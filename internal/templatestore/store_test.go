@@ -21,8 +21,6 @@ import (
 // testMasterKey is a 32-byte key for testing
 var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
-const testIdentityID = "default"
-
 func TestValidateBaseKeyType(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -95,7 +93,7 @@ func TestSaveAndLoadTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	yamlData := []byte(`
 schema_version: 1
@@ -111,7 +109,7 @@ teal: |
 	keyType := "test.test-template.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -124,7 +122,7 @@ teal: |
 	assertTemplateDirMode(t, filepath.Dir(outputPath))
 
 	// Load template back
-	templatePath, pathErr := GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType, TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -148,7 +146,7 @@ func TestSaveAndLoadComposedTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	yamlData := []byte(`
 schema_version: 1
@@ -177,7 +175,7 @@ teal: |
 	keyType := "test.falcon1024-test.v1"
 
 	// Save template
-	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey))
+	outputPath, err := SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -189,7 +187,7 @@ teal: |
 	}
 
 	// Load template back
-	templatePath, pathErr := GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeComposed)
+	templatePath, pathErr := GetTemplateFilePathForPaths(paths, keyType, TemplateTypeComposed)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -242,57 +240,57 @@ func TestTemplateExists(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	keyType := "test.exists-test.v1"
 
 	// Should not exist initially
-	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+	if TemplateExistsForPaths(paths, keyType, TemplateTypeGeneric) {
 		t.Error("Template should not exist before saving")
 	}
 
 	// Save template
 	yamlData := []byte("test: data")
-	_, err = SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+	_, err = SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
 
-	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+	if TemplateExistsForPaths(paths, keyType, TemplateTypeGeneric) {
 		t.Error("Template should not exist before key type state is written")
 	}
 	markTemplateState(t, paths, keyType, TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	// Should exist now
-	if !TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+	if !TemplateExistsForPaths(paths, keyType, TemplateTypeGeneric) {
 		t.Error("Template should exist after saving and state write")
 	}
 
 	// Should not exist in composed directory
-	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeComposed) {
+	if TemplateExistsForPaths(paths, keyType, TemplateTypeComposed) {
 		t.Error("Template should not exist in composed directory")
 	}
 }
 
 func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	keyType := "test.unknown-template-type.v1"
 	unknownType := TemplateType("compiled_provider")
 
-	if _, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), []byte("test: data"), keyType, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
+	if _, err := SaveTemplateActive(genstoretest.Active(t, paths), []byte("test: data"), keyType, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
 		t.Fatal("SaveTemplateActive() error = nil, want unsupported template_type")
 	}
-	if TemplateExistsForPaths(paths, testIdentityID, keyType, unknownType) {
+	if TemplateExistsForPaths(paths, keyType, unknownType) {
 		t.Fatal("TemplateExistsForPaths() = true for unsupported template_type")
 	}
-	if _, err := ScanTemplateDirectoryForPaths(paths, testIdentityID, unknownType); err == nil {
+	if _, err := ScanTemplateDirectoryForPaths(paths, unknownType); err == nil {
 		t.Fatal("ScanTemplateDirectoryForPaths() error = nil, want unsupported template_type")
 	}
-	if _, err := LoadAllTemplatesForPaths(paths, testIdentityID, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
+	if _, err := LoadAllTemplatesForPaths(paths, unknownType, cryptotest.Keyring(t, testMasterKey)); err == nil {
 		t.Fatal("LoadAllTemplatesForPaths() error = nil, want unsupported template_type")
 	}
-	if _, ok, err := keytypestate.Get(paths, testIdentityID, keyType); err != nil {
+	if _, ok, err := keytypestate.Get(paths, keyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
 		t.Fatal("SaveTemplateActive() wrote state for unsupported template_type")
@@ -309,7 +307,7 @@ func TestLoadAllTemplates(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	// Save multiple templates
 	templates := map[string][]byte{
@@ -319,7 +317,7 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	for keyType, data := range templates {
-		_, err := SaveTemplateActive(genstoretest.Active(t, paths, testIdentityID), data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+		_, err := SaveTemplateActive(genstoretest.Active(t, paths), data, keyType, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 		if err != nil {
 			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
 		}
@@ -327,7 +325,7 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	// Load all templates
-	loaded, err := LoadAllTemplatesForPaths(paths, testIdentityID, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
+	loaded, err := LoadAllTemplatesForPaths(paths, TemplateTypeGeneric, cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
 		t.Fatalf("LoadAllTemplates failed: %v", err)
 	}
@@ -367,7 +365,7 @@ func markTemplateState(t *testing.T, paths utilkeys.Paths, keyType string, templ
 	if !ok {
 		t.Fatalf("unsupported template type in test: %q", templateType)
 	}
-	if err := keytypestate.Put(paths, testIdentityID, keytypestate.Record{
+	if err := keytypestate.Put(paths, keytypestate.Record{
 		KeyType: keyType,
 		Source:  source,
 		State:   state,
@@ -620,7 +618,7 @@ func testUint64Ptr(value uint64) *uint64 {
 
 func mustActiveTS(t *testing.T, paths utilkeys.Paths) utilkeys.ActivePaths {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}

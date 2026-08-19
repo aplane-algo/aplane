@@ -77,8 +77,8 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 	if stored.MaxFeeMicroAlgos == nil || *stored.MaxFeeMicroAlgos != 7000 {
 		t.Fatalf("MaxFeeMicroAlgos = %v, want 7000", stored.MaxFeeMicroAlgos)
 	}
-	if store.IdentityID() != "default" || store.LastSHA256() != "abc123" {
-		t.Fatalf("store metadata identity=%q sha=%q, want default/abc123", store.IdentityID(), store.LastSHA256())
+	if store.LastSHA256() != "abc123" {
+		t.Fatalf("store metadata sha=%q, want abc123", store.LastSHA256())
 	}
 	if store.PolicyYAML() != client.snapshot.PolicyYAML {
 		t.Fatalf("PolicyYAML() = %q, want %q", store.PolicyYAML(), client.snapshot.PolicyYAML)

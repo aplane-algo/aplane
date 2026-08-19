@@ -20,7 +20,7 @@ func TestValidateRequiresSSHDefaults(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	runtime := &RuntimeState{}
 
-	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err != nil {
+	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir())); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
 }
@@ -32,7 +32,7 @@ func TestValidateRejectsInvalidSSHConfig(t *testing.T) {
 	cfg.Endpoint.SSH.HostKeyPath = ""
 	runtime := &RuntimeState{}
 
-	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err == nil {
+	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir())); err == nil {
 		t.Fatal("Validate() error = nil, want invalid ssh configuration error")
 	}
 }
@@ -48,7 +48,7 @@ func TestValidateRejectsAdditionalIdentityBeforeUnlockPlanning(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := serverconfig.DefaultServerConfig()
-	_, err := Validate(&cfg, &RuntimeState{}, utilkeys.NewPaths(root), "default")
+	_, err := Validate(&cfg, &RuntimeState{}, utilkeys.NewPaths(root))
 	if err == nil || !strings.Contains(err.Error(), "invalid product identity layout") {
 		t.Fatalf("Validate() error = %v, want product layout refusal", err)
 	}

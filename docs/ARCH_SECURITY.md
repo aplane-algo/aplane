@@ -605,8 +605,7 @@ Denial behavior:
 
 - HTTP authentication failures and HTTP authorization denials are recorded as
   `AUTH_FAILED` with a reason such as `missing_credentials`,
-  `invalid_credentials`, `unsupported_identity:<identity>`, or
-  `unauthorized:<action>`.
+  `invalid_credentials`, or `unauthorized:<action>`.
 - Admin protocol authorization denials are recorded as
   `AUTHORIZATION_DENIED` with the admin session context, action/resource details,
   target identity, principal attribution, transport, and denial reason.
@@ -642,7 +641,7 @@ mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Res
 ```
 
 HTTP token authentication validates against the token authority bound to the
-one product identity runtime. Node failure is checked first and fails closed.
+one product runtime. Node failure is checked first and fails closed.
 
 ```go
 // internal/signerapp/daemon/http_auth.go
@@ -670,7 +669,11 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 }
 ```
 
-Handlers extract the identity with `auth.IdentityFromContext(r.Context())` and use `identity.ID` to scope key lookups and audit log entries through the bound identity runtime. In product mode, externally reachable flows target the product identity; `auth.CurrentProductIdentityID()` is a process-boundary/defaulting helper rather than the primary handler-time identity resolution mechanism.
+Handlers may extract the authenticated principal identity with
+`auth.IdentityFromContext(r.Context())` for attribution. They do not use it to
+select storage: key lookups, policy, approvals, and mutation all use the
+process-owned product runtime. Boundary adapters stamp the fixed `default`
+value into compatibility-bearing audit and status fields.
 
 This pipeline keeps handler code behind the `Authorizer` interface.
 

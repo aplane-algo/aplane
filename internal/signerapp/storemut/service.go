@@ -8,9 +8,9 @@ package storemut
 import (
 	"context"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"path/filepath"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -28,16 +28,14 @@ type TokenUpdater interface {
 
 // Service performs signer-owned persistent mutations.
 type Service struct {
-	identityID      string
 	keyPaths        storepaths.Paths
 	httpTokenUpdate TokenUpdater
 	sshTokenUpdate  TokenUpdater
 }
 
-// New creates a new signer mutation service for an identity.
-func New(identityID string, keyPaths storepaths.Paths, httpTokenUpdate, sshTokenUpdate TokenUpdater) *Service {
+// New creates a new signer mutation service for the product store.
+func New(keyPaths storepaths.Paths, httpTokenUpdate, sshTokenUpdate TokenUpdater) *Service {
 	return &Service{
-		identityID:      identityID,
 		keyPaths:        keyPaths,
 		httpTokenUpdate: httpTokenUpdate,
 		sshTokenUpdate:  sshTokenUpdate,
@@ -51,7 +49,7 @@ func (s *Service) RevokeToken() (string, error) {
 		return "", fmt.Errorf("failed to generate new token: %w", err)
 	}
 
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root(), s.identityID)
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root())
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(tokenPath)); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
@@ -71,13 +69,13 @@ func (s *Service) RevokeToken() (string, error) {
 
 // DeleteKey moves a key file out of the active key set into the identity archive.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
-	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir(s.identityID))
+	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir())
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the
 // identity-scoped activated compiled key type set.
 func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
-	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, kr, params, activated)
+	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, keyType, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivated imports and persists a standard key using
@@ -89,7 +87,7 @@ func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, k
 // ImportKeyFromMnemonicWithActivatedContext imports and persists a standard key
 // using the identity-scoped activated compiled key type set.
 func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
-	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, mnemonic, kr, params, activated)
+	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, keyType, mnemonic, kr, params, activated)
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file.
@@ -109,7 +107,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, false); err != nil {
 		return err
 	}
-	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, kr)
+	_, err := keys.SavePayload(s.keyPaths, payload, kr)
 	return err
 }
 
@@ -120,5 +118,5 @@ func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) erro
 
 // SaveIdentitySetting persists a single identity-scoped setting.
 func (s *Service) SaveIdentitySetting(dataDir, key string, value interface{}) error {
-	return identity.SaveStoredSetting(dataDir, s.identityID, key, value)
+	return identity.SaveStoredSetting(dataDir, key, value)
 }

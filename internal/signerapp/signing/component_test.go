@@ -181,7 +181,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	receiver := types.Address{8}.String()
 	txn := paymentTransaction(t, sender, receiver, 10)
 
-	_, err := (&Service{}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -194,7 +194,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 		t.Fatalf("SignComponentWithContext() error = %q, want missing sentry policy", err.Message)
 	}
 
-	_, err = (&Service{}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err = (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
 		Role:          signerapi.ComponentSignRoleUser,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -209,7 +209,7 @@ func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-no-policy",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
@@ -233,7 +233,7 @@ func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-no-routing",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
@@ -266,7 +266,7 @@ func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-appl",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -292,7 +292,7 @@ func TestSignComponentSentryRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -349,12 +349,12 @@ key_overrides:
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy("default", plan); signErr != nil {
+	if signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy(plan); signErr != nil {
 		t.Fatalf("evaluateSentryComponentPolicy() error = %v", signErr)
 	}
 
 	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy("default", plan)
+	signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy(plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("evaluateSentryComponentPolicy(other key) error = %#v, want route miss", signErr)
 	}
@@ -371,7 +371,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-review-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -409,7 +409,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-review-above",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -438,7 +438,7 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{
 		SentryPolicy: sentryRoutePolicy(t, source, dest),
 		AuditLog:     audit,
-	}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-rekey",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -494,7 +494,7 @@ rekey_policy:
 	}
 	store := &componentKeyStore{key: keyMaterial}
 
-	result, signErr := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	result, signErr := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-rekey-allow",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
@@ -530,7 +530,7 @@ rekey_policy:
 	txn.RekeyTo = blockedTarget
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-rekey-deny",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testFalconComponentSelector(t, 0xbb),
@@ -573,7 +573,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	result, signErr := (&Service{
 		SentryPolicy: sentryRoutePolicy(t, source, dest),
 		AuditLog:     audit,
-	}).signComponentWithContext(context.Background(), "default", componentPlanRequest{
+	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-sentry-policy-pass",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
@@ -612,7 +612,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 }
 
 func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
-	baseKeyType := "test.user-component-signing.v1"
+	baseKeyType := uniqueSigningTestFamily("test.user-component-signing.v1")
 	provider := &componentUserTestProvider{family: baseKeyType}
 	coresigning.Register(provider)
 
@@ -679,7 +679,7 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 }
 
 func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) {
-	baseKeyType := "test.user-component-authorizer-signing.v1"
+	baseKeyType := uniqueSigningTestFamily("test.user-component-authorizer-signing.v1")
 	provider := &componentUserTestProvider{family: baseKeyType}
 	coresigning.Register(provider)
 
@@ -738,7 +738,7 @@ func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) 
 }
 
 func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
-	_, err := (&Service{}).AssembleWithContext(context.Background(), "default", signerapi.AssemblyRequest{
+	_, err := (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
@@ -755,7 +755,7 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 		t.Fatalf("AssembleGuardedWithContext() error = %q, want decode transaction", err.Message)
 	}
 
-	_, err = (&Service{}).AssembleWithContext(context.Background(), "default", signerapi.AssemblyRequest{}, nil)
+	_, err = (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("AssembleGuardedWithContext(invalid) error = %#v, want bad request", err)
 	}

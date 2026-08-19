@@ -80,7 +80,7 @@ func TestGateUserComponentSigningExcludesFrozenDummySuffix(t *testing.T) {
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
 	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
-	if _, gateErr := svc.gateUserComponentSigning(t.Context(), "default", plan); gateErr != nil {
+	if _, gateErr := svc.gateUserComponentSigning(t.Context(), plan); gateErr != nil {
 		t.Fatalf("gateUserComponentSigning() error = %v", gateErr)
 	}
 	if prompt.calls != 0 {
@@ -139,7 +139,7 @@ func (p *componentGatePrompt) approvalService(audit *testAuditLogger) *ApprovalS
 
 func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, cfg *policy.Config, guardedAccount string) *Service {
 	return &Service{
-		Planner: &Planner{Snapshot: func(string) PlannerIdentitySnapshot {
+		Planner: &Planner{Snapshot: func() PlannerIdentitySnapshot {
 			return PlannerIdentitySnapshot{
 				KeyFiles: map[string]string{guardedAccount: "guarded.key"},
 				KeyTypes: map[string]string{guardedAccount: keytypes.GuardedFalcon1024Sentry1024V1},
@@ -180,7 +180,7 @@ func userComponentGateRequest(t *testing.T, sender string, txns []types.Transact
 }
 
 func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-policy-reject.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-policy-reject.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{21}.String()
@@ -192,12 +192,12 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	_, err := svc.signComponentWithContext(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
+	_, err := svc.signComponentWithContext(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
 	if err == nil {
 		t.Fatal("SignComponentWithContext() error = nil, want session required")
 	}
 
-	_, err = svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	_, err = svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponent error = %#v, want forbidden", err)
 	}
@@ -224,7 +224,7 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 }
 
 func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-operator-approve.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-operator-approve.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{23}.String()
@@ -237,7 +237,7 @@ func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
 	leaseAcquired, leaseReleased := countOperationLease(svc)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	result, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	result, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err != nil {
 		t.Fatalf("SignComponent error = %v", err)
 	}
@@ -270,7 +270,7 @@ func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
 }
 
 func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-operator-deny.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-operator-deny.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{25}.String()
@@ -282,7 +282,7 @@ func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
 	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	_, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponent error = %#v, want forbidden", err)
 	}
@@ -306,7 +306,7 @@ func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
 }
 
 func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-user-auto.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-user-auto.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{27}.String()
@@ -320,7 +320,7 @@ func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
 	svc := newComponentGateService(audit, approval, nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	result, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	result, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err != nil {
 		t.Fatalf("SignComponent error = %v", err)
 	}
@@ -333,7 +333,7 @@ func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
 }
 
 func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
-	provider := &componentUserTestProvider{family: "test.component-gate-foreign-review.v1"}
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-foreign-review.v1")}
 	coresigning.Register(provider)
 
 	sender := types.Address{29}.String()
@@ -357,7 +357,7 @@ func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
 	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
-	result, svcErr := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0}), session)
+	result, svcErr := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0}), session)
 	if svcErr != nil {
 		t.Fatalf("SignComponent error = %v", svcErr)
 	}
@@ -384,7 +384,7 @@ func TestSignComponentUserRoleWithoutAdminClientFailsClosed(t *testing.T) {
 	svc := newComponentGateService(audit, approval, nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial("test.component-gate-no-client.v1")}
 
-	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	_, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err == nil || err.Kind != ErrorUnavailable {
 		t.Fatalf("SignComponent error = %#v, want unavailable", err)
 	}
@@ -406,7 +406,7 @@ func TestSignComponentUserRolePreflightRejectsUnknownKeyBeforePrompt(t *testing.
 	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, receiver)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial("test.component-gate-preflight.v1")}
 
-	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	_, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("SignComponent error = %#v, want bad request", err)
 	}

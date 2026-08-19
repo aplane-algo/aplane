@@ -27,8 +27,8 @@ const maxCurrentPointerSize = 128
 // well-formed generation ID (trailing newline permitted), and the named
 // generation directory must exist as a regular directory. Any deviation is
 // an error; callers fail closed into recovery, never guess a generation.
-func ReadCurrent(paths storepaths.Paths, identityID string) (string, error) {
-	pointerPath := paths.CurrentPointerPath(identityID)
+func ReadCurrent(paths storepaths.Paths) (string, error) {
+	pointerPath := paths.CurrentPointerPath()
 	info, err := os.Lstat(pointerPath)
 	if err != nil {
 		return "", fmt.Errorf("read CURRENT pointer: %w", err)
@@ -50,7 +50,7 @@ func ReadCurrent(paths storepaths.Paths, identityID string) (string, error) {
 	if err := storepaths.ValidateGenerationID(generationID); err != nil {
 		return "", fmt.Errorf("CURRENT pointer: %w", err)
 	}
-	if err := requireRegularDirectory(paths.GenerationDir(identityID, generationID)); err != nil {
+	if err := requireRegularDirectory(paths.GenerationDir(generationID)); err != nil {
 		return "", fmt.Errorf("selected generation: %w", err)
 	}
 	return generationID, nil
@@ -71,18 +71,18 @@ var ErrCommitDurabilityUnknown = fmt.Errorf("CURRENT flip visible but its durabi
 // A failure after the rename is not "nothing committed": CURRENT already
 // names the new generation. WriteCurrent detects that window, retries the
 // directory sync once, and otherwise returns ErrCommitDurabilityUnknown.
-func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error {
+func WriteCurrent(paths storepaths.Paths, generationID string) error {
 	if err := storepaths.ValidateGenerationID(generationID); err != nil {
 		return err
 	}
-	if err := requireRegularDirectory(paths.GenerationDir(identityID, generationID)); err != nil {
+	if err := requireRegularDirectory(paths.GenerationDir(generationID)); err != nil {
 		return fmt.Errorf("refusing to point CURRENT at %s: %w", generationID, err)
 	}
-	writeErr := fsutil.WriteFileDurable(paths.CurrentPointerPath(identityID), []byte(generationID+"\n"))
+	writeErr := fsutil.WriteFileDurable(paths.CurrentPointerPath(), []byte(generationID+"\n"))
 	if writeErr == nil {
 		return nil
 	}
-	current, readErr := ReadCurrent(paths, identityID)
+	current, readErr := ReadCurrent(paths)
 	if readErr != nil {
 		if errors.Is(readErr, os.ErrNotExist) {
 			// An absent pointer proves non-commit: a rename cannot remove
@@ -100,7 +100,7 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 		// The old pointer is intact and authoritative; nothing committed.
 		return writeErr
 	}
-	if syncErr := fsutil.SyncDir(paths.IdentityDir(identityID)); syncErr == nil {
+	if syncErr := fsutil.SyncDir(paths.ProductDir()); syncErr == nil {
 		return nil
 	}
 	return fmt.Errorf("%w: generation %s: %v", ErrCommitDurabilityUnknown, generationID, writeErr)
@@ -109,27 +109,27 @@ func WriteCurrent(paths storepaths.Paths, identityID, generationID string) error
 // Resolve reads CURRENT once and returns the bound generation paths.
 // Mutating callers must hold the identity mutation lock across Resolve and
 // every use of the result; never re-resolve mid-operation.
-func Resolve(paths storepaths.Paths, identityID string) (storepaths.GenPaths, error) {
-	generationID, err := ReadCurrent(paths, identityID)
+func Resolve(paths storepaths.Paths) (storepaths.GenPaths, error) {
+	generationID, err := ReadCurrent(paths)
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}
-	return paths.GenerationPaths(identityID, generationID), nil
+	return paths.GenerationPaths(generationID), nil
 }
 
 // ResolveActive resolves the identity's active namespaces: the generation
 // named by CURRENT. All stores are generation-based; a missing or invalid
 // CURRENT is an error (recovery), never a fallback.
-func ResolveActive(paths storepaths.Paths, identityID string) (storepaths.ActivePaths, error) {
-	return Resolve(paths, identityID)
+func ResolveActive(paths storepaths.Paths) (storepaths.ActivePaths, error) {
+	return Resolve(paths)
 }
 
 // IsGenerational reports whether the identity store exists as a
 // generation-based store (all supported stores are). It distinguishes an
 // uninitialized store from one whose CURRENT pointer is present, so callers
 // can produce a friendly not-initialized error instead of a pointer error.
-func IsGenerational(paths storepaths.Paths, identityID string) (bool, error) {
-	_, err := os.Lstat(paths.CurrentPointerPath(identityID))
+func IsGenerational(paths storepaths.Paths) (bool, error) {
+	_, err := os.Lstat(paths.CurrentPointerPath())
 	if err == nil {
 		return true, nil
 	}

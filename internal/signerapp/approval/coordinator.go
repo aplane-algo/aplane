@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"sync"
 	"time"
 )
@@ -447,11 +448,11 @@ func (c *Coordinator) HandleTokenProvisioningResponse(msg *TokenProvisioningResp
 	}
 }
 
-func (c *Coordinator) RequestTokenProvisioning(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	return c.RequestTokenProvisioningContext(context.Background(), requestID, identityID, sshFingerprint, remoteAddr, timeout)
+func (c *Coordinator) RequestTokenProvisioning(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+	return c.RequestTokenProvisioningContext(context.Background(), requestID, sshFingerprint, remoteAddr, timeout)
 }
 
-func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -485,7 +486,7 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 
 	request := &TokenProvisioningRequest{
 		ID:             requestID,
-		IdentityID:     identityID,
+		IdentityID:     productmode.IdentityID,
 		SSHFingerprint: sshFingerprint,
 		RemoteAddr:     remoteAddr,
 		Timestamp:      time.Now().Unix(),

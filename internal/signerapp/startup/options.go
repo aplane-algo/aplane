@@ -20,12 +20,11 @@ type Options struct {
 	Config            serverconfig.ServerConfig
 	PassphraseTimeout time.Duration
 	Paths             storepaths.Paths
-	IdentityID        string
 }
 
 // LoadOptions resolves the signer bootstrap state into a normalized startup
 // model that can be passed through validation and runtime assembly.
-func LoadOptions(dataDirFlag string, identityID string) (*Options, error) {
+func LoadOptions(dataDirFlag string) (*Options, error) {
 	startup, err := bootstrap.Load(dataDirFlag)
 	if err != nil {
 		return nil, err
@@ -36,7 +35,6 @@ func LoadOptions(dataDirFlag string, identityID string) (*Options, error) {
 		Config:            startup.Config,
 		PassphraseTimeout: startup.PassphraseTimeout,
 		Paths:             startup.Paths,
-		IdentityID:        identityID,
 	}, nil
 }
 
@@ -61,7 +59,7 @@ type UnlockPlan struct {
 // Keeping that order in one operation prevents an invalid store layout from
 // invoking an operator-configured passphrase helper.
 func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
-	info, err := Validate(&opts.Config, runtime, opts.Paths, opts.IdentityID)
+	info, err := Validate(&opts.Config, runtime, opts.Paths)
 	if err != nil {
 		return nil, nil, fmt.Errorf("startup validation failed: %w", err)
 	}
@@ -73,11 +71,11 @@ func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassph
 	return info, plan, nil
 }
 
-// ResolveUnlockConfig returns the passphrase command config for an identity.
-// It checks identity-scoped unlock.yaml first, then falls back to the
+// ResolveUnlockConfig returns the product-store passphrase command config.
+// It checks the product unlock.yaml first, then falls back to the
 // process-global config for backward compatibility.
-func ResolveUnlockConfig(dataDir, identityID string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
-	unlockCfg, err := identity.LoadUnlockConfig(dataDir, identityID)
+func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
+	unlockCfg, err := identity.LoadUnlockConfig(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +106,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 
 	if testPassphrase != "" {
 		passphrase := []byte(testPassphrase)
-		if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir(opts.IdentityID)); err != nil {
+		if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 			crypto.ZeroBytes(passphrase)
 			return nil, fmt.Errorf("TEST_PASSPHRASE does not match existing keystore")
 		}
@@ -119,7 +117,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		}, nil
 	}
 
-	unlockCfg, err := ResolveUnlockConfig(opts.DataDir, opts.IdentityID, &opts.Config)
+	unlockCfg, err := ResolveUnlockConfig(opts.DataDir, &opts.Config)
 	if err != nil {
 		return nil, fmt.Errorf("load identity unlock config: %w", err)
 	}
@@ -139,7 +137,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 	if err != nil {
 		return nil, err
 	}
-	if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir(opts.IdentityID)); err != nil {
+	if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("passphrase from passphrase command does not match existing keystore")
 	}

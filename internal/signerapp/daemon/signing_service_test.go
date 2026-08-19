@@ -18,7 +18,7 @@ func TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot(t 
 		config: &serverconfig.ServerConfig{},
 	}
 	ir := identity.New(identity.Config{
-		ID:              auth.DefaultIdentityID,
+
 		Authenticator:   auth.NewTokenAuthenticator("test-token"),
 		UserAutoApprove: &userAutoApprove,
 	})

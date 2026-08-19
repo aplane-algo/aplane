@@ -19,7 +19,7 @@ import (
 )
 
 func TestModelCyclesBoolFieldAndTracksModified(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if cmd != nil {
@@ -45,7 +45,7 @@ func TestModelCyclesBoolFieldAndTracksModified(t *testing.T) {
 
 func TestModelApplyUsesStoreAndClearsModified(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 
@@ -74,7 +74,7 @@ func TestModelApplyUsesStoreAndClearsModified(t *testing.T) {
 
 func TestModelApplyPromptsForMissingStorePassphrase(t *testing.T) {
 	store := &passphraseFakeStore{}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 
@@ -120,7 +120,7 @@ func TestModelApplyPromptsForMissingStorePassphrase(t *testing.T) {
 
 func TestModelApplyFailureClearsPromptedPassphrase(t *testing.T) {
 	store := &passphraseFakeStore{fakeStore: fakeStore{saveErr: errors.New("bad passphrase")}}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 
@@ -145,7 +145,7 @@ func TestModelApplyFailureClearsPromptedPassphrase(t *testing.T) {
 }
 
 func TestModifiedQuitRequiresConfirmation(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 
@@ -179,7 +179,7 @@ func TestModifiedQuitRequiresConfirmation(t *testing.T) {
 
 func TestModifiedQuitCanApplyAndQuit(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 	updated, _ = m.Update(keyRunes("q"))
@@ -209,7 +209,7 @@ func TestStandaloneDraftPersistenceLanguageIsTruthful(t *testing.T) {
 		Kind: policyeditor.PersistenceDraft,
 		Path: path,
 	}}
-	m := New(store, &policy.StoredConfig{}, "", "default")
+	m := New(store, &policy.StoredConfig{}, "")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 
@@ -256,7 +256,7 @@ func TestStandaloneDraftPersistenceLanguageIsTruthful(t *testing.T) {
 
 func TestModelValidateReportsStoreError(t *testing.T) {
 	store := &fakeStore{validateErr: errors.New("invalid policy")}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 
 	updated, cmd := m.Update(keyRunes("v"))
 	if cmd == nil {
@@ -284,7 +284,7 @@ func TestViewShowsTransferPolicySummary(t *testing.T) {
 			{ID: "route_one"},
 		},
 	}},
-	}, "/tmp/aplane", "default")
+	}, "/tmp/aplane")
 
 	view := m.View()
 	if !strings.Contains(view, "enabled=true routes=1") {
@@ -293,7 +293,7 @@ func TestViewShowsTransferPolicySummary(t *testing.T) {
 }
 
 func TestHomeViewDoesNotShowFloatingFieldDescription(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 
 	view := m.View()
 	if strings.Contains(view, "Reject rekey-to addresses outside the signer identity.") {
@@ -302,7 +302,7 @@ func TestHomeViewDoesNotShowFloatingFieldDescription(t *testing.T) {
 }
 
 func TestHomeViewShowsEffectivePolicyDefaults(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 
 	view := m.View()
 	assertHomeSourceColumnAligned(t, view)
@@ -341,7 +341,7 @@ func TestHomeViewShowsExplicitPolicySources(t *testing.T) {
 		Enabled:       &enabled,
 		OnNoRoute:     &onNoRoute,
 	}},
-	}, "/tmp/aplane", "default")
+	}, "/tmp/aplane")
 
 	view := m.View()
 	assertHomeSourceColumnAligned(t, view)
@@ -361,7 +361,7 @@ func TestHomeViewShowsExplicitPolicySources(t *testing.T) {
 }
 
 func TestRouteScreenCyclesSelectedRouteEnabled(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -395,7 +395,7 @@ func TestRouteScreenCyclesSelectedRouteEnabled(t *testing.T) {
 func TestRouteScreenShowsBlockedDestinations(t *testing.T) {
 	stored := routePolicy()
 	stored.TransferPolicy.BlockedDestinations = []string{"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -409,7 +409,7 @@ func TestRouteScreenShowsBlockedDestinations(t *testing.T) {
 
 func TestRouteScreenEditsBlockedDestinations(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -443,7 +443,7 @@ func TestRouteScreenEditsBlockedDestinations(t *testing.T) {
 
 func TestBlockedDestinationsEditorInitializesRoutingSafely(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(store, &policy.StoredConfig{}, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -478,7 +478,7 @@ func TestBlockedDestinationsEditorInitializesRoutingSafely(t *testing.T) {
 }
 
 func TestRouteScreenShowsRouteDescriptionInline(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -503,7 +503,7 @@ func TestRouteScreenShowsRouteDescriptionInline(t *testing.T) {
 }
 
 func TestRouteScreenShowsTransferPolicyYAML(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -542,7 +542,7 @@ func TestAssetSetScreenShowsStoredSets(t *testing.T) {
 			"testnet": []uint64{10458941},
 		},
 	}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -581,7 +581,7 @@ func TestAssetSetEditorEditsASAIDsAsText(t *testing.T) {
 			"mainnet": []uint64{31566704},
 		},
 	}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -632,7 +632,7 @@ func TestAssetSetEditAppliesValidatedSet(t *testing.T) {
 			"testnet": []uint64{10458941},
 		},
 	}
-	m := New(store, stored, "/tmp/aplane", "default")
+	m := New(store, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -677,7 +677,7 @@ func TestAssetSetEditEscDuringValidationDiscardsLateResult(t *testing.T) {
 			"testnet": []uint64{10458941},
 		},
 	}
-	m := New(store, stored, "/tmp/aplane", "default")
+	m := New(store, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -724,7 +724,7 @@ func TestAssetSetScreenNewCloneAndDelete(t *testing.T) {
 			"testnet": []uint64{10458941},
 		},
 	}
-	m := New(store, stored, "/tmp/aplane", "default")
+	m := New(store, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -783,7 +783,7 @@ func TestAssetSetScreenNewCloneAndDelete(t *testing.T) {
 }
 
 func TestAssetSetScreenSeedsUSDCWhenMissing(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -810,7 +810,7 @@ func TestAssetSetScreenSeedsUSDCWhenMissing(t *testing.T) {
 }
 
 func TestRouteYAMLViewPageKeysScrollByPage(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.screen = screenRouteYAML
 	m.height = 12
 
@@ -832,7 +832,7 @@ func TestRouteYAMLViewConstrainsLongLines(t *testing.T) {
 	stored := routePolicy()
 	longDescription := strings.Repeat("long-description-", 12)
 	stored.TransferPolicy.Routes[0].Description = longDescription
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.screen = screenRouteYAML
 	m.width = 40
 
@@ -846,7 +846,7 @@ func TestRouteYAMLViewConstrainsLongLines(t *testing.T) {
 }
 
 func TestRouteYAMLViewFitsTerminalHeight(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.screen = screenRouteYAML
 	m.width = 100
 	m.height = 24
@@ -859,7 +859,7 @@ func TestRouteYAMLViewFitsTerminalHeight(t *testing.T) {
 
 func TestRouteScreenCanApplyRouteEditsToProduction(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -884,7 +884,7 @@ func TestRouteScreenCanApplyRouteEditsToProduction(t *testing.T) {
 
 func TestWriteFilePopupWritesDraftWithoutApplyingProduction(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(Model)
 	if !m.modified() {
@@ -947,7 +947,7 @@ func TestWriteFilePopupWritesDraftWithoutApplyingProduction(t *testing.T) {
 }
 
 func TestRouteScreenNewRouteInitializesTransferPolicy(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -986,7 +986,7 @@ func TestRouteScreenNewRouteInitializesTransferPolicy(t *testing.T) {
 }
 
 func TestTransferSettingsOpenInitializesDisabledPolicy(t *testing.T) {
-	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, &policy.StoredConfig{}, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1013,7 +1013,7 @@ func TestRouteScreenNewRouteMarksRoutesSetOnExistingTransferPolicy(t *testing.T)
 		Enabled:       &enabled,
 		OnNoRoute:     &onNoRoute,
 	}},
-	}, "/tmp/aplane", "default")
+	}, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1030,7 +1030,7 @@ func TestRouteScreenNewRouteMarksRoutesSetOnExistingTransferPolicy(t *testing.T)
 }
 
 func TestRouteScreenCloneDeleteAndReorder(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1075,7 +1075,7 @@ func TestRouteScreenCloneDeleteAndReorder(t *testing.T) {
 }
 
 func TestRouteDeleteCanBeCanceled(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1097,7 +1097,7 @@ func TestRouteDeleteCanBeCanceled(t *testing.T) {
 
 func TestRouteEditFormAppliesValidatedRoute(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1137,7 +1137,7 @@ func TestRouteEditFormAppliesValidatedRoute(t *testing.T) {
 
 func TestRouteEditFormEditsGuardNameAndDescription(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1193,7 +1193,7 @@ func TestRouteEditFormEditsGuardNameAndDescription(t *testing.T) {
 
 func TestRouteEditFormWritesGuardNameAssetRouteIDs(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1248,7 +1248,7 @@ func TestRouteEditFormDisplaysAlgoThresholdsInAlgo(t *testing.T) {
 		ReviewAbove: uint64Ptr(50_000_000),
 		RejectAbove: uint64Ptr(75_500_000),
 	}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1271,7 +1271,7 @@ func TestRouteEditFormParsesASADisplayThresholds(t *testing.T) {
 	stored.TransferPolicy.Routes[0].Limits = &policy.StoredAmountLimits{
 		ReviewAbove: uint64Ptr(5_000_000),
 	}
-	m := New(store, stored, t.TempDir(), "default")
+	m := New(store, stored, t.TempDir())
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1319,7 +1319,7 @@ func TestRouteEditFormAppliesGroupedAssetRows(t *testing.T) {
 			Destinations: []string{"self"},
 		},
 	}
-	m := New(store, stored, t.TempDir(), "default")
+	m := New(store, stored, t.TempDir())
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1373,7 +1373,7 @@ func TestRouteEditFormEditsAssetSetThresholdsAcrossNetworks(t *testing.T) {
 		"mainnet": {RejectAbove: uint64Ptr(5_000_000)},
 		"testnet": {RejectAbove: uint64Ptr(5_000_000)},
 	}
-	m := New(store, stored, t.TempDir(), "default")
+	m := New(store, stored, t.TempDir())
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1412,7 +1412,7 @@ func TestRouteEditFormResolvesCachedASASymbolToID(t *testing.T) {
 	stored := routePolicy()
 	stored.TransferPolicy.Routes[0].Networks = []string{"testnet"}
 	stored.TransferPolicy.Routes[0].Assets = []policy.StoredAssetTerm{{Raw: "algo"}}
-	m := New(store, stored, t.TempDir(), "default")
+	m := New(store, stored, t.TempDir())
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1447,7 +1447,7 @@ func TestRouteEditFormAcceptsBareAssetSetName(t *testing.T) {
 		},
 	}
 	stored.TransferPolicy.Routes[0].Networks = []string{"testnet"}
-	m := New(store, stored, t.TempDir(), "default")
+	m := New(store, stored, t.TempDir())
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1476,7 +1476,7 @@ func TestRouteAssetHintListsDefinedAssetSets(t *testing.T) {
 	stored.TransferPolicy.AssetSets = map[string]policy.StoredAssetSet{
 		"usdc": {"testnet": []uint64{10458941}},
 	}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 
 	hint := m.routeTextHint("asset")
 	if !strings.Contains(hint, "usdc") {
@@ -1494,7 +1494,7 @@ func TestRouteEditFormShowsCountsForSourcesAndDestinations(t *testing.T) {
 		"SOURCETWOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 	}
 	stored.TransferPolicy.Routes[0].Destinations = []string{"self", "@ops", "*"}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1514,7 +1514,7 @@ func TestRouteEditFormShowsCountsForSourcesAndDestinations(t *testing.T) {
 }
 
 func TestRouteEditFormShowsSingleListValue(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1533,7 +1533,7 @@ func TestRouteEditFormShowsSingleListValue(t *testing.T) {
 }
 
 func TestRouteEditSourcesOpenListEditor(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1569,7 +1569,7 @@ func TestRouteEditSourcesOpenListEditor(t *testing.T) {
 }
 
 func TestRouteEditDestinationOpensListEditor(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1590,7 +1590,7 @@ func TestRouteEditDestinationOpensListEditor(t *testing.T) {
 }
 
 func TestRouteEditTextFieldUsesPopupEditor(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1619,7 +1619,7 @@ func TestRouteEditTextFieldUsesPopupEditor(t *testing.T) {
 }
 
 func TestRouteEditChoiceFieldUsesPopupEditor(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1647,7 +1647,7 @@ func TestRouteEditChoiceFieldUsesPopupEditor(t *testing.T) {
 
 func TestRouteEditFieldAutoSavesDraft(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1685,7 +1685,7 @@ func TestRouteEditFieldAutoSavesDraft(t *testing.T) {
 
 func TestRouteEditFormEscDuringValidationDiscardsLateResult(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1735,7 +1735,7 @@ func TestRouteEditFormLeavesAdvancedRouteYAMLOnly(t *testing.T) {
 			RejectAbove: uint64Ptr(30),
 		},
 	}
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1760,7 +1760,7 @@ func TestRouteEditFormLeavesAdvancedRouteYAMLOnly(t *testing.T) {
 }
 
 func TestRouteEditFormRejectsParseError(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1783,7 +1783,7 @@ func TestRouteEditFormRejectsParseError(t *testing.T) {
 
 func TestRouteEditFormKeepsFormOpenOnValidationError(t *testing.T) {
 	store := &fakeStore{validateErr: errors.New("duplicate route id")}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1823,7 +1823,7 @@ func TestTransferSettingsApplyValidatedChanges(t *testing.T) {
 	stored.TransferPolicy.BlockedDestinations = []string{"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}
 	clawbackOnNoRoute := "review"
 	stored.TransferPolicy.ClawbackOnNoRoute = &clawbackOnNoRoute
-	m := New(store, stored, "/tmp/aplane", "default")
+	m := New(store, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1872,7 +1872,7 @@ func TestTransferSettingsHideClawbackFallback(t *testing.T) {
 	stored := routePolicy()
 	clawbackOnNoRoute := "review"
 	stored.TransferPolicy.ClawbackOnNoRoute = &clawbackOnNoRoute
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1890,7 +1890,7 @@ func TestTransferSettingsHideClawbackFallback(t *testing.T) {
 
 func TestTransferSettingsFieldsUseEnterEditors(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1953,7 +1953,7 @@ func TestTransferSettingsFieldsUseEnterEditors(t *testing.T) {
 func TestTransferSettingsEnabledIsBinaryInUI(t *testing.T) {
 	stored := routePolicy()
 	stored.TransferPolicy.Enabled = nil
-	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m := New(&fakeStore{}, stored, "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -1979,7 +1979,7 @@ func TestTransferSettingsEnabledIsBinaryInUI(t *testing.T) {
 
 func TestTransferSettingsEscDuringValidationDiscardsLateResult(t *testing.T) {
 	store := &fakeStore{}
-	m := New(store, routePolicy(), "/tmp/aplane", "default")
+	m := New(store, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
@@ -2017,7 +2017,7 @@ func TestTransferSettingsEscDuringValidationDiscardsLateResult(t *testing.T) {
 }
 
 func TestTransferSettingsRejectsInvalidOnNoRoute(t *testing.T) {
-	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane", "default")
+	m := New(&fakeStore{}, routePolicy(), "/tmp/aplane")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)

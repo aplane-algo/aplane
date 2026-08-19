@@ -72,11 +72,11 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 	return data, doc, nil
 }
 
-func SaveIdentitySidecarWithKeyring(paths storepaths.Paths, identityID string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
-	return SaveIdentitySidecar(paths, identityID, roleBytes, kr, signedAt)
+func SaveIdentitySidecarWithKeyring(paths storepaths.Paths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	return SaveIdentitySidecar(paths, roleBytes, kr, signedAt)
 }
 
-func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+func SaveIdentitySidecar(paths storepaths.Paths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
 	if _, err := ParseDocument(roleBytes); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []
 	if err != nil {
 		return err
 	}
-	path := paths.NodeRoleIntegritySidecar(identityID)
+	path := paths.NodeRoleIntegritySidecar()
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
@@ -102,16 +102,16 @@ func SaveIdentitySidecar(paths storepaths.Paths, identityID string, roleBytes []
 	return nil
 }
 
-func LoadAndVerifyWithKeyring(paths storepaths.Paths, identityID string, kr *apcrypto.Keyring) (Document, error) {
-	return LoadAndVerify(paths, identityID, kr)
+func LoadAndVerifyWithKeyring(paths storepaths.Paths, kr *apcrypto.Keyring) (Document, error) {
+	return LoadAndVerify(paths, kr)
 }
 
-func LoadAndVerify(paths storepaths.Paths, identityID string, kr *apcrypto.Keyring) (Document, error) {
+func LoadAndVerify(paths storepaths.Paths, kr *apcrypto.Keyring) (Document, error) {
 	doc, roleBytes, err := Load(paths)
 	if err != nil {
 		return Document{}, err
 	}
-	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar(identityID))
+	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar())
 	if err != nil {
 		return Document{}, err
 	}

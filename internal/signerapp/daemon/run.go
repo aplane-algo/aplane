@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -55,7 +54,7 @@ func Run(dataDir string) int {
 		return 1
 	}
 
-	startupOpts, err := signerstartup.LoadOptions(dataDir, auth.CurrentProductIdentityID())
+	startupOpts, err := signerstartup.LoadOptions(dataDir)
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
@@ -96,7 +95,6 @@ func Run(dataDir string) int {
 	config.IPCPath = resolvedIPCPath
 	startupOpts.Config = config
 	passphraseTimeout := startupOpts.PassphraseTimeout
-	identityID := startupOpts.IdentityID
 	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
 		logWarnf("invalid passphrase_timeout in config: %v, using default (0)", err)
 		_ = os.Stderr.Sync()
@@ -195,12 +193,11 @@ func Run(dataDir string) int {
 		dataDir:       resolvedDataDir,
 	}
 
-	ir, err := signerstartup.BuildProductRuntime(signerstartup.IdentityBuildOptions{
+	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               resolvedDataDir,
 		KeyPaths:              startupOpts.Paths,
 		Config:                &config,
 		DefaultSessionTimeout: passphraseTimeout,
-		ProductIdentityID:     identityID,
 	}, server.identityBuildHooks())
 	if err != nil {
 		logErrorf("%v", err)
@@ -209,7 +206,7 @@ func Run(dataDir string) int {
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	logInfof("product identity runtime initialized")
-	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths, identityID)
+	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths)
 	if cleanupErr != nil {
 		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
 		return 1
@@ -217,7 +214,7 @@ func Run(dataDir string) int {
 	if removed != 0 {
 		logInfof("removed %d incomplete backup import(s)", removed)
 	}
-	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root(), identityID))
+	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root()))
 
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)
 	configureAlgodOnDSAs(&config)

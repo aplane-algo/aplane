@@ -4,7 +4,7 @@ This document defines APlane's product authorization model: the reserved admin
 principal, explicit allowed actions, resources, and the enforcement points that
 protect signer operations.
 
-Identity model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model). The
+Product-store model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Fixed Product Store and Runtime). The
 product surface does not expose tenant management, principal management, group
 management, grant management, or multiple independent operator domains.
 
@@ -13,13 +13,13 @@ management, grant management, or multiple independent operator domains.
 Authorization answers this question:
 
 ```text
-May this principal perform this action on this target signing identity/resource?
+May this principal perform this action on this resource?
 ```
 
 It is separate from:
 
 - **Authentication:** Which credential was presented, and did it verify?
-- **Signing identity ownership:** Which identity owns keys, config, token files,
+- **Product-store ownership:** Which process owns keys, config, token files,
   runtime state, and approval state?
 - **Signing policy:** Is a specific transaction safe enough to sign?
 - **Encryption and key handling:** How passphrases, term keys, and key files
@@ -55,28 +55,25 @@ Compatibility credentials map to the reserved system principal:
 system:product-admin
 ```
 
-A signing identity such as `default` is not inherently a principal. It is the
-key-owning identity being acted on.
+The compatibility attribution value `default` is not a principal. It names the
+one product signing store in durable paths and retained output fields.
 
-### Signing Identity
+### Product Store and Target Attribution
 
-A signing identity owns signer state:
+The one product store owns signer state:
 
 - encrypted key files
 - keystore metadata
-- identity-scoped config
+- product runtime config
 - API token file
 - SSH authorized keys
 - approval coordinator
 - runtime lock/unlock state
 - watcher and reload ownership
 
-The product identity is `default`.
-
-### Target Identity
-
-The target identity is the signing identity an operation acts on. It is carried
-through authorization as `auth.Resource.IdentityID`.
+Its durable namespace and retained target-attribution value are `default`.
+That value is written by status, admin, SSH, and audit boundary adapters; it is
+not an authorization principal or an internal target selector.
 
 ### Action
 
@@ -97,21 +94,17 @@ token.revoke
 
 ```go
 type Resource struct {
-    Type       string
-    ID         string
-    IdentityID string
+    Type string
+    ID   string
 }
 ```
 
 Conventions:
 
-- `IdentityID` is the target signing identity.
 - `Type` is the resource family, such as `key`, `keys`, `policy`,
   `transaction`, or `token`.
 - `ID` is the concrete resource identifier when one exists, such as a key
-  address, request ID, template key type, or identity ID.
-- Empty `IdentityID` is allowed only at boundaries that immediately resolve it
-  from the authenticated identity or bound admin session.
+  address, request ID, or template key type.
 
 ## Product Mode
 
@@ -119,7 +112,7 @@ The product mode is:
 
 ```text
 mode: product_single
-signing identity: default
+product store attribution: default
 admin principal: system:product-admin
 authorization source: closed product action allowlist
 identity/principal/group/grant management UI: none
@@ -132,15 +125,15 @@ credential
   -> authenticated product session
   -> system:product-admin
   -> explicit ProductAllowedActions membership
-  -> empty-or-default target identity/resource
+  -> concrete resource type and optional resource ID
 ```
 
 Important implications:
 
 - Logging in with `apadmin` authenticates the one product store, and the admin
   session authorizes as `system:product-admin`.
-- `default` is the product signing identity. It is not the
-  authorization principal.
+- `default` is retained product-store attribution. It is not the authorization
+  principal or an authorization selector.
 - A known action is not automatically allowed. It must also appear in the
   explicit product action allowlist.
 
@@ -155,13 +148,12 @@ Authorization: aplane <token>
   -> product TokenAuthenticator
   -> system:product-admin
   -> ProductAuthorizer
-  -> default runtime
+  -> process-owned product runtime
   -> handler
 ```
 
 HTTP authentication maps the one product token to the product principal.
-Authentication never selects a runtime. Product authorization rejects any
-resource whose identity is neither empty nor `default`.
+Authentication and authorization never select a runtime or store.
 
 ### Admin IPC
 
@@ -183,8 +175,8 @@ runtime binding, and explicit action authorization are still required after
 socket connection.
 
 Auth-time unlock is authorization-gated before the runtime is unlocked.
-Explicit admin lock requests use `identity.lock` for the bound identity.
-Admin disconnect cleanup applies the bound identity's `lock_on_disconnect`
+Explicit admin lock requests retain the stable `identity.lock` action name.
+Admin disconnect cleanup applies the product runtime's `lock_on_disconnect`
 setting. Local admin idle timeout is enforced by `apadmin` as a disconnect,
 not by a signer-side activity grant.
 
@@ -220,8 +212,8 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.view` | View identity state | `identity` | No |
 | `identity.unlock` | Unlock signer identity | `identity` | No |
 | `identity.lock` | Lock signer identity | `identity` | No |
-| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the bound identity | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
-| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile recovery state for the bound identity | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
+| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the product store | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
+| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
 | `sign.component` | Request user, sentry, or bounded-base authorization components over a frozen group | `transaction` | Yes |
@@ -260,7 +252,7 @@ product authorizer grants an operation only when all of these conditions hold:
 - the principal is exactly `system:product-admin`;
 - the action is in the closed known-action vocabulary;
 - the action is independently present in `ProductAllowedActions`; and
-- the resource identity is empty or exactly `default`.
+- the callsite supplies a concrete resource type and, where applicable, ID.
 
 Adding a known action does not add it to the product allowlist. This preserves
 a deliberate review point for new sensitive operations. There is no runtime
@@ -310,7 +302,6 @@ Authorization is fail-closed:
 - nil or unknown principal is forbidden
 - unknown action is forbidden before allowlist matching
 - known but unlisted action is forbidden
-- a resource identity other than empty or `default` is forbidden
 
 Wire behavior:
 
@@ -359,7 +350,7 @@ boundary.
   must have an authorization check.
 - Auth-time unlock must be authorization-gated.
 - Approval responses must be authorization-gated.
-- Non-default resource identity must fail closed.
+- Authorization resources must not grow a runtime or store selector.
 - Unknown actions must fail closed.
 - Unknown actions must fail before allowlist matching so callsite typos do
   not create ad hoc permissions.

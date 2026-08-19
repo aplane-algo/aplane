@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -23,14 +22,14 @@ import (
 // first generation and removes the legacy directories.
 func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 	t.Helper()
-	if current, err := genstore.ReadCurrent(server.keyPaths, auth.DefaultIdentityID); err == nil {
+	if current, err := genstore.ReadCurrent(server.keyPaths); err == nil {
 		return current
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_800_000, 0))
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(server.keyPaths, auth.DefaultIdentityID, genstore.MintRequest{
+	if _, err := genstore.Mint(server.keyPaths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "test-init",
@@ -38,8 +37,8 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		CreatedAt:       time.Unix(1_753_800_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			for src, dst := range map[string]string{
-				server.keyPaths.LegacyKeysDir(auth.DefaultIdentityID):           staged.KeysDir(),
-				server.keyPaths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID): staged.KeyTypeRecordsDir(),
+				server.keyPaths.LegacyKeysDir():           staged.KeysDir(),
+				server.keyPaths.LegacyKeyTypeRecordsDir(): staged.KeyTypeRecordsDir(),
 			} {
 				entries, err := os.ReadDir(src)
 				if os.IsNotExist(err) {
@@ -64,8 +63,8 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		t.Fatalf("Mint: %v", err)
 	}
 	for _, legacy := range []string{
-		server.keyPaths.LegacyKeysDir(auth.DefaultIdentityID),
-		server.keyPaths.LegacyKeyTypeRecordsDir(auth.DefaultIdentityID),
+		server.keyPaths.LegacyKeysDir(),
+		server.keyPaths.LegacyKeyTypeRecordsDir(),
 	} {
 		if err := os.RemoveAll(legacy); err != nil {
 			t.Fatalf("remove legacy namespace: %v", err)
@@ -82,7 +81,7 @@ func startPendingTestRotation(
 	t.Helper()
 	convertTestSignerToGenerational(t, server)
 	kr, err := crypto.OpenKeyringStore(
-		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		server.keyPaths.KeystoreMetadataDir(),
 		testPassphrase,
 	)
 	if err != nil {
@@ -90,7 +89,7 @@ func startPendingTestRotation(
 	}
 	if _, err := rotationinventory.StartRotation(
 		server.keyPaths,
-		auth.DefaultIdentityID,
+
 		kr,
 		passphrase,
 	); err != nil {
@@ -133,7 +132,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 		)
 	}
 	settled, err := crypto.OpenKeyringStore(
-		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		server.keyPaths.KeystoreMetadataDir(),
 		newPassphrase,
 	)
 	if err != nil {
@@ -144,7 +143,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 		t.Fatal("unlock left the rotation pending")
 	}
 	if _, err := os.Stat(
-		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+		server.keyPaths.RotationSnapshotPath(),
 	); !os.IsNotExist(err) {
 		t.Fatalf("rotation snapshot still present after unlock completion: %v", err)
 	}
@@ -159,7 +158,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	}
 	convertTestSignerToGenerational(t, server)
 	kr, err := crypto.OpenKeyringStore(
-		server.keyPaths.KeystoreMetadataDir(auth.DefaultIdentityID),
+		server.keyPaths.KeystoreMetadataDir(),
 		testPassphrase,
 	)
 	if err != nil {
@@ -167,7 +166,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	}
 	injected := errors.New("injected pre-root rename failure")
 	rootPath := crypto.KeyringPath(
-		server.keyPaths.IdentityDir(auth.DefaultIdentityID),
+		server.keyPaths.ProductDir(),
 	)
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpRename && path == rootPath {
@@ -178,7 +177,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	t.Cleanup(func() { fsutil.TestHook = nil })
 	if _, err := rotationinventory.StartRotation(
 		server.keyPaths,
-		auth.DefaultIdentityID,
+
 		kr,
 		[]byte("uncommitted-new-passphrase"),
 	); !errors.Is(err, injected) {
@@ -207,7 +206,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 		)
 	}
 	if _, err := os.Stat(
-		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+		server.keyPaths.RotationSnapshotPath(),
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pre-root rotation snapshot survived unlock: %v", err)
 	}
@@ -224,7 +223,7 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	kr := startPendingTestRotation(t, server, newPassphrase)
 	kr.Zero()
 	if err := os.WriteFile(
-		server.keyPaths.RotationSnapshotPath(auth.DefaultIdentityID),
+		server.keyPaths.RotationSnapshotPath(),
 		[]byte("tampered snapshot"),
 		0o600,
 	); err != nil {
@@ -265,7 +264,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 
 	// A malformed credential inside the selected generation: structural
 	// validation passes (regular file), content validation must fail closed.
-	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	gen := server.keyPaths.GenerationPaths(generationID)
 	garbage := filepath.Join(gen.KeysDir(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.key")
 	if err := os.WriteFile(garbage, []byte("not-an-encrypted-credential"), 0o660); err != nil {
 		t.Fatalf("WriteFile(garbage): %v", err)
@@ -307,7 +306,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	// A corrupt key-type state record inside the selected generation: the
 	// keytypes namespace is generation content and validates fail-closed
 	// exactly like keys.
-	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	gen := server.keyPaths.GenerationPaths(generationID)
 	garbage := filepath.Join(gen.KeyTypeRecordsDir(), "broken.json")
 	if err := os.WriteFile(garbage, []byte("{not json"), 0o660); err != nil {
 		t.Fatalf("WriteFile(garbage record): %v", err)
@@ -344,7 +343,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	// Files that are neither managed credentials nor witness artifacts are
 	// unaccounted-for content: strict validation treats them as defects, in
 	// either namespace of the selected generation.
-	gen := server.keyPaths.GenerationPaths(auth.DefaultIdentityID, generationID)
+	gen := server.keyPaths.GenerationPaths(generationID)
 	strays := []string{
 		filepath.Join(gen.KeysDir(), "notes.txt"),
 		filepath.Join(gen.KeyTypeRecordsDir(), "backup.tar"),

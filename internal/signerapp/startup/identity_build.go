@@ -6,7 +6,6 @@ package startup
 import (
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"sync"
 	"time"
 
@@ -14,6 +13,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/productmode"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -24,19 +25,18 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
-// IdentityBuildOptions describes the config and paths needed to construct all
-// signer identity runtimes for process startup.
-type IdentityBuildOptions struct {
+// ProductBuildOptions describes the config and paths needed to construct the
+// process-owned product runtime.
+type ProductBuildOptions struct {
 	DataDir               string
 	KeyPaths              storepaths.Paths
 	Config                *serverconfig.ServerConfig
 	DefaultSessionTimeout time.Duration
-	ProductIdentityID     string
 }
 
-// IdentityBuildHooks provides the non-owning process callbacks needed by
-// identity runtime assembly.
-type IdentityBuildHooks struct {
+// ProductBuildHooks provides the non-owning process callbacks needed by
+// product runtime assembly.
+type ProductBuildHooks struct {
 	HasAdminClient               func() bool
 	SendSignRequest              func(req *approval.SignRequest) bool
 	SendSignRequestCanceled      func(msg *approval.SignRequestCanceled) bool
@@ -54,43 +54,34 @@ type IdentityBuildHooks struct {
 
 // BuildProductRuntime validates the product layout and constructs the one
 // process-owned identity runtime.
-func BuildProductRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks) (*identity.Runtime, error) {
-	if err := identity.ValidateProductIdentityLayout(opts.DataDir, opts.ProductIdentityID); err != nil {
+func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*identity.Runtime, error) {
+	if err := identity.ValidateProductStoreLayout(opts.DataDir); err != nil {
 		return nil, err
 	}
-	return BuildIdentityRuntime(opts, hooks, opts.ProductIdentityID)
-}
-
-// BuildIdentityRuntime constructs one identity runtime. Product startup should
-// use BuildProductRuntime so layout validation cannot be skipped.
-func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
 	nodeDoc, _, err := noderole.Load(opts.KeyPaths)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load node role for identity %q: %w", identityID, err)
+		return nil, fmt.Errorf("failed to load product node role: %w", err)
 	}
 
-	storedCfg, err := identity.LoadStoredConfig(opts.DataDir, identityID)
+	storedCfg, err := identity.LoadStoredConfig(opts.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config for identity %q: %w", identityID, err)
+		return nil, fmt.Errorf("failed to load product config: %w", err)
 	}
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root(), identityID)
+	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root())
 	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read token for identity %q: %w", identityID, err)
+		return nil, fmt.Errorf("failed to read product token: %w", err)
 	}
 	if token == "" {
-		if identityID != opts.ProductIdentityID {
-			return nil, fmt.Errorf("identity %q is missing token file: %s", identityID, tokenPath)
-		}
-		token, err = tokenfile.LoadAPlaneToken(opts.KeyPaths.Root(), identityID)
+		token, err = tokenfile.LoadAPlaneToken(opts.KeyPaths.Root())
 		if err != nil {
-			return nil, fmt.Errorf("failed to load token for identity %q: %w", identityID, err)
+			return nil, fmt.Errorf("failed to load product token: %w", err)
 		}
 	}
 
 	defaultApprovalWait, err := serverconfig.ParseApprovalWait(opts.Config.ApprovalWait)
 	if err != nil {
-		return nil, fmt.Errorf("invalid approval_wait for identity %q: %w", identityID, err)
+		return nil, fmt.Errorf("invalid product approval_wait: %w", err)
 	}
 
 	effectiveCfg, err := storedCfg.Apply(identity.ConfigDefaults{
@@ -100,16 +91,16 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 		ApprovalWait:     defaultApprovalWait,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve config for identity %q: %w", identityID, err)
+		return nil, fmt.Errorf("failed to resolve product config: %w", err)
 	}
 	userAutoApprove := effectiveCfg.UserAutoApprove
 	lockOnDisconnect := effectiveCfg.LockOnDisconnect
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
 
-	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, identityID, opts.Config)
+	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, opts.Config)
 	if unlockErr != nil {
-		return nil, fmt.Errorf("failed to load unlock config for identity %q: %w", identityID, unlockErr)
+		return nil, fmt.Errorf("failed to load product unlock config: %w", unlockErr)
 	}
 	if unlockCfg != nil {
 		lockOnDisconnect = false
@@ -117,8 +108,7 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 	}
 
 	ir := identity.New(identity.Config{
-		ID:               identityID,
-		KeyStore:         keystore.NewFileKeyStoreForPaths(opts.KeyPaths, identityID),
+		KeyStore:         keystore.NewFileKeyStoreForPaths(opts.KeyPaths),
 		KeyPaths:         opts.KeyPaths,
 		Authenticator:    auth.NewTokenAuthenticator(token),
 		SessionTimeout:   sessionTimeout,
@@ -140,7 +130,7 @@ func BuildIdentityRuntime(opts IdentityBuildOptions, hooks IdentityBuildHooks, i
 
 // WireApprovalCoordinator creates and installs an approval coordinator on the
 // identity runtime using the process hooks.
-func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
+func WireApprovalCoordinator(ir *identity.Runtime, hooks ProductBuildHooks) {
 	coordinator := approval.New(
 		func() bool {
 			if hooks.HasAdminClient == nil {
@@ -174,21 +164,20 @@ func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
 // using the process options and hooks. The session parameter is passed
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
-func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
-	identityID := ir.ID()
+func NewReloadService(ir *identity.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
 	svc := &signertemplates.ReloadService{
 		KeyStore:        ir.KeyStore(),
 		Session:         session,
 		TemplateManager: newTemplateManager(ir.KeyPaths()),
 		BeforeKeyScan: func(kr *crypto.Keyring) error {
-			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, identityID, kr); err != nil {
-				return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
+			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, kr); err != nil {
+				return fmt.Errorf("node role verification failed for identity %q: %w", productmode.IdentityID, err)
 			} else if verifiedRole.Role != ir.NodeRole() {
-				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
+				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", productmode.IdentityID, ir.NodeRole(), verifiedRole.Role)
 			}
-			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, identityID, opts.Config, kr)
+			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, opts.Config, kr)
 			if err != nil {
-				return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
+				return fmt.Errorf("policy verification failed for identity %q: %w", productmode.IdentityID, err)
 			}
 			switch ir.NodeRole() {
 			case noderole.RoleSentry:
@@ -203,7 +192,7 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
 			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
 				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
-					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))
+					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", productmode.IdentityID, err))
 				}
 				return err
 			}
@@ -224,10 +213,10 @@ func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ide
 
 // WireReloadFunc configures the reload function and the watcher reload
 // mutation lock on an identity runtime.
-func WireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
+func WireReloadFunc(ir *identity.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks) {
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
-		return svc.Reload(ir.ID(), passphrase)
+		return svc.Reload(passphrase)
 	})
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(func() sync.Locker {

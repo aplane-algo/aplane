@@ -17,7 +17,7 @@ func TestValidateStartupAcceptsSSHDefaults(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	runtime := &signerstartup.RuntimeState{}
 
-	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err != nil {
+	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir())); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
 }
@@ -29,7 +29,7 @@ func TestValidateStartupRejectsInvalidSSHConfig(t *testing.T) {
 	cfg.Endpoint.SSH.AuthorizedKeysPath = ""
 	runtime := &signerstartup.RuntimeState{}
 
-	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err == nil {
+	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir())); err == nil {
 		t.Fatal("Validate() error = nil, want invalid ssh configuration error")
 	}
 }

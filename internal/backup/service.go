@@ -31,7 +31,6 @@ type ArchiveResult struct {
 // are not cleared.
 type CreateKeysArchiveRequest struct {
 	Paths            storepaths.Paths
-	IdentityID       string
 	ArchivePath      string
 	Addresses        []string
 	Keyring          *crypto.Keyring
@@ -41,7 +40,7 @@ type CreateKeysArchiveRequest struct {
 // CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
 // When Addresses is empty, all active keys are exported.
 func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
-	if err := prepareManagedArchiveDestination(req.Paths, req.IdentityID, req.ArchivePath); err != nil {
+	if err := prepareManagedArchiveDestination(req.Paths, req.ArchivePath); err != nil {
 		return nil, err
 	}
 
@@ -52,7 +51,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
 	// Export sources resolve through the active layout once per archive.
-	activeStore, err := genstore.ResolveActive(req.Paths, req.IdentityID)
+	activeStore, err := genstore.ResolveActive(req.Paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}
@@ -65,7 +64,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		var err error
 		checksums, err = ExportAllKeys(
 			req.Paths,
-			req.IdentityID,
+
 			activeKeysDir,
 			stageDir,
 			req.Keyring,
@@ -88,7 +87,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			}
 			checksum, _, err := ExportKey(
 				req.Paths,
-				req.IdentityID,
+
 				activeKeysDir,
 				keysDestDir,
 				address,
@@ -156,10 +155,10 @@ func FileSHA256(path string) (string, int64, error) {
 	return fsutil.RegularFileSHA256(path)
 }
 
-func prepareManagedArchiveDestination(paths storepaths.Paths, identityID, archivePath string) error {
+func prepareManagedArchiveDestination(paths storepaths.Paths, archivePath string) error {
 	for _, dir := range []string{
 		paths.BackupsRootDir(),
-		paths.IdentityBackupsDir(identityID),
+		paths.ProductBackupsDir(),
 		filepath.Dir(archivePath),
 	} {
 		if err := ensureStoreDir(dir); err != nil {
@@ -179,7 +178,7 @@ func ensureStoreDir(path string) error {
 	return nil
 }
 
-func BuildManagedArchivePath(paths storepaths.Paths, identityID string, ts string) string {
+func BuildManagedArchivePath(paths storepaths.Paths, ts string) string {
 	fileName := fmt.Sprintf("aplane-backup-%s.tar.gz", ts)
-	return filepath.Join(paths.IdentityBackupsDir(identityID), fileName)
+	return filepath.Join(paths.ProductBackupsDir(), fileName)
 }

@@ -214,7 +214,7 @@ func EvaluateRollbackCutover(
 // generation mints reconcile the now-stale record after CURRENT flips.
 func EvaluateRollback(
 	paths storepaths.Paths,
-	identityID string,
+
 	generationID string,
 	live []genstore.InventoryEntry,
 	manifest *genstore.Manifest,
@@ -224,7 +224,7 @@ func EvaluateRollback(
 		return nil, fmt.Errorf("evaluate rollback: keyring is required")
 	}
 	var baseline *Baseline
-	candidate, err := ReadBaseline(paths, identityID, kr)
+	candidate, err := ReadBaseline(paths, kr)
 	if err == nil && candidate.GenerationID == generationID {
 		baseline = candidate
 	}
@@ -235,7 +235,7 @@ func EvaluateRollback(
 // and durably publishes it before a pending rotation may be cleared.
 func WriteBaseline(
 	paths storepaths.Paths,
-	identityID string,
+
 	baseline *Baseline,
 	kr *crypto.Keyring,
 ) error {
@@ -257,7 +257,7 @@ func WriteBaseline(
 			MaxRotationBaselineBytes,
 		)
 	}
-	baselinePath := paths.RotationBaselinePath(identityID)
+	baselinePath := paths.RotationBaselinePath()
 	if err := fsutil.RemoveDurableWriteTemps(baselinePath); err != nil {
 		return fmt.Errorf("reconcile rotation baseline durable-write residue: %w", err)
 	}
@@ -271,14 +271,14 @@ func WriteBaseline(
 // current term and its fixed logical context.
 func ReadBaseline(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 ) (*Baseline, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("read rotation baseline: keyring is required")
 	}
 	sealed, _, err := fsutil.ReadRegularFileLimited(
-		paths.RotationBaselinePath(identityID),
+		paths.RotationBaselinePath(),
 		MaxRotationBaselineBytes,
 	)
 	if err != nil {
@@ -325,13 +325,13 @@ func openBaselineBytes(sealed []byte, kr *crypto.Keyring) (*Baseline, error) {
 // files as blocking evidence for operator remediation.
 func ReconcileBaselineForPreflight(
 	paths storepaths.Paths,
-	identityID, currentGeneration string,
+	currentGeneration string,
 	kr *crypto.Keyring,
 ) (*Baseline, error) {
 	if err := storepaths.ValidateGenerationID(currentGeneration); err != nil {
 		return nil, err
 	}
-	baseline, err := ReadBaseline(paths, identityID, kr)
+	baseline, err := ReadBaseline(paths, kr)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -341,7 +341,7 @@ func ReconcileBaselineForPreflight(
 	if baseline.GenerationID == currentGeneration {
 		return baseline, nil
 	}
-	if err := fsutil.RemoveDurable(paths.RotationBaselinePath(identityID)); err != nil {
+	if err := fsutil.RemoveDurable(paths.RotationBaselinePath()); err != nil {
 		return nil, fmt.Errorf("remove stale rotation baseline: %w", err)
 	}
 	return nil, nil

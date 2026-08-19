@@ -17,16 +17,16 @@ type storedConfigParser func([]byte) (*StoredConfig, error)
 
 // LoadVerifiedStoredConfig reads policy.yaml and policy.yaml.hmac, verifies the
 // sidecar against the policy bytes, then parses the stored policy.
-func LoadVerifiedStoredConfig(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedStoredConfigDocument(dataRoot, identityID, kr)
+func LoadVerifiedStoredConfig(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedStoredConfigDocument(dataRoot, kr)
 	return stored, err
 }
 
 // LoadVerifiedStoredConfigDocument reads, authenticates, and parses policy.yaml,
 // returning the exact document bytes covered by the verified sidecar.
-func LoadVerifiedStoredConfigDocument(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+func LoadVerifiedStoredConfigDocument(dataRoot string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
-		PolicyPath(dataRoot, identityID),
+		PolicyPath(dataRoot),
 		kr,
 		ParseStoredConfig,
 		"policy",
@@ -37,16 +37,16 @@ func LoadVerifiedStoredConfigDocument(dataRoot, identityID string, kr *crypto.Ke
 // LoadVerifiedSentryConfig reads policy.yaml for a sentry node, verifies
 // policy.yaml.hmac against the document bytes, then parses the stored sentry
 // policy.
-func LoadVerifiedSentryConfig(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedSentryConfigDocument(dataRoot, identityID, kr)
+func LoadVerifiedSentryConfig(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedSentryConfigDocument(dataRoot, kr)
 	return stored, err
 }
 
 // LoadVerifiedSentryConfigDocument reads, authenticates, and parses the
 // sentry-domain policy.yaml, returning the exact verified document bytes.
-func LoadVerifiedSentryConfigDocument(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+func LoadVerifiedSentryConfigDocument(dataRoot string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
-		SentryPath(dataRoot, identityID),
+		SentryPath(dataRoot),
 		kr,
 		ParseStoredSentryConfig,
 		"sentry policy",
@@ -78,14 +78,14 @@ func loadVerifiedStoredConfigAtPath(path string, kr *crypto.Keyring, parser stor
 
 // LoadVerifiedStoredConfigWithKeyring verifies policy.yaml with the identity
 // keyring and parses it.
-func LoadVerifiedStoredConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
-	return LoadVerifiedStoredConfig(dataRoot, identityID, kr)
+func LoadVerifiedStoredConfigWithKeyring(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	return LoadVerifiedStoredConfig(dataRoot, kr)
 }
 
 // LoadVerifiedSentryConfigWithKeyring verifies policy.yaml with the identity
 // keyring as a sentry policy and parses it.
-func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto.Keyring) (*StoredConfig, error) {
-	return LoadVerifiedSentryConfig(dataRoot, identityID, kr)
+func LoadVerifiedSentryConfigWithKeyring(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	return LoadVerifiedSentryConfig(dataRoot, kr)
 }
 
 // SaveStoredConfigWithIntegrity writes policy.yaml and policy.yaml.hmac. The
@@ -95,36 +95,36 @@ func LoadVerifiedSentryConfigWithKeyring(dataRoot, identityID string, kr *crypto
 // so signing, marshaling, and staging failures preserve the old pair. Crash
 // recovery remains fail-closed: callers may observe a valid old pair, a valid
 // new pair, or a mismatch after interruption between the two renames.
-func SaveStoredConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+func SaveStoredConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	policyBytes, err := MarshalStoredConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal policy config: %w", err)
 	}
-	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, kr, signedAt)
+	return SavePolicyBytesWithIntegrity(dataRoot, policyBytes, kr, signedAt)
 }
 
 // SaveStoredSentryConfigWithIntegrity writes policy.yaml and
 // policy.yaml.hmac for a sentry node.
-func SaveStoredSentryConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+func SaveStoredSentryConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
 	sentryBytes, err := MarshalStoredSentryConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
 	}
-	return SaveSentryBytesWithIntegrity(dataRoot, identityID, sentryBytes, kr, signedAt)
+	return SaveSentryBytesWithIntegrity(dataRoot, sentryBytes, kr, signedAt)
 }
 
 // SavePolicyBytesWithIntegrity writes exact policy.yaml bytes plus
 // policy.yaml.hmac. The caller owns parsing and runtime validation before
 // calling this lower-level primitive.
-func SavePolicyBytesWithIntegrity(dataRoot, identityID string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot, identityID), policyBytes, kr, signedAt, "policy config", "policy integrity sidecar")
+func SavePolicyBytesWithIntegrity(dataRoot string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot), policyBytes, kr, signedAt, "policy config", "policy integrity sidecar")
 }
 
 // SaveSentryBytesWithIntegrity writes exact sentry-policy bytes to
 // policy.yaml plus policy.yaml.hmac. The caller owns parsing and runtime
 // validation before calling this lower-level primitive.
-func SaveSentryBytesWithIntegrity(dataRoot, identityID string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(SentryPath(dataRoot, identityID), sentryBytes, kr, signedAt, "sentry policy config", "policy integrity sidecar")
+func SaveSentryBytesWithIntegrity(dataRoot string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(SentryPath(dataRoot), sentryBytes, kr, signedAt, "sentry policy config", "policy integrity sidecar")
 }
 
 func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time, configLabel, sidecarLabel string) error {
@@ -153,39 +153,39 @@ func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *cry
 
 // SaveStoredConfigWithKeyring writes policy.yaml plus policy.yaml.hmac with
 // the identity keyring.
-func SaveStoredConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveStoredConfigWithIntegrity(dataRoot, identityID, cfg, kr, signedAt)
+func SaveStoredConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	return SaveStoredConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
 }
 
 // SaveStoredSentryConfigWithKeyring writes sentry policy.yaml plus
 // policy.yaml.hmac with the identity keyring.
-func SaveStoredSentryConfigWithKeyring(dataRoot, identityID string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveStoredSentryConfigWithIntegrity(dataRoot, identityID, cfg, kr, signedAt)
+func SaveStoredSentryConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	return SaveStoredSentryConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
 }
 
 // SavePolicyBytesWithKeyring writes exact policy.yaml bytes plus
 // policy.yaml.hmac with the identity keyring.
-func SavePolicyBytesWithKeyring(dataRoot, identityID string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, kr, signedAt)
+func SavePolicyBytesWithKeyring(dataRoot string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return SavePolicyBytesWithIntegrity(dataRoot, policyBytes, kr, signedAt)
 }
 
 // SaveSentryBytesWithKeyring writes exact sentry-policy bytes plus
 // policy.yaml.hmac with the identity keyring.
-func SaveSentryBytesWithKeyring(dataRoot, identityID string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveSentryBytesWithIntegrity(dataRoot, identityID, sentryBytes, kr, signedAt)
+func SaveSentryBytesWithKeyring(dataRoot string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return SaveSentryBytesWithIntegrity(dataRoot, sentryBytes, kr, signedAt)
 }
 
 // SignPolicyFileIntegrity writes policy.yaml.hmac for the current policy.yaml
 // bytes. It preserves the YAML exactly as edited and rejects malformed policy
 // before creating a trusted sidecar.
-func SignPolicyFileIntegrity(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot, identityID), kr, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
+func SignPolicyFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot), kr, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
 }
 
 // SignSentryFileIntegrity writes policy.yaml.hmac for the current
 // sentry-policy bytes in policy.yaml.
-func SignSentryFileIntegrity(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(SentryPath(dataRoot, identityID), kr, signedAt, ParseStoredSentryConfig, "sentry policy", "sentry policy config", "policy integrity sidecar")
+func SignSentryFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(SentryPath(dataRoot), kr, signedAt, ParseStoredSentryConfig, "sentry policy", "sentry policy config", "policy integrity sidecar")
 }
 
 func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt time.Time, parser storedConfigParser, docLabel, configLabel, sidecarLabel string) error {
@@ -216,12 +216,12 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 
 // SignPolicyFileIntegrityWithKeyring signs the current policy.yaml bytes with
 // the identity keyring.
-func SignPolicyFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
-	return SignPolicyFileIntegrity(dataRoot, identityID, kr, signedAt)
+func SignPolicyFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return SignPolicyFileIntegrity(dataRoot, kr, signedAt)
 }
 
 // SignSentryFileIntegrityWithKeyring signs the current sentry-policy bytes in
 // policy.yaml with the identity keyring.
-func SignSentryFileIntegrityWithKeyring(dataRoot, identityID string, kr *crypto.Keyring, signedAt time.Time) error {
-	return SignSentryFileIntegrity(dataRoot, identityID, kr, signedAt)
+func SignSentryFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return SignSentryFileIntegrity(dataRoot, kr, signedAt)
 }

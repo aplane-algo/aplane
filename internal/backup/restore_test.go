@@ -20,26 +20,26 @@ import (
 
 func TestResolveManagedBackupPathScopesToIdentityBackupDir(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	managed := BuildManagedArchivePath(paths, "default", "one")
-	resolved, err := ResolveManagedBackupPath(paths, "default", filepath.Base(managed))
+	managed := BuildManagedArchivePath(paths, "one")
+	resolved, err := ResolveManagedBackupPath(paths, filepath.Base(managed))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resolved != managed {
 		t.Fatalf("resolved = %q, want %q", resolved, managed)
 	}
-	if _, err := ResolveManagedBackupPath(paths, "default", "../escape.tar.gz"); err == nil {
+	if _, err := ResolveManagedBackupPath(paths, "../escape.tar.gz"); err == nil {
 		t.Fatal("ResolveManagedBackupPath accepted traversal")
 	}
 }
 
 func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityBackupsDir("default"), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductBackupsDir(), 0o770); err != nil {
 		t.Fatal(err)
 	}
-	older := BuildManagedArchivePath(paths, "default", "older")
-	newer := BuildManagedArchivePath(paths, "default", "newer")
+	older := BuildManagedArchivePath(paths, "older")
+	newer := BuildManagedArchivePath(paths, "newer")
 	if err := os.WriteFile(older, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +50,10 @@ func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	if err := os.Chtimes(older, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(newer, filepath.Join(paths.IdentityBackupsDir("default"), "link.tar.gz")); err != nil {
+	if err := os.Symlink(newer, filepath.Join(paths.ProductBackupsDir(), "link.tar.gz")); err != nil {
 		t.Fatal(err)
 	}
-	items, err := ListManagedBackups(paths, "default")
+	items, err := ListManagedBackups(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestPreviewRestoreReportsCanonicalCredentialWithoutTemplate(t *testing.T) {
 	mintFirstGenerationForBackupTest(t, paths)
 	archive, address := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
 	preview, err := PreviewRestoreWithNodeRole(
-		paths, "default", archive, []byte("export-passphrase"), noderole.RoleSigner,
+		paths, archive, []byte("export-passphrase"), noderole.RoleSigner,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -89,12 +89,12 @@ func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	restorer := NewRestorer(paths, "default").WithNodeRole(noderole.RoleSigner)
+	restorer := NewRestorer(paths).WithNodeRole(noderole.RoleSigner)
 	kr := cryptotest.Keyring(t, testExportMasterKey)
 	if _, err := restorer.RestoreKey(keysDir, address, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func writeCredentialArchiveForBackupTest(t *testing.T, paths storepaths.Paths, r
 	if err := WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	archive := BuildManagedArchivePath(paths, "default", "credential-test")
+	archive := BuildManagedArchivePath(paths, "credential-test")
 	if err := CreateTarGzArchive(root, archive); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 func TestLoadManagedRestoreSetRejectsRoleMismatch(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archive, _ := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
-	set, err := LoadManagedRestoreSet(paths, "default", archive, nil, []byte("export-passphrase"), noderole.RoleSentry)
+	set, err := LoadManagedRestoreSet(paths, archive, nil, []byte("export-passphrase"), noderole.RoleSentry)
 	if set != nil {
 		set.ZeroSecrets()
 	}
@@ -161,7 +161,7 @@ func TestCredentialEntryZeroSecrets(t *testing.T) {
 func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, "default")
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,11 +280,11 @@ func TestLoadManagedRestoreSetRejectsMissingRuntimeProvider(t *testing.T) {
 	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
-	archive := BuildManagedArchivePath(paths, "default", "missing-provider")
+	archive := BuildManagedArchivePath(paths, "missing-provider")
 	if err := CreateTarGzArchive(root, archive); err != nil {
 		t.Fatal(err)
 	}
-	set, err := LoadManagedRestoreSet(paths, "default", archive, nil, []byte("export-passphrase"), noderole.RoleSigner)
+	set, err := LoadManagedRestoreSet(paths, archive, nil, []byte("export-passphrase"), noderole.RoleSigner)
 	if set != nil {
 		set.ZeroSecrets()
 	}

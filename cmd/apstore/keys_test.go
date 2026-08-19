@@ -18,7 +18,7 @@ import (
 func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		kr := deriveTestKeyring(t, passphrase)
-		edResult, err := keymgmt.GenerateKey(keystorePaths(), productIdentityID(), "ed25519", kr, nil)
+		edResult, err := keymgmt.GenerateKey(keystorePaths(), "ed25519", kr, nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
@@ -60,7 +60,7 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 	t.Helper()
 	kr := deriveTestKeyring(t, passphrase)
 	generator := &falconkeygen.WitnessFalcon1024Generator{}
-	result, err := generator.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), kr, witness.Falcon1024V1, nil)
+	result, err := generator.GenerateRandom(context.Background(), keystorePaths(), kr, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
 	}
@@ -72,7 +72,7 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 
 func deriveTestKeyring(t *testing.T, passphrase []byte) *crypto.Keyring {
 	t.Helper()
-	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), passphrase)
+	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}

@@ -181,7 +181,7 @@ func copyDir(src, dst string) error {
 func clearClonedSignerKeys(dataDir string) error {
 	// Resolve through the active layout: generational clones keep their
 	// keys under generations/<id>/keys behind the CURRENT pointer.
-	active, err := genstore.ResolveActive(storepaths.NewPaths(dataDir), "default")
+	active, err := genstore.ResolveActive(storepaths.NewPaths(dataDir))
 	if err != nil {
 		return err
 	}
@@ -303,14 +303,14 @@ func setSignerUserAutoApprove(dataDir string, userAutoApprove bool) error {
 	if err := setSignerBoolConfig(dataDir, "user_auto_approve", userAutoApprove); err != nil {
 		return err
 	}
-	return identity.SaveStoredSetting(dataDir, "default", "user_auto_approve", userAutoApprove)
+	return identity.SaveStoredSetting(dataDir, "user_auto_approve", userAutoApprove)
 }
 
 func setSignerLockOnDisconnect(dataDir string, lockOnDisconnect bool) error {
 	if err := setSignerBoolConfig(dataDir, "lock_on_disconnect", lockOnDisconnect); err != nil {
 		return err
 	}
-	return identity.SaveStoredSetting(dataDir, "default", "lock_on_disconnect", lockOnDisconnect)
+	return identity.SaveStoredSetting(dataDir, "lock_on_disconnect", lockOnDisconnect)
 }
 
 func setSignerBoolConfig(dataDir, key string, value bool) error {

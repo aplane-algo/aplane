@@ -18,7 +18,7 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	sharedClient := filepath.Join(sharedRoot, "apclient")
 
 	sharedPaths := storepaths.NewPaths(sharedSigner)
-	genstoretest.MintFirst(t, sharedPaths, "default")
+	genstoretest.MintFirst(t, sharedPaths)
 	mustMkdirAll(t, filepath.Join(sharedSigner, ".ssh"))
 	mustMkdirAll(t, filepath.Join(sharedClient, ".ssh"))
 
@@ -33,7 +33,7 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	t.Setenv("APLANE_SHARED_APCLIENT_DATA", sharedClient)
 
 	first := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	firstActive, err := genstore.ResolveActive(storepaths.NewPaths(first.SignerDataDir), "default")
+	firstActive, err := genstore.ResolveActive(storepaths.NewPaths(first.SignerDataDir))
 	if err != nil {
 		t.Fatalf("ResolveActive(first clone): %v", err)
 	}
@@ -41,7 +41,7 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	mustWriteFile(t, templatePath, []byte("custom template"), 0o600)
 
 	second := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	secondActive, err := genstore.ResolveActive(storepaths.NewPaths(second.SignerDataDir), "default")
+	secondActive, err := genstore.ResolveActive(storepaths.NewPaths(second.SignerDataDir))
 	if err != nil {
 		t.Fatalf("ResolveActive(second clone): %v", err)
 	}

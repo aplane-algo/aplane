@@ -26,7 +26,7 @@ type stubPlannerDeps struct {
 	keyMetadata map[string]PlannerKeyMetadata
 }
 
-func (d stubPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
+func (d stubPlannerDeps) Snapshot() PlannerIdentitySnapshot {
 	keyFiles := d.keyFiles
 	if keyFiles == nil && d.keyTypes != nil {
 		keyFiles = make(map[string]string, len(d.keyTypes))
@@ -46,9 +46,9 @@ type countingSnapshotPlannerDeps struct {
 	calls int
 }
 
-func (d *countingSnapshotPlannerDeps) Snapshot(identityID string) PlannerIdentitySnapshot {
+func (d *countingSnapshotPlannerDeps) Snapshot() PlannerIdentitySnapshot {
 	d.calls++
-	return d.stubPlannerDeps.Snapshot(identityID)
+	return d.stubPlannerDeps.Snapshot()
 }
 
 type captureAuditLog struct {
@@ -56,16 +56,14 @@ type captureAuditLog struct {
 }
 
 type captureAuditEntry struct {
-	identityID  string
 	authAddress string
 	txnSender   string
 	txnType     string
 	details     string
 }
 
-func (a *captureAuditLog) LogSignRequest(identityID, authAddress, txnSender, txnType, details string) {
+func (a *captureAuditLog) LogSignRequest(authAddress, txnSender, txnType, details string) {
 	a.entries = append(a.entries, captureAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		txnType:     txnType,
@@ -89,7 +87,7 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 	plan, indices, err := calculateLogicSigResources(
 		nil,
 		snapshot,
-		"default",
+
 		[]signerapi.SignRequest{{AuthAddress: "LSIG"}},
 		[]types.Transaction{{}},
 		nil,
@@ -126,7 +124,7 @@ func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 	plan, _, err := calculateLogicSigResources(
 		nil,
 		snapshot,
-		"default",
+
 		[]signerapi.SignRequest{{AuthAddress: "LSIG"}},
 		[]types.Transaction{{}},
 		nil,
@@ -148,7 +146,7 @@ func TestCalculateLogicSigResourcesAllowsNonLogicSigGroup(t *testing.T) {
 	_, _, err := calculateLogicSigResources(
 		nil,
 		PlannerIdentitySnapshot{},
-		"default",
+
 		[]signerapi.SignRequest{{AuthAddress: "ED25519"}},
 		[]types.Transaction{{}},
 		nil,
@@ -169,7 +167,7 @@ func TestCalculateLogicSigResourcesRejectsOversizedNonLogicSigGroup(t *testing.T
 	_, _, err := calculateLogicSigResources(
 		nil,
 		PlannerIdentitySnapshot{},
-		"default",
+
 		requests,
 		txns,
 		nil,
@@ -191,7 +189,7 @@ func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *tes
 	_, _, err := calculateLogicSigResources(
 		nil,
 		PlannerIdentitySnapshot{},
-		"default",
+
 		[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(encoded)}},
 		[]types.Transaction{{}},
 		nil,
@@ -265,7 +263,7 @@ func TestCalculateLogicSigResourcesRejectsUnderprovisionedImmutablePassthrough(t
 	_, _, err := calculateLogicSigResources(
 		nil,
 		PlannerIdentitySnapshot{},
-		"default",
+
 		[]signerapi.SignRequest{{
 			SignedTxnHex: hex.EncodeToString(encoded),
 			LsigResources: &signerapi.LogicSigResourceUsage{
@@ -296,7 +294,7 @@ func TestVerifySignableKeysRequiresKeyTypeMetadata(t *testing.T) {
 	snapshot := PlannerIdentitySnapshot{
 		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
 	}
-	count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 	if count != 0 {
 		t.Fatalf("verifySignableKeys() count = %d, want 0", count)
 	}
@@ -322,7 +320,7 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 		KeyTypes: map[string]string{addr: "ed25519"},
 	}
 
-	count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 	if count != 0 {
 		t.Fatalf("verifySignableKeys() count = %d, want 0", count)
 	}
@@ -368,7 +366,7 @@ func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 				KeyTypes: map[string]string{addr: tt.keyType},
 			}
 
-			count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+			count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 			if count != 0 {
 				t.Fatalf("verifySignableKeys() count = %d, want 0", count)
 			}
@@ -397,7 +395,7 @@ func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
 		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Sentry1024V1},
 	}
 
-	count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
 	if err != nil {
 		t.Fatalf("verifySignableKeys() error = %v, want guarded planning to succeed", err)
 	}
@@ -438,7 +436,7 @@ func TestPlannerUsesSingleIdentitySnapshot(t *testing.T) {
 	}
 	planner := NewPlanner(deps, PlannerOptions{GenesisHashResolver: resolver})
 
-	plan, planErr := planner.PlanGroup("default", signerapi.GroupSignRequest{
+	plan, planErr := planner.PlanGroup(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
 			TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
@@ -494,7 +492,7 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 		},
 	})
 
-	_, planErr := planner.PlanGroup("default", signerapi.GroupSignRequest{
+	_, planErr := planner.PlanGroup(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
 			TxnSender:   "caller-spoofed-sender",
@@ -694,7 +692,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 
 	// The starting fee satisfies the ordinary transaction requirement, but the
 	// bounded account cannot absorb the priced-program contribution.
-	_, planErr := planner.PlanGroup("default", makeRequest(1000))
+	_, planErr := planner.PlanGroup(makeRequest(1000))
 	if planErr == nil {
 		t.Fatal("PlanGroup() error = nil, want bounded fee-capacity rejection")
 	}

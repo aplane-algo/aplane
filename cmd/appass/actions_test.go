@@ -107,7 +107,7 @@ func setupDataDir(t *testing.T) string {
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", filepath.Join(dataDir, "identities", "default", "passphrase")},
 	}
-	if err := unlockconfig.SaveUnlockConfig(dataDir, "default", unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, unlockCfg); err != nil {
 		t.Fatalf("save unlock config: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestExecuteClear_ClearsIdentityScopedConfig(t *testing.T) {
 	dataDir := setupDataDir(t)
 
 	// Verify starting state: method is passfile
-	method, err := currentAutoUnlockMethod(dataDir, "default")
+	method, err := currentAutoUnlockMethod(dataDir)
 	if err != nil {
 		t.Fatalf("currentAutoUnlockMethod before clear: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestExecuteClear_ClearsIdentityScopedConfig(t *testing.T) {
 	}
 
 	// Clear
-	warning, err := executeClear(dataDir, "default")
+	warning, err := executeClear(dataDir)
 	if err != nil {
 		t.Fatalf("executeClear: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestExecuteClear_ClearsIdentityScopedConfig(t *testing.T) {
 	}
 
 	// After clear, method must be "none".
-	method, err = currentAutoUnlockMethod(dataDir, "default")
+	method, err = currentAutoUnlockMethod(dataDir)
 	if err != nil {
 		t.Fatalf("currentAutoUnlockMethod after clear: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestExecuteClear_RemovesIdentityScopedSystemdCredsFile(t *testing.T) {
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-systemd-creds", filepath.Join(identityDir, "passphrase.cred")},
 	}
-	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestExecuteClear_RemovesIdentityScopedSystemdCredsFile(t *testing.T) {
 		t.Fatalf("WriteFile(passphrase.cred) error = %v", err)
 	}
 
-	if _, err := executeClear(dataDir, identityID); err != nil {
+	if _, err := executeClear(dataDir); err != nil {
 		t.Fatalf("executeClear() error = %v", err)
 	}
 

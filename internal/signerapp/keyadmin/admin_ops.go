@@ -135,7 +135,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 
-	unlockMutation := s.lockMutation(ir.ID())
+	unlockMutation := s.lockMutation()
 	defer unlockMutation()
 
 	if provider := lsigprovider.Get(keyType); provider != nil {
@@ -152,7 +152,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), ir.ID(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -163,7 +163,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}
 	}
 
-	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error
@@ -179,7 +179,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyImported(ir.ID(), importResult.Address, keyType)
+		s.AuditLog.LogKeyImported(importResult.Address, keyType)
 	}
 	return importResult, nil
 }

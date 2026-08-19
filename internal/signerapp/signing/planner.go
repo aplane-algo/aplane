@@ -17,11 +17,11 @@ import (
 )
 
 type AuditLogger interface {
-	LogSignRequest(identityID, authAddress, txnSender, txnType, details string)
+	LogSignRequest(authAddress, txnSender, txnType, details string)
 }
 
-type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
+type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
@@ -61,7 +61,7 @@ type PlanResult struct {
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.
-type SnapshotFunc func(identityID string) PlannerIdentitySnapshot
+type SnapshotFunc func() PlannerIdentitySnapshot
 
 type Planner struct {
 	AuditLog               AuditLogger
@@ -74,7 +74,7 @@ type Planner struct {
 	Snapshot               SnapshotFunc
 }
 
-func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
+func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
 	console := consoleOf(p.Console)
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
@@ -104,7 +104,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	p.logSignRequests(identityID, req, txns, passthroughIndices, foreignIndices)
+	p.logSignRequests(req, txns, passthroughIndices, foreignIndices)
 
 	isPreGrouped, err := validateGroupConsistency(txns, hasPassthrough, console)
 	if err != nil {
@@ -123,10 +123,10 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 
 	var snapshot PlannerIdentitySnapshot
 	if p.Snapshot != nil {
-		snapshot = p.Snapshot(identityID)
+		snapshot = p.Snapshot()
 	}
 
-	signableCount, err := p.VerifySignableKeys(snapshot, identityID, req.Requests, passthroughIndices, foreignIndices)
+	signableCount, err := p.VerifySignableKeys(snapshot, req.Requests, passthroughIndices, foreignIndices)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		return nil, err
 	}
 
-	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
+	resourcePlan, lsigIndices, err := p.CalculateDummies(snapshot, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
 	if err != nil {
 		return nil, err
 	}
@@ -223,17 +223,17 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 	}, nil
 }
 
-func (p *Planner) logSignRequests(identityID string, req signerapi.GroupSignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) {
+func (p *Planner) logSignRequests(req signerapi.GroupSignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) {
 	if p.AuditLog == nil || p.GenerateTxnDescription == nil {
 		return
 	}
 	for i, txReq := range req.Requests {
 		if passthroughIndices[i] {
-			p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
+			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
 		} else if foreignIndices[i] {
-			p.AuditLog.LogSignRequest(identityID, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
 		} else {
-			p.AuditLog.LogSignRequest(identityID, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest(txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
 		}
 	}
 }

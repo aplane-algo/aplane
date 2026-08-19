@@ -27,8 +27,8 @@ type Session interface {
 }
 
 type AuditLogger interface {
-	LogKeyReload(identityID string, keyCount int)
-	LogKeyRejected(identityID, keyFile, reason string)
+	LogKeyReload(keyCount int)
+	LogKeyRejected(keyFile, reason string)
 }
 
 type KeysChangedNotification struct {
@@ -85,7 +85,7 @@ func IsGenerationValidationError(errMsg string) bool {
 	return strings.Contains(errMsg, ErrGenerationValidation.Error())
 }
 
-func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadReport, error) {
+func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 	if s.KeyStore == nil || s.Session == nil || s.TemplateManager == nil || s.PublishSnapshot == nil {
 		return nil, fmt.Errorf("reload service not fully configured")
 	}
@@ -124,7 +124,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 				return err
 			}
 		}
-		registrationReport, err := s.TemplateManager.RegisterKeystoreTemplates(identityID, kr)
+		registrationReport, err := s.TemplateManager.RegisterKeystoreTemplates(kr)
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 		}
 		return nil, fmt.Errorf("failed to rescan keys directory: %w", err)
 	}
-	s.auditRejectedLogicSigKeys(identityID)
+	s.auditRejectedLogicSigKeys()
 
 	// Reload fails closed on content defects: the selected generation is
 	// the committed state, and a malformed or undecryptable entry in it
@@ -221,7 +221,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	keyCount := len(newKeysMap)
 	report.KeyCount = keyCount
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyReload(identityID, keyCount)
+		s.AuditLog.LogKeyReload(keyCount)
 	}
 
 	fmt.Printf("🔄 Keys reloaded: %d key(s) available\n", keyCount)
@@ -242,7 +242,7 @@ func (s *ReloadService) clearKeyCache() {
 	}
 }
 
-func (s *ReloadService) auditRejectedLogicSigKeys(identityID string) {
+func (s *ReloadService) auditRejectedLogicSigKeys() {
 	if s.AuditLog == nil {
 		return
 	}
@@ -254,6 +254,6 @@ func (s *ReloadService) auditRejectedLogicSigKeys(identityID string) {
 		if !warning.IsLogicSigInvariantViolation() {
 			continue
 		}
-		s.AuditLog.LogKeyRejected(identityID, warning.KeyFile, string(warning.Code)+": "+warning.Reason())
+		s.AuditLog.LogKeyRejected(warning.KeyFile, string(warning.Code)+": "+warning.Reason())
 	}
 }

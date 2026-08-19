@@ -82,7 +82,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.
 	address := salted.Address.String()
 	saltCounter := salted.Counter
 
-	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	signingArgs := keys.StoreSigningArgs(template.RuntimeArgs())
 	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(template, false)
 	if err != nil {
@@ -105,7 +105,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.
 	}
 
 	if g.AuditLog != nil {
-		g.AuditLog.LogKeyGenerated(ir.ID(), address, keyType)
+		g.AuditLog.LogKeyGenerated(address, keyType)
 	}
 
 	return address, nil

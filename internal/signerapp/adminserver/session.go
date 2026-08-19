@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -61,19 +62,18 @@ type Session struct {
 }
 
 type backupExportAuditKey struct {
-	identityID string
-	fileName   string
+	fileName string
 }
 
 // markBackupExportChunk returns true when this successful read starts an
 // unaudited archive transfer. Offset zero explicitly starts a new transfer;
 // a client that starts elsewhere is still audited on its first successful
 // read. EOF closes the inferred transfer so a later read is audited again.
-func (s *Session) markBackupExportChunk(identityID, fileName string, offset int64, eof bool) bool {
+func (s *Session) markBackupExportChunk(fileName string, offset int64, eof bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := backupExportAuditKey{identityID: identityID, fileName: fileName}
+	key := backupExportAuditKey{fileName: fileName}
 	_, active := s.activeBackupExports[key]
 	started := offset == 0 || !active
 	if eof {
@@ -110,10 +110,7 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 }
 
 func (s *Session) authorize(requestID string, action auth.Action, resource auth.Resource) bool {
-	if resource.IdentityID == "" {
-		resource.IdentityID = s.TargetIdentityID()
-	}
-	if resource.IdentityID == "" {
+	if s.TargetIdentityID() == "" {
 		_ = s.SendError(requestID, protocol.ErrCodeNoIdentityBound, "no identity bound to session")
 		return false
 	}
@@ -157,7 +154,7 @@ func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Ac
 		ctx.ApproverPrincipal = principal
 	}
 	if ctx.TargetIdentityID == "" {
-		ctx.TargetIdentityID = resource.IdentityID
+		ctx.TargetIdentityID = productmode.IdentityID
 	}
 	s.audit.LogAuthorizationDenied(ctx, action, resource, reason)
 }
@@ -245,9 +242,8 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		authenticateOnly := base.Type == protocol.MsgTypeAuthOnly
 		if !authenticateOnly {
 			unlockResource := auth.Resource{
-				Type:       "identity",
-				ID:         ir.ID(),
-				IdentityID: ir.ID(),
+				Type: "identity",
+				ID:   productmode.IdentityID,
 			}
 			if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
 				zeroBytes(passphraseBytes)
@@ -279,7 +275,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		s.context.AdminPrincipal = principal
 		s.context.RequesterPrincipal = principal
 		s.context.ApproverPrincipal = principal
-		s.context.TargetIdentityID = ir.ID()
+		s.context.TargetIdentityID = productmode.IdentityID
 		s.context.AuthMethod = s.method
 		s.mu.Unlock()
 		s.sendAuthResult(true, "", "")
@@ -411,7 +407,7 @@ func (s *Session) Bind(identity *auth.Identity, bound *identity.Runtime) {
 	s.context.RequesterPrincipal = principal
 	s.context.ApproverPrincipal = principal
 	if bound != nil {
-		s.context.TargetIdentityID = bound.ID()
+		s.context.TargetIdentityID = productmode.IdentityID
 	}
 	if bound != nil {
 		s.state = StateAuthenticated

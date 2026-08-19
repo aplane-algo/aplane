@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"net"
 	"os"
 	"path/filepath"
@@ -268,7 +269,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 		t.Fatal("global config.yaml was modified for identity-scoped user_auto_approve")
 	}
 
-	storedCfg, err := identity.LoadStoredConfig(server.dataDir, auth.CurrentProductIdentityID())
+	storedCfg, err := identity.LoadStoredConfig(server.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,8 +312,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if connected.Event != AuditSessionConnected {
 		t.Fatalf("first event = %q, want %q", connected.Event, AuditSessionConnected)
 	}
-	if connected.IdentityID != auth.CurrentProductIdentityID() {
-		t.Fatalf("connected identity_id = %q, want %q", connected.IdentityID, auth.CurrentProductIdentityID())
+	if connected.IdentityID != productmode.IdentityID {
+		t.Fatalf("connected identity_id = %q, want %q", connected.IdentityID, productmode.IdentityID)
 	}
 	if connected.AdminSessionID == "" {
 		t.Fatal("connected admin_session_id is empty")
@@ -320,8 +321,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if connected.Transport != adminserver.TransportIPC {
 		t.Fatalf("connected transport = %q, want %q", connected.Transport, adminserver.TransportIPC)
 	}
-	if connected.TargetIdentityID != auth.CurrentProductIdentityID() {
-		t.Fatalf("connected target_identity_id = %q, want %q", connected.TargetIdentityID, auth.CurrentProductIdentityID())
+	if connected.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("connected target_identity_id = %q, want %q", connected.TargetIdentityID, productmode.IdentityID)
 	}
 
 	var disconnected AuditEntry
@@ -331,8 +332,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if disconnected.Event != AuditSessionDisconnected {
 		t.Fatalf("second event = %q, want %q", disconnected.Event, AuditSessionDisconnected)
 	}
-	if disconnected.IdentityID != auth.CurrentProductIdentityID() {
-		t.Fatalf("disconnected identity_id = %q, want %q", disconnected.IdentityID, auth.CurrentProductIdentityID())
+	if disconnected.IdentityID != productmode.IdentityID {
+		t.Fatalf("disconnected identity_id = %q, want %q", disconnected.IdentityID, productmode.IdentityID)
 	}
 	if disconnected.AdminSessionID != connected.AdminSessionID {
 		t.Fatalf("disconnected admin_session_id = %q, want %q", disconnected.AdminSessionID, connected.AdminSessionID)
@@ -340,8 +341,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if disconnected.Transport != adminserver.TransportIPC {
 		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, adminserver.TransportIPC)
 	}
-	if disconnected.TargetIdentityID != auth.CurrentProductIdentityID() {
-		t.Fatalf("disconnected target_identity_id = %q, want %q", disconnected.TargetIdentityID, auth.CurrentProductIdentityID())
+	if disconnected.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("disconnected target_identity_id = %q, want %q", disconnected.TargetIdentityID, productmode.IdentityID)
 	}
 }
 

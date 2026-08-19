@@ -6,7 +6,6 @@ package backupadmin
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
@@ -14,5 +13,5 @@ func requireProductRuntime(ir *identity.Runtime) error {
 	if ir == nil {
 		return fmt.Errorf("product identity runtime is required")
 	}
-	return auth.RequireCurrentProductIdentity(ir.ID())
+	return nil
 }

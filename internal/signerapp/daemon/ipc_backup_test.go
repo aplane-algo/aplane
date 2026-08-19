@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -68,7 +67,7 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	if archivePath != filepath.Base(archivePath) {
 		t.Fatalf("ArchivePath = %q, want basename-only protocol value", archivePath)
 	}
-	managedArchivePath := filepath.Join(ir.KeyPaths().IdentityBackupsDir(ir.ID()), archivePath)
+	managedArchivePath := filepath.Join(ir.KeyPaths().ProductBackupsDir(), archivePath)
 	if _, err := os.Stat(managedArchivePath); err != nil {
 		t.Fatalf("backup archive stat error = %v", err)
 	}
@@ -127,7 +126,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	}) {
 		t.Fatalf("restore response = %#v", restoreMessages)
 	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, generated.Address)); err != nil {
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, generated.Address)); err != nil {
 		t.Fatalf("restored key stat error = %v", err)
 	}
 	if ir.KeyCount() != 1 {

@@ -51,7 +51,7 @@ func cmdRebuild(args []string) error {
 }
 
 func cmdRebuildFromBackup(source string, addresses []string, explicitRole noderole.Role, explicitRoleSet bool) error {
-	identityDir := keystorePaths().IdentityDir(productIdentityID())
+	identityDir := keystorePaths().ProductDir()
 	if _, err := os.Stat(identityDir); err == nil {
 		return fmt.Errorf("rebuild requires a missing identity directory; move or archive the existing directory first: %s", identityDir)
 	} else if !os.IsNotExist(err) {
@@ -118,7 +118,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	// Rebuilt stores use generation-based active storage: a fresh keyring
 	// root plus the restored keys committed as the first generation behind a
 	// durable CURRENT flip.
-	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(productIdentityID()), storePassphrase)
+	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(), storePassphrase)
 	if err != nil {
 		return fmt.Errorf("failed to create keyring store: %w", err)
 	}
@@ -131,7 +131,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err != nil {
 		return err
 	}
-	if _, err := genstore.Mint(keystorePaths(), productIdentityID(), genstore.MintRequest{
+	if _, err := genstore.Mint(keystorePaths(), genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-rebuild",
@@ -192,7 +192,7 @@ func initializeRebuildNodeRole(role noderole.Role, kr *crypto.Keyring) error {
 	if err != nil {
 		return fmt.Errorf("failed to create node role: %w", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), productIdentityID(), roleBytes, kr, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), roleBytes, kr, time.Now()); err != nil {
 		return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	return nil
@@ -213,7 +213,7 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Rol
 
 	restored := 0
 	for _, address := range addresses {
-		keyType, err := backup.NewRestorer(keystorePaths(), productIdentityID()).
+		keyType, err := backup.NewRestorer(keystorePaths()).
 			WithNodeRole(role).
 			WithLogger(logInfof).
 			WithActiveNamespace(staged).

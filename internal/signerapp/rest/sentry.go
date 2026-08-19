@@ -30,7 +30,7 @@ func (s Service) SignComponents(ctx context.Context, ir *identity.Runtime, req s
 		ctx, finish = ir.BeginSigningRequest(ctx, req.RequestID)
 		defer finish()
 	}
-	return s.Deps.NewSigningService(ir).SignComponentsWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
+	return s.Deps.NewSigningService(ir).SignComponentsWithContext(ctx, req, ir.SnapshotKeySession())
 }
 
 func (s Service) Assemble(ctx context.Context, ir *identity.Runtime, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, *signersigning.ServiceError) {
@@ -46,7 +46,7 @@ func (s Service) Assemble(ctx context.Context, ir *identity.Runtime, req signera
 	}
 
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).AssembleWithContext(ctx, ir.ID(), req, session)
+	result, err := s.Deps.NewSigningService(ir).AssembleWithContext(ctx, req, session)
 	if err != nil {
 		return nil, err
 	}

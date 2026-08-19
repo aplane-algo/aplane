@@ -63,20 +63,20 @@ a key.
 | **aplocalnet** | LocalNet setup TUI/CLI for client (`apshell`) default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
 
-## Identity Model
+## Fixed Product Store and Runtime
 
 APlane is a **single-operator, single-signing-identity product**. Every
-`apsigner` process owns exactly one `identity.Runtime`, whose fixed ID is
-`default`. That runtime owns the keystore, lock state, approval coordinator,
-token authority, SSH enrollment, configuration, and watcher. IPC and SSH admin
-clients compete for one process-wide admin session.
+`apsigner` process owns exactly one signing-state aggregate. The aggregate owns
+the keystore, lock state, approval coordinator, token authority, SSH enrollment,
+configuration, and watcher; it has no runtime ID, registry, or selector. IPC
+and SSH admin clients compete for one process-wide admin session.
 
-The durable namespace deliberately remains `identities/default/`. This keeps
-storage ownership explicit and leaves room for a future, versioned migration;
-it does not preserve identity discovery, request routing, wildcard grants,
-per-identity session maps, or identity selectors in product APIs. Low-level
-storage helpers may remain parameterized, but product-boundary callers pass the
-fixed product identity.
+The durable namespace deliberately remains `identities/default/`, with managed
+archives under `backups/default/`. `default` is a literal compatibility
+namespace and retained attribution value, not a tenant locator, runtime ID, or
+authorization principal. `internal/storepaths.Paths` constructs these paths
+without accepting an identity argument. The same fixed layout applies to
+signer-role and sentry-role data roots.
 
 This contract removes a working internal multi-identity capability, including
 identity-local template activation and the former end-to-end `alice` routing
@@ -84,9 +84,9 @@ scenario. It is not a description of previously dead code. A future tenant
 product must add an explicit composition and authorization layer instead of
 reactivating dormant branches.
 
-At startup, any direct entry under `identities/` other than a real directory
-named `default` is an unsupported layout and fails closed before tokens, keys,
-policy, or watchers are loaded. HTTP token authentication binds the reserved
+At startup, a no-follow layout-integrity check rejects any direct entry under
+`identities/` other than a real directory named `default`; it fails closed
+before tokens, keys, policy, or watchers are loaded. HTTP token authentication binds the reserved
 principal `system:product-admin` to the one product runtime. Normal SSH accepts
 only `default`; enrollment accepts only `request-token:default`; product request
 and admin inputs expose no runtime selector.
@@ -191,8 +191,8 @@ aplane/
 │   ├── signerapp/                 # Signer runtime packages
 │   │   ├── daemon/                # Process composition and HTTP/IPC/SSH runtime
 │   │   ├── adminserver/           # Admin sessions, dispatch, handlers, displacement
-│   │   ├── startup/               # Startup validation and identity runtime assembly
-│   │   ├── identity/              # Identity runtime, registry, config, lifecycle
+│   │   ├── startup/               # Startup validation and product runtime assembly
+│   │   ├── identity/              # Product runtime/config/lifecycle (historical package name)
 │   │   ├── runtime/               # Lock state
 │   │   ├── approval/              # Approval queues
 │   │   ├── approvalpolicy/        # Signer approval policy integration
@@ -211,7 +211,7 @@ aplane/
 │   ├── signerclient/              # Signer REST client
 │   ├── signerapi/                 # Internal aliases for pkg/signerapi DTOs
 │   ├── keytypecatalog/            # Compiled key type visibility catalog
-│   ├── keytypestate/              # Identity-scoped key type state records
+│   ├── keytypestate/              # Product-store key type state records
 │   ├── templatelibrary/           # Plaintext KeyType Library parsing/install
 │   ├── templatestore/             # Encrypted identity template storage
 │   ├── storepaths/                # Signer data path construction
@@ -278,7 +278,7 @@ sentry endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
 client `ssh:` signer routing is not supported by managed startup in this
 endpoint-routed client model.
 
-apsigner also reads per-identity configuration overlays:
+apsigner also reads product-store configuration:
 - `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
 - `identities/default/unlock.yaml` — product passphrase helper configuration
 - `identities/default/policy.yaml` — product node-role policy
@@ -370,7 +370,7 @@ can be discovered, generated, or imported.
 
 **Product runtime state:**
 
-The process owns one `identity.Runtime`, fixed to `default`, containing:
+The process owns one `identity.Runtime` signing-state aggregate containing:
 - key maps (`keys`, `keyTypes`, `keyMetadata`) protected by `keysLock`
 - key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
@@ -382,9 +382,11 @@ The process owns one `identity.Runtime`, fixed to `default`, containing:
 The retained on-disk namespace is rooted at `identities/default/`: keys live
 under `keys/`, encrypted templates and state records under `keytypes/`, deleted
 key/template archives under `deleted/`, node-role policy at `policy.yaml`, and
-runtime configuration at `config.yaml`. HTTP authentication selects the one
-product runtime; admin sessions over IPC or the SSH `aplane-admin` subsystem
-bind to that same runtime at authentication time.
+runtime configuration at `config.yaml`. HTTP authentication authorizes access
+to that one aggregate; admin sessions over IPC or the SSH `aplane-admin`
+subsystem bind to the same aggregate at authentication time. The package name
+`internal/signerapp/identity` is historical and does not imply an identity
+selector or runtime registry.
 
 **Admin protocol architecture:**
 

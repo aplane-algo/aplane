@@ -23,12 +23,12 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 	passphrase := []byte("rotation-integration-passphrase")
 	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
 	if err := fsutil.RemoveDurable(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); err != nil {
 		t.Fatalf("RemoveDurable(snapshot) error = %v", err)
 	}
 	if err := fsutil.RemoveDurable(
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(),
 	); err != nil {
 		t.Fatalf("RemoveDurable(baseline) error = %v", err)
 	}
@@ -38,9 +38,9 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 		path string
 	}
 	var operations []operation
-	snapshotPath := fixture.paths.RotationSnapshotPath(inventoryIdentity)
-	rootPath := crypto.KeyringPath(fixture.paths.IdentityDir(inventoryIdentity))
-	identityDir := fixture.paths.IdentityDir(inventoryIdentity)
+	snapshotPath := fixture.paths.RotationSnapshotPath()
+	rootPath := crypto.KeyringPath(fixture.paths.ProductDir())
+	identityDir := fixture.paths.ProductDir()
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if path == snapshotPath || path == rootPath || path == identityDir {
 			operations = append(operations, operation{op: op, path: path})
@@ -51,7 +51,7 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -81,7 +81,7 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 	}
 	opened, err := ReadReferencedSnapshot(
 		fixture.paths,
-		inventoryIdentity,
+
 		state.Snapshot,
 		state.FromTerm,
 		state.ToTerm,
@@ -98,7 +98,7 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 		t.Fatalf("pending root omitted retained generation %s", inventoryGenA)
 	}
 	if err := genstore.ValidateAnchoredSealed(
-		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenA),
+		fixture.paths.GenerationPaths(inventoryGenA),
 		anchor,
 		fixture.kr,
 	); err != nil {
@@ -107,14 +107,14 @@ func TestStartRotationCommitsSnapshotAnchorsAndRootInOrder(t *testing.T) {
 	if _, ok := fixture.kr.HistoricalGenerationAnchor(inventoryGenB); ok {
 		t.Fatal("pending root anchored the mutable current generation")
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(pending anchored store) error = %v", err)
 	}
 
 	operations = nil
 	if _, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); !errors.Is(err, crypto.ErrRotationAlreadyPending) {
@@ -140,12 +140,12 @@ func TestStartRotationPinsPriorBaselineAsEffectiveAuthority(t *testing.T) {
 	passphrase := []byte("rotation-baseline-integration")
 	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
 	if err := fsutil.RemoveDurable(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); err != nil {
 		t.Fatalf("RemoveDurable(snapshot) error = %v", err)
 	}
 
-	gen := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB)
+	gen := fixture.paths.GenerationPaths(inventoryGenB)
 	manifest, err := genstore.ReadManifest(gen)
 	if err != nil {
 		t.Fatalf("ReadManifest() error = %v", err)
@@ -163,7 +163,7 @@ func TestStartRotationPinsPriorBaselineAsEffectiveAuthority(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -191,7 +191,7 @@ func prepareInventoryFixtureKeyringStore(
 	passphrase []byte,
 ) {
 	t.Helper()
-	identityDir := fixture.paths.IdentityDir(inventoryIdentity)
+	identityDir := fixture.paths.ProductDir()
 	for _, path := range []string{
 		crypto.KeyringPath(identityDir),
 		filepath.Join(identityDir, ".keystore"),

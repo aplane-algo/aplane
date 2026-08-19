@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"os"
@@ -65,19 +66,16 @@ func init() {
 
 type auditRecorder struct {
 	generated []struct {
-		identityID string
-		address    string
-		keyType    string
+		address string
+		keyType string
 	}
 	deleted []struct {
-		identityID  string
 		address     string
 		deletedPath string
 	}
 	imported []struct {
-		identityID string
-		address    string
-		keyType    string
+		address string
+		keyType string
 	}
 }
 
@@ -97,28 +95,25 @@ func (l *recordingLock) Unlock() {
 	l.held = false
 }
 
-func (a *auditRecorder) LogKeyGenerated(identityID, address, keyType string) {
+func (a *auditRecorder) LogKeyGenerated(address, keyType string) {
 	a.generated = append(a.generated, struct {
-		identityID string
-		address    string
-		keyType    string
-	}{identityID: identityID, address: address, keyType: keyType})
+		address string
+		keyType string
+	}{address: address, keyType: keyType})
 }
 
-func (a *auditRecorder) LogKeyDeleted(identityID, address, deletedPath string) {
+func (a *auditRecorder) LogKeyDeleted(address, deletedPath string) {
 	a.deleted = append(a.deleted, struct {
-		identityID  string
 		address     string
 		deletedPath string
-	}{identityID: identityID, address: address, deletedPath: deletedPath})
+	}{address: address, deletedPath: deletedPath})
 }
 
-func (a *auditRecorder) LogKeyImported(identityID, address, keyType string) {
+func (a *auditRecorder) LogKeyImported(address, keyType string) {
 	a.imported = append(a.imported, struct {
-		identityID string
-		address    string
-		keyType    string
-	}{identityID: identityID, address: address, keyType: keyType})
+		address string
+		keyType string
+	}{address: address, keyType: keyType})
 }
 
 func setupIdentityRuntime(t *testing.T) *identity.Runtime {
@@ -130,19 +125,19 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths, auth.DefaultIdentityID)
-	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
+	genstoretest.MintFirst(t, keyPaths)
+	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -280,7 +275,7 @@ teal: |
 		t.Fatal(err)
 	}
 	logicsigdsa.RegisterIfAbsent(provider)
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
 	}); err != nil {
 		t.Fatal(err)
@@ -299,7 +294,7 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", referenceJSON); err != nil {
+	if _, err := sentryrefs.Import(ir.KeyPaths(), "bounded-sentry", referenceJSON); err != nil {
 		t.Fatal(err)
 	}
 
@@ -368,10 +363,7 @@ func TestServiceGenerateKeyUsesMutationLock(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	lock := &recordingLock{}
 	svc := Service{
-		MutationLock: func(identityID string) Locker {
-			if identityID != ir.ID() {
-				t.Fatalf("MutationLock identityID = %q, want %q", identityID, ir.ID())
-			}
+		MutationLock: func() Locker {
 			return lock
 		},
 	}
@@ -415,14 +407,14 @@ func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	svc := Service{}
 	keyType := "aplane.ed25519.v1"
 
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
-	if err := keytypestate.Delete(ir.KeyPaths(), ir.ID(), keyType); err != nil {
+	if err := keytypestate.Delete(ir.KeyPaths(), keyType); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
@@ -477,75 +469,6 @@ teal: |
 	}
 	if called {
 		t.Fatal("generic generator was called for key type not enabled for identity")
-	}
-}
-
-// F1 canary: a composed YAML template installed on identity A must not let
-// identity B generate keys for that key type. Pre-refactor, the process-global
-// LSig provider registry leaked the key type across identities; the post-
-// refactor gate is per-identity through keytypestate.CanGenerate.
-func TestServiceGenerateKeyRejectsComposedTemplateInstalledForOtherIdentity(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, auth.DefaultIdentityID)
-	keyType := "test.falcon1024-keyadmin-cross-identity.v1"
-	yamlData := []byte(`schema_version: 1
-template_type: composed
-base_key_type: aplane.falcon1024.v1
-template_mode: generated
-publisher: test
-family: falcon1024-keyadmin-cross-identity
-version: 1
-display_name: "Falcon Keyadmin Cross Identity"
-description: "F1 canary: cross-identity composed template"
-max_opcode_cost: 20000
-parameters: []
-runtime_args: []
-teal: |
-  int 1
-  return
-`)
-	spec, err := composeddsa.ParseTemplateSpec(yamlData)
-	if err != nil {
-		t.Fatalf("ParseTemplateSpec() error = %v", err)
-	}
-	if err := composeddsa.ValidateTemplateSpec(spec); err != nil {
-		t.Fatalf("ValidateTemplateSpec() error = %v", err)
-	}
-	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
-	if err != nil {
-		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
-	}
-	logicsigdsa.RegisterIfAbsent(provider)
-
-	genstoretest.MintFirst(t, paths, "alice")
-	genstoretest.MintFirst(t, paths, "bob")
-	if err := keytypestate.Put(paths, "alice", keytypestate.Record{
-		KeyType: keyType,
-		Source:  keytypestate.SourceYAMLComposed,
-		State:   keytypestate.StateEnabled,
-	}); err != nil {
-		t.Fatalf("Put(alice) error = %v", err)
-	}
-
-	bob := identity.New(identity.Config{
-		ID:            "bob",
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("bob-token"),
-	})
-
-	called := false
-	result, genErr := Service{}.GenerateKey(context.Background(), bob, keyType, nil, func(context.Context, *identity.Runtime, string, map[string]string) (string, error) {
-		called = true
-		return "ADDR", nil
-	})
-	if result != nil {
-		t.Fatalf("GenerateKey(bob) result = %#v, want nil", result)
-	}
-	if genErr == nil || genErr.Kind != ErrorInvalidInput {
-		t.Fatalf("GenerateKey(bob) error = %#v, want ErrorInvalidInput", genErr)
-	}
-	if called {
-		t.Fatal("composed generator was called for key type not enabled for identity")
 	}
 }
 
@@ -644,7 +567,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
+		result, saveErr := keys.SavePayload(ir.KeyPaths(), payload, mk)
 		if saveErr == nil && result.Address != address {
 			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
@@ -861,12 +784,12 @@ func registerServiceGenericTemplate(t *testing.T) {
 func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths(), ir.ID()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(service generic template) error = %v", err)
 	}
-	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: serviceGenericKeyType,
 		Source:  keytypestate.SourceYAMLGeneric,
 		State:   keytypestate.StateEnabled,

@@ -466,19 +466,19 @@ HTTP or admin transports. Store-owning local processes may decrypt credentials
 transiently for signing, backup creation, verification, restore, or rebuild;
 exported backup archives carry only passphrase-encrypted credential records.
 
-### Identity Model
+### Fixed Product Store and Runtime
 
-Identity model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
+Conceptual model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Fixed Product Store and Runtime).
 
 Identity plumbing rules specific to this spec:
 
-- every signer process owns exactly one runtime, fixed to
-  `auth.CurrentProductIdentityID()` (`default`),
+- every signer process owns exactly one signing-state aggregate, with no
+  runtime ID, registry, or selector,
 - preserving `identities/default/` preserves the storage namespace, not a
   multi-identity runtime model,
-- reusable storage code may retain an identity locator parameter; product
-  request, authentication, SSH, admin-session, and runtime code has no identity
-  selector,
+- `internal/storepaths.Paths` binds `identities/default/` and
+  `backups/default/` from the signer data root; storage, runtime, request,
+  authentication, SSH, and admin APIs accept no identity locator,
 - startup validates the direct `identities/` entries without following
   symlinks and rejects every entry other than a real `default` directory before
   loading identity secrets or starting watchers,
@@ -544,50 +544,49 @@ Server config includes process-global settings such as:
 - memory protection requirement,
 - theme.
 
-Identity-sensitive runtime settings are owned separately by `internal/signerapp/identity.IdentityConfig`:
+Product runtime settings are owned separately by `internal/signerapp/identity.IdentityConfig`:
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
 - `passphrase_timeout` (admin idle disconnect timeout),
 - `approval_wait` (maximum manual signing approval wait).
 
-Those values are persisted per identity at
-`identities/<identity>/config.yaml` via
+Those values are persisted at `identities/default/config.yaml` via
 `internal/signerapp/identity.StoredConfig`. Unknown fields, including the
 removed `decommissioned` setting, fail strict parsing. On startup, stored
 runtime values overlay process-global defaults (nil/empty means inherit).
-Runtime reads resolve through the bound
-identity runtime rather than directly from `ServerConfig`.
+Runtime reads resolve through the product runtime rather than directly from
+`ServerConfig`.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
 signer data directory has a root `node.yaml` with exactly one role:
 `signer` or `sentry`. New installs default to `signer` unless explicitly
 initialized as sentry nodes. The role is immutable in supported tools, is
-integrity-bound per identity with an HMAC sidecar over the exact root
+integrity-bound to the product store with an HMAC sidecar over the exact root
 `node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
 service dispatch. Identity config does not own node role; a `mode` field there
 is unsupported and must be rejected.
 
-Passphrase helper configuration is identity-scoped via
+Passphrase helper configuration is product-store scoped via
 `internal/signerapp/unlockconfig.UnlockConfig`, stored at
-`identities/<identity>/unlock.yaml`. `internal/signerapp/identity` re-exports
+`identities/default/unlock.yaml`. `internal/signerapp/identity` re-exports
 that type and its path/load/save helpers for existing callsites:
 
 - `passphrase_command_argv`
 - `passphrase_command_env`
 
-Passphrase files are stored at `identities/<identity>/passphrase` or `passphrase.cred` for `systemd-creds`.
+Passphrase files are stored at `identities/default/passphrase` or `passphrase.cred` for `systemd-creds`.
 
 Signer policy participates in the ordered approval engine. The current policy
 verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
-node-role policy is identity-scoped and stored at
-`identities/<identity>/policy.yaml` with a sibling HMAC sidecar. On signer
+node-role policy is product-store scoped and stored at
+`identities/default/policy.yaml` with a sibling HMAC sidecar. On signer
 nodes the document is client-signing policy; on sentry nodes the same
 filename is direct sentry component policy. The default approval fallback is
 `user_auto_approve`, persisted in
-`identities/<identity>/config.yaml` and shown in `apadmin` as
-`User Auto-Approve`. Policy is verified with a key derived from the identity
-term key and loaded into the bound identity runtime on unlock/reload before
+`identities/default/config.yaml` and shown in `apadmin` as
+`User Auto-Approve`. Policy is verified with a key derived from the product
+store term key and loaded into the product runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
 `internal/signerapp/policytui`. `apadmin policy` edits the active document
 through authenticated admin IPC or SSH while `apsigner` is running;
@@ -598,7 +597,7 @@ role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
 target-aware (`signer|sentry`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
-fresh sidecar, and update the bound runtime immediately on success. The policy
+fresh sidecar, and update the product runtime immediately on success. The policy
 admin surface reads, validates, and replaces only complete YAML documents
 through `get_policy_snapshot`, `validate_policy`, and `replace_policy`,
 including YAML-only fields such as `key_overrides`. There is no scalar
@@ -629,7 +628,7 @@ prompt to no and applying only to the client and/or signer data roots being
 installed. The compatibility details are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
-`apsigner` startup resolves the product identity's `unlock.yaml` before the
+`apsigner` startup resolves the product store's `unlock.yaml` before the
 process-global `config.yaml` passphrase command. `appass` has no identity
 selector and always manages `identities/default/unlock.yaml`.
 
@@ -642,14 +641,15 @@ The concrete on-disk layouts, key-file compatibility, keystore metadata versioni
 Operationally:
 
 - client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), token (`aplane.token`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
-- signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/<identity>/`, and all sensitive runtime assets rooted under `identities/<identity>/`,
+- signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/default/`, and all sensitive runtime assets rooted under `identities/default/`,
 - systemd signer state is service-user-only (`0700` directories and `0600`
   ordinary files); the operator Unix group has no traversal rights and reaches
   signer operations only through authenticated transports. See
   [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
-- active credentials and key-type state live under `identities/<identity>/generations/<gen-id>/`, selected by the `CURRENT` pointer file; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and the on-disk layout in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
+- active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by the `CURRENT` pointer file; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and the on-disk layout in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
 - systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
-- the effective layout is identity-scoped even though the default deployment uses only `"default"`.
+- the effective product layout is fixed; `default` is a literal namespace and
+  compatibility value, not a caller-supplied locator.
 
 ## Security Model
 
@@ -711,7 +711,10 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 
 ## Server Ownership Model
 
-`Signer` (`internal/signerapp/daemon/server.go`) is the composition root. Per-identity mutable state lives in `identity.Runtime` (`internal/signerapp/identity/runtime.go`).
+`Signer` (`internal/signerapp/daemon/server.go`) is the composition root. The
+one product signing-state aggregate lives in `identity.Runtime`
+(`internal/signerapp/identity/runtime.go`). The package name is historical and
+does not imply a runtime selector or registry.
 
 | Concern | Owner |
 |---------|-------|
@@ -722,7 +725,7 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 | Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
 | Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
-| Identity runtime, config, token, SSH enrollment, lifecycle | `internal/signerapp/identity` |
+| Product runtime aggregate, config, token, SSH enrollment, lifecycle | `internal/signerapp/identity` (historical package name) |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` with `internal/signerapi` aliases |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
@@ -736,7 +739,7 @@ typed `ServiceError` values mapped to HTTP status at that transport edge.
 Signer request lifecycle state is owned below the HTTP layer:
 `pkg/signerapi` defines the request/cancel DTOs,
 `internal/signerapp/daemon` routes `/sign` and `/sign/cancel`,
-`internal/signerapp/rest` binds live `/sign` request IDs to identity runtimes,
+`internal/signerapp/rest` binds live `/sign` request IDs to the product runtime,
 `internal/signerapp/approval` owns pending/canceled lifecycle state, and
 `internal/signerclient` is the repo-owned client that creates request IDs and
 sends explicit cancellation.
@@ -807,21 +810,21 @@ bytecode must derive an off-curve LogicSig address.
 
 The main server struct is `Signer`, which owns:
 
-- the one product identity runtime and node-level fail-closed state,
+- the one product runtime and node-level fail-closed state,
 - authn/authz components,
 - signer-side planning/approval/execution service adapters,
 - IPC server,
 - optional SSH server,
 - config and data-dir references.
 
-Sensitive per-identity state lives under `internal/signerapp/identity.Runtime`, including:
+Sensitive product state lives under `internal/signerapp/identity.Runtime`, including:
 
 - `keySession`,
-- identity-scoped `keys`, `keyTypes`, and `keyMetadata` resource profiles,
+- product `keys`, `keyTypes`, and `keyMetadata` resource profiles,
 - signer runtime owner,
 - approval coordinator,
 - watcher lifecycle,
-- identity-scoped config,
+- product runtime config,
 - token authority and SSH enrollment state.
 
 The key indexes are authoritative runtime indexes of what the server believes is signable.
@@ -1280,8 +1283,8 @@ ID, but it is not a valid Algorand address because addresses are 58 characters.
 Signer-custodied sentry witnesses use
 `<active-generation>/keys/<WitnessKeyID>.sen`; account authority uses the same
 active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
-is `identities/<identity>/generations/<gen-id>/keys/`, selected by `CURRENT`.
-The direct `identities/<identity>/keys/` path is pre-generation legacy state,
+is `identities/default/generations/<gen-id>/keys/`, selected by `CURRENT`.
+The direct `identities/default/keys/` path is pre-generation legacy state,
 not an active credential source. External contract-admin
 witnesses remain standalone `.wit` artifacts and are never scanned by the signer.
 The full sentry public key remains the verifier key embedded in guarded
@@ -1533,7 +1536,7 @@ Key type identifiers use the canonical form `publisher.family.vN` for APlane-def
 
 It owns:
 
-- identity-scoped key directory resolution,
+- product-store key directory resolution,
 - keyring opening and caching,
 - decrypted scan metadata cache,
 - on-demand decryption for specific addresses.
@@ -1922,14 +1925,16 @@ Weaker or more coupled areas:
   signer-cache `*Locked` split still live on the engine side rather than being
   fully owned by `internal/clientstate`,
 - shell commands execute once and return one result with human and machine presentations,
-- the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.
+- the runtime core is product-store-owned and the operator/control-plane surface
+  is single-operator, even though the product admin workflow may arrive over
+  IPC or the SSH `aplane-admin` subsystem.
 
 Product-level boundaries:
 
-- identity-scoped storage, sessions, approval routing, and token plumbing exist,
-  with a single-operator deployment model,
+- one fixed product store, runtime session, approval coordinator, and token
+  authority exist, with a single-operator deployment model,
 - plugin manifests expose one command-first executable contract,
-- template files are identity-scoped and encrypted; `key_type` is an immutability boundary rather than an override hook,
+- template files are product-store scoped and encrypted; `key_type` is an immutability boundary rather than an override hook,
 - shell command automation is explicit per primary command, with aliases inheriting policy and no text-capture fallback.
 
 ## Key Entry Points

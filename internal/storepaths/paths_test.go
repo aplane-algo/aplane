@@ -16,13 +16,60 @@ func TestTemplateLibraryDirUsesLibraryTemplatesSubdirectory(t *testing.T) {
 	}
 }
 
+func TestProductPathsAreBoundAtConstruction(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
+	paths := NewPaths(root)
+	if got, want := paths.ProductDir(), filepath.Join(root, "identities", "default"); got != want {
+		t.Fatalf("ProductDir() = %q, want %q", got, want)
+	}
+	if got, want := paths.ProductBackupsDir(), filepath.Join(root, "backups", "default"); got != want {
+		t.Fatalf("ProductBackupsDir() = %q, want %q", got, want)
+	}
+}
+
+func TestCanonicalProductStorePathMatrix(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
+	paths := NewPaths(root)
+	identityDir := filepath.Join(root, "identities", "default")
+	generationID := "gen-1700000000-0123abcd"
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"identity", paths.ProductDir(), identityDir},
+		{"metadata", paths.KeystoreMetadataDir(), identityDir},
+		{"legacy keys", paths.LegacyKeysDir(), filepath.Join(identityDir, "keys")},
+		{"deleted", paths.DeletedDir(), filepath.Join(identityDir, "deleted")},
+		{"deleted keys", paths.DeletedKeysDir(), filepath.Join(identityDir, "deleted", "keys")},
+		{"backups", paths.ProductBackupsDir(), filepath.Join(root, "backups", "default")},
+		{"legacy key types", paths.LegacyKeyTypeRecordsDir(), filepath.Join(identityDir, "keytypes")},
+		{"sentry references", paths.SentryRefsDir(), filepath.Join(identityDir, "sentries")},
+		{"sentry reference", paths.SentryRefPath("primary"), filepath.Join(identityDir, "sentries", "primary.json")},
+		{"node role sidecar", paths.NodeRoleIntegritySidecar(), filepath.Join(identityDir, "node.yaml.hmac")},
+		{"rotation snapshot", paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc")},
+		{"rotation baseline", paths.RotationBaselinePath(), filepath.Join(identityDir, "rotation.baseline.enc")},
+		{"current", paths.CurrentPointerPath(), filepath.Join(identityDir, CurrentPointerName)},
+		{"generations", paths.GenerationsDir(), filepath.Join(identityDir, GenerationsDirName)},
+		{"generation", paths.GenerationDir(generationID), filepath.Join(identityDir, GenerationsDirName, generationID)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Fatalf("path = %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNodeRolePaths(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	if got, want := paths.NodeRolePath(), filepath.Join("/tmp/test-keystore", "node.yaml"); got != want {
 		t.Fatalf("NodeRolePath() = %q, want %q", got, want)
 	}
 	wantSidecar := filepath.Join("/tmp/test-keystore", "identities", "default", "node.yaml.hmac")
-	if got := paths.NodeRoleIntegritySidecar("default"); got != wantSidecar {
+	if got := paths.NodeRoleIntegritySidecar(); got != wantSidecar {
 		t.Fatalf("NodeRoleIntegritySidecar() = %q, want %q", got, wantSidecar)
 	}
 }
@@ -30,10 +77,10 @@ func TestNodeRolePaths(t *testing.T) {
 func TestRotationPathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
-	if got, want := paths.RotationSnapshotPath("default"), filepath.Join(identityDir, "rotation.snapshot.enc"); got != want {
+	if got, want := paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc"); got != want {
 		t.Fatalf("RotationSnapshotPath() = %q, want %q", got, want)
 	}
-	if got, want := paths.RotationBaselinePath("default"), filepath.Join(identityDir, "rotation.baseline.enc"); got != want {
+	if got, want := paths.RotationBaselinePath(), filepath.Join(identityDir, "rotation.baseline.enc"); got != want {
 		t.Fatalf("RotationBaselinePath() = %q, want %q", got, want)
 	}
 }
@@ -41,14 +88,14 @@ func TestRotationPathsAreIdentityScoped(t *testing.T) {
 func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	wantDir := filepath.Join("/tmp/test-keystore", "identities", "default", "keytypes")
-	if gotDir := paths.LegacyKeyTypeRecordsDir("default"); gotDir != wantDir {
+	if gotDir := paths.LegacyKeyTypeRecordsDir(); gotDir != wantDir {
 		t.Fatalf("LegacyKeyTypeRecordsDir() = %q, want %q", gotDir, wantDir)
 	}
 
-	if gotFile := paths.LegacyKeyTypeRecord("default", "aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
+	if gotFile := paths.LegacyKeyTypeRecord("aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
 		t.Fatalf("LegacyKeyTypeRecord() = %q", gotFile)
 	}
-	if gotFile := paths.LegacyKeyTypeTemplate("default", "test.generic-policy.v1"); gotFile != filepath.Join(wantDir, "test.generic-policy.v1.template") {
+	if gotFile := paths.LegacyKeyTypeTemplate("test.generic-policy.v1"); gotFile != filepath.Join(wantDir, "test.generic-policy.v1.template") {
 		t.Fatalf("LegacyKeyTypeTemplate() = %q", gotFile)
 	}
 }
@@ -56,13 +103,13 @@ func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 func TestDeletedPathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
-	if got, want := paths.DeletedDir("default"), filepath.Join(identityDir, "deleted"); got != want {
+	if got, want := paths.DeletedDir(), filepath.Join(identityDir, "deleted"); got != want {
 		t.Fatalf("DeletedDir() = %q, want %q", got, want)
 	}
-	if got, want := paths.DeletedKeysDir("default"), filepath.Join(identityDir, "deleted", "keys"); got != want {
+	if got, want := paths.DeletedKeysDir(), filepath.Join(identityDir, "deleted", "keys"); got != want {
 		t.Fatalf("DeletedKeysDir() = %q, want %q", got, want)
 	}
-	got := paths.DeletedKeyTypeTemplate("default", "test.generic-policy.v1")
+	got := paths.DeletedKeyTypeTemplate("test.generic-policy.v1")
 	want := filepath.Join(identityDir, "deleted", "keytypes", "test.generic-policy.v1.template")
 	if got != want {
 		t.Fatalf("DeletedKeyTypeTemplate() = %q, want %q", got, want)
@@ -95,15 +142,6 @@ func TestValidatePathComponent(t *testing.T) {
 	}
 }
 
-func TestKeysDirRejectsTraversal(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("KeysDir with traversal identity did not panic")
-		}
-	}()
-	NewPaths("/tmp/test-keystore").LegacyKeysDir("../../etc")
-}
-
 func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	invalid := []string{"", "Bad-v1", "_bad-v1", "-bad-v1", "bad:name", "bad/name", `bad\name`, "bad\x00name", "../bad", "bad..name"}
@@ -114,7 +152,7 @@ func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
 					t.Errorf("KeyTypeRecord(%q) did not panic", keyType)
 				}
 			}()
-			_ = paths.LegacyKeyTypeRecord("default", keyType)
+			_ = paths.LegacyKeyTypeRecord(keyType)
 		}()
 	}
 }

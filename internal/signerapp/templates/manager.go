@@ -180,7 +180,7 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 // Recoverable reload problems are surfaced through the returned report; the
 // error return is reserved for manager misconfiguration and unrecoverable work
 // that should stop the caller's reload flow.
-func (m *Manager) RegisterKeystoreTemplates(identityID string, kr *crypto.Keyring) (RegistrationReport, error) {
+func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
 	registrars, err := m.templateRegistrars()
 	if err != nil {
 		return RegistrationReport{}, err
@@ -190,7 +190,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, kr *crypto.Keyrin
 	// Resolve the active layout once for the whole registration pass; on a
 	// generational store this binds every record and template read to the
 	// generation CURRENT names right now.
-	active, err := genstore.ResolveActive(m.Paths, identityID)
+	active, err := genstore.ResolveActive(m.Paths)
 	if err != nil {
 		return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}
@@ -211,7 +211,7 @@ func (m *Manager) RegisterKeystoreTemplates(identityID string, kr *crypto.Keyrin
 		if !ok {
 			continue
 		}
-		outcome := registerTemplateRecord(active, identityID, kr, rec, registrar)
+		outcome := registerTemplateRecord(active, kr, rec, registrar)
 		appendOutcome(&report, registrar.Source, outcome)
 	}
 
@@ -364,7 +364,7 @@ func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, regi
 	return nil
 }
 
-func registerTemplateRecord(active storepaths.ActivePaths, identityID string, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
+func registerTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)
 	if _, err := os.Stat(path); err != nil {

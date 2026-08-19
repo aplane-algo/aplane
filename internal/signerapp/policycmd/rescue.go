@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
@@ -94,7 +93,7 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		if err := guard.Normalize(); err != nil {
 			return fmt.Errorf("policy saved, but managed store ownership normalization failed: %w", err)
 		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(command.DataDir, auth.CurrentProductIdentityID()))
+		_, _ = fmt.Fprintf(streams.Stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(command.DataDir))
 		return nil
 	}
 
@@ -119,13 +118,12 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		store.SetPassphrase(passphrase)
 		crypto.ZeroBytes(passphrase)
 	}
-	identityID := auth.CurrentProductIdentityID()
-	path := target.Path(command.DataDir, identityID)
+	path := target.Path(command.DataDir)
 	err = (loadedDocument{
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: target,
 		status:  fmt.Sprintf("%s OK: %s", target.StatusNoun(), path),
-		dataDir: command.DataDir, identityID: identityID, editor: r.Editor,
+		dataDir: command.DataDir, editor: r.Editor,
 	}).run()
 	if err == nil && command.Verb == VerbEdit {
 		err = guard.Normalize()

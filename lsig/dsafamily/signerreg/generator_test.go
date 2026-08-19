@@ -188,8 +188,6 @@ func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ ma
 // testMasterKey is a 32-byte key for testing (AES-256 requires exactly 32 bytes)
 var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
-const testIdentityID = "test-identity"
-
 func newTestGenerator() *LogicSigGenerator {
 	ops := &testFalcon1024V1{}
 	return NewLogicSigGenerator("falcon1024", map[string]LogicSigKeygenOps{
@@ -204,7 +202,7 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
 	paths := utilkeys.NewPaths(".")
-	genstoretest.MintFirst(t, paths, "test-identity")
+	genstoretest.MintFirst(t, paths)
 	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}
@@ -243,7 +241,7 @@ func TestGenerateFromSeed(t *testing.T) {
 	}
 
 	// Generate first key
-	result1, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result1, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
@@ -278,7 +276,7 @@ func TestGenerateFromSeed(t *testing.T) {
 	}
 
 	// Generate second key with same seed (determinism test)
-	result2, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result2, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("Second GenerateFromSeed failed: %v", err)
 	}
@@ -305,7 +303,7 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 	for i := range seed {
 		seed[i] = byte(i + 1)
 	}
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), keyType, nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), keyType, nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed() error = %v", err)
 	}
@@ -336,7 +334,7 @@ func TestGenerateFromSeedWithEncryption(t *testing.T) {
 	seed := make([]byte, 64)
 	masterKey := testMasterKey
 
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, masterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, masterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed with encryption failed: %v", err)
 	}
@@ -373,7 +371,7 @@ func TestGenerateFromSeedDifferentSizes(t *testing.T) {
 		seed64[i] = byte(i)
 	}
 
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed64, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed64, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Errorf("64-byte seed should work: %v", err)
 	}
@@ -398,7 +396,7 @@ func TestGenerateFromMnemonic(t *testing.T) {
 	// Use a known BIP-39 test mnemonic (24 words)
 	testMnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := generator.GenerateFromMnemonic(context.Background(), paths, testIdentityID, testMnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromMnemonic(context.Background(), paths, testMnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromMnemonic failed: %v", err)
 	}
@@ -424,7 +422,7 @@ func TestGenerateFromMnemonic(t *testing.T) {
 	}
 
 	// Verify determinism: same mnemonic should produce same address
-	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, testIdentityID, testMnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, testMnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("Second GenerateFromMnemonic failed: %v", err)
 	}
@@ -462,7 +460,7 @@ func TestGenerateFromMnemonicInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := generator.GenerateFromMnemonic(context.Background(), paths, testIdentityID, tt.mnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+			_, err := generator.GenerateFromMnemonic(context.Background(), paths, tt.mnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 			if err == nil {
 				t.Error("Expected error for invalid mnemonic")
 			}
@@ -477,7 +475,7 @@ func TestGenerateRandom(t *testing.T) {
 
 	generator := newTestGenerator()
 
-	result, err := generator.GenerateRandom(context.Background(), paths, testIdentityID, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom failed: %v", err)
 	}
@@ -536,7 +534,7 @@ func TestGenerateRandomUniqueness(t *testing.T) {
 	iterations := 5
 
 	for i := 0; i < iterations; i++ {
-		result, err := generator.GenerateRandom(context.Background(), paths, testIdentityID, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+		result, err := generator.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 		if err != nil {
 			t.Fatalf("GenerateRandom iteration %d failed: %v", i, err)
 		}
@@ -567,7 +565,7 @@ func TestPublicKeyFormat(t *testing.T) {
 	generator := newTestGenerator()
 	seed := make([]byte, 64)
 
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
@@ -597,7 +595,7 @@ func TestKeysDirectoryCreation(t *testing.T) {
 	seed := make([]byte, 64)
 
 	// An uninitialized store (no generation) refuses key generation.
-	if _, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil); err == nil {
+	if _, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil); err == nil {
 		t.Fatal("GenerateFromSeed succeeded on an uninitialized store")
 	}
 }
@@ -610,13 +608,13 @@ func TestKeyFileNaming(t *testing.T) {
 	generator := newTestGenerator()
 	seed := make([]byte, 64)
 
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
 
 	// Verify file naming inside the active generation.
-	active, err := genstore.ResolveActive(paths, testIdentityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}
@@ -634,7 +632,7 @@ func TestLSigBytecodeGeneration(t *testing.T) {
 	generator := newTestGenerator()
 	seed := make([]byte, 64)
 
-	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromSeed failed: %v", err)
 	}
@@ -683,13 +681,13 @@ func TestMnemonicRoundTrip(t *testing.T) {
 	generator := newTestGenerator()
 
 	// Generate random key with mnemonic
-	result1, err := generator.GenerateRandom(context.Background(), paths, testIdentityID, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result1, err := generator.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom failed: %v", err)
 	}
 
 	// Regenerate from mnemonic
-	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, testIdentityID, result1.Mnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
+	result2, err := generator.GenerateFromMnemonic(context.Background(), paths, result1.Mnemonic, cryptotest.Keyring(t, testMasterKey), "aplane.falcon1024.v1", nil)
 	if err != nil {
 		t.Fatalf("GenerateFromMnemonic failed: %v", err)
 	}

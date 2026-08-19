@@ -121,7 +121,7 @@ func TestExecutorExecuteGroupSigningHonorsCanceledContext(t *testing.T) {
 		ForeignIndices:     map[int]bool{},
 	}, signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR"}},
-	}, "default", nil)
+	}, nil)
 	if err == nil {
 		t.Fatal("ExecuteGroupSigning() error = nil, want cancellation")
 		return
@@ -148,7 +148,7 @@ func TestExecutorSignSingleTransactionZeroesKeyAfterPostLoadCancel(t *testing.T)
 	session.InitializeSession()
 
 	exec := &Executor{}
-	_, _, err := exec.signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, nil, session, "default", ctx)
+	_, _, err := exec.signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, nil, session, ctx)
 	if err == nil {
 		t.Fatal("signSingleTransaction() error = nil, want cancellation")
 		return
@@ -179,7 +179,6 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 		nil,
 		nil,
 		keyMaterial,
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signCryptoKey() error = nil, want unsupported key type")
@@ -227,7 +226,7 @@ func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 				}},
 			}
 
-			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
+			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, nil)
 			if err == nil {
 				t.Fatal("ExecuteGroupSigning() error = nil, want sentry key type rejection")
 				return
@@ -270,7 +269,6 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 				nil,
 				nil,
 				keyMaterial,
-				"default",
 			)
 			if err == nil {
 				t.Fatal("signCryptoKey() error = nil, want sentry key type rejection")
@@ -296,7 +294,7 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 }
 
 func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
-	keyType := "test-native-auth-decode"
+	keyType := uniqueSigningTestFamily("test-native-auth-decode")
 	coresigning.Register(&testNativeSigningProvider{family: keyType})
 	exec := &Executor{}
 
@@ -310,7 +308,6 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 			Type:  keyType,
 			Value: []byte{1},
 		},
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signCryptoKey() error = nil, want invalid auth address")
@@ -328,7 +325,7 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 }
 
 func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testing.T) {
-	keyType := "test-unexpected-transaction-authorizer"
+	keyType := uniqueSigningTestFamily("test-unexpected-transaction-authorizer")
 	provider := &unexpectedTransactionAuthorizerProvider{
 		testNativeSigningProvider: testNativeSigningProvider{family: keyType},
 	}
@@ -342,7 +339,6 @@ func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testi
 		nil,
 		nil,
 		&coresigning.KeyMaterial{Type: keyType, Value: privateKey},
-		"default",
 	)
 	if err == nil || !strings.Contains(err.Message, "unexpectedly implements structured transaction authorization") {
 		t.Fatalf("signCryptoKey() error = %#v, want unexpected transaction authorizer rejection", err)
@@ -383,7 +379,6 @@ func TestExecutorSignGenericLSigRejectsMissingRequiredRuntimeArg(t *testing.T) {
 				Required: true,
 			}},
 		},
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want missing runtime arg rejection")
@@ -425,7 +420,6 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 				Required: true,
 			}},
 		},
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want runtime arg decode rejection")
@@ -461,7 +455,6 @@ func TestExecutorSignGenericLSigRejectsMissingSigningMetadata(t *testing.T) {
 			Category: keys.CategoryGenericLsig,
 			Bytecode: []byte{1},
 		},
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want missing signing metadata rejection")
@@ -504,7 +497,6 @@ func TestExecutorSignGenericLSigUsesStoredSigningArgsWithoutProvider(t *testing.
 				Required: true,
 			}},
 		},
-		"default",
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want missing runtime arg rejection")
@@ -548,7 +540,6 @@ func TestExecutorSignGenericLSigOrdersStoredSigningArgsOnSuccess(t *testing.T) {
 				{Name: "first", Type: "bytes", Required: true},
 			},
 		},
-		"default",
 	)
 	if err != nil {
 		t.Fatalf("signGenericLSig() error = %v", err)
@@ -592,7 +583,6 @@ func TestExecutorSignGenericLSigIgnoresLiveTemplateMetadata(t *testing.T) {
 				Required: true,
 			}},
 		},
-		"default",
 	)
 	if err != nil {
 		t.Fatalf("signGenericLSig() error = %v", err)
@@ -637,7 +627,6 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 		},
 		[]byte{1, 2, 3},
 		keyType,
-		"default",
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing runtime arg rejection")
@@ -676,7 +665,6 @@ func TestExecutorAssembleDSALogicSigRejectsMissingSigningMetadata(t *testing.T) 
 		},
 		[]byte{1, 2, 3},
 		keyType,
-		"default",
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing signing metadata rejection")
@@ -728,7 +716,6 @@ func TestExecutorAssembleDSALogicSigUsesStoredSigningArgsWithoutComposedProvider
 		},
 		[]byte{1, 2, 3},
 		keyType,
-		"default",
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing runtime arg rejection")
@@ -782,7 +769,6 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 		},
 		signature,
 		keyType,
-		"default",
 	)
 	if err != nil {
 		t.Fatalf("assembleDSALogicSig() error = %v", err)
@@ -815,7 +801,6 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 		},
 		signature,
 		keyType,
-		"default",
 	)
 	if err != nil {
 		t.Fatalf("assembleDSALogicSig() error = %v", err)
@@ -957,7 +942,6 @@ func TestExecutorSignCryptoKeyRejectsAdminRekeyFromPlanItem(t *testing.T) {
 		nil,
 		item,
 		keyMaterial,
-		"default",
 	)
 	if err == nil || err.Kind != ErrorBoundedAdminRequired {
 		t.Fatalf("signCryptoKey() error = %#v, want bounded_admin_required", err)
@@ -1007,7 +991,6 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 		},
 		signature,
 		keyType,
-		"default",
 	)
 	if err != nil {
 		t.Fatalf("assembleDSALogicSig() error = %v", err)
@@ -1047,7 +1030,6 @@ func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.
 		},
 		[]byte{1, 2, 3},
 		keyType,
-		"default",
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing base provider rejection")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -175,7 +176,7 @@ func (s *stubServices) BuildPolicySnapshot(ir *identity.Runtime, target adminpro
 	s.policySnapshotCalls++
 	s.lastPolicySnapshot = target
 	if s.policySnapshotResult.IdentityID == "" {
-		s.policySnapshotResult.IdentityID = ir.ID()
+		s.policySnapshotResult.IdentityID = productmode.IdentityID
 	}
 	if s.policySnapshotResult.Target == "" {
 		s.policySnapshotResult.Target = target
@@ -186,7 +187,7 @@ func (s *stubServices) ReplacePolicy(ir *identity.Runtime, req adminproto.Replac
 	s.replacePolicyCalls++
 	s.lastReplacePolicy = req
 	if s.replacePolicyResult.IdentityID == "" {
-		s.replacePolicyResult.IdentityID = ir.ID()
+		s.replacePolicyResult.IdentityID = productmode.IdentityID
 	}
 	if s.replacePolicyResult.Target == "" {
 		s.replacePolicyResult.Target = req.Target
@@ -197,7 +198,7 @@ func (s *stubServices) ValidatePolicy(ir *identity.Runtime, req adminproto.Valid
 	s.validatePolicyCalls++
 	s.lastValidatePolicy = req
 	if s.validatePolicyResult.IdentityID == "" {
-		s.validatePolicyResult.IdentityID = ir.ID()
+		s.validatePolicyResult.IdentityID = productmode.IdentityID
 	}
 	if s.validatePolicyResult.Target == "" {
 		s.validatePolicyResult.Target = req.Target
@@ -340,11 +341,6 @@ func (s *stubServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyType
 	s.listKeyTypesCalls++
 	return s.keyTypesResult
 }
-func (s *stubServices) LogSessionConnected(identityID, remoteAddr, transport string) {
-}
-func (s *stubServices) LogSessionDisconnected(identityID, remoteAddr, transport string) {
-}
-
 func (s stubServices) deps() SessionDeps {
 	return SessionDeps{
 		Identity: &s,
@@ -376,7 +372,7 @@ func currentAdminProtocolVersion() *protocol.ProtocolVersion {
 
 func TestSessionAuthenticateSuccess(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	ir.SetUnlocked()
@@ -414,8 +410,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.SessionID == "" {
 		t.Fatal("SessionContext().SessionID is empty")
 	}
-	if sessionCtx.TargetIdentityID != auth.DefaultIdentityID {
-		t.Fatalf("SessionContext().TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, auth.DefaultIdentityID)
+	if sessionCtx.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("SessionContext().TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
 	}
 	if sessionCtx.AuthMethod != "ipc-passphrase" {
 		t.Fatalf("SessionContext().AuthMethod = %q, want ipc-passphrase", sessionCtx.AuthMethod)
@@ -426,8 +422,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.RemoteAddr != "unix:/tmp/aplane.sock" {
 		t.Fatalf("SessionContext().RemoteAddr = %q, want unix:/tmp/aplane.sock", sessionCtx.RemoteAddr)
 	}
-	if sessionCtx.AdminPrincipal.ID != auth.DefaultIdentityID {
-		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, auth.DefaultIdentityID)
+	if sessionCtx.AdminPrincipal.ID != productmode.IdentityID {
+		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, productmode.IdentityID)
 	}
 	if sessionCtx.RequesterPrincipal.ID != sessionCtx.AdminPrincipal.ID {
 		t.Fatalf("SessionContext().RequesterPrincipal.ID = %q, want %q", sessionCtx.RequesterPrincipal.ID, sessionCtx.AdminPrincipal.ID)
@@ -461,7 +457,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 
 func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	authMsg, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
@@ -611,7 +607,7 @@ func TestSessionDispatchRejectsNonRequestEnvelope(t *testing.T) {
 
 func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()
@@ -636,7 +632,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 
 func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	conn := &queueConn{}
@@ -660,7 +656,7 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 
 func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            "alice",
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	ir.SetUnlocked()
@@ -686,14 +682,17 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want true")
 	}
-	if session.TargetIdentityID() != "alice" {
-		t.Fatalf("TargetIdentityID() = %q, want alice", session.TargetIdentityID())
+	if session.TargetIdentityID() != productmode.IdentityID {
+		t.Fatalf("TargetIdentityID() = %q, want %q", session.TargetIdentityID(), productmode.IdentityID)
+	}
+	if got := session.Identity(); got == nil || got.ID != "alice" {
+		t.Fatalf("authenticated principal = %#v, want alice", got)
 	}
 }
 
 func TestSessionAuthenticateRejectsStaleIdentitySelectorBeforePassphrase(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            "bob",
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
@@ -734,7 +733,7 @@ func TestSessionAuthenticateRejectsStaleIdentitySelectorBeforePassphrase(t *test
 
 func TestSessionAuthenticateRejectsOldVersionBeforeStaleSelector(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            "alice",
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
@@ -768,7 +767,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeStaleSelector(t *testing.T) {
 
 func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	ir.SetUnlocked()
@@ -933,7 +932,7 @@ func TestValidateAdminProtocolVersionAcceptsCurrentAndMinorSkew(t *testing.T) {
 
 func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	conn := &queueConn{}
@@ -952,8 +951,8 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	session.Bind(principal, ir)
 
 	sessionCtx := session.SessionContext()
-	if sessionCtx.TargetIdentityID != auth.DefaultIdentityID {
-		t.Fatalf("TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, auth.DefaultIdentityID)
+	if sessionCtx.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
 	}
 	if sessionCtx.AdminPrincipal.ID != "admin-1" {
 		t.Fatalf("AdminPrincipal.ID = %q, want admin-1", sessionCtx.AdminPrincipal.ID)
@@ -980,7 +979,7 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	conn := &queueConn{}
 	ir := identity.New(identity.Config{
-		ID:            "alice",
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	got := make(chan signerapproval.SignResponse, 1)

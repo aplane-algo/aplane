@@ -25,63 +25,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestProductBackupAdaptersRejectNonDefaultRuntimeBeforeCreatingPaths(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: "other", Authenticator: auth.NewTokenAuthenticator("token")})
-
-	tests := []struct {
-		name string
-		call func() string
-	}{
-		{"backup", func() string {
-			return service.BackupIdentity(ir, adminproto.BackupIdentityRequest{ExportPassphrase: []byte("passphrase")}).Error
-		}},
-		{"list backups", func() string { return service.ListBackups(ir).Error }},
-		{"delete backup", func() string {
-			return service.DeleteBackup(ir, adminproto.DeleteBackupRequest{ArchivePath: "missing.tar.gz"}).Error
-		}},
-		{"preview restore", func() string {
-			return service.PreviewRestore(ir, adminproto.PreviewRestoreRequest{ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase")}).Error
-		}},
-		{"restore", func() string {
-			return service.RestoreBackup(ir, adminproto.RestoreBackupRequest{OperationID: "restore-other", ArchivePath: "missing.tar.gz", ExportPassphrase: []byte("passphrase")}).Error
-		}},
-		{"rollback restore", func() string {
-			return service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{OperationID: "rollback-other"}).Error
-		}},
-		{"begin import", func() string {
-			return service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"}).Error
-		}},
-		{"append import", func() string {
-			return service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: "upload", Data: []byte("data")}).Error
-		}},
-		{"commit import", func() string {
-			return service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: "upload", ExportPassphrase: []byte("passphrase")}).Error
-		}},
-		{"abort import", func() string {
-			return service.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: "upload"}).Error
-		}},
-		{"read backup chunk", func() string {
-			return service.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: "missing.tar.gz"}).Error
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if errText := tt.call(); !strings.Contains(errText, "unsupported identity") {
-				t.Fatalf("non-default runtime error = %q, want unsupported identity", errText)
-			}
-		})
-	}
-	if _, err := os.Lstat(paths.IdentityDir("other")); !os.IsNotExist(err) {
-		t.Fatalf("non-default identity path was created: %v", err)
-	}
-}
-
 func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
@@ -140,7 +87,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -170,7 +117,7 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 	if !strings.Contains(result.Warning, "directory durability could not be confirmed") {
 		t.Fatalf("CommitBackupImport() warning = %q, want durability warning", result.Warning)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "sync-warning.tar.gz")); err != nil {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "sync-warning.tar.gz")); err != nil {
 		t.Fatalf("published backup missing after warning: %v", err)
 	}
 }
@@ -178,7 +125,7 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
@@ -201,7 +148,7 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -223,7 +170,7 @@ func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	if result.Success {
 		t.Fatalf("CommitBackupImport(wrong passphrase) = %#v", result)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "wrong-passphrase.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("unauthenticated archive was published: %v", err)
 	}
 }
@@ -232,7 +179,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 	paths := storepaths.NewPaths(t.TempDir())
 	deps := &lockingBackupTransferDeps{paths: paths}
 	service := Service{Deps: deps}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -273,7 +220,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 
 	mutationDone := make(chan struct{})
 	go func() {
-		_ = deps.WithIdentityMutation(ir.ID(), func() error {
+		_ = deps.WithStoreMutation(func() error {
 			close(mutationDone)
 			return nil
 		})
@@ -292,7 +239,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "payload.bin"), []byte("not a credential backup"), 0o600); err != nil {
@@ -324,7 +271,7 @@ func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *tes
 	if result.Success {
 		t.Fatalf("CommitBackupImport(invalid contents) = %#v", result)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.IdentityBackupsDir(ir.ID()), "invalid.tar.gz")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), "invalid.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("invalid archive was published: %v", err)
 	}
 }
@@ -383,12 +330,12 @@ func appendBackupImportBytes(t *testing.T, service Service, ir *identity.Runtime
 func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "large.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	path := filepath.Join(paths.IdentityBackupsDir(ir.ID()), begin.UploadID)
+	path := filepath.Join(paths.ProductBackupsDir(), begin.UploadID)
 	if err := os.Truncate(path, adminproto.MaxBackupImportBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -403,12 +350,12 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	first := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "first.tar.gz"})
 	if !first.Success {
 		t.Fatalf("first BeginBackupImport() = %#v", first)
 	}
-	firstPath := filepath.Join(paths.IdentityBackupsDir(ir.ID()), first.UploadID)
+	firstPath := filepath.Join(paths.ProductBackupsDir(), first.UploadID)
 	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz"})
 	if !second.Success {
 		t.Fatalf("second BeginBackupImport() = %#v", second)
@@ -420,7 +367,7 @@ func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 
 func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	dir := paths.ProductBackupsDir()
 	residue := filepath.Join(dir, backupValidationPrefix+"crash")
 	if err := os.MkdirAll(residue, 0o700); err != nil {
 		t.Fatal(err)
@@ -433,7 +380,7 @@ func TestCleanupIncompleteBackupImportsRemovesValidationResidue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	removed, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID)
+	removed, err := CleanupIncompleteBackupImports(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +403,7 @@ type lockingBackupTransferDeps struct {
 func (d *lockingBackupTransferDeps) KeyPaths() storepaths.Paths             { return d.paths }
 func (d *lockingBackupTransferDeps) GenesisHashMappings() map[string]string { return nil }
 func (d *lockingBackupTransferDeps) RestoreLimiter() RestoreLimiter         { return nil }
-func (d *lockingBackupTransferDeps) WithIdentityMutation(_ string, fn func() error) error {
+func (d *lockingBackupTransferDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return fn()
@@ -465,7 +412,7 @@ func (d *lockingBackupTransferDeps) Logf(string, ...interface{}) {}
 
 func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	dir := paths.IdentityBackupsDir(auth.DefaultIdentityID)
+	dir := paths.ProductBackupsDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +426,7 @@ func TestCleanupIncompleteBackupImportsRejectsValidationSymlink(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 
-	if _, err := CleanupIncompleteBackupImports(paths, auth.DefaultIdentityID); err == nil {
+	if _, err := CleanupIncompleteBackupImports(paths); err == nil {
 		t.Fatal("CleanupIncompleteBackupImports() accepted validation symlink")
 	}
 	if _, err := os.Stat(marker); err != nil {

@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -224,7 +224,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		}
 		return err
 	}
-	authState := newTokenProofClientAuth(auth.CurrentProductIdentityID(), token)
+	authState := newTokenProofClientAuth(productmode.IdentityID, token)
 	defer authState.clear()
 	verifiedHostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		if err := hostKeyCallback(hostname, remote, key); err != nil {
@@ -234,7 +234,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	}
 
 	config := &ssh.ClientConfig{
-		User: auth.CurrentProductIdentityID(),
+		User: productmode.IdentityID,
 		Auth: []ssh.AuthMethod{
 			authMethod,
 			ssh.KeyboardInteractive(authState.challenge),
@@ -763,7 +763,7 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	}
 
 	// Use special username for token provisioning
-	username := "request-token:" + auth.CurrentProductIdentityID()
+	username := "request-token:" + productmode.IdentityID
 
 	config := &ssh.ClientConfig{
 		User:            username,

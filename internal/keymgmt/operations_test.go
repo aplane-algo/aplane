@@ -68,16 +68,14 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 
 func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
-	const identityID = "test-identity"
+	genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	generated, err := GenerateKey(paths, identityID, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
+	generated, err := GenerateKey(paths, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(witness) error = %v", err)
 	}
-	err = validateKnownWitnessRoleExclusivity(paths, identityID, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
+	err = validateKnownWitnessRoleExclusivity(paths, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
 		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
 	}, cryptotest.Keyring(t, masterKey))
 	if err == nil || !strings.Contains(err.Error(), "sentry custody") {
@@ -92,15 +90,15 @@ func init() {
 
 func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
+	genstoretest.MintFirst(t, paths)
 
-	_, err := GenerateKey(paths, "test-identity", "", nil, nil)
+	_, err := GenerateKey(paths, "", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "key type must be specified") {
 		t.Fatalf("GenerateKey(empty) error = %v, want missing key type", err)
 	}
 
-	_, err = GenerateKey(paths, "test-identity", "not-a-real-key-type", nil, nil)
+	_, err = GenerateKey(paths, "not-a-real-key-type", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
 		t.Fatalf("GenerateKey(invalid) error = %v, want invalid key type", err)
 	}
@@ -108,10 +106,10 @@ func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 
 func TestImportKeyRejectsInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
+	genstoretest.MintFirst(t, paths)
 
-	_, err := ImportKey(paths, "test-identity", "not-a-real-key-type", "mnemonic words here", nil, nil)
+	_, err := ImportKey(paths, "not-a-real-key-type", "mnemonic words here", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
 		t.Fatalf("ImportKey(invalid) error = %v, want invalid key type", err)
 	}
@@ -142,11 +140,11 @@ func TestSupportsMnemonicImport(t *testing.T) {
 
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
+	genstoretest.MintFirst(t, paths)
 
 	keyType := falcon1024guarded.KeyTypeV1
-	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, "mnemonic words here", nil, nil, []string{keyType})
+	_, err := ImportKeyWithActivatedContext(context.Background(), paths, keyType, "mnemonic words here", nil, nil, []string{keyType})
 	if err == nil || !strings.Contains(err.Error(), "mnemonic import not supported") {
 		t.Fatalf("ImportKeyWithActivatedContext(%s) error = %v, want mnemonic import unsupported", keyType, err)
 	}
@@ -154,20 +152,20 @@ func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 
 func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
+	genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	first, err := GenerateKey(paths, "test-identity", "ed25519", cryptotest.Keyring(t, masterKey), nil)
+	first, err := GenerateKey(paths, "ed25519", cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("GenerateKey(first) error = %v", err)
 	}
-	duplicatePath := filepath.Join(activeKeysDirForKeymgmtTest(t, paths, "test-identity"), "duplicate.key")
+	duplicatePath := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), "duplicate.key")
 	if err := os.Rename(first.KeyFile, duplicatePath); err != nil {
 		t.Fatalf("Rename(%q, %q) error = %v", first.KeyFile, duplicatePath, err)
 	}
 
-	second, err := ImportKey(paths, "test-identity", "ed25519", first.Mnemonic, cryptotest.Keyring(t, masterKey), nil)
+	second, err := ImportKey(paths, "ed25519", first.Mnemonic, cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
 		t.Fatalf("ImportKey(second) error = %v", err)
 	}
@@ -273,8 +271,8 @@ func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 
 func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
+	genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	for _, keyType := range []string{
@@ -282,7 +280,7 @@ func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, cryptotest.Keyring(t, masterKey), nil, []string{keyType})
+			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, keyType, cryptotest.Keyring(t, masterKey), nil, []string{keyType})
 			if err == nil || !strings.Contains(err.Error(), "missing required parameter: sentry_public_key") {
 				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing sentry_public_key", err)
 			}
@@ -306,14 +304,14 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths, "test-identity")
-			genstoretest.MintFirst(t, paths, "default")
+			genstoretest.MintFirst(t, paths)
+			genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKeyWithActivatedContext(
 				context.Background(),
 				paths,
-				"test-identity",
+
 				tt.keyType,
 				cryptotest.Keyring(t, masterKey),
 				map[string]string{
@@ -380,11 +378,11 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths, "test-identity")
-			genstoretest.MintFirst(t, paths, "default")
+			genstoretest.MintFirst(t, paths)
+			genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-			result, err := GenerateKey(paths, "test-identity", keyType, cryptotest.Keyring(t, masterKey), nil)
+			result, err := GenerateKey(paths, keyType, cryptotest.Keyring(t, masterKey), nil)
 			if err != nil {
 				t.Fatalf("GenerateKey(component) error = %v", err)
 			}
@@ -545,7 +543,7 @@ func TestDeleteKey(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(tmpDir)
-	result, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir(identityID))
+	result, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
@@ -561,7 +559,7 @@ func TestDeleteKey(t *testing.T) {
 	}
 
 	// Verify deleted path structure.
-	expectedDir := paths.DeletedKeysDir(identityID)
+	expectedDir := paths.DeletedKeysDir()
 	if filepath.Dir(result.DeletedPath) != expectedDir {
 		t.Errorf("deleted dir = %q, want %q", filepath.Dir(result.DeletedPath), expectedDir)
 	}
@@ -569,11 +567,9 @@ func TestDeleteKey(t *testing.T) {
 
 func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "test-identity")
-	genstoretest.MintFirst(t, paths, "default")
-	identityID := "default"
+	genstoretest.MintFirst(t, paths)
 	selector := "WITNESSID"
-	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths, identityID), selector+keys.SentryCredentialExtension)
+	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), selector+keys.SentryCredentialExtension)
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -581,11 +577,11 @@ func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := DeleteKey(selector, keyFile, paths.DeletedKeysDir(identityID))
+	result, err := DeleteKey(selector, keyFile, paths.DeletedKeysDir())
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	want := filepath.Join(paths.DeletedKeysDir(identityID), selector+keys.SentryCredentialExtension)
+	want := filepath.Join(paths.DeletedKeysDir(), selector+keys.SentryCredentialExtension)
 	if result.DeletedPath != want {
 		t.Fatalf("DeletedPath = %q, want %q", result.DeletedPath, want)
 	}
@@ -602,7 +598,7 @@ func TestDeleteKey_MissingFile(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(tmpDir)
-	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), paths.DeletedKeysDir("default"))
+	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), paths.DeletedKeysDir())
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -622,7 +618,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(tmpDir)
-	deletedDir := paths.DeletedKeysDir(identityID)
+	deletedDir := paths.DeletedKeysDir()
 	if err := os.MkdirAll(deletedDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -631,7 +627,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir(identityID))
+	_, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
 	if err == nil || !strings.Contains(err.Error(), "failed to move key file") {
 		t.Fatalf("DeleteKey(rename failure) error = %v, want move failure", err)
 	}
@@ -867,9 +863,9 @@ func (p keymgmtTestDSAProvider) DeriveLsig(context.Context, []byte, map[string]s
 	return nil, "", nil
 }
 
-func activeKeysDirForKeymgmtTest(t *testing.T, paths storepaths.Paths, identityID string) string {
+func activeKeysDirForKeymgmtTest(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}

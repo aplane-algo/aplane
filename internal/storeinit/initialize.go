@@ -21,11 +21,10 @@ import (
 )
 
 type Options struct {
-	DataDir    string
-	Paths      storepaths.Paths
-	IdentityID string
-	Role       noderole.Role
-	Logf       func(format string, args ...any)
+	DataDir string
+	Paths   storepaths.Paths
+	Role    noderole.Role
+	Logf    func(format string, args ...any)
 }
 
 type Result struct {
@@ -40,9 +39,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if opts.DataDir == "" {
 		return result, fmt.Errorf("data directory is required")
 	}
-	if opts.IdentityID == "" {
-		return result, fmt.Errorf("identity ID is required")
-	}
 	role := opts.Role
 	if role == "" {
 		role = noderole.DefaultRole()
@@ -55,13 +51,13 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, err
 	}
 
-	metadataDir := opts.Paths.KeystoreMetadataDir(opts.IdentityID)
+	metadataDir := opts.Paths.KeystoreMetadataDir()
 	result.MetadataDir = metadataDir
 	if crypto.KeyringExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (control file exists in %s)", metadataDir)
 	}
-	if HasPartialState(opts.Paths, opts.IdentityID) {
-		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.IdentityDir(opts.IdentityID))
+	if HasPartialState(opts.Paths) {
+		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.ProductDir())
 	}
 
 	logf(opts.Logf, "keystore directory: %s", metadataDir)
@@ -94,14 +90,14 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
 	createdNodeRole = true
-	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, opts.IdentityID, roleBytes, keyring, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, roleBytes, keyring, time.Now()); err != nil {
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	var policyErr error
 	if role == noderole.RoleSentry {
-		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
+		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
 	} else {
-		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, keyring, time.Now())
+		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
 	}
 	if policyErr != nil {
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
@@ -114,7 +110,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		if err != nil {
 			return result, err
 		}
-		if _, err := genstore.Mint(opts.Paths, opts.IdentityID, genstore.MintRequest{
+		if _, err := genstore.Mint(opts.Paths, genstore.MintRequest{
 			GenerationID:    generationID,
 			FirstGeneration: true,
 			Operation:       "store-initialize",
@@ -128,7 +124,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}
 	}
 
-	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root(), opts.IdentityID); err != nil {
+	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root()); err != nil {
 		return result, fmt.Errorf("failed to generate API token: %w", err)
 	}
 
@@ -139,8 +135,8 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	return result, nil
 }
 
-func HasPartialState(paths storepaths.Paths, identityID string) bool {
-	identityDir := paths.IdentityDir(identityID)
+func HasPartialState(paths storepaths.Paths) bool {
+	identityDir := paths.ProductDir()
 	entries, err := os.ReadDir(identityDir)
 	if os.IsNotExist(err) {
 		return false

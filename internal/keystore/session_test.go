@@ -253,7 +253,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	}
 
 	// Create FileKeyStore and set up cache and master key
-	fileStore := NewFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot), "default")
+	fileStore := NewFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot))
 	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519", Category: keys.CategoryEd25519}
 	fileStore.setKeyringDirectlyForTest(masterKeyRing)
 

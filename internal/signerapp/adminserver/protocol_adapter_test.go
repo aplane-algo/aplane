@@ -69,14 +69,14 @@ func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *tes
 
 func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 	created := ProtocolBackupResultMessage("backup-1", adminproto.BackupIdentityResult{
-		Success: true, ArchivePath: "/var/lib/apsigner/identities/default/backups/created.tar.gz",
+		Success: true, ArchivePath: "/var/lib/apsigner/backups/default/created.tar.gz",
 	})
 	if created.ArchivePath != "created.tar.gz" {
 		t.Fatalf("backup archive_path = %q, want basename", created.ArchivePath)
 	}
 
 	listed := ProtocolBackupsListMessage("list-1", adminproto.ListBackupsResult{Backups: []adminproto.BackupInfo{{
-		Path: "/var/lib/apsigner/identities/default/backups/listed.tar.gz", FileName: "listed.tar.gz",
+		Path: "/var/lib/apsigner/backups/default/listed.tar.gz", FileName: "listed.tar.gz",
 	}}})
 	if len(listed.Backups) != 1 || listed.Backups[0].Path != "listed.tar.gz" || listed.Backups[0].FileName != "listed.tar.gz" {
 		t.Fatalf("listed backup leaked path: %#v", listed.Backups)
@@ -84,7 +84,7 @@ func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 
 	committed := ProtocolCommitBackupImportResultMessage("commit-1", adminproto.CommitBackupImportResult{
 		Success: true, Warning: "directory durability warning", Backup: adminproto.BackupInfo{
-			Path: "/var/lib/apsigner/identities/default/backups/imported.tar.gz", FileName: "imported.tar.gz",
+			Path: "/var/lib/apsigner/backups/default/imported.tar.gz", FileName: "imported.tar.gz",
 		},
 	})
 	if committed.Backup.Path != "imported.tar.gz" || committed.Backup.FileName != "imported.tar.gz" {

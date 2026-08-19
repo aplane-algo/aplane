@@ -76,22 +76,20 @@ func (f *fakeSession) InitializeSession() { f.initialized = true }
 type fakeAuditLog struct {
 	reloads  int
 	rejected []struct {
-		identityID string
-		keyFile    string
-		reason     string
+		keyFile string
+		reason  string
 	}
 }
 
-func (f *fakeAuditLog) LogKeyReload(string, int) {
+func (f *fakeAuditLog) LogKeyReload(int) {
 	f.reloads++
 }
 
-func (f *fakeAuditLog) LogKeyRejected(identityID, keyFile, reason string) {
+func (f *fakeAuditLog) LogKeyRejected(keyFile, reason string) {
 	f.rejected = append(f.rejected, struct {
-		identityID string
-		keyFile    string
-		reason     string
-	}{identityID: identityID, keyFile: keyFile, reason: reason})
+		keyFile string
+		reason  string
+	}{keyFile: keyFile, reason: reason})
 }
 
 func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
@@ -106,7 +104,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	var publishedKeys map[string]string
 	var publishedKeyTypes map[string]string
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "conflicting-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "invalid-composed", templatestore.TemplateTypeComposed, testTemplateMasterKey())
@@ -154,7 +152,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	_ = publishedKeyTypes
 	_ = infos
 	_ = warns
-	report, err := service.Reload("default", nil)
+	report, err := service.Reload(nil)
 	// Content defects fail closed: the invalid composed template aborts the
 	// reload with a generation-validation error naming the defect.
 	if err == nil || !IsGenerationValidationError(err.Error()) {
@@ -176,7 +174,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "hook-order", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 
 	service := &ReloadService{
@@ -208,7 +206,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 		},
 	}
 
-	if _, err := service.Reload("default", nil); err != nil && !IsGenerationValidationError(err.Error()) {
+	if _, err := service.Reload(nil); err != nil && !IsGenerationValidationError(err.Error()) {
 		t.Fatalf("Reload() error = %v", err)
 	}
 	want := []string{"before", "templates", "scan", "publish"}
@@ -229,7 +227,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	var prepared bool
 	var published bool
@@ -258,7 +256,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 		},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
@@ -330,7 +328,7 @@ func TestReloadPendingRotationEntersRecoveryBeforeRuntimePublication(t *testing.
 		},
 	}
 
-	report, err := service.Reload("default", nil)
+	report, err := service.Reload(nil)
 	if err == nil || !IsGenerationValidationError(err.Error()) {
 		t.Fatalf("Reload() error = %v, want generation validation failure", err)
 	}
@@ -363,7 +361,7 @@ func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if err == nil {
 		t.Fatal("Reload() error = nil, want locked error")
 	}
@@ -383,7 +381,7 @@ func TestReloadMapsKeyStorePendingGuardToGenerationRecovery(t *testing.T) {
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
-	report, err := service.Reload("default", nil)
+	report, err := service.Reload(nil)
 	if err == nil || !IsGenerationValidationError(err.Error()) {
 		t.Fatalf("Reload() error = %v, want generation validation failure", err)
 	}
@@ -408,7 +406,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
-	_, err := service.Reload("default", []byte("passphrase"))
+	_, err := service.Reload([]byte("passphrase"))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
@@ -431,7 +429,7 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
-	_, err := service.Reload("default", []byte("passphrase"))
+	_, err := service.Reload([]byte("passphrase"))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
@@ -454,7 +452,7 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
@@ -489,7 +487,7 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 		},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
 	}
@@ -531,7 +529,7 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 		},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if err == nil {
 		t.Fatal("Reload() error = nil, want node role validation failure")
 	}
@@ -577,7 +575,7 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 		},
 	}
 
-	_, err := service.Reload("default", nil)
+	_, err := service.Reload(nil)
 	if !errors.Is(err, keys.ErrAddressCollision) {
 		t.Fatalf("Reload() error = %v, want ErrAddressCollision", err)
 	}
@@ -609,7 +607,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	session := &fakeSession{}
 	audit := &fakeAuditLog{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	service := &ReloadService{
 		KeyStore:        store,
@@ -619,14 +617,14 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 		AuditLog:        audit,
 	}
 
-	if _, err := service.Reload("default", nil); err == nil || !IsGenerationValidationError(err.Error()) {
+	if _, err := service.Reload(nil); err == nil || !IsGenerationValidationError(err.Error()) {
 		t.Fatalf("Reload() error = %v, want fail-closed reload over malformed keys", err)
 	}
 	if len(audit.rejected) != 3 {
 		t.Fatalf("rejected audit calls = %#v, want the three LogicSig invariant warnings", audit.rejected)
 	}
 	got := audit.rejected[0]
-	if got.identityID != "default" || got.keyFile != "/tmp/BAD.key" {
+	if got.keyFile != "/tmp/BAD.key" {
 		t.Fatalf("rejected audit = %#v", got)
 	}
 	if !strings.Contains(got.reason, string(keys.KeyScanWarningLogicSigSaltInvalid)) || !strings.Contains(got.reason, keys.ErrMissingLogicSigSaltCounter.Error()) {
@@ -654,6 +652,6 @@ func testNoopRegistrar() TemplateRegistrar {
 func mintedPathsForReloadTest(t *testing.T) utilkeys.Paths {
 	t.Helper()
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	return paths
 }

@@ -42,7 +42,7 @@ func TestNativeFalconGenerateAndRecover(t *testing.T) {
 		entropy[i] = byte(i)
 	}
 	gen := &NativeFalconGenerator{}
-	result, err := gen.GenerateFromSeed(context.Background(), paths, testIdentityID, entropy, cryptotest.Keyring(t, testMasterKey), nativefalcon.KeyType, nil)
+	result, err := gen.GenerateFromSeed(context.Background(), paths, entropy, cryptotest.Keyring(t, testMasterKey), nativefalcon.KeyType, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestNativeFalconGenerateRandomReturnsRecoverableMnemonic(t *testing.T) {
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 	gen := &NativeFalconGenerator{}
-	result, err := gen.GenerateRandom(context.Background(), paths, testIdentityID, cryptotest.Keyring(t, testMasterKey), nativefalcon.KeyType, nil)
+	result, err := gen.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), nativefalcon.KeyType, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

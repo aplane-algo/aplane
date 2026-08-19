@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -25,10 +24,6 @@ var dataDirectory string
 
 func keystorePaths() storepaths.Paths {
 	return storepaths.NewPaths(dataDirectory)
-}
-
-func productIdentityID() string {
-	return auth.CurrentProductIdentityID()
 }
 
 func main() {

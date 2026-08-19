@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
-	"github.com/aplane-algo/aplane/internal/auth"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -195,12 +194,9 @@ func needsPolicyDataDir(command policycmd.Command) bool {
 	return command.DataDir != "" || os.Getenv("APSIGNER_DATA") != ""
 }
 
-func launchPolicyEditor(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) error {
-	if identityID == "" {
-		identityID = auth.CurrentProductIdentityID()
-	}
+func launchPolicyEditor(store policyeditor.Store, stored *policy.StoredConfig, dataDir string, target policyeditor.Target) error {
 	program := tea.NewProgram(
-		policytui.NewWithTarget(store, stored, dataDir, identityID, target),
+		policytui.NewWithTarget(store, stored, dataDir, target),
 		tea.WithAltScreen(),
 	)
 	_, err := program.Run()

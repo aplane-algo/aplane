@@ -5,8 +5,9 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 func TestContextWithIdentity_RoundTrip(t *testing.T) {
@@ -41,48 +42,13 @@ func TestIdentityFromContext_EmptyContext(t *testing.T) {
 func TestNewDefaultIdentity(t *testing.T) {
 	id := NewDefaultIdentity("ipc-passphrase")
 
-	if id.ID != DefaultIdentityID {
-		t.Errorf("expected ID %q, got %q", DefaultIdentityID, id.ID)
+	if id.ID != productmode.IdentityID {
+		t.Errorf("expected ID %q, got %q", productmode.IdentityID, id.ID)
 	}
 	if id.Type != "service" {
 		t.Errorf("expected Type 'service', got %q", id.Type)
 	}
 	if id.Method != "ipc-passphrase" {
 		t.Errorf("expected Method 'ipc-passphrase', got %q", id.Method)
-	}
-}
-
-func TestDefaultIdentityID(t *testing.T) {
-	if DefaultIdentityID != "default" {
-		t.Errorf("expected DefaultIdentityID to be 'default', got %q", DefaultIdentityID)
-	}
-}
-
-func TestCurrentProductIdentityID(t *testing.T) {
-	if CurrentProductIdentityID() != DefaultIdentityID {
-		t.Errorf("expected CurrentProductIdentityID to be %q, got %q", DefaultIdentityID, CurrentProductIdentityID())
-	}
-}
-
-func TestIsCurrentProductIdentity(t *testing.T) {
-	if !IsCurrentProductIdentity(DefaultIdentityID) {
-		t.Fatalf("expected %q to be recognized as current product identity", DefaultIdentityID)
-	}
-	if IsCurrentProductIdentity("other-identity") {
-		t.Fatal("expected non-product identity to be rejected")
-	}
-}
-
-func TestRequireCurrentProductIdentity(t *testing.T) {
-	if err := RequireCurrentProductIdentity(DefaultIdentityID); err != nil {
-		t.Fatalf("expected current product identity to pass, got %v", err)
-	}
-
-	err := RequireCurrentProductIdentity("other-identity")
-	if err == nil {
-		t.Fatal("expected non-product identity to fail")
-	}
-	if !errors.Is(err, ErrUnsupportedProductIdentity) {
-		t.Fatalf("expected ErrUnsupportedProductIdentity, got %v", err)
 	}
 }

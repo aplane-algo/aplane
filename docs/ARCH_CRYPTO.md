@@ -249,9 +249,9 @@ Visibility states recorded by `internal/keytypecatalog`:
 - `library`: compiled capability exists but needs identity activation
 - `disabled`: compiled in source, not exposed by the owning runtime path
 
-Identity-scoped key type enable/disable metadata is owned by
+Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
-`identities/<identity>/keytypes/<key_type>.json` via
+`identities/default/keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
 library-visible providers such as `aplane.falcon1024-sentry1024.v1` and
 `aplane.ed25519.v1` available to that identity for key type discovery and
@@ -259,7 +259,7 @@ generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
 Installed YAML templates use the same record with `source:"yaml_generic"` or
 `source:"yaml_composed"` and store the encrypted template body in the adjacent
-`identities/<identity>/keytypes/<key_type>.template` file.
+`identities/default/keytypes/<key_type>.template` file.
 
 The operator-facing CLI and TUI expose these transitions as `Enable` and
 `Disable`. The stable admin protocol wire messages remain `activate_key_type`
@@ -274,8 +274,8 @@ identity key depends on that `key_type`. Restoring a key for a library-visible
 compiled provider also creates the same identity state record idempotently.
 
 Deletion archives are identity-local. Key deletion moves encrypted key files to
-`identities/<identity>/deleted/keys/`; template removal moves encrypted
-template files to `identities/<identity>/deleted/keytypes/`. These archives are
+`identities/default/deleted/keys/`; template removal moves encrypted
+template files to `identities/default/deleted/keytypes/`. These archives are
 outside active key/template scans.
 
 Optional YAML templates have a source-library lifecycle:
@@ -287,8 +287,8 @@ Optional YAML templates have a source-library lifecycle:
 - library YAML files are reference material only; they are not active key types by being present on disk,
 - new signer-store initialization installs the bundled `aplane.falcon1024-allowlist.v1` YAML into the identity store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
-- installing a library template parses and encrypts the YAML into the identity-scoped template store under
-  `identities/<identity>/keytypes/<key_type>.template` and writes an enabled state record,
+- installing a library template parses and encrypts the YAML into the product template store under
+  `identities/default/keytypes/<key_type>.template` and writes an enabled state record,
 - the identity reload path applies key-type state records, skips disabled installed templates, activates enabled
   installed templates, and registers providers before key scanning.
 
@@ -297,7 +297,7 @@ template entries and compiled-provider entries. Template entries are installed
 from YAML and can then be enabled or disabled for the identity; compiled-provider
 entries are enabled or disabled for the identity.
 
-The encrypted identity-scoped `.template` files are the runtime source of truth
+The encrypted product-store `.template` files are the runtime source of truth
 for optional key-type generation and discovery, not for signing already-created
 keys. The plaintext `library/templates/` copy is only an install source and may
 be refreshed by installer or packaging flows without changing active key types
@@ -335,7 +335,7 @@ For terminology and lifecycle rules, defer to
 The keyring is the store's cryptographic root, defined in
 `internal/crypto/keyring.go` and `internal/crypto/keyring_store.go`.
 
-- schema `aplane.keyring.v2`, one file per identity beside `.keystore`
+- schema `aplane.keyring.v2`, one product-store file beside `.keystore`
 - plaintext header: Argon2id parameters and the KEK salt, so the file is
   self-describing
 - sealed body: the set of numbered term keys, wrapped under the
@@ -479,7 +479,7 @@ decryption until lock.
 
 It owns:
 
-- identity-scoped key directory resolution
+- fixed product-store key directory resolution
 - keyring caching and zeroing
 - scan-time `address -> KeyScanInfo` caching
 - on-demand decryption of specific keys

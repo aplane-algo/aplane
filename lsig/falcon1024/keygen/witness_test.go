@@ -20,19 +20,19 @@ import (
 func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	passphrase := []byte("component-generator-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(paths.IdentityDir("default"), passphrase); err != nil {
+	if _, err := securecrypto.CreateKeyringStore(paths.ProductDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
-	kr, err := securecrypto.OpenKeyringStore(paths.IdentityDir("default"), passphrase)
+	kr, err := securecrypto.OpenKeyringStore(paths.ProductDir(), passphrase)
 	if err != nil {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
 
 	g := &WitnessFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", kr, witness.Falcon1024V1, nil)
+	result, err := g.GenerateRandom(context.Background(), paths, kr, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
@@ -52,7 +52,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("KeyFiles = %#v, want private file", result.KeyFiles)
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, "default", kr)
+	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
 	if err != nil {
 		t.Fatalf("ScanKeysDirectoryWithKeyring() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
 	}
 
-	store := keystore.NewFileKeyStoreForPaths(paths, "default")
+	store := keystore.NewFileKeyStoreForPaths(paths)
 	if err := store.Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 
 func TestWitnessFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
 	g := &WitnessFalcon1024Generator{}
-	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), "default", nil, "ed25519", nil)
+	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), nil, "ed25519", nil)
 	if err == nil {
 		t.Fatal("GenerateRandom() error = nil, want wrong key type rejection")
 	}

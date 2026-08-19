@@ -21,7 +21,7 @@ import (
 func TestSavePayloadEncrypted(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -32,14 +32,14 @@ func TestSavePayloadEncrypted(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, "default", payload, cryptotest.Keyring(t, masterKey))
+	result, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 	if result.Address != selector {
 		t.Fatalf("Address = %q, want %q", result.Address, selector)
 	}
-	if result.PrivateFile != AccountKeyFilePath(paths, "default", selector) {
+	if result.PrivateFile != AccountKeyFilePath(paths, selector) {
 		t.Fatalf("PrivateFile = %q, want canonical selector path", result.PrivateFile)
 	}
 
@@ -65,7 +65,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if roundTripped.KeyType != "ed25519" || roundTripped.Category != CategoryEd25519 {
 		t.Fatalf("round trip payload = (%q, %q), want ed25519 native", roundTripped.KeyType, roundTripped.Category)
 	}
-	if _, err := os.Stat(WitnessPublicMetadataPath(paths, "default", selector)); !os.IsNotExist(err) {
+	if _, err := os.Stat(WitnessPublicMetadataPath(paths, selector)); !os.IsNotExist(err) {
 		t.Fatalf("component public metadata for ed25519 stat error = %v, want not exist", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
 	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	componentKey, err := payload.Selector()
@@ -81,14 +81,14 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 		t.Fatalf("Selector() error = %v", err)
 	}
 
-	result, err := SavePayload(paths, "default", payload, cryptotest.Keyring(t, masterKey))
+	result, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
 	}
 	if result.Address != componentKey {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
 	}
-	wantPrivateFile := SentryCredentialFilePath(paths, "default", componentKey)
+	wantPrivateFile := SentryCredentialFilePath(paths, componentKey)
 	if result.PrivateFile != wantPrivateFile {
 		t.Fatalf("PrivateFile = %q, want %q", result.PrivateFile, wantPrivateFile)
 	}
@@ -99,13 +99,13 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	if !crypto.IsEncrypted(privateData) {
 		t.Fatal("saved sentry credential should be encrypted")
 	}
-	if _, err := os.Stat(AccountKeyFilePath(paths, "default", componentKey)); !os.IsNotExist(err) {
+	if _, err := os.Stat(AccountKeyFilePath(paths, componentKey)); !os.IsNotExist(err) {
 		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
 	}
 
-	path := WitnessPublicMetadataPath(paths, "default", componentKey)
+	path := WitnessPublicMetadataPath(paths, componentKey)
 	assertKeyFileMode(t, path, fsutil.StoreFilePerm)
-	env, ok, err := ReadWitnessPublicMetadata(paths, "default", componentKey)
+	env, ok, err := ReadWitnessPublicMetadata(paths, componentKey)
 	if err != nil {
 		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSavePayloadRejectsEmptyMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	result, err := SavePayload(storepaths.NewPaths(t.TempDir()), "default", NewEd25519Payload(publicKey, privateKey), nil)
+	result, err := SavePayload(storepaths.NewPaths(t.TempDir()), NewEd25519Payload(publicKey, privateKey), nil)
 	if result != nil {
 		t.Fatalf("SavePayload() result = %#v, want nil", result)
 	}
@@ -137,15 +137,15 @@ func TestSavePayloadRejectsEmptyMasterKey(t *testing.T) {
 func TestSavePayloadDirectoryCreation(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	if _, err := SavePayload(paths, "default", NewEd25519Payload(publicKey, privateKey), cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := SavePayload(paths, NewEd25519Payload(publicKey, privateKey), cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SavePayload() error = %v, keys dir should be created automatically", err)
 	}
-	info, err := os.Stat(activeKeysDirForTest(t, paths, "default"))
+	info, err := os.Stat(activeKeysDirForTest(t, paths))
 	if err != nil {
 		t.Fatalf("keys directory should exist: %v", err)
 	}

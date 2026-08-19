@@ -7,10 +7,10 @@ import (
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 )
 
-// testIdentityBuildOptions mirrors the startup options main() derives from the
+// testProductBuildOptions mirrors the startup options main() derives from the
 // server's resolved state, for tests that wire identity runtimes directly.
-func testIdentityBuildOptions(fs *Signer) signerstartup.IdentityBuildOptions {
-	return signerstartup.IdentityBuildOptions{
+func testProductBuildOptions(fs *Signer) signerstartup.ProductBuildOptions {
+	return signerstartup.ProductBuildOptions{
 		DataDir:  fs.dataDir,
 		KeyPaths: fs.keyPaths,
 		Config:   fs.config,

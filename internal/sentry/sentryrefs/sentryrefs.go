@@ -75,12 +75,12 @@ func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvel
 	return &reference, nil
 }
 
-func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Record, error) {
+func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 	record, err := ParseImport(name, data)
 	if err != nil {
 		return nil, err
 	}
-	existing, found, err := Get(paths, identityID, record.Name)
+	existing, found, err := Get(paths, record.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 	if record.ImportedAt == "" {
 		record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if err := putRecord(paths, identityID, *record); err != nil {
+	if err := putRecord(paths, *record); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -136,12 +136,12 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	}, nil
 }
 
-func putRecord(paths storepaths.Paths, identityID string, rec Record) error {
+func putRecord(paths storepaths.Paths, rec Record) error {
 	normalized, err := normalizeRecord(rec)
 	if err != nil {
 		return err
 	}
-	path := paths.SentryRefPath(identityID, normalized.Name)
+	path := paths.SentryRefPath(normalized.Name)
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
@@ -156,12 +156,12 @@ func putRecord(paths storepaths.Paths, identityID string, rec Record) error {
 	return nil
 }
 
-func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) {
+func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	name, err := NormalizeName(name)
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.SentryRefPath(identityID, name)
+	path := paths.SentryRefPath(name)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -179,8 +179,8 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 // List returns every independently valid sentry reference. A malformed record
 // is omitted rather than hiding unrelated generation choices; direct Get of
 // that record still returns its validation error.
-func List(paths storepaths.Paths, identityID string) ([]Record, error) {
-	dir := paths.SentryRefsDir(identityID)
+func List(paths storepaths.Paths) ([]Record, error) {
+	dir := paths.SentryRefsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -213,12 +213,12 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 	return records, nil
 }
 
-func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
+func Delete(paths storepaths.Paths, name string) (bool, error) {
 	name, err := NormalizeName(name)
 	if err != nil {
 		return false, err
 	}
-	if err := os.Remove(paths.SentryRefPath(identityID, name)); err != nil {
+	if err := os.Remove(paths.SentryRefPath(name)); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
@@ -227,7 +227,7 @@ func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
 	return true, nil
 }
 
-func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, params map[string]string) (map[string]string, error) {
+func ResolveCreationParams(paths storepaths.Paths, keyType string, params map[string]string) (map[string]string, error) {
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return params, nil
 	}
@@ -235,13 +235,13 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !ok {
 		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
 	}
-	return ResolveCreationParamsForComponent(paths, identityID, keyType, wantKeyType, params)
+	return ResolveCreationParamsForComponent(paths, keyType, wantKeyType, params)
 }
 
 // ResolveCreationParamsForComponent resolves the signer-facing sentry selector
 // for any provider that declares a sentry component type. This keeps generic
 // bounded-sentry templates out of hard-coded guarded-account key-type tables.
-func ResolveCreationParamsForComponent(paths storepaths.Paths, identityID, keyType, componentKeyType string, params map[string]string) (map[string]string, error) {
+func ResolveCreationParamsForComponent(paths storepaths.Paths, keyType, componentKeyType string, params map[string]string) (map[string]string, error) {
 	selector, hasSelector := params[ParamSentryName]
 	if !hasSelector || strings.TrimSpace(selector) == "" {
 		return params, nil
@@ -249,7 +249,7 @@ func ResolveCreationParamsForComponent(paths storepaths.Paths, identityID, keyTy
 	if _, hasPublicKey := params[keytypes.ParameterSentryPublicKey]; hasPublicKey {
 		return nil, fmt.Errorf("specify either %s or %s, not both", ParamSentryName, keytypes.ParameterSentryPublicKey)
 	}
-	rec, ok, err := resolveByNameOrComponentKey(paths, identityID, selector)
+	rec, ok, err := resolveByNameOrComponentKey(paths, selector)
 	if err != nil {
 		return nil, err
 	}
@@ -271,10 +271,10 @@ func ResolveCreationParamsForComponent(paths storepaths.Paths, identityID, keyTy
 	return resolved, nil
 }
 
-func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value string) (Record, bool, error) {
+func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, bool, error) {
 	value = strings.TrimSpace(value)
 	if componentKey, err := witness.NormalizeID(value); err == nil {
-		records, err := List(paths, identityID)
+		records, err := List(paths)
 		if err != nil {
 			return Record{}, false, err
 		}
@@ -285,7 +285,7 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value strin
 		}
 		return Record{}, false, nil
 	}
-	return Get(paths, identityID, value)
+	return Get(paths, value)
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {

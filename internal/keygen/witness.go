@@ -14,10 +14,10 @@ import (
 
 // SaveWitnessKey persists a generated witness keypair under its Witness Key ID
 // and returns the generation result.
-func SaveWitnessKey(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, kr *crypto.Keyring) (*GenerationResult, error) {
+func SaveWitnessKey(paths storepaths.Paths, keyType string, publicKey, privateKey []byte, kr *crypto.Keyring) (*GenerationResult, error) {
 	payload := keys.NewWitnessPayload(keyType, publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	keyFiles, err := keys.SavePayload(paths, identityID, payload, kr)
+	keyFiles, err := keys.SavePayload(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save witness key: %w", err)
 	}

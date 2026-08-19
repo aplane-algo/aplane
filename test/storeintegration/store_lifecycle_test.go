@@ -59,7 +59,7 @@ func TestFreshStoreBackupRestoreAndSign(t *testing.T) {
 	assertCanSign(t, destination, generated)
 	assertCanSign(t, destination, imported)
 
-	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir), "default")
+	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir))
 	if err != nil {
 		t.Fatalf("resolve restored destination generation: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 	mustImportAndApplyBackup(t, env, archive, exportPass)
 
 	paths := storepaths.NewPaths(env.dataDir)
-	before, err := genstore.Resolve(paths, "default")
+	before, err := genstore.Resolve(paths)
 	if err != nil {
 		t.Fatalf("resolve pre-rotation generation: %v", err)
 	}
@@ -170,10 +170,10 @@ func TestReleaseArtifactStoreDrill(t *testing.T) {
 func assertStoreUninitialized(t *testing.T, env *storeEnv) {
 	t.Helper()
 	paths := storepaths.NewPaths(env.dataDir)
-	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir("default")) {
+	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
 		t.Fatal("fresh store fixture already contains keyring authority")
 	}
-	if _, err := os.Lstat(paths.IdentityDir("default")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(paths.ProductDir()); !os.IsNotExist(err) {
 		t.Fatalf("fresh store fixture contains an identity directory: %v", err)
 	}
 }
@@ -381,7 +381,7 @@ func mustImportAndApplyBackup(t *testing.T, env *storeEnv, archive, exportPass s
 func mustOpenKeyring(t *testing.T, env *storeEnv, passphrase string) *crypto.Keyring {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(
-		storepaths.NewPaths(env.dataDir).KeystoreMetadataDir("default"),
+		storepaths.NewPaths(env.dataDir).KeystoreMetadataDir(),
 		[]byte(passphrase),
 	)
 	if err != nil {
@@ -393,7 +393,7 @@ func mustOpenKeyring(t *testing.T, env *storeEnv, passphrase string) *crypto.Key
 func assertPassphraseRejected(t *testing.T, env *storeEnv, passphrase string) {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(
-		storepaths.NewPaths(env.dataDir).KeystoreMetadataDir("default"),
+		storepaths.NewPaths(env.dataDir).KeystoreMetadataDir(),
 		[]byte(passphrase),
 	)
 	if kr != nil {
@@ -406,7 +406,7 @@ func assertPassphraseRejected(t *testing.T, env *storeEnv, passphrase string) {
 
 func assertNoRotationSnapshot(t *testing.T, env *storeEnv) {
 	t.Helper()
-	path := storepaths.NewPaths(env.dataDir).RotationSnapshotPath("default")
+	path := storepaths.NewPaths(env.dataDir).RotationSnapshotPath()
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("settled rotation left snapshot %s: %v", path, err)
 	}

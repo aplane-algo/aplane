@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -109,7 +108,7 @@ func TestOfflineStoreRejectsPolicyTargetForWrongNodeRole(t *testing.T) {
 
 func TestOfflineStoreLoadRejectsTamperedPolicy(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir, auth.CurrentProductIdentityID())
+	path := policy.PolicyPath(dataDir)
 	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -193,7 +192,7 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	if err := store.SaveYAML(context.Background(), policyBytes); err != nil {
 		t.Fatalf("SaveYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -231,7 +230,7 @@ transfer_policy:
 	if err := store.SaveSentryYAML(context.Background(), sentryBytes); err != nil {
 		t.Fatalf("SaveSentryYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, auth.CurrentProductIdentityID()))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -243,7 +242,7 @@ transfer_policy:
 		t.Fatalf("unlock() error = %v", err)
 	}
 	defer clear()
-	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, auth.CurrentProductIdentityID(), masterKey)
+	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, masterKey)
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() after SaveSentryYAML() error = %v", err)
 	}
@@ -254,7 +253,7 @@ transfer_policy:
 
 func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir, auth.CurrentProductIdentityID())
+	path := policy.PolicyPath(dataDir)
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -321,10 +320,9 @@ func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, [
 	dataDir := t.TempDir()
 	passphrase := []byte("policyeditor-passphrase")
 	_, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir:    dataDir,
-		Paths:      storepaths.NewPaths(dataDir),
-		IdentityID: auth.CurrentProductIdentityID(),
-		Role:       role,
+		DataDir: dataDir,
+		Paths:   storepaths.NewPaths(dataDir),
+		Role:    role,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)

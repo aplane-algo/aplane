@@ -40,7 +40,7 @@ type PlannerKeyMetadata struct {
 
 // PlannerDeps supplies process-specific data needed by the package-owned planner.
 type PlannerDeps interface {
-	Snapshot(identityID string) PlannerIdentitySnapshot
+	Snapshot() PlannerIdentitySnapshot
 }
 
 // PlannerOptions configures non-environmental planner behavior.
@@ -58,11 +58,11 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		Console:                opts.Console,
 		GenerateTxnDescription: opts.GenerateTxnDescription,
 		GenesisHashResolver:    opts.GenesisHashResolver,
-		VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
-			return verifySignableKeys(opts.Console, snapshot, identityID, requests, passthroughIndices, foreignIndices)
+		VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
+			return verifySignableKeys(opts.Console, snapshot, requests, passthroughIndices, foreignIndices)
 		},
-		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-			return calculateLogicSigResources(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
+		CalculateDummies: func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+			return calculateLogicSigResources(opts.Console, snapshot, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
 		},
 		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
 			return buildFinalGroupWithoutFees(opts.Console, txns, dummiesNeeded, isPreGrouped)
@@ -95,7 +95,7 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 	return allTxns, dummyTxns, feeInfo, dummiesNeeded > 0 || !isPreGrouped, nil
 }
 
-func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapshot, _ string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+func calculateLogicSigResources(console Console, snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
 	profile, profileErr := lsigresource.CurrentConsensus()
 	if profileErr != nil {
 		return lsigresource.Plan{}, nil, internal(fmt.Sprintf("load compiled v42 LogicSig contract: %v", profileErr))
@@ -271,7 +271,7 @@ func passthroughLogicSigUsage(encoded []byte, declared *signerapi.LogicSigResour
 	}, true, nil
 }
 
-func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError) {
+func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError) {
 	for i, txReq := range requests {
 		if passthroughIndices[i] {
 			consoleOf(console).Printf("[GROUP]   [%d] passthrough ok\n", i+1)

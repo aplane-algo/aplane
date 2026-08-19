@@ -8,6 +8,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
@@ -25,7 +26,7 @@ func (s *Session) SendError(requestID, code, errMsg string) error {
 
 func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token"}) {
 		return
 	}
 	err := s.identityServices.RevokeProductToken(ir)
@@ -35,7 +36,7 @@ func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
 
 func (s *Session) HandleGetAdminSettings(requestID string) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(requestID, auth.ActionSettingsView, auth.Resource{Type: "settings", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionSettingsView, auth.Resource{Type: "settings"}) {
 		return
 	}
 	settings := s.settingsServices.BuildAdminSettings(ir)
@@ -44,7 +45,7 @@ func (s *Session) HandleGetAdminSettings(requestID string) {
 
 func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessage) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings"}) {
 		return
 	}
 	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
@@ -54,7 +55,7 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 
 func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
 	snapshot := s.settingsServices.BuildPolicySnapshot(ir, adminproto.NormalizePolicyTarget(msg.Target))
@@ -63,7 +64,7 @@ func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage
 
 func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy"}) {
 		return
 	}
 	result := s.settingsServices.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
@@ -76,7 +77,7 @@ func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 
 func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 	ir := s.productOrBoundRuntime()
-	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
 	result := s.settingsServices.ValidatePolicy(ir, adminproto.ValidatePolicyRequest{
@@ -91,7 +92,7 @@ func (s *Session) HandleListSentryReferences(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references"}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -106,7 +107,7 @@ func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessa
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -124,7 +125,7 @@ func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenc
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -149,7 +150,7 @@ func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenc
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -170,7 +171,7 @@ func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessa
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -186,7 +187,7 @@ func (s *Session) HandleListGenerations(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations"}) {
 		return
 	}
 	if s.inspectionServices == nil {
@@ -206,7 +207,7 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 
@@ -234,7 +235,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 		return
 	}
 
-	resource := auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}
+	resource := auth.Resource{Type: "identity", ID: productmode.IdentityID}
 	identity := s.Identity()
 	if s.authorizer != nil && identity == nil {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
@@ -267,7 +268,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -302,7 +303,7 @@ func (s *Session) HandleListBackups(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -318,7 +319,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -334,7 +335,7 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -352,7 +353,7 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -369,7 +370,7 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -405,7 +406,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -421,7 +422,7 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -433,7 +434,7 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		if audit, ok := s.audit.(interface {
 			LogBackupExportStartedContext(SessionContext, string)
 		}); ok {
-			if s.markBackupExportChunk(ir.ID(), result.FileName, result.Offset, result.EOF) {
+			if s.markBackupExportChunk(result.FileName, result.Offset, result.EOF) {
 				audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
 			}
 		}
@@ -454,7 +455,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.identityServices == nil {
@@ -477,7 +478,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -519,7 +520,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -572,7 +573,7 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -595,7 +596,7 @@ func (s *Session) HandleReconcileStore(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: ir.ID(), IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -610,7 +611,7 @@ func (s *Session) HandleListKeys(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionKeysView, auth.Resource{Type: "keys", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionKeysView, auth.Resource{Type: "keys"}) {
 		return
 	}
 
@@ -628,7 +629,7 @@ func (s *Session) HandleGetKeyDetails(msg *protocol.GetKeyDetailsMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionKeysView, auth.Resource{Type: "key", ID: msg.Address, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionKeysView, auth.Resource{Type: "key", ID: msg.Address}) {
 		return
 	}
 
@@ -641,7 +642,7 @@ func (s *Session) HandleListLibraryTemplates(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
 		return
 	}
 	result := s.templateServices.ListLibraryTemplates(ir)
@@ -653,7 +654,7 @@ func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTempl
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
@@ -668,7 +669,7 @@ func (s *Session) HandleListInstalledTemplates(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
 		return
 	}
 	result := s.templateServices.ListInstalledTemplates(ir)
@@ -680,7 +681,7 @@ func (s *Session) HandleShowInstalledTemplate(msg *protocol.ShowInstalledTemplat
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.ShowInstalledTemplate(ir, adminproto.ShowInstalledTemplateRequest{
@@ -694,7 +695,7 @@ func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMes
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
@@ -709,7 +710,7 @@ func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTem
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template"}) {
 		return
 	}
 	result := s.templateServices.ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
@@ -723,7 +724,7 @@ func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTem
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionTemplatesRemove, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionTemplatesRemove, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{
@@ -737,7 +738,7 @@ func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionKeyTypesActivate, auth.Resource{Type: "keytype", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionKeyTypesActivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
@@ -751,7 +752,7 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionKeyTypesDeactivate, auth.Resource{Type: "keytype", ID: msg.KeyType, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionKeyTypesDeactivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
 		return
 	}
 	result := s.templateServices.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
@@ -765,7 +766,7 @@ func (s *Session) HandleListKeyTypes(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionKeyTypesView, auth.Resource{Type: "keytypes", IdentityID: ir.ID()}) {
+	if !s.authorize(requestID, auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}) {
 		return
 	}
 	result := s.templateServices.ListKeyTypes(ir)
@@ -774,7 +775,7 @@ func (s *Session) HandleListKeyTypes(requestID string) {
 
 func (s *Session) HandleSignResponse(msg *protocol.SignResponseMessage) {
 	if ir := s.BoundRuntime(); ir != nil {
-		if !s.authorize(msg.ID, auth.ActionSignApprove, auth.Resource{Type: "sign_request", ID: msg.ID, IdentityID: ir.ID()}) {
+		if !s.authorize(msg.ID, auth.ActionSignApprove, auth.Resource{Type: "sign_request", ID: msg.ID}) {
 			return
 		}
 		ctx := s.SessionContext()
@@ -793,7 +794,7 @@ func (s *Session) HandleSignResponse(msg *protocol.SignResponseMessage) {
 
 func (s *Session) HandleTokenProvisioningResponse(msg *protocol.TokenProvisioningResponseMessage) {
 	if ir := s.BoundRuntime(); ir != nil {
-		if !s.authorize(msg.ID, auth.ActionTokenProvision, auth.Resource{Type: "token_provisioning", ID: msg.ID, IdentityID: ir.ID()}) {
+		if !s.authorize(msg.ID, auth.ActionTokenProvision, auth.Resource{Type: "token_provisioning", ID: msg.ID}) {
 			return
 		}
 		ir.HandleTokenProvisioningApprovalResponse(&signerapproval.TokenProvisioningResponse{
@@ -809,7 +810,7 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 	if ir == nil {
 		return
 	}
-	resource := auth.Resource{Type: "key", IdentityID: ir.ID()}
+	resource := auth.Resource{Type: "key"}
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
@@ -826,7 +827,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address, IdentityID: ir.ID()}) {
+	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address}) {
 		return
 	}
 	del := s.keyServices.DeleteKey(ir, adminproto.DeleteKeyRequest{Address: msg.Address})
@@ -839,7 +840,7 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	if ir == nil {
 		return
 	}
-	resource := auth.Resource{Type: "key", ID: msg.Address, IdentityID: ir.ID()}
+	resource := auth.Resource{Type: "key", ID: msg.Address}
 	if !s.authorize(msg.ID, auth.ActionKeysExport, resource) {
 		return
 	}
@@ -853,7 +854,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if ir == nil {
 		return
 	}
-	resource := auth.Resource{Type: "key", IdentityID: ir.ID()}
+	resource := auth.Resource{Type: "key"}
 	if !s.authorize(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}

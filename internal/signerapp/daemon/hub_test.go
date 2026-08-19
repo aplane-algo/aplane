@@ -46,7 +46,6 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
@@ -73,7 +72,6 @@ func TestSignerIsUnlocked(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 
@@ -109,7 +107,6 @@ func TestFailAllPendingRequests(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
@@ -129,7 +126,6 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
@@ -157,7 +153,6 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
@@ -177,7 +172,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	}
 
 	hub.reset()
-	approved, err = signer.requestTokenProvisioning("req-token", auth.DefaultIdentityID, "fingerprint", "remote", time.Second)
+	approved, err = signer.requestTokenProvisioning("req-token", "fingerprint", "remote", time.Second)
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}
@@ -197,10 +192,9 @@ func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 	signer := &Signer{hub: hub}
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            "alice",
 	})
 
-	svc := signerstartup.NewReloadService(ir, testIdentityBuildOptions(signer), signer.identityBuildHooks(), nil)
+	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.identityBuildHooks(), nil)
 	if svc.NotifyKeysChanged == nil {
 		t.Fatal("NotifyKeysChanged = nil, want configured callback")
 	}
@@ -216,11 +210,11 @@ func TestReloadServiceFailsNodeClosedOnNodeRoleConflict(t *testing.T) {
 	signer := &Signer{nodeFailState: nodeState}
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            "alice",
-		NodeRole:      noderole.RoleSigner,
+
+		NodeRole: noderole.RoleSigner,
 	})
 
-	svc := signerstartup.NewReloadService(ir, testIdentityBuildOptions(signer), signer.identityBuildHooks(), nil)
+	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.identityBuildHooks(), nil)
 	err := svc.BeforePublish(nil, map[string]string{
 		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": witness.Falcon1024V1,
 	})
@@ -239,7 +233,6 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 	}
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            "alice",
 	})
 	signer.runtime = ir
 
@@ -260,7 +253,6 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
 	})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())

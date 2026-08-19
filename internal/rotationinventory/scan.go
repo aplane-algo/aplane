@@ -25,34 +25,33 @@ import (
 // Scan builds the canonical K8 inventory. The caller holds the store and
 // identity mutation locks. Unpublished generation staging residue must already
 // have been reconciled and is rejected.
-func Scan(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
-	return scan(paths, identityID, kr, false)
+func Scan(paths storepaths.Paths, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, kr, false)
 }
 
 // ScanForSnapshot builds the cutover input inventory. The snapshot file is
 // deliberately excluded so a pending root never recursively inventories the
 // record that contains the inventory. A pre-existing baseline remains an
 // input and is classified normally.
-func ScanForSnapshot(paths storepaths.Paths, identityID string, kr *crypto.Keyring) (*Report, error) {
-	return scan(paths, identityID, kr, true)
+func ScanForSnapshot(paths storepaths.Paths, kr *crypto.Keyring) (*Report, error) {
+	return scan(paths, kr, true)
 }
 
 func scan(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 	excludeSnapshot bool,
 ) (*Report, error) {
 	if kr == nil {
 		return nil, fmt.Errorf("rotation inventory requires an open keyring")
 	}
-	current, err := genstore.ReadCurrent(paths, identityID)
+	current, err := genstore.ReadCurrent(paths)
 	if err != nil {
 		return nil, fmt.Errorf("rotation inventory CURRENT: %w", err)
 	}
 	scanner := inventoryScanner{
 		paths:             paths,
-		identityID:        identityID,
 		currentGeneration: current,
 		kr:                kr,
 		excludeSnapshot:   excludeSnapshot,
@@ -85,7 +84,6 @@ func scan(
 
 type inventoryScanner struct {
 	paths             storepaths.Paths
-	identityID        string
 	currentGeneration string
 	kr                *crypto.Keyring
 	excludeSnapshot   bool
@@ -102,7 +100,7 @@ type historicalGenerationAuthority struct {
 }
 
 func (s *inventoryScanner) scanGenerations(current string) error {
-	root := s.paths.GenerationsDir(s.identityID)
+	root := s.paths.GenerationsDir()
 	if err := requireDirectory(root); err != nil {
 		return fmt.Errorf("rotation inventory generations: %w", err)
 	}
@@ -129,7 +127,7 @@ func (s *inventoryScanner) scanGenerations(current string) error {
 		return fmt.Errorf("rotation inventory CURRENT generation %s is missing", current)
 	}
 	for _, name := range names {
-		gen := s.paths.GenerationPaths(s.identityID, name)
+		gen := s.paths.GenerationPaths(name)
 		var contentSeal *genstore.Seal
 		var historicalAnchor *crypto.HistoricalGenerationAnchor
 		var historical *historicalGenerationAuthority
@@ -295,7 +293,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 	if err != nil {
 		return err
 	}
-	nodeSidecarPath := s.paths.NodeRoleIntegritySidecar(s.identityID)
+	nodeSidecarPath := s.paths.NodeRoleIntegritySidecar()
 	nodeSidecarBytes, _, err := fsutil.ReadRegularFile(nodeSidecarPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory node role sidecar: %w", err)
@@ -314,7 +312,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 		return err
 	}
 
-	policyPath := policy.PolicyPath(s.paths.Root(), s.identityID)
+	policyPath := policy.PolicyPath(s.paths.Root())
 	policyBytes, _, err := fsutil.ReadRegularFile(policyPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory policy: %w", err)
@@ -355,7 +353,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 }
 
 func (s *inventoryScanner) scanDeleted() error {
-	root := s.paths.DeletedDir(s.identityID)
+	root := s.paths.DeletedDir()
 	present, err := directoryExists(root)
 	if err != nil || !present {
 		return err
@@ -441,8 +439,8 @@ func (s *inventoryScanner) scanOptionalRotationRecords() error {
 		kind ArtifactKind
 		ctx  crypto.ObjectContext
 	}{
-		{s.paths.RotationSnapshotPath(s.identityID), KindRotationSnapshot, crypto.RotationSnapshotContext()},
-		{s.paths.RotationBaselinePath(s.identityID), KindRotationBaseline, crypto.RotationBaselineContext()},
+		{s.paths.RotationSnapshotPath(), KindRotationSnapshot, crypto.RotationSnapshotContext()},
+		{s.paths.RotationBaselinePath(), KindRotationBaseline, crypto.RotationBaselineContext()},
 	} {
 		if s.excludeSnapshot && record.kind == KindRotationSnapshot {
 			continue
@@ -588,7 +586,7 @@ func (s *inventoryScanner) addBytes(path string, kind ArtifactKind, data []byte,
 		ObjectClass:    ctx.Class,
 		ObjectSelector: ctx.Selector,
 	})
-	currentGen := s.paths.GenerationPaths(s.identityID, s.currentGeneration)
+	currentGen := s.paths.GenerationPaths(s.currentGeneration)
 	generationRelative, err := filepath.Rel(currentGen.Dir(), path)
 	if err != nil {
 		return err

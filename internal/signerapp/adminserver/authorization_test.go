@@ -6,6 +6,7 @@ package adminserver
 import (
 	"context"
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -52,7 +53,7 @@ func (a *recordingAuthorizationAudit) LogAuthorizationDenied(ctx SessionContext,
 
 func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{}
@@ -80,8 +81,8 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	if authorizer.got.action != auth.ActionKeyTypesView {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionKeyTypesView)
 	}
-	if authorizer.got.resource.Type != "keytypes" || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("authorizer resource = %+v, want keytypes/default", authorizer.got.resource)
+	if authorizer.got.resource.Type != "keytypes" {
+		t.Fatalf("authorizer resource = %+v, want keytypes", authorizer.got.resource)
 	}
 
 	msgs := decodeAdminProtoWrites(t, conn)
@@ -94,11 +95,11 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	if audit.calls != 1 {
 		t.Fatalf("audit calls = %d, want 1", audit.calls)
 	}
-	if audit.ctx.TargetIdentityID != auth.DefaultIdentityID || audit.ctx.AdminPrincipal.ID != "admin-principal" {
+	if audit.ctx.TargetIdentityID != productmode.IdentityID || audit.ctx.AdminPrincipal.ID != "admin-principal" {
 		t.Fatalf("audit context = %+v, want target default and admin-principal", audit.ctx)
 	}
-	if audit.action != auth.ActionKeyTypesView || audit.resource.Type != "keytypes" || audit.resource.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("audit decision = action %q resource %+v, want keytypes/default", audit.action, audit.resource)
+	if audit.action != auth.ActionKeyTypesView || audit.resource.Type != "keytypes" {
+		t.Fatalf("audit decision = action %q resource %+v, want keytypes", audit.action, audit.resource)
 	}
 	if audit.reason != auth.ErrForbidden.Error() {
 		t.Fatalf("audit reason = %q, want %q", audit.reason, auth.ErrForbidden.Error())
@@ -110,7 +111,7 @@ func TestSessionAuthorizationMissingIdentityFailsClosed(t *testing.T) {
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{Authorizer: authorizer})
 
-	if session.authorize("req-missing", auth.ActionKeysView, auth.Resource{Type: "keys", IdentityID: auth.DefaultIdentityID}) {
+	if session.authorize("req-missing", auth.ActionKeysView, auth.Resource{Type: "keys"}) {
 		t.Fatal("authorize() = true, want false")
 	}
 	if authorizer.calls != 0 {
@@ -128,14 +129,14 @@ func TestSessionAuthorizationMissingIdentityFailsClosed(t *testing.T) {
 
 func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
 		policySnapshotResult: adminproto.PolicySnapshot{
 			Success:      true,
 			Target:       adminproto.PolicyTargetSentry,
-			IdentityID:   auth.DefaultIdentityID,
+			IdentityID:   productmode.IdentityID,
 			PolicyYAML:   "reject_foreign_rekey: true\n",
 			PolicySHA256: "abc123",
 			Canonical:    true,
@@ -164,7 +165,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	if authorizer.got.action != auth.ActionPolicyView {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
 	}
-	if authorizer.got.resource.Type != "policy" || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
+	if authorizer.got.resource.Type != "policy" {
 		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
 	}
 
@@ -182,13 +183,13 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 
 func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
 		replacePolicyResult: adminproto.PolicySnapshot{
 			Success:    true,
-			IdentityID: auth.DefaultIdentityID,
+			IdentityID: productmode.IdentityID,
 			PolicyYAML: "reject_foreign_rekey: false\n",
 			Canonical:  true,
 		},
@@ -220,7 +221,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	if authorizer.got.action != auth.ActionPolicyUpdate {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyUpdate)
 	}
-	if authorizer.got.resource.Type != "policy" || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
+	if authorizer.got.resource.Type != "policy" {
 		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
 	}
 
@@ -238,14 +239,14 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 
 func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
 		validatePolicyResult: adminproto.ValidatePolicyResult{
 			Success:    true,
 			Target:     adminproto.PolicyTargetSentry,
-			IdentityID: auth.DefaultIdentityID,
+			IdentityID: productmode.IdentityID,
 		},
 	}
 	authorizer := &recordingAuthorizer{}
@@ -273,7 +274,7 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	if authorizer.got.action != auth.ActionPolicyView {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
 	}
-	if authorizer.got.resource.Type != "policy" || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
+	if authorizer.got.resource.Type != "policy" {
 		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
 	}
 

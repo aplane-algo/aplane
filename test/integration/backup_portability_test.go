@@ -10,14 +10,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -328,7 +326,7 @@ teal: |
 			mustRestoreArchive(t, destApadmin, archivePath, exportPassphrase, address)
 
 			destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
+			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); err != nil {
 				t.Fatalf("restored key file missing for %s: %v", address, err)
 			}
 
@@ -442,7 +440,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	}
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); err != nil {
 		t.Fatalf("expected restored key file after IPC restore, got stat err=%v", err)
 	}
 	destToken := readSignerToken(t, destSigner)
@@ -496,7 +494,7 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -571,7 +569,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
+	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -585,15 +583,15 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err != nil {
 		t.Fatalf("expected standalone key restore without local template or bundled definition, got %v\noutput:\n%s", err, output)
 	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); statErr != nil {
 		t.Fatalf("expected restored key file without local template, got stat err=%v", statErr)
 	}
-	if templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected standalone restore not to materialize missing aplane.htlc.v1 template")
 	}
 }
 
-func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
+func TestBackupAllArchiveContainsOnlyActiveKeys(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	sourceApadmin := harness.NewApAdminHarness(t, sourceClone.SignerDataDir)
@@ -615,13 +613,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	}
 
 	paths := utilkeys.NewPaths(sourceClone.SignerDataDir)
-	activeKeyPath := apkeys.AccountKeyFilePath(paths, auth.DefaultIdentityID, activeAddress)
-	activeKeyData, err := os.ReadFile(activeKeyPath)
-	if err != nil {
-		t.Fatalf("failed to read active key file: %v", err)
-	}
-
-	deletedDir := filepath.Join(paths.IdentityDir(auth.DefaultIdentityID), "deleted", "keys")
+	deletedDir := filepath.Join(paths.ProductDir(), "deleted", "keys")
 	if err := os.MkdirAll(deletedDir, 0o755); err != nil {
 		t.Fatalf("failed to create deleted keys dir: %v", err)
 	}
@@ -629,7 +621,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate second key: %v", err)
 	}
-	deletedKeyPath := apkeys.AccountKeyFilePath(paths, auth.DefaultIdentityID, deletedAddress)
+	deletedKeyPath := apkeys.AccountKeyFilePath(paths, deletedAddress)
 	deletedKeyData, err := os.ReadFile(deletedKeyPath)
 	if err != nil {
 		t.Fatalf("failed to read second key file: %v", err)
@@ -641,12 +633,6 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 		t.Fatalf("failed to write deleted key file: %v", err)
 	}
 
-	otherIdentity := "other"
-	genstoretest.MintFirst(t, paths, otherIdentity)
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, otherIdentity, deletedAddress), activeKeyData, 0o600); err != nil {
-		t.Fatalf("failed to write other-identity key file: %v", err)
-	}
-
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
 	archivePath := mustCreateBackupArchive(t, sourceApadmin, "all", storePassphrase)
@@ -656,7 +642,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 		t.Fatalf("active key missing from backup all archive: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "apb", deletedAddress+".apb")); err == nil {
-		t.Fatal("deleted or other-identity key unexpectedly present in backup all archive")
+		t.Fatal("deleted key unexpectedly present in backup all archive")
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("unexpected stat error for excluded key: %v", err)
 	}

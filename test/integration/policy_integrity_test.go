@@ -119,7 +119,7 @@ reject_clawback: false
 func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness, signerDataDir, passphrase, policyYAML string) {
 	t.Helper()
 
-	path := policy.PolicyPath(signerDataDir, "default")
+	path := policy.PolicyPath(signerDataDir)
 	if err := os.WriteFile(path, []byte(policyYAML), 0o600); err != nil {
 		t.Fatalf("failed to write policy file %s: %v", path, err)
 	}

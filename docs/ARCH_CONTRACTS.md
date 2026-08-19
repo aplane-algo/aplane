@@ -32,12 +32,13 @@
 
 ## Current Release Compatibility Scope
 
-### Single-Identity Product Boundary
+### Fixed Product Store Boundary
 
-An `apsigner` process owns exactly one signing identity and one
-`identity.Runtime`, fixed to `default`. The durable path remains
-`identities/default/`; this is a storage namespace and future-migration seam,
-not a supported identity-routing surface.
+An `apsigner` process owns exactly one signing-state aggregate and one product
+store. The aggregate has no runtime ID, registry, or selector. The exact
+durable roots remain `identities/default/` and `backups/default/`; `default` is
+a compatibility namespace and retained output/audit value, not a supported
+identity-routing surface or authorization principal.
 
 Startup performs a no-follow check of direct `identities/` entries before it
 loads tokens, keys, policy, or watchers. A directory, ordinary file, hidden
@@ -52,6 +53,15 @@ exactly `default`, and token enrollment must be exactly
 `request-token:default`. Product HTTP, admin, CLI, and SDK request inputs expose
 no identity selector. Output and audit fields may still attribute operations to
 `default`.
+
+Internal storage APIs also expose no product-store selector:
+`internal/storepaths.Paths` binds `identities/default/` and
+`backups/default/` when constructed from the signer data root, generation and
+backup operations accept that bound `Paths` value, and the runtime aggregate
+has no ID field or accessor. One process-wide store mutation lock serializes
+live mutation and watcher reload. These are internal architecture constraints;
+the literal paths, SSH transcript value, and retained output fields are the
+compatibility contract.
 
 This deliberately removes a working internal multi-identity capability,
 including identity-local template activation and the former `alice`
@@ -158,7 +168,7 @@ Terminology:
 
 ## HTTP API Contract
 
-See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shapes, status codes, identity routing, and cancellation semantics.
+See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shapes, status codes, fixed runtime binding, and cancellation semantics.
 The DTO and error-code source of truth is `pkg/signerapi`; `internal/signerapi`
 contains aliases for in-repo callers, not an independent schema.
 
@@ -547,7 +557,7 @@ types are projected at `internal/signerapp/adminserver` and must not be treated
 as wire DTOs.
 
 The pre-auth `auth` request verifies the passphrase and may also unlock and
-reload the bound identity. Therefore `auth_result{success:false}` does not
+reload the product runtime. Therefore `auth_result{success:false}` does not
 always mean a bad passphrase. If passphrase verification succeeds but unlock or
 reload fails, the signer returns `auth_result` with `code:"unlock_failed"` and
 an `error` prefixed with `auth ok but unlock failed:`. Clients should surface
@@ -649,9 +659,9 @@ validation, and mutation use canonical policy YAML through
 `get_policy_snapshot`, `validate_policy`, and `replace_policy`; there is no
 parallel scalar policy RPC surface.
 
-These client capabilities describe the product surface for the product
-identity. Backend admin routing is identity-scoped internally; `apadmin`,
-`apapprover`, and `appass` do not expose a tenant-management UI.
+These client capabilities describe the one product surface. Backend admin
+operations use the one process-owned runtime; `apadmin`, `apapprover`, and
+`appass` do not expose a tenant-management UI.
 
 `apadmin` test mode details:
 
@@ -731,17 +741,17 @@ pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
-Process-global settings live in `config.yaml`. Identity-scoped settings live in
+Process-global settings live in `config.yaml`. Product runtime settings live in
 `identities/default/config.yaml`; nil means inherit from process defaults.
 Unknown fields, including the removed `decommissioned` setting, fail parsing.
 
 Signer policy participates in the ordered approval engine.
-The active node-role policy is identity-scoped and stored in
-`identities/<identity>/policy.yaml`, with a sibling `.hmac` sidecar that
-authenticates the exact YAML bytes with a key derived from the identity master
+The active node-role policy is product-store scoped and stored in
+`identities/default/policy.yaml`, with a sibling `.hmac` sidecar that
+authenticates the exact YAML bytes with a key derived from the product store
 key. Signer nodes parse it as client-signing policy; sentry nodes parse it as
 direct sentry component policy. The default approval fallback is
-`user_auto_approve`, lives in `identities/<identity>/config.yaml`, and is not a
+`user_auto_approve`, lives in `identities/default/config.yaml`, and is not a
 policy document field. The policy document is verified and loaded on
 unlock/reload before the key scan; a missing policy file or missing/mismatched
 sidecar fails closed instead of falling back to defaults. Authenticated admin
@@ -902,7 +912,7 @@ targets are rejected.
 
 ### Passphrase Helper Contract
 
-Sources: `internal/signerapp/unlockconfig/unlock.go` owns identity-scoped
+Sources: `internal/signerapp/unlockconfig/unlock.go` owns product-store
 `unlock.yaml` persistence; `internal/serverconfig/passphrasecmd.go` owns helper
 execution, output decoding, environment filtering, and validation.
 
@@ -946,13 +956,13 @@ execution, output decoding, environment filtering, and validation.
     <network>_asa_cache.json
   library/
     templates/*.yaml        # plaintext KeyType Library YAML sources
-  backups/<identity>/
+  backups/default/
     *.tar.gz                # restorable managed/imported backup archives
     .import-*.part          # unpublished bounded upload residue
     .import-claimed-*.part  # immutable archive undergoing deep validation
     .import-validation-*/   # private same-filesystem validation residue
   .ssh/ssh_host_key
-  identities/<identity>/
+  identities/default/
     CURRENT                 # names the active generation (generation layout)
     generations/<gen-id>/
       manifest.json         # immutable at-mint operation record
@@ -984,7 +994,7 @@ Additional signer-state notes:
 
 - production signer directories are service-owned mode `0700` and ordinary
   signer files are service-owned mode `0600`; the recognized root-owned
-  exceptions are `identities/<identity>/passphrase.cred` (`root:root`, `0600`)
+  exceptions are `identities/default/passphrase.cred` (`root:root`, `0600`)
   and installer metadata under `install/`. Systemd setup writes
   `install/service-principal.json` as root-owned `0640` metadata containing
   schema version 1 and the numeric service `uid`/`gid`; stopped-store repair
@@ -1019,19 +1029,19 @@ Additional signer-state notes:
   `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
-  `<data_dir>/backups/<identity>/`; the archive contains `README.md` and
+  `<data_dir>/backups/default/`; the archive contains `README.md` and
   `apb/*.apb` encrypted canonical credential payloads plus `manifest.sealed`
 - imported backup archives are validated by the operator client, streamed to
   the daemon in bounded admin-protocol chunks, and atomically published under
-  `<data_dir>/backups/<identity>/`; exports stream bounded chunks in the other
+  `<data_dir>/backups/default/`; exports stream bounded chunks in the other
   direction, so operators never need filesystem access to the private locker
-- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is not identity-scoped and is not authoritative for policy enforcement
+- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is outside the private product store and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
 - `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product auth and token enrollment use `identities/default/.ssh/authorized_keys`
-- `passphrase` and `passphrase.cred` are sensitive identity-scoped helper files referenced by `unlock.yaml`
+- `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
 
@@ -1163,7 +1173,7 @@ encrypted adjacent `<key_type>.template` file. A disabled YAML record keeps the
 encrypted template installed but hides that key type from discovery, reload, and
 generation. These records do not gate signing for keys that already exist.
 
-Identity-local deletion archives live under `deleted/`. Key deletion moves the
+Product-store deletion archives live under `deleted/`. Key deletion moves the
 encrypted key file from `keys/` to `deleted/keys/`. Template removal deletes the
 state record and moves the encrypted `.template` file from `keytypes/` to
 `deleted/keytypes/`. Archived files are outside active scans.
@@ -1174,11 +1184,11 @@ state record and moves the encrypted `.template` file from `keytypes/` to
 operations, but `internal/templatelibrary` is the only production
 feature-level mutation coordinator for these records and encrypted template
 files. Live admin handlers in `internal/signerapp/templateadmin` acquire the
-identity-scoped mutation lock, call the coordinator, and reload before
+product store mutation lock, call the coordinator, and reload before
 reporting success; watcher-triggered reloads acquire the same lock before
 scanning. First-generation defaults use the same coordinator against an
 unpublished generation and become visible through the durable `CURRENT`
-publication, without a live identity lock or reload. Record writes use the
+publication, without a live runtime lock or reload. Record writes use the
 shared atomic write helper (temporary file plus rename). They do not fsync the
 parent directory, so the durability contract is the same as other small signer
 metadata files in this store.
@@ -1241,9 +1251,9 @@ encrypted `.template` filenames and therefore may not include parameter metadata
 available.
 
 Installing a library template takes `key_type` and `template_type`, re-resolves the candidate from the
-signer-data library, parses the YAML, writes it through the encrypted identity-scoped template store under
-`identities/<identity>/keytypes/<key_type>.template`, writes an enabled state record, then
-reloads that identity. Installed `.template` files, not the plaintext library files, are the active persisted
+signer-data library, parses the YAML, writes it through the encrypted product template store under
+`identities/default/keytypes/<key_type>.template`, writes an enabled state record, then
+reloads the product runtime. Installed `.template` files, not the plaintext library files, are the active persisted
 runtime source for key generation and key-type discovery; the installed template is not consulted to sign
 already-created keys. Template enabled state changes discovery and generation only; it is not a
 signing authorization gate for existing key files. The low-level template store
@@ -1275,14 +1285,14 @@ state record and does not unregister process-global provider code. Disabling a Y
 encrypted `.template` installed and sets the identity state record to disabled. Removing an encrypted YAML template
 moves the `.template` source to the identity-local deleted key type archive and deletes the state record; this
 removal is exposed through authenticated admin transport as `apadmin template remove`.
-Disabling or removing an installed YAML template requires that no stored identity
+Disabling or removing an installed YAML template requires that no stored product
 key depends on that `key_type`; compiled-provider disable has the same
-unused-key guard because it removes the identity's compiled-provider opt-in. The
-unused check requires the identity's current term key, scans existing keys, and returns
+unused-key guard because it removes the product store's compiled-provider opt-in. The
+unused check requires the product store's current term key, scans existing keys, and returns
 `key_type_in_use` on the live admin protocol when the guard blocks installed
 template disable/removal or compiled-provider disable. Live key type
 enable/disable, template install, non-generic key generation, key import, and
-key delete operations are serialized per identity so key creation cannot race a
+key delete operations are serialized by the product store mutation lock so key creation cannot race a
 lifecycle decision made from a stale state snapshot. The underlying IPC message
 names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
@@ -1441,7 +1451,7 @@ canonical file.
 
 #### Sealed Cutover Snapshot
 
-`identities/<identity>/rotation.snapshot.enc` is a term envelope with object
+`identities/default/rotation.snapshot.enc` is a term envelope with object
 context `rotation-snapshot:pending`. Its strict plaintext schema is
 `aplane.rotation-snapshot.v1`:
 
@@ -1513,7 +1523,7 @@ mutation. Offline passphrase change, policy signing/editing, and generation
 pruning apply the same guard. `ErrRotationPending` is the stable error
 classification; only the explicit resume/completion path may bypass it.
 
-`identities/<identity>/rotation.baseline.enc` is a current-term envelope with
+`identities/default/rotation.baseline.enc` is a current-term envelope with
 object context `rotation-baseline:current`. Its strict plaintext schema is
 `aplane.rotation-baseline.v1` and contains exactly `schema`, canonical
 `generation_id`, non-negative `entry_count`, and lowercase
@@ -1617,7 +1627,7 @@ that unlock will resume the transition.
 Owned by `internal/genstore`; the commit protocol and its invariants are
 specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 
-- `identities/<identity>/CURRENT` contains the active generation ID and is
+- `identities/default/CURRENT` contains the active generation ID and is
   the sole commit record; the active `keys/` and `keytypes/` namespaces live
   inside the generation it names and are resolved via
   `genstore.ResolveActive`
@@ -1669,14 +1679,14 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 
 ### Policy File (`policy.yaml`)
 
-The identity-scoped active policy is stored at
-`identities/<identity>/policy.yaml`. Signer nodes parse that file as
+The product-store active policy is stored at
+`identities/default/policy.yaml`. Signer nodes parse that file as
 client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
 The policy integrity key is derived inside `internal/crypto` from the named
-identity term key with HKDF-SHA256 using info string
+product-store term key with HKDF-SHA256 using info string
 `aplane policy integrity v1`. The derived 32-byte key is neither persisted nor
 returned to policy callers; they use keyring-confined sign/verify operations.
 
@@ -1992,7 +2002,7 @@ that status does not invalidate the key or alter signing behavior.
 #### Offline Identity Key Inventory
 
 `apstore keys list` is a local, passphrase-gated inventory surface for the
-current product identity's encrypted key files. It decrypts key metadata using
+product store's encrypted key files. It decrypts key metadata using
 the identity store passphrase and lists successfully scanned key addresses or
 Witness Key IDs with their key type, durable category, creation timestamp, and
 key-file name.
@@ -2042,7 +2052,7 @@ trust claim.
 sentry reference library:
 
 ```text
-identities/<identity>/sentries/<name>.json
+identities/default/sentries/<name>.json
 ```
 
 Reference names are normalized to lowercase and may contain lowercase letters,
@@ -2084,7 +2094,7 @@ file. `aplane.corridor.v1`, for example, persists its public recipient list and
 complete bounded metadata; later signing does not require the YAML source to
 remain installed.
 
-Identity-scoped `/keytypes` metadata may expose imported references as a
+Product `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
 containing Witness Key IDs whose sentry key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
@@ -2179,7 +2189,7 @@ Template capability notes:
 
 ### Audit Log
 
-JSONL at `audit.log`, `0600` permissions, fsynced per write, UTC timestamps. Identity-scoped events carry `identity_id`; process-level events omit it.
+JSONL at `audit.log`, `0600` permissions, fsynced per write, UTC timestamps. Product-store events retain `identity_id:"default"`; process/pre-auth events omit it.
 
 Audit entries may include:
 
@@ -2443,7 +2453,7 @@ Auto-approval policy includes:
 
 - `auto_approve_self_noop_transfer`: approve a single signer-controlled request without operator review only when the real transaction is either a 0 ALGO payment to self or a 0-unit ASA transfer to self, has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and its fee after subtracting signer-added dummy fees is at most 1000 microAlgos. Server-generated LogicSig-resource dummy transactions are allowed only when they use APlane's embedded dummy LogicSig address, match the real transaction's network and validity window, carry no fee, and the real transaction fee increase exactly covers those dummies. Priced program bytes and native-PQ fee contributions disable this narrow auto-approval. The ASA form may opt into an asset if the account does not already hold it.
 
-`user_auto_approve` is not an auto-approval policy rule. It is the per-identity
+`user_auto_approve` is not an auto-approval policy rule. It is the product-runtime
 fallback switch stored in identity config and shown in `apadmin` as
 `User Auto-Approve`. It controls only the operator-default fallback after
 auto-rejection, forced review, and explicit auto-approval have all had a chance
@@ -2515,15 +2525,15 @@ have exited.
 
 ## Key Watching and Reload
 
-Key/template watching is implemented via `fsnotify` and owned per identity runtime.
+Key/template watching is implemented via `fsnotify` and owned by the one product runtime.
 
 Watched paths:
 
-- the identity directory, for `CURRENT` replacement and late directory
+- the product directory, for `CURRENT` replacement and late directory
   creation
 - the active generation's `keys/` and `keytypes/` directories, resolved
   through `genstore.ResolveActive`; when `CURRENT` cannot be resolved the
-  watcher falls back to the identity-root `keys/` and `keytypes/` paths,
+  watcher falls back to the product-root `keys/` and `keytypes/` paths,
   which are not the live active store on a healthy generational store
 
 Mechanism:
@@ -2533,9 +2543,9 @@ Mechanism:
   active generation and re-arms the watcher on its directories
 - missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload
-- when locked, the watcher remains running and marks the identity dirty
-- watcher-triggered reload obtains the identity mutation lock before scanning keys/templates
-- admin mutation paths that already hold the identity mutation lock call direct reload paths and must not call watcher-only reload entrypoints
+- when locked, the watcher remains running and marks the product runtime dirty
+- watcher-triggered reload obtains the product store mutation lock before scanning keys/templates
+- admin mutation paths that already hold the product store mutation lock call direct reload paths and must not call watcher-only reload entrypoints
 
 Debounce:
 
@@ -2544,7 +2554,7 @@ Debounce:
 
 Lifecycle:
 
-- starts when the identity runtime is unlocked or initialized
+- starts when the product runtime is unlocked or initialized
 - remains running across lock/unlock transitions
 - stops on runtime shutdown
 
@@ -2586,14 +2596,14 @@ Key type immutability:
 - keystore templates may add new non-built-in `key_type` values but must not override built-ins,
 - reload/unlock may activate new key types or ignore idempotent re-loads of the same definition, but must not replace an existing conflicting definition.
 
-Product identity filtering:
+Product key-type filtering:
 
-- a process-global provider can exist without being visible to the product identity,
+- a process-global provider can exist without being visible to the product store,
 - `/keytypes`, admin `list_key_types`, and key generation filter by the product
   identity's default-enabled key types plus enabled identity state records,
 - a globally registered generic/composed template that is not installed or
-  enabled for the product identity is not generatable by that identity,
-- existing keys remain owned by the product identity's keystore; provider
+  enabled for the product store is not generatable by that store,
+- existing keys remain owned by the product keystore; provider
   lookup only supplies compatible signing/derivation code for keys already
   owned by that identity.
 
@@ -2634,7 +2644,7 @@ Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 Admin library template install verifies activation from the identity-local
 `ReloadReport`: the installed key type must appear in the activated or
 idempotent bucket for the requested template family. A process-global provider
-registry hit alone is not sufficient proof that the bound identity accepted the
+registry hit alone is not sufficient proof that the product runtime accepted the
 template during reload.
 
 ## Plugin Contract
@@ -2938,7 +2948,7 @@ backup contract and no migration from earlier internal tags is provided.
 ### Import and inspection
 
 `apadmin backup import` asks the daemon to validate an external tar archive
-deeply before publishing it under `backups/<identity>/`. The commit request
+deeply before publishing it under `backups/default/`. The commit request
 carries the sensitive export passphrase; the daemon authenticates the archive
 inventory and validates every credential payload, then zeros the passphrase
 without persisting it. Client-side archive inspection is not an authorization
@@ -2948,7 +2958,7 @@ credential verification per archive member, so first-party clients allow up to
 admin timeout. Import does not compile or install templates because
 templates are not archive members. The IPC transfer declares its exact source
 size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
-one writable upload per identity. Commit claims the completed upload under the
+one writable upload for the product store. Commit claims the completed upload under the
 identity mutation lock, releases that lock for hashing and deep verification,
 then reacquires it only for the final publish. A new import supersedes writable
 upload residue without deleting an archive already undergoing validation;

@@ -21,11 +21,11 @@ import (
 )
 
 type AuditRejectLogger interface {
-	LogSignRejected(identityID, authAddress, txnSender, reason string)
+	LogSignRejected(authAddress, txnSender, reason string)
 }
 
 type AuditRejectPolicyRuleLogger interface {
-	LogSignRejectedWithPolicyRule(identityID, authAddress, txnSender, reason, policyRuleID string)
+	LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string)
 }
 
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
@@ -64,7 +64,7 @@ type approvalResponseRecorder interface {
 	RecordApprovalResponse(response signerapproval.SignResponse)
 }
 
-func (s *ApprovalService) requestSigningApproval(ctx context.Context, identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
+func (s *ApprovalService) requestSigningApproval(ctx context.Context, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 	var response signerapproval.SignResponse
 	var err error
 	if s.RequestSigningApprovalResponseContext != nil {
@@ -100,17 +100,17 @@ func (s *ApprovalService) approvalWait() time.Duration {
 	return defaultApprovalWait
 }
 
-func (s *ApprovalService) logSignRejected(identityID, authAddress, txnSender, reason, policyRuleID string) {
+func (s *ApprovalService) logSignRejected(authAddress, txnSender, reason, policyRuleID string) {
 	if s.AuditLog == nil {
 		return
 	}
 	if policyRuleID != "" {
 		if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-			ruleLogger.LogSignRejectedWithPolicyRule(identityID, authAddress, txnSender, reason, policyRuleID)
+			ruleLogger.LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID)
 			return
 		}
 	}
-	s.AuditLog.LogSignRejected(identityID, authAddress, txnSender, reason)
+	s.AuditLog.LogSignRejected(authAddress, txnSender, reason)
 }
 
 func reviewabilityReason(txn types.Transaction) string {
@@ -446,15 +446,15 @@ func requestIDPreview(requestID string) string {
 	return requestID[:20]
 }
 
-func (s *ApprovalService) RequestGroupApproval(identityID string, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.RequestGroupApprovalWithContext(context.Background(), identityID, req, plan, groupDesc, firstValid, lastValid, txns)
+func (s *ApprovalService) RequestGroupApproval(req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
+	return s.RequestGroupApprovalWithContext(context.Background(), req, plan, groupDesc, firstValid, lastValid, txns)
 }
 
-func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
-	return s.requestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns, "")
+func (s *ApprovalService) RequestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction) *ServiceError {
+	return s.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, "")
 }
 
-func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string) *ServiceError {
+func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, groupDesc string, firstValid, lastValid uint64, txns []types.Transaction, forceReviewRuleID string) *ServiceError {
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() && forceReviewRuleID == "" {
 		console.Println("[USER AUTO-APPROVE] Group approved without operator prompt")
@@ -479,7 +479,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 				if plan.ForeignIndices[j] {
 					authAddr = ""
 				}
-				s.logSignRejected(identityID, authAddr, txns[j].Sender.String(), "reviewability_blocked: "+reason, forceReviewRuleID)
+				s.logSignRejected(authAddr, txns[j].Sender.String(), "reviewability_blocked: "+reason, forceReviewRuleID)
 			}
 			return forbidden(fmt.Sprintf("group approval blocked: tx %d/%d: %s", i+1, len(txns), reason))
 		}
@@ -495,7 +495,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 	violations := approvalpolicy.CheckGroupWarnings(txns, s.KnownAddresses())
 	approved, err := s.requestSigningApproval(
 		ctx,
-		identityID,
+
 		requestID,
 		groupAuthAddr,
 		displaySender,
@@ -507,7 +507,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 	)
 	if err != nil {
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
-			s.logGroupApprovalTimeout(identityID, req, plan, txns, forceReviewRuleID)
+			s.logGroupApprovalTimeout(req, plan, txns, forceReviewRuleID)
 		}
 		console.Printf("[X] Group approval error: %v\n", err)
 		console.Sync()
@@ -521,7 +521,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 			if plan.ForeignIndices[i] {
 				authAddr = ""
 			}
-			s.logSignRejected(identityID, authAddr, txns[i].Sender.String(), "group_rejected_by_operator", forceReviewRuleID)
+			s.logSignRejected(authAddr, txns[i].Sender.String(), "group_rejected_by_operator", forceReviewRuleID)
 		}
 		return forbidden("Group request rejected by operator")
 	}
@@ -531,15 +531,15 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, i
 	return nil
 }
 
-func (s *ApprovalService) RequestSingleTxnApproval(identityID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(context.Background(), identityID, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+func (s *ApprovalService) RequestSingleTxnApproval(txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
+	return s.requestSingleTxnApprovalWithContext(context.Background(), "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
 }
 
-func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, identityID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
-	return s.requestSingleTxnApprovalWithContext(ctx, identityID, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
+func (s *ApprovalService) RequestSingleTxnApprovalWithContext(ctx context.Context, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64) *ServiceError {
+	return s.requestSingleTxnApprovalWithContext(ctx, "", txReq, allTxns, txns, dummiesNeeded, firstValid, lastValid, "")
 }
 
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, identityID, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, suppliedRequestID string, txReq signerapi.SignRequest, allTxns, txns []types.Transaction, dummiesNeeded int, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
 	console := consoleOf(s.Console)
 	txnApproved := false
 	approvalReason := ""
@@ -566,7 +566,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	if reason := reviewabilityReason(allTxns[0]); reason != "" {
 		console.Printf("[REVIEWABILITY] Blocked txn approval: %s\n", reason)
 		console.Sync()
-		s.logSignRejected(identityID, txReq.AuthAddress, decodedSender, "reviewability_blocked: "+reason, forceReviewRuleID)
+		s.logSignRejected(txReq.AuthAddress, decodedSender, "reviewability_blocked: "+reason, forceReviewRuleID)
 		return forbidden("transaction approval blocked: " + reason)
 	}
 
@@ -586,7 +586,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 
 	approved, err := s.requestSigningApproval(
 		ctx,
-		identityID,
+
 		requestID,
 		txReq.AuthAddress,
 		decodedSender,
@@ -598,7 +598,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	)
 	if err != nil {
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
-			s.logSignRejected(identityID, txReq.AuthAddress, decodedSender, "txn_approval_timeout", forceReviewRuleID)
+			s.logSignRejected(txReq.AuthAddress, decodedSender, "txn_approval_timeout", forceReviewRuleID)
 		}
 		console.Printf("[X] Txn approval error: %v\n", err)
 		console.Sync()
@@ -607,7 +607,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	if !approved {
 		console.Println("[X] TXN REJECTED")
 		console.Sync()
-		s.logSignRejected(identityID, txReq.AuthAddress, decodedSender, "txn_rejected_by_operator", forceReviewRuleID)
+		s.logSignRejected(txReq.AuthAddress, decodedSender, "txn_rejected_by_operator", forceReviewRuleID)
 		return forbidden("Transaction rejected by operator")
 	}
 
@@ -616,7 +616,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	return nil
 }
 
-func (s *ApprovalService) logGroupApprovalTimeout(identityID string, req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, policyRuleID string) {
+func (s *ApprovalService) logGroupApprovalTimeout(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, policyRuleID string) {
 	if s.AuditLog == nil {
 		return
 	}
@@ -629,7 +629,7 @@ func (s *ApprovalService) logGroupApprovalTimeout(identityID string, req signera
 		if i < len(txns) {
 			txnSender = txns[i].Sender.String()
 		}
-		s.logSignRejected(identityID, authAddr, txnSender, "group_approval_timeout", policyRuleID)
+		s.logSignRejected(authAddr, txnSender, "group_approval_timeout", policyRuleID)
 	}
 }
 

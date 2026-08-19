@@ -370,7 +370,7 @@ func TestRequestSingleTxnApprovalBlocksNonReviewableTxn(t *testing.T) {
 	}
 
 	err := svc.RequestSingleTxnApproval(
-		"default",
+
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{{Type: types.TxType("mystery")}},
 		[]types.Transaction{{Type: types.TxType("mystery")}},
@@ -411,7 +411,7 @@ func TestRequestGroupApprovalBlocksNonReviewableTxn(t *testing.T) {
 	}
 	txns := []types.Transaction{{Type: types.TxType("mystery")}}
 
-	err := svc.RequestGroupApproval("default", req, plan, "desc", 0, 0, txns)
+	err := svc.RequestGroupApproval(req, plan, "desc", 0, 0, txns)
 	if err == nil {
 		t.Fatal("RequestGroupApproval() error = nil, want blocked non-reviewable group")
 		return
@@ -448,7 +448,7 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 	}
 
 	err := svc.RequestSingleTxnApproval(
-		"default",
+
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
@@ -489,7 +489,7 @@ func TestRequestSingleTxnApprovalUsesConfiguredWaitAndAuditsTimeout(t *testing.T
 	}
 
 	err := svc.RequestSingleTxnApproval(
-		"default",
+
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
 		[]types.Transaction{txn},
@@ -530,7 +530,7 @@ func TestRequestSingleTxnApprovalAuditsForcedReviewRuleOnReject(t *testing.T) {
 	}
 	err := svc.requestSingleTxnApprovalWithContext(
 		context.Background(),
-		"default",
+
 		"",
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},
@@ -588,7 +588,7 @@ func TestRequestGroupApprovalPassesWarningViolationsAndCanApprove(t *testing.T) 
 		},
 	}
 
-	err := svc.RequestGroupApproval("default", req, plan, "desc", 0, 0, txns)
+	err := svc.RequestGroupApproval(req, plan, "desc", 0, 0, txns)
 	if err != nil {
 		t.Fatalf("RequestGroupApproval() error = %v, want nil", err)
 	}
@@ -623,7 +623,7 @@ func TestRequestSingleTxnApprovalUsesSuppliedRequestID(t *testing.T) {
 
 	err := svc.requestSingleTxnApprovalWithContext(
 		context.Background(),
-		"default",
+
 		"cli-single-1",
 		signerapi.SignRequest{AuthAddress: "AUTH"},
 		[]types.Transaction{txn},

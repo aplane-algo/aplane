@@ -29,7 +29,7 @@ func TestCompleteRotationClosesVerifiedTransition(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -45,16 +45,16 @@ func TestCompleteRotationClosesVerifiedTransition(t *testing.T) {
 		t.Fatal("CompleteRotation() left root pending")
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("completed snapshot still exists: %v", err)
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(),
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("non-rollback completion wrote a baseline: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(settled store) error = %v", err)
 	}
 }
@@ -65,8 +65,8 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 	newPassphrase := []byte("pre-root-new-passphrase")
 	prepareInventoryFixtureKeyringStore(t, fixture, oldPassphrase)
 	for _, path := range []string{
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
+		fixture.paths.RotationBaselinePath(),
 	} {
 		if err := fsutil.RemoveDurable(path); err != nil {
 			t.Fatalf("RemoveDurable(%s) error = %v", path, err)
@@ -75,7 +75,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 
 	injected := errors.New("injected pre-root rename failure")
 	rootPath := crypto.KeyringPath(
-		fixture.paths.IdentityDir(inventoryIdentity),
+		fixture.paths.ProductDir(),
 	)
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpRename && path == rootPath {
@@ -87,7 +87,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 
 	if _, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		newPassphrase,
 	); !errors.Is(err, injected) {
@@ -99,7 +99,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 	if fixture.kr.CurrentTerm() != 1 {
 		t.Fatalf("current term = %d, want old settled term 1", fixture.kr.CurrentTerm())
 	}
-	snapshotPath := fixture.paths.RotationSnapshotPath(inventoryIdentity)
+	snapshotPath := fixture.paths.RotationSnapshotPath()
 	if _, err := os.Stat(snapshotPath); err != nil {
 		t.Fatalf("pre-root snapshot orphan is missing: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		oldPassphrase,
 	)
@@ -124,7 +124,7 @@ func TestCompleteRotationDiscardsPreRootSnapshotOrphan(t *testing.T) {
 	if _, err := os.Stat(snapshotPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pre-root snapshot survived cleanup: %v", err)
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan() after pre-root cleanup error = %v", err)
 	}
 }
@@ -134,8 +134,8 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 	passphrase := []byte("stale-current-seal-passphrase")
 	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
 	for _, path := range []string{
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
+		fixture.paths.RotationBaselinePath(),
 	} {
 		if err := fsutil.RemoveDurable(path); err != nil {
 			t.Fatalf("RemoveDurable(%s) error = %v", path, err)
@@ -143,7 +143,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 	}
 
 	current := fixture.paths.GenerationPaths(
-		inventoryIdentity,
+
 		inventoryGenB,
 	)
 	if err := genstore.WriteSeal(
@@ -160,7 +160,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -177,7 +177,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -194,7 +194,7 @@ func TestCompleteRotationIgnoresStaleSealOnCurrentGeneration(t *testing.T) {
 	if !bytes.Equal(after, staleSeal) {
 		t.Fatal("rotation rewrote non-authoritative CURRENT seal residue")
 	}
-	if _, err := Scan(fixture.paths, inventoryIdentity, fixture.kr); err != nil {
+	if _, err := Scan(fixture.paths, fixture.kr); err != nil {
 		t.Fatalf("Scan(settled store with stale CURRENT seal) error = %v", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestCompleteRotationWritesCleanCutoverBaselineBeforeClose(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -221,14 +221,14 @@ func TestCompleteRotationWritesCleanCutoverBaselineBeforeClose(t *testing.T) {
 	}
 	baseline, err := ReadBaseline(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	)
 	if err != nil {
 		t.Fatalf("ReadBaseline() error = %v", err)
 	}
 	inventory, err := genstore.BuildInventory(
-		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB),
+		fixture.paths.GenerationPaths(inventoryGenB),
 	)
 	if err != nil {
 		t.Fatalf("BuildInventory() error = %v", err)
@@ -257,7 +257,7 @@ func TestCompleteRotationReplacesPinnedPriorBaseline(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -269,14 +269,14 @@ func TestCompleteRotationReplacesPinnedPriorBaseline(t *testing.T) {
 	}
 	baseline, err := ReadBaseline(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 	)
 	if err != nil {
 		t.Fatalf("ReadBaseline() error = %v", err)
 	}
 	inventory, err := genstore.BuildInventory(
-		fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB),
+		fixture.paths.GenerationPaths(inventoryGenB),
 	)
 	if err != nil {
 		t.Fatalf("BuildInventory() error = %v", err)
@@ -299,7 +299,7 @@ func TestCompleteRotationDoesNotEraseCutoverDivergence(t *testing.T) {
 
 	report, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -310,7 +310,7 @@ func TestCompleteRotationDoesNotEraseCutoverDivergence(t *testing.T) {
 		t.Fatalf("diverged completion wrote a baseline: %#v", report)
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationBaselinePath(),
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("diverged completion baseline exists: %v", err)
 	}
@@ -318,10 +318,10 @@ func TestCompleteRotationDoesNotEraseCutoverDivergence(t *testing.T) {
 
 func TestCompleteRotationPublishesBaselineBeforeRootAndSnapshotCleanup(t *testing.T) {
 	fixture, _, passphrase := startCompletionFixture(t, true, false, false)
-	identityDir := fixture.paths.IdentityDir(inventoryIdentity)
-	baselinePath := fixture.paths.RotationBaselinePath(inventoryIdentity)
+	identityDir := fixture.paths.ProductDir()
+	baselinePath := fixture.paths.RotationBaselinePath()
 	rootPath := crypto.KeyringPath(identityDir)
-	snapshotPath := fixture.paths.RotationSnapshotPath(inventoryIdentity)
+	snapshotPath := fixture.paths.RotationSnapshotPath()
 	baselineRenamed := false
 	rootRenamed := false
 	rootDirectorySynced := false
@@ -357,7 +357,7 @@ func TestCompleteRotationPublishesBaselineBeforeRootAndSnapshotCleanup(t *testin
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err != nil {
@@ -378,7 +378,7 @@ func TestCompleteRotationPublishesBaselineBeforeRootAndSnapshotCleanup(t *testin
 func TestCompleteRotationRejectsUnpinnedFinalPath(t *testing.T) {
 	fixture, _, passphrase := startCompletionFixture(t, false, false, false)
 	path := filepath.Join(
-		fixture.paths.DeletedKeysDir(inventoryIdentity),
+		fixture.paths.DeletedKeysDir(),
 		"INJECTED.key",
 	)
 	if err := writeEnvelope(
@@ -392,7 +392,7 @@ func TestCompleteRotationRejectsUnpinnedFinalPath(t *testing.T) {
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err == nil || !strings.Contains(err.Error(), "unpinned path") {
@@ -402,7 +402,7 @@ func TestCompleteRotationRejectsUnpinnedFinalPath(t *testing.T) {
 		t.Fatal("final path-set rejection closed the pending root")
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); err != nil {
 		t.Fatalf("final path-set rejection removed snapshot: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 	injected := errors.New("injected baseline directory sync failure")
 	failed := false
 	baselineRenamed := false
-	baselinePath := fixture.paths.RotationBaselinePath(inventoryIdentity)
+	baselinePath := fixture.paths.RotationBaselinePath()
 	baselineDir := filepath.Dir(
 		baselinePath,
 	)
@@ -432,7 +432,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -449,7 +449,7 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 	retry, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -464,10 +464,10 @@ func TestCompleteRotationRetriesBaselineAfterDurabilityFailure(t *testing.T) {
 
 func TestCompleteRotationSecondScanBlocksMutationAfterBaseline(t *testing.T) {
 	fixture, _, passphrase := startCompletionFixture(t, true, false, false)
-	policyPath := policy.PolicyPath(fixture.paths.Root(), inventoryIdentity)
+	policyPath := policy.PolicyPath(fixture.paths.Root())
 	mutated := false
 	baselineRenamed := false
-	baselinePath := fixture.paths.RotationBaselinePath(inventoryIdentity)
+	baselinePath := fixture.paths.RotationBaselinePath()
 	baselineDir := filepath.Dir(
 		baselinePath,
 	)
@@ -491,7 +491,7 @@ func TestCompleteRotationSecondScanBlocksMutationAfterBaseline(t *testing.T) {
 
 	if _, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	); err == nil {
@@ -509,7 +509,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 	fixture, _, passphrase := startCompletionFixture(t, false, false, false)
 	injected := errors.New("injected close directory sync failure")
 	rootRenamed := false
-	identityDir := fixture.paths.IdentityDir(inventoryIdentity)
+	identityDir := fixture.paths.ProductDir()
 	rootPath := crypto.KeyringPath(identityDir)
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpRename && path == rootPath {
@@ -524,7 +524,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -539,7 +539,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 		t.Fatal("visible settled root was not adopted")
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); err != nil {
 		t.Fatalf("snapshot removed before close durability reconciliation: %v", err)
 	}
@@ -547,7 +547,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 
 	recovered, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -563,7 +563,7 @@ func TestCompleteRotationRecoversVisibleCloseBeforeSnapshotCleanup(t *testing.T)
 func TestCompleteRotationReportsSnapshotCleanupDurabilityFailure(t *testing.T) {
 	fixture, _, passphrase := startCompletionFixture(t, false, false, false)
 	injected := errors.New("injected snapshot cleanup directory sync failure")
-	identityDir := fixture.paths.IdentityDir(inventoryIdentity)
+	identityDir := fixture.paths.ProductDir()
 	rootPath := crypto.KeyringPath(identityDir)
 	rootRenamed := false
 	rootSynced := false
@@ -584,7 +584,7 @@ func TestCompleteRotationReportsSnapshotCleanupDurabilityFailure(t *testing.T) {
 
 	partial, err := CompleteRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)
@@ -598,7 +598,7 @@ func TestCompleteRotationReportsSnapshotCleanupDurabilityFailure(t *testing.T) {
 		t.Fatal("snapshot cleanup failure restored pending authority")
 	}
 	if _, err := os.Stat(
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("snapshot removal is not visible after cleanup sync failure: %v", err)
 	}
@@ -613,8 +613,8 @@ func startCompletionFixture(
 	passphrase := []byte("rotation-completion-passphrase")
 	prepareInventoryFixtureKeyringStore(t, fixture, passphrase)
 	for _, path := range []string{
-		fixture.paths.RotationSnapshotPath(inventoryIdentity),
-		fixture.paths.RotationBaselinePath(inventoryIdentity),
+		fixture.paths.RotationSnapshotPath(),
+		fixture.paths.RotationBaselinePath(),
 	} {
 		if err := fsutil.RemoveDurable(path); err != nil {
 			t.Fatalf("RemoveDurable(%s) error = %v", path, err)
@@ -622,7 +622,7 @@ func startCompletionFixture(
 	}
 
 	if rollbackEligible {
-		gen := fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB)
+		gen := fixture.paths.GenerationPaths(inventoryGenB)
 		manifest, err := genstore.ReadManifest(gen)
 		if err != nil {
 			t.Fatalf("ReadManifest() error = %v", err)
@@ -641,7 +641,7 @@ func startCompletionFixture(
 	if diverged {
 		path := filepath.Join(
 			fixture.paths.GenerationPaths(
-				inventoryIdentity,
+
 				inventoryGenB,
 			).KeysDir(),
 			"ACCOUNT.key",
@@ -657,7 +657,7 @@ func startCompletionFixture(
 	}
 	if priorBaseline {
 		inventory, err := genstore.BuildInventory(
-			fixture.paths.GenerationPaths(inventoryIdentity, inventoryGenB),
+			fixture.paths.GenerationPaths(inventoryGenB),
 		)
 		if err != nil {
 			t.Fatalf("BuildInventory(prior baseline) error = %v", err)
@@ -668,7 +668,7 @@ func startCompletionFixture(
 		}
 		if err := WriteBaseline(
 			fixture.paths,
-			inventoryIdentity,
+
 			baseline,
 			fixture.kr,
 		); err != nil {
@@ -678,7 +678,7 @@ func startCompletionFixture(
 
 	snapshot, err := StartRotation(
 		fixture.paths,
-		inventoryIdentity,
+
 		fixture.kr,
 		passphrase,
 	)

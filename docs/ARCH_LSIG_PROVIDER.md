@@ -106,7 +106,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
 | `internal/tealtemplate/legacy.go` | Generated-mode restricted list expansion and scalar substitution utilities |
 | `internal/keytypecatalog` | Compiled key type visibility catalog |
-| `internal/keytypestate` | Identity-scoped state record format and persistence primitives for library-visible compiled providers and installed templates |
+| `internal/keytypestate` | Product-store state record format and persistence primitives for library-visible compiled providers and installed templates |
 | `internal/templatelibrary` | Library parsing and sole feature-level template/key-type mutation coordinator |
 | `internal/templatestore` | Encrypted template file format and persistence primitives |
 | `internal/signing` | Resource-dummy construction/signing and common transaction helpers |

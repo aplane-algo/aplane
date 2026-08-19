@@ -12,6 +12,7 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -532,22 +533,22 @@ func cloneASAAmounts(in map[string]map[uint64]uint64) map[string]map[uint64]uint
 	return out
 }
 
-// PolicyPath returns the path to an identity policy file.
-func PolicyPath(dataRoot, identityID string) string {
-	return filepath.Join(dataRoot, "identities", identityID, "policy.yaml")
+// PolicyPath returns the fixed product policy path.
+func PolicyPath(dataRoot string) string {
+	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "policy.yaml")
 }
 
 // SentryPath returns the path to the policy file used by sentry nodes.
 // Single-mode nodes store the active role policy in policy.yaml; this helper is
 // retained so sentry-domain callers can keep using the sentry parser and
 // validator without carrying a separate filename.
-func SentryPath(dataRoot, identityID string) string {
-	return PolicyPath(dataRoot, identityID)
+func SentryPath(dataRoot string) string {
+	return PolicyPath(dataRoot)
 }
 
-// SaveStoredConfig writes a whole identity policy file atomically.
-func SaveStoredConfig(dataRoot, identityID string, cfg *StoredConfig) error {
-	path := PolicyPath(dataRoot, identityID)
+// SaveStoredConfig writes the fixed product policy file atomically.
+func SaveStoredConfig(dataRoot string, cfg *StoredConfig) error {
+	path := PolicyPath(dataRoot)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create policy directory: %w", err)

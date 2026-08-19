@@ -45,29 +45,28 @@ func validateGenerationComponent(id string) string {
 	return id
 }
 
-// CurrentPointerPath is identities/<id>/CURRENT.
-func (p Paths) CurrentPointerPath(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), CurrentPointerName)
+// CurrentPointerPath is identities/default/CURRENT.
+func (p Paths) CurrentPointerPath() string {
+	return filepath.Join(p.ProductDir(), CurrentPointerName)
 }
 
-// GenerationsDir is identities/<id>/generations.
-func (p Paths) GenerationsDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), GenerationsDirName)
+// GenerationsDir is identities/default/generations.
+func (p Paths) GenerationsDir() string {
+	return filepath.Join(p.ProductDir(), GenerationsDirName)
 }
 
-// GenerationDir is identities/<id>/generations/<generation-id>.
-func (p Paths) GenerationDir(identityID, generationID string) string {
-	return filepath.Join(p.GenerationsDir(identityID), validateGenerationComponent(generationID))
+// GenerationDir is identities/default/generations/<generation-id>.
+func (p Paths) GenerationDir(generationID string) string {
+	return filepath.Join(p.GenerationsDir(), validateGenerationComponent(generationID))
 }
 
 // GenerationPaths binds generation-qualified active-store paths. Pure
 // constructor: it does not consult CURRENT. Operations resolve CURRENT once
 // (internal/genstore.Resolve) under the identity mutation lock and pass the
 // result down; re-resolving mid-operation is a correctness bug.
-func (p Paths) GenerationPaths(identityID, generationID string) GenPaths {
+func (p Paths) GenerationPaths(generationID string) GenPaths {
 	return GenPaths{
-		root:         p.GenerationDir(identityID, generationID),
-		identityID:   identityID,
+		root:         p.GenerationDir(generationID),
 		generationID: generationID,
 	}
 }
@@ -76,10 +75,9 @@ func (p Paths) GenerationPaths(identityID, generationID string) GenPaths {
 // Only the genstore commit protocol should use this: staging and published
 // generation directories share one internal layout, and the commit rename
 // is what turns one into the other.
-func StagedGenerationPaths(identityID, generationID, stagingDir string) GenPaths {
+func StagedGenerationPaths(generationID, stagingDir string) GenPaths {
 	return GenPaths{
 		root:         stagingDir,
-		identityID:   identityID,
 		generationID: validateGenerationComponent(generationID),
 	}
 }
@@ -87,15 +85,11 @@ func StagedGenerationPaths(identityID, generationID, stagingDir string) GenPaths
 // GenPaths carries the active-store paths of one resolved generation.
 type GenPaths struct {
 	root         string
-	identityID   string
 	generationID string
 }
 
 // GenerationID names the bound generation.
 func (g GenPaths) GenerationID() string { return g.generationID }
-
-// IdentityID names the bound identity.
-func (g GenPaths) IdentityID() string { return g.identityID }
 
 // Dir is the generation directory itself.
 func (g GenPaths) Dir() string { return g.root }

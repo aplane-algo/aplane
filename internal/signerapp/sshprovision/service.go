@@ -8,27 +8,28 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 type AuditLogger interface {
-	LogTokenProvisioned(identityID, sshFingerprint, remoteAddr string)
+	LogTokenProvisioned(sshFingerprint, remoteAddr string)
 }
 
 type Service struct {
 	TokenRoot                       string
-	RequestTokenProvisioning        func(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error)
-	RequestTokenProvisioningContext func(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error)
+	RequestTokenProvisioning        func(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error)
+	RequestTokenProvisioningContext func(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error)
 	AuditLog                        AuditLogger
 	Logf                            func(format string, args ...interface{})
 	Now                             func() time.Time
 }
 
-func (s Service) Approve(identityID, sshFingerprint, remoteAddr string) (bool, error) {
-	return s.ApproveContext(context.Background(), identityID, sshFingerprint, remoteAddr)
+func (s Service) Approve(sshFingerprint, remoteAddr string) (bool, error) {
+	return s.ApproveContext(context.Background(), sshFingerprint, remoteAddr)
 }
 
-func (s Service) ApproveContext(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+func (s Service) ApproveContext(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 	if s.RequestTokenProvisioningContext == nil && s.RequestTokenProvisioning == nil {
 		return false, fmt.Errorf("token provisioning requester not configured")
 	}
@@ -38,13 +39,13 @@ func (s Service) ApproveContext(ctx context.Context, identityID, sshFingerprint,
 	}
 	requestID := fmt.Sprintf("token-%d", now().UnixNano())
 	if s.RequestTokenProvisioningContext != nil {
-		return s.RequestTokenProvisioningContext(ctx, requestID, identityID, sshFingerprint, remoteAddr, 5*time.Minute)
+		return s.RequestTokenProvisioningContext(ctx, requestID, sshFingerprint, remoteAddr, 5*time.Minute)
 	}
-	return s.RequestTokenProvisioning(requestID, identityID, sshFingerprint, remoteAddr, 5*time.Minute)
+	return s.RequestTokenProvisioning(requestID, sshFingerprint, remoteAddr, 5*time.Minute)
 }
 
-func (s Service) Issue(identityID string) (string, error) {
-	path := tokenfile.GetAPlaneTokenPathForRoot(s.TokenRoot, identityID)
+func (s Service) Issue() (string, error) {
+	path := tokenfile.GetAPlaneTokenPathForRoot(s.TokenRoot)
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to load token: %w", err)
@@ -55,11 +56,11 @@ func (s Service) Issue(identityID string) (string, error) {
 	return token, nil
 }
 
-func (s Service) AuditProvisioned(identityID, sshFingerprint, remoteAddr string) {
+func (s Service) AuditProvisioned(sshFingerprint, remoteAddr string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogTokenProvisioned(identityID, sshFingerprint, remoteAddr)
+		s.AuditLog.LogTokenProvisioned(sshFingerprint, remoteAddr)
 	}
 	if s.Logf != nil {
-		s.Logf("token provisioned for identity %q to %s (key: %s)", identityID, remoteAddr, sshFingerprint)
+		s.Logf("token provisioned for identity %q to %s (key: %s)", productmode.IdentityID, remoteAddr, sshFingerprint)
 	}
 }

@@ -45,7 +45,7 @@ func (*inspectionStub) ListGenerations(*identity.Runtime) adminproto.GenerationI
 }
 
 func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	if ir.IsUnlocked() {
 		t.Fatal("new identity runtime unexpectedly unlocked")
 	}
@@ -73,7 +73,7 @@ func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
 }
 
 func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	inspection := &inspectionStub{listResult: adminproto.ListSentryReferencesResult{
 		References: []adminproto.SentryReferenceInfo{{Name: "lab", ComponentKey: "WKID", KeyType: "witness"}},
 	}}
@@ -100,7 +100,7 @@ func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
 }
 
 func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
-	ir := identity.New(identity.Config{ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}

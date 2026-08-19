@@ -95,8 +95,8 @@ func (t Target) StatusNoun() string {
 	}
 }
 
-func (t Target) Path(dataDir, identityID string) string {
-	return policy.PolicyPath(dataDir, identityID)
+func (t Target) Path(dataDir string) string {
+	return policy.PolicyPath(dataDir)
 }
 
 func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {

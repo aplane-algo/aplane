@@ -129,8 +129,8 @@ func CanonicalManagedCredentialFilename(selector, category string) (string, erro
 	return selector + class.Extension(), nil
 }
 
-func CanonicalManagedCredentialPath(paths storepaths.Paths, identityID, selector, category string) (string, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func CanonicalManagedCredentialPath(paths storepaths.Paths, selector, category string) (string, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", err
 	}
@@ -149,8 +149,8 @@ func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selecto
 
 // AccountKeyFilePath is for code that already owns a validated Algorand
 // account address. Canonical writers should prefer CanonicalManagedCredentialPath.
-func AccountKeyFilePath(paths storepaths.Paths, identityID, address string) string {
-	return AccountKeyFilePathActive(mustResolveActive(paths, identityID), address)
+func AccountKeyFilePath(paths storepaths.Paths, address string) string {
+	return AccountKeyFilePathActive(mustResolveActive(paths), address)
 }
 
 // AccountKeyFilePathActive is AccountKeyFilePath against resolved
@@ -161,16 +161,16 @@ func AccountKeyFilePathActive(active storepaths.ActivePaths, address string) str
 
 // SentryCredentialFilePath is for code that already owns a validated Witness
 // Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
-func SentryCredentialFilePath(paths storepaths.Paths, identityID, witnessKeyID string) string {
-	return SentryCredentialFilePathActive(mustResolveActive(paths, identityID), witnessKeyID)
+func SentryCredentialFilePath(paths storepaths.Paths, witnessKeyID string) string {
+	return SentryCredentialFilePathActive(mustResolveActive(paths), witnessKeyID)
 }
 
 // mustResolveActive backs the string-returning convenience path builders,
 // which have no production callers (writers use the Active variants); a
 // present-but-invalid CURRENT panics rather than silently resolving legacy
 // paths.
-func mustResolveActive(paths storepaths.Paths, identityID string) storepaths.ActivePaths {
-	active, err := genstore.ResolveActive(paths, identityID)
+func mustResolveActive(paths storepaths.Paths) storepaths.ActivePaths {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		panic(err)
 	}
@@ -185,8 +185,8 @@ func SentryCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID 
 
 // ManagedCredentialDestination reports the canonical destination and whether
 // it exists, while rejecting an active file in the contradictory class.
-func ManagedCredentialDestination(paths storepaths.Paths, identityID, selector, category string) (string, bool, error) {
-	active, err := genstore.ResolveActive(paths, identityID)
+func ManagedCredentialDestination(paths storepaths.Paths, selector, category string) (string, bool, error) {
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", false, err
 	}

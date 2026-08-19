@@ -24,22 +24,21 @@ var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := keys.SentryCredentialFilePath(paths, identityID, selector)
+	source := keys.SentryCredentialFilePath(paths, selector)
 	if err := os.WriteFile(source, encrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	destination := t.TempDir()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
-	if _, _, err := ExportKey(paths, identityID, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
+	if _, _, err := ExportKey(paths, active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
 		t.Fatalf("ExportKey() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
@@ -50,21 +49,20 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	identityID := "default"
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.LegacyKeysDir(identityID), 0o700); err != nil {
+	if err := os.MkdirAll(paths.LegacyKeysDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for _, extension := range []string{keys.AccountKeyExtension, keys.SentryCredentialExtension} {
-		if err := os.WriteFile(filepath.Join(paths.LegacyKeysDir(identityID), selector+extension), encrypted, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(paths.LegacyKeysDir(), selector+extension), encrypted, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, _, err = ExportKey(paths, identityID, paths.LegacyKeysDir(identityID), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, _, err = ExportKey(paths, paths.LegacyKeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
 		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
 	}
@@ -129,7 +127,7 @@ func mintFirstGenerationForBackupTest(t *testing.T, paths storepaths.Paths) {
 	if err != nil {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
-	if _, err := genstore.Mint(paths, "default", genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    generationID,
 		FirstGeneration: true,
 		Operation:       "store-initialize",

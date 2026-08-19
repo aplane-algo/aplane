@@ -27,10 +27,9 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	oldUmask := syscall.Umask(0o077)
 	defer syscall.Umask(oldUmask)
 
-	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -39,20 +38,20 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
-	archivePath := BuildManagedArchivePath(paths, identityID, "20260428-010203")
+	archivePath := BuildManagedArchivePath(paths, "20260428-010203")
 	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
-		identityID,
+
 		archivePath,
 		nil,
 		noderole.RoleSigner,
@@ -62,7 +61,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	}
 
 	assertStoreDirMode(t, paths.BackupsRootDir())
-	assertStoreDirMode(t, paths.IdentityBackupsDir(identityID))
+	assertStoreDirMode(t, paths.ProductBackupsDir())
 	assertFileMode(t, archivePath, fsutil.StoreFilePerm)
 
 	extractDir := t.TempDir()
@@ -98,10 +97,9 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 }
 
 func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
-	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatal(err)
 	}
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
@@ -109,20 +107,20 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, identityID, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
-	archivePath := BuildManagedArchivePath(paths, identityID, "20260721-010203")
+	archivePath := BuildManagedArchivePath(paths, "20260721-010203")
 	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
-		identityID,
+
 		archivePath,
 		nil,
 		noderole.RoleSentry,
@@ -149,7 +147,7 @@ func timeForBackupTest() time.Time {
 
 func testCreateKeysArchiveRequest(
 	paths storepaths.Paths,
-	identityID, archivePath string,
+	archivePath string,
 	addresses []string,
 	role noderole.Role,
 	kr *crypto.Keyring,
@@ -157,7 +155,6 @@ func testCreateKeysArchiveRequest(
 	_ = role
 	return CreateKeysArchiveRequest{
 		Paths:            paths,
-		IdentityID:       identityID,
 		ArchivePath:      archivePath,
 		Addresses:        addresses,
 		Keyring:          kr,
@@ -199,11 +196,10 @@ func assertFileMode(t *testing.T, path string, want os.FileMode) {
 func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 
-	const identityID = "default"
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 
@@ -212,7 +208,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
@@ -224,21 +220,21 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), identityID, &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
 	}
 
-	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-010203")
+	archivePath := BuildManagedArchivePath(paths, "20260710-010203")
 	_, err = CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
-		identityID,
+
 		archivePath,
 		nil,
 		noderole.RoleSigner,
@@ -249,10 +245,10 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	}
 
 	// Explicitly selecting the invalid key still fails closed.
-	selectedPath := BuildManagedArchivePath(paths, identityID, "20260710-020304")
+	selectedPath := BuildManagedArchivePath(paths, "20260710-020304")
 	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
-		identityID,
+
 		selectedPath,
 		[]string{badAddress},
 		noderole.RoleSigner,
@@ -263,10 +259,9 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 }
 
 func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
-	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir(identityID)); err != nil {
+	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
 	const badAddress = "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -274,15 +269,15 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	badFile := apkeys.AccountKeyFilePath(paths, identityID, badAddress)
+	badFile := apkeys.AccountKeyFilePath(paths, badAddress)
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
-	archivePath := BuildManagedArchivePath(paths, identityID, "20260710-030405")
+	archivePath := BuildManagedArchivePath(paths, "20260710-030405")
 	_, err = CreateKeysArchive(testCreateKeysArchiveRequest(
 		paths,
-		identityID,
+
 		archivePath,
 		nil,
 		noderole.RoleSigner,
@@ -295,20 +290,19 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 
 // Infrastructure failures also abort the complete archive.
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
-	const identityID = "default"
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForBackupTest(t, paths)
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
 	srcDir := active.KeysDir()
-	corruptFile := apkeys.AccountKeyFilePath(paths, identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	corruptFile := apkeys.AccountKeyFilePath(paths, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	_, err = ExportAllKeys(paths, identityID, srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, err = ExportAllKeys(paths, srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}

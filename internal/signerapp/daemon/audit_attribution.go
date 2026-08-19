@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
 
@@ -28,7 +29,7 @@ func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	if ident == nil {
 		return attr
 	}
-	attr.TargetIdentityID = auth.CurrentProductIdentityID()
+	attr.TargetIdentityID = productmode.IdentityID
 	attr.RequesterPrincipal = ident.ID
 	return attr
 }
@@ -43,46 +44,46 @@ func (fs *Signer) signingAuditLogger(r *http.Request) signingAudit {
 	}
 }
 
-func (l *signingAuditLogger) LogSignRequest(identityID, authAddress, txnSender, txnType, details string) {
+func (l *signingAuditLogger) LogSignRequest(authAddress, txnSender, txnType, details string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignRequestAttributed(l.attribution, identityID, authAddress, txnSender, txnType, details)
+	l.log.LogSignRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 }
 
-func (l *signingAuditLogger) LogSignApproved(identityID, authAddress, txnSender, details string) {
+func (l *signingAuditLogger) LogSignApproved(authAddress, txnSender, details string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignApprovedAttributed(l.attribution, identityID, authAddress, txnSender, details)
+	l.log.LogSignApprovedAttributed(l.attribution, authAddress, txnSender, details)
 }
 
-func (l *signingAuditLogger) LogSignApprovedWithPolicyRule(identityID, authAddress, txnSender, details, policyRuleID string) {
+func (l *signingAuditLogger) LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignApprovedAttributedWithPolicyRule(l.attribution, identityID, authAddress, txnSender, details, policyRuleID)
+	l.log.LogSignApprovedAttributedWithPolicyRule(l.attribution, authAddress, txnSender, details, policyRuleID)
 }
 
-func (l *signingAuditLogger) LogSignRejected(identityID, authAddress, txnSender, reason string) {
+func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignRejectedAttributed(l.attribution, identityID, authAddress, txnSender, reason)
+	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason)
 }
 
-func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(identityID, authAddress, txnSender, reason, policyRuleID string) {
+func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignRejectedAttributedWithPolicyRule(l.attribution, identityID, authAddress, txnSender, reason, policyRuleID)
+	l.log.LogSignRejectedAttributedWithPolicyRule(l.attribution, authAddress, txnSender, reason, policyRuleID)
 }
 
-func (l *signingAuditLogger) LogSignFailed(identityID, authAddress, txnSender, reason string) {
+func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string) {
 	if l == nil || l.log == nil {
 		return
 	}
-	l.log.LogSignFailedAttributed(l.attribution, identityID, authAddress, txnSender, reason)
+	l.log.LogSignFailedAttributed(l.attribution, authAddress, txnSender, reason)
 }
 
 func (l *signingAuditLogger) RecordApprovalResponse(response signerapproval.SignResponse) {

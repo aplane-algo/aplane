@@ -58,19 +58,19 @@ This separation is deliberate:
 
 | Object | Durable location | Authority |
 |---|---|---|
-| Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
-| LogicSig key file | `identities/<identity>/keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
-| Sentry witness credential | `identities/<identity>/keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
-| Witness public sidecar | `identities/<identity>/keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
+| Native key file | `identities/default/keys/<address>.key` | Native signing authority. |
+| LogicSig key file | `identities/default/keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
+| Sentry witness credential | `identities/default/keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
+| Witness public sidecar | `identities/default/keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
 | External contract-admin witness | Operator-controlled `<witness_key_id>.wit`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
-| Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
+| Node role integrity sidecar | `identities/default/node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
 | Identity config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
-| Key type state record | `identities/<identity>/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
-| Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
-| Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |
-| Deleted template archive | `identities/<identity>/deleted/keytypes/` | Removed template files; outside active scans. |
+| Key type state record | `identities/default/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
+| Installed YAML template | `identities/default/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
+| Deleted key archive | `identities/default/deleted/keys/` | Removed key files; outside active scans. |
+| Deleted template archive | `identities/default/deleted/keytypes/` | Removed template files; outside active scans. |
 | Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer stores install the bundled Falcon allowlist v1 source into the product identity during initialization; other entries require identity-local import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; identity visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
@@ -131,7 +131,7 @@ Rules:
 
 A node hosts one product identity. Role-conflicting key inventory anywhere in
 the data directory is a node-level store contradiction: startup/reload fails
-closed for the node rather than allowing that identity runtime to continue.
+closed for the node rather than allowing the product runtime to continue.
 This is a deliberate
 safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.sen` can make the
 node unavailable until the operator removes it, while supported restore/import
@@ -364,7 +364,7 @@ is not published as valid runtime inventory.
 4. Node role gates allowed key classes for generation, reload, restore, and
    signing endpoint dispatch.
 5. Node role is immutable in supported tools and tamper-resistant through
-   per-identity HMAC sidecars over root `node.yaml`.
+   a product-store HMAC sidecar over root `node.yaml`.
 6. Role-conflicting active inventory anywhere in a signer data root fails the
    whole node closed.
 7. Disabled key types block new-key discovery/generation, not valid

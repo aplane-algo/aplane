@@ -58,7 +58,7 @@ func validateBoundedAdminPlan(request signerapi.BoundedAdminRequest, plan *PlanR
 	return 0, plan.BoundedItems[0], nil
 }
 
-func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, identityID string, session *keystore.KeySession, targetIndex int, item *boundedPlanItem) ([]string, *ServiceError) {
+func (e *Executor) ExecuteBoundedAdminPartial(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession, targetIndex int, item *boundedPlanItem) ([]string, *ServiceError) {
 	if targetIndex < 0 || targetIndex >= len(req.Requests) || targetIndex >= len(plan.AllTxns) || item == nil {
 		return nil, internal("bounded-admin target index is invalid")
 	}

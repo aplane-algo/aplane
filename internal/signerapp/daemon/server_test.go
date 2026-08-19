@@ -56,7 +56,6 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	signer := &Signer{
 		runtime: identity.New(identity.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
-			ID:            auth.DefaultIdentityID,
 		}),
 	}
 
@@ -73,7 +72,7 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	)
 
 	deps := signerPlannerDeps{signer: signer}
-	snapshot := deps.Snapshot(auth.DefaultIdentityID)
+	snapshot := deps.Snapshot()
 
 	if snapshot.Revision != 1 {
 		t.Fatalf("Snapshot revision = %d, want 1", snapshot.Revision)
@@ -94,7 +93,6 @@ func TestBuildKeyInfoListEmpty(t *testing.T) {
 	signer := &Signer{
 		runtime: identity.New(identity.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
-			ID:            auth.DefaultIdentityID,
 		}),
 	}
 

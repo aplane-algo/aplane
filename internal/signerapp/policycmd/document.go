@@ -47,17 +47,16 @@ func readSource(source string, stdin io.Reader) ([]byte, error) {
 }
 
 type loadedDocument struct {
-	command    Command
-	streams    Streams
-	store      policyeditor.Store
-	stored     *policy.StoredConfig
-	exactYAML  []byte
-	target     policyeditor.Target
-	status     string
-	dataDir    string
-	identityID string
-	digest     string
-	editor     Editor
+	command   Command
+	streams   Streams
+	store     policyeditor.Store
+	stored    *policy.StoredConfig
+	exactYAML []byte
+	target    policyeditor.Target
+	status    string
+	dataDir   string
+	digest    string
+	editor    Editor
 }
 
 func (d loadedDocument) run() error {
@@ -69,7 +68,7 @@ func (d loadedDocument) run() error {
 		if d.status != "" {
 			_, _ = fmt.Fprintln(d.streams.Stdout, d.status)
 		}
-		return d.editor(d.store, d.stored, d.dataDir, identityOrDefault(d.identityID), d.target)
+		return d.editor(d.store, d.stored, d.dataDir, d.target)
 	case VerbCheck:
 		_, _ = fmt.Fprintln(d.streams.Stdout, d.status)
 	case VerbExport:

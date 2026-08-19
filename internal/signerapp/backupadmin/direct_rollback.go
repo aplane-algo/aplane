@@ -48,9 +48,9 @@ func (s Service) RollbackRestore(
 		return result
 	}
 	mutated := false
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		paths := s.Deps.KeyPaths()
-		current, err := genstore.Resolve(paths, ir.ID())
+		current, err := genstore.Resolve(paths)
 		if err != nil {
 			return err
 		}
@@ -78,12 +78,12 @@ func (s Service) RollbackRestore(
 		if err != nil {
 			return err
 		}
-		target := paths.GenerationPaths(ir.ID(), manifest.ParentID)
+		target := paths.GenerationPaths(manifest.ParentID)
 		var source *rollbackGenerationSource
 		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			cutover, err := rotationinventory.EvaluateRollback(
 				paths,
-				ir.ID(),
+
 				current.GenerationID(),
 				inventory,
 				manifest,
@@ -120,7 +120,7 @@ func (s Service) RollbackRestore(
 			return err
 		}
 		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			_, mintErr := genstore.Mint(paths, ir.ID(), genstore.MintRequest{
+			_, mintErr := genstore.Mint(paths, genstore.MintRequest{
 				GenerationID:               generationID,
 				Parent:                     current.GenerationID(),
 				Operation:                  genstore.OperationCredentialRestoreRollback,
@@ -139,12 +139,12 @@ func (s Service) RollbackRestore(
 			mutated = true
 			result.GenerationID = generationID
 			_, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				paths, ir.ID(), generationID, masterKey,
+				paths, generationID, masterKey,
 			)
 			return reconcileErr
 		})
 		if err != nil {
-			visible, visibleErr := genstore.ReadCurrent(paths, ir.ID())
+			visible, visibleErr := genstore.ReadCurrent(paths)
 			if visibleErr == nil && visible == generationID {
 				mutated = true
 				result.GenerationID = generationID

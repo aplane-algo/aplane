@@ -15,7 +15,7 @@ import (
 
 // These Signer-level wrappers exist for test convenience and legacy
 // call sites. They route through productIdentityRuntime() which is the
-// only process-boundary use of CurrentProductIdentityID in the runtime path.
+// only process-boundary use of the fixed product identity in the runtime path.
 
 func (fs *Signer) getState() SignerState {
 	return fs.productIdentityRuntime().GetState()

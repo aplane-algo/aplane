@@ -205,7 +205,7 @@ func ParseSnapshot(data []byte) (*Snapshot, error) {
 // publishes the exact encrypted file before any root may reference it.
 func WriteSnapshot(
 	paths storepaths.Paths,
-	identityID string,
+
 	snapshot *Snapshot,
 	kr *crypto.Keyring,
 ) (crypto.RotationSnapshotReference, error) {
@@ -230,7 +230,7 @@ func WriteSnapshot(
 	if err != nil {
 		return crypto.RotationSnapshotReference{}, fmt.Errorf("seal rotation snapshot: %w", err)
 	}
-	if err := fsutil.WriteFileDurable(paths.RotationSnapshotPath(identityID), sealed); err != nil {
+	if err := fsutil.WriteFileDurable(paths.RotationSnapshotPath(), sealed); err != nil {
 		return crypto.RotationSnapshotReference{}, fmt.Errorf("write rotation snapshot: %w", err)
 	}
 	return ref, nil
@@ -241,7 +241,7 @@ func WriteSnapshot(
 // logical context, and validates the expected transition terms.
 func ReadReferencedSnapshot(
 	paths storepaths.Paths,
-	identityID string,
+
 	ref crypto.RotationSnapshotReference,
 	fromTerm, toTerm int64,
 	kr *crypto.Keyring,
@@ -249,7 +249,7 @@ func ReadReferencedSnapshot(
 	if kr == nil {
 		return nil, fmt.Errorf("read rotation snapshot: keyring is required")
 	}
-	sealed, err := readSnapshotFile(paths.RotationSnapshotPath(identityID))
+	sealed, err := readSnapshotFile(paths.RotationSnapshotPath())
 	if err != nil {
 		return nil, fmt.Errorf("read rotation snapshot: %w", err)
 	}

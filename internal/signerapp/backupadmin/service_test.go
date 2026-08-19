@@ -70,7 +70,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(keys.AccountKeyFilePath(paths, auth.DefaultIdentityID, address), sealed, 0o600)
+		return os.WriteFile(keys.AccountKeyFilePath(paths, address), sealed, 0o600)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -105,10 +105,10 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 
 func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityBackupsDir(auth.DefaultIdentityID), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductBackupsDir(), 0o770); err != nil {
 		t.Fatal(err)
 	}
-	archivePath := backup.BuildManagedArchivePath(paths, auth.DefaultIdentityID, "malformed")
+	archivePath := backup.BuildManagedArchivePath(paths, "malformed")
 	if err := os.WriteFile(archivePath, []byte("not an archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -150,17 +150,17 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
 	t.Helper()
-	if _, err := crypto.CreateKeyringStore(paths.IdentityDir(auth.DefaultIdentityID), backupAdminTestPassphrase); err != nil {
+	if _, err := crypto.CreateKeyringStore(paths.ProductDir(), backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	convertToGenerationalStore(t, paths)
-	keyStore := keystore.NewFileKeyStoreForPaths(paths, auth.DefaultIdentityID)
+	keyStore := keystore.NewFileKeyStoreForPaths(paths)
 	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	autoApprove := false
 	ir := identity.New(identity.Config{
-		ID: auth.DefaultIdentityID, KeyStore: keyStore, KeyPaths: paths,
+		KeyStore: keyStore, KeyPaths: paths,
 		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
 	})
@@ -174,14 +174,14 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 
 func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	t.Helper()
-	if current, err := genstore.ReadCurrent(paths, auth.DefaultIdentityID); err == nil {
+	if current, err := genstore.ReadCurrent(paths); err == nil {
 		return current
 	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_700_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := genstore.Mint(paths, auth.DefaultIdentityID, genstore.MintRequest{
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID: generationID, FirstGeneration: true, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
 	}); err != nil {
@@ -194,7 +194,7 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		return policy.SaveStoredConfigWithKeyring(
-			paths.Root(), auth.DefaultIdentityID, stored, kr, time.Unix(1_700_000_000, 0),
+			paths.Root(), stored, kr, time.Unix(1_700_000_000, 0),
 		)
 	}); err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 
 func testBackupIdentityRuntime() *identity.Runtime {
 	return identity.New(identity.Config{
-		ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token"),
+		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 }
 
@@ -217,18 +217,18 @@ type backupServiceTestDeps struct {
 	limiter RestoreLimiter
 }
 
-func (d backupServiceTestDeps) KeyPaths() storepaths.Paths                           { return d.paths }
-func (d backupServiceTestDeps) GenesisHashMappings() map[string]string               { return nil }
-func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter                       { return d.limiter }
-func (d backupServiceTestDeps) WithIdentityMutation(_ string, fn func() error) error { return fn() }
-func (d backupServiceTestDeps) Logf(string, ...interface{})                          {}
+func (d backupServiceTestDeps) KeyPaths() storepaths.Paths              { return d.paths }
+func (d backupServiceTestDeps) GenesisHashMappings() map[string]string  { return nil }
+func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter          { return d.limiter }
+func (d backupServiceTestDeps) WithStoreMutation(fn func() error) error { return fn() }
+func (d backupServiceTestDeps) Logf(string, ...interface{})             {}
 
 type failingBackupDeps struct{ paths storepaths.Paths }
 
 func (d failingBackupDeps) KeyPaths() storepaths.Paths             { return d.paths }
 func (d failingBackupDeps) GenesisHashMappings() map[string]string { return nil }
 func (d failingBackupDeps) RestoreLimiter() RestoreLimiter         { return nil }
-func (d failingBackupDeps) WithIdentityMutation(string, func() error) error {
+func (d failingBackupDeps) WithStoreMutation(func() error) error {
 	return errors.New("mutation failed")
 }
 func (d failingBackupDeps) Logf(string, ...interface{}) {}

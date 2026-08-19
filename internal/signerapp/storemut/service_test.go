@@ -12,7 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -45,15 +44,15 @@ func registerProviders() {
 	})
 }
 
-func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Keyring, func()) {
+func setupKeystore(t *testing.T) (utilkeys.Paths, *crypto.Keyring, func()) {
 	t.Helper()
 	registerProviders()
 
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, identityID)
+	genstoretest.MintFirst(t, paths)
 
-	userDir := paths.IdentityDir(identityID)
+	userDir := paths.ProductDir()
 	if _, err := crypto.CreateKeyringStore(userDir, []byte("test-passphrase-for-storemut")); err != nil {
 		t.Fatalf("CreateKeyringStore() error = %v", err)
 	}
@@ -69,11 +68,11 @@ func setupKeystore(t *testing.T, identityID string) (utilkeys.Paths, *crypto.Key
 func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
 	httpUpdater := &recordingUpdater{}
 	sshUpdater := &recordingUpdater{}
-	svc := New("default", paths, httpUpdater, sshUpdater)
+	svc := New(paths, httpUpdater, sshUpdater)
 
 	tokenPath, err := svc.RevokeToken()
 	if err != nil {
@@ -98,9 +97,9 @@ func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths, "default")
+	genstoretest.MintFirst(t, paths)
 
-	keyPath := keys.AccountKeyFilePath(paths, "default", "ADDR")
+	keyPath := keys.AccountKeyFilePath(paths, "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -108,7 +107,7 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	svc := New("default", paths, nil, nil)
+	svc := New(paths, nil, nil)
 	result, err := svc.DeleteKey("ADDR", keyPath)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
@@ -120,17 +119,16 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Fatalf("expected deleted key at %s: %v", result.DeletedPath, err)
 	}
-	if wantDir := paths.DeletedKeysDir("default"); filepath.Dir(result.DeletedPath) != wantDir {
+	if wantDir := paths.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
 		t.Fatalf("deleted path dir = %s, want %s", filepath.Dir(result.DeletedPath), wantDir)
 	}
 }
 
 func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
-	const identityID = "storemut-generate"
-	paths, masterKey, cleanup := setupKeystore(t, identityID)
+	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New(identityID, paths, nil, nil)
+	svc := New(paths, nil, nil)
 	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -144,17 +142,16 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	if _, err := os.Stat(result.KeyFile); err != nil {
 		t.Fatalf("expected key file at %s: %v", result.KeyFile, err)
 	}
-	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths, identityID); got != want {
+	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths); got != want {
 		t.Fatalf("key dir = %s, want %s", got, want)
 	}
 }
 
 func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
-	const identityID = "storemut-import"
-	paths, masterKey, cleanup := setupKeystore(t, identityID)
+	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New(identityID, paths, nil, nil)
+	svc := New(paths, nil, nil)
 	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
@@ -168,16 +165,16 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	if _, err := os.Stat(result.KeyFile); err != nil {
 		t.Fatalf("expected key file at %s: %v", result.KeyFile, err)
 	}
-	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths, identityID); got != want {
+	if got, want := filepath.Dir(result.KeyFile), mustActiveKeysDirStoremut(t, paths); got != want {
 		t.Fatalf("key dir = %s, want %s", got, want)
 	}
 }
 
 func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
-	paths, masterKey, cleanup := setupKeystore(t, auth.DefaultIdentityID)
+	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New("default", paths, nil, nil)
+	svc := New(paths, nil, nil)
 	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
 	if err != nil {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
@@ -197,7 +194,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
 	}
 
-	keyPath := keys.AccountKeyFilePath(paths, "default", salted.Address.String())
+	keyPath := keys.AccountKeyFilePath(paths, salted.Address.String())
 	if _, err := os.Stat(keyPath); err != nil {
 		t.Fatalf("expected generic lsig file at %s: %v", keyPath, err)
 	}
@@ -230,7 +227,7 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	svc := New("default", utilkeys.NewPaths(dir), nil, nil)
+	svc := New(utilkeys.NewPaths(dir), nil, nil)
 	if err := svc.SaveServerSetting(dir, "theme", "dark"); err != nil {
 		t.Fatalf("SaveServerSetting() error = %v", err)
 	}
@@ -250,7 +247,7 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 	dir := t.TempDir()
 
-	svc := New("default", utilkeys.NewPaths(dir), nil, nil)
+	svc := New(utilkeys.NewPaths(dir), nil, nil)
 	if err := svc.SaveIdentitySetting(dir, "user_auto_approve", true); err != nil {
 		t.Fatalf("SaveIdentitySetting() error = %v", err)
 	}
@@ -258,7 +255,7 @@ func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 		t.Fatalf("SaveIdentitySetting() error = %v", err)
 	}
 
-	cfg, err := identity.LoadStoredConfig(dir, "default")
+	cfg, err := identity.LoadStoredConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}
@@ -270,9 +267,9 @@ func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
 	}
 }
 
-func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths, identityID string) string {
+func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(paths, identityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive: %v", err)
 	}

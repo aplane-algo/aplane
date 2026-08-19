@@ -5,10 +5,7 @@ package auth
 
 import "context"
 
-// DefaultIdentityID is the storage/request model default identity.
-// Product-facing code should prefer CurrentProductIdentityID so the
-// single-operator product assumption stays explicit.
-const DefaultIdentityID = "default"
+import "github.com/aplane-algo/aplane/internal/productmode"
 
 // contextKey is an unexported type for context keys in this package.
 type contextKey struct{}
@@ -30,5 +27,9 @@ func IdentityFromContext(ctx context.Context) *Identity {
 
 // NewDefaultIdentity returns the effective product identity for the given auth method.
 func NewDefaultIdentity(method string) *Identity {
-	return CurrentProductIdentity(method)
+	return &Identity{
+		ID:     productmode.IdentityID,
+		Type:   "service",
+		Method: method,
+	}
 }

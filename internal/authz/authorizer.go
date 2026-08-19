@@ -91,9 +91,6 @@ func (a *ProductAuthorizer) Authorize(_ context.Context, identity *auth.Identity
 	if _, ok := a.allowed[action]; !ok {
 		return auth.ErrForbidden
 	}
-	if resource.IdentityID != "" && !auth.IsCurrentProductIdentity(resource.IdentityID) {
-		return auth.ErrForbidden
-	}
 	return nil
 }
 

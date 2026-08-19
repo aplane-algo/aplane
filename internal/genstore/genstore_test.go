@@ -34,7 +34,7 @@ func testKeyring(t *testing.T) *crypto.Keyring {
 // complete manifest and the given namespace files.
 func mintTestGeneration(t *testing.T, paths storepaths.Paths, generationID string, files map[string]string) storepaths.GenPaths {
 	t.Helper()
-	gen := paths.GenerationPaths(testIdentity, generationID)
+	gen := paths.GenerationPaths(generationID)
 	for _, namespace := range []string{"keys", "keytypes"} {
 		if err := os.MkdirAll(filepath.Join(gen.Dir(), namespace), 0o770); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", namespace, err)
@@ -66,10 +66,10 @@ func TestCurrentPointerRoundTripAndResolve(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
 
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent() error = %v", err)
 	}
-	gen, err := Resolve(paths, testIdentity)
+	gen, err := Resolve(paths)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -86,10 +86,10 @@ func TestCurrentPointerRoundTripAndResolve(t *testing.T) {
 
 func TestWriteCurrentRefusesMissingGeneration(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityDir(testIdentity), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := WriteCurrent(paths, testIdentity, testGenA); err == nil {
+	if err := WriteCurrent(paths, testGenA); err == nil {
 		t.Fatal("WriteCurrent pointed CURRENT at a generation that does not exist")
 	}
 }
@@ -106,13 +106,13 @@ func TestReadCurrentFailsClosedOnMalformedPointer(t *testing.T) {
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			if err := os.MkdirAll(paths.IdentityDir(testIdentity), 0o770); err != nil {
+			if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
 			}
-			if err := os.WriteFile(paths.CurrentPointerPath(testIdentity), []byte(content), 0o660); err != nil {
+			if err := os.WriteFile(paths.CurrentPointerPath(), []byte(content), 0o660); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
-			if _, err := ReadCurrent(paths, testIdentity); err == nil {
+			if _, err := ReadCurrent(paths); err == nil {
 				t.Fatalf("ReadCurrent accepted malformed pointer %q", content)
 			}
 		})
@@ -122,14 +122,14 @@ func TestReadCurrentFailsClosedOnMalformedPointer(t *testing.T) {
 func TestReadCurrentRejectsSymlinkPointer(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintTestGeneration(t, paths, testGenA, nil)
-	target := filepath.Join(paths.IdentityDir(testIdentity), "pointer-target")
+	target := filepath.Join(paths.ProductDir(), "pointer-target")
 	if err := os.WriteFile(target, []byte(testGenA+"\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := os.Symlink(target, paths.CurrentPointerPath(testIdentity)); err != nil {
+	if err := os.Symlink(target, paths.CurrentPointerPath()); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	if _, err := ReadCurrent(paths, testIdentity); err == nil {
+	if _, err := ReadCurrent(paths); err == nil {
 		t.Fatal("ReadCurrent followed a symlinked CURRENT pointer")
 	}
 }
@@ -557,7 +557,7 @@ func TestValidateRejectsSymlinkInNamespace(t *testing.T) {
 
 func TestManifestIncompleteFailsValidation(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	gen := paths.GenerationPaths(testIdentity, testGenA)
+	gen := paths.GenerationPaths(testGenA)
 	for _, namespace := range []string{"keys", "keytypes"} {
 		if err := os.MkdirAll(filepath.Join(gen.Dir(), namespace), 0o770); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -579,18 +579,18 @@ func TestManifestIncompleteFailsValidation(t *testing.T) {
 
 func TestIsGenerational(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.IdentityDir(testIdentity), 0o770); err != nil {
+	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	generational, err := IsGenerational(paths, testIdentity)
+	generational, err := IsGenerational(paths)
 	if err != nil || generational {
 		t.Fatalf("IsGenerational(legacy) = (%v, %v), want (false, nil)", generational, err)
 	}
 	mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent() error = %v", err)
 	}
-	generational, err = IsGenerational(paths, testIdentity)
+	generational, err = IsGenerational(paths)
 	if err != nil || !generational {
 		t.Fatalf("IsGenerational(migrated) = (%v, %v), want (true, nil)", generational, err)
 	}
@@ -615,15 +615,15 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
 	// An uninitialized store (no CURRENT) is an error, never a fallback.
-	if _, err := ResolveActive(paths, testIdentity); err == nil {
+	if _, err := ResolveActive(paths); err == nil {
 		t.Fatal("ResolveActive resolved a store with no CURRENT pointer")
 	}
 
 	gen := mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testIdentity, testGenA); err != nil {
+	if err := WriteCurrent(paths, testGenA); err != nil {
 		t.Fatalf("WriteCurrent: %v", err)
 	}
-	active, err := ResolveActive(paths, testIdentity)
+	active, err := ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
@@ -632,10 +632,10 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	}
 
 	// A present-but-invalid CURRENT is an error.
-	if err := os.WriteFile(paths.CurrentPointerPath(testIdentity), []byte("garbage"+"\n"), 0o660); err != nil {
+	if err := os.WriteFile(paths.CurrentPointerPath(), []byte("garbage"+"\n"), 0o660); err != nil {
 		t.Fatalf("corrupt CURRENT: %v", err)
 	}
-	if _, err := ResolveActive(paths, testIdentity); err == nil {
+	if _, err := ResolveActive(paths); err == nil {
 		t.Fatal("ResolveActive accepted an invalid CURRENT pointer")
 	}
 }
@@ -649,11 +649,11 @@ func TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted(t *testing.T) {
 
 	// A pointer that ReadCurrent rejects (symlink) plus an injected write
 	// failure: the write path cannot prove non-commit by reading back.
-	target := filepath.Join(paths.IdentityDir(testIdentity), "pointer-target")
+	target := filepath.Join(paths.ProductDir(), "pointer-target")
 	if err := os.WriteFile(target, []byte("x\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := os.Symlink(target, paths.CurrentPointerPath(testIdentity)); err != nil {
+	if err := os.Symlink(target, paths.CurrentPointerPath()); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
 	injected := errors.New("injected file-sync failure")
@@ -665,7 +665,7 @@ func TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	err := WriteCurrent(paths, testIdentity, testGenA)
+	err := WriteCurrent(paths, testGenA)
 	if !errors.Is(err, ErrCommitDurabilityUnknown) {
 		t.Fatalf("WriteCurrent error = %v, want ErrCommitDurabilityUnknown (unreadable pointer proves nothing)", err)
 	}

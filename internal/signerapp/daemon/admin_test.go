@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,23 +73,23 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
+	if err := policy.SaveStoredConfigWithKeyring(tmpDir, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create policy baseline: %v", err)
 	}
 	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
 	if err != nil {
 		t.Fatalf("Failed to create node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, auth.DefaultIdentityID, roleBytes, masterKeyRing, time.Now()); err != nil {
+	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, roleBytes, masterKeyRing, time.Now()); err != nil {
 		t.Fatalf("Failed to create node role sidecar: %v", err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), masterKeyRing)
+	initialPolicy, err := policyruntime.LoadVerified(tmpDir, serverConfigForTest(), masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}
 
 	// Initialize FileKeyStore and derive master key
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
 	err = ks.Unlock(testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)
@@ -111,17 +112,17 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
-		KeyStore:      ks,
-		KeyPaths:      keyPaths,
-		NodeRole:      noderole.RoleSigner,
+
+		KeyStore: ks,
+		KeyPaths: keyPaths,
+		NodeRole: noderole.RoleSigner,
 	})
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
-	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
+	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.identityBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)
 	ir.SetUnlocked()
@@ -139,7 +140,7 @@ func serverConfigForTest() *serverconfig.ServerConfig {
 
 // requestWithIdentity creates an HTTP request with an authenticated identity in the context.
 func requestWithIdentity(method, url string, body []byte) *http.Request {
-	return requestWithIdentityID(method, url, body, auth.CurrentProductIdentityID())
+	return requestWithIdentityID(method, url, body, productmode.IdentityID)
 }
 
 func requestWithIdentityID(method, url string, body []byte, identityID string) *http.Request {

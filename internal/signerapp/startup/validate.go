@@ -114,14 +114,14 @@ func ValidateProductionStorePermissions(dataDir string) error {
 
 // Validate performs comprehensive signer startup validation.
 // It returns an error for required failures and writes optional warnings to stderr.
-func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths storepaths.Paths, identityID string) (*ValidationInfo, error) {
+func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths storepaths.Paths) (*ValidationInfo, error) {
 	var warnings []string
 	info := &ValidationInfo{}
 
 	// Validate the single-product layout before the caller resolves any
 	// passphrase source. BuildProductRuntime repeats this check immediately
 	// before assembly to protect against a concurrent filesystem change.
-	if err := identity.ValidateProductIdentityLayout(keyPaths.Root(), identityID); err != nil {
+	if err := identity.ValidateProductStoreLayout(keyPaths.Root()); err != nil {
 		return nil, fmt.Errorf("invalid product identity layout: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths
 		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.authorized_keys_path is required")
 	}
 
-	if !crypto.KeyringExistsIn(keyPaths.KeystoreMetadataDir(identityID)) {
+	if !crypto.KeyringExistsIn(keyPaths.KeystoreMetadataDir()) {
 		info.KeystoreExists = false
 		warnings = append(warnings, "Keystore not initialized — run 'apstore initialize'")
 	} else {

@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -227,7 +226,7 @@ func TestOnlineEditDraftSeedsExpectedSHAFromActiveSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := &fakeOnlineSession{status: "unlocked"}
-	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _, _ string, _ policyeditor.Target) error {
+	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _ string, _ policyeditor.Target) error {
 		adminStore, ok := store.(*policyeditor.AdminStore)
 		if !ok {
 			t.Fatalf("editor store = %T, want *policyeditor.AdminStore", store)
@@ -515,7 +514,7 @@ func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := policy.PolicyPath(root, auth.CurrentProductIdentityID())
+	path := policy.PolicyPath(root)
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -560,7 +559,7 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = shared.Close() }()
-	path := policy.PolicyPath(root, auth.CurrentProductIdentityID())
+	path := policy.PolicyPath(root)
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -589,7 +588,7 @@ func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 	var editorDataDir string
-	editor := func(store policyeditor.Store, _ *policy.StoredConfig, dataDir, _ string, _ policyeditor.Target) error {
+	editor := func(store policyeditor.Store, _ *policy.StoredConfig, dataDir string, _ policyeditor.Target) error {
 		editorDataDir = dataDir
 		replacement, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: false\n"))
 		if err != nil {
@@ -648,7 +647,7 @@ func TestRescueProductionEditHoldsLockThroughEditorAndNormalizesOnlyOnSuccess(t 
 		return nil
 	}
 
-	editor := func(policyeditor.Store, *policy.StoredConfig, string, string, policyeditor.Target) error {
+	editor := func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error {
 		guard, err := storelock.AcquireShared(root)
 		if err == nil {
 			_ = guard.Close()
@@ -670,7 +669,7 @@ func TestRescueProductionEditHoldsLockThroughEditorAndNormalizesOnlyOnSuccess(t 
 	}
 
 	normalizeCalls = 0
-	err = (RescueRunner{Editor: func(policyeditor.Store, *policy.StoredConfig, string, string, policyeditor.Target) error {
+	err = (RescueRunner{Editor: func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error {
 		return errors.New("cancelled")
 	}}).Run(context.Background(), Command{
 		Verb: VerbEdit, Target: policyeditor.TargetSigner, DataDir: root,
@@ -686,7 +685,7 @@ func initializedPolicyStore(t *testing.T) (string, string) {
 	root := t.TempDir()
 	passphrase := "policycmd-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
-		DataDir: root, Paths: storepaths.NewPaths(root), IdentityID: auth.CurrentProductIdentityID(), Role: noderole.RoleSigner,
+		DataDir: root, Paths: storepaths.NewPaths(root), Role: noderole.RoleSigner,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -18,27 +18,26 @@ import (
 
 func TestHasPartialKeystoreState(t *testing.T) {
 	paths := utilpaths.NewPaths(t.TempDir())
-	identityID := "default"
 
-	if storeinit.HasPartialState(paths, identityID) {
+	if storeinit.HasPartialState(paths) {
 		t.Fatal("empty identity dir should not be partial")
 	}
 
-	identityDir := paths.IdentityDir(identityID)
+	identityDir := paths.ProductDir()
 	if err := os.MkdirAll(identityDir, 0o770); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(identityDir, "orphan.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if !storeinit.HasPartialState(paths, identityID) {
+	if !storeinit.HasPartialState(paths) {
 		t.Fatal("expected orphaned identity dir state to be detected")
 	}
 
 	if err := os.WriteFile(filepath.Join(identityDir, ".keystore"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.keystore) error = %v", err)
 	}
-	if storeinit.HasPartialState(paths, identityID) {
+	if storeinit.HasPartialState(paths) {
 		t.Fatal("presence of .keystore should not be considered partial initialization")
 	}
 }
@@ -65,7 +64,7 @@ func TestCmdInitializeInitializes(t *testing.T) {
 		gotRole = role
 		return protocol.InitializeStoreResultMessage{
 			Success:     true,
-			MetadataDir: keystorePaths().KeystoreMetadataDir(productIdentityID()),
+			MetadataDir: keystorePaths().KeystoreMetadataDir(),
 		}, nil
 	}
 

@@ -19,7 +19,7 @@ func TestTokenProvisioningRequiresProductAdmin(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	server.ipcServer = ipcServer
 
-	approved, err := server.requestTokenProvisioning("token-no-admin", "default", "fp", "remote", time.Second)
+	approved, err := server.requestTokenProvisioning("token-no-admin", "fp", "remote", time.Second)
 	if err == nil {
 		t.Fatal("requestTokenProvisioning(alice) error = nil, want no-client error")
 	}
@@ -46,7 +46,7 @@ func TestTokenProvisioningRoutesToProductAdmin(t *testing.T) {
 		err      error
 	}, 1)
 	go func() {
-		approved, err := server.requestTokenProvisioning("token-default", "default", "fp", "remote", time.Second)
+		approved, err := server.requestTokenProvisioning("token-default", "fp", "remote", time.Second)
 		resultCh <- struct {
 			approved bool
 			err      error

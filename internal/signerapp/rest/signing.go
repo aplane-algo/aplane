@@ -27,7 +27,7 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 	defer finishSignRequest()
 
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).SignGroupWithContext(ctx, ir.ID(), req, session)
+	result, err := s.Deps.NewSigningService(ir).SignGroupWithContext(ctx, req, session)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *identity.Runtime, 
 	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
 	defer finishSignRequest()
 
-	result, err := s.Deps.NewSigningService(ir).PrepareBoundedAdminWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
+	result, err := s.Deps.NewSigningService(ir).PrepareBoundedAdminWithContext(ctx, req, ir.SnapshotKeySession())
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*si
 		return nil, notConfigured("transaction encoder")
 	}
 
-	plan, err := s.Deps.PlanGroup(ir.ID(), req)
+	plan, err := s.Deps.PlanGroup(req)
 	if err != nil {
 		return nil, err
 	}

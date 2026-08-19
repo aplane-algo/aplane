@@ -77,9 +77,9 @@ type KeyDetailsResult struct {
 }
 
 type AuditLogger interface {
-	LogKeyGenerated(identityID, address, keyType string)
-	LogKeyDeleted(identityID, address, deletedPath string)
-	LogKeyImported(identityID, address, keyType string)
+	LogKeyGenerated(address, keyType string)
+	LogKeyDeleted(address, deletedPath string)
+	LogKeyImported(address, keyType string)
 }
 
 type Locker interface {
@@ -89,7 +89,7 @@ type Locker interface {
 
 type Service struct {
 	AuditLog     AuditLogger
-	MutationLock func(identityID string) Locker
+	MutationLock func() Locker
 }
 
 type GenerateGenericLSigFunc func(context.Context, *identity.Runtime, string, map[string]string) (string, error)
@@ -113,7 +113,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
+		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
@@ -122,7 +122,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
 				resolved, err := sentryrefs.ResolveCreationParamsForComponent(
-					ir.KeyPaths(), ir.ID(), keyType, metadata.Sentry.ComponentKeyType, params,
+					ir.KeyPaths(), keyType, metadata.Sentry.ComponentKeyType, params,
 				)
 				if err != nil {
 					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -149,14 +149,14 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		}
 	}
 
-	unlockMutation := s.lockMutation(ir.ID())
+	unlockMutation := s.lockMutation()
 	defer unlockMutation()
 
 	activated, activationErr := activatedKeyTypes(ir)
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), ir.ID(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -178,7 +178,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		}, nil
 	}
 
-	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
@@ -194,7 +194,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyGenerated(ir.ID(), genResult.Address, genResult.KeyType)
+		s.AuditLog.LogKeyGenerated(genResult.Address, genResult.KeyType)
 	}
 
 	return &GenerateResult{
@@ -245,14 +245,14 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 
-	unlockMutation := s.lockMutation(ir.ID())
+	unlockMutation := s.lockMutation()
 	defer unlockMutation()
 
 	keyFile, err := ir.FindKeyFile(address)
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-	delResult, err := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
+	delResult, err := storemut.New(ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
 	}
@@ -262,14 +262,14 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyDeleted(ir.ID(), address, delResult.DeletedPath)
+		s.AuditLog.LogKeyDeleted(address, delResult.DeletedPath)
 	}
 
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 
 func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {
-	records, err := keytypestate.List(ir.KeyPaths(), ir.ID())
+	records, err := keytypestate.List(ir.KeyPaths())
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -282,11 +282,11 @@ func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {
 	return enabled, nil
 }
 
-func (s Service) lockMutation(identityID string) func() {
+func (s Service) lockMutation() func() {
 	if s.MutationLock == nil {
 		return func() {}
 	}
-	lock := s.MutationLock(identityID)
+	lock := s.MutationLock()
 	if lock == nil {
 		return func() {}
 	}

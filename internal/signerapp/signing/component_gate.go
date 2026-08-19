@@ -23,7 +23,7 @@ import (
 // as the policy key for each target position. Every non-target group position
 // is a foreign leg this signer does not sign but the operator still reviews.
 // It returns the matched always-review rule ID for approval audit events.
-func (s *Service) gateUserComponentSigning(ctx context.Context, identityID string, plan *ComponentSignPlan) (string, *ServiceError) {
+func (s *Service) gateUserComponentSigning(ctx context.Context, plan *ComponentSignPlan) (string, *ServiceError) {
 	if plan == nil || plan.Group == nil {
 		return "", internal("component sign plan is nil")
 	}
@@ -76,10 +76,10 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 		AuthKeys:       authKeys,
 		KnownAddresses: s.knownAddresses(nil),
 		LogRejection: func(reason string) {
-			s.logUserComponentRejections(identityID, plan, "policy_engine_rejected: "+reason)
+			s.logUserComponentRejections(plan, "policy_engine_rejected: "+reason)
 		},
 		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
-			return s.Approval.requestComponentApprovalWithContext(ctx, identityID, plan, allTxns, groupDesc, firstValid, lastValid, forceReviewRuleID)
+			return s.Approval.requestComponentApprovalWithContext(ctx, plan, allTxns, groupDesc, firstValid, lastValid, forceReviewRuleID)
 		},
 	}, console)
 }
@@ -90,11 +90,11 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 // the approval gates, so rejected requests and operator prompts never trigger
 // key decryption. The key is decrypted only after the gates pass, under the
 // operation lease.
-func (s *Service) preflightGuardedAccountKeyMetadata(identityID, guardedAccount string) *ServiceError {
+func (s *Service) preflightGuardedAccountKeyMetadata(guardedAccount string) *ServiceError {
 	if s.Planner == nil || s.Planner.Snapshot == nil {
 		return internal("signing service planner is not configured")
 	}
-	snapshot := s.Planner.Snapshot(identityID)
+	snapshot := s.Planner.Snapshot()
 	if _, ok := snapshot.KeyFiles[guardedAccount]; !ok {
 		return badRequest(fmt.Sprintf("guarded account key %q not found", guardedAccount))
 	}
@@ -137,7 +137,7 @@ func buildComponentApprovalDescription(plan *ComponentSignPlan, allTxns []types.
 	return b.String(), firstValid, lastValid
 }
 
-func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Context, identityID string, plan *ComponentSignPlan, allTxns []types.Transaction, groupDesc string, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
+func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Context, plan *ComponentSignPlan, allTxns []types.Transaction, groupDesc string, firstValid, lastValid uint64, forceReviewRuleID string) *ServiceError {
 	console := consoleOf(s.Console)
 	if s.userAutoApprove() && forceReviewRuleID == "" {
 		console.Println("[USER AUTO-APPROVE] Guarded component request approved without operator prompt")
@@ -157,7 +157,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 		if reason := reviewabilityReason(txn); reason != "" {
 			console.Printf("[REVIEWABILITY] Blocked guarded component approval: tx %d/%d: %s\n", i+1, len(allTxns), reason)
 			console.Sync()
-			s.logComponentRejected(identityID, plan, "reviewability_blocked: "+reason, forceReviewRuleID)
+			s.logComponentRejected(plan, "reviewability_blocked: "+reason, forceReviewRuleID)
 			return forbidden(fmt.Sprintf("guarded component approval blocked: tx %d/%d: %s", i+1, len(allTxns), reason))
 		}
 	}
@@ -178,7 +178,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 	violations := approvalpolicy.CheckGroupWarnings(allTxns, knownAddresses)
 	approved, err := s.requestSigningApproval(
 		ctx,
-		identityID,
+
 		requestID,
 		plan.ComponentKey,
 		displaySender,
@@ -190,7 +190,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 	)
 	if err != nil {
 		if errors.Is(err, signerapproval.ErrApprovalTimeout) {
-			s.logComponentRejected(identityID, plan, "component_approval_timeout", forceReviewRuleID)
+			s.logComponentRejected(plan, "component_approval_timeout", forceReviewRuleID)
 		}
 		console.Printf("[X] Guarded component approval error: %v\n", err)
 		console.Sync()
@@ -199,7 +199,7 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 	if !approved {
 		console.Println("[X] GUARDED COMPONENT REQUEST REJECTED")
 		console.Sync()
-		s.logComponentRejected(identityID, plan, "component_rejected_by_operator", forceReviewRuleID)
+		s.logComponentRejected(plan, "component_rejected_by_operator", forceReviewRuleID)
 		return forbidden("Guarded component request rejected by operator")
 	}
 
@@ -208,23 +208,23 @@ func (s *ApprovalService) requestComponentApprovalWithContext(ctx context.Contex
 	return nil
 }
 
-func (s *ApprovalService) logComponentRejected(identityID string, plan *ComponentSignPlan, reason, policyRuleID string) {
+func (s *ApprovalService) logComponentRejected(plan *ComponentSignPlan, reason, policyRuleID string) {
 	for _, target := range plan.Targets {
-		s.logSignRejected(identityID, plan.ComponentKey, target.Sender, reason, policyRuleID)
+		s.logSignRejected(plan.ComponentKey, target.Sender, reason, policyRuleID)
 	}
 }
 
-func (s *Service) logUserComponentRejections(identityID string, plan *ComponentSignPlan, reason string) {
+func (s *Service) logUserComponentRejections(plan *ComponentSignPlan, reason string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil || plan == nil {
 		return
 	}
 	for _, target := range plan.Targets {
-		rejectLogger.LogSignRejected(identityID, plan.ComponentKey, target.Sender, reason)
+		rejectLogger.LogSignRejected(plan.ComponentKey, target.Sender, reason)
 	}
 }
 
-func (s *Service) logUserComponentApproved(identityID string, plan *ComponentSignPlan, policyRuleID string) {
+func (s *Service) logUserComponentApproved(plan *ComponentSignPlan, policyRuleID string) {
 	if s.AuditLog == nil || plan == nil {
 		return
 	}
@@ -232,10 +232,10 @@ func (s *Service) logUserComponentApproved(identityID string, plan *ComponentSig
 		details := fmt.Sprintf("user component signature target %d signed", target.TargetIndex)
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignApprovedWithPolicyRule(identityID, plan.ComponentKey, target.Sender, details, policyRuleID)
+				ruleLogger.LogSignApprovedWithPolicyRule(plan.ComponentKey, target.Sender, details, policyRuleID)
 				continue
 			}
 		}
-		s.AuditLog.LogSignApproved(identityID, plan.ComponentKey, target.Sender, details)
+		s.AuditLog.LogSignApproved(plan.ComponentKey, target.Sender, details)
 	}
 }

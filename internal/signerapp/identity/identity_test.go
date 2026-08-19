@@ -6,6 +6,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,9 +22,9 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestValidateProductIdentityLayout(t *testing.T) {
+func TestValidateProductStoreLayout(t *testing.T) {
 	t.Run("missing identities", func(t *testing.T) {
-		if err := ValidateProductIdentityLayout(t.TempDir(), auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductStoreLayout(t.TempDir()); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -32,16 +33,16 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductStoreLayout(root); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("real default", func(t *testing.T) {
 		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "identities", auth.DefaultIdentityID), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, "identities", productmode.IdentityID), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductStoreLayout(root); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -51,7 +52,7 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		t.Run("reject extra "+entryType, func(t *testing.T) {
 			root := t.TempDir()
 			identitiesDir := filepath.Join(root, "identities")
-			if err := os.MkdirAll(filepath.Join(identitiesDir, auth.DefaultIdentityID), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Join(identitiesDir, productmode.IdentityID), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			name := "alice"
@@ -74,9 +75,9 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+			err := ValidateProductStoreLayout(root)
 			if err == nil || !strings.Contains(err.Error(), name) {
-				t.Fatalf("ValidateProductIdentityLayout() error = %v, want unexpected entry %q", err, name)
+				t.Fatalf("ValidateProductStoreLayout() error = %v, want unexpected entry %q", err, name)
 			}
 		})
 	}
@@ -86,19 +87,18 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", auth.DefaultIdentityID)); err != nil {
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", productmode.IdentityID)); err != nil {
 			t.Fatal(err)
 		}
-		err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+		err := ValidateProductStoreLayout(root)
 		if err == nil || !strings.Contains(err.Error(), "real directory") {
-			t.Fatalf("ValidateProductIdentityLayout() error = %v, want real-directory rejection", err)
+			t.Fatalf("ValidateProductStoreLayout() error = %v, want real-directory rejection", err)
 		}
 	})
 }
 
 func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	rejectForeignRekey := false
@@ -165,7 +165,6 @@ func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
 
 func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 
@@ -198,7 +197,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 
 func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	ir.PublishSnapshot(
@@ -269,7 +267,6 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 
 func TestWatcherReloadUsesMutationLock(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	ir.SetUnlocked()
@@ -476,17 +473,17 @@ func TestStoredConfigApplyUserAutoApprove(t *testing.T) {
 
 func TestSaveAndLoadStoredConfig(t *testing.T) {
 	root := t.TempDir()
-	if err := SaveStoredSetting(root, "default", "user_auto_approve", true); err != nil {
+	if err := SaveStoredSetting(root, "user_auto_approve", true); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
-	if err := SaveStoredSetting(root, "default", "lock_on_disconnect", false); err != nil {
+	if err := SaveStoredSetting(root, "lock_on_disconnect", false); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
-	if err := SaveStoredSetting(root, "default", "approval_wait", "10m"); err != nil {
+	if err := SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
 
-	cfg, err := LoadStoredConfig(root, "default")
+	cfg, err := LoadStoredConfig(root)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}
@@ -514,7 +511,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			path := ConfigPath(root, auth.DefaultIdentityID)
+			path := ConfigPath(root)
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -522,7 +519,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cfg, err := LoadStoredConfig(root, auth.DefaultIdentityID)
+			cfg, err := LoadStoredConfig(root)
 			if err != nil {
 				t.Fatalf("LoadStoredConfig() error = %v", err)
 			}
@@ -536,7 +533,7 @@ func TestLoadStoredConfigTreatsEmptyDocumentsAsEmptyConfig(t *testing.T) {
 
 func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 	root := t.TempDir()
-	path := ConfigPath(root, "default")
+	path := ConfigPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +541,7 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := LoadStoredConfig(root, "default"); err == nil || !strings.Contains(err.Error(), "decommissioned") {
+	if _, err := LoadStoredConfig(root); err == nil || !strings.Contains(err.Error(), "decommissioned") {
 		t.Fatalf("LoadStoredConfig() error = %v, want unknown decommissioned field", err)
 	}
 }
@@ -552,7 +549,6 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 func TestLoadAuthorizedKeysRejectsMalformedFile(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{
-		ID:            "default",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 		KeyPaths:      utilkeys.NewPaths(root),
 	})

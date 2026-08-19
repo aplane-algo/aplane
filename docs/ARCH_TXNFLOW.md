@@ -159,7 +159,7 @@ The `/sign` endpoint accepts a `GroupSignRequest` containing one or more transac
      │                                                   │
 ```
 
-See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the `/sign` request lifecycle, identity routing, and cancellation semantics. This document focuses on the *flow* of transaction data through the endpoint.
+See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the `/sign` request lifecycle, fixed runtime binding, and cancellation semantics. This document focuses on the *flow* of transaction data through the endpoint.
 
 ### Request Format
 

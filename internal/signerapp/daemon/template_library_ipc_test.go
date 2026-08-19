@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -124,10 +124,10 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	}) {
 		t.Fatalf("disable response mismatch: %#v", disableRecorder.messages(t)[0])
 	}
-	if !keyTypeStateDisabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
-	if !templatestore.TemplateExistsForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("installed template file was removed during disable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -151,7 +151,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	}) {
 		t.Fatalf("enable response mismatch: %#v", enableRecorder.messages(t)[0])
 	}
-	if keyTypeStateDisabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state still present after enable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); !ok {
@@ -320,7 +320,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !disabled.Success || !disabled.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want disabled template", disabled)
 	}
-	if !keyTypeStateDisabled(server, ir.ID(), keyType) {
+	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
 
@@ -328,10 +328,10 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
-	if templatestore.TemplateExistsForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("template %s still exists after removal", keyType)
 	}
-	if keyTypeStateDisabled(server, ir.ID(), keyType) {
+	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state still exists after template removal for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -370,7 +370,7 @@ func TestIPCActivateKeyTypeEnablesCompiledProvider(t *testing.T) {
 	}) {
 		t.Fatalf("activation response mismatch: %#v", msgs[0])
 	}
-	if !keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state not written for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); !ok {
@@ -384,7 +384,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productIdentityRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 	}) {
 		t.Fatalf("deactivation response mismatch: %#v", msgs[0])
 	}
-	if keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state still exists for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -428,7 +428,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productIdentityRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
@@ -438,7 +438,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, masterKey)
+		_, saveErr := apkeys.SavePayload(server.keyPaths, payload, masterKey)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
@@ -472,7 +472,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	if errText, _ := msgs[0]["error"].(string); !strings.Contains(errText, "key(s) still use it") {
 		t.Fatalf("deactivation error = %q, want in-use context", errText)
 	}
-	if !keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state was removed despite in-use rejection for %s", keyType)
 	}
 }
@@ -516,7 +516,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -577,12 +577,12 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}
 	ir := server.productIdentityRuntime()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, installErr := templatelibrary.InstallParsed(server.keyPaths, ir.ID(), parsed, masterKey)
+		_, installErr := templatelibrary.InstallParsed(server.keyPaths, parsed, masterKey)
 		return installErr
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, ir.ID(), keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -623,7 +623,7 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 
 func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
 	t.Helper()
-	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, auth.CurrentProductIdentityID(), keyType, templateType)
+	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templateType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -637,12 +637,12 @@ func testTemplateKeyType(family string) string {
 }
 
 func keyTypeStateEnabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
 func keyTypeStateDisabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, identityID, keyType)
+	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 

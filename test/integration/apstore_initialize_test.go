@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -19,7 +18,7 @@ import (
 func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
 	paths := storepaths.NewPaths(env.SignerDataDir)
-	identityDir := paths.IdentityDir(auth.DefaultIdentityID)
+	identityDir := paths.ProductDir()
 	if err := os.RemoveAll(identityDir); err != nil {
 		t.Fatalf("failed to remove cloned identity dir: %v", err)
 	}
@@ -37,12 +36,12 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 		t.Fatalf("initialize output did not report offline bootstrap completion:\n%s", output)
 	}
 
-	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir(auth.DefaultIdentityID)) {
+	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
 		t.Fatal("keystore metadata missing after apstore initialize")
 	}
 	// New stores are generational: the keys namespace lives in the first
 	// generation behind CURRENT.
-	active, err := genstore.ResolveActive(paths, auth.DefaultIdentityID)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}

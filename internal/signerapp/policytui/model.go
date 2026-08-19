@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
@@ -66,7 +67,6 @@ type Model struct {
 	policy                    *policy.StoredConfig
 	baseline                  []byte
 	dataDir                   string
-	identityID                string
 	screen                    screen
 	cursor                    int
 	routeCursor               int
@@ -157,7 +157,7 @@ type routeEditField struct {
 // New returns a policy editor model initialized with a verified signer policy.
 // NewWithTarget returns a policy editor model initialized with a verified stored
 // policy document for the selected domain.
-func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) Model {
+func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir string, target policyeditor.Target) Model {
 	if target == "" || target == policyeditor.TargetAuto {
 		target = policyeditor.TargetSigner
 	}
@@ -169,7 +169,6 @@ func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDi
 		policy:      cp,
 		baseline:    baseline,
 		dataDir:     dataDir,
-		identityID:  identityID,
 		status:      fmt.Sprintf("loaded verified %s", target.StatusNoun()),
 		fields:      policyFieldsForTarget(target),
 	}
@@ -438,7 +437,7 @@ func (m Model) bodyView() string {
 	b.WriteString("\n\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("store: %s", m.dataDir)))
 	b.WriteString("\n")
-	b.WriteString(metadataStyle.Render(fmt.Sprintf("identity: %s", m.identityID)))
+	b.WriteString(metadataStyle.Render(fmt.Sprintf("identity: %s", productmode.IdentityID)))
 	b.WriteString("\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("document: %s", m.target.DocumentName())))
 	b.WriteString("\n")

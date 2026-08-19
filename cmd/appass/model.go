@@ -4,12 +4,12 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
@@ -110,7 +110,7 @@ func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 		}
 		method := "none"
 
-		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, productIdentityID())
+		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
 		if err == nil && unlockCfg.HasPassphraseCommand() {
 			method = detectMethod(unlockCfg.PassphraseCommandArgv)
 		}
@@ -178,7 +178,7 @@ func (m Model) buildMenu() []menuItem {
 // statusHelperInfo returns display info about the helper binary and associated file.
 func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel, fileStatus string) {
 	var argv []string
-	if unlockCfg, err := unlockconfig.LoadUnlockConfig(m.dataDir, productIdentityID()); err == nil && unlockCfg.HasPassphraseCommand() {
+	if unlockCfg, err := unlockconfig.LoadUnlockConfig(m.dataDir); err == nil && unlockCfg.HasPassphraseCommand() {
 		argv = unlockCfg.PassphraseCommandArgv
 	}
 
@@ -223,5 +223,5 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 }
 
 func productIdentityID() string {
-	return auth.CurrentProductIdentityID()
+	return productmode.IdentityID
 }

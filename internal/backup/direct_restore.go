@@ -112,13 +112,13 @@ type RestoreClassification struct {
 // storage. An empty selectors slice selects the complete archive.
 func LoadManagedRestoreSet(
 	paths storepaths.Paths,
-	identityID string,
+
 	archivePath string,
 	selectors []string,
 	exportPassphrase []byte,
 	role noderole.Role,
 ) (*RestoreSet, error) {
-	resolvedArchive, err := ResolveManagedBackupPath(paths, identityID, archivePath)
+	resolvedArchive, err := ResolveManagedBackupPath(paths, archivePath)
 	if err != nil {
 		return nil, err
 	}

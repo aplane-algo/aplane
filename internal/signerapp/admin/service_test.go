@@ -6,6 +6,7 @@ package admin
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -69,7 +70,7 @@ func (d *fakeDeps) WithProcessConfigMutation(fn func() error) error {
 	return fn()
 }
 
-func (d *fakeDeps) WithIdentityMutation(identityID string, fn func() error) error {
+func (d *fakeDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.identityMutationCalls++
@@ -85,7 +86,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(auth.DefaultIdentityID), 0o750); err != nil {
+	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 
@@ -97,9 +98,9 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 		keyPaths: keyPaths,
 		theme:    cfg.Theme,
 	}
-	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
+	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths)
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      keyStore,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -112,7 +113,7 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	t.Helper()
 
 	passphrase := []byte("admin-policy-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase); err != nil {
+	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(), passphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}
 	if err := ir.KeyStore().Unlock(passphrase); err != nil {
@@ -123,19 +124,19 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		switch target {
 		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
 			ir.SetSentryPolicyState(verified, effective)
 		default:
-			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
@@ -187,7 +188,7 @@ func TestServiceDetectPassphraseMethodForIdentityReadsUnlockYAML(t *testing.T) {
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(deps.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -215,7 +216,7 @@ func TestServiceDetectPassphraseMethodForIdentityIdentityScopedOverridesGlobal(t
 	unlockCfg := &identity.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(deps.dataDir, auth.DefaultIdentityID, unlockCfg); err != nil {
+	if err := identity.SaveUnlockConfig(deps.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -376,8 +377,8 @@ func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	if !snapshot.Success {
 		t.Fatalf("BuildPolicySnapshot() success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
-	if snapshot.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, auth.DefaultIdentityID)
+	if snapshot.IdentityID != productmode.IdentityID {
+		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, productmode.IdentityID)
 	}
 	if !snapshot.Canonical {
 		t.Fatal("Canonical = false, want true")
@@ -403,8 +404,8 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	if snapshot.Code != "policy_snapshot_unavailable" {
 		t.Fatalf("Code = %q, want policy_snapshot_unavailable", snapshot.Code)
 	}
-	if snapshot.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, auth.DefaultIdentityID)
+	if snapshot.IdentityID != productmode.IdentityID {
+		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, productmode.IdentityID)
 	}
 }
 
@@ -491,7 +492,7 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	var verified *policy.StoredConfig
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
 		var err error
-		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), ir.ID(), masterKey)
+		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), masterKey)
 		return err
 	})
 	if err != nil {

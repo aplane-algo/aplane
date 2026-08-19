@@ -39,7 +39,7 @@ type CompletionReport struct {
 // never receives a new baseline.
 func CompleteRotation(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 	passphrase []byte,
 ) (*CompletionReport, error) {
@@ -51,18 +51,18 @@ func CompleteRotation(
 	}
 	state, pending := kr.PendingRotation()
 	if !pending {
-		return cleanupUnreferencedRotationSnapshot(paths, identityID, kr, passphrase)
+		return cleanupUnreferencedRotationSnapshot(paths, kr, passphrase)
 	}
 
 	report := &CompletionReport{}
-	resume, err := ResumeRotation(paths, identityID, kr)
+	resume, err := ResumeRotation(paths, kr)
 	report.Resume = resume
 	if err != nil {
 		return report, err
 	}
 	snapshot, err := ReadReferencedSnapshot(
 		paths,
-		identityID,
+
 		state.Snapshot,
 		state.FromTerm,
 		state.ToTerm,
@@ -71,12 +71,12 @@ func CompleteRotation(
 	if err != nil {
 		return report, err
 	}
-	historicalPrefixes, err := historicalGenerationPrefixes(paths, identityID, kr)
+	historicalPrefixes, err := historicalGenerationPrefixes(paths, kr)
 	if err != nil {
 		return report, err
 	}
 
-	before, err := Scan(paths, identityID, kr)
+	before, err := Scan(paths, kr)
 	if err != nil {
 		return report, fmt.Errorf("complete rotation pre-baseline scan: %w", err)
 	}
@@ -86,7 +86,7 @@ func CompleteRotation(
 	}
 	if err := verifyCompletionInventory(
 		paths,
-		identityID,
+
 		before,
 		snapshot,
 		state,
@@ -101,7 +101,7 @@ func CompleteRotation(
 	if baseline != nil {
 		current, err := readMatchingCompletionBaseline(
 			paths,
-			identityID,
+
 			baseline,
 			kr,
 		)
@@ -111,14 +111,14 @@ func CompleteRotation(
 		if current {
 			report.BaselineAlreadyCurrent = true
 		} else {
-			if err := WriteBaseline(paths, identityID, baseline, kr); err != nil {
+			if err := WriteBaseline(paths, baseline, kr); err != nil {
 				return report, err
 			}
 			report.BaselineWritten = true
 		}
 	}
 
-	after, err := Scan(paths, identityID, kr)
+	after, err := Scan(paths, kr)
 	if err != nil {
 		return report, fmt.Errorf("complete rotation post-baseline scan: %w", err)
 	}
@@ -128,7 +128,7 @@ func CompleteRotation(
 	}
 	if err := verifyCompletionInventory(
 		paths,
-		identityID,
+
 		after,
 		snapshot,
 		state,
@@ -142,7 +142,7 @@ func CompleteRotation(
 	report.FinalEntries = len(after.Entries)
 
 	if err := crypto.CloseRotation(
-		paths.IdentityDir(identityID),
+		paths.ProductDir(),
 		kr,
 		passphrase,
 	); err != nil {
@@ -157,7 +157,7 @@ func CompleteRotation(
 	}
 
 	if err := fsutil.RemoveDurable(
-		paths.RotationSnapshotPath(identityID),
+		paths.RotationSnapshotPath(),
 	); err != nil {
 		return report, fmt.Errorf("remove completed rotation snapshot: %w", err)
 	}
@@ -191,7 +191,7 @@ func completionBaseline(
 
 func verifyCompletionInventory(
 	paths storepaths.Paths,
-	identityID string,
+
 	final *Report,
 	snapshot *Snapshot,
 	state crypto.RotationState,
@@ -209,14 +209,14 @@ func verifyCompletionInventory(
 	}
 	snapshotPath, err := canonicalPathFor(
 		paths,
-		paths.RotationSnapshotPath(identityID),
+		paths.RotationSnapshotPath(),
 	)
 	if err != nil {
 		return err
 	}
 	baselinePath, err := canonicalPathFor(
 		paths,
-		paths.RotationBaselinePath(identityID),
+		paths.RotationBaselinePath(),
 	)
 	if err != nil {
 		return err
@@ -278,12 +278,12 @@ func verifyCompletionInventory(
 	}
 
 	if desiredBaseline != nil {
-		_, statErr := os.Lstat(paths.RotationBaselinePath(identityID))
+		_, statErr := os.Lstat(paths.RotationBaselinePath())
 		switch {
 		case statErr == nil:
 			matches, err := readMatchingCompletionBaseline(
 				paths,
-				identityID,
+
 				desiredBaseline,
 				kr,
 			)
@@ -357,14 +357,14 @@ func verifyCompletionEntry(
 
 func readMatchingCompletionBaseline(
 	paths storepaths.Paths,
-	identityID string,
+
 	want *Baseline,
 	kr *crypto.Keyring,
 ) (bool, error) {
 	if kr == nil {
 		return false, fmt.Errorf("complete rotation baseline requires a keyring")
 	}
-	got, err := ReadBaseline(paths, identityID, kr)
+	got, err := ReadBaseline(paths, kr)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -376,12 +376,12 @@ func readMatchingCompletionBaseline(
 
 func cleanupUnreferencedRotationSnapshot(
 	paths storepaths.Paths,
-	identityID string,
+
 	kr *crypto.Keyring,
 	passphrase []byte,
 ) (*CompletionReport, error) {
 	report := &CompletionReport{}
-	snapshotPath := paths.RotationSnapshotPath(identityID)
+	snapshotPath := paths.RotationSnapshotPath()
 	sealed, err := readSnapshotFile(snapshotPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoRotationPending
@@ -395,7 +395,7 @@ func cleanupUnreferencedRotationSnapshot(
 	}
 
 	onDisk, err := crypto.OpenKeyringStore(
-		paths.IdentityDir(identityID),
+		paths.ProductDir(),
 		passphrase,
 	)
 	if err != nil {
@@ -460,7 +460,7 @@ func cleanupUnreferencedRotationSnapshot(
 		)
 	}
 
-	if err := fsutil.SyncDir(paths.IdentityDir(identityID)); err != nil {
+	if err := fsutil.SyncDir(paths.ProductDir()); err != nil {
 		return report, fmt.Errorf("sync settled rotation root directory: %w", err)
 	}
 	if err := fsutil.RemoveDurable(snapshotPath); err != nil {

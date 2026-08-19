@@ -27,8 +27,7 @@ func cmdGenerations(args []string) error {
 	switch args[0] {
 	case "prune":
 		paths := keystorePaths()
-		identityID := productIdentityID()
-		generational, err := genstore.IsGenerational(paths, identityID)
+		generational, err := genstore.IsGenerational(paths)
 		if err != nil {
 			return err
 		}
@@ -55,7 +54,7 @@ func cmdGenerations(args []string) error {
 			}
 		}
 		if !retainRollbackParent {
-			if err := validateCurrentGenerationForContent(paths, identityID); err != nil {
+			if err := validateCurrentGenerationForContent(paths); err != nil {
 				return err
 			}
 			logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
@@ -69,11 +68,11 @@ func cmdGenerations(args []string) error {
 			return fmt.Errorf("generation prune blocked: %w", err)
 		}
 		if !retainRollbackParent {
-			if err := verifyCurrentGenerationContentWithKeyring(paths, identityID, kr); err != nil {
+			if err := verifyCurrentGenerationContentWithKeyring(paths, kr); err != nil {
 				return err
 			}
 		}
-		removed, err := genstore.CollectGarbage(paths, identityID, nil, retainRollbackParent, kr)
+		removed, err := genstore.CollectGarbage(paths, nil, retainRollbackParent, kr)
 		if err != nil {
 			return err
 		}
@@ -95,8 +94,8 @@ func cmdGenerations(args []string) error {
 	}
 }
 
-func validateCurrentGenerationForContent(paths storepaths.Paths, identityID string) error {
-	gen, err := genstore.Resolve(paths, identityID)
+func validateCurrentGenerationForContent(paths storepaths.Paths) error {
+	gen, err := genstore.Resolve(paths)
 	if err != nil {
 		return err
 	}
@@ -106,15 +105,15 @@ func validateCurrentGenerationForContent(paths storepaths.Paths, identityID stri
 	return nil
 }
 
-func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, identityID string, kr *crypto.Keyring) error {
-	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, kr)
+func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) error {
+	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(kr)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)
 	}
 	if defects := templateReport.ContentDefectKeyTypes(); len(defects) > 0 {
 		return fmt.Errorf("refusing to prune: %d template/key-type defect(s) in the current generation (first: %s)", len(defects), defects[0])
 	}
-	scan, err := keys.ScanKeysDirectoryWithKeyringReport(paths, identityID, kr)
+	scan, err := keys.ScanKeysDirectoryWithKeyringReport(paths, kr)
 	if err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}
