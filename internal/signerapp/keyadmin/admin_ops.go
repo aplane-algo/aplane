@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
@@ -164,7 +163,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}
 	}
 
-	mut := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error
@@ -180,7 +179,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyImported(productmode.IdentityID, importResult.Address, keyType)
+		s.AuditLog.LogKeyImported(importResult.Address, keyType)
 	}
 	return importResult, nil
 }

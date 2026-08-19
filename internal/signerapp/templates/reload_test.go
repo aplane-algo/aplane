@@ -76,22 +76,20 @@ func (f *fakeSession) InitializeSession() { f.initialized = true }
 type fakeAuditLog struct {
 	reloads  int
 	rejected []struct {
-		identityID string
-		keyFile    string
-		reason     string
+		keyFile string
+		reason  string
 	}
 }
 
-func (f *fakeAuditLog) LogKeyReload(string, int) {
+func (f *fakeAuditLog) LogKeyReload(int) {
 	f.reloads++
 }
 
-func (f *fakeAuditLog) LogKeyRejected(identityID, keyFile, reason string) {
+func (f *fakeAuditLog) LogKeyRejected(keyFile, reason string) {
 	f.rejected = append(f.rejected, struct {
-		identityID string
-		keyFile    string
-		reason     string
-	}{identityID: identityID, keyFile: keyFile, reason: reason})
+		keyFile string
+		reason  string
+	}{keyFile: keyFile, reason: reason})
 }
 
 func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
@@ -626,7 +624,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 		t.Fatalf("rejected audit calls = %#v, want the three LogicSig invariant warnings", audit.rejected)
 	}
 	got := audit.rejected[0]
-	if got.identityID != "default" || got.keyFile != "/tmp/BAD.key" {
+	if got.keyFile != "/tmp/BAD.key" {
 		t.Fatalf("rejected audit = %#v", got)
 	}
 	if !strings.Contains(got.reason, string(keys.KeyScanWarningLogicSigSaltInvalid)) || !strings.Contains(got.reason, keys.ErrMissingLogicSigSaltCounter.Error()) {

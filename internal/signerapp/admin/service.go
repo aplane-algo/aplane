@@ -217,7 +217,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	}
 
 	if err == nil && saveKey != "" {
-		mut := storemut.New(productmode.IdentityID, s.Deps.KeyPaths(), nil, nil)
+		mut := storemut.New(s.Deps.KeyPaths(), nil, nil)
 		var saveErr error
 		if saveKey == adminproto.AdminSettingTheme {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
@@ -252,10 +252,10 @@ func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.Pol
 	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
 	ops, err := s.policyTargetOps(ir, target)
 	if err != nil {
-		return policySnapshotError(productmode.IdentityID, target, err)
+		return policySnapshotError(target, err)
 	}
 	stored, _ := ops.activeSnapshot(ir)
-	return canonicalPolicySnapshot(productmode.IdentityID, target, ops, stored)
+	return canonicalPolicySnapshot(target, ops, stored)
 }
 
 func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto.PolicyTarget) adminproto.PolicyTarget {
@@ -268,12 +268,12 @@ func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto
 	return adminproto.PolicyTargetSigner
 }
 
-func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, ops policyTargetOps, stored *policy.StoredConfig) adminproto.PolicySnapshot {
+func canonicalPolicySnapshot(target adminproto.PolicyTarget, ops policyTargetOps, stored *policy.StoredConfig) adminproto.PolicySnapshot {
 	if stored == nil {
 		return adminproto.PolicySnapshot{
 			Success:    false,
 			Target:     target,
-			IdentityID: identityID,
+			IdentityID: productmode.IdentityID,
 			Code:       ops.snapshotUnavailableCode,
 			Error:      ops.snapshotUnavailableErr,
 		}
@@ -283,7 +283,7 @@ func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, 
 		return adminproto.PolicySnapshot{
 			Success:    false,
 			Target:     target,
-			IdentityID: identityID,
+			IdentityID: productmode.IdentityID,
 			Code:       "policy_snapshot_marshal_failed",
 			Error:      err.Error(),
 		}
@@ -292,7 +292,7 @@ func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, 
 	return adminproto.PolicySnapshot{
 		Success:      true,
 		Target:       target,
-		IdentityID:   identityID,
+		IdentityID:   productmode.IdentityID,
 		PolicyYAML:   string(data),
 		PolicySHA256: fmt.Sprintf("%x", sum),
 		Canonical:    true,
@@ -365,13 +365,13 @@ func validatePolicyTargetForNodeRole(role noderole.Role, target adminproto.Polic
 	}
 }
 
-func policySnapshotError(identityID string, target adminproto.PolicyTarget, err error) adminproto.PolicySnapshot {
+func policySnapshotError(target adminproto.PolicyTarget, err error) adminproto.PolicySnapshot {
 	var replaceErr policyReplaceError
 	if errors.As(err, &replaceErr) {
 		return adminproto.PolicySnapshot{
 			Success:    false,
 			Target:     target,
-			IdentityID: identityID,
+			IdentityID: productmode.IdentityID,
 			Code:       replaceErr.code,
 			Error:      replaceErr.msg,
 		}
@@ -379,7 +379,7 @@ func policySnapshotError(identityID string, target adminproto.PolicyTarget, err 
 	return adminproto.PolicySnapshot{
 		Success:    false,
 		Target:     target,
-		IdentityID: identityID,
+		IdentityID: productmode.IdentityID,
 		Code:       "policy_snapshot_failed",
 		Error:      err.Error(),
 	}
@@ -485,7 +485,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		return fail("policy_replace_failed", err.Error())
 	}
 
-	return canonicalPolicySnapshot(productmode.IdentityID, target, ops, storedSnapshot)
+	return canonicalPolicySnapshot(target, ops, storedSnapshot)
 }
 
 func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {

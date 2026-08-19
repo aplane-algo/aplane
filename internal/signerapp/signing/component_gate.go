@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 // gateUserComponentSigning runs the shared signer-domain approval gates for a
@@ -221,7 +220,7 @@ func (s *Service) logUserComponentRejections(plan *ComponentSignPlan, reason str
 		return
 	}
 	for _, target := range plan.Targets {
-		rejectLogger.LogSignRejected(productmode.IdentityID, plan.ComponentKey, target.Sender, reason)
+		rejectLogger.LogSignRejected(plan.ComponentKey, target.Sender, reason)
 	}
 }
 
@@ -233,10 +232,10 @@ func (s *Service) logUserComponentApproved(plan *ComponentSignPlan, policyRuleID
 		details := fmt.Sprintf("user component signature target %d signed", target.TargetIndex)
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignApprovedWithPolicyRule(productmode.IdentityID, plan.ComponentKey, target.Sender, details, policyRuleID)
+				ruleLogger.LogSignApprovedWithPolicyRule(plan.ComponentKey, target.Sender, details, policyRuleID)
 				continue
 			}
 		}
-		s.AuditLog.LogSignApproved(productmode.IdentityID, plan.ComponentKey, target.Sender, details)
+		s.AuditLog.LogSignApproved(plan.ComponentKey, target.Sender, details)
 	}
 }

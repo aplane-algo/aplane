@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
@@ -107,11 +106,11 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 		const details = "bounded-sentry base component released after policy and operator approval"
 		if policyRuleID != "" {
 			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
-				logger.LogSignApprovedWithPolicyRule(productmode.IdentityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
+				logger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
 				continue
 			}
 		}
-		s.AuditLog.LogSignApproved(productmode.IdentityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
+		s.AuditLog.LogSignApproved(txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
 	}
 }
 

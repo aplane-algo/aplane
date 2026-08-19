@@ -13,7 +13,7 @@ import (
 )
 
 type AuditLogger interface {
-	LogTokenProvisioned(identityID, sshFingerprint, remoteAddr string)
+	LogTokenProvisioned(sshFingerprint, remoteAddr string)
 }
 
 type Service struct {
@@ -58,7 +58,7 @@ func (s Service) Issue() (string, error) {
 
 func (s Service) AuditProvisioned(sshFingerprint, remoteAddr string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogTokenProvisioned(productmode.IdentityID, sshFingerprint, remoteAddr)
+		s.AuditLog.LogTokenProvisioned(sshFingerprint, remoteAddr)
 	}
 	if s.Logf != nil {
 		s.Logf("token provisioned for identity %q to %s (key: %s)", productmode.IdentityID, remoteAddr, sshFingerprint)

@@ -295,7 +295,7 @@ func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T)
 		t.Fatalf("sign-request audit entries = %#v, want one per original position", audit.entries)
 	}
 	entry := audit.entries[0]
-	if entry.identityID != "default" || entry.authAddress != authorizer || entry.txnSender != txn.Sender.String() || entry.details != "frozen bounded transaction" {
+	if entry.authAddress != authorizer || entry.txnSender != txn.Sender.String() || entry.details != "frozen bounded transaction" {
 		t.Fatalf("sign-request audit entry = %#v, want frozen request attribution", entry)
 	}
 }

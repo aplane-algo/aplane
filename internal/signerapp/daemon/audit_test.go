@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -45,22 +46,22 @@ func TestAuditIdentityScopedEventsCarryIdentityID(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	id := "test-identity"
+	id := productmode.IdentityID
 
-	logger.LogSignRequest(id, "ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApproved(id, "ADDR", "SENDER", "send 1 ALGO")
-	logger.LogSignRejected(id, "ADDR", "SENDER", "operator rejected")
-	logger.LogSignFailed(id, "ADDR", "SENDER", "key load error")
-	logger.LogKeyReload(id, 5)
-	logger.LogKeyRejected(id, "/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
-	logger.LogTokenProvisioned(id, "SHA256:abc", "10.0.0.1")
+	logger.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
+	logger.LogSignApproved("ADDR", "SENDER", "send 1 ALGO")
+	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
+	logger.LogSignFailed("ADDR", "SENDER", "key load error")
+	logger.LogKeyReload(5)
+	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
+	logger.LogTokenProvisioned("SHA256:abc", "10.0.0.1")
 	logger.LogAuthFailed(id, "10.0.0.1", "invalid_credentials")
 	logger.LogSessionConnected(id, "10.0.0.1", "user")
 	logger.LogSessionDisconnected(id, "10.0.0.1", "user")
-	logger.LogStoreInitialized(id, "/data/identities/default")
-	logger.LogStoreInitializeFailed(id, "already initialized")
-	logger.LogPassphraseChanged(id, 2, 1)
-	logger.LogPassphraseChangeFailed(id, "invalid passphrase")
+	logger.LogStoreInitialized("/data/identities/default")
+	logger.LogStoreInitializeFailed("already initialized")
+	logger.LogPassphraseChanged(2, 1)
+	logger.LogPassphraseChangeFailed("invalid passphrase")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -94,7 +95,7 @@ func TestAuditKeyRejected(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogKeyRejected("default", "/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
+	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 1 {
@@ -117,22 +118,22 @@ func TestAuditSigningAttributionFields(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogSignRequest("alice", "ADDR", "SENDER", "pay", "send 1 ALGO")
-	logger.LogSignApproved("alice", "ADDR", "SENDER", "txn signed")
-	logger.LogSignRejected("alice", "ADDR", "SENDER", "operator rejected")
+	logger.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
+	logger.LogSignApproved("ADDR", "SENDER", "txn signed")
+	logger.LogSignRejected("ADDR", "SENDER", "operator rejected")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 3 {
 		t.Fatalf("entry count = %d, want 3", len(entries))
 	}
 
-	if entries[0].TargetIdentityID != "alice" || entries[0].RequesterPrincipal != "alice" || entries[0].ApproverPrincipal != "" || entries[0].Outcome != "requested" {
+	if entries[0].TargetIdentityID != productmode.IdentityID || entries[0].RequesterPrincipal != "" || entries[0].ApproverPrincipal != "" || entries[0].Outcome != "requested" {
 		t.Fatalf("request attribution = %#v", entries[0])
 	}
-	if entries[1].TargetIdentityID != "alice" || entries[1].RequesterPrincipal != "alice" || entries[1].ApproverPrincipal != "alice" || entries[1].Outcome != "approved" {
+	if entries[1].TargetIdentityID != productmode.IdentityID || entries[1].RequesterPrincipal != "" || entries[1].ApproverPrincipal != "" || entries[1].Outcome != "approved" {
 		t.Fatalf("approval attribution = %#v", entries[1])
 	}
-	if entries[2].TargetIdentityID != "alice" || entries[2].RequesterPrincipal != "alice" || entries[2].ApproverPrincipal != "alice" || entries[2].Outcome != "rejected" {
+	if entries[2].TargetIdentityID != productmode.IdentityID || entries[2].RequesterPrincipal != "" || entries[2].ApproverPrincipal != "" || entries[2].Outcome != "rejected" {
 		t.Fatalf("rejection attribution = %#v", entries[2])
 	}
 }
@@ -145,8 +146,8 @@ func TestAuditSigningPolicyRuleID(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogSignApprovedWithPolicyRule("alice", "ADDR", "SENDER", "txn signed", "review_algo_payment_exceeded")
-	logger.LogSignRejectedWithPolicyRule("alice", "ADDR", "SENDER", "operator rejected", "always_review_warnings")
+	logger.LogSignApprovedWithPolicyRule("ADDR", "SENDER", "txn signed", "review_algo_payment_exceeded")
+	logger.LogSignRejectedWithPolicyRule("ADDR", "SENDER", "operator rejected", "always_review_warnings")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 {
@@ -264,9 +265,9 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		attribution: signingAuditAttributionFromRequest(r),
 	}
 
-	audit.LogSignRequest("alice", "ADDR", "SENDER", "pay", "send 1 ALGO")
+	audit.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
 	audit.RecordApprovalResponse(signerapproval.SignResponse{ID: "req-1", Approved: true, ApproverPrincipal: "alice-admin"})
-	audit.LogSignApprovedWithPolicyRule("alice", "ADDR", "SENDER", "txn signed", "always_review_warnings")
+	audit.LogSignApprovedWithPolicyRule("ADDR", "SENDER", "txn signed", "always_review_warnings")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 {
@@ -448,9 +449,9 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogKeyGenerated("default", "ADDR1", "ed25519")
-	logger.LogKeyDeleted("default", "ADDR2", "/tmp/deleted/ADDR2.key")
-	logger.LogKeyImported("default", "ADDR4", "ed25519")
+	logger.LogKeyGenerated("ADDR1", "ed25519")
+	logger.LogKeyDeleted("ADDR2", "/tmp/deleted/ADDR2.key")
+	logger.LogKeyImported("ADDR4", "ed25519")
 
 	data, err := os.ReadFile(path)
 	if err != nil {

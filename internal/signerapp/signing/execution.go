@@ -25,11 +25,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type AuditFailLogger interface {
-	LogSignFailed(identityID, authAddress, txnSender, reason string)
+	LogSignFailed(authAddress, txnSender, reason string)
 }
 
 type DecodeRuntimeArgsFunc func(lsigArgs map[string]string) (map[string][]byte, error)
@@ -135,7 +134,7 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	keyMaterial, loadErr := session.GetKeyWithContext(ctx, authAddr)
 	if loadErr != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
 		}
 		if errors.Is(loadErr, keystore.ErrStoreLocked) {
 			return nil, "", lockedError()
@@ -236,7 +235,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("generic lsig sign failed: %v", err))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("generic lsig sign failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 	}
@@ -272,14 +271,14 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 			authorizer, err := types.DecodeAddress(authAddr)
 			if err != nil {
 				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+					e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
 				}
 				return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
 			}
 			stxn, err := transactionAuthorizer.AuthorizeTransaction(keyMaterial, txn, authorizer)
 			if err != nil {
 				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
+					e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
 				}
 				return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 			}
@@ -309,7 +308,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 	sig, err := provider.SignMessage(keyMaterial, messageBytes)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("sign failed: %v", err))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("sign failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 	}
@@ -328,7 +327,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		authAddrDecoded, err := types.DecodeAddress(authAddr)
 		if err != nil {
 			if e.AuditLog != nil {
-				e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+				e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
 			}
 			return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
 		}
@@ -446,7 +445,7 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("lsig assembly failed: %v", err))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("lsig assembly failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to assemble lsig txn: %v", err))
 	}
@@ -489,7 +488,7 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to assemble bounded lsig txn: %v", err))
 	}

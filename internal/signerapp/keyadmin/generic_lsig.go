@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 var (
@@ -83,7 +82,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.
 	address := salted.Address.String()
 	saltCounter := salted.Counter
 
-	mut := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	signingArgs := keys.StoreSigningArgs(template.RuntimeArgs())
 	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(template, false)
 	if err != nil {
@@ -106,7 +105,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.
 	}
 
 	if g.AuditLog != nil {
-		g.AuditLog.LogKeyGenerated(productmode.IdentityID, address, keyType)
+		g.AuditLog.LogKeyGenerated(address, keyType)
 	}
 
 	return address, nil

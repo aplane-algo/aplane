@@ -14,15 +14,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type AuditApproveLogger interface {
-	LogSignApproved(identityID, authAddress, txnSender, details string)
+	LogSignApproved(authAddress, txnSender, details string)
 }
 
 type AuditApprovePolicyRuleLogger interface {
-	LogSignApprovedWithPolicyRule(identityID, authAddress, txnSender, details, policyRuleID string)
+	LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string)
 }
 
 type IsUnlockedFunc func() bool
@@ -64,7 +63,7 @@ type AssemblyResult struct {
 }
 
 type policyAuditLogger interface {
-	LogSignRejected(identityID, authAddress, txnSender, reason string)
+	LogSignRejected(authAddress, txnSender, reason string)
 }
 
 func (s *Service) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
@@ -417,11 +416,11 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 		details := fmt.Sprintf("txn %d/%d signed", i+1, len(req.Requests))
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignApprovedWithPolicyRule(productmode.IdentityID, txReq.AuthAddress, txns[i].Sender.String(), details, policyRuleID)
+				ruleLogger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, txns[i].Sender.String(), details, policyRuleID)
 				continue
 			}
 		}
-		s.AuditLog.LogSignApproved(productmode.IdentityID, txReq.AuthAddress, txns[i].Sender.String(), details)
+		s.AuditLog.LogSignApproved(txReq.AuthAddress, txns[i].Sender.String(), details)
 	}
 }
 
@@ -433,11 +432,11 @@ func (s *Service) logBoundedAdminPartialApproved(req signerapi.GroupSignRequest,
 	const details = "bounded-admin spending partial prepared; external contract-admin signature required"
 	if policyRuleID != "" {
 		if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
-			ruleLogger.LogSignApprovedWithPolicyRule(productmode.IdentityID, txReq.AuthAddress, txn.Sender.String(), details, policyRuleID)
+			ruleLogger.LogSignApprovedWithPolicyRule(txReq.AuthAddress, txn.Sender.String(), details, policyRuleID)
 			return
 		}
 	}
-	s.AuditLog.LogSignApproved(productmode.IdentityID, txReq.AuthAddress, txn.Sender.String(), details)
+	s.AuditLog.LogSignApproved(txReq.AuthAddress, txn.Sender.String(), details)
 }
 
 func (s *Service) logPolicyRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {
@@ -450,6 +449,6 @@ func (s *Service) logPolicyRejections(req signerapi.GroupSignRequest, plan *Plan
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
 			continue
 		}
-		rejectLogger.LogSignRejected(productmode.IdentityID, txReq.AuthAddress, txns[i].Sender.String(), "policy_engine_rejected: "+reason)
+		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), "policy_engine_rejected: "+reason)
 	}
 }

@@ -14,11 +14,10 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type AuditLogger interface {
-	LogSignRequest(identityID, authAddress, txnSender, txnType, details string)
+	LogSignRequest(authAddress, txnSender, txnType, details string)
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
@@ -230,11 +229,11 @@ func (p *Planner) logSignRequests(req signerapi.GroupSignRequest, txns []types.T
 	}
 	for i, txReq := range req.Requests {
 		if passthroughIndices[i] {
-			p.AuditLog.LogSignRequest(productmode.IdentityID, "", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
+			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "passthrough", "pre-signed transaction")
 		} else if foreignIndices[i] {
-			p.AuditLog.LogSignRequest(productmode.IdentityID, "", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest("", txns[i].Sender.String(), "foreign", p.GenerateTxnDescription(txReq.TxnBytesHex))
 		} else {
-			p.AuditLog.LogSignRequest(productmode.IdentityID, txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
+			p.AuditLog.LogSignRequest(txReq.AuthAddress, txns[i].Sender.String(), "", p.GenerateTxnDescription(txReq.TxnBytesHex))
 		}
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -27,10 +26,10 @@ type Deps interface {
 }
 
 type AuditLogger interface {
-	LogStoreInitialized(identityID, metadataDir string)
-	LogStoreInitializeFailed(identityID, reason string)
-	LogPassphraseChanged(identityID string, keysMigrated, templatesMigrated int)
-	LogPassphraseChangeFailed(identityID, reason string)
+	LogStoreInitialized(metadataDir string)
+	LogStoreInitializeFailed(reason string)
+	LogPassphraseChanged(keysMigrated, templatesMigrated int)
+	LogPassphraseChangeFailed(reason string)
 }
 
 type UnlockIdentityFunc func(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
@@ -49,7 +48,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 		}
 	}
 	if len(req.Passphrase) == 0 {
-		s.logStoreInitializeFailed(productmode.IdentityID, "passphrase is required")
+		s.logStoreInitializeFailed("passphrase is required")
 		return adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: "passphrase is required",
@@ -59,7 +58,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	configSnapshot := *s.Deps.Config()
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
-		s.logStoreInitializeFailed(productmode.IdentityID, err.Error())
+		s.logStoreInitializeFailed(err.Error())
 		return adminproto.InitializeStoreResult{
 			Code:  "passphrase_helper_error",
 			Error: err.Error(),
@@ -96,14 +95,14 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 		}
 	}
 	if err != nil {
-		s.logStoreInitializeFailed(productmode.IdentityID, err.Error())
+		s.logStoreInitializeFailed(err.Error())
 		return adminproto.InitializeStoreResult{
 			Code:          "initialize_store_failed",
 			Error:         err.Error(),
 			HelperWarning: helperWarning,
 		}
 	}
-	s.logStoreInitialized(productmode.IdentityID, initResult.MetadataDir)
+	s.logStoreInitialized(initResult.MetadataDir)
 	return adminproto.InitializeStoreResult{
 		Success:       true,
 		MetadataDir:   initResult.MetadataDir,
@@ -113,21 +112,21 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 
 func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
-		s.logPassphraseChangeFailed(productmode.IdentityID, "current and new passphrases are required")
+		s.logPassphraseChangeFailed("current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "current and new passphrases are required",
 		}
 	}
 	if bytes.Equal(req.CurrentPassphrase, req.NewPassphrase) {
-		s.logPassphraseChangeFailed(productmode.IdentityID, "new passphrase must be different from current passphrase")
+		s.logPassphraseChangeFailed("new passphrase must be different from current passphrase")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "new passphrase must be different from current passphrase",
 		}
 	}
 	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), req.CurrentPassphrase); err != nil {
-		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
+		s.logPassphraseChangeFailed(err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: err.Error(),
@@ -137,7 +136,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	configSnapshot := *s.Deps.Config()
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
-		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
+		s.logPassphraseChangeFailed(err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "passphrase_helper_error",
 			Error: err.Error(),
@@ -182,7 +181,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		return nil
 	})
 	if err != nil {
-		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
+		s.logPassphraseChangeFailed(err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			KeysMigrated:             rotation.KeysMigrated,
 			TemplatesMigrated:        rotation.TemplatesMigrated,
@@ -196,11 +195,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 			Error:                    err.Error(),
 		}
 	}
-	s.logPassphraseChanged(
-		productmode.IdentityID,
-		rotation.KeysMigrated,
-		rotation.TemplatesMigrated,
-	)
+	s.logPassphraseChanged(rotation.KeysMigrated, rotation.TemplatesMigrated)
 	return adminproto.ChangeStorePassphraseResult{
 		Success:                  true,
 		KeysMigrated:             rotation.KeysMigrated,
@@ -224,26 +219,26 @@ func passphraseCommandConfigFromUnlock(unlockCfg *identity.UnlockConfig) *server
 	}
 }
 
-func (s Service) logStoreInitialized(identityID, metadataDir string) {
+func (s Service) logStoreInitialized(metadataDir string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogStoreInitialized(identityID, metadataDir)
+		s.AuditLog.LogStoreInitialized(metadataDir)
 	}
 }
 
-func (s Service) logStoreInitializeFailed(identityID, reason string) {
+func (s Service) logStoreInitializeFailed(reason string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogStoreInitializeFailed(identityID, reason)
+		s.AuditLog.LogStoreInitializeFailed(reason)
 	}
 }
 
-func (s Service) logPassphraseChanged(identityID string, keysMigrated, templatesMigrated int) {
+func (s Service) logPassphraseChanged(keysMigrated, templatesMigrated int) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChanged(identityID, keysMigrated, templatesMigrated)
+		s.AuditLog.LogPassphraseChanged(keysMigrated, templatesMigrated)
 	}
 }
 
-func (s Service) logPassphraseChangeFailed(identityID, reason string) {
+func (s Service) logPassphraseChangeFailed(reason string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChangeFailed(identityID, reason)
+		s.AuditLog.LogPassphraseChangeFailed(reason)
 	}
 }

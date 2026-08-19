@@ -8,9 +8,9 @@ package storemut
 import (
 	"context"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"path/filepath"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -28,16 +28,14 @@ type TokenUpdater interface {
 
 // Service performs signer-owned persistent mutations.
 type Service struct {
-	identityID      string
 	keyPaths        storepaths.Paths
 	httpTokenUpdate TokenUpdater
 	sshTokenUpdate  TokenUpdater
 }
 
-// New creates a new signer mutation service for an identity.
-func New(identityID string, keyPaths storepaths.Paths, httpTokenUpdate, sshTokenUpdate TokenUpdater) *Service {
+// New creates a new signer mutation service for the product store.
+func New(keyPaths storepaths.Paths, httpTokenUpdate, sshTokenUpdate TokenUpdater) *Service {
 	return &Service{
-		identityID:      identityID,
 		keyPaths:        keyPaths,
 		httpTokenUpdate: httpTokenUpdate,
 		sshTokenUpdate:  sshTokenUpdate,

@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 func (s *Service) evaluateSentryComponentPolicy(plan *ComponentSignPlan) *ServiceError {
@@ -190,11 +189,11 @@ func (s *Service) logSentryPolicyRejections(plan *ComponentSignPlan, reason, pol
 		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignRejectedWithPolicyRule(productmode.IdentityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason, policyRuleID)
+				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, sender, "sentry_policy_rejected: "+reason, policyRuleID)
 				continue
 			}
 		}
-		rejectLogger.LogSignRejected(productmode.IdentityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason)
+		rejectLogger.LogSignRejected(plan.ComponentKey, sender, "sentry_policy_rejected: "+reason)
 	}
 }
 
@@ -207,7 +206,7 @@ func (s *Service) logSentryComponentApproved(plan *ComponentSignPlan, result *Co
 		componentKey = plan.ComponentKey
 	}
 	for _, target := range plan.Targets {
-		s.AuditLog.LogSignApproved(productmode.IdentityID, componentKey,
+		s.AuditLog.LogSignApproved(componentKey,
 			target.Sender,
 			fmt.Sprintf("sentry component signature target %d signed", target.TargetIndex),
 		)

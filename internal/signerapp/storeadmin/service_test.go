@@ -10,7 +10,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -19,29 +18,28 @@ import (
 )
 
 type auditEvent struct {
-	kind     string
-	identity string
-	reason   string
+	kind   string
+	reason string
 }
 
 type recordingAuditLog struct {
 	events []auditEvent
 }
 
-func (l *recordingAuditLog) LogStoreInitialized(identityID, metadataDir string) {
-	l.events = append(l.events, auditEvent{kind: "store_initialized", identity: identityID})
+func (l *recordingAuditLog) LogStoreInitialized(metadataDir string) {
+	l.events = append(l.events, auditEvent{kind: "store_initialized"})
 }
 
-func (l *recordingAuditLog) LogStoreInitializeFailed(identityID, reason string) {
-	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", identity: identityID, reason: reason})
+func (l *recordingAuditLog) LogStoreInitializeFailed(reason string) {
+	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", reason: reason})
 }
 
-func (l *recordingAuditLog) LogPassphraseChanged(identityID string, _, _ int) {
-	l.events = append(l.events, auditEvent{kind: "passphrase_changed", identity: identityID})
+func (l *recordingAuditLog) LogPassphraseChanged(_, _ int) {
+	l.events = append(l.events, auditEvent{kind: "passphrase_changed"})
 }
 
-func (l *recordingAuditLog) LogPassphraseChangeFailed(identityID, reason string) {
-	l.events = append(l.events, auditEvent{kind: "passphrase_change_failed", identity: identityID, reason: reason})
+func (l *recordingAuditLog) LogPassphraseChangeFailed(reason string) {
+	l.events = append(l.events, auditEvent{kind: "passphrase_change_failed", reason: reason})
 }
 
 func TestInitializeStoreRejectsNilRuntime(t *testing.T) {
@@ -64,7 +62,7 @@ func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
 	if len(audit.events) != 1 {
 		t.Fatalf("audit events = %#v, want one event", audit.events)
 	}
-	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.identity != productmode.IdentityID || got.reason != "passphrase is required" {
+	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.reason != "passphrase is required" {
 		t.Fatalf("audit event = %#v, want product store initialize failure", got)
 	}
 }
@@ -175,7 +173,7 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 			if len(audit.events) != 1 {
 				t.Fatalf("audit events = %#v, want one event", audit.events)
 			}
-			if got := audit.events[0]; got.kind != "passphrase_change_failed" || got.identity != productmode.IdentityID || got.reason != tt.want {
+			if got := audit.events[0]; got.kind != "passphrase_change_failed" || got.reason != tt.want {
 				t.Fatalf("audit event = %#v, want product passphrase change failure", got)
 			}
 		})

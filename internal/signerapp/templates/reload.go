@@ -11,7 +11,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type KeyStore interface {
@@ -28,8 +27,8 @@ type Session interface {
 }
 
 type AuditLogger interface {
-	LogKeyReload(identityID string, keyCount int)
-	LogKeyRejected(identityID, keyFile, reason string)
+	LogKeyReload(keyCount int)
+	LogKeyRejected(keyFile, reason string)
 }
 
 type KeysChangedNotification struct {
@@ -222,7 +221,7 @@ func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 	keyCount := len(newKeysMap)
 	report.KeyCount = keyCount
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyReload(productmode.IdentityID, keyCount)
+		s.AuditLog.LogKeyReload(keyCount)
 	}
 
 	fmt.Printf("🔄 Keys reloaded: %d key(s) available\n", keyCount)
@@ -255,6 +254,6 @@ func (s *ReloadService) auditRejectedLogicSigKeys() {
 		if !warning.IsLogicSigInvariantViolation() {
 			continue
 		}
-		s.AuditLog.LogKeyRejected(productmode.IdentityID, warning.KeyFile, string(warning.Code)+": "+warning.Reason())
+		s.AuditLog.LogKeyRejected(warning.KeyFile, string(warning.Code)+": "+warning.Reason())
 	}
 }

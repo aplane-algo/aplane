@@ -65,19 +65,16 @@ func init() {
 
 type auditRecorder struct {
 	generated []struct {
-		identityID string
-		address    string
-		keyType    string
+		address string
+		keyType string
 	}
 	deleted []struct {
-		identityID  string
 		address     string
 		deletedPath string
 	}
 	imported []struct {
-		identityID string
-		address    string
-		keyType    string
+		address string
+		keyType string
 	}
 }
 
@@ -97,28 +94,25 @@ func (l *recordingLock) Unlock() {
 	l.held = false
 }
 
-func (a *auditRecorder) LogKeyGenerated(identityID, address, keyType string) {
+func (a *auditRecorder) LogKeyGenerated(address, keyType string) {
 	a.generated = append(a.generated, struct {
-		identityID string
-		address    string
-		keyType    string
-	}{identityID: identityID, address: address, keyType: keyType})
+		address string
+		keyType string
+	}{address: address, keyType: keyType})
 }
 
-func (a *auditRecorder) LogKeyDeleted(identityID, address, deletedPath string) {
+func (a *auditRecorder) LogKeyDeleted(address, deletedPath string) {
 	a.deleted = append(a.deleted, struct {
-		identityID  string
 		address     string
 		deletedPath string
-	}{identityID: identityID, address: address, deletedPath: deletedPath})
+	}{address: address, deletedPath: deletedPath})
 }
 
-func (a *auditRecorder) LogKeyImported(identityID, address, keyType string) {
+func (a *auditRecorder) LogKeyImported(address, keyType string) {
 	a.imported = append(a.imported, struct {
-		identityID string
-		address    string
-		keyType    string
-	}{identityID: identityID, address: address, keyType: keyType})
+		address string
+		keyType string
+	}{address: address, keyType: keyType})
 }
 
 func setupIdentityRuntime(t *testing.T) *identity.Runtime {

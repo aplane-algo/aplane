@@ -17,15 +17,15 @@ type lazyReloadAuditLogger struct {
 	fs *Signer
 }
 
-func (l lazyReloadAuditLogger) LogKeyReload(identityID string, keyCount int) {
+func (l lazyReloadAuditLogger) LogKeyReload(keyCount int) {
 	if l.fs.auditLog != nil {
-		l.fs.auditLog.LogKeyReload(identityID, keyCount)
+		l.fs.auditLog.LogKeyReload(keyCount)
 	}
 }
 
-func (l lazyReloadAuditLogger) LogKeyRejected(identityID, keyFile, reason string) {
+func (l lazyReloadAuditLogger) LogKeyRejected(keyFile, reason string) {
 	if l.fs.auditLog != nil {
-		l.fs.auditLog.LogKeyRejected(identityID, keyFile, reason)
+		l.fs.auditLog.LogKeyRejected(keyFile, reason)
 	}
 }
 

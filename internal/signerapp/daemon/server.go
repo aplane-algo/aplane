@@ -18,7 +18,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 // maxRequestBodyBytes limits HTTP request body size to prevent DoS via
@@ -138,7 +137,7 @@ func (fs *Signer) RevokeProductToken(ir *identity.Runtime) error {
 		httpUpdater = ta
 	}
 
-	tokenPath, err := storemut.New(productmode.IdentityID, ir.KeyPaths(), httpUpdater, nil).RevokeToken()
+	tokenPath, err := storemut.New(ir.KeyPaths(), httpUpdater, nil).RevokeToken()
 	if err != nil {
 		return err
 	}

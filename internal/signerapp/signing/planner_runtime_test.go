@@ -56,16 +56,14 @@ type captureAuditLog struct {
 }
 
 type captureAuditEntry struct {
-	identityID  string
 	authAddress string
 	txnSender   string
 	txnType     string
 	details     string
 }
 
-func (a *captureAuditLog) LogSignRequest(identityID, authAddress, txnSender, txnType, details string) {
+func (a *captureAuditLog) LogSignRequest(authAddress, txnSender, txnType, details string) {
 	a.entries = append(a.entries, captureAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		txnType:     txnType,

@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 // Error aliases the unified signer service-error model so key-admin error
@@ -78,9 +77,9 @@ type KeyDetailsResult struct {
 }
 
 type AuditLogger interface {
-	LogKeyGenerated(identityID, address, keyType string)
-	LogKeyDeleted(identityID, address, deletedPath string)
-	LogKeyImported(identityID, address, keyType string)
+	LogKeyGenerated(address, keyType string)
+	LogKeyDeleted(address, deletedPath string)
+	LogKeyImported(address, keyType string)
 }
 
 type Locker interface {
@@ -179,7 +178,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		}, nil
 	}
 
-	mut := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil)
+	mut := storemut.New(ir.KeyPaths(), nil, nil)
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
@@ -195,7 +194,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyGenerated(productmode.IdentityID, genResult.Address, genResult.KeyType)
+		s.AuditLog.LogKeyGenerated(genResult.Address, genResult.KeyType)
 	}
 
 	return &GenerateResult{
@@ -253,7 +252,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-	delResult, err := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
+	delResult, err := storemut.New(ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
 	}
@@ -263,7 +262,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyDeleted(productmode.IdentityID, address, delResult.DeletedPath)
+		s.AuditLog.LogKeyDeleted(address, delResult.DeletedPath)
 	}
 
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil

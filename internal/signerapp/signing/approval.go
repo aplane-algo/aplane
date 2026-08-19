@@ -14,7 +14,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
@@ -22,11 +21,11 @@ import (
 )
 
 type AuditRejectLogger interface {
-	LogSignRejected(identityID, authAddress, txnSender, reason string)
+	LogSignRejected(authAddress, txnSender, reason string)
 }
 
 type AuditRejectPolicyRuleLogger interface {
-	LogSignRejectedWithPolicyRule(identityID, authAddress, txnSender, reason, policyRuleID string)
+	LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string)
 }
 
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
@@ -107,11 +106,11 @@ func (s *ApprovalService) logSignRejected(authAddress, txnSender, reason, policy
 	}
 	if policyRuleID != "" {
 		if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-			ruleLogger.LogSignRejectedWithPolicyRule(productmode.IdentityID, authAddress, txnSender, reason, policyRuleID)
+			ruleLogger.LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID)
 			return
 		}
 	}
-	s.AuditLog.LogSignRejected(productmode.IdentityID, authAddress, txnSender, reason)
+	s.AuditLog.LogSignRejected(authAddress, txnSender, reason)
 }
 
 func reviewabilityReason(txn types.Transaction) string {

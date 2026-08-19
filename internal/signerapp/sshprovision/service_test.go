@@ -11,18 +11,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 type auditRecorder struct {
-	identityID     string
 	sshFingerprint string
 	remoteAddr     string
 }
 
-func (a *auditRecorder) LogTokenProvisioned(identityID, sshFingerprint, remoteAddr string) {
-	a.identityID = identityID
+func (a *auditRecorder) LogTokenProvisioned(sshFingerprint, remoteAddr string) {
 	a.sshFingerprint = sshFingerprint
 	a.remoteAddr = remoteAddr
 }
@@ -151,7 +148,7 @@ func TestServiceAuditProvisionedDelegates(t *testing.T) {
 	}
 
 	svc.AuditProvisioned("SHA256:test", "10.0.0.1")
-	if audit.identityID != productmode.IdentityID || audit.sshFingerprint != "SHA256:test" || audit.remoteAddr != "10.0.0.1" {
+	if audit.sshFingerprint != "SHA256:test" || audit.remoteAddr != "10.0.0.1" {
 		t.Fatalf("audit = %#v", audit)
 	}
 	if gotLog != `token provisioned for identity "default" to 10.0.0.1 (key: SHA256:test)` {

@@ -427,7 +427,6 @@ func testDigest(t *testing.T, encoded string) types.Digest {
 }
 
 type testAuditEntry struct {
-	identityID  string
 	authAddress string
 	txnSender   string
 	reason      string
@@ -439,18 +438,16 @@ type testAuditLogger struct {
 	rejected []testAuditEntry
 }
 
-func (l *testAuditLogger) LogSignApproved(identityID, authAddress, txnSender, details string) {
+func (l *testAuditLogger) LogSignApproved(authAddress, txnSender, details string) {
 	l.approved = append(l.approved, testAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		reason:      details,
 	})
 }
 
-func (l *testAuditLogger) LogSignApprovedWithPolicyRule(identityID, authAddress, txnSender, details, policyRuleID string) {
+func (l *testAuditLogger) LogSignApprovedWithPolicyRule(authAddress, txnSender, details, policyRuleID string) {
 	l.approved = append(l.approved, testAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		reason:      details,
@@ -458,18 +455,16 @@ func (l *testAuditLogger) LogSignApprovedWithPolicyRule(identityID, authAddress,
 	})
 }
 
-func (l *testAuditLogger) LogSignRejected(identityID, authAddress, txnSender, reason string) {
+func (l *testAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {
 	l.rejected = append(l.rejected, testAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		reason:      reason,
 	})
 }
 
-func (l *testAuditLogger) LogSignRejectedWithPolicyRule(identityID, authAddress, txnSender, reason, policyRuleID string) {
+func (l *testAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
 	l.rejected = append(l.rejected, testAuditEntry{
-		identityID:  identityID,
 		authAddress: authAddress,
 		txnSender:   txnSender,
 		reason:      reason,
@@ -531,9 +526,6 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 		t.Fatalf("len(audit.rejected) = %d, want 1", len(audit.rejected))
 	}
 	entry := audit.rejected[0]
-	if entry.identityID != "default" {
-		t.Fatalf("identityID = %q, want default", entry.identityID)
-	}
 	if entry.authAddress != "AUTHADDR" {
 		t.Fatalf("authAddress = %q, want AUTHADDR", entry.authAddress)
 	}
