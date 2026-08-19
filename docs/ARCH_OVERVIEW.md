@@ -237,7 +237,6 @@ aplane/
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
 │   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + sentry) LogicSig provider
-│   ├── sentryaccount/             # Shared client-safe guarded/sentry account helpers
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
