@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
@@ -56,7 +57,7 @@ func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResu
 	return targets, nil
 }
 
-func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
+func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -66,7 +67,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	plan, groupReq, err := s.ValidateFrozenComponentContext(identityID, req)
+	plan, groupReq, err := s.ValidateFrozenComponentContext(req)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +75,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, groupReq, plan)
+	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, groupReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -88,12 +89,12 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, identi
 		}
 		components = append(components, component)
 	}
-	s.logBoundedComponentsApproved(identityID, req, plan, targets, policyRuleID)
+	s.logBoundedComponentsApproved(req, plan, targets, policyRuleID)
 	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-sentry base component(s)\n", len(components))
 	return &signerapi.ComponentResponse{RequestID: req.RequestID, Components: components}, nil
 }
 
-func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.ComponentRequest, plan *PlanResult, targets []int, policyRuleID string) {
+func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, plan *PlanResult, targets []int, policyRuleID string) {
 	if s.AuditLog == nil || plan == nil {
 		return
 	}
@@ -106,11 +107,11 @@ func (s *Service) logBoundedComponentsApproved(identityID string, req signerapi.
 		const details = "bounded-sentry base component released after policy and operator approval"
 		if policyRuleID != "" {
 			if logger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && logger != nil {
-				logger.LogSignApprovedWithPolicyRule(identityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
+				logger.LogSignApprovedWithPolicyRule(productmode.IdentityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details, policyRuleID)
 				continue
 			}
 		}
-		s.AuditLog.LogSignApproved(identityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
+		s.AuditLog.LogSignApproved(productmode.IdentityID, txReq.AuthAddress, plan.AllTxns[index].Sender.String(), details)
 	}
 }
 

@@ -228,7 +228,7 @@ func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 	planner := NewPlanner(stubPlannerDeps{
 		keyTypes: map[string]string{authorizer: nativefalcon.KeyType},
 	}, PlannerOptions{GenesisHashResolver: resolver})
-	plan, planErr := planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	plan, planErr := planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: hex.EncodeToString(msgpack.Encode(txn)),
 	}}})
 	if planErr != nil {

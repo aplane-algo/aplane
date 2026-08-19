@@ -25,6 +25,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 type AuditFailLogger interface {
@@ -58,7 +59,7 @@ type ExecuteResult struct {
 	SignedTxns []string
 }
 
-func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, identityID string, session *keystore.KeySession) (*ExecuteResult, *ServiceError) {
+func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession) (*ExecuteResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -93,7 +94,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		}
 		signedBytes, keyType, signErr := e.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
-			req.Requests[i].LsigArgs, planBoundedItem(plan, i), session, identityID, ctx,
+			req.Requests[i].LsigArgs, planBoundedItem(plan, i), session, ctx,
 		)
 		if signErr != nil {
 			// Forbidden and locked describe the whole request, not one slot,
@@ -124,7 +125,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 	return &ExecuteResult{SignedTxns: signedTxns}, nil
 }
 
-func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, identityID string, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
+func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -134,7 +135,7 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	keyMaterial, loadErr := session.GetKeyWithContext(ctx, authAddr)
 	if loadErr != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
+			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
 		}
 		if errors.Is(loadErr, keystore.ErrStoreLocked) {
 			return nil, "", lockedError()
@@ -162,10 +163,10 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	}
 
 	if isGenericKeyMaterial(keyMaterial) {
-		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial, identityID)
+		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial)
 	}
 
-	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, identityID)
+	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial)
 }
 
 // planBoundedItem returns the planner's bounded classification for request slot
@@ -208,7 +209,7 @@ func canceledSignRequest(err error) *ServiceError {
 	return unavailable(fmt.Sprintf("sign request canceled: %v", err))
 }
 
-func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
 	defer algocrypto.ZeroBytes(keyMaterial.Bytecode)
 
@@ -235,7 +236,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("generic lsig sign failed: %v", err))
+			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("generic lsig sign failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 	}
@@ -243,7 +244,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 	return signedTxnBytes, keyType, nil
 }
 
-func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
 
 	if err := rejectSentrySignKeyType(keyType); err != nil {
@@ -271,14 +272,14 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 			authorizer, err := types.DecodeAddress(authAddr)
 			if err != nil {
 				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+					e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
 				}
 				return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
 			}
 			stxn, err := transactionAuthorizer.AuthorizeTransaction(keyMaterial, txn, authorizer)
 			if err != nil {
 				if e.AuditLog != nil {
-					e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
+					e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("structured sign failed: %v", err))
 				}
 				return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 			}
@@ -308,13 +309,13 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 	sig, err := provider.SignMessage(keyMaterial, messageBytes)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("sign failed: %v", err))
+			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("sign failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to sign: %v", err))
 	}
 
 	if keyMaterial.Bytecode != nil {
-		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType, identityID)
+		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType)
 	}
 
 	var sigArr types.Signature
@@ -327,7 +328,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		authAddrDecoded, err := types.DecodeAddress(authAddr)
 		if err != nil {
 			if e.AuditLog != nil {
-				e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
+				e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("invalid auth address: %v", err))
 			}
 			return nil, keyType, badRequest(fmt.Sprintf("invalid auth address %q: %v", authAddr, err))
 		}
@@ -392,19 +393,19 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 	key.Value = nil
 }
 
-func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType string) ([]byte, string, *ServiceError) {
 	if keyMaterial.SigningMetadataVersion == 0 {
 		return nil, keyType, missingLogicSigSigningMetadata(keyType)
 	}
 
-	return e.assembleDSALogicSigFromKeyMetadata(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType, identityID)
+	return e.assembleDSALogicSigFromKeyMetadata(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType)
 }
 
 func missingLogicSigSigningMetadata(keyType string) *ServiceError {
 	return internal(fmt.Sprintf("logic sig key %s is missing signing metadata; regenerate the key or restore from a current-format backup", keyType))
 }
 
-func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType string) ([]byte, string, *ServiceError) {
 	baseKeyType := keyMaterial.BaseKeyType
 	if baseKeyType == "" {
 		baseKeyType = keyType
@@ -420,7 +421,7 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 		return nil, keyType, badRequest(err.Error())
 	}
 	if keyMaterial.BoundedAuthorization != nil {
-		return e.assembleBoundedLogicSig(txn, authAddr, txnSender, boundedItem, keyMaterial, signatureArgs, keyType, identityID)
+		return e.assembleBoundedLogicSig(txn, authAddr, txnSender, boundedItem, keyMaterial, signatureArgs, keyType)
 	}
 
 	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
@@ -445,7 +446,7 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("lsig assembly failed: %v", err))
+			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("lsig assembly failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to assemble lsig txn: %v", err))
 	}
@@ -457,7 +458,7 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 // checks (classification, fee ceiling, caller-args validation, admin-path
 // routing) ran at the plan boundary and were rechecked against the loaded key
 // via verifyBoundedPlanIntegrity; only assembly-shape enforcement remains here.
-func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnSender string, item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnSender string, item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType string) ([]byte, string, *ServiceError) {
 	metadata := keyMaterial.BoundedAuthorization
 	if item == nil {
 		return nil, keyType, internal("bounded LogicSig assembly is missing its planned path")
@@ -488,7 +489,7 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
+			e.AuditLog.LogSignFailed(productmode.IdentityID, authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
 		}
 		return nil, keyType, internal(fmt.Sprintf("failed to assemble bounded lsig txn: %v", err))
 	}

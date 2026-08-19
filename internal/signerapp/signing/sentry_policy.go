@@ -9,15 +9,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
-func (s *Service) evaluateSentryComponentPolicy(identityID string, plan *ComponentSignPlan) *ServiceError {
+func (s *Service) evaluateSentryComponentPolicy(plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
 	cfg := sentryPolicyConfig(s.SentryPolicy, plan.ComponentKey)
 	if cfg == nil {
-		return s.rejectSentryComponentPolicy(identityID, plan, []policy.LintViolation{{
+		return s.rejectSentryComponentPolicy(plan, []policy.LintViolation{{
 			RuleID:   policy.SentryPolicyMissingRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
@@ -25,7 +26,7 @@ func (s *Service) evaluateSentryComponentPolicy(identityID string, plan *Compone
 		}})
 	}
 	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
-		return s.rejectSentryComponentPolicy(identityID, plan, []policy.LintViolation{{
+		return s.rejectSentryComponentPolicy(plan, []policy.LintViolation{{
 			RuleID:   policy.SentryTransferPolicyRequiredRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
@@ -33,7 +34,7 @@ func (s *Service) evaluateSentryComponentPolicy(identityID string, plan *Compone
 		}})
 	}
 	if violations := sentryTransferPolicyConfigLints(cfg.TransferPolicy); len(violations) > 0 {
-		return s.rejectSentryComponentPolicy(identityID, plan, violations)
+		return s.rejectSentryComponentPolicy(plan, violations)
 	}
 
 	var violations []policy.LintViolation
@@ -42,7 +43,7 @@ func (s *Service) evaluateSentryComponentPolicy(identityID string, plan *Compone
 		violations = append(violations, sentryTargetPolicyLints(txn, target.TargetIndex, cfg)...)
 	}
 	if len(violations) > 0 {
-		return s.rejectSentryComponentPolicy(identityID, plan, violations)
+		return s.rejectSentryComponentPolicy(plan, violations)
 	}
 	return nil
 }
@@ -161,12 +162,12 @@ func withTargetIndex(violations []policy.LintViolation, targetIndex int) []polic
 	return violations
 }
 
-func (s *Service) rejectSentryComponentPolicy(identityID string, plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
+func (s *Service) rejectSentryComponentPolicy(plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
 	reason := policy.JoinLintViolations(violations)
 	if reason == "" {
 		reason = "sentry policy rejected request"
 	}
-	s.logSentryPolicyRejections(identityID, plan, reason, firstPolicyRuleID(violations))
+	s.logSentryPolicyRejections(plan, reason, firstPolicyRuleID(violations))
 	return forbidden("sentry policy rejected request: " + reason)
 }
 
@@ -177,7 +178,7 @@ func firstPolicyRuleID(violations []policy.LintViolation) string {
 	return violations[0].RuleID
 }
 
-func (s *Service) logSentryPolicyRejections(identityID string, plan *ComponentSignPlan, reason, policyRuleID string) {
+func (s *Service) logSentryPolicyRejections(plan *ComponentSignPlan, reason, policyRuleID string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil || plan == nil {
 		return
@@ -189,15 +190,15 @@ func (s *Service) logSentryPolicyRejections(identityID string, plan *ComponentSi
 		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignRejectedWithPolicyRule(identityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason, policyRuleID)
+				ruleLogger.LogSignRejectedWithPolicyRule(productmode.IdentityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason, policyRuleID)
 				continue
 			}
 		}
-		rejectLogger.LogSignRejected(identityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason)
+		rejectLogger.LogSignRejected(productmode.IdentityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason)
 	}
 }
 
-func (s *Service) logSentryComponentApproved(identityID string, plan *ComponentSignPlan, result *ComponentSignResult) {
+func (s *Service) logSentryComponentApproved(plan *ComponentSignPlan, result *ComponentSignResult) {
 	if s.AuditLog == nil || plan == nil || result == nil {
 		return
 	}
@@ -206,9 +207,7 @@ func (s *Service) logSentryComponentApproved(identityID string, plan *ComponentS
 		componentKey = plan.ComponentKey
 	}
 	for _, target := range plan.Targets {
-		s.AuditLog.LogSignApproved(
-			identityID,
-			componentKey,
+		s.AuditLog.LogSignApproved(productmode.IdentityID, componentKey,
 			target.Sender,
 			fmt.Sprintf("sentry component signature target %d signed", target.TargetIndex),
 		)

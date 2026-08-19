@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -32,13 +33,13 @@ func TestServiceApproveUsesCanonicalRequestShape(t *testing.T) {
 		Now: func() time.Time {
 			return time.Unix(0, 12345)
 		},
-		RequestTokenProvisioning: func(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+		RequestTokenProvisioning: func(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 			called = true
 			if requestID != "token-12345" {
 				t.Fatalf("requestID = %q, want token-12345", requestID)
 			}
-			if identityID != "alice" || sshFingerprint != "SHA256:test" || remoteAddr != "10.0.0.1" {
-				t.Fatalf("request args = %q %q %q", identityID, sshFingerprint, remoteAddr)
+			if sshFingerprint != "SHA256:test" || remoteAddr != "10.0.0.1" {
+				t.Fatalf("request args = %q %q", sshFingerprint, remoteAddr)
 			}
 			if timeout != 5*time.Minute {
 				t.Fatalf("timeout = %v, want 5m", timeout)
@@ -47,7 +48,7 @@ func TestServiceApproveUsesCanonicalRequestShape(t *testing.T) {
 		},
 	}
 
-	ok, err := svc.Approve("alice", "SHA256:test", "10.0.0.1")
+	ok, err := svc.Approve("SHA256:test", "10.0.0.1")
 	if err != nil {
 		t.Fatalf("Approve() error = %v", err)
 	}
@@ -67,7 +68,7 @@ func TestServiceApproveContextUsesContextRequester(t *testing.T) {
 		Now: func() time.Time {
 			return time.Unix(0, 12345)
 		},
-		RequestTokenProvisioningContext: func(gotCtx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+		RequestTokenProvisioningContext: func(gotCtx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 			called = true
 			if gotCtx != ctx {
 				t.Fatal("ApproveContext did not pass through caller context")
@@ -79,7 +80,7 @@ func TestServiceApproveContextUsesContextRequester(t *testing.T) {
 		},
 	}
 
-	ok, err := svc.ApproveContext(ctx, "alice", "SHA256:test", "10.0.0.1")
+	ok, err := svc.ApproveContext(ctx, "SHA256:test", "10.0.0.1")
 	if err == nil {
 		t.Fatal("ApproveContext() error = nil, want canceled context error")
 	}
@@ -102,7 +103,7 @@ func TestServiceIssueLoadsExistingToken(t *testing.T) {
 	}
 	svc := Service{TokenRoot: root}
 
-	token1, err := svc.Issue("alice")
+	token1, err := svc.Issue()
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -110,7 +111,7 @@ func TestServiceIssueLoadsExistingToken(t *testing.T) {
 		t.Fatalf("Issue() token = %q, want existing-token", token1)
 	}
 
-	token2, err := svc.Issue("alice")
+	token2, err := svc.Issue()
 	if err != nil {
 		t.Fatalf("Issue() second call error = %v", err)
 	}
@@ -131,7 +132,7 @@ func TestServiceIssueDoesNotGenerateMissingToken(t *testing.T) {
 	root := t.TempDir()
 	svc := Service{TokenRoot: root}
 
-	if _, err := svc.Issue("alice"); err == nil {
+	if _, err := svc.Issue(); err == nil {
 		t.Fatal("Issue() error = nil, want missing-token error")
 	}
 	if _, err := os.Stat(tokenfile.GetAPlaneTokenPathForRoot(root)); !os.IsNotExist(err) {
@@ -149,11 +150,11 @@ func TestServiceAuditProvisionedDelegates(t *testing.T) {
 		},
 	}
 
-	svc.AuditProvisioned("alice", "SHA256:test", "10.0.0.1")
-	if audit.identityID != "alice" || audit.sshFingerprint != "SHA256:test" || audit.remoteAddr != "10.0.0.1" {
+	svc.AuditProvisioned("SHA256:test", "10.0.0.1")
+	if audit.identityID != productmode.IdentityID || audit.sshFingerprint != "SHA256:test" || audit.remoteAddr != "10.0.0.1" {
 		t.Fatalf("audit = %#v", audit)
 	}
-	if gotLog != `token provisioned for identity "alice" to 10.0.0.1 (key: SHA256:test)` {
+	if gotLog != `token provisioned for identity "default" to 10.0.0.1 (key: SHA256:test)` {
 		t.Fatalf("log format = %q", gotLog)
 	}
 }

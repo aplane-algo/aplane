@@ -262,7 +262,7 @@ func TestTokenProvisioningCanceledWhileQueuedReleasesSlot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	tokenErr := make(chan error, 1)
 	go func() {
-		_, err := c.RequestTokenProvisioningContext(ctx, "token-canceled", "id", "fp", "addr", time.Second)
+		_, err := c.RequestTokenProvisioningContext(ctx, "token-canceled", "fp", "addr", time.Second)
 		tokenErr <- err
 	}()
 
@@ -322,7 +322,7 @@ func TestCoordinatorSerializesAcrossApprovalTypes(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		ok, err := c.RequestTokenProvisioning("token-1", "id", "fp", "addr", time.Second)
+		ok, err := c.RequestTokenProvisioning("token-1", "fp", "addr", time.Second)
 		if err != nil {
 			t.Errorf("token approval failed: %v", err)
 			return
@@ -360,7 +360,7 @@ func TestCoordinatorRejectsEmptyRequestID(t *testing.T) {
 	if _, err := c.RequestSigningApproval("", "A", "A", "desc", 0, 0, nil, time.Second); err == nil {
 		t.Fatal("RequestSigningApproval() error = nil, want request ID rejection")
 	}
-	if _, err := c.RequestTokenProvisioning("", "id", "fp", "addr", time.Second); err == nil {
+	if _, err := c.RequestTokenProvisioning("", "fp", "addr", time.Second); err == nil {
 		t.Fatal("RequestTokenProvisioning() error = nil, want request ID rejection")
 	}
 }
@@ -627,7 +627,7 @@ func TestCoordinatorMismatchedTokenResponseIDDoesNotSatisfyActiveRequest(t *test
 		err      error
 	}, 1)
 	go func() {
-		approved, err := c.RequestTokenProvisioning("token-1", "id", "fp", "addr", time.Second)
+		approved, err := c.RequestTokenProvisioning("token-1", "fp", "addr", time.Second)
 		resultCh <- struct {
 			approved bool
 			err      error
@@ -686,7 +686,7 @@ func TestCoordinatorTokenProvisioningContextCancelClearsPending(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	resultCh := make(chan error, 1)
 	go func() {
-		_, err := c.RequestTokenProvisioningContext(ctx, "token-1", "id", "fp", "addr", time.Minute)
+		_, err := c.RequestTokenProvisioningContext(ctx, "token-1", "fp", "addr", time.Minute)
 		resultCh <- err
 	}()
 

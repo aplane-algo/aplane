@@ -106,19 +106,19 @@ type stubSigningService struct {
 	assemblyErr        *signersigning.ServiceError
 }
 
-func (s *stubSigningService) SignComponentsWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
-	s.gotCtx, s.gotIdentityID, s.gotComponents, s.gotSession = ctx, identityID, req, session
+func (s *stubSigningService) SignComponentsWithContext(ctx context.Context, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotComponents, s.gotSession = ctx, productmode.IdentityID, req, session
 	return s.components, s.componentErr
 }
 
-func (s *stubSigningService) AssembleWithContext(ctx context.Context, identityID string, req signerapi.AssemblyRequest, session *keystore.KeySession) (*signersigning.AssemblyResult, *signersigning.ServiceError) {
-	s.gotCtx, s.gotIdentityID, s.gotUnifiedAssembly, s.gotSession = ctx, identityID, req, session
+func (s *stubSigningService) AssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest, session *keystore.KeySession) (*signersigning.AssemblyResult, *signersigning.ServiceError) {
+	s.gotCtx, s.gotIdentityID, s.gotUnifiedAssembly, s.gotSession = ctx, productmode.IdentityID, req, session
 	return s.assembly, s.assemblyErr
 }
 
-func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
+func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
 	s.gotCtx = ctx
-	s.gotIdentityID = identityID
+	s.gotIdentityID = productmode.IdentityID
 	s.gotBoundedAdmin = req
 	s.gotSession = session
 	return s.boundedAdmin, s.err
@@ -126,9 +126,9 @@ func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context,
 
 type testContextKey string
 
-func (s *stubSigningService) SignGroupWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError) {
+func (s *stubSigningService) SignGroupWithContext(ctx context.Context, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError) {
 	s.gotCtx = ctx
-	s.gotIdentityID = identityID
+	s.gotIdentityID = productmode.IdentityID
 	s.gotReq = req
 	s.gotSession = session
 	return s.result, s.err
@@ -369,10 +369,7 @@ func TestServicePlanShapesResponse(t *testing.T) {
 	ir := setupIdentityRuntime(t, true)
 	svc := Service{
 		Deps: Dependencies{
-			PlanGroup: func(identityID string, req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
-				if identityID != productmode.IdentityID {
-					t.Fatalf("identityID = %q, want %q", identityID, productmode.IdentityID)
-				}
+			PlanGroup: func(req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
 				return &signersigning.PlanResult{
 					AllTxns:        []types.Transaction{{Header: types.Header{Fee: 1000}}, {Header: types.Header{Fee: 2000}}},
 					DummiesNeeded:  1,

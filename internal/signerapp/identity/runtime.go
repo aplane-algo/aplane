@@ -517,16 +517,16 @@ func (ir *Runtime) HandleTokenProvisioningApprovalResponse(msg *signerapproval.T
 }
 
 // RequestTokenProvisioning requests operator approval for token provisioning.
-func (ir *Runtime) RequestTokenProvisioning(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	return ir.RequestTokenProvisioningContext(context.Background(), requestID, identityID, sshFingerprint, remoteAddr, timeout)
+func (ir *Runtime) RequestTokenProvisioning(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+	return ir.RequestTokenProvisioningContext(context.Background(), requestID, sshFingerprint, remoteAddr, timeout)
 }
 
-func (ir *Runtime) RequestTokenProvisioningContext(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+func (ir *Runtime) RequestTokenProvisioningContext(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 	c := ir.approval.Load()
 	if c == nil {
 		return false, fmt.Errorf("approval coordinator not initialized")
 	}
-	return c.RequestTokenProvisioningContext(ctx, requestID, identityID, sshFingerprint, remoteAddr, timeout)
+	return c.RequestTokenProvisioningContext(ctx, requestID, sshFingerprint, remoteAddr, timeout)
 }
 
 // --- Identity config ---

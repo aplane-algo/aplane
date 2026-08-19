@@ -83,13 +83,13 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	})
 	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
 		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
-			return provisioning.ApproveContext(ctx, auth.CurrentProductIdentityID(), sshFingerprint, remoteAddr)
+			return provisioning.ApproveContext(ctx, sshFingerprint, remoteAddr)
 		},
 		Issue: func() (string, error) {
-			return provisioning.Issue(auth.CurrentProductIdentityID())
+			return provisioning.Issue()
 		},
 		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
-			provisioning.AuditProvisioned(auth.CurrentProductIdentityID(), sshFingerprint, remoteAddr)
+			provisioning.AuditProvisioned(sshFingerprint, remoteAddr)
 		},
 		OperatorConnected: func() bool {
 			return server.hasAdminClient()

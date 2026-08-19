@@ -26,7 +26,7 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 	requestForPlan := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}}
-	planned, planErr := service.Planner.PlanGroup("default", requestForPlan)
+	planned, planErr := service.Planner.PlanGroup(requestForPlan)
 	if planErr != nil {
 		t.Fatal(planErr)
 	}
@@ -44,7 +44,7 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 	}
 	componentRequest.GroupBytesHex = groupHex
 
-	reconstructed, groupRequest, serviceErr := service.ValidateFrozenComponentContext("default", componentRequest)
+	reconstructed, groupRequest, serviceErr := service.ValidateFrozenComponentContext(componentRequest)
 	if serviceErr != nil {
 		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
 	}
@@ -108,7 +108,7 @@ func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, stri
 
 func TestValidateFrozenComponentContextAcceptsRekeyedAuthorizer(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 1)
-	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
@@ -127,7 +127,7 @@ func TestValidateFrozenComponentContextAcceptsRekeyedAuthorizer(t *testing.T) {
 		Targets:        []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
 		DummyPositions: dummyPositions,
 	}
-	plan, groupRequest, serviceErr := service.ValidateFrozenComponentContext("default", request)
+	plan, groupRequest, serviceErr := service.ValidateFrozenComponentContext(request)
 	if serviceErr != nil {
 		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
 	}
@@ -141,7 +141,7 @@ func TestValidateFrozenComponentContextAcceptsRekeyedAuthorizer(t *testing.T) {
 
 func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 4_500)
-	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
@@ -171,7 +171,7 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 	for index := 1; index < len(groupHex); index++ {
 		request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: index})
 	}
-	_, _, serviceErr := service.ValidateFrozenComponentContext("default", request)
+	_, _, serviceErr := service.ValidateFrozenComponentContext(request)
 	if serviceErr == nil || !strings.Contains(serviceErr.Error(), "not the canonical signer-added dummy") {
 		t.Fatalf("ValidateFrozenComponentContext() error = %v, want fabricated dummy rejection", serviceErr)
 	}
@@ -179,7 +179,7 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 
 func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 4_500)
-	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
@@ -216,7 +216,7 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 			if err := request.Validate(); err != nil {
 				t.Fatalf("structural request validation failed: %v", err)
 			}
-			if _, err := service.SignComponentsWithContext(context.Background(), "default", request, nil); err == nil ||
+			if _, err := service.SignComponentsWithContext(context.Background(), request, nil); err == nil ||
 				!strings.Contains(err.Error(), "must be declared as dummy_positions") {
 				t.Fatalf("SignComponentsWithContext() error = %v, want undeclared dummy rejection", err)
 			}
@@ -237,7 +237,7 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 
 func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 1)
-	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
@@ -254,12 +254,12 @@ func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
 			request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
 		}
 	}
-	service.Planner.VerifySignableKeys = func(PlannerIdentitySnapshot, string, []signerapi.SignRequest, map[int]bool, map[int]bool) (int, *ServiceError) {
+	service.Planner.VerifySignableKeys = func(PlannerIdentitySnapshot, []signerapi.SignRequest, map[int]bool, map[int]bool) (int, *ServiceError) {
 		return 0, badRequest("key not found")
 	}
 	service.IsUnlocked = func() bool { return false }
 
-	_, _, serviceErr := service.ValidateFrozenComponentContext("default", request)
+	_, _, serviceErr := service.ValidateFrozenComponentContext(request)
 	if serviceErr == nil || serviceErr.Kind != ErrorLocked {
 		t.Fatalf("ValidateFrozenComponentContext() error = %#v, want locked", serviceErr)
 	}
@@ -267,7 +267,7 @@ func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
 
 func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 1)
-	planned, planErr := service.Planner.PlanGroup("default", signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
 	if planErr != nil {
@@ -288,7 +288,7 @@ func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T)
 		}
 	}
 
-	if _, _, serviceErr := service.ValidateFrozenComponentContext("default", request); serviceErr != nil {
+	if _, _, serviceErr := service.ValidateFrozenComponentContext(request); serviceErr != nil {
 		t.Fatalf("ValidateFrozenComponentContext() error = %v", serviceErr)
 	}
 	if len(audit.entries) != 1 {

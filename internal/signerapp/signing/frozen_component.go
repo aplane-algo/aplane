@@ -16,7 +16,7 @@ import (
 // from typed position declarations and signer-owned metadata. It validates the
 // supplied bytes in place and never invokes the canonical planner or mutates,
 // appends, regroups, fee-pools, or repairs the group.
-func (s *Service) ValidateFrozenComponentContext(identityID string, request signerapi.ComponentRequest) (*PlanResult, signerapi.GroupSignRequest, *ServiceError) {
+func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequest) (*PlanResult, signerapi.GroupSignRequest, *ServiceError) {
 	if err := request.Validate(); err != nil {
 		return nil, signerapi.GroupSignRequest{}, badRequest(err.Error())
 	}
@@ -54,16 +54,16 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 
 	var snapshot PlannerIdentitySnapshot
 	if s.Planner.Snapshot != nil {
-		snapshot = s.Planner.Snapshot(identityID)
+		snapshot = s.Planner.Snapshot()
 	}
-	if _, err := s.Planner.VerifySignableKeys(snapshot, identityID, req.Requests, map[int]bool{}, foreign); err != nil {
+	if _, err := s.Planner.VerifySignableKeys(snapshot, req.Requests, map[int]bool{}, foreign); err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
 	boundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, originals, map[int]bool{}, foreign)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	resourcePlan, lsigIndices, err := s.Planner.CalculateDummies(snapshot, identityID, req.Requests, originals, boundedItems, map[int]bool{}, foreign, nil, false, false)
+	resourcePlan, lsigIndices, err := s.Planner.CalculateDummies(snapshot, req.Requests, originals, boundedItems, map[int]bool{}, foreign, nil, false, false)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
@@ -81,7 +81,7 @@ func (s *Service) ValidateFrozenComponentContext(identityID string, request sign
 	if feeErr != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(feeErr)
 	}
-	s.Planner.logSignRequests(identityID, req, originals, map[int]bool{}, foreign)
+	s.Planner.logSignRequests(req, originals, map[int]bool{}, foreign)
 	authKeyTypes := make([]string, evalCount)
 	for i, txReq := range req.Requests {
 		if !foreign[i] {

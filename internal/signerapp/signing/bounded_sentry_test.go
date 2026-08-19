@@ -49,7 +49,7 @@ func TestPrepareBoundedComponentRejectsNilSessionBeforePlanning(t *testing.T) {
 	svc := &Service{Planner: &Planner{}, Approval: &ApprovalService{}, Executor: &Executor{}}
 	_, err := svc.PrepareBoundedComponentWithContext(
 		t.Context(),
-		"default",
+
 		signerapi.ComponentRequest{},
 		nil,
 	)
@@ -80,7 +80,7 @@ func TestLoadBoundedKeyMaterialMapsExpectedErrors(t *testing.T) {
 func TestUnifiedAssemblyRejectsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := (&Service{}).AssembleWithContext(ctx, "default", signerapi.AssemblyRequest{}, nil)
+	_, err := (&Service{}).AssembleWithContext(ctx, signerapi.AssemblyRequest{}, nil)
 	if err == nil || err.Kind != ErrorUnavailable {
 		t.Fatalf("AssembleWithContext() error = %#v, want canceled request", err)
 	}

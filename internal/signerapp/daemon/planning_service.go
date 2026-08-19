@@ -5,7 +5,6 @@ package daemon
 
 import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
@@ -32,9 +31,9 @@ func (fs *Signer) genesisHashResolver() apconfig.GenesisHashNetworkResolver {
 	return resolver
 }
 
-func (fs *Signer) planGroupWithAudit(auditLog signersigning.AuditLogger) func(string, signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
-	return func(identityID string, req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
-		return fs.newPlannerWithAudit(auditLog).PlanGroup(identityID, req)
+func (fs *Signer) planGroupWithAudit(auditLog signersigning.AuditLogger) func(signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
+	return func(req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
+		return fs.newPlannerWithAudit(auditLog).PlanGroup(req)
 	}
 }
 
@@ -42,9 +41,9 @@ type signerPlannerDeps struct {
 	signer *Signer
 }
 
-func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIdentitySnapshot {
+func (d signerPlannerDeps) Snapshot() signersigning.PlannerIdentitySnapshot {
 	ir := d.signer.runtime
-	if ir == nil || identityID != productmode.IdentityID {
+	if ir == nil {
 		return signersigning.PlannerIdentitySnapshot{}
 	}
 	// KeyIndexSnapshot deep-clones per call, so the snapshot (including its

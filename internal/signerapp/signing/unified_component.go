@@ -14,7 +14,7 @@ import (
 // SignComponentsWithContext dispatches one validated, discriminated component
 // request without merging the authorization gates behind each target kind.
 // Mixed kinds remain closed until the end-to-end mixed choreography is enabled.
-func (s *Service) SignComponentsWithContext(ctx context.Context, identityID string, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
+func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.ComponentRequest, session *keystore.KeySession) (*signerapi.ComponentResponse, *ServiceError) {
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
@@ -41,7 +41,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, identityID stri
 				planReq.ComponentKey = target.ComponentKey
 			}
 		}
-		result, err := s.signComponentWithContext(ctx, identityID, planReq, session)
+		result, err := s.signComponentWithContext(ctx, planReq, session)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +54,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, identityID stri
 		}
 		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
 	case signerapi.ComponentTargetKindBoundedBase:
-		result, err := s.PrepareBoundedComponentWithContext(ctx, identityID, req, session)
+		result, err := s.PrepareBoundedComponentWithContext(ctx, req, session)
 		if err != nil {
 			return nil, err
 		}

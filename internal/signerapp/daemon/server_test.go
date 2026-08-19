@@ -72,7 +72,7 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	)
 
 	deps := signerPlannerDeps{signer: signer}
-	snapshot := deps.Snapshot(auth.DefaultIdentityID)
+	snapshot := deps.Snapshot()
 
 	if snapshot.Revision != 1 {
 		t.Fatalf("Snapshot revision = %d, want 1", snapshot.Revision)

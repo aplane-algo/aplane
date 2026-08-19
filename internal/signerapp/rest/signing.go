@@ -6,7 +6,6 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -28,7 +27,7 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 	defer finishSignRequest()
 
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).SignGroupWithContext(ctx, productmode.IdentityID, req, session)
+	result, err := s.Deps.NewSigningService(ir).SignGroupWithContext(ctx, req, session)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +53,7 @@ func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *identity.Runtime, 
 	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
 	defer finishSignRequest()
 
-	result, err := s.Deps.NewSigningService(ir).PrepareBoundedAdminWithContext(ctx, productmode.IdentityID, req, ir.SnapshotKeySession())
+	result, err := s.Deps.NewSigningService(ir).PrepareBoundedAdminWithContext(ctx, req, ir.SnapshotKeySession())
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +84,7 @@ func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*si
 		return nil, notConfigured("transaction encoder")
 	}
 
-	plan, err := s.Deps.PlanGroup(productmode.IdentityID, req)
+	plan, err := s.Deps.PlanGroup(req)
 	if err != nil {
 		return nil, err
 	}

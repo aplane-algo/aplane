@@ -172,7 +172,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	}
 
 	hub.reset()
-	approved, err = signer.requestTokenProvisioning("req-token", auth.DefaultIdentityID, "fingerprint", "remote", time.Second)
+	approved, err = signer.requestTokenProvisioning("req-token", "fingerprint", "remote", time.Second)
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}

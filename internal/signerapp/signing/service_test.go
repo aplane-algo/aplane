@@ -29,7 +29,7 @@ func userAutoApproveDefault(v bool) *bool {
 func TestPlannerReturnsTypedBadRequestError(t *testing.T) {
 	planner := &Planner{}
 
-	plan, err := planner.PlanGroup("default", signerapi.GroupSignRequest{})
+	plan, err := planner.PlanGroup(signerapi.GroupSignRequest{})
 	if plan != nil {
 		t.Fatalf("PlanGroup() returned unexpected plan: %#v", plan)
 	}
@@ -46,7 +46,7 @@ func TestPlannerReturnsTypedBadRequestError(t *testing.T) {
 func TestSigningServiceReturnsTypedInternalErrorWhenUnconfigured(t *testing.T) {
 	service := &Service{}
 
-	result, err := service.SignGroupWithContext(context.Background(), "default", signerapi.GroupSignRequest{}, nil)
+	result, err := service.SignGroupWithContext(context.Background(), signerapi.GroupSignRequest{}, nil)
 	if result != nil {
 		t.Fatalf("SignGroup() returned unexpected result: %#v", result)
 	}
@@ -483,10 +483,10 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 	audit := &testAuditLogger{}
 	service := &Service{
 		Planner: &Planner{
-			VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
+			VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 				return 1, nil
 			},
-			CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+			CalculateDummies: func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
 				return lsigresource.Plan{}, nil, nil
 			},
 			BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
@@ -520,7 +520,7 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -551,7 +551,7 @@ func TestPlanGroupWhileSignablePrefersConcurrentLock(t *testing.T) {
 		IsUnlocked: func() bool { return false },
 	}
 
-	_, err := service.planGroupWhileSignable("default", signerapi.GroupSignRequest{})
+	_, err := service.planGroupWhileSignable(signerapi.GroupSignRequest{})
 	if err == nil || err.Kind != ErrorLocked || err.Message != "signer is locked" {
 		t.Fatalf("planGroupWhileSignable() error = %#v, want locked error", err)
 	}
@@ -563,7 +563,7 @@ func TestPlanGroupWhileSignablePreservesPlannerErrorWhileUnlocked(t *testing.T) 
 		IsUnlocked: func() bool { return true },
 	}
 
-	_, err := service.planGroupWhileSignable("default", signerapi.GroupSignRequest{})
+	_, err := service.planGroupWhileSignable(signerapi.GroupSignRequest{})
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("planGroupWhileSignable() error = %#v, want planner bad request", err)
 	}
@@ -594,7 +594,7 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 		ForeignIndices: map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", request, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), request, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlanContext() result = %#v, want nil", result)
 	}
@@ -639,7 +639,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -742,7 +742,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 				AuthKeyTypes:          []string{"ed25519"},
 			}
 
-			result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+			result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 			if result != nil {
 				t.Fatalf("signGroupWithPlanContext() result = %#v, want nil", result)
 			}
@@ -811,7 +811,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -877,7 +877,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove(t *testin
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -944,7 +944,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1028,7 +1028,7 @@ transfer_policy:
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1112,7 +1112,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 		}},
 	}
 
-	result, signErr := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, signErr := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1213,7 +1213,7 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1286,7 +1286,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 		}},
 	}
 
-	result, signErr := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, signErr := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1338,7 +1338,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1419,7 +1419,7 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1467,7 +1467,7 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1518,7 +1518,7 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 		HasPassthrough:        true,
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if err != nil {
 		t.Fatalf("signGroupWithPlan() error = %#v, want nil", err)
 	}
@@ -1553,7 +1553,7 @@ func TestLogPolicyRejectionsSkipsPassthroughAndForeign(t *testing.T) {
 		{Header: types.Header{Sender: types.Address{3}}},
 	}
 
-	service.logPolicyRejections("default", req, plan, txns, "policy_engine_rejected: test")
+	service.logPolicyRejections(req, plan, txns, "policy_engine_rejected: test")
 	if len(audit.rejected) != 1 {
 		t.Fatalf("len(audit.rejected) = %d, want 1", len(audit.rejected))
 	}
@@ -1582,7 +1582,7 @@ func TestLogSuccessfulSignaturesSkipsPassthroughAndForeign(t *testing.T) {
 		{Header: types.Header{Sender: types.Address{3}}},
 	}
 
-	service.logSuccessfulSignatures("default", req, plan, txns, "")
+	service.logSuccessfulSignatures(req, plan, txns, "")
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
@@ -1606,7 +1606,7 @@ func TestLogSuccessfulSignaturesIncludesForcedReviewRule(t *testing.T) {
 	}
 	txns := []types.Transaction{{Header: types.Header{Sender: types.Address{1}}}}
 
-	service.logSuccessfulSignatures("default", req, plan, txns, policy.ReviewAlgoPaymentExceededRuleID)
+	service.logSuccessfulSignatures(req, plan, txns, policy.ReviewAlgoPaymentExceededRuleID)
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
@@ -1659,7 +1659,7 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
@@ -1724,7 +1724,7 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 		ForeignIndices:        map[int]bool{},
 	}
 
-	result, err := service.signGroupWithPlanContext(context.Background(), "default", req, nil, plan)
+	result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
