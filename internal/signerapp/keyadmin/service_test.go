@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"os"
@@ -125,7 +126,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
+	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
 	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
 		t.Fatalf("CreateKeyringStore(): %v", err)
 	}

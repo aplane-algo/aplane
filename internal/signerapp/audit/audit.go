@@ -447,10 +447,6 @@ func (a *AuditLogger) LogAuthFailed(identityID, remoteAddr, reason string) {
 // LogAuthorizationDenied logs an authorization denial for an authenticated admin session.
 func (a *AuditLogger) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
 	entry := sessionAuditFields(ctx)
-	if resource.IdentityID != "" {
-		entry.IdentityID = resource.IdentityID
-		entry.TargetIdentityID = resource.IdentityID
-	}
 	entry.Event = AuditAuthorizationDenied
 	entry.Outcome = "denied"
 	entry.Reason = authorizationDeniedReason(action, resource, reason)

@@ -4,10 +4,10 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -116,7 +116,7 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 		t.Fatal("SendSignRequestCanceled() = false, want true")
 	}
 	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{
-		ID: "token-1", IdentityID: auth.DefaultIdentityID,
+		ID: "token-1", IdentityID: productmode.IdentityID,
 	}) {
 		t.Fatal("SendTokenProvisioningRequest() = false, want true")
 	}

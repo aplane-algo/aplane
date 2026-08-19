@@ -22,14 +22,12 @@ func TestProductAuthorizer(t *testing.T) {
 		resource auth.Resource
 		wantErr  error
 	}{
-		{name: "explicit action and default resource", identity: product, action: auth.ActionKeysGenerate, resource: auth.Resource{Type: "key", IdentityID: auth.DefaultIdentityID}},
-		{name: "empty resource identity", identity: product, action: auth.ActionKeysView, resource: auth.Resource{Type: "keys"}},
+		{name: "explicit action and resource", identity: product, action: auth.ActionKeysGenerate, resource: auth.Resource{Type: "key"}},
 		{name: "nil principal", action: auth.ActionKeysView, wantErr: auth.ErrUnauthorized},
 		{name: "empty principal", identity: &auth.Identity{}, action: auth.ActionKeysView, wantErr: auth.ErrUnauthorized},
 		{name: "unknown principal", identity: &auth.Identity{ID: "default"}, action: auth.ActionKeysView, wantErr: auth.ErrForbidden},
 		{name: "unknown action", identity: product, action: auth.Action("unknown.action"), wantErr: auth.ErrForbidden},
 		{name: "known but ungranted health", identity: product, action: auth.ActionHealthGet, wantErr: auth.ErrForbidden},
-		{name: "non-default resource", identity: product, action: auth.ActionKeysView, resource: auth.Resource{Type: "keys", IdentityID: "alice"}, wantErr: auth.ErrForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := authorizer.Authorize(context.Background(), tc.identity, tc.action, tc.resource)

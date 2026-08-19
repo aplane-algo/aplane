@@ -4,13 +4,13 @@
 package integration_test
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -22,7 +22,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	currentPassphrase := mustReadPassphrase(t, env.SignerDataDir)
 
 	passFileBinary := buildPassFileHelper(t)
-	identityPassphrasePath := filepath.Join(env.SignerDataDir, "identities", auth.DefaultIdentityID, "passphrase")
+	identityPassphrasePath := filepath.Join(env.SignerDataDir, "identities", productmode.IdentityID, "passphrase")
 	if err := os.WriteFile(identityPassphrasePath, []byte(currentPassphrase), 0o600); err != nil {
 		t.Fatalf("failed to seed identity passphrase file: %v", err)
 	}

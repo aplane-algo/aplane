@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -139,7 +140,7 @@ func serverConfigForTest() *serverconfig.ServerConfig {
 
 // requestWithIdentity creates an HTTP request with an authenticated identity in the context.
 func requestWithIdentity(method, url string, body []byte) *http.Request {
-	return requestWithIdentityID(method, url, body, auth.CurrentProductIdentityID())
+	return requestWithIdentityID(method, url, body, productmode.IdentityID)
 }
 
 func requestWithIdentityID(method, url string, body []byte, identityID string) *http.Request {

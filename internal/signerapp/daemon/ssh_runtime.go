@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"net"
 	"strconv"
 	"strings"
@@ -70,9 +71,9 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	if auditLog != nil {
 		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
 			if connected {
-				auditLog.LogSessionConnected(auth.CurrentProductIdentityID(), remoteAddr, auth.CurrentProductIdentityID())
+				auditLog.LogSessionConnected(productmode.IdentityID, remoteAddr, productmode.IdentityID)
 			} else {
-				auditLog.LogSessionDisconnected(auth.CurrentProductIdentityID(), remoteAddr, auth.CurrentProductIdentityID())
+				auditLog.LogSessionDisconnected(productmode.IdentityID, remoteAddr, productmode.IdentityID)
 			}
 		})
 	}

@@ -415,8 +415,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.SessionID == "" {
 		t.Fatal("SessionContext().SessionID is empty")
 	}
-	if sessionCtx.TargetIdentityID != auth.DefaultIdentityID {
-		t.Fatalf("SessionContext().TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, auth.DefaultIdentityID)
+	if sessionCtx.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("SessionContext().TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
 	}
 	if sessionCtx.AuthMethod != "ipc-passphrase" {
 		t.Fatalf("SessionContext().AuthMethod = %q, want ipc-passphrase", sessionCtx.AuthMethod)
@@ -427,8 +427,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.RemoteAddr != "unix:/tmp/aplane.sock" {
 		t.Fatalf("SessionContext().RemoteAddr = %q, want unix:/tmp/aplane.sock", sessionCtx.RemoteAddr)
 	}
-	if sessionCtx.AdminPrincipal.ID != auth.DefaultIdentityID {
-		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, auth.DefaultIdentityID)
+	if sessionCtx.AdminPrincipal.ID != productmode.IdentityID {
+		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, productmode.IdentityID)
 	}
 	if sessionCtx.RequesterPrincipal.ID != sessionCtx.AdminPrincipal.ID {
 		t.Fatalf("SessionContext().RequesterPrincipal.ID = %q, want %q", sessionCtx.RequesterPrincipal.ID, sessionCtx.AdminPrincipal.ID)
@@ -956,8 +956,8 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	session.Bind(principal, ir)
 
 	sessionCtx := session.SessionContext()
-	if sessionCtx.TargetIdentityID != auth.DefaultIdentityID {
-		t.Fatalf("TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, auth.DefaultIdentityID)
+	if sessionCtx.TargetIdentityID != productmode.IdentityID {
+		t.Fatalf("TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
 	}
 	if sessionCtx.AdminPrincipal.ID != "admin-1" {
 		t.Fatalf("AdminPrincipal.ID = %q, want admin-1", sessionCtx.AdminPrincipal.ID)

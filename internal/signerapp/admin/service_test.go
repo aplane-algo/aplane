@@ -6,6 +6,7 @@ package admin
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -376,8 +377,8 @@ func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	if !snapshot.Success {
 		t.Fatalf("BuildPolicySnapshot() success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
-	if snapshot.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, auth.DefaultIdentityID)
+	if snapshot.IdentityID != productmode.IdentityID {
+		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, productmode.IdentityID)
 	}
 	if !snapshot.Canonical {
 		t.Fatal("Canonical = false, want true")
@@ -403,8 +404,8 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	if snapshot.Code != "policy_snapshot_unavailable" {
 		t.Fatalf("Code = %q, want policy_snapshot_unavailable", snapshot.Code)
 	}
-	if snapshot.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, auth.DefaultIdentityID)
+	if snapshot.IdentityID != productmode.IdentityID {
+		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, productmode.IdentityID)
 	}
 }
 

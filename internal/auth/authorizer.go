@@ -108,11 +108,6 @@ type Resource struct {
 
 	// ID is the resource identifier (e.g., key address)
 	ID string
-
-	// IdentityID is the target signing identity that owns the resource. When
-	// empty at an HTTP boundary, apsigner treats the authenticated identity as
-	// the target identity.
-	IdentityID string
 }
 
 // Authorizer determines if an identity is allowed to perform an action on a resource

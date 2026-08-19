@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net"
 	"os"
@@ -21,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -451,11 +451,11 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	keyFingerprint := ssh.FingerprintSHA256(key)
 	username := conn.User()
 
-	if username == "request-token:"+auth.CurrentProductIdentityID() {
+	if username == "request-token:"+productmode.IdentityID {
 		return s.handleTokenProvisioningAuth(conn, key, username, remoteAddr, keyFingerprint)
 	}
-	if username != auth.CurrentProductIdentityID() {
-		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", auth.CurrentProductIdentityID())
+	if username != productmode.IdentityID {
+		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", productmode.IdentityID)
 	}
 
 	var authorized bool
@@ -484,7 +484,7 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	return &ssh.Permissions{Extensions: map[string]string{
 		"auth_method":     "publickey_pending_token_proof",
 		"key_fingerprint": keyFingerprint,
-		"identity_id":     auth.CurrentProductIdentityID(),
+		"identity_id":     productmode.IdentityID,
 	}}, nil
 }
 
@@ -537,7 +537,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 		return nil, err
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Identity:    auth.CurrentProductIdentityID(),
+		Identity:    productmode.IdentityID,
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -576,7 +576,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 
 	extensions := map[string]string{
 		"auth_method":     "publickey+token-proof",
-		"identity_id":     auth.CurrentProductIdentityID(),
+		"identity_id":     productmode.IdentityID,
 		"key_fingerprint": keyFingerprint,
 	}
 	if tokenGeneration > 0 {
@@ -611,7 +611,7 @@ func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason 
 // Only requires valid SSH key - no token needed (that's what we're requesting!).
 // Fails fast if no operator is connected to approve the request.
 func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.PublicKey, username, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
-	if username != "request-token:"+auth.CurrentProductIdentityID() {
+	if username != "request-token:"+productmode.IdentityID {
 		return nil, fmt.Errorf("unsupported token provisioning username")
 	}
 
@@ -624,7 +624,7 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 		Extensions: map[string]string{
 			"auth_method":     "token_provisioning",
 			"key_fingerprint": keyFingerprint,
-			"identity_id":     auth.CurrentProductIdentityID(),
+			"identity_id":     productmode.IdentityID,
 			"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 		},
 	}, nil

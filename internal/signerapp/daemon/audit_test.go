@@ -221,9 +221,8 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 		AdminPrincipal:   adminserver.SessionPrincipal{ID: "alice-admin"},
 	}
 	logger.LogAuthorizationDenied(ctx, auth.ActionKeysDelete, auth.Resource{
-		Type:       "key",
-		ID:         "ADDR",
-		IdentityID: "alice",
+		Type: "key",
+		ID:   "ADDR",
 	}, "forbidden")
 
 	entries := readAuditEntries(t, path)
@@ -274,7 +273,7 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != "alice" {
+		if entry.TargetIdentityID != productmode.IdentityID || entry.RequesterPrincipal != "alice" {
 			t.Fatalf("HTTP signing attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.10:4000" {
@@ -372,7 +371,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != auth.DefaultIdentityID || entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
+		if entry.TargetIdentityID != productmode.IdentityID || entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
 			t.Fatalf("HTTP signing identity attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {

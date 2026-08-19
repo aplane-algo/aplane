@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -52,7 +52,7 @@ func TestBuildProductRuntimeRejectsExtraIdentityBeforeLoadingSecrets(t *testing.
 
 func TestValidateProductIdentityLayoutBlankStore(t *testing.T) {
 	root := t.TempDir()
-	if err := identity.ValidateProductIdentityLayout(root, auth.CurrentProductIdentityID()); err != nil {
+	if err := identity.ValidateProductIdentityLayout(root, productmode.IdentityID); err != nil {
 		t.Fatal(err)
 	}
 }

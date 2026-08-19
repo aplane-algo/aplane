@@ -5,6 +5,7 @@ package templateadmin
 
 import (
 	"errors"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 	"sync"
@@ -67,7 +68,7 @@ func setupServiceWithReload(
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
 	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
+	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
 	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}

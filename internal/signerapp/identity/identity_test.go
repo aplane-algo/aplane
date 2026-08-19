@@ -6,6 +6,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ import (
 
 func TestValidateProductIdentityLayout(t *testing.T) {
 	t.Run("missing identities", func(t *testing.T) {
-		if err := ValidateProductIdentityLayout(t.TempDir(), auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductIdentityLayout(t.TempDir(), productmode.IdentityID); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -32,16 +33,16 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductIdentityLayout(root, productmode.IdentityID); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("real default", func(t *testing.T) {
 		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "identities", auth.DefaultIdentityID), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, "identities", productmode.IdentityID), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID); err != nil {
+		if err := ValidateProductIdentityLayout(root, productmode.IdentityID); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -51,7 +52,7 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		t.Run("reject extra "+entryType, func(t *testing.T) {
 			root := t.TempDir()
 			identitiesDir := filepath.Join(root, "identities")
-			if err := os.MkdirAll(filepath.Join(identitiesDir, auth.DefaultIdentityID), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Join(identitiesDir, productmode.IdentityID), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			name := "alice"
@@ -74,7 +75,7 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+			err := ValidateProductIdentityLayout(root, productmode.IdentityID)
 			if err == nil || !strings.Contains(err.Error(), name) {
 				t.Fatalf("ValidateProductIdentityLayout() error = %v, want unexpected entry %q", err, name)
 			}
@@ -86,10 +87,10 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, "identities"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", auth.DefaultIdentityID)); err != nil {
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, "identities", productmode.IdentityID)); err != nil {
 			t.Fatal(err)
 		}
-		err := ValidateProductIdentityLayout(root, auth.DefaultIdentityID)
+		err := ValidateProductIdentityLayout(root, productmode.IdentityID)
 		if err == nil || !strings.Contains(err.Error(), "real directory") {
 			t.Fatalf("ValidateProductIdentityLayout() error = %v, want real-directory rejection", err)
 		}

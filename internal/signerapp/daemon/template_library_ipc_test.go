@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -125,7 +124,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	}) {
 		t.Fatalf("disable response mismatch: %#v", disableRecorder.messages(t)[0])
 	}
-	if !keyTypeStateDisabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
 	if !templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
@@ -152,7 +151,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	}) {
 		t.Fatalf("enable response mismatch: %#v", enableRecorder.messages(t)[0])
 	}
-	if keyTypeStateDisabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state still present after enable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); !ok {
@@ -371,7 +370,7 @@ func TestIPCActivateKeyTypeEnablesCompiledProvider(t *testing.T) {
 	}) {
 		t.Fatalf("activation response mismatch: %#v", msgs[0])
 	}
-	if !keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state not written for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); !ok {
@@ -415,7 +414,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 	}) {
 		t.Fatalf("deactivation response mismatch: %#v", msgs[0])
 	}
-	if keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state still exists for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -473,7 +472,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	if errText, _ := msgs[0]["error"].(string); !strings.Contains(errText, "key(s) still use it") {
 		t.Fatalf("deactivation error = %q, want in-use context", errText)
 	}
-	if !keyTypeStateEnabled(server, auth.CurrentProductIdentityID(), keyType) {
+	if !keyTypeStateEnabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("enabled state was removed despite in-use rejection for %s", keyType)
 	}
 }

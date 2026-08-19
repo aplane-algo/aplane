@@ -4,10 +4,10 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
@@ -32,11 +32,11 @@ func TestSSHAdminSessionBindsProductRuntimeInDaemon(t *testing.T) {
 	if !productRuntime.IsUnlocked() {
 		t.Fatal("product runtime was not unlocked")
 	}
-	if session.TargetIdentityID() != auth.CurrentProductIdentityID() {
+	if session.TargetIdentityID() != productmode.IdentityID {
 		t.Fatalf("TargetIdentityID() = %q, want product identity", session.TargetIdentityID())
 	}
 	sessionCtx := session.SessionContext()
-	if sessionCtx.TargetIdentityID != auth.CurrentProductIdentityID() {
+	if sessionCtx.TargetIdentityID != productmode.IdentityID {
 		t.Fatalf("SessionContext().TargetIdentityID = %q, want product identity", sessionCtx.TargetIdentityID)
 	}
 	if sessionCtx.Transport != adminserver.TransportSSH {

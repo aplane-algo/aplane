@@ -146,7 +146,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 	genstoretest.MintFirst(t, keyPaths)
 	genstoretest.MintFirst(t, keyPaths)
 	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", auth.DefaultIdentityID)
+	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
 	keysDir := keyPaths.LegacyKeysDir()
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(keysDir): %v", err)
@@ -1052,7 +1052,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 		},
 		{
@@ -1067,7 +1067,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 			wantVisible: true,
 		},
@@ -1082,8 +1082,8 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
-				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				writeTemplateStateForRestTest(t, paths, productmode.IdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 			wantVisible: true,
 		},
@@ -1098,8 +1098,8 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
-				writeTemplateStateForRestTest(t, paths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				writeTemplateStateForRestTest(t, paths, productmode.IdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 		},
 		{
@@ -1116,7 +1116,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 			wantVisible: true,
 		},
@@ -1134,7 +1134,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 				}); err != nil {
 					t.Fatalf("Put() error = %v", err)
 				}
-				return restMatrixIdentity(paths, auth.DefaultIdentityID)
+				return restMatrixIdentity(paths, productmode.IdentityID)
 			},
 		},
 	}

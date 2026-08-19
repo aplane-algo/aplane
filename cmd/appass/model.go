@@ -4,12 +4,12 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
@@ -223,5 +223,5 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 }
 
 func productIdentityID() string {
-	return auth.CurrentProductIdentityID()
+	return productmode.IdentityID
 }

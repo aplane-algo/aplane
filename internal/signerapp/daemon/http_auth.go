@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
@@ -48,23 +49,11 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 			return
 		}
 
-		targetResource := resource
-		if targetResource.IdentityID == "" {
-			targetResource.IdentityID = auth.CurrentProductIdentityID()
-		}
-		if err := auth.RequireCurrentProductIdentity(targetResource.IdentityID); err != nil {
-			if fs.auditLog != nil {
-				fs.auditLog.LogAuthFailed(auth.CurrentProductIdentityID(), r.RemoteAddr, "non_product_identity_forbidden: "+targetResource.IdentityID)
-			}
-			writeErrorJSON(w, http.StatusForbidden, "Forbidden")
-			return
-		}
-
 		authCtx := auth.ContextWithIdentity(ctx, ident)
 		if fs.authorizer != nil {
-			if err := fs.authorizer.Authorize(authCtx, ident, action, targetResource); err != nil {
+			if err := fs.authorizer.Authorize(authCtx, ident, action, resource); err != nil {
 				if fs.auditLog != nil {
-					fs.auditLog.LogAuthFailed(auth.CurrentProductIdentityID(), r.RemoteAddr, "unauthorized: "+string(action))
+					fs.auditLog.LogAuthFailed(productmode.IdentityID, r.RemoteAddr, "unauthorized: "+string(action))
 				}
 				writeErrorJSON(w, http.StatusForbidden, "Forbidden")
 				return

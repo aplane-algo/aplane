@@ -148,7 +148,7 @@ func TestRequireAuthForbidden(t *testing.T) {
 	if authz.got.action != auth.ActionKeysDelete {
 		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionKeysDelete)
 	}
-	if authz.got.resource.Type != "key" || authz.got.resource.ID != "ADDR" || authz.got.resource.IdentityID != auth.DefaultIdentityID {
+	if authz.got.resource.Type != "key" || authz.got.resource.ID != "ADDR" {
 		t.Fatalf("resource = %#v", authz.got.resource)
 	}
 }
@@ -241,31 +241,8 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
-	if authorizer.got.identityID != authzpkg.SystemProductAdminPrincipalID || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
+	if authorizer.got.identityID != authzpkg.SystemProductAdminPrincipalID {
 		t.Fatalf("authorization binding = %#v", authorizer.got)
-	}
-}
-
-func TestRequireAuthRejectsCrossIdentityResource(t *testing.T) {
-	server, cleanup := newAuthTestSigner(t)
-	defer cleanup()
-
-	authz := &stubAuthorizer{}
-	server.authorizer = authz
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane test-token")
-
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys", IdentityID: "bob"}, func(http.ResponseWriter, *http.Request) {
-		t.Fatal("next handler should not be called")
-	})(w, r)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", w.Code)
-	}
-	if authz.calls != 0 {
-		t.Fatalf("authorizer calls = %d, want 0", authz.calls)
 	}
 }
 

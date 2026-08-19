@@ -4,6 +4,7 @@
 package sshtunnel
 
 import (
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"net"
 	"sync"
 	"testing"
@@ -231,7 +232,7 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	}()
 
 	clientSigner, _ := generateClientKey(t)
-	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, auth.CurrentProductIdentityID(), "old-token")
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, productmode.IdentityID, "old-token")
 	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
@@ -347,7 +348,7 @@ func newActiveSSHTestConn(t *testing.T, srv *Server) activeSSHTestConn {
 		<-releaseServer
 	}()
 
-	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, auth.CurrentProductIdentityID(), "test-token")
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, productmode.IdentityID, "test-token")
 	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)

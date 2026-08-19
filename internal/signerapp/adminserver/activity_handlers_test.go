@@ -6,6 +6,7 @@ package adminserver
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 	"time"
 
@@ -58,13 +59,13 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	if authorizer.got.action != auth.ActionIdentityLock {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionIdentityLock)
 	}
-	if authorizer.got.resource.Type != "identity" || authorizer.got.resource.IdentityID != auth.DefaultIdentityID {
-		t.Fatalf("authorizer resource = %+v, want identity/default", authorizer.got.resource)
+	if authorizer.got.resource.Type != "identity" {
+		t.Fatalf("authorizer resource = %+v, want identity", authorizer.got.resource)
 	}
 	if audit.lockCalls != 1 {
 		t.Fatalf("audit lock calls = %d, want 1", audit.lockCalls)
 	}
-	if audit.lockCtx.TargetIdentityID != auth.DefaultIdentityID || audit.lockCtx.AdminPrincipal.ID != "admin-principal" {
+	if audit.lockCtx.TargetIdentityID != productmode.IdentityID || audit.lockCtx.AdminPrincipal.ID != "admin-principal" {
 		t.Fatalf("audit context = %+v, want target default and admin-principal", audit.lockCtx)
 	}
 	if audit.reason != "apadmin manual lock" {
