@@ -160,7 +160,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 	}
 	autoApprove := false
 	ir := identity.New(identity.Config{
-		ID: auth.DefaultIdentityID, KeyStore: keyStore, KeyPaths: paths,
+		KeyStore: keyStore, KeyPaths: paths,
 		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
 	})
@@ -208,7 +208,7 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 
 func testBackupIdentityRuntime() *identity.Runtime {
 	return identity.New(identity.Config{
-		ID: auth.DefaultIdentityID, Authenticator: auth.NewTokenAuthenticator("token"),
+		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 }
 
@@ -217,18 +217,18 @@ type backupServiceTestDeps struct {
 	limiter RestoreLimiter
 }
 
-func (d backupServiceTestDeps) KeyPaths() storepaths.Paths                           { return d.paths }
-func (d backupServiceTestDeps) GenesisHashMappings() map[string]string               { return nil }
-func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter                       { return d.limiter }
-func (d backupServiceTestDeps) WithIdentityMutation(_ string, fn func() error) error { return fn() }
-func (d backupServiceTestDeps) Logf(string, ...interface{})                          {}
+func (d backupServiceTestDeps) KeyPaths() storepaths.Paths              { return d.paths }
+func (d backupServiceTestDeps) GenesisHashMappings() map[string]string  { return nil }
+func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter          { return d.limiter }
+func (d backupServiceTestDeps) WithStoreMutation(fn func() error) error { return fn() }
+func (d backupServiceTestDeps) Logf(string, ...interface{})             {}
 
 type failingBackupDeps struct{ paths storepaths.Paths }
 
 func (d failingBackupDeps) KeyPaths() storepaths.Paths             { return d.paths }
 func (d failingBackupDeps) GenesisHashMappings() map[string]string { return nil }
 func (d failingBackupDeps) RestoreLimiter() RestoreLimiter         { return nil }
-func (d failingBackupDeps) WithIdentityMutation(string, func() error) error {
+func (d failingBackupDeps) WithStoreMutation(func() error) error {
 	return errors.New("mutation failed")
 }
 func (d failingBackupDeps) Logf(string, ...interface{}) {}

@@ -20,12 +20,11 @@ type Options struct {
 	Config            serverconfig.ServerConfig
 	PassphraseTimeout time.Duration
 	Paths             storepaths.Paths
-	IdentityID        string
 }
 
 // LoadOptions resolves the signer bootstrap state into a normalized startup
 // model that can be passed through validation and runtime assembly.
-func LoadOptions(dataDirFlag string, identityID string) (*Options, error) {
+func LoadOptions(dataDirFlag string) (*Options, error) {
 	startup, err := bootstrap.Load(dataDirFlag)
 	if err != nil {
 		return nil, err
@@ -36,7 +35,6 @@ func LoadOptions(dataDirFlag string, identityID string) (*Options, error) {
 		Config:            startup.Config,
 		PassphraseTimeout: startup.PassphraseTimeout,
 		Paths:             startup.Paths,
-		IdentityID:        identityID,
 	}, nil
 }
 
@@ -61,7 +59,7 @@ type UnlockPlan struct {
 // Keeping that order in one operation prevents an invalid store layout from
 // invoking an operator-configured passphrase helper.
 func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
-	info, err := Validate(&opts.Config, runtime, opts.Paths, opts.IdentityID)
+	info, err := Validate(&opts.Config, runtime, opts.Paths)
 	if err != nil {
 		return nil, nil, fmt.Errorf("startup validation failed: %w", err)
 	}

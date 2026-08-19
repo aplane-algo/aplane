@@ -111,17 +111,17 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	ir := identity.New(identity.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ID:            auth.DefaultIdentityID,
-		KeyStore:      ks,
-		KeyPaths:      keyPaths,
-		NodeRole:      noderole.RoleSigner,
+
+		KeyStore: ks,
+		KeyPaths: keyPaths,
+		NodeRole: noderole.RoleSigner,
 	})
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
-	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
+	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.identityBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)
 	ir.SetUnlocked()

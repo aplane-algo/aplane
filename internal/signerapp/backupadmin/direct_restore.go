@@ -59,7 +59,7 @@ func (s Service) RestoreBackup(
 	wasRecovery := ir.IsRecovery()
 	var parent, committedGeneration string
 	archiveAuthenticated := false
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		prepareErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			set, loadErr := backup.LoadManagedRestoreSet(
 				s.Deps.KeyPaths(),

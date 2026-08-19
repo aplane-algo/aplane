@@ -5,6 +5,7 @@ package daemon
 
 import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
@@ -43,7 +44,7 @@ type signerPlannerDeps struct {
 
 func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIdentitySnapshot {
 	ir := d.signer.runtime
-	if ir == nil || identityID != ir.ID() {
+	if ir == nil || identityID != productmode.IdentityID {
 		return signersigning.PlannerIdentitySnapshot{}
 	}
 	// KeyIndexSnapshot deep-clones per call, so the snapshot (including its

@@ -48,7 +48,7 @@ func (s Service) RollbackRestore(
 		return result
 	}
 	mutated := false
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		paths := s.Deps.KeyPaths()
 		current, err := genstore.Resolve(paths)
 		if err != nil {

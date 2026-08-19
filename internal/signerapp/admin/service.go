@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -40,7 +41,7 @@ type Deps interface {
 	Theme() string
 	SetTheme(v string)
 	WithProcessConfigMutation(fn func() error) error
-	WithIdentityMutation(identityID string, fn func() error) error
+	WithStoreMutation(fn func() error) error
 	SSHInfo() SSHInfo
 }
 
@@ -150,7 +151,7 @@ func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateA
 	if req.Key == adminproto.AdminSettingSSHListenAddress || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
-	return s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	return s.Deps.WithStoreMutation(func() error {
 		return s.updateAdminSettingLocked(ir, req)
 	})
 }
@@ -216,7 +217,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	}
 
 	if err == nil && saveKey != "" {
-		mut := storemut.New(ir.ID(), s.Deps.KeyPaths(), nil, nil)
+		mut := storemut.New(productmode.IdentityID, s.Deps.KeyPaths(), nil, nil)
 		var saveErr error
 		if saveKey == adminproto.AdminSettingTheme {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
@@ -251,10 +252,10 @@ func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.Pol
 	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
 	ops, err := s.policyTargetOps(ir, target)
 	if err != nil {
-		return policySnapshotError(ir.ID(), target, err)
+		return policySnapshotError(productmode.IdentityID, target, err)
 	}
 	stored, _ := ops.activeSnapshot(ir)
-	return canonicalPolicySnapshot(ir.ID(), target, ops, stored)
+	return canonicalPolicySnapshot(productmode.IdentityID, target, ops, stored)
 }
 
 func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto.PolicyTarget) adminproto.PolicyTarget {
@@ -403,7 +404,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		return adminproto.PolicySnapshot{
 			Success:    false,
 			Target:     target,
-			IdentityID: ir.ID(),
+			IdentityID: productmode.IdentityID,
 			Code:       code,
 			Error:      msg,
 		}
@@ -428,7 +429,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 
 	var storedSnapshot *policy.StoredConfig
 	var effective *policy.Config
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		expectedSHA := strings.TrimSpace(req.ExpectedCurrentSHA256)
 		if expectedSHA != "" {
 			current := s.BuildPolicySnapshot(ir, target)
@@ -484,7 +485,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		return fail("policy_replace_failed", err.Error())
 	}
 
-	return canonicalPolicySnapshot(ir.ID(), target, ops, storedSnapshot)
+	return canonicalPolicySnapshot(productmode.IdentityID, target, ops, storedSnapshot)
 }
 
 func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
@@ -493,7 +494,7 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 		return adminproto.ValidatePolicyResult{
 			Success:    false,
 			Target:     target,
-			IdentityID: ir.ID(),
+			IdentityID: productmode.IdentityID,
 			Code:       code,
 			Error:      msg,
 		}
@@ -519,7 +520,7 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 	return adminproto.ValidatePolicyResult{
 		Success:    true,
 		Target:     target,
-		IdentityID: ir.ID(),
+		IdentityID: productmode.IdentityID,
 	}
 }
 

@@ -164,7 +164,7 @@ func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 
 func newKeyTransportTestSession(transport string) (*Session, *queueConn, *stubServices) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	ir.SetUnlocked()

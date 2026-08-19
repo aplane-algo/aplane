@@ -142,7 +142,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 	}
 
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -368,10 +368,7 @@ func TestServiceGenerateKeyUsesMutationLock(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	lock := &recordingLock{}
 	svc := Service{
-		MutationLock: func(identityID string) Locker {
-			if identityID != ir.ID() {
-				t.Fatalf("MutationLock identityID = %q, want %q", identityID, ir.ID())
-			}
+		MutationLock: func() Locker {
 			return lock
 		},
 	}

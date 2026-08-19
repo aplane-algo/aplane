@@ -52,7 +52,7 @@ func (a *recordingAuthorizationAudit) LogAuthorizationDenied(ctx SessionContext,
 
 func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{}
@@ -128,7 +128,7 @@ func TestSessionAuthorizationMissingIdentityFailsClosed(t *testing.T) {
 
 func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
@@ -182,7 +182,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 
 func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
@@ -238,7 +238,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 
 func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{

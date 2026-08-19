@@ -69,7 +69,7 @@ func (d *fakeDeps) WithProcessConfigMutation(fn func() error) error {
 	return fn()
 }
 
-func (d *fakeDeps) WithIdentityMutation(identityID string, fn func() error) error {
+func (d *fakeDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.identityMutationCalls++
@@ -99,7 +99,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 	}
 	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths)
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      keyStore,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),

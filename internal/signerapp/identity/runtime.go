@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package identity owns identity-scoped server runtime state.
-// Each Runtime is an independent security domain owning keystore,
-// session, lock state, and key indexes for a single identity.
+// Package identity owns the product signing-state runtime.
 package identity
 
 import (
@@ -38,7 +36,7 @@ import (
 // It runs until ctx is cancelled.
 type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() error) error
 
-// Runtime owns all sensitive and mutable state for a single identity.
+// Runtime owns all sensitive and mutable state for the product store.
 //
 // Lock ordering (acquire outer first; nested order is left to right):
 //
@@ -71,7 +69,6 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //
 // The full process-wide lock table lives in docs/ARCH_SPEC.md, "Lock Hierarchy".
 type Runtime struct {
-	id          string
 	keyStore    *keystore.FileKeyStore
 	keyPaths    storepaths.Paths
 	lockRuntime *signerruntime.Runtime
@@ -140,9 +137,8 @@ type KeyPublicMetadata struct {
 	LogicSigResources    *lsigresource.Profile
 }
 
-// Config is the construction parameters for an identity Runtime.
+// Config is the construction parameters for the product Runtime.
 type Config struct {
-	ID               string
 	KeyStore         *keystore.FileKeyStore
 	KeyPaths         storepaths.Paths
 	Authenticator    auth.Authenticator // Required. Token authority for this identity.
@@ -173,7 +169,6 @@ func New(cfg Config) *Runtime {
 	}
 
 	ir := &Runtime{
-		id:            cfg.ID,
 		keyStore:      cfg.KeyStore,
 		keyPaths:      cfg.KeyPaths,
 		lockRuntime:   rt,
@@ -209,13 +204,6 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 	ir.watcherMu.Lock()
 	ir.reloadLock = fn
 	ir.watcherMu.Unlock()
-}
-
-// --- Identity ---
-
-// ID returns the identity ID this runtime belongs to.
-func (ir *Runtime) ID() string {
-	return ir.id
 }
 
 // NodeRole returns the immutable role declared by the signer data root.
@@ -557,9 +545,9 @@ func (ir *Runtime) Authenticator() auth.Authenticator {
 
 // --- SSH authorized keys ---
 
-// AuthorizedKeysPath returns the path to this identity's authorized_keys file.
+// AuthorizedKeysPath returns the product store's authorized_keys path.
 func (ir *Runtime) AuthorizedKeysPath() string {
-	return filepath.Join(ir.keyPaths.Root(), "identities", ir.id, ".ssh", "authorized_keys")
+	return filepath.Join(ir.keyPaths.ProductDir(), ".ssh", "authorized_keys")
 }
 
 // LoadAuthorizedKeys loads SSH public keys from this identity's authorized_keys file.
@@ -894,9 +882,9 @@ func (ir *Runtime) MarkDirty() {
 
 func (ir *Runtime) reconcileDirty() {
 	if _, err := ir.reloadFromWatcher(); err != nil {
-		fmt.Printf("⚠️  Dirty-state reconciliation failed for identity %s: %v\n", ir.id, err)
+		fmt.Printf("⚠️  Dirty-state reconciliation failed for product store: %v\n", err)
 	} else {
-		fmt.Printf("✓ Reconciled pending filesystem changes for identity %s\n", ir.id)
+		fmt.Println("✓ Reconciled pending filesystem changes for product store")
 	}
 }
 

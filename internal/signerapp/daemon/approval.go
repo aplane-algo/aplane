@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"time"
 )
 
@@ -15,7 +16,7 @@ func (fs *Signer) requestTokenProvisioning(requestID, identityID, sshFingerprint
 
 func (fs *Signer) requestTokenProvisioningContext(ctx context.Context, requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
 	ir := fs.runtime
-	if ir == nil || identityID != ir.ID() {
+	if ir == nil || identityID != productmode.IdentityID {
 		return false, fmt.Errorf("identity not found: %s", identityID)
 	}
 	return ir.RequestTokenProvisioningContext(ctx, requestID, identityID, sshFingerprint, remoteAddr, timeout)

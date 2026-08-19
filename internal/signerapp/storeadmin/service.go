@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -21,7 +22,7 @@ type Deps interface {
 	DataDir() string
 	Config() *serverconfig.ServerConfig
 	KeyPaths() storepaths.Paths
-	WithIdentityMutation(identityID string, fn func() error) error
+	WithStoreMutation(fn func() error) error
 	Logf(format string, args ...interface{})
 }
 
@@ -48,7 +49,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 		}
 	}
 	if len(req.Passphrase) == 0 {
-		s.logStoreInitializeFailed(ir.ID(), "passphrase is required")
+		s.logStoreInitializeFailed(productmode.IdentityID, "passphrase is required")
 		return adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: "passphrase is required",
@@ -58,7 +59,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	configSnapshot := *s.Deps.Config()
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
-		s.logStoreInitializeFailed(ir.ID(), err.Error())
+		s.logStoreInitializeFailed(productmode.IdentityID, err.Error())
 		return adminproto.InitializeStoreResult{
 			Code:  "passphrase_helper_error",
 			Error: err.Error(),
@@ -68,7 +69,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 
 	var helperWarning string
 	var initResult storeinit.Result
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		var initErr error
 		initResult, initErr = storeinit.Initialize(req.Passphrase, storeinit.Options{
 			DataDir: s.Deps.DataDir(),
@@ -95,14 +96,14 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 		}
 	}
 	if err != nil {
-		s.logStoreInitializeFailed(ir.ID(), err.Error())
+		s.logStoreInitializeFailed(productmode.IdentityID, err.Error())
 		return adminproto.InitializeStoreResult{
 			Code:          "initialize_store_failed",
 			Error:         err.Error(),
 			HelperWarning: helperWarning,
 		}
 	}
-	s.logStoreInitialized(ir.ID(), initResult.MetadataDir)
+	s.logStoreInitialized(productmode.IdentityID, initResult.MetadataDir)
 	return adminproto.InitializeStoreResult{
 		Success:       true,
 		MetadataDir:   initResult.MetadataDir,
@@ -112,21 +113,21 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 
 func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
-		s.logPassphraseChangeFailed(ir.ID(), "current and new passphrases are required")
+		s.logPassphraseChangeFailed(productmode.IdentityID, "current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "current and new passphrases are required",
 		}
 	}
 	if bytes.Equal(req.CurrentPassphrase, req.NewPassphrase) {
-		s.logPassphraseChangeFailed(ir.ID(), "new passphrase must be different from current passphrase")
+		s.logPassphraseChangeFailed(productmode.IdentityID, "new passphrase must be different from current passphrase")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "new passphrase must be different from current passphrase",
 		}
 	}
 	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), req.CurrentPassphrase); err != nil {
-		s.logPassphraseChangeFailed(ir.ID(), err.Error())
+		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: err.Error(),
@@ -136,7 +137,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	configSnapshot := *s.Deps.Config()
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
-		s.logPassphraseChangeFailed(ir.ID(), err.Error())
+		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "passphrase_helper_error",
 			Error: err.Error(),
@@ -145,7 +146,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	passphraseCmdCfg := passphraseCommandConfigFromUnlock(unlockCfg)
 
 	var rotation storepass.RotateResult
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		// A pending root authorizes its retiring term only for the explicit
 		// resume path. Clear the already-published runtime before the root can
 		// enter that window so concurrent signing cannot keep using a cached
@@ -181,7 +182,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		return nil
 	})
 	if err != nil {
-		s.logPassphraseChangeFailed(ir.ID(), err.Error())
+		s.logPassphraseChangeFailed(productmode.IdentityID, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			KeysMigrated:             rotation.KeysMigrated,
 			TemplatesMigrated:        rotation.TemplatesMigrated,
@@ -196,7 +197,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 		}
 	}
 	s.logPassphraseChanged(
-		ir.ID(),
+		productmode.IdentityID,
 		rotation.KeysMigrated,
 		rotation.TemplatesMigrated,
 	)

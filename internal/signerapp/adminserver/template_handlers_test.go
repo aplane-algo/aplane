@@ -16,7 +16,7 @@ import (
 
 func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()
@@ -228,7 +228,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 
 func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 
@@ -308,7 +308,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 
 func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 

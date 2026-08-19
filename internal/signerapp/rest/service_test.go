@@ -52,6 +52,7 @@ import (
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 var restTestPassphrase = []byte("test-passphrase-for-unit-tests!")
@@ -160,7 +161,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Rol
 	}
 
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -212,8 +213,8 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignGroup() error = %v", err)
 	}
-	if stub.gotIdentityID != ir.ID() {
-		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
+	if stub.gotIdentityID != productmode.IdentityID {
+		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, productmode.IdentityID)
 	}
 	if len(resp.Signed) != 1 || resp.Signed[0] != "abc123" {
 		t.Fatalf("Signed = %#v, want [abc123]", resp.Signed)
@@ -295,8 +296,8 @@ func TestServiceSignComponentsDelegates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignComponents() error = %v", err)
 	}
-	if stub.gotIdentityID != ir.ID() {
-		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
+	if stub.gotIdentityID != productmode.IdentityID {
+		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, productmode.IdentityID)
 	}
 	if stub.gotComponents.RequestID != req.RequestID || stub.gotComponents.Targets[0].ComponentKey != componentKey {
 		t.Fatalf("got component request = %#v, want %#v", stub.gotComponents, req)
@@ -347,8 +348,8 @@ func TestServiceAssembleDelegates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Assemble() error = %v", err)
 	}
-	if stub.gotIdentityID != ir.ID() {
-		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
+	if stub.gotIdentityID != productmode.IdentityID {
+		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, productmode.IdentityID)
 	}
 	if stub.gotUnifiedAssembly.RequestID != req.RequestID || len(stub.gotUnifiedAssembly.Targets) != 1 {
 		t.Fatalf("got assembly request = %#v, want %#v", stub.gotUnifiedAssembly, req)
@@ -369,8 +370,8 @@ func TestServicePlanShapesResponse(t *testing.T) {
 	svc := Service{
 		Deps: Dependencies{
 			PlanGroup: func(identityID string, req signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError) {
-				if identityID != ir.ID() {
-					t.Fatalf("identityID = %q, want %q", identityID, ir.ID())
+				if identityID != productmode.IdentityID {
+					t.Fatalf("identityID = %q, want %q", identityID, productmode.IdentityID)
 				}
 				return &signersigning.PlanResult{
 					AllTxns:        []types.Transaction{{Header: types.Header{Fee: 1000}}, {Header: types.Header{Fee: 2000}}},
@@ -1027,7 +1028,7 @@ teal: |
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), productmode.IdentityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
@@ -1169,7 +1170,7 @@ func keyTypesResponseContains(items []signerapi.KeyTypeInfo, keyType string) boo
 
 func restMatrixIdentity(paths storepaths.Paths, identityID string) *identity.Runtime {
 	return identity.New(identity.Config{
-		ID:            identityID,
+
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator(identityID + "-token"),
 		NodeRole:      noderole.RoleSigner,
@@ -1368,7 +1369,7 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(rest generic template) error = %v", err)
 	}
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), productmode.IdentityID, restGenericErrorKeyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 	_, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: restGenericErrorKeyType})
 	if genErr == nil || genErr.HTTPStatus() != 500 || genErr.Message != "key generation failed" {
 		t.Fatalf("AdminGenerate(internal) = %#v, want 500 key generation failed", genErr)

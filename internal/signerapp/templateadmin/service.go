@@ -28,7 +28,7 @@ import (
 
 type Deps interface {
 	KeyPaths() storepaths.Paths
-	WithIdentityMutation(identityID string, fn func() error) error
+	WithStoreMutation(fn func() error) error
 	Logf(format string, args ...interface{})
 }
 
@@ -80,7 +80,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 	ref := templatelibrary.TemplateRef{KeyType: keyType, TemplateType: templateType}
 	var installResult templatelibrary.InstallResult
 	var out adminproto.InstallLibraryTemplateResult
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallFromLibrary(s.Deps.KeyPaths(), ref, masterKey)
@@ -300,7 +300,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 
 	var installResult templatelibrary.InstallResult
 	var out adminproto.ImportInstalledTemplateResult
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallParsed(s.Deps.KeyPaths(), parsed, masterKey)
@@ -390,7 +390,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 
 	var removeResult templatelibrary.RemoveResult
 	var out adminproto.RemoveInstalledTemplateResult
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			removeResult, removeErr = templatelibrary.RemoveInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
@@ -442,7 +442,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var out adminproto.ActivateKeyTypeResult
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {
 			out = adminproto.ActivateKeyTypeResult{
 				Success: false,
@@ -547,7 +547,7 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 	var removeResult templatelibrary.RemoveResult
 	var disabledTemplate bool
 	var out adminproto.DeactivateKeyTypeResult
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {

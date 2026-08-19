@@ -56,7 +56,6 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	signer := &Signer{
 		runtime: identity.New(identity.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
-			ID:            auth.DefaultIdentityID,
 		}),
 	}
 
@@ -94,7 +93,6 @@ func TestBuildKeyInfoListEmpty(t *testing.T) {
 	signer := &Signer{
 		runtime: identity.New(identity.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
-			ID:            auth.DefaultIdentityID,
 		}),
 	}
 

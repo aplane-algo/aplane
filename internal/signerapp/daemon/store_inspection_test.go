@@ -76,7 +76,7 @@ func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- server.withIdentityMutation(ir.ID(), func() error {
+		done <- server.withStoreMutation(func() error {
 			close(started)
 			<-release
 			return nil
@@ -86,7 +86,7 @@ func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	defer func() {
 		close(release)
 		if err := <-done; err != nil {
-			t.Errorf("withIdentityMutation() error = %v", err)
+			t.Errorf("withStoreMutation() error = %v", err)
 		}
 	}()
 

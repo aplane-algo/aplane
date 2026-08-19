@@ -38,7 +38,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 		return beginImportError(err, s.Deps.KeyPaths().Root())
 	}
 	var uploadID string
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		dir := s.Deps.KeyPaths().ProductBackupsDir()
 		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
@@ -89,7 +89,7 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 		return appendImportError(fmt.Errorf("invalid backup import chunk"), s.Deps.KeyPaths().Root())
 	}
 	var next int64
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		path, err := backupUploadPath(s.Deps.KeyPaths().ProductBackupsDir(), req.UploadID)
 		if err != nil {
 			return err
@@ -148,7 +148,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
 	dir := s.Deps.KeyPaths().ProductBackupsDir()
-	claimPath, err := s.claimBackupImport(ir.ID(), dir, req.UploadID, fileName, req.ExpectedSize)
+	claimPath, err := s.claimBackupImport(dir, req.UploadID, fileName, req.ExpectedSize)
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
@@ -195,7 +195,7 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 
 	var info adminproto.BackupInfo
 	var warning string
-	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err = s.Deps.WithStoreMutation(func() error {
 		destination := filepath.Join(dir, fileName)
 		if _, err := os.Lstat(destination); err == nil {
 			return fmt.Errorf("managed backup already exists: %s", fileName)
@@ -230,9 +230,9 @@ func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitB
 	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning}
 }
 
-func (s Service) claimBackupImport(identityID, dir, uploadID, fileName string, expectedSize int64) (string, error) {
+func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize int64) (string, error) {
 	var claimPath string
-	err := s.Deps.WithIdentityMutation(identityID, func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		uploadPath, err := backupUploadPath(dir, uploadID)
 		if err != nil {
 			return err
@@ -274,7 +274,7 @@ func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBac
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
 	}
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		path, err := backupUploadPath(s.Deps.KeyPaths().ProductBackupsDir(), req.UploadID)
 		if err != nil {
 			return err

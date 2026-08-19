@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -246,8 +247,8 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if !authenticateOnly {
 			unlockResource := auth.Resource{
 				Type:       "identity",
-				ID:         ir.ID(),
-				IdentityID: ir.ID(),
+				ID:         productmode.IdentityID,
+				IdentityID: productmode.IdentityID,
 			}
 			if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
 				zeroBytes(passphraseBytes)
@@ -279,7 +280,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		s.context.AdminPrincipal = principal
 		s.context.RequesterPrincipal = principal
 		s.context.ApproverPrincipal = principal
-		s.context.TargetIdentityID = ir.ID()
+		s.context.TargetIdentityID = productmode.IdentityID
 		s.context.AuthMethod = s.method
 		s.mu.Unlock()
 		s.sendAuthResult(true, "", "")
@@ -411,7 +412,7 @@ func (s *Session) Bind(identity *auth.Identity, bound *identity.Runtime) {
 	s.context.RequesterPrincipal = principal
 	s.context.ApproverPrincipal = principal
 	if bound != nil {
-		s.context.TargetIdentityID = bound.ID()
+		s.context.TargetIdentityID = productmode.IdentityID
 	}
 	if bound != nil {
 		s.state = StateAuthenticated

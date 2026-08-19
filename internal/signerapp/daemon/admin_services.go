@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
@@ -168,7 +169,7 @@ func (s signerAdminServices) completePendingRotation(
 		if report != nil && report.Resume != nil {
 			logInfof(
 				"completed pending key rotation for identity %s (%d rewrapped, %d re-signed)",
-				ir.ID(),
+				productmode.IdentityID,
 				report.Resume.Rewrapped,
 				report.Resume.Resigned,
 			)
@@ -176,7 +177,7 @@ func (s signerAdminServices) completePendingRotation(
 		if report != nil && report.PreRootSnapshotDiscarded {
 			logInfof(
 				"discarded unreferenced pre-root rotation snapshot for identity %s",
-				ir.ID(),
+				productmode.IdentityID,
 			)
 		}
 		return nil
@@ -184,7 +185,7 @@ func (s signerAdminServices) completePendingRotation(
 	if s.signer == nil {
 		return complete()
 	}
-	return s.signer.withIdentityMutation(ir.ID(), complete)
+	return s.signer.withStoreMutation(complete)
 }
 
 // reconcileGenerations enforces CURRENT as the sole commit record at unlock
@@ -194,7 +195,7 @@ func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
 	if s.signer == nil {
 		return s.reconcileGenerationsLocked(ir)
 	}
-	return s.signer.withIdentityMutation(ir.ID(), func() error {
+	return s.signer.withStoreMutation(func() error {
 		return s.reconcileGenerationsLocked(ir)
 	})
 }
@@ -327,7 +328,7 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *identity.Runtime) (*s
 		err := work()
 		return report, err
 	}
-	err := s.signer.withIdentityMutation(ir.ID(), work)
+	err := s.signer.withStoreMutation(work)
 	return report, err
 }
 
@@ -348,7 +349,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*si
 	// committed state proves clean.
 	report, err := s.reconcileReloadAndPromote(ir)
 	if err != nil {
-		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", ir.ID(), err)
+		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", productmode.IdentityID, err)
 		return nil, false
 	}
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
@@ -376,7 +377,7 @@ func (s signerTemplateServices) ListKeyTypes(ir *identity.Runtime) adminproto.Li
 
 func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult {
 	var records []sentryrefs.Record
-	err := s.withIdentityStoreInspection(ir.ID(), func() error {
+	err := s.withStoreInspection(func() error {
 		var err error
 		records, err = sentryrefs.List(ir.KeyPaths())
 		return err
@@ -395,7 +396,7 @@ func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminpro
 func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
 	var record sentryrefs.Record
 	var found bool
-	err := s.withIdentityStoreInspection(ir.ID(), func() error {
+	err := s.withStoreInspection(func() error {
 		var err error
 		record, found, err = sentryrefs.Get(ir.KeyPaths(), req.Name)
 		return err
@@ -412,7 +413,7 @@ func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminp
 
 func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
 	var record *sentryrefs.Record
-	err := s.withIdentityStoreMutation(ir.ID(), func() error {
+	err := s.withStoreMutation(func() error {
 		var err error
 		record, err = sentryrefs.Import(ir.KeyPaths(), req.Name, []byte(req.EnvelopeJSON))
 		return err
@@ -426,7 +427,7 @@ func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adm
 func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
 	var removed bool
 	var componentKey string
-	err := s.withIdentityStoreMutation(ir.ID(), func() error {
+	err := s.withStoreMutation(func() error {
 		existing, found, err := sentryrefs.Get(ir.KeyPaths(), req.Name)
 		if err != nil {
 			return err
@@ -452,7 +453,7 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 	}
 	var envelope witness.PublicReference
 	var found bool
-	err = s.withIdentityStoreInspection(ir.ID(), func() error {
+	err = s.withStoreInspection(func() error {
 		var err error
 		envelope, found, err = apkeys.ReadWitnessPublicMetadata(ir.KeyPaths(), componentKey)
 		return err
@@ -474,7 +475,7 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 
 func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory {
 	var report genstore.ReconcileReport
-	err := s.withIdentityStoreInspection(ir.ID(), func() error {
+	err := s.withStoreInspection(func() error {
 		generational, err := genstore.IsGenerational(ir.KeyPaths())
 		if err != nil {
 			return err
@@ -496,18 +497,18 @@ func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.Ge
 	}
 }
 
-func (s signerAdminServices) withIdentityStoreMutation(identityID string, fn func() error) error {
+func (s signerAdminServices) withStoreMutation(fn func() error) error {
 	if s.signer == nil {
 		return fn()
 	}
-	return s.signer.withIdentityMutation(identityID, fn)
+	return s.signer.withStoreMutation(fn)
 }
 
-func (s signerAdminServices) withIdentityStoreInspection(identityID string, fn func() error) error {
+func (s signerAdminServices) withStoreInspection(fn func() error) error {
 	if s.signer == nil {
 		return fn()
 	}
-	return s.signer.tryWithIdentityInspection(identityID, fn)
+	return s.signer.tryWithStoreInspection(fn)
 }
 
 func identityStoreInspectionError(err error, fallbackCode string) (string, string) {
@@ -675,8 +676,8 @@ func (d signerAdminAppDeps) WithProcessConfigMutation(fn func() error) error {
 	return d.signer.withProcessConfigMutation(fn)
 }
 
-func (d signerAdminAppDeps) WithIdentityMutation(identityID string, fn func() error) error {
-	return d.signer.withIdentityMutation(identityID, fn)
+func (d signerAdminAppDeps) WithStoreMutation(fn func() error) error {
+	return d.signer.withStoreMutation(fn)
 }
 
 func (d signerAdminAppDeps) RestoreLimiter() backupadmin.RestoreLimiter {

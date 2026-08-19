@@ -39,7 +39,7 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 			EncodeTxnHex: encodeTxnToHex,
 			KeyAdmin: keyadmin.Service{
 				AuditLog: keyAudit,
-				MutationLock: func(string) keyadmin.Locker {
+				MutationLock: func() keyadmin.Locker {
 					return &fs.storeMutationLock
 				},
 			},

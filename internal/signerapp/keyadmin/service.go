@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 // Error aliases the unified signer service-error model so key-admin error
@@ -89,7 +90,7 @@ type Locker interface {
 
 type Service struct {
 	AuditLog     AuditLogger
-	MutationLock func(identityID string) Locker
+	MutationLock func() Locker
 }
 
 type GenerateGenericLSigFunc func(context.Context, *identity.Runtime, string, map[string]string) (string, error)
@@ -149,7 +150,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		}
 	}
 
-	unlockMutation := s.lockMutation(ir.ID())
+	unlockMutation := s.lockMutation()
 	defer unlockMutation()
 
 	activated, activationErr := activatedKeyTypes(ir)
@@ -178,7 +179,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		}, nil
 	}
 
-	mut := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil)
+	mut := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil)
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
@@ -194,7 +195,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyGenerated(ir.ID(), genResult.Address, genResult.KeyType)
+		s.AuditLog.LogKeyGenerated(productmode.IdentityID, genResult.Address, genResult.KeyType)
 	}
 
 	return &GenerateResult{
@@ -245,14 +246,14 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 
-	unlockMutation := s.lockMutation(ir.ID())
+	unlockMutation := s.lockMutation()
 	defer unlockMutation()
 
 	keyFile, err := ir.FindKeyFile(address)
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-	delResult, err := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
+	delResult, err := storemut.New(productmode.IdentityID, ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
 	}
@@ -262,7 +263,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyDeleted(ir.ID(), address, delResult.DeletedPath)
+		s.AuditLog.LogKeyDeleted(productmode.IdentityID, address, delResult.DeletedPath)
 	}
 
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
@@ -282,11 +283,11 @@ func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {
 	return enabled, nil
 }
 
-func (s Service) lockMutation(identityID string) func() {
+func (s Service) lockMutation() func() {
 	if s.MutationLock == nil {
 		return func() {}
 	}
-	lock := s.MutationLock(identityID)
+	lock := s.MutationLock()
 	if lock == nil {
 		return func() {}
 	}

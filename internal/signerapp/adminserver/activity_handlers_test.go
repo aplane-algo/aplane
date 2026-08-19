@@ -30,7 +30,7 @@ func (a *recordingIdentityLockAudit) LogIdentityLockedContext(ctx SessionContext
 
 func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()
@@ -85,7 +85,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 
 func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()
@@ -141,7 +141,7 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 
 func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	ir.SetUnlocked()

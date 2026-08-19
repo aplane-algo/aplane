@@ -38,7 +38,7 @@ type stubDeps struct {
 
 func (d *stubDeps) KeyPaths() storepaths.Paths { return d.keyPaths }
 
-func (d *stubDeps) WithIdentityMutation(_ string, fn func() error) error {
+func (d *stubDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.mutationActive.Store(true)
@@ -82,7 +82,7 @@ func setupServiceWithReload(
 	deps := &stubDeps{keyPaths: keyPaths}
 	var reloadCount atomic.Int64
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
@@ -132,7 +132,7 @@ func assertReloadInsideMutation(t *testing.T, reloadCount *atomic.Int64, deps *s
 		t.Fatalf("reloadCount = %d, want 1", got)
 	}
 	if deps.reloadOutsideMutation.Load() {
-		t.Fatal("reload ran outside WithIdentityMutation")
+		t.Fatal("reload ran outside WithStoreMutation")
 	}
 }
 

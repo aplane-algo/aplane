@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -54,7 +55,7 @@ func TestInitializeStoreRejectsNilRuntime(t *testing.T) {
 
 func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
 	audit := &recordingAuditLog{}
-	ir := testIdentityRuntime("alice")
+	ir := testIdentityRuntime()
 
 	result := Service{AuditLog: audit}.InitializeStore(ir, adminproto.InitializeStoreRequest{})
 	if result.Code != protocol.ErrCodeInvalidPassphrase {
@@ -63,8 +64,8 @@ func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
 	if len(audit.events) != 1 {
 		t.Fatalf("audit events = %#v, want one event", audit.events)
 	}
-	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.identity != "alice" || got.reason != "passphrase is required" {
-		t.Fatalf("audit event = %#v, want store initialize failure for alice", got)
+	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.identity != productmode.IdentityID || got.reason != "passphrase is required" {
+		t.Fatalf("audit event = %#v, want product store initialize failure", got)
 	}
 }
 
@@ -79,7 +80,7 @@ func (d *initializeTestDeps) DataDir() string                    { return d.data
 func (d *initializeTestDeps) Config() *serverconfig.ServerConfig { return &d.cfg }
 func (d *initializeTestDeps) KeyPaths() storepaths.Paths         { return d.paths }
 func (d *initializeTestDeps) Logf(string, ...interface{})        {}
-func (d *initializeTestDeps) WithIdentityMutation(_ string, fn func() error) error {
+func (d *initializeTestDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return fn()
@@ -92,7 +93,7 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 		dataDir: dataDir,
 		paths:   storepaths.NewPaths(dataDir),
 	}
-	ir := testIdentityRuntime("alice")
+	ir := testIdentityRuntime()
 	unlockCalled := false
 	service := Service{
 		Deps: deps,
@@ -101,7 +102,7 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 			_ []byte,
 		) (bool, int, string, string) {
 			unlockCalled = true
-			if err := deps.WithIdentityMutation("alice", func() error {
+			if err := deps.WithStoreMutation(func() error {
 				return nil
 			}); err != nil {
 				return false, 0, err.Error(), ""
@@ -162,7 +163,7 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			audit := &recordingAuditLog{}
-			ir := testIdentityRuntime("alice")
+			ir := testIdentityRuntime()
 
 			result := Service{AuditLog: audit}.ChangeStorePassphrase(ir, tt.req)
 			if result.Code != "invalid_passphrase" {
@@ -174,8 +175,8 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 			if len(audit.events) != 1 {
 				t.Fatalf("audit events = %#v, want one event", audit.events)
 			}
-			if got := audit.events[0]; got.kind != "passphrase_change_failed" || got.identity != "alice" || got.reason != tt.want {
-				t.Fatalf("audit event = %#v, want passphrase change failure for alice", got)
+			if got := audit.events[0]; got.kind != "passphrase_change_failed" || got.identity != productmode.IdentityID || got.reason != tt.want {
+				t.Fatalf("audit event = %#v, want product passphrase change failure", got)
 			}
 		})
 	}
@@ -205,9 +206,9 @@ func TestPassphraseCommandConfigFromUnlock(t *testing.T) {
 	}
 }
 
-func testIdentityRuntime(id string) *identity.Runtime {
+func testIdentityRuntime() *identity.Runtime {
 	return identity.New(identity.Config{
-		ID:            id,
+
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ApprovalWait:  serverconfig.DefaultApprovalWait,
 	})

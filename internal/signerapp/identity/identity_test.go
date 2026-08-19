@@ -98,7 +98,6 @@ func TestValidateProductIdentityLayout(t *testing.T) {
 
 func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	rejectForeignRekey := false
@@ -165,7 +164,6 @@ func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
 
 func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 
@@ -198,7 +196,6 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 
 func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	ir.PublishSnapshot(
@@ -269,7 +266,6 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 
 func TestWatcherReloadUsesMutationLock(t *testing.T) {
 	ir := New(Config{
-		ID:            "test",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
 	ir.SetUnlocked()
@@ -552,7 +548,6 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 func TestLoadAuthorizedKeysRejectsMalformedFile(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{
-		ID:            "default",
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 		KeyPaths:      utilkeys.NewPaths(root),
 	})

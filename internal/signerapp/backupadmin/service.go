@@ -18,7 +18,7 @@ type Deps interface {
 	KeyPaths() storepaths.Paths
 	GenesisHashMappings() map[string]string
 	RestoreLimiter() RestoreLimiter
-	WithIdentityMutation(identityID string, fn func() error) error
+	WithStoreMutation(fn func() error) error
 	Logf(format string, args ...interface{})
 }
 
@@ -37,7 +37,7 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	archivePath := backup.BuildManagedArchivePath(s.Deps.KeyPaths(), timestamp)
 
 	var result *backup.ArchiveResult
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var backupErr error
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
@@ -102,7 +102,7 @@ func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupR
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.DeleteBackupResult{Code: protocol.ResultCodeDeleteBackupFailed, Error: err.Error()}
 	}
-	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
+	err := s.Deps.WithStoreMutation(func() error {
 		return backup.DeleteManagedBackup(s.Deps.KeyPaths(), req.ArchivePath)
 	})
 	if err != nil {

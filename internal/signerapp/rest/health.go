@@ -6,6 +6,7 @@ package rest
 import (
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -45,7 +46,7 @@ func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
 	nodeRole := ""
 
 	if ir != nil {
-		identityID = ir.ID()
+		identityID = productmode.IdentityID
 		nodeRole = string(ir.NodeRole())
 		state = ir.GetState().String()
 		locked = !ir.IsUnlocked()

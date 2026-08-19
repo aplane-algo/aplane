@@ -66,10 +66,9 @@ func TestBuildUnlockPlanLockedWithoutKeystore(t *testing.T) {
 
 	root := t.TempDir()
 	opts := &Options{
-		DataDir:    root,
-		Config:     serverconfig.DefaultServerConfig(),
-		Paths:      storepaths.NewPaths(root),
-		IdentityID: "default",
+		DataDir: root,
+		Config:  serverconfig.DefaultServerConfig(),
+		Paths:   storepaths.NewPaths(root),
 	}
 
 	plan, err := BuildUnlockPlan(opts, false, "")
@@ -98,10 +97,9 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 	}
 
 	opts := &Options{
-		DataDir:    root,
-		Config:     serverconfig.DefaultServerConfig(),
-		Paths:      paths,
-		IdentityID: "default",
+		DataDir: root,
+		Config:  serverconfig.DefaultServerConfig(),
+		Paths:   paths,
 	}
 
 	plan, err := BuildUnlockPlan(opts, true, string(passphrase))
@@ -134,10 +132,9 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.PassphraseCommandArgv = []string{helper, marker}
 	opts := &Options{
-		DataDir:    root,
-		Config:     cfg,
-		Paths:      paths,
-		IdentityID: "default",
+		DataDir: root,
+		Config:  cfg,
+		Paths:   paths,
 	}
 
 	plan, err := BuildUnlockPlan(opts, true, "")
@@ -175,10 +172,9 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.PassphraseCommandArgv = []string{helper, marker}
 	opts := &Options{
-		DataDir:    root,
-		Config:     cfg,
-		Paths:      paths,
-		IdentityID: "default",
+		DataDir: root,
+		Config:  cfg,
+		Paths:   paths,
 	}
 
 	_, _, err := ValidateAndBuildUnlockPlan(opts, &RuntimeState{}, "")
@@ -211,15 +207,12 @@ func TestLoadOptionsResolvesBootstrapState(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	opts, err := LoadOptions(root, "default")
+	opts, err := LoadOptions(root)
 	if err != nil {
 		t.Fatalf("LoadOptions() error = %v", err)
 	}
 	if opts.DataDir != root {
 		t.Fatalf("LoadOptions() data dir = %q, want %q", opts.DataDir, root)
-	}
-	if opts.IdentityID != "default" {
-		t.Fatalf("LoadOptions() identity = %q, want %q", opts.IdentityID, "default")
 	}
 	if opts.Config.Endpoint.SignerPort != 22334 {
 		t.Fatalf("LoadOptions() endpoint.signer_port = %d, want %d", opts.Config.Endpoint.SignerPort, 22334)

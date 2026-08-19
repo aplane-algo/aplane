@@ -33,7 +33,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 		t.Fatalf("WriteFile(CURRENT) error = %v", err)
 	}
 	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
+
 		KeyStore:      keystore.NewFileKeyStoreForPaths(paths),
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator("token"),

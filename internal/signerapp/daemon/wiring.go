@@ -32,8 +32,8 @@ func (l lazyReloadAuditLogger) LogKeyRejected(identityID, keyFile, reason string
 // identityBuildHooks returns the process callbacks identity runtime assembly
 // needs from the server. It is the single wiring source for both startup and
 // test-constructed identity runtimes.
-func (fs *Signer) identityBuildHooks() signerstartup.IdentityBuildHooks {
-	return signerstartup.IdentityBuildHooks{
+func (fs *Signer) identityBuildHooks() signerstartup.ProductBuildHooks {
+	return signerstartup.ProductBuildHooks{
 		HasAdminClient: func() bool {
 			hub := fs.adminHub()
 			if hub == nil {

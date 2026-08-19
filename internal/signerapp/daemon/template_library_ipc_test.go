@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -320,7 +321,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !disabled.Success || !disabled.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want disabled template", disabled)
 	}
-	if !keyTypeStateDisabled(server, ir.ID(), keyType) {
+	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
 
@@ -331,7 +332,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("template %s still exists after removal", keyType)
 	}
-	if keyTypeStateDisabled(server, ir.ID(), keyType) {
+	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state still exists after template removal for %s", keyType)
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {

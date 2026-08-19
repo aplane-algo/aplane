@@ -131,7 +131,7 @@ func TestWatcherReloadWaitsForAdminIdentityMutation(t *testing.T) {
 	releaseMutation := make(chan struct{})
 	mutationDone := make(chan error, 1)
 	go func() {
-		mutationDone <- server.withIdentityMutation(ir.ID(), func() error {
+		mutationDone <- server.withStoreMutation(func() error {
 			close(enteredMutation)
 			<-releaseMutation
 			return nil
