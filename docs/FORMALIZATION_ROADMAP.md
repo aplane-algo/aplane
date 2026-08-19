@@ -61,3 +61,26 @@ make formal-test-deep
 The metrics JSON files are the authoritative run inventories. Expected-failure
 negative controls, such as the rotation R5 mutation, must remain explicitly
 marked rather than being treated as successful safety runs.
+
+## Drift reviews
+
+Drift review (2026-08-19, HEAD `ea4f0347`): first recorded review; baseline
+established. `make formal-test` (13 runs) and `make formal-test-deep` (7 runs)
+passed with all metrics matched. Anchor sweep over `FORMAL_TRACEABILITY.md`:
+all 128 file anchors exist; three stale test anchors fixed in the same commit
+(I5 `TestCalculateDummies_PreGroupedImmutability` →
+`TestCalculateLogicSigResourcesRejectsUnderprovisionedImmutablePassthrough`
+after the legacy LogicSig size plumbing removal — I5 enforcement is now
+reject-on-underprovision rather than no-mutation; S7
+`TestPayloadV1AlgodAutoSaltRoundTrip` →
+`TestAutoSaltedLogicSigPayloadContract`; S13 restore-side contradictory-class
+test → `internal/keys/managed_files_test.go::TestManagedCredentialDestinationRejectsContradictoryClass`
+after the backup/restore simplification). Code movement in modeled areas since
+`docs/formal/` was last touched (92f6b598): three commits — an apshellcli
+rendering refactor (plugin review dispatch untouched; PS3/PS6/PS7 hold),
+adminserver doc-comment and test-only changes. Spot-checked transcriptions
+hold: SO2 disconnect-cleanup condition and ClearActive ordering, AP7
+fail-all-before-displacement, PS3 fail-closed AutoConfirm review, guarded
+assembly abort-on-first-failure. Bookkeeping consistent: `metrics.json` state
+counts match the model-doc status headers and traceability prose. No new
+unmodeled surface found in the range.
