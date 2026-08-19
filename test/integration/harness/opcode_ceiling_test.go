@@ -23,6 +23,7 @@ import (
 func TestValidateDeclaredOpcodeCeilingAggregatesMaximums(t *testing.T) {
 	program := []byte{13, 1, 2, 3}
 	costs := []uint64{900, 1_100}
+	const simulationRound = uint64(12345)
 	requests := 0
 	client := opcodeSimulationClient(t, func(t *testing.T, request models.SimulateRequest) models.SimulateResponse {
 		if len(request.TxnGroups) != 1 || len(request.TxnGroups[0].Txns) != 1 {
@@ -30,6 +31,9 @@ func TestValidateDeclaredOpcodeCeilingAggregatesMaximums(t *testing.T) {
 		}
 		if !request.ExecTraceConfig.Enable {
 			t.Fatal("simulate request did not enable execution tracing")
+		}
+		if request.Round != simulationRound {
+			t.Fatalf("simulate request round = %d, want %d", request.Round, simulationRound)
 		}
 		cost := costs[requests]
 		requests++
@@ -40,6 +44,7 @@ func TestValidateDeclaredOpcodeCeilingAggregatesMaximums(t *testing.T) {
 		Name:          "test.template.v1",
 		FinalProgram:  program,
 		Profile:       lsigresource.DefaultOpcodeProfile(20_000),
+		Round:         simulationRound,
 		RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
 		Vectors: []OpcodeCeilingVector{
 			{Name: "short", Path: lsigresource.PathDefault, SignedTxns: opcodeVector(program), LSigIndex: 0},

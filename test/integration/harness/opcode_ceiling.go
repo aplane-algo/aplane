@@ -31,6 +31,7 @@ type OpcodeCeilingValidation struct {
 	FinalProgram  []byte
 	Profile       lsigresource.OpcodeProfile
 	Bounded       bool
+	Round         uint64
 	RequiredPaths []lsigresource.AuthorizationPath
 	Vectors       []OpcodeCeilingVector
 }
@@ -107,6 +108,7 @@ func ValidateDeclaredOpcodeCeiling(
 		response, err := algodClient.SimulateTransaction(models.SimulateRequest{
 			TxnGroups:       []models.SimulateRequestTransactionGroup{{Txns: vector.SignedTxns}},
 			ExecTraceConfig: models.SimulateTraceConfig{Enable: true},
+			Round:           input.Round,
 		}).Do(ctx)
 		if err != nil {
 			return report, fmt.Errorf("%s: vector %s simulation request failed: %w", validationName(input.Name), vectorName, err)

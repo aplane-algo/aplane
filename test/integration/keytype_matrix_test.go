@@ -220,7 +220,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				}
 			})
 
-			fundMatrixBatch(t, testnet, funder, sp, batch)
+			fundingRound := fundMatrixBatch(t, testnet, funder, sp, batch)
 			waitForMatrixFundingVisibility(t, testnet, batch)
 
 			for _, account := range batch {
@@ -248,20 +248,17 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 
 			validateMatrixHTLCAssetOptInOpcodeCeilings(
-				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet),
+				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), fundingRound,
 			)
 			validateMatrixSpendingRekeyOpcodeCeilings(
-				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), approvalClient,
+				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), approvalClient, fundingRound,
 			)
 
-			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed)
-			txids := submitSignedTxnGroup(t, testnet, signResp.Signed)
+			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed, fundingRound)
+			txids := submitMatrixDrainGroup(t, testnet, signResp.Signed)
 			drainSubmitted = true
 			if len(txids) == 0 {
 				t.Fatal("positive batch produced no transaction IDs")
-			}
-			if _, err := testnet.WaitForConfirmation(txids[0], 10); err != nil {
-				t.Fatalf("positive batch failed to confirm: %v", err)
 			}
 		})
 	}
@@ -307,6 +304,7 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
+	simulationRound uint64,
 ) {
 	t.Helper()
 	for _, account := range accounts {
@@ -364,6 +362,7 @@ func validateMatrixSpendingRekeyOpcodeCeilings(
 				FinalProgram:  signed[0].Lsig.Logic,
 				Profile:       profile,
 				Bounded:       true,
+				Round:         simulationRound,
 				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpendingRekey},
 				Vectors: []harness.OpcodeCeilingVector{{
 					Name: "maximum-spending-key-rekey", Path: lsigresource.PathSpendingRekey, SignedTxns: signed, LSigIndex: 0,
@@ -407,6 +406,7 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
+	simulationRound uint64,
 ) {
 	t.Helper()
 	for _, account := range accounts {
@@ -439,6 +439,7 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 				Name:          account.keyType,
 				FinalProgram:  signed[0].Lsig.Logic,
 				Profile:       profile,
+				Round:         simulationRound,
 				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
 				Vectors: []harness.OpcodeCeilingVector{{
 					Name: "maximum-asset-optin", Path: lsigresource.PathDefault, SignedTxns: signed, LSigIndex: 0,
@@ -653,7 +654,7 @@ func fundMatrixBatch(
 	funder *harness.FundTestAccount,
 	sp types.SuggestedParams,
 	accounts []includedKeyTypeAccount,
-) {
+) uint64 {
 	t.Helper()
 	txns := make([]types.Transaction, len(accounts))
 	for i, account := range accounts {
@@ -690,9 +691,11 @@ func fundMatrixBatch(
 	if _, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background()); err != nil {
 		t.Fatalf("submit atomic matrix funding group: %v", err)
 	}
-	if _, err := testnet.WaitForConfirmation(firstTxID, 10); err != nil {
+	confirmedRound, err := testnet.WaitForConfirmation(firstTxID, 10)
+	if err != nil {
 		t.Fatalf("matrix funding group %s failed to confirm: %v", firstTxID, err)
 	}
+	return confirmedRound
 }
 
 func waitForMatrixFundingVisibility(
@@ -752,29 +755,65 @@ func waitForMatrixFundingVisibility(
 
 func bestEffortSubmitMatrixDrain(t *testing.T, testnet *harness.TestnetConfig, signedHexes []string) {
 	t.Helper()
-	rawGroup := make([]byte, 0)
-	for _, signedHex := range signedHexes {
-		signedBytes, err := hex.DecodeString(signedHex)
-		if err != nil {
-			t.Logf("WARNING: matrix cleanup could not decode signed drain group: %v", err)
-			return
-		}
-		rawGroup = append(rawGroup, signedBytes...)
-	}
-	if len(rawGroup) == 0 {
-		t.Log("WARNING: matrix cleanup had no signed drain group to submit")
-		return
-	}
-	txid, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background())
+	txids, err := sendMatrixDrainGroup(testnet, signedHexes)
 	if err != nil {
 		t.Logf("WARNING: matrix cleanup could not submit signed drain group: %v", err)
 		return
 	}
-	if _, err := testnet.WaitForConfirmation(txid, 10); err != nil {
-		t.Logf("WARNING: matrix cleanup drain group %s did not confirm: %v", txid, err)
-		return
+	t.Logf("matrix cleanup returned batch funding with drain group %s", txids[0])
+}
+
+func submitMatrixDrainGroup(t *testing.T, testnet *harness.TestnetConfig, signedHexes []string) []string {
+	t.Helper()
+	txids, err := sendMatrixDrainGroup(testnet, signedHexes)
+	if err != nil {
+		t.Fatalf("failed to submit signed matrix drain group: %v", err)
 	}
-	t.Logf("matrix cleanup returned batch funding with drain group %s", txid)
+	return txids
+}
+
+func sendMatrixDrainGroup(testnet *harness.TestnetConfig, signedHexes []string) ([]string, error) {
+	rawGroup := make([]byte, 0)
+	txids := make([]string, 0, len(signedHexes))
+	for _, signedHex := range signedHexes {
+		signedBytes, err := hex.DecodeString(signedHex)
+		if err != nil {
+			return nil, fmt.Errorf("decode signed drain transaction: %w", err)
+		}
+		var stxn types.SignedTxn
+		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
+			return nil, fmt.Errorf("decode signed drain transaction: %w", err)
+		}
+		rawGroup = append(rawGroup, signedBytes...)
+		txids = append(txids, algocrypto.GetTxID(stxn.Txn))
+	}
+	if len(rawGroup) == 0 {
+		return nil, fmt.Errorf("signed drain group is empty")
+	}
+
+	const attempts = 8
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		_, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background())
+		if err == nil {
+			if _, err := testnet.WaitForConfirmation(txids[0], 10); err != nil {
+				return nil, fmt.Errorf("wait for drain group %s: %w", txids[0], err)
+			}
+			return txids, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), " balance 0 below min ") || attempt == attempts {
+			break
+		}
+		status, statusErr := testnet.Client.Status().Do(context.Background())
+		if statusErr != nil {
+			return nil, fmt.Errorf("submit drain group after account-visibility failure: %w (status: %v)", err, statusErr)
+		}
+		if _, waitErr := testnet.Client.StatusAfterBlock(status.LastRound).Do(context.Background()); waitErr != nil {
+			return nil, fmt.Errorf("submit drain group after account-visibility failure: %w (wait: %v)", err, waitErr)
+		}
+	}
+	return nil, fmt.Errorf("submit drain group after %d account-visibility attempts: %w", attempts, lastErr)
 }
 
 func matrixCompileAlgod(t *testing.T, network *harness.TestnetConfig) *sdkalgod.Client {
@@ -811,6 +850,7 @@ func validateMatrixOpcodeCeilings(
 	client *sdkalgod.Client,
 	accounts []includedKeyTypeAccount,
 	signedHexes []string,
+	simulationRound uint64,
 ) {
 	t.Helper()
 	signed := make([]types.SignedTxn, len(signedHexes))
@@ -836,6 +876,7 @@ func validateMatrixOpcodeCeilings(
 			FinalProgram:  signed[i].Lsig.Logic,
 			Profile:       profile,
 			Bounded:       bounded,
+			Round:         simulationRound,
 			RequiredPaths: []lsigresource.AuthorizationPath{path},
 			Vectors: []harness.OpcodeCeilingVector{{
 				Name: vectorName, Path: path, SignedTxns: signed, LSigIndex: i,
