@@ -6,6 +6,7 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	stded25519 "crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
+	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
+	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -26,6 +30,8 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	edlsigv1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
+	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -37,7 +43,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const matrixAccountFunding = 250_000
+const (
+	matrixAccountFunding     = 250_000
+	matrixBaseMinimumBalance = 100_000
+)
 
 func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	assertBundledOpcodeValidationInventory(t)
@@ -94,6 +103,12 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	preimageHash := sha256.Sum256(preimage)
 	timelockRound := baseRound
 	htlcAssetID := corridorTestAssetID(t, testnet, funder)
+	cleanupAuthority := algocrypto.GenerateAccount()
+	alockAdminPublicKey, alockAdminPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("generate matrix ALock cleanup admin key: %v", err)
+	}
+	t.Cleanup(func() { securecrypto.ZeroBytes(alockAdminPrivateKey) })
 
 	cases := []includedKeyTypeCase{
 		{
@@ -146,13 +161,14 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			params:  map[string]string{"recipients": matrixMaximumRecipients(funder.GetAddress())},
 		},
 		{
-			keyType: "aplane.falcon1024-allowlist-alock.v1",
+			keyType:         "aplane.falcon1024-allowlist-alock.v1",
+			adminPrivateKey: alockAdminPrivateKey,
 			params: map[string]string{
 				"recipients":         matrixMaximumRecipients(funder.GetAddress()),
 				"asset_ids":          matrixMaximumAssetIDs(),
 				"max_payment_amount": "18446744073709551615",
 				"max_asset_amount":   "18446744073709551615",
-				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)),
+				composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(alockAdminPublicKey),
 			},
 		},
 		{
@@ -190,12 +206,23 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				t.Fatalf("failed to get suggested params: %v", err)
 			}
 
-			// Prepare and sign the exact drain group before putting funds at risk.
-			// If a later characterization check fails, cleanup can still submit
-			// this group while the generated signer keys remain available.
+			// Prepare every recovery authority before putting funds at risk. Bounded
+			// accounts reject CloseRemainderTo by contract, so they first rekey to
+			// this test-owned Ed25519 authority and are then closed normally.
+			cleanupPlans := prepareMatrixRekeyCleanups(
+				t, testnet, signerClient, signerd.GetURL(), token, fundingAddress,
+				batch, sp, approvalClient, cleanupAuthority,
+			)
+			cleanupReserves := matrixCleanupReserves(cleanupPlans)
+
+			// Prepare and sign the exact settlement group before putting funds at
+			// risk. Close-capable accounts close directly; bounded accounts retain
+			// only the minimum balance plus their already-finalized rekey fee.
 			signTxns := make([]matrixSignTxn, 0, len(batch))
 			for _, account := range batch {
-				signTxns = append(signTxns, account.positiveSignTxn(t, sp, funder.GetAddress()))
+				signTxns = append(signTxns, account.positiveSignTxn(
+					t, sp, funder.GetAddress(), cleanupReserves[account.address],
+				))
 			}
 			expectedDummies := matrixExpectedResourceDummies(t, sp.ConsensusVersion, batch, resourceProfiles)
 			req := plannedMatrixSignRequest(t, signerClient, sp, fundingAddress, signTxns, expectedDummies)
@@ -211,15 +238,18 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 				t.Fatalf("unexpected positive batch sign error: %s", signResp.Error)
 			}
 			assertMatrixPlannerDummies(t, signResp, len(req.Requests), expectedDummies)
-			assertMatrixAccountsDrainExactly(t, signResp.Signed, len(signTxns))
+			assertMatrixAccountsSettleExactly(t, signResp.Signed, signTxns)
 
-			drainSubmitted := false
+			cleanupState := newMatrixBatchCleanupState(signResp.Signed, cleanupPlans)
 			t.Cleanup(func() {
-				if !drainSubmitted {
-					bestEffortSubmitMatrixDrain(t, testnet, signResp.Signed)
+				if cleanupState.funded && !cleanupState.complete() {
+					if err := cleanupState.run(testnet, funder.GetAddress()); err != nil {
+						t.Logf("WARNING: matrix cleanup could not recover batch funding: %v", err)
+					}
 				}
 			})
 
+			cleanupState.funded = true
 			fundingRound := fundMatrixBatch(t, testnet, funder, sp, batch)
 			waitForMatrixFundingVisibility(t, testnet, batch)
 
@@ -250,15 +280,14 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			validateMatrixHTLCAssetOptInOpcodeCeilings(
 				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), fundingRound,
 			)
-			validateMatrixSpendingRekeyOpcodeCeilings(
-				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), approvalClient, fundingRound,
-			)
+			validateMatrixRekeyOpcodeCeilings(t, compileAlgod, cleanupPlans, fundingRound)
 
 			validateMatrixOpcodeCeilings(t, compileAlgod, batch, signResp.Signed, fundingRound)
-			txids := submitMatrixDrainGroup(t, testnet, signResp.Signed)
-			drainSubmitted = true
-			if len(txids) == 0 {
-				t.Fatal("positive batch produced no transaction IDs")
+			if err := cleanupState.run(testnet, funder.GetAddress()); err != nil {
+				t.Fatalf("recover matrix batch funding: %v", err)
+			}
+			if !cleanupState.complete() {
+				t.Fatal("matrix batch cleanup returned without completing")
 			}
 		})
 	}
@@ -295,84 +324,210 @@ func assertBundledOpcodeValidationInventory(t *testing.T) {
 	}
 }
 
-func validateMatrixSpendingRekeyOpcodeCeilings(
+type matrixRekeyCleanupPlan struct {
+	account           includedKeyTypeAccount
+	signedHexes       []string
+	targetFee         uint64
+	path              lsigresource.AuthorizationPath
+	cleanupPrivateKey stded25519.PrivateKey
+}
+
+func prepareMatrixRekeyCleanups(
 	t *testing.T,
-	client *sdkalgod.Client,
+	testnet *harness.TestnetConfig,
+	signerClient *signerclient.Client,
 	signerURL string,
 	token string,
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
 	approvalClient *transport.IPCClient,
+	cleanupAuthority algocrypto.Account,
+) []matrixRekeyCleanupPlan {
+	t.Helper()
+	plans := make([]matrixRekeyCleanupPlan, 0)
+	for _, account := range accounts {
+		switch {
+		case matrixSupportsSpendingRekey(account.keyType):
+			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
+				t, signerURL, token, fundingAddress, account, sp, approvalClient, cleanupAuthority,
+			))
+		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
+			plans = append(plans, prepareMatrixAdminRekeyCleanup(
+				t, testnet, signerClient, account, sp, approvalClient, cleanupAuthority,
+			))
+		}
+	}
+	return plans
+}
+
+func prepareMatrixSpendingRekeyCleanup(
+	t *testing.T,
+	signerURL string,
+	token string,
+	fundingAddress string,
+	account includedKeyTypeAccount,
+	sp types.SuggestedParams,
+	approvalClient *transport.IPCClient,
+	cleanupAuthority algocrypto.Account,
+) matrixRekeyCleanupPlan {
+	t.Helper()
+	txn := mustPaymentTxnForMatrix(
+		t, sp, account.address, account.address, "keytype-matrix-spending-rekey", "", account.positiveFirstValid,
+	)
+	txn.RekeyTo = cleanupAuthority.Address
+	req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
+
+	var status int
+	var body []byte
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		status, body = postSignRequest(t, signerURL, "aplane "+token, req)
+	}()
+	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
+	const wantApprovalAddress = "2 auth addresses (see details)"
+	gotApprovalAddress := approval.Address
+	mustApproveIPCSignRequest(t, approvalClient, approval.ID)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for approved spending-rekey signing")
+	}
+	if gotApprovalAddress != wantApprovalAddress {
+		t.Fatalf("spending-rekey approval address = %s, want %s", gotApprovalAddress, wantApprovalAddress)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
+	}
+	var signResp signerapi.GroupSignResponse
+	if err := json.Unmarshal(body, &signResp); err != nil {
+		t.Fatalf("parse spending-key rekey sign response: %v", err)
+	}
+	if signResp.Error != "" {
+		t.Fatalf("unexpected spending-key rekey sign error: %s", signResp.Error)
+	}
+	assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
+	target := decodeSignedTxnHex(t, signResp.Signed[0])
+	return matrixRekeyCleanupPlan{
+		account: account, signedHexes: signResp.Signed, targetFee: uint64(target.Txn.Fee),
+		path: lsigresource.PathSpendingRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
+	}
+}
+
+func prepareMatrixAdminRekeyCleanup(
+	t *testing.T,
+	testnet *harness.TestnetConfig,
+	signerClient *signerclient.Client,
+	account includedKeyTypeAccount,
+	sp types.SuggestedParams,
+	approvalClient *transport.IPCClient,
+	cleanupAuthority algocrypto.Account,
+) matrixRekeyCleanupPlan {
+	t.Helper()
+	if len(account.adminPrivateKey) == 0 {
+		t.Fatalf("%s cleanup admin private key is missing", account.keyType)
+	}
+	txn := mustPaymentTxnForMatrix(
+		t, sp, account.address, account.address, "keytype-matrix-admin-rekey", "", account.positiveFirstValid,
+	)
+	txn.RekeyTo = cleanupAuthority.Address
+
+	var partial *signerapi.BoundedAdminPartialResponse
+	var requestErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		partial, requestErr = signerClient.RequestBoundedAdmin(
+			signerapi.BoundedAdminOperationRekey,
+			[]signerapi.SignRequest{{
+				AuthAddress: account.address,
+				TxnSender:   account.address,
+				TxnBytesHex: txnHexForMatrix(txn),
+			}},
+		)
+	}()
+	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
+	mustApproveIPCSignRequest(t, approvalClient, approval.ID)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for approved contract-admin rekey signing")
+	}
+	if requestErr != nil {
+		t.Fatalf("prepare contract-admin rekey cleanup: %v", requestErr)
+	}
+
+	request, err := boundedprotocol.NewRequest(boundedprotocol.RequestPayload{
+		Partial:            *partial,
+		Network:            testnet.Network,
+		GenesisHashHex:     hex.EncodeToString(sp.GenesisHash),
+		CurrentAuthAddress: account.address,
+	})
+	if err != nil {
+		t.Fatalf("build contract-admin cleanup request: %v", err)
+	}
+	validated, err := boundedauthorization.ValidateRequest(request)
+	if err != nil {
+		t.Fatalf("validate contract-admin cleanup request: %v", err)
+	}
+	adminSignature, err := signerops.New(nil).Sign(account.adminPrivateKey, validated.Message[:])
+	if err != nil {
+		t.Fatalf("sign contract-admin cleanup request: %v", err)
+	}
+	response := boundedprotocol.Response{
+		Schema:             boundedprotocol.ResponseSchemaV1,
+		RequestHashHex:     request.RequestHashHex,
+		ContractAdminKeyID: partial.Authorization.ContractAdminKeyID,
+		SignatureHex:       hex.EncodeToString(adminSignature),
+	}
+	signed, txns, err := boundedauthorization.Complete(request, response)
+	if err != nil {
+		t.Fatalf("complete contract-admin cleanup request: %v", err)
+	}
+	signedHexes := make([]string, len(signed))
+	for i := range signed {
+		signedHexes[i] = hex.EncodeToString(signed[i])
+	}
+	return matrixRekeyCleanupPlan{
+		account: account, signedHexes: signedHexes, targetFee: uint64(txns[partial.TargetIndex].Fee),
+		path: lsigresource.PathAdminRekey, cleanupPrivateKey: cleanupAuthority.PrivateKey,
+	}
+}
+
+func validateMatrixRekeyOpcodeCeilings(
+	t *testing.T,
+	client *sdkalgod.Client,
+	plans []matrixRekeyCleanupPlan,
 	simulationRound uint64,
 ) {
 	t.Helper()
-	for _, account := range accounts {
-		if !matrixSupportsSpendingRekey(account.keyType) {
-			continue
+	for _, plan := range plans {
+		plan := plan
+		pathName := "spending-rekey"
+		vectorName := "maximum-spending-key-rekey"
+		if plan.path == lsigresource.PathAdminRekey {
+			pathName = "admin-rekey"
+			vectorName = "maximum-admin-key-rekey"
 		}
-		t.Run(account.keyType+"/opcode/spending-rekey", func(t *testing.T) {
-			txn := mustPaymentTxnForMatrix(
-				t, sp, account.address, account.address, "keytype-matrix-spending-rekey", "", account.positiveFirstValid,
-			)
-			txn.RekeyTo = algocrypto.GenerateAccount().Address
-			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{
-				authAddress: account.address,
-				txn:         txn,
-			}})
-			var status int
-			var body []byte
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				status, body = postSignRequest(t, signerURL, "aplane "+token, req)
-			}()
-			approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
-			// matrixSignRequest includes the LogicSig transaction and a native-Falcon
-			// fee sponsor, so the approval correctly represents two authorizers.
-			const wantApprovalAddress = "2 auth addresses (see details)"
-			gotApprovalAddress := approval.Address
-			mustApproveIPCSignRequest(t, approvalClient, approval.ID)
-			select {
-			case <-done:
-			case <-time.After(10 * time.Second):
-				t.Fatal("timed out waiting for approved spending-rekey signing")
-			}
-			if gotApprovalAddress != wantApprovalAddress {
-				t.Fatalf("spending-rekey approval address = %s, want %s", gotApprovalAddress, wantApprovalAddress)
-			}
-			if status != http.StatusOK {
-				t.Fatalf("expected spending-key rekey signing to succeed, got %d: %s", status, string(body))
-			}
-			var signResp signerapi.GroupSignResponse
-			if err := json.Unmarshal(body, &signResp); err != nil {
-				t.Fatalf("parse spending-key rekey sign response: %v", err)
-			}
-			if signResp.Error != "" {
-				t.Fatalf("unexpected spending-key rekey sign error: %s", signResp.Error)
-			}
-			assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
-			signed := make([]types.SignedTxn, len(signResp.Signed))
-			for i, encoded := range signResp.Signed {
+		t.Run(plan.account.keyType+"/opcode/"+pathName, func(t *testing.T) {
+			signed := make([]types.SignedTxn, len(plan.signedHexes))
+			for i, encoded := range plan.signedHexes {
 				signed[i] = decodeSignedTxnHex(t, encoded)
 			}
-			profile := matrixDeclaredOpcodeProfile(t, account.keyType)
+			profile := matrixDeclaredOpcodeProfile(t, plan.account.keyType)
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
-				Name:          account.keyType,
-				FinalProgram:  signed[0].Lsig.Logic,
-				Profile:       profile,
-				Bounded:       true,
-				Round:         simulationRound,
-				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpendingRekey},
+				Name: plan.account.keyType, FinalProgram: signed[0].Lsig.Logic, Profile: profile,
+				Bounded: true, Round: simulationRound, RequiredPaths: []lsigresource.AuthorizationPath{plan.path},
 				Vectors: []harness.OpcodeCeilingVector{{
-					Name: "maximum-spending-key-rekey", Path: lsigresource.PathSpendingRekey, SignedTxns: signed, LSigIndex: 0,
+					Name: vectorName, Path: plan.path, SignedTxns: signed, LSigIndex: 0,
 				}},
 			})
 			if err != nil {
-				t.Fatalf("validate spending-key rekey opcode ceiling: %v", err)
+				t.Fatalf("validate %s opcode ceiling: %v", pathName, err)
 			}
-			observed := report.Paths[lsigresource.PathSpendingRekey]
-			t.Logf("spending-rekey opcode cost: %d observed / %d declared", observed.MaximumObserved, observed.DeclaredCeiling)
+			observed := report.Paths[plan.path]
+			t.Logf("%s opcode cost: %d observed / %d declared", pathName, observed.MaximumObserved, observed.DeclaredCeiling)
 		})
 	}
 }
@@ -392,6 +547,7 @@ type includedKeyTypeCase struct {
 	keyType            string
 	opcodeVectorName   string
 	opcodeAssetOptInID uint64
+	adminPrivateKey    []byte
 	params             map[string]string
 	positiveArgs       map[string]string
 	positiveFirstValid uint64
@@ -434,12 +590,16 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 			for i, encoded := range signResp.Signed {
 				signed[i] = decodeSignedTxnHex(t, encoded)
 			}
+			// The vector is built after the funding-visibility wait. A public
+			// TestNet node may therefore give it a FirstValid later than the
+			// funding round whose state the simulation must include.
+			opcodeSimulationRound := matrixOpcodeSimulationRound(t, simulationRound, signed)
 			profile := matrixDeclaredOpcodeProfile(t, account.keyType)
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), client, harness.OpcodeCeilingValidation{
 				Name:          account.keyType,
 				FinalProgram:  signed[0].Lsig.Logic,
 				Profile:       profile,
-				Round:         simulationRound,
+				Round:         opcodeSimulationRound,
 				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathDefault},
 				Vectors: []harness.OpcodeCeilingVector{{
 					Name: "maximum-asset-optin", Path: lsigresource.PathDefault, SignedTxns: signed, LSigIndex: 0,
@@ -450,6 +610,46 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 			}
 			observed := report.Paths[lsigresource.PathDefault]
 			t.Logf("asset-optin opcode cost: %d observed / %d declared", observed.MaximumObserved, observed.DeclaredCeiling)
+		})
+	}
+}
+
+func matrixOpcodeSimulationRound(t *testing.T, stateRound uint64, signed []types.SignedTxn) uint64 {
+	t.Helper()
+	round := stateRound
+	for _, stxn := range signed {
+		if firstValid := uint64(stxn.Txn.FirstValid); round < firstValid {
+			round = firstValid
+		}
+	}
+	for i, stxn := range signed {
+		if lastValid := uint64(stxn.Txn.LastValid); round > lastValid {
+			t.Fatalf(
+				"opcode simulation round %d is outside transaction %d validity window %d--%d",
+				round, i, stxn.Txn.FirstValid, stxn.Txn.LastValid,
+			)
+		}
+	}
+	return round
+}
+
+func TestMatrixOpcodeSimulationRoundUsesValidGroupRound(t *testing.T) {
+	signed := []types.SignedTxn{
+		{Txn: types.Transaction{Header: types.Header{FirstValid: 101, LastValid: 1_101}}},
+		{Txn: types.Transaction{Header: types.Header{FirstValid: 103, LastValid: 1_103}}},
+	}
+	for _, tc := range []struct {
+		name       string
+		stateRound uint64
+		want       uint64
+	}{
+		{name: "advance stale state round", stateRound: 100, want: 103},
+		{name: "preserve newer state round", stateRound: 105, want: 105},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matrixOpcodeSimulationRound(t, tc.stateRound, signed); got != tc.want {
+				t.Fatalf("matrixOpcodeSimulationRound() = %d, want %d", got, tc.want)
+			}
 		})
 	}
 }
@@ -467,22 +667,36 @@ type includedKeyTypeAccount struct {
 }
 
 type matrixSignTxn struct {
-	authAddress string
-	txn         types.Transaction
-	lsigArgs    map[string]string
+	authAddress     string
+	txn             types.Transaction
+	lsigArgs        map[string]string
+	retainedBalance uint64
 }
 
-func (a includedKeyTypeAccount) positiveSignTxn(t *testing.T, sp types.SuggestedParams, destination string) matrixSignTxn {
+func (a includedKeyTypeAccount) positiveSignTxn(
+	t *testing.T,
+	sp types.SuggestedParams,
+	destination string,
+	retainedBalance uint64,
+) matrixSignTxn {
 	t.Helper()
-	txn := mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-positive", "", a.positiveFirstValid)
-	if uint64(txn.Fee) >= matrixAccountFunding {
-		t.Fatalf("matrix transaction fee %d exhausts account funding %d", txn.Fee, matrixAccountFunding)
+	closeTo := ""
+	if retainedBalance == 0 {
+		closeTo = destination
 	}
-	txn.Amount = types.MicroAlgos(matrixAccountFunding - uint64(txn.Fee))
+	txn := mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-positive", closeTo, a.positiveFirstValid)
+	if uint64(txn.Fee)+retainedBalance >= matrixAccountFunding {
+		t.Fatalf(
+			"matrix transaction fee %d plus retained balance %d exhaust account funding %d",
+			txn.Fee, retainedBalance, matrixAccountFunding,
+		)
+	}
+	txn.Amount = types.MicroAlgos(matrixAccountFunding - uint64(txn.Fee) - retainedBalance)
 	return matrixSignTxn{
-		authAddress: a.address,
-		txn:         txn,
-		lsigArgs:    a.positiveArgs,
+		authAddress:     a.address,
+		txn:             txn,
+		lsigArgs:        a.positiveArgs,
+		retainedBalance: retainedBalance,
 	}
 }
 
@@ -555,10 +769,15 @@ func plannedMatrixSignRequest(
 			t.Fatalf("failed to decode planned matrix transaction %d: %v", i+1, err)
 		}
 		plannedFee := uint64(plannedTxn.Fee)
-		if plannedFee >= matrixAccountFunding {
-			t.Fatalf("planned matrix fee %d exhausts account funding %d", plannedFee, matrixAccountFunding)
+		if plannedFee+signTxns[i].retainedBalance >= matrixAccountFunding {
+			t.Fatalf(
+				"planned matrix fee %d plus retained balance %d exhaust account funding %d",
+				plannedFee, signTxns[i].retainedBalance, matrixAccountFunding,
+			)
 		}
-		signTxns[i].txn.Amount = types.MicroAlgos(matrixAccountFunding - plannedFee)
+		signTxns[i].txn.Amount = types.MicroAlgos(
+			matrixAccountFunding - plannedFee - signTxns[i].retainedBalance,
+		)
 	}
 	return matrixSignRequest(t, sp, fundingAddress, signTxns)
 }
@@ -637,13 +856,20 @@ func matrixExpectedResourceDummies(
 	return int(plan.DummyCount)
 }
 
-func assertMatrixAccountsDrainExactly(t *testing.T, signed []string, accountCount int) {
+func assertMatrixAccountsSettleExactly(t *testing.T, signed []string, signTxns []matrixSignTxn) {
 	t.Helper()
-	for i := 0; i < accountCount; i++ {
+	for i, signTxn := range signTxns {
 		stxn := decodeSignedTxnHex(t, signed[i])
 		spent := uint64(stxn.Txn.Amount) + uint64(stxn.Txn.Fee)
-		if spent != matrixAccountFunding {
-			t.Fatalf("matrix transaction %d spends %d microAlgos, want funded balance %d", i+1, spent, matrixAccountFunding)
+		wantSpent := matrixAccountFunding - signTxn.retainedBalance
+		if spent != wantSpent {
+			t.Fatalf("matrix transaction %d spends %d microAlgos, want %d", i+1, spent, wantSpent)
+		}
+		if signTxn.retainedBalance == 0 && stxn.Txn.CloseRemainderTo.IsZero() {
+			t.Fatalf("matrix transaction %d must close its account", i+1)
+		}
+		if signTxn.retainedBalance != 0 && !stxn.Txn.CloseRemainderTo.IsZero() {
+			t.Fatalf("bounded matrix transaction %d unexpectedly closes its account", i+1)
 		}
 	}
 }
@@ -704,13 +930,15 @@ func waitForMatrixFundingVisibility(
 	accounts []includedKeyTypeAccount,
 ) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	observedOnce := false
 	lastIssue := "funded accounts were not visible"
-	for time.Now().Before(deadline) {
+	for ctx.Err() == nil {
 		allVisible := true
 		for _, account := range accounts {
-			info, err := testnet.Client.AccountInformation(account.address).Do(context.Background())
+			info, err := testnet.Client.AccountInformation(account.address).Do(ctx)
 			if err != nil {
 				allVisible = false
 				lastIssue = fmt.Sprintf("read %s account %s: %v", account.keyType, account.address, err)
@@ -729,21 +957,22 @@ func waitForMatrixFundingVisibility(
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		if observedOnce {
+		if testnet.Network == harness.IntegrationNetworkLocalnet || observedOnce {
 			return
 		}
 
 		// Public algod endpoints may load-balance account reads and simulation
 		// across nodes. Require the funded state to remain visible across one
 		// additional round before asking a potentially different node to
-		// simulate the group.
-		status, err := testnet.Client.Status().Do(context.Background())
+		// simulate the group. LocalNet may not produce empty rounds, so the
+		// confirmed balance reads above are sufficient for that profile.
+		status, err := testnet.Client.Status().Do(ctx)
 		if err != nil {
 			lastIssue = fmt.Sprintf("read algod status after funding: %v", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		if _, err := testnet.Client.StatusAfterBlock(status.LastRound).Do(context.Background()); err != nil {
+		if _, err := testnet.Client.StatusAfterBlock(status.LastRound).Do(ctx); err != nil {
 			lastIssue = fmt.Sprintf("wait for post-funding round: %v", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
@@ -753,67 +982,134 @@ func waitForMatrixFundingVisibility(
 	t.Fatalf("matrix funding did not become consistently visible within 30s: %s", lastIssue)
 }
 
-func bestEffortSubmitMatrixDrain(t *testing.T, testnet *harness.TestnetConfig, signedHexes []string) {
-	t.Helper()
-	txids, err := sendMatrixDrainGroup(testnet, signedHexes)
-	if err != nil {
-		t.Logf("WARNING: matrix cleanup could not submit signed drain group: %v", err)
-		return
+func matrixCleanupReserves(plans []matrixRekeyCleanupPlan) map[string]uint64 {
+	reserves := make(map[string]uint64, len(plans))
+	for _, plan := range plans {
+		reserves[plan.account.address] = matrixBaseMinimumBalance + plan.targetFee
 	}
-	t.Logf("matrix cleanup returned batch funding with drain group %s", txids[0])
+	return reserves
 }
 
-func submitMatrixDrainGroup(t *testing.T, testnet *harness.TestnetConfig, signedHexes []string) []string {
-	t.Helper()
-	txids, err := sendMatrixDrainGroup(testnet, signedHexes)
-	if err != nil {
-		t.Fatalf("failed to submit signed matrix drain group: %v", err)
-	}
-	return txids
+type matrixBatchCleanupState struct {
+	funded     bool
+	settlement []string
+	settled    bool
+	plans      []matrixRekeyCleanupPlan
+	rekeyed    []bool
+	closed     []bool
 }
 
-func sendMatrixDrainGroup(testnet *harness.TestnetConfig, signedHexes []string) ([]string, error) {
+func newMatrixBatchCleanupState(
+	settlement []string,
+	plans []matrixRekeyCleanupPlan,
+) *matrixBatchCleanupState {
+	return &matrixBatchCleanupState{
+		settlement: append([]string(nil), settlement...),
+		plans:      append([]matrixRekeyCleanupPlan(nil), plans...),
+		rekeyed:    make([]bool, len(plans)),
+		closed:     make([]bool, len(plans)),
+	}
+}
+
+func (s *matrixBatchCleanupState) complete() bool {
+	if s == nil || !s.settled {
+		return false
+	}
+	for i := range s.plans {
+		if !s.rekeyed[i] || !s.closed[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *matrixBatchCleanupState) run(testnet *harness.TestnetConfig, destination string) error {
+	if s == nil {
+		return fmt.Errorf("matrix cleanup state is nil")
+	}
+	if !s.settled {
+		txids, err := sendMatrixSignedGroup(testnet, s.settlement)
+		if err != nil {
+			return fmt.Errorf("submit matrix settlement group: %w", err)
+		}
+		if len(txids) == 0 {
+			return fmt.Errorf("matrix settlement group produced no transaction IDs")
+		}
+		s.settled = true
+	}
+	for i, plan := range s.plans {
+		if !s.rekeyed[i] {
+			if _, err := sendMatrixSignedGroup(testnet, plan.signedHexes); err != nil {
+				return fmt.Errorf("rekey %s cleanup authority: %w", plan.account.keyType, err)
+			}
+			s.rekeyed[i] = true
+		}
+		if !s.closed[i] {
+			if err := closeMatrixRekeyedAccount(
+				testnet, plan.account.address, destination, plan.cleanupPrivateKey,
+			); err != nil {
+				return fmt.Errorf("close rekeyed %s account: %w", plan.account.keyType, err)
+			}
+			s.closed[i] = true
+		}
+	}
+	return nil
+}
+
+func sendMatrixSignedGroup(testnet *harness.TestnetConfig, signedHexes []string) ([]string, error) {
 	rawGroup := make([]byte, 0)
 	txids := make([]string, 0, len(signedHexes))
 	for _, signedHex := range signedHexes {
 		signedBytes, err := hex.DecodeString(signedHex)
 		if err != nil {
-			return nil, fmt.Errorf("decode signed drain transaction: %w", err)
+			return nil, fmt.Errorf("decode signed matrix transaction: %w", err)
 		}
 		var stxn types.SignedTxn
 		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
-			return nil, fmt.Errorf("decode signed drain transaction: %w", err)
+			return nil, fmt.Errorf("decode signed matrix transaction: %w", err)
 		}
 		rawGroup = append(rawGroup, signedBytes...)
 		txids = append(txids, algocrypto.GetTxID(stxn.Txn))
 	}
 	if len(rawGroup) == 0 {
-		return nil, fmt.Errorf("signed drain group is empty")
+		return nil, fmt.Errorf("signed matrix group is empty")
 	}
+	if _, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background()); err != nil {
+		return nil, err
+	}
+	if _, err := testnet.WaitForConfirmation(txids[0], 10); err != nil {
+		return nil, fmt.Errorf("wait for matrix group %s: %w", txids[0], err)
+	}
+	return txids, nil
+}
 
-	const attempts = 8
-	var lastErr error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		_, err := testnet.Client.SendRawTransaction(rawGroup).Do(context.Background())
-		if err == nil {
-			if _, err := testnet.WaitForConfirmation(txids[0], 10); err != nil {
-				return nil, fmt.Errorf("wait for drain group %s: %w", txids[0], err)
-			}
-			return txids, nil
-		}
-		lastErr = err
-		if !strings.Contains(err.Error(), " balance 0 below min ") || attempt == attempts {
-			break
-		}
-		status, statusErr := testnet.Client.Status().Do(context.Background())
-		if statusErr != nil {
-			return nil, fmt.Errorf("submit drain group after account-visibility failure: %w (status: %v)", err, statusErr)
-		}
-		if _, waitErr := testnet.Client.StatusAfterBlock(status.LastRound).Do(context.Background()); waitErr != nil {
-			return nil, fmt.Errorf("submit drain group after account-visibility failure: %w (wait: %v)", err, waitErr)
-		}
+func closeMatrixRekeyedAccount(
+	testnet *harness.TestnetConfig,
+	account string,
+	destination string,
+	authPrivateKey stded25519.PrivateKey,
+) error {
+	sp, err := testnet.GetSuggestedParams()
+	if err != nil {
+		return fmt.Errorf("read suggested params: %w", err)
 	}
-	return nil, fmt.Errorf("submit drain group after %d account-visibility attempts: %w", attempts, lastErr)
+	txn, err := transaction.MakePaymentTxn(
+		account, destination, 0, []byte("keytype-matrix-cleanup-close"), destination, sp,
+	)
+	if err != nil {
+		return fmt.Errorf("build close transaction: %w", err)
+	}
+	txid, signedBytes, err := algocrypto.SignTransaction(authPrivateKey, txn)
+	if err != nil {
+		return fmt.Errorf("sign close transaction: %w", err)
+	}
+	if _, err := testnet.Client.SendRawTransaction(signedBytes).Do(context.Background()); err != nil {
+		return fmt.Errorf("submit close transaction: %w", err)
+	}
+	if _, err := testnet.WaitForConfirmation(txid, 10); err != nil {
+		return fmt.Errorf("wait for close transaction %s: %w", txid, err)
+	}
+	return nil
 }
 
 func matrixCompileAlgod(t *testing.T, network *harness.TestnetConfig) *sdkalgod.Client {
@@ -895,6 +1191,8 @@ func validateMatrixOpcodeCeilings(
 
 func matrixDeclaredOpcodeProfile(t *testing.T, keyType string) lsigresource.OpcodeProfile {
 	t.Helper()
+	falcon.RegisterClient()
+
 	switch keyType {
 	case "aplane.ed25519.v1":
 		return edlsigv1.NewProvider().LogicSigOpcodeProfile()
