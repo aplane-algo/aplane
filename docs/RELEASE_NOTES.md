@@ -40,8 +40,8 @@ nodes through the ordinary key-management workflows. Recovery uses a 25-word
 Algorand mnemonic, signing emits top-level `PQsig` scheme `f1`, and APlane
 accounts for the protocol's additional post-quantum fee contribution.
 
-This release supports exactly the consensus-v42 authorization contract (with
-FNet's `fnet5` identifier as an explicit deployment alias). It is distinct
+This release supports exactly the consensus-v42 authorization contract. It is
+distinct
 from the LogicSig type `aplane.falcon1024.v1`, whose
 24-word mnemonic and LogicSig key material are not convertible to native
 Falcon.

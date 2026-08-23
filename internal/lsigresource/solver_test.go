@@ -29,10 +29,6 @@ func TestResolveConsensusUsesSingleV42Contract(t *testing.T) {
 	if v42.Version != CurrentConsensusVersion || v42.PerByteTxnSurcharge != 100 {
 		t.Fatalf("v42 profile = %#v", v42)
 	}
-	fnet := mustProfile(t, protocol.ConsensusVFnet5)
-	if fnet != v42 {
-		t.Fatalf("fnet5 profile = %#v, want v42 contract %#v", fnet, v42)
-	}
 	for _, unsupported := range []protocol.ConsensusVersion{protocol.ConsensusV41, protocol.ConsensusFuture, "future-unreviewed"} {
 		if _, err := ResolveConsensus(string(unsupported)); !errors.Is(err, ErrUnknownConsensus) {
 			t.Fatalf("ResolveConsensus(%q) error = %v, want unsupported", unsupported, err)

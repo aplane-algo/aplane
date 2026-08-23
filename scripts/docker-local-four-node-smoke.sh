@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Smoke-test an APlane Docker topology against LocalNet or FNet:
+# Smoke-test an APlane Docker topology against LocalNet:
 #   1. signer apsigner node
 #   2. sentry apsigner node
 #   3. client/admin node with apshell and apadmin
-#   4. AlgoKit-style LocalNet algod/KMD node (LocalNet profile only)
+#   4. AlgoKit-style LocalNet algod/KMD node
 #
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
@@ -41,15 +41,7 @@ KMD_URL="http://algod:7833"
 ACCOUNT_FUND_AMOUNT=100000000
 ALGOD_CONFIG_DIR=""
 LOCALNET_GENESIS_HASH=""
-NETWORK_PROFILE="localnet"
 NETWORK_TOKEN="localnet"
-FNET_ALGOD_URL="${APLANE_FNET_ALGOD_URL:-https://fnet-api.4160.nodely.dev}"
-FNET_ALGOD_TOKEN="${APLANE_FNET_ALGOD_TOKEN:-}"
-FNET_GENESIS_ID="fnet-v1"
-FNET_GENESIS_HASH="kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
-FNET_CONSENSUS="fnet5"
-FNET_FUNDING_HELPER=""
-FNET_FUNDING_ADDRESS=""
 FALCON_ADDRESS=""
 SENTRY_COMPONENT_KEY=""
 SENTRY_REFERENCE_NAME="docker-sentry"
@@ -79,15 +71,11 @@ Options:
   --sdk-version <v>     Install SDK packages at this version from PyPI/npm (default: latest)
   --sdk-repo <path>     Path to aplanesdk repo or its python/ dir
                         (default: APLANE_SDKS_REPO, APLANE_SDK_REPO, ../aplanesdk, ~/aplanesdk)
-  --network <profile>    Network profile: localnet or fnet (default: localnet)
   --keep-container      Leave containers and network running for debugging
   -h, --help            Show this help
 
 This test requires Docker privileges. LocalNet starts signer, sentry,
-client/admin, and an AlgoKit-style algod/KMD node. FNet starts the three APlane
-containers and uses the configured public FNet algod. The FNet profile requires
-TEST_FUNDING_MNEMONIC for a funded protocol-native Falcon-1024 account; the
-mnemonic remains on the host and is not copied into any container.
+client/admin, and an AlgoKit-style algod/KMD node.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
@@ -171,11 +159,6 @@ parse_args() {
                 SDK_REPO="$2"
                 shift 2
                 ;;
-            --network)
-                [ $# -ge 2 ] || die "--network requires a value"
-                NETWORK_PROFILE="$2"
-                shift 2
-                ;;
             --keep-container)
                 KEEP_CONTAINER=1
                 shift
@@ -192,27 +175,7 @@ parse_args() {
 }
 
 select_network_profile() {
-    case "$NETWORK_PROFILE" in
-        localnet)
-            NETWORK_TOKEN="localnet"
-            ;;
-        fnet)
-            [ -n "${TEST_FUNDING_MNEMONIC:-}" ] \
-                || die "TEST_FUNDING_MNEMONIC must identify a funded native Falcon-1024 FNet account"
-            NETWORK_TOKEN="fnet"
-            ALGOD_URL="$FNET_ALGOD_URL"
-            ALGOD_TOKEN="$FNET_ALGOD_TOKEN"
-            KMD_URL=""
-            ACCOUNT_FUND_AMOUNT=150000
-            NETWORK_NAME="aplane-fnet-smoke-net-$RUN_ID"
-            SIGNER_CONTAINER="aplane-fnet-signer-$RUN_ID"
-            SENTRY_CONTAINER="aplane-fnet-sentry-$RUN_ID"
-            CLIENT_CONTAINER="aplane-fnet-client-$RUN_ID"
-            ;;
-        *)
-            die "unsupported Docker smoke network profile: $NETWORK_PROFILE"
-            ;;
-    esac
+    NETWORK_TOKEN="localnet"
 }
 
 docker_exec() {
@@ -236,9 +199,7 @@ docker_exec_as_tester() {
 cleanup() {
     if [ "$KEEP_CONTAINER" = "1" ]; then
         printf '\nKept containers for debugging:\n'
-        if [ "$NETWORK_PROFILE" = "localnet" ]; then
-            printf '  %s\n' "$ALGOD_CONTAINER"
-        fi
+        printf '  %s\n' "$ALGOD_CONTAINER"
         printf '  %s\n' "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER"
         printf 'Kept Docker network: %s\n' "$NETWORK_NAME"
         if [ -n "$ALGOD_CONFIG_DIR" ]; then
@@ -246,16 +207,11 @@ cleanup() {
         fi
         return
     fi
-    if [ "$NETWORK_PROFILE" = "localnet" ]; then
-        docker rm -f "$ALGOD_CONTAINER" >/dev/null 2>&1 || true
-    fi
+    docker rm -f "$ALGOD_CONTAINER" >/dev/null 2>&1 || true
     docker rm -f "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER" >/dev/null 2>&1 || true
     docker network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
     if [ -n "$ALGOD_CONFIG_DIR" ]; then
         rm -rf "$ALGOD_CONFIG_DIR"
-    fi
-    if [ -n "$FNET_FUNDING_HELPER" ]; then
-        rm -f "$FNET_FUNDING_HELPER"
     fi
 }
 
@@ -424,26 +380,24 @@ JSON
 
 start_containers() {
     docker network create "$NETWORK_NAME" >/dev/null
-    if [ "$NETWORK_PROFILE" = "localnet" ]; then
-        write_algod_localnet_files
-        docker run \
-            --name "$ALGOD_CONTAINER" \
-            --network "$NETWORK_NAME" \
-            --network-alias algod \
-            --init \
-            -e KMD_TOKEN="$ALGOD_TOKEN" \
-            -e TOKEN="$ALGOD_TOKEN" \
-            -e ADMIN_TOKEN="$ALGOD_TOKEN" \
-            -e GOSSIP_PORT=10000 \
-            -e START_KMD=1 \
-            -e ALGOD_PORT=8080 \
-            -e KMD_PORT=7833 \
-            -e ALGORAND_DATA=/algod/data \
-            -v "$ALGOD_CONFIG_DIR/config.json:/etc/algorand/config.json:ro" \
-            -v "$ALGOD_CONFIG_DIR/template.json:/etc/algorand/template.json:ro" \
-            -v "$ALGOD_CONFIG_DIR/goal_mount:/root/goal_mount" \
-            -d "$ALGOD_IMAGE" >/dev/null
-    fi
+    write_algod_localnet_files
+    docker run \
+        --name "$ALGOD_CONTAINER" \
+        --network "$NETWORK_NAME" \
+        --network-alias algod \
+        --init \
+        -e KMD_TOKEN="$ALGOD_TOKEN" \
+        -e TOKEN="$ALGOD_TOKEN" \
+        -e ADMIN_TOKEN="$ALGOD_TOKEN" \
+        -e GOSSIP_PORT=10000 \
+        -e START_KMD=1 \
+        -e ALGOD_PORT=8080 \
+        -e KMD_PORT=7833 \
+        -e ALGORAND_DATA=/algod/data \
+        -v "$ALGOD_CONFIG_DIR/config.json:/etc/algorand/config.json:ro" \
+        -v "$ALGOD_CONFIG_DIR/template.json:/etc/algorand/template.json:ro" \
+        -v "$ALGOD_CONFIG_DIR/goal_mount:/root/goal_mount" \
+        -d "$ALGOD_IMAGE" >/dev/null
     docker run --name "$SIGNER_CONTAINER" --network "$NETWORK_NAME" --network-alias signer -d "$IMAGE_NAME" >/dev/null
     docker run --name "$SENTRY_CONTAINER" --network "$NETWORK_NAME" --network-alias sentry -d "$IMAGE_NAME" >/dev/null
     docker run --name "$CLIENT_CONTAINER" --network "$NETWORK_NAME" --network-alias client -d "$IMAGE_NAME" >/dev/null
@@ -699,140 +653,19 @@ verify_localnet_reachable_from_nodes() {
     done
 }
 
-wait_for_fnet() {
-    local i
-    for i in $(seq 1 30); do
-        if docker_exec_as_tester "$CLIENT_CONTAINER" "curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/v2/status' >/tmp/algod-status.json"; then
-            return 0
-        fi
-        sleep 1
-    done
-    die "FNet algod $ALGOD_URL did not become reachable from the client container within 30s"
-}
-
-build_fnet_funding_helper() {
-    FNET_FUNDING_HELPER="$(mktemp)"
-    go build -o "$FNET_FUNDING_HELPER" ./test/integration/cmd/native-funding
-}
-
-run_fnet_funding_helper() {
-    [ -x "$FNET_FUNDING_HELPER" ] || die "FNet funding helper is not built"
-    APLANE_INTEGRATION_NETWORK=fnet \
-        ALGOD_URL="$ALGOD_URL" \
-        ALGOD_TOKEN="$ALGOD_TOKEN" \
-        "$FNET_FUNDING_HELPER" "$@"
-}
-
-prepare_fnet_funding() {
-    build_fnet_funding_helper
-    FNET_FUNDING_ADDRESS="$(run_fnet_funding_helper address)"
-    [ -n "$FNET_FUNDING_ADDRESS" ] || die "could not derive FNet funding account address"
-
-    local balance
-    balance="$(run_fnet_funding_helper balance "$FNET_FUNDING_ADDRESS")"
-    [ -n "$balance" ] || die "could not read FNet funding account balance"
-    if [ "$balance" -lt 600000 ]; then
-        die "FNet funding account $FNET_FUNDING_ADDRESS has $balance microAlgos; at least 600000 are required"
-    fi
-    printf 'FNet native Falcon funding account %s balance: %s microAlgos\n' "$FNET_FUNDING_ADDRESS" "$balance"
-}
-
-configure_yaml_network_endpoint() {
-    local container="$1"
-    local config_path="$2"
-    docker_exec_as_tester "$container" "awk -v selected='$NETWORK_TOKEN' -v server='$ALGOD_URL' -v token='$ALGOD_TOKEN' '
-        /^  [a-z0-9_-]+:/ {
-            name = \$1
-            sub(/:$/, \"\", name)
-            in_selected = (name == selected)
-        }
-        in_selected && /^[[:space:]]*server: / {
-            print \"      server: \" server
-            next
-        }
-        in_selected && /^[[:space:]]*token: / {
-            print \"      token: \\\"\" token \"\\\"\"
-            next
-        }
-        { print }
-    ' '$config_path' > '$config_path.tmp' && mv '$config_path.tmp' '$config_path'"
-}
-
-configure_node_fnet() {
-    local container="$1"
-    local config_path="/home/$TEST_USER/aplane/apsigner/config.yaml"
-    configure_yaml_network_endpoint "$container" "$config_path"
-    docker_exec_as_tester "$container" "sed -i 's/^teal_compile_network:.*/teal_compile_network: fnet/' '$config_path'"
-}
-
-configure_client_fnet() {
-    local config_path="/home/$TEST_USER/aplane/apclient/config.yaml"
-    configure_yaml_network_endpoint "$CLIENT_CONTAINER" "$config_path"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "sed -i 's/^network:.*/network: fnet/' '$config_path' && \
-        cat > /home/$TEST_USER/aplane/apclient/plugins.yaml <<'YAML'
-enabled_plugins: []
-YAML"
-}
-
-verify_fnet_reachable_from_nodes() {
-    local container
-    for container in "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER"; do
-        docker_exec_as_tester "$container" "set -e
-            curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/versions' > /tmp/algod-versions.json
-            curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/v2/status' > /tmp/algod-status.json
-            curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/v2/transactions/params' > /tmp/algod-params.json
-            python3 - <<'PY'
-import json
-
-with open('/tmp/algod-versions.json', encoding='utf-8') as fh:
-    versions = json.load(fh)
-with open('/tmp/algod-status.json', encoding='utf-8') as fh:
-    status = json.load(fh)
-with open('/tmp/algod-params.json', encoding='utf-8') as fh:
-    params = json.load(fh)
-
-genesis_hash = params.get('genesis-hash', '')
-assert params.get('genesis-id') == '$FNET_GENESIS_ID', params
-assert genesis_hash == '$FNET_GENESIS_HASH', params
-assert params.get('consensus-version') == '$FNET_CONSENSUS', params
-assert status.get('last-version') == '$FNET_CONSENSUS', status
-PY"
-    done
-}
-
 prepare_selected_network() {
-    case "$NETWORK_PROFILE" in
-        localnet)
-            wait_for_localnet
-            discover_localnet
-            ;;
-        fnet)
-            wait_for_fnet
-            prepare_fnet_funding
-            ;;
-    esac
+    wait_for_localnet
+    discover_localnet
 }
 
 configure_selected_network() {
-    case "$NETWORK_PROFILE" in
-        localnet)
-            configure_node_localnet "$SIGNER_CONTAINER"
-            configure_node_localnet "$SENTRY_CONTAINER"
-            configure_client_localnet
-            ;;
-        fnet)
-            configure_node_fnet "$SIGNER_CONTAINER"
-            configure_node_fnet "$SENTRY_CONTAINER"
-            configure_client_fnet
-            ;;
-    esac
+    configure_node_localnet "$SIGNER_CONTAINER"
+    configure_node_localnet "$SENTRY_CONTAINER"
+    configure_client_localnet
 }
 
 verify_selected_network_reachable() {
-    case "$NETWORK_PROFILE" in
-        localnet) verify_localnet_reachable_from_nodes ;;
-        fnet) verify_fnet_reachable_from_nodes ;;
-    esac
+    verify_localnet_reachable_from_nodes
 }
 
 configure_client_endpoints() {
@@ -1531,13 +1364,8 @@ generate_guarded_key() {
 generate_corridor_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "Corridor admin public key is not set"
-    if [ "$NETWORK_PROFILE" = "localnet" ]; then
-        CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
-        CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
-    else
-        CORRIDOR_ALLOWED_ADDRESS="$FNET_FUNDING_ADDRESS"
-        CORRIDOR_BLOCKED_ADDRESS="$GUARDED_ADDRESS"
-    fi
+    CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
+    CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "could not resolve corridor allowed account"
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "could not resolve corridor blocked account"
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
@@ -1596,18 +1424,8 @@ fund_account_from_localnet() {
     printf '%s\n' "$out"
 }
 
-fund_account_from_fnet() {
-    local address="$1"
-    local label="$2"
-    [ -n "$address" ] || die "$label address is not set"
-    run_fnet_funding_helper fund "$address" "$ACCOUNT_FUND_AMOUNT"
-}
-
 fund_account() {
-    case "$NETWORK_PROFILE" in
-        localnet) fund_account_from_localnet "$@" ;;
-        fnet) fund_account_from_fnet "$@" ;;
-    esac
+    fund_account_from_localnet "$@"
 }
 
 verify_account_funded() {
@@ -1617,11 +1435,7 @@ verify_account_funded() {
 
     local balance i
     for i in $(seq 1 20); do
-        if [ "$NETWORK_PROFILE" = "localnet" ]; then
-            balance="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account balance -a '$address' -d /algod/data 2>/dev/null | awk '{ print \$1; exit }'")"
-        else
-            balance="$(run_fnet_funding_helper balance "$address" 2>/dev/null || true)"
-        fi
+        balance="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account balance -a '$address' -d /algod/data 2>/dev/null | awk '{ print \$1; exit }'")"
         if [ -n "$balance" ] && [ "$balance" -ge "$ACCOUNT_FUND_AMOUNT" ]; then
             printf '%s account %s balance: %s microAlgos\n' "$label" "$address" "$balance"
             return 0
@@ -1861,11 +1675,7 @@ main() {
     log "Building Ubuntu test image"
     build_image
 
-    if [ "$NETWORK_PROFILE" = "localnet" ]; then
-        log "Starting four-container Docker network with shared LocalNet"
-    else
-        log "Starting three-container Docker network for FNet"
-    fi
+    log "Starting four-container Docker network with shared LocalNet"
     start_containers
 
     log "Creating test users"

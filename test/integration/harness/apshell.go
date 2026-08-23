@@ -128,7 +128,7 @@ func (a *ApshellHarness) RunWithInput(input string, args ...string) (string, err
 func ensureIntegrationClientConfig(clientData string) error {
 	network := IntegrationNetwork()
 	if network == "" {
-		return fmt.Errorf("%s must be set to %q, %q, or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet, IntegrationNetworkFNet)
+		return fmt.Errorf("%s must be set to %q or %q", IntegrationNetworkEnv, IntegrationNetworkTestnet, IntegrationNetworkLocalnet)
 	}
 	cfg, err := config.LoadConfig(clientData)
 	if err != nil {

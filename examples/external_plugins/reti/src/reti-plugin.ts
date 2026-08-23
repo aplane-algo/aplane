@@ -129,12 +129,6 @@ const NETWORK_DEFAULTS: Record<string, NetworkDefaults> = {
     retiAppId: 2020356933n,
     feeSink: 'A7NMWS3NT3IUDMLVO26ULGXGIIOUQ3ND2TXSER6EBGRZNOBOUIQXHIBGDE',
   },
-  fnet: {
-    algodUrl: 'https://fnet-api.4160.nodely.dev',
-    nfdApiUrl: 'https://api.testnet.nf.domains',
-    retiAppId: 639070n,
-    feeSink: 'FEESINK7OJKODDB5ZB4W2SRYPUSTOTK65UDCUYZ5DB4BW3VOHDHGO6JUNE',
-  },
   localnet: {
     algodUrl: 'http://localhost:4001',
     nfdApiUrl: 'https://api.testnet.nf.domains',
@@ -1400,7 +1394,7 @@ function handleGetInfo(): any {
     version: '1.0.0',
     description: 'Reti staking protocol integration',
     commands: ['reti'],
-    networks: ['testnet', 'mainnet', 'betanet', 'fnet', 'localnet', 'sandbox'],
+    networks: ['testnet', 'mainnet', 'betanet', 'localnet', 'sandbox'],
     status: pluginState.initialized ? 'ready' : 'starting',
   }
 }

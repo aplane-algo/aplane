@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-fnet native-falcon-fnet-test integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-fnet-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -487,12 +487,6 @@ docker-systemd-test:
 docker-local-test:
 	@./scripts/docker-local-four-node-smoke.sh $(ARGS)
 
-# Same installed signer/sentry/client topology as docker-local-test, but uses
-# the public FNet algod and a funded native Falcon TEST_FUNDING_MNEMONIC from
-# the host. The secret is not copied into the Docker containers.
-docker-fnet-test:
-	@./scripts/docker-local-four-node-smoke.sh --network fnet $(ARGS)
-
 # Same topology and assertions as docker-local-test, but installs APlane from
 # GitHub release assets and installs the Python SDK from PyPI and TypeScript SDK
 # from npm. Pin versions with
@@ -677,8 +671,7 @@ store-release-drill:
 # Run integration tests (tests in test/integration/)
 # Always regenerates the shared fixture and .env.test first to avoid stale
 # /tmp/aplane-test-env state or mismatched passphrases.
-# Requires APLANE_INTEGRATION_NETWORK=testnet or localnet. Use the dedicated
-# integration-test-fnet target for the full FNet profile.
+# Requires APLANE_INTEGRATION_NETWORK=testnet or localnet.
 integration-test:
 	@echo "Running integration tests..."
 	@./test/setup-test-env.sh
@@ -692,24 +685,13 @@ integration-test-testnet:
 integration-test-localnet:
 	@APLANE_INTEGRATION_NETWORK=localnet $(MAKE) integration-test
 
-integration-test-fnet:
-	@APLANE_INTEGRATION_NETWORK=fnet APLANE_FNET_FULL_SUITE=1 $(MAKE) integration-test
-
-# Focused positive acceptance for protocol-native Falcon-1024 authorization.
-# This deliberately omits the unrelated SDK integration pass
-# run by the broad integration target.
-native-falcon-fnet-test:
-	@echo "Running native Falcon FNet acceptance tests..."
-	@APLANE_INTEGRATION_NETWORK=fnet ./test/setup-test-env.sh
-	@set -a && . ./.env.test && set +a && APLANE_INTEGRATION_NETWORK=fnet INTEGRATION=1 go test -count=1 -timeout 25m -v -run '^TestNativeFalconFNet' $(INTEGRATION_TEST_PKG)
-
 # Validate reviewed LogicSig opcode ceilings through the same algod selected
 # for TEAL compilation. TEST_FUNDING_MNEMONIC must identify a funded native
 # Falcon account on the selected integration network.
 .PHONY: logicsig-opcode-validation
 logicsig-opcode-validation:
 	@if [ -z "$(APLANE_INTEGRATION_NETWORK)" ]; then \
-		echo "APLANE_INTEGRATION_NETWORK must be set to fnet, testnet, or localnet"; \
+		echo "APLANE_INTEGRATION_NETWORK must be set to testnet or localnet"; \
 		exit 2; \
 	fi
 	@APLANE_INTEGRATION_NETWORK=$(APLANE_INTEGRATION_NETWORK) ./test/setup-test-env.sh
@@ -994,16 +976,14 @@ help:
 	@echo "  make store-release-drill - Exercise staged amd64 release binaries against a blank store"
 	@echo "  APLANE_INTEGRATION_NETWORK=testnet make integration-test - Regenerate fixture and run integration tests"
 	@echo "  APLANE_INTEGRATION_NETWORK=localnet make integration-test - Run integration tests against LocalNet"
-	@echo "  make integration-test-fnet - Run the full integration suite against FNet"
 	@echo "  make integration-test-testnet - Regenerate fixture and run integration tests against testnet"
 	@echo "  make integration-test-localnet - Regenerate fixture and run integration tests against LocalNet"
-	@echo "  APLANE_INTEGRATION_NETWORK=fnet make logicsig-opcode-validation - Simulate reviewed LogicSig ceilings through the compile algod"
+	@echo "  APLANE_INTEGRATION_NETWORK=testnet make logicsig-opcode-validation - Simulate reviewed LogicSig ceilings through the compile algod"
 	@echo "  make integration-test-reuse - Run integration tests with existing fixture"
 	@echo "  make soak-test-localnet - Run opt-in LocalNet transaction soak test"
 	@echo "  make apshell-command-coverage-localnet - Run broad LocalNet apshell command coverage"
 	@echo "  make docker-systemd-test - End-to-end systemd install+uninstall in a fresh Ubuntu systemd container (requires docker)"
 	@echo "  make docker-local-test - End-to-end local Docker install smoke test with shared LocalNet and local Python SDK checkout (requires docker)"
-	@echo "  TEST_FUNDING_MNEMONIC=... make docker-fnet-test - Run the Docker signer/sentry/client smoke topology against FNet"
 	@echo "  make docker-local-release-test - Same Docker smoke test using GitHub APlane release assets plus PyPI/npm SDKs (requires docker)"
 	@echo ""
 	@echo "External Plugins:"

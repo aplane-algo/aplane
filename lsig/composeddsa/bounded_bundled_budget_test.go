@@ -67,7 +67,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 			composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminKey),
 		}, bytecode: 5924, spendArgs: 3358, adminArgs: 2846, spendGroup: 4, adminGroup: 3, spendFee: 4195, adminFee: 3294},
 	}
-	profile, err := lsigresource.ResolveConsensus("fnet5")
+	profile, err := lsigresource.CurrentConsensus()
 	if err != nil {
 		t.Fatal(err)
 	}

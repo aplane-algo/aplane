@@ -18,40 +18,33 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
-func TestNativeFalconFNetProfile(t *testing.T) {
-	if harness.IntegrationNetwork() != harness.IntegrationNetworkFNet {
-		t.Skip("set APLANE_INTEGRATION_NETWORK=fnet to run native Falcon live acceptance")
-	}
-
+func TestNativeFalconProfile(t *testing.T) {
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
-		t.Fatalf("validate FNet network profile: %v", err)
+		t.Fatalf("validate network profile: %v", err)
 	}
-	t.Logf("validated FNet genesis %s/%s at consensus %s",
+	t.Logf("validated genesis %s/%s at consensus %s",
 		network.GenesisID, network.GenesisHash, network.ConsensusVersion)
 
 	funding, err := harness.NewFundingAccount()
 	if err != nil {
-		t.Fatalf("load FNet native Falcon funding account: %v", err)
+		t.Fatalf("load native Falcon funding account: %v", err)
 	}
 	if err := funding.EnsureFunded(network.Client); err != nil {
-		t.Fatalf("validate FNet native Falcon funding account: %v", err)
+		t.Fatalf("validate native Falcon funding account: %v", err)
 	}
 	balance, err := network.GetAccountInfo(funding.Address)
 	if err != nil {
 		t.Fatalf("read funded native Falcon account: %v", err)
 	}
-	t.Logf("validated funded FNet native Falcon account %s with %d microAlgos", funding.Address, balance)
+	t.Logf("validated funded native Falcon account %s with %d microAlgos", funding.Address, balance)
 }
 
-func TestNativeFalconFNetPayment(t *testing.T) {
-	if harness.IntegrationNetwork() != harness.IntegrationNetworkFNet {
-		t.Skip("set APLANE_INTEGRATION_NETWORK=fnet to run native Falcon live acceptance")
-	}
+func TestNativeFalconPayment(t *testing.T) {
 	harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
 	network, err := harness.NewTestnetConfig()
 	if err != nil {
-		t.Fatalf("validate FNet network profile: %v", err)
+		t.Fatalf("validate network profile: %v", err)
 	}
 
 	signerd := harness.NewSignerHarness(t)
@@ -64,7 +57,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 
 	funder, err := harness.NewFundTestAccount(network.Client)
 	if err != nil {
-		t.Fatalf("load FNet native Falcon funder: %v", err)
+		t.Fatalf("load native Falcon funder: %v", err)
 	}
 	fundingAddress := funder.GetAddress()
 
@@ -82,7 +75,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 		t.Fatal("signer did not publish generated test keys")
 	}
 
-	exportPassphrase := "public-fnet-native-falcon-backup-passphrase"
+	exportPassphrase := "public-native-falcon-backup-passphrase"
 	backupResult, err := apadmin.CreateBackup(exportPassphrase)
 	if err != nil {
 		t.Fatalf("back up native Falcon key: %v", err)
@@ -108,7 +101,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 
 	sp, err := network.GetSuggestedParams()
 	if err != nil {
-		t.Fatalf("get FNet suggested params: %v", err)
+		t.Fatalf("get suggested params: %v", err)
 	}
 	firstNative, err := transaction.MakePaymentTxn(childAddress, fundingAddress, 0,
 		[]byte("aplane-native-falcon-group-a"), "", sp)
@@ -120,9 +113,9 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build second native Falcon group transaction: %v", err)
 	}
-	response := signFNetGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
-		nativeFNetSignRequest(childAddress, firstNative),
-		nativeFNetSignRequest(childAddress, secondNative),
+	response := signNativeFalconGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+		nativeFalconSignRequest(childAddress, firstNative),
+		nativeFalconSignRequest(childAddress, secondNative),
 	})
 	if len(response.Signed) != 2 {
 		t.Fatalf("native Falcon group response contains %d transactions, want 2", len(response.Signed))
@@ -143,7 +136,7 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 
 	sp, err = network.GetSuggestedParams()
 	if err != nil {
-		t.Fatalf("refresh FNet suggested params: %v", err)
+		t.Fatalf("refresh suggested params: %v", err)
 	}
 	nativeGrouped, err := transaction.MakePaymentTxn(childAddress, fundingAddress, 0,
 		[]byte("aplane-native-falcon-mixed"), "", sp)
@@ -155,9 +148,9 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build Ed25519 member of mixed group: %v", err)
 	}
-	mixedResponse := signFNetGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
-		nativeFNetSignRequest(childAddress, nativeGrouped),
-		nativeFNetSignRequest(edAddress, edGrouped),
+	mixedResponse := signNativeFalconGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+		nativeFalconSignRequest(childAddress, nativeGrouped),
+		nativeFalconSignRequest(edAddress, edGrouped),
 	})
 	if len(mixedResponse.Signed) != 2 {
 		t.Fatalf("mixed group response contains %d transactions, want 2", len(mixedResponse.Signed))
@@ -231,18 +224,18 @@ func TestNativeFalconFNetPayment(t *testing.T) {
 	if _, err := network.WaitForConfirmation(closeID, 10); err != nil {
 		t.Fatalf("native Falcon close did not confirm: %v", err)
 	}
-	t.Logf("confirmed native Falcon backup/restore, mixed group, rekey, spend, and close on FNet: funding=%s mixed=%s rekey=%s spend=%s unrekey=%s close=%s",
+	t.Logf("confirmed native Falcon backup/restore, mixed group, rekey, spend, and close: funding=%s mixed=%s rekey=%s spend=%s unrekey=%s close=%s",
 		nativeGroupIDs[0], mixedTxIDs[0], rekeyID, rekeyedSpendID, unrekeyID, closeID)
 }
 
-func nativeFNetSignRequest(authorizer string, txn types.Transaction) signerapi.SignRequest {
+func nativeFalconSignRequest(authorizer string, txn types.Transaction) signerapi.SignRequest {
 	return signerapi.SignRequest{
 		AuthAddress: authorizer,
 		TxnBytesHex: hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...)),
 	}
 }
 
-func signFNetGroup(t *testing.T, signerURL, token string, requests []signerapi.SignRequest) signerapi.GroupSignResponse {
+func signNativeFalconGroup(t *testing.T, signerURL, token string, requests []signerapi.SignRequest) signerapi.GroupSignResponse {
 	t.Helper()
 	status, body := postSignRequest(t, signerURL, "aplane "+token, signerapi.GroupSignRequest{Requests: requests})
 	if status != 200 {

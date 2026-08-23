@@ -371,13 +371,13 @@ func TestValidateAcceptsFrozenStructure(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsDeployedFNetV13FixedWidthBranches(t *testing.T) {
+func TestValidateAcceptsDeployedV13FixedWidthBranches(t *testing.T) {
 	program, expected := testExpectedProgramWithBranchEncoding(t, 1, false, false, func(b *testProgramBuilder) {
 		b.pushInt(1)
 		b.branch(0x42, "accept")
 	})
 	if err := Validate(program, expected); err != nil {
-		t.Fatalf("Validate() rejected deployed FNet branch encoding: %v", err)
+		t.Fatalf("Validate() rejected deployed v13 branch encoding: %v", err)
 	}
 }
 

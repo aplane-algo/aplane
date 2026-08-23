@@ -1067,11 +1067,6 @@ networks:
     algod:
       server: https://mainnet-api.4160.nodely.dev
       token: ""
-  fnet:
-    algod:
-      server: https://fnet-api.4160.nodely.dev
-      token: ""
-    genesis_hash: "kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
   localnet:
     algod:
       server: http://localhost:4001
@@ -1094,7 +1089,6 @@ network: testnet
 networks_allowed:
   - mainnet
   - testnet
-  - fnet
 
 signer_status_poll_interval: "10s"
 
@@ -1106,10 +1100,6 @@ networks:
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
-      token: ""
-  fnet:
-    algod:
-      server: https://fnet-api.4160.nodely.dev
       token: ""
   localnet:
     algod:
@@ -1955,7 +1945,6 @@ network: testnet
 networks_allowed:
   - mainnet
   - testnet
-  - fnet
 
 signer_status_poll_interval: "10s"
 
@@ -1967,10 +1956,6 @@ networks:
   mainnet:
     algod:
       server: https://mainnet-api.4160.nodely.dev
-      token: ""
-  fnet:
-    algod:
-      server: https://fnet-api.4160.nodely.dev
       token: ""
   localnet:
     algod:

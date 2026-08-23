@@ -16,8 +16,6 @@
 #     Falcon-1024 account (requires the v42 network upgrade)
 #   - localnet mode: a v42-capable AlgoKit LocalNet algod/KMD must be running;
 #     setup bootstraps a disposable native Falcon funding account from KMD
-#   - fnet mode: TEST_FUNDING_MNEMONIC must identify a funded native
-#     Falcon-1024 account on FNet
 #   - ssh-keygen must be available
 #
 # Output:
@@ -36,23 +34,22 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 INTEGRATION_NETWORK="${APLANE_INTEGRATION_NETWORK:-}"
 case "$INTEGRATION_NETWORK" in
-    testnet|localnet|fnet)
+    testnet|localnet)
         ;;
     "")
-        echo "ERROR: APLANE_INTEGRATION_NETWORK must be set to 'testnet', 'localnet', or 'fnet'" >&2
+        echo "ERROR: APLANE_INTEGRATION_NETWORK must be set to 'testnet' or 'localnet'" >&2
         echo "  Example: APLANE_INTEGRATION_NETWORK=testnet make integration-test" >&2
         echo "  Example: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
-        echo "  Example: APLANE_INTEGRATION_NETWORK=fnet make integration-test" >&2
         echo "  Setup only: APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh" >&2
         exit 1
         ;;
     *)
-        echo "ERROR: APLANE_INTEGRATION_NETWORK must be 'testnet', 'localnet', or 'fnet' (got '$INTEGRATION_NETWORK')" >&2
+        echo "ERROR: APLANE_INTEGRATION_NETWORK must be 'testnet' or 'localnet' (got '$INTEGRATION_NETWORK')" >&2
         exit 1
         ;;
 esac
 
-if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet" ]; } &&
+if [ "$INTEGRATION_NETWORK" = "testnet" ] &&
    [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
     MNEMONIC_FILE="$PROJECT_ROOT/test-mnemonic.sh"
     if [ -f "$MNEMONIC_FILE" ]; then
@@ -61,7 +58,7 @@ if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet"
     fi
 fi
 
-if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet" ]; } &&
+if [ "$INTEGRATION_NETWORK" = "testnet" ] &&
    [ -z "${TEST_FUNDING_MNEMONIC:-}" ]; then
     echo "ERROR: TEST_FUNDING_MNEMONIC must be set" >&2
     echo "  The native Falcon-1024 account must be funded on $INTEGRATION_NETWORK." >&2
@@ -70,15 +67,6 @@ if { [ "$INTEGRATION_NETWORK" = "testnet" ] || [ "$INTEGRATION_NETWORK" = "fnet"
     echo "  Or run against localnet with: APLANE_INTEGRATION_NETWORK=localnet make integration-test" >&2
     exit 1
 fi
-
-case "${APLANE_FNET_FULL_SUITE:-0}" in
-    0|1)
-        ;;
-    *)
-        echo "ERROR: APLANE_FNET_FULL_SUITE must be 0 or 1" >&2
-        exit 1
-        ;;
-esac
 
 if ! command -v ssh-keygen &>/dev/null; then
     echo "ERROR: ssh-keygen is required" >&2
@@ -99,7 +87,6 @@ LOCALNET_GENESIS_HASH=""
 LOCALNET_KMD_URL="${APLANE_LOCALNET_KMD_URL:-http://localhost:4002}"
 LOCALNET_WALLET="${APLANE_LOCALNET_WALLET:-unencrypted-default-wallet}"
 LOCALNET_WALLET_PASSWORD="${APLANE_LOCALNET_WALLET_PASSWORD:-}"
-FNET_INDEXER_URL=""
 INTEGRATION_GENESIS_ID=""
 INTEGRATION_GENESIS_HASH=""
 FUNDING_ADDRESS=""
@@ -142,15 +129,6 @@ if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     echo "  LocalNet genesis: ${LOCALNET_GENESIS_ID:-unknown}"
     INTEGRATION_GENESIS_ID="$LOCALNET_GENESIS_ID"
     INTEGRATION_GENESIS_HASH="$LOCALNET_GENESIS_HASH"
-elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
-    ALGOD_URL="${ALGOD_URL:-${APLANE_FNET_ALGOD_URL:-https://fnet-api.4160.nodely.dev}}"
-    ALGOD_TOKEN="${ALGOD_TOKEN:-${APLANE_FNET_ALGOD_TOKEN:-}}"
-    FNET_INDEXER_URL="${INDEXER_URL:-${APLANE_FNET_INDEXER_URL:-https://fnet-idx.4160.nodely.dev}}"
-    INTEGRATION_GENESIS_ID="fnet-v1"
-    INTEGRATION_GENESIS_HASH="kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="
-
-    FUNDING_ADDRESS="$(TEST_FUNDING_MNEMONIC="$TEST_FUNDING_MNEMONIC" go run "$PROJECT_ROOT/test/integration/cmd/native-funding-address")"
-    echo "  Using native Falcon FNet funding account $FUNDING_ADDRESS"
 else
     ALGOD_URL="${ALGOD_URL:-https://testnet-api.4160.nodely.dev}"
     ALGOD_TOKEN="${ALGOD_TOKEN:-}"
@@ -208,8 +186,6 @@ echo "  Generated client SSH key and authorized it"
 SIGNER_GENESIS_CONFIG=""
 if [ "$INTEGRATION_NETWORK" = "localnet" ]; then
     SIGNER_GENESIS_CONFIG="    genesis_hash: \"$LOCALNET_GENESIS_HASH\""
-elif [ "$INTEGRATION_NETWORK" = "fnet" ]; then
-    SIGNER_GENESIS_CONFIG="    genesis_hash: \"kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA=\""
 fi
 
 cat > "$SIGNER_DATA/config.yaml" << YAML
@@ -348,10 +324,6 @@ APLANE_LOCALNET_KMD_URL="$ENV_LOCALNET_KMD_URL"
 APLANE_LOCALNET_TOKEN="$ENV_LOCALNET_TOKEN"
 APLANE_LOCALNET_WALLET="$ENV_LOCALNET_WALLET"
 APLANE_LOCALNET_WALLET_PASSWORD="$ENV_LOCALNET_WALLET_PASSWORD"
-APLANE_FNET_FULL_SUITE="${APLANE_FNET_FULL_SUITE:-0}"
-APLANE_FNET_ALGOD_URL="${APLANE_FNET_ALGOD_URL:-}"
-APLANE_FNET_ALGOD_TOKEN="${APLANE_FNET_ALGOD_TOKEN:-}"
-APLANE_FNET_INDEXER_URL="$FNET_INDEXER_URL"
 LOCALNET_GENESIS_ID="$LOCALNET_GENESIS_ID"
 LOCALNET_GENESIS_HASH="$LOCALNET_GENESIS_HASH"
 DISABLE_MEMORY_LOCK=1

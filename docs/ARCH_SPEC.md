@@ -237,7 +237,7 @@ interleaved with domain logic on a single flat facade.
 
 The live consensus boundary is client-owned in `internal/engine/consensus.go`.
 Transaction construction validates algod SuggestedParams, and first-party
-planning and executable workflows refresh the v42/`fnet5` check before asking
+planning and executable workflows refresh the v42 check before asking
 apsigner to plan, releasing signatures, invoking plugin signers, or submitting
 or simulating immutable signed groups. The guarded flow enters through the same
 checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
@@ -1746,11 +1746,6 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH token provisioning, client signer reachability, guarded
   signing, and corridor allowlist enforcement across the Docker network.
-- `make docker-fnet-test` runs the same installed signer, sentry, and
-  client/admin topology against the public FNet algod. Funding transactions
-  are authorized on the host by the protocol-native Falcon account in
-  `TEST_FUNDING_MNEMONIC`; the mnemonic is not copied into a container or
-  persisted in generated node configuration.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 
@@ -1760,17 +1755,17 @@ long-running LocalNet transaction coverage and
 
 The integration harness behavior is part of the effective repository contract:
 
-- `make integration-test` requires an explicit TestNet, LocalNet, or FNet
+- `make integration-test` requires an explicit TestNet or LocalNet
   profile and fails closed when the profile is absent or invalid;
-  `make integration-test-testnet`, `make integration-test-localnet`, and
-  `make integration-test-fnet` are the convenience targets,
+  `make integration-test-testnet` and `make integration-test-localnet` are the
+  convenience targets,
 - `TEST_FUNDING_MNEMONIC` has one authorization meaning on every integration
   network: it is a protocol-native Falcon-1024 recovery mnemonic; the harness
   adds the native-PQ fee contribution before group IDs and emits structured
   `PQsig` envelopes for direct fixture transactions,
 - LocalNet setup uses a KMD Ed25519 account only as a bootstrap source for a
-  disposable funded native Falcon account; TestNet/FNet use an operator-supplied
-  funded native Falcon account and therefore require a v42-capable network,
+  disposable funded native Falcon account; TestNet uses an operator-supplied
+  funded native Falcon account and therefore requires a v42-capable network,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,

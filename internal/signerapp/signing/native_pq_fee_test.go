@@ -215,7 +215,7 @@ func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 	genesisHash := types.Digest{5}
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
-		base64.StdEncoding.EncodeToString(genesisHash[:]): "fnet_test",
+		base64.StdEncoding.EncodeToString(genesisHash[:]): "customnet_test",
 	})
 	if err != nil {
 		t.Fatal(err)

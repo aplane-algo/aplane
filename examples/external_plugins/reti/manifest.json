@@ -79,7 +79,7 @@
       ]
     }
   ],
-  "networks": ["testnet", "mainnet", "betanet", "fnet", "localnet", "sandbox"],
+  "networks": ["testnet", "mainnet", "betanet", "localnet", "sandbox"],
   "timeout": 120,
   "manifest_format": "2.0"
 }
