@@ -10,7 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -54,7 +54,7 @@ func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 // TestSignerPlannerDepsSnapshotIncludesKeyIndex tests planner key snapshot lookup.
 func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 	signer := &Signer{
-		runtime: identity.New(identity.Config{
+		runtime: productruntime.New(productruntime.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
 		}),
 	}
@@ -91,7 +91,7 @@ func TestSignerPlannerDepsSnapshotIncludesKeyIndex(t *testing.T) {
 // TestBuildKeyInfoListEmpty tests empty key list
 func TestBuildKeyInfoListEmpty(t *testing.T) {
 	signer := &Signer{
-		runtime: identity.New(identity.Config{
+		runtime: productruntime.New(productruntime.Config{
 			Authenticator: auth.NewTokenAuthenticator("test-token"),
 		}),
 	}

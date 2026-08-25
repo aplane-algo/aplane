@@ -277,7 +277,7 @@ rejection, cancellation, or operator denial. See
 
 ## Runtime Snapshot Semantics
 
-The identity runtime publishes policy updates atomically. Readers see either
+The product runtime publishes policy updates atomically. Readers see either
 the previous policy snapshot or the replacement snapshot; they must not observe
 a partially applied policy.
 
@@ -547,7 +547,7 @@ Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` or route entries fail validation. For top-level and
 `client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
 routing is enabled unless the block is a key override that inherits an
-identity-wide `on_no_route` value. sentry-domain `policy.yaml` omits that choice and
+product-wide `on_no_route` value. sentry-domain `policy.yaml` omits that choice and
 treats route misses as `reject`. For top-level and
 `client_signing.transfer_policy` blocks, `close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
@@ -601,8 +601,8 @@ shape because ASA IDs are network-local.
 `blocked_destinations` is a flat list of concrete Algorand addresses. It does
 not accept `self`, `*`, or `@address_set` terms. The list is global in v1:
 it is not source-scoped, asset-scoped, or network-scoped. A key override
-inherits the identity-wide blocked list and may add addresses, but it cannot
-remove identity-wide blocked destinations.
+inherits the product-wide blocked list and may add addresses, but it cannot
+remove product-wide blocked destinations.
 
 Routing extracts movements only from direct payment and asset-transfer
 transactions:
@@ -688,7 +688,7 @@ Key override routing blocks are sparse overlays, except `enabled` must be
 explicit in every `transfer_policy` block. Unset `on_no_route`,
 `close_on_no_route`, `clawback_on_no_route`, `blocked_destinations`,
 `address_sets`, and `asset_sets` inherit from the
-identity-wide effective policy. Override `blocked_destinations` are unioned with
+product-wide effective policy. Override `blocked_destinations` are unioned with
 the inherited blocked list. Override address and asset sets add to or replace
 inherited set names. Routes inherit unless the override explicitly provides a
 `routes` field, in which case the override's route list replaces the inherited
@@ -745,15 +745,15 @@ component signing, the effective policy is selected by the request
 `component_key` Witness Key ID.
 
 At the stored-policy level, overrides are sparse: unset fields inherit from the
-identity-wide policy. Nested overrides are rejected. If an override includes a
+product-wide policy. Nested overrides are rejected. If an override includes a
 `transfer_policy` block, that block still requires `schema_version` and
 explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
-If no matching selector exists, the identity-wide effective policy for that
+If no matching selector exists, the product-wide effective policy for that
 document applies. Override blocks in sentry-domain `policy.yaml` are direct sparse
 sentry policy blocks and must satisfy the same validation as the
-identity-wide sentry policy: no review-producing route outcomes.
+product-wide sentry policy: no review-producing route outcomes.
 
 ## Transaction Scope
 
@@ -782,7 +782,7 @@ true because no human approval is involved.
 signer through admin IPC. Its policy store requests the active signer-owned
 snapshot, validates draft YAML with the signer runtime compiler, and applies a
 whole-document replacement with optimistic concurrency. The replacement path
-requires an unlocked identity, verifies the current sidecar, validates the
+requires an unlocked signer store, verifies the current sidecar, validates the
 submitted YAML in the selected policy domain, writes the exact submitted bytes
 plus a fresh sidecar, and updates the active runtime policy immediately.
 
@@ -877,7 +877,7 @@ parse and runtime-validate the file without reading the production sidecar or
 requesting the store passphrase.
 Inside the TUI, `a` applies the current in-memory draft to production. `w`
 exports the current draft to an operator-selected YAML file only; it does not
-write a sidecar, update the identity store, or mark the draft clean.
+write a sidecar, update the product store, or mark the draft clean.
 
 Authenticated admin IPC policy changes use only whole-document replacement.
 The identity must be unlocked so the signer can verify the current policy and

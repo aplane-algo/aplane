@@ -59,7 +59,6 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 		snapshot: AdminPolicySnapshot{
 			Success:      true,
 			Target:       TargetSigner,
-			IdentityID:   "default",
 			PolicyYAML:   "max_fee_microalgos: 7000\n",
 			PolicySHA256: "abc123",
 			Canonical:    true,
@@ -87,7 +86,7 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 
 func TestAdminStoreValidateUsesTargetMarshalAndClientValidation(t *testing.T) {
 	client := &fakeAdminPolicyClient{
-		validation: AdminPolicyValidation{Success: true, Target: TargetSentry, IdentityID: "default"},
+		validation: AdminPolicyValidation{Success: true, Target: TargetSentry},
 	}
 	store := &AdminStore{Client: client, Target: TargetSentry}
 	stored, err := policy.ParseStoredSentryConfig([]byte(sentryYAMLForAdminStoreTest("allow_validate")))
@@ -112,14 +111,12 @@ func TestAdminStoreSaveSendsExpectedSHAAndUpdatesFromReplaceSnapshot(t *testing.
 		snapshot: AdminPolicySnapshot{
 			Success:      true,
 			Target:       TargetSigner,
-			IdentityID:   "default",
 			PolicyYAML:   "max_fee_microalgos: 7000\n",
 			PolicySHA256: "abc123",
 		},
 		replace: AdminPolicySnapshot{
 			Success:      true,
 			Target:       TargetSigner,
-			IdentityID:   "default",
 			PolicyYAML:   "max_fee_microalgos: 9000\n",
 			PolicySHA256: "def456",
 		},
@@ -148,7 +145,6 @@ func TestAdminStoreFailedSaveDoesNotUpdateExpectedSHA(t *testing.T) {
 		snapshot: AdminPolicySnapshot{
 			Success:      true,
 			Target:       TargetSigner,
-			IdentityID:   "default",
 			PolicyYAML:   "max_fee_microalgos: 7000\n",
 			PolicySHA256: "abc123",
 		},

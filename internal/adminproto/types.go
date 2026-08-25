@@ -409,7 +409,6 @@ func NormalizePolicyTarget(raw string) PolicyTarget {
 type PolicySnapshot struct {
 	Success      bool
 	Target       PolicyTarget
-	IdentityID   string
 	PolicyYAML   string
 	PolicySHA256 string
 	Canonical    bool
@@ -436,11 +435,10 @@ type ValidatePolicyRequest struct {
 // ValidatePolicyResult is the admin-domain response to a validation-only policy
 // request.
 type ValidatePolicyResult struct {
-	Success    bool
-	Target     PolicyTarget
-	IdentityID string
-	Code       string
-	Error      string
+	Success bool
+	Target  PolicyTarget
+	Code    string
+	Error   string
 }
 
 // GenerateKeyRequest is the admin-domain request to generate a key.

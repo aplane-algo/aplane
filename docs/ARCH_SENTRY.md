@@ -54,7 +54,7 @@ Primary ownership:
 
 - `internal/noderole`: root role parsing and role integrity.
 - `internal/keyclass`: role-versus-key-type classification.
-- `internal/signerapp/identity`: runtime load/reload with role-aware key scan.
+- `internal/signerapp/productruntime`: runtime load/reload with role-aware key scan.
 - `internal/signerapp/signing`: signing dispatch and role-specific behavior.
 
 ## Key Model

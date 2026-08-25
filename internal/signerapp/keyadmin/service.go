@@ -21,7 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -92,19 +92,19 @@ type Service struct {
 	MutationLock func() Locker
 }
 
-type GenerateGenericLSigFunc func(context.Context, *identity.Runtime, string, map[string]string) (string, error)
+type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
 
 type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
 }
 
-func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+func (s Service) GenerateKey(ctx context.Context, ir *productruntime.Runtime, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if ir == nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 	if keyType == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "key_type is required"}
@@ -189,7 +189,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		return nil, mapGenerateError(err)
 	}
 
-	if reloadErr := reloadIdentityKeys(ir); reloadErr != nil {
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
 		return nil, reloadErr
 	}
 
@@ -208,7 +208,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}, nil
 }
 
-func validateVisibleSentryAuthorityCollisions(ir *identity.Runtime, sentryPublicKeyHex string) error {
+func validateVisibleSentryAuthorityCollisions(ir *productruntime.Runtime, sentryPublicKeyHex string) error {
 	if ir == nil || ir.KeyStore() == nil {
 		return nil
 	}
@@ -232,9 +232,9 @@ func validateVisibleSentryAuthorityCollisions(ir *identity.Runtime, sentryPublic
 	return nil
 }
 
-func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult, *Error) {
+func (s Service) DeleteKey(ir *productruntime.Runtime, address string) (*DeleteResult, *Error) {
 	if ir == nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 	if address == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "address is required"}
@@ -257,7 +257,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
 	}
 
-	if reloadErr := reloadIdentityKeys(ir); reloadErr != nil {
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
 		return nil, reloadErr
 	}
 
@@ -268,7 +268,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 
-func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {
+func activatedKeyTypes(ir *productruntime.Runtime) ([]string, *Error) {
 	records, err := keytypestate.List(ir.KeyPaths())
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
@@ -310,7 +310,7 @@ func mapGenerateError(err error) *Error {
 	return &Error{Kind: ErrorInternal, Message: "key generation failed"}
 }
 
-func reloadIdentityKeys(ir *identity.Runtime) *Error {
+func reloadKeys(ir *productruntime.Runtime) *Error {
 	if _, err := ir.Reload(); err != nil {
 		if isLockedStateError(err) {
 			return &Error{Kind: ErrorLocked, Message: "signer is locked"}

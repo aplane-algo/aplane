@@ -526,7 +526,6 @@ type SignResponseMessage struct {
 // TokenProvisioningRequestMessage is sent to apadmin when a client requests a token via SSH
 type TokenProvisioningRequestMessage struct {
 	BaseMessage
-	IdentityID     string `json:"identity_id"`     // Identity requesting token (typically the current product identity)
 	SSHFingerprint string `json:"ssh_fingerprint"` // SSH key fingerprint of requester
 	RemoteAddr     string `json:"remote_addr"`     // Remote address of requester
 	Timestamp      int64  `json:"timestamp"`       // Unix timestamp of request
@@ -973,7 +972,6 @@ type PolicySnapshotMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
 	Target       string `json:"target,omitempty"`
-	IdentityID   string `json:"identity_id,omitempty"`
 	PolicyYAML   string `json:"policy_yaml,omitempty"`
 	PolicySHA256 string `json:"policy_sha256,omitempty"`
 	Canonical    bool   `json:"canonical,omitempty"`
@@ -999,7 +997,6 @@ type ReplacePolicyResultMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
 	Target       string `json:"target,omitempty"`
-	IdentityID   string `json:"identity_id,omitempty"`
 	PolicyYAML   string `json:"policy_yaml,omitempty"`
 	PolicySHA256 string `json:"policy_sha256,omitempty"`
 	Canonical    bool   `json:"canonical,omitempty"`
@@ -1017,11 +1014,10 @@ type ValidatePolicyMessage struct {
 // ValidatePolicyResultMessage is the response to a validation-only policy request.
 type ValidatePolicyResultMessage struct {
 	BaseMessage
-	Success    bool   `json:"success"`
-	Target     string `json:"target,omitempty"`
-	IdentityID string `json:"identity_id,omitempty"`
-	Code       string `json:"code,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Success bool   `json:"success"`
+	Target  string `json:"target,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 type SentryReferenceInfo struct {

@@ -24,7 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -148,7 +148,7 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 	}
 }
 
-func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
+func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
 	if _, err := crypto.CreateKeyringStore(paths.ProductDir(), backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		t.Fatal(err)
 	}
 	autoApprove := false
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		KeyStore: keyStore, KeyPaths: paths,
 		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
@@ -190,7 +190,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	return generationID
 }
 
-func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
+func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		return policy.SaveStoredConfigWithKeyring(
@@ -206,8 +206,8 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 	ir.SetPolicyState(stored, effective)
 }
 
-func testBackupIdentityRuntime() *identity.Runtime {
-	return identity.New(identity.Config{
+func testBackupIdentityRuntime() *productruntime.Runtime {
+	return productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 }

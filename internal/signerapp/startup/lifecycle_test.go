@@ -13,7 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -21,7 +21,7 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 	t.Parallel()
 
 	root := t.TempDir()
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),
@@ -41,7 +41,7 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	plan := LifecyclePlan{
 		ProductRuntime: ir,
-		StartWatcher: func(*identity.Runtime) {
+		StartWatcher: func(*productruntime.Runtime) {
 			record("watcher")
 		},
 		ShutdownTimeout: time.Second,
@@ -119,7 +119,7 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 	t.Parallel()
 
 	root := t.TempDir()
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),
@@ -187,7 +187,7 @@ func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T)
 	t.Parallel()
 
 	root := t.TempDir()
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(root)),
 		KeyPaths:      storepaths.NewPaths(root),

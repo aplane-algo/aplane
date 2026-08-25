@@ -86,7 +86,7 @@ func TestModelApplyPromptsForMissingStorePassphrase(t *testing.T) {
 	if m.screen != screenApplyPassphrase {
 		t.Fatalf("screen = %v, want passphrase prompt", m.screen)
 	}
-	if !strings.Contains(m.View(), "Enter the identity store passphrase") {
+	if !strings.Contains(m.View(), "Enter the signer-store passphrase") {
 		t.Fatalf("passphrase prompt missing from view:\n%s", m.View())
 	}
 

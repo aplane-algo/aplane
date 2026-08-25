@@ -24,8 +24,9 @@ const (
 	tokenProofNonceSize     = 32
 	tokenProofMACSize       = sha256.Size
 	tokenProofHostHashSize  = sha256.Size
-	tokenProofMaxIdentity   = 128
 	tokenProofMaxJSONLength = 1024
+	productSSHUsername      = "aplane"
+	tokenRequestSSHUsername = "request-token"
 )
 
 const (
@@ -34,7 +35,6 @@ const (
 )
 
 type tokenProofTranscript struct {
-	Identity    string
 	HostKeyHash []byte
 	ClientNonce []byte
 	ServerNonce []byte
@@ -69,12 +69,6 @@ func hashSSHHostKey(key ssh.PublicKey) ([]byte, error) {
 }
 
 func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error) {
-	if transcript.Identity == "" {
-		return nil, fmt.Errorf("identity is empty")
-	}
-	if len(transcript.Identity) > tokenProofMaxIdentity {
-		return nil, fmt.Errorf("identity exceeds %d bytes", tokenProofMaxIdentity)
-	}
 	if len(transcript.HostKeyHash) != tokenProofHostHashSize {
 		return nil, fmt.Errorf("host key hash is %d bytes, want %d", len(transcript.HostKeyHash), tokenProofHostHashSize)
 	}
@@ -88,7 +82,6 @@ func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error)
 	var encoded bytes.Buffer
 	for _, field := range [][]byte{
 		[]byte(tokenProofDomain),
-		[]byte(transcript.Identity),
 		transcript.HostKeyHash,
 		transcript.ClientNonce,
 		transcript.ServerNonce,

@@ -71,7 +71,6 @@ type SignResponse struct {
 // TokenProvisioningRequest is the domain-level approval request for token issuance.
 type TokenProvisioningRequest struct {
 	ID             string
-	IdentityID     string
 	SSHFingerprint string
 	RemoteAddr     string
 	Timestamp      int64

@@ -23,7 +23,7 @@ import (
 )
 
 // Scan builds the canonical K8 inventory. The caller holds the store and
-// identity mutation locks. Unpublished generation staging residue must already
+// store mutation locks. Unpublished generation staging residue must already
 // have been reconciled and is rejected.
 func Scan(paths storepaths.Paths, kr *crypto.Keyring) (*Report, error) {
 	return scan(paths, kr, false)

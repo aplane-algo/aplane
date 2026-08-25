@@ -8,7 +8,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
@@ -29,7 +28,7 @@ func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token"}) {
 		return
 	}
-	err := s.identityServices.RevokeProductToken(ir)
+	err := s.productServices.RevokeProductToken(ir)
 
 	_ = s.WriteJSON(ProtocolRevokeTokenResultMessage(msg.ID, err))
 }
@@ -207,14 +206,14 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity"}) {
 		return
 	}
 
 	passphraseBytes := msg.Passphrase.Clone()
 	defer zeroBytes(passphraseBytes)
 
-	success, keyCount, errStr, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
+	success, keyCount, errStr, code := s.productServices.UnlockIdentity(ir, passphraseBytes)
 	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr, code))
 }
 
@@ -222,7 +221,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if s.State() != StateAuthenticated {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
+			protocol.WithCode(protocol.ErrCodeNoRuntimeBound, fmt.Errorf("no product runtime bound to session")),
 		))
 		return
 	}
@@ -230,17 +229,17 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if ir == nil {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
+			protocol.WithCode(protocol.ErrCodeNoRuntimeBound, fmt.Errorf("no product runtime bound to session")),
 		))
 		return
 	}
 
-	resource := auth.Resource{Type: "identity", ID: productmode.IdentityID}
+	resource := auth.Resource{Type: "identity"}
 	identity := s.Identity()
 	if s.authorizer != nil && identity == nil {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
+			protocol.WithCode(protocol.ErrCodeNoRuntimeBound, fmt.Errorf("no product runtime bound to session")),
 		))
 		return
 	}
@@ -268,7 +267,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -303,7 +302,7 @@ func (s *Session) HandleListBackups(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -319,7 +318,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -455,10 +454,10 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.identityServices == nil {
+	if s.productServices == nil {
 		_ = s.SendError(msg.ID, "", "identity service unavailable")
 		return
 	}
@@ -466,7 +465,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	newPassphrase := msg.NewPassphrase.Clone()
 	defer zeroBytes(currentPassphrase)
 	defer zeroBytes(newPassphrase)
-	result := s.identityServices.ChangeStorePassphrase(ir, adminproto.ChangeStorePassphraseRequest{
+	result := s.productServices.ChangeStorePassphrase(ir, adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: currentPassphrase,
 		NewPassphrase:     newPassphrase,
 	})
@@ -478,7 +477,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -520,7 +519,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -573,7 +572,7 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {
@@ -596,7 +595,7 @@ func (s *Session) HandleReconcileStore(requestID string) {
 	if ir == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity", ID: productmode.IdentityID}) {
+	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
 	if s.backupServices == nil {

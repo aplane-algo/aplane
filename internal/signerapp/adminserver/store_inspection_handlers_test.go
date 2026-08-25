@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type inspectionStub struct {
@@ -21,33 +21,33 @@ type inspectionStub struct {
 	listResult  adminproto.ListSentryReferencesResult
 }
 
-func (s *inspectionStub) ListSentryReferences(*identity.Runtime) adminproto.ListSentryReferencesResult {
+func (s *inspectionStub) ListSentryReferences(*productruntime.Runtime) adminproto.ListSentryReferencesResult {
 	s.listCalls++
 	return s.listResult
 }
-func (*inspectionStub) GetSentryReference(*identity.Runtime, adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+func (*inspectionStub) GetSentryReference(*productruntime.Runtime, adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
 	return adminproto.GetSentryReferenceResult{}
 }
-func (s *inspectionStub) ImportSentryReference(*identity.Runtime, adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s *inspectionStub) ImportSentryReference(*productruntime.Runtime, adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
 	s.importCalls++
 	return adminproto.ImportSentryReferenceResult{Success: true}
 }
-func (s *inspectionStub) RemoveSentryReference(*identity.Runtime, adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s *inspectionStub) RemoveSentryReference(*productruntime.Runtime, adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
 	s.removeCalls++
 	return adminproto.RemoveSentryReferenceResult{Success: true}
 }
 
-func (*inspectionStub) ExportSentryPublic(*identity.Runtime, adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+func (*inspectionStub) ExportSentryPublic(*productruntime.Runtime, adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
 	return adminproto.ExportSentryPublicResult{}
 }
-func (*inspectionStub) ListGenerations(*identity.Runtime) adminproto.GenerationInventory {
+func (*inspectionStub) ListGenerations(*productruntime.Runtime) adminproto.GenerationInventory {
 	return adminproto.GenerationInventory{}
 }
 
 func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	if ir.IsUnlocked() {
-		t.Fatal("new identity runtime unexpectedly unlocked")
+		t.Fatal("new product runtime unexpectedly unlocked")
 	}
 	inspection := &inspectionStub{}
 	conn := &queueConn{}
@@ -73,7 +73,7 @@ func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
 }
 
 func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	inspection := &inspectionStub{listResult: adminproto.ListSentryReferencesResult{
 		References: []adminproto.SentryReferenceInfo{{Name: "lab", ComponentKey: "WKID", KeyType: "witness"}},
 	}}
@@ -100,7 +100,7 @@ func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
 }
 
 func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}

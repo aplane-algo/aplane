@@ -4,6 +4,5 @@
 // Package productmode owns fixed vocabulary for the single-store product.
 package productmode
 
-// IdentityID is the compatibility-bearing name of the one product signing
-// identity and its durable store namespace.
+// IdentityID is the stable directory name of the product signing store on disk.
 const IdentityID = "default"

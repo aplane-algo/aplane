@@ -9,7 +9,7 @@ every step, followed by restart reconciliation.
 
 The other modules in this directory model concurrency — two processes
 racing over shared state. This one models a different interleaving with
-the same shape: a single serialized writer (the identity mutation lock
+the same shape: a single serialized writer (the store mutation lock
 makes the commit sequence non-concurrent) against a crash that can land
 between any two steps, and against a filesystem that may lose any write
 whose fsync has not completed.
@@ -80,7 +80,7 @@ The module intentionally omits:
   - Multi-generation chains. Two generations are enough to express every
     ordering constraint in the protocol; a longer chain adds states
     without adding reachable shapes.
-  - Concurrent minting. The identity mutation lock serializes it, and
+  - Concurrent minting. The store mutation lock serializes it, and
     that lock is outside this model.
 
 If those concerns become security-critical for a particular check, add a

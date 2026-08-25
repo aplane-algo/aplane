@@ -19,7 +19,7 @@ func registerProductProvider(keyType string, register func() bool) bool {
 
 // UnregisterProductProvider removes the installed-template provider for the
 // one product activation set. Product callers hold the process store mutation
-// lock, so there is no per-identity reference count to reconcile.
+// lock, so there is no per-runtime reference count to reconcile.
 func UnregisterProductProvider(keyType string) bool {
 	keyType = normalizeTemplateProviderKeyType(keyType)
 	if keyType == "" {

@@ -12,7 +12,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig"
 )
@@ -46,8 +47,8 @@ func TestInitializeStoreRejectsNilRuntime(t *testing.T) {
 	result := Service{}.InitializeStore(nil, adminproto.InitializeStoreRequest{
 		Passphrase: []byte("passphrase"),
 	})
-	if result.Code != protocol.ErrCodeNoIdentityBound {
-		t.Fatalf("Code = %q, want %q", result.Code, protocol.ErrCodeNoIdentityBound)
+	if result.Code != protocol.ErrCodeNoRuntimeBound {
+		t.Fatalf("Code = %q, want %q", result.Code, protocol.ErrCodeNoRuntimeBound)
 	}
 }
 
@@ -96,7 +97,7 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 	service := Service{
 		Deps: deps,
 		UnlockIdentity: func(
-			_ *identity.Runtime,
+			_ *productruntime.Runtime,
 			_ []byte,
 		) (bool, int, string, string) {
 			unlockCalled = true
@@ -124,7 +125,7 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 			t.Fatal("InitializeStore() did not invoke unlock")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("InitializeStore() deadlocked by re-entering the identity mutation lock")
+		t.Fatal("InitializeStore() deadlocked by re-entering the store mutation lock")
 	}
 }
 
@@ -184,11 +185,11 @@ func TestPassphraseCommandConfigFromUnlock(t *testing.T) {
 	if got := passphraseCommandConfigFromUnlock(nil); got != nil {
 		t.Fatalf("nil unlock config produced %#v, want nil", got)
 	}
-	if got := passphraseCommandConfigFromUnlock(&identity.UnlockConfig{}); got != nil {
+	if got := passphraseCommandConfigFromUnlock(&unlockconfig.UnlockConfig{}); got != nil {
 		t.Fatalf("empty unlock config produced %#v, want nil", got)
 	}
 
-	got := passphraseCommandConfigFromUnlock(&identity.UnlockConfig{
+	got := passphraseCommandConfigFromUnlock(&unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/bin/helper", "read"},
 		PassphraseCommandEnv:  map[string]string{"TOKEN": "abc"},
 	})
@@ -204,8 +205,8 @@ func TestPassphraseCommandConfigFromUnlock(t *testing.T) {
 	}
 }
 
-func testIdentityRuntime() *identity.Runtime {
-	return identity.New(identity.Config{
+func testIdentityRuntime() *productruntime.Runtime {
+	return productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		ApprovalWait:  serverconfig.DefaultApprovalWait,

@@ -19,11 +19,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -51,11 +51,11 @@ type Service struct {
 
 var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
 
-func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
+func (s Service) BuildAdminSettings(ir *productruntime.Runtime) adminproto.AdminSettings {
 	cfg := s.Deps.Config()
 	sshInfo := s.Deps.SSHInfo()
 	icfg := ir.Config()
-	passphraseMethod := s.detectPassphraseMethodForIdentity(ir, cfg)
+	passphraseMethod := s.detectPassphraseMethod(ir, cfg)
 
 	timeoutStr := "0"
 	if identityTimeout := icfg.SessionTimeout(); identityTimeout > 0 {
@@ -142,7 +142,7 @@ func primaryOutboundIPv4() string {
 	return ip.String()
 }
 
-func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s Service) UpdateAdminSetting(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
 	if req.Key == adminproto.AdminSettingTheme {
 		return s.Deps.WithProcessConfigMutation(func() error {
 			return s.updateAdminSettingLocked(ir, req)
@@ -156,7 +156,7 @@ func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateA
 	})
 }
 
-func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
 	cfg := s.Deps.Config()
 
 	changed, checkErr := serverconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg)
@@ -173,9 +173,9 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	icfg := ir.Config()
 
 	oldTheme := s.Deps.Theme()
-	oldIdentityUserAutoApprove := icfg.UserAutoApprove()
-	oldIdentityLockOnDisconnect := icfg.LockOnDisconnect()
-	oldIdentitySessionTimeout := icfg.SessionTimeout()
+	oldUserAutoApprove := icfg.UserAutoApprove()
+	oldLockOnDisconnect := icfg.LockOnDisconnect()
+	oldSessionTimeout := icfg.SessionTimeout()
 
 	switch req.Key {
 	case adminproto.AdminSettingUserAutoApprove:
@@ -184,7 +184,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 		saveKey, saveValue = adminproto.AdminSettingUserAutoApprove, v
 	case adminproto.AdminSettingLockOnDisconnect:
 		v := req.Value == "true"
-		passphraseMethod := s.detectPassphraseMethodForIdentity(ir, cfg)
+		passphraseMethod := s.detectPassphraseMethod(ir, cfg)
 		if passphraseMethod != "none" && v {
 			err = fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		} else {
@@ -196,7 +196,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 		if parseErr != nil {
 			err = parseErr
 		} else {
-			passphraseMethod := s.detectPassphraseMethodForIdentity(ir, cfg)
+			passphraseMethod := s.detectPassphraseMethod(ir, cfg)
 			if passphraseMethod != "none" && duration > 0 {
 				err = fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 			} else {
@@ -222,13 +222,13 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 		if saveKey == adminproto.AdminSettingTheme {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
 		} else {
-			saveErr = mut.SaveIdentitySetting(s.Deps.DataDir(), saveKey, saveValue)
+			saveErr = mut.SaveRuntimeSetting(s.Deps.DataDir(), saveKey, saveValue)
 		}
 		if saveErr != nil {
 			s.Deps.SetTheme(oldTheme)
-			icfg.SetUserAutoApprove(oldIdentityUserAutoApprove)
-			icfg.SetLockOnDisconnect(oldIdentityLockOnDisconnect)
-			icfg.SetSessionTimeout(oldIdentitySessionTimeout)
+			icfg.SetUserAutoApprove(oldUserAutoApprove)
+			icfg.SetLockOnDisconnect(oldLockOnDisconnect)
+			icfg.SetSessionTimeout(oldSessionTimeout)
 			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
 		}
 	}
@@ -244,11 +244,11 @@ type policyTargetOps struct {
 	loadVerified            func(dataDir string, kr *crypto.Keyring) (*policy.StoredConfig, error)
 	saveBytes               func(dataDir string, data []byte, kr *crypto.Keyring, signedAt time.Time) error
 	apply                   func(dataDir string, cfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
-	activeSnapshot          func(*identity.Runtime) (*policy.StoredConfig, *policy.Config)
-	setState                func(*identity.Runtime, *policy.StoredConfig, *policy.Config)
+	activeSnapshot          func(*productruntime.Runtime) (*policy.StoredConfig, *policy.Config)
+	setState                func(*productruntime.Runtime, *policy.StoredConfig, *policy.Config)
 }
 
-func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+func (s Service) BuildPolicySnapshot(ir *productruntime.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
 	ops, err := s.policyTargetOps(ir, target)
 	if err != nil {
@@ -271,35 +271,32 @@ func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto
 func canonicalPolicySnapshot(target adminproto.PolicyTarget, ops policyTargetOps, stored *policy.StoredConfig) adminproto.PolicySnapshot {
 	if stored == nil {
 		return adminproto.PolicySnapshot{
-			Success:    false,
-			Target:     target,
-			IdentityID: productmode.IdentityID,
-			Code:       ops.snapshotUnavailableCode,
-			Error:      ops.snapshotUnavailableErr,
+			Success: false,
+			Target:  target,
+			Code:    ops.snapshotUnavailableCode,
+			Error:   ops.snapshotUnavailableErr,
 		}
 	}
 	data, err := ops.marshal(stored)
 	if err != nil {
 		return adminproto.PolicySnapshot{
-			Success:    false,
-			Target:     target,
-			IdentityID: productmode.IdentityID,
-			Code:       "policy_snapshot_marshal_failed",
-			Error:      err.Error(),
+			Success: false,
+			Target:  target,
+			Code:    "policy_snapshot_marshal_failed",
+			Error:   err.Error(),
 		}
 	}
 	sum := sha256.Sum256(data)
 	return adminproto.PolicySnapshot{
 		Success:      true,
 		Target:       target,
-		IdentityID:   productmode.IdentityID,
 		PolicyYAML:   string(data),
 		PolicySHA256: fmt.Sprintf("%x", sum),
 		Canonical:    true,
 	}
 }
 
-func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyTarget) (policyTargetOps, error) {
+func (s Service) policyTargetOps(ir *productruntime.Runtime, target adminproto.PolicyTarget) (policyTargetOps, error) {
 	if err := validatePolicyTargetForNodeRole(ir.NodeRole(), target); err != nil {
 		return policyTargetOps{}, err
 	}
@@ -313,8 +310,8 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 			loadVerified:            policy.LoadVerifiedStoredConfigWithKeyring,
 			saveBytes:               policy.SavePolicyBytesWithKeyring,
 			apply:                   policyruntime.ApplyStoredConfig,
-			activeSnapshot:          (*identity.Runtime).PolicySnapshot,
-			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
+			activeSnapshot:          (*productruntime.Runtime).PolicySnapshot,
+			setState: func(ir *productruntime.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
 				ir.SetPolicyState(stored, effective)
 			},
 		}, nil
@@ -327,8 +324,8 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 			loadVerified:            policy.LoadVerifiedSentryConfigWithKeyring,
 			saveBytes:               policy.SaveSentryBytesWithKeyring,
 			apply:                   policyruntime.ApplySentryStoredConfig,
-			activeSnapshot:          (*identity.Runtime).SentryPolicySnapshot,
-			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
+			activeSnapshot:          (*productruntime.Runtime).SentryPolicySnapshot,
+			setState: func(ir *productruntime.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
 				ir.SetSentryPolicyState(stored, effective)
 			},
 		}, nil
@@ -369,19 +366,17 @@ func policySnapshotError(target adminproto.PolicyTarget, err error) adminproto.P
 	var replaceErr policyReplaceError
 	if errors.As(err, &replaceErr) {
 		return adminproto.PolicySnapshot{
-			Success:    false,
-			Target:     target,
-			IdentityID: productmode.IdentityID,
-			Code:       replaceErr.code,
-			Error:      replaceErr.msg,
+			Success: false,
+			Target:  target,
+			Code:    replaceErr.code,
+			Error:   replaceErr.msg,
 		}
 	}
 	return adminproto.PolicySnapshot{
-		Success:    false,
-		Target:     target,
-		IdentityID: productmode.IdentityID,
-		Code:       "policy_snapshot_failed",
-		Error:      err.Error(),
+		Success: false,
+		Target:  target,
+		Code:    "policy_snapshot_failed",
+		Error:   err.Error(),
 	}
 }
 
@@ -398,15 +393,14 @@ func newPolicyReplaceError(code string, err error) policyReplaceError {
 	return policyReplaceError{code: code, msg: err.Error()}
 }
 
-func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+func (s Service) ReplacePolicy(ir *productruntime.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
 	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.PolicySnapshot {
 		return adminproto.PolicySnapshot{
-			Success:    false,
-			Target:     target,
-			IdentityID: productmode.IdentityID,
-			Code:       code,
-			Error:      msg,
+			Success: false,
+			Target:  target,
+			Code:    code,
+			Error:   msg,
 		}
 	}
 	ops, err := s.policyTargetOps(ir, target)
@@ -488,15 +482,14 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 	return canonicalPolicySnapshot(target, ops, storedSnapshot)
 }
 
-func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+func (s Service) ValidatePolicy(ir *productruntime.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
 	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.ValidatePolicyResult {
 		return adminproto.ValidatePolicyResult{
-			Success:    false,
-			Target:     target,
-			IdentityID: productmode.IdentityID,
-			Code:       code,
-			Error:      msg,
+			Success: false,
+			Target:  target,
+			Code:    code,
+			Error:   msg,
 		}
 	}
 	ops, err := s.policyTargetOps(ir, target)
@@ -518,9 +511,8 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 		return fail("policy_validation_failed", fmt.Sprintf("invalid policy: %v", err))
 	}
 	return adminproto.ValidatePolicyResult{
-		Success:    true,
-		Target:     target,
-		IdentityID: productmode.IdentityID,
+		Success: true,
+		Target:  target,
 	}
 }
 
@@ -528,8 +520,8 @@ func policyTargetFileName() string {
 	return "policy.yaml"
 }
 
-func (s Service) detectPassphraseMethodForIdentity(ir *identity.Runtime, cfg *serverconfig.ServerConfig) string {
-	unlockCfg, _ := identity.LoadUnlockConfig(s.Deps.DataDir())
+func (s Service) detectPassphraseMethod(ir *productruntime.Runtime, cfg *serverconfig.ServerConfig) string {
+	unlockCfg, _ := unlockconfig.LoadUnlockConfig(s.Deps.DataDir())
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)
 	}

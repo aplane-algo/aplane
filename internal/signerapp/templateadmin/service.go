@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
@@ -36,7 +36,7 @@ type Service struct {
 	Deps Deps
 }
 
-func (s Service) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
+func (s Service) ListLibraryTemplates(ir *productruntime.Runtime) adminproto.ListLibraryTemplatesResult {
 	items, err := templatelibrary.List(s.Deps.KeyPaths())
 	if err != nil {
 		return adminproto.ListLibraryTemplatesResult{
@@ -64,7 +64,7 @@ func (s Service) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibra
 	return adminproto.ListLibraryTemplatesResult{Templates: out}
 }
 
-func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
+func (s Service) InstallLibraryTemplate(ir *productruntime.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType := templatestore.TemplateType(req.TemplateType)
 	if templateType != templatestore.TemplateTypeGeneric && templateType != templatestore.TemplateTypeComposed {
@@ -148,7 +148,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 	}
 }
 
-func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListInstalledTemplatesResult {
+func (s Service) ListInstalledTemplates(ir *productruntime.Runtime) adminproto.ListInstalledTemplatesResult {
 	var out []adminproto.InstalledTemplateInfo
 	for _, templateType := range templatestore.ActiveTemplateTypes() {
 		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), templateType)
@@ -180,7 +180,7 @@ func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListIns
 	return adminproto.ListInstalledTemplatesResult{Templates: out}
 }
 
-func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
+func (s Service) ShowLibraryTemplate(ir *productruntime.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType := templatestore.TemplateType(strings.ToLower(strings.TrimSpace(req.TemplateType)))
 	if keyType == "" {
@@ -230,7 +230,7 @@ func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLi
 	}
 }
 
-func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
+func (s Service) ShowInstalledTemplate(ir *productruntime.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType, rec, ok, err := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType)
 	if err != nil {
@@ -280,7 +280,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 	}
 }
 
-func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
+func (s Service) ImportInstalledTemplate(ir *productruntime.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
 	if err := templatelibrary.ValidateImportableSchema(req.TemplateYAML); err != nil {
 		return adminproto.ImportInstalledTemplateResult{
 			Success: false,
@@ -368,7 +368,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 	}
 }
 
-func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
+func (s Service) RemoveInstalledTemplate(ir *productruntime.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType, rec, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType)
 	if stateErr != nil {
@@ -439,7 +439,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 	}
 }
 
-func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
+func (s Service) ActivateKeyType(ir *productruntime.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var out adminproto.ActivateKeyTypeResult
 	err := s.Deps.WithStoreMutation(func() error {
@@ -470,7 +470,7 @@ func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKe
 	return out
 }
 
-func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
+func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
 	installResult, err := templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType)
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
@@ -516,7 +516,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 	}
 }
 
-func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string) adminproto.ActivateKeyTypeResult {
+func (s Service) activateCompiledProviderKeyTypeLocked(ir *productruntime.Runtime, keyType string) adminproto.ActivateKeyTypeResult {
 	installResult, err := templatelibrary.ActivateCompiledProvider(s.Deps.KeyPaths(), keyType)
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
@@ -542,7 +542,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, key
 	}
 }
 
-func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
+func (s Service) DeactivateKeyType(ir *productruntime.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var removeResult templatelibrary.RemoveResult
 	var disabledTemplate bool
@@ -603,11 +603,11 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 	}
 }
 
-func (s Service) disableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
+func (s Service) disableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
 }
 
-func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *identity.Runtime, keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
+func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *productruntime.Runtime, keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), keyType, masterKey)
 }
 

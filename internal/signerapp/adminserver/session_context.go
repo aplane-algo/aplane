@@ -27,13 +27,10 @@ type SessionPrincipal struct {
 	Metadata map[string]string
 }
 
-// SessionContext carries attribution and routing context for one admin session.
-// Phase 1 only records this information; later phases use it for identity-scoped
-// routing and audit attribution.
+// SessionContext carries attribution context for one admin session.
 type SessionContext struct {
 	SessionID          string
 	AdminPrincipal     SessionPrincipal
-	TargetIdentityID   string
 	AuthMethod         string
 	Transport          string
 	RemoteAddr         string

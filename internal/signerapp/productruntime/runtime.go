@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package identity owns the product signing-state runtime.
-package identity
+package productruntime
 
 import (
 	"bytes"
@@ -90,7 +90,7 @@ type Runtime struct {
 
 	approval              atomic.Pointer[signerapproval.Coordinator]
 	authenticator         auth.Authenticator
-	identityCfg           *IdentityConfig
+	runtimeCfg            *RuntimeConfig
 	nodeRole              noderole.Role
 	policyMu              sync.RWMutex
 	policyCfg             *policy.Config
@@ -150,11 +150,11 @@ type Config struct {
 	OnLocked         func() // Called after lock transition completes.
 }
 
-// New creates an identity Runtime in the locked state.
+// New creates a product Runtime in the locked state.
 // Panics if Authenticator is nil.
 func New(cfg Config) *Runtime {
 	if cfg.Authenticator == nil {
-		panic("identity.New: Authenticator is required")
+		panic("productruntime.New: Authenticator is required")
 	}
 
 	session := keystore.NewKeySession(cfg.KeyStore)
@@ -174,7 +174,7 @@ func New(cfg Config) *Runtime {
 		lockRuntime:   rt,
 		keySession:    session,
 		authenticator: cfg.Authenticator,
-		identityCfg:   NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		runtimeCfg:    NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
 		nodeRole:      nodeRole,
 		keys:          make(map[string]string),
 		keyTypes:      make(map[string]string),
@@ -529,11 +529,11 @@ func (ir *Runtime) RequestTokenProvisioningContext(ctx context.Context, requestI
 	return c.RequestTokenProvisioningContext(ctx, requestID, sshFingerprint, remoteAddr, timeout)
 }
 
-// --- Identity config ---
+// --- Product runtime config ---
 
-// Config returns the identity-scoped configuration.
-func (ir *Runtime) Config() *IdentityConfig {
-	return ir.identityCfg
+// Config returns the product runtime configuration.
+func (ir *Runtime) Config() *RuntimeConfig {
+	return ir.runtimeCfg
 }
 
 // --- Token authority ---
@@ -770,7 +770,7 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // --- Reload ---
 
 // Reload rescans keys using the cached keyring (no passphrase needed).
-// Admin mutation paths call this directly while holding the identity mutation lock;
+// Admin mutation paths call this directly while holding the store mutation lock;
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()
@@ -917,7 +917,7 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// Destroy cleans up the identity runtime for shutdown.
+// Destroy cleans up the product runtime for shutdown.
 // Blocks until in-flight key operations complete.
 func (ir *Runtime) Destroy() {
 	ir.StopKeyWatcher()

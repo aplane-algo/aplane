@@ -88,11 +88,6 @@ func generateClientKey(t *testing.T) (ssh.Signer, ssh.PublicKey) {
 // server side, and connects with an SSH client to run "provision".
 func runProvisioningSession(t *testing.T, srv *Server, clientSigner ssh.Signer) (output string, exitCode int, err error) {
 	t.Helper()
-	return runProvisioningSessionForIdentity(t, srv, clientSigner, "default")
-}
-
-func runProvisioningSessionForIdentity(t *testing.T, srv *Server, clientSigner ssh.Signer, identityID string) (output string, exitCode int, err error) {
-	t.Helper()
 
 	// Listen on a random port
 	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
@@ -124,7 +119,7 @@ func runProvisioningSessionForIdentity(t *testing.T, srv *Server, clientSigner s
 
 	// Client side
 	clientConfig := &ssh.ClientConfig{
-		User: "request-token:" + identityID,
+		User: tokenRequestSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -328,7 +323,7 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: "request-token:default",
+		User: tokenRequestSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -503,7 +498,7 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: "request-token:default",
+		User: tokenRequestSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -642,7 +637,7 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: "request-token:default",
+		User: tokenRequestSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},

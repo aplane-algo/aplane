@@ -161,7 +161,7 @@ func (p StoredRoutePermission) Clone() StoredRoutePermission {
 
 // TransferPolicy is the compiled effective routing policy attached to a policy
 // Config. The unexported set maps are retained so key_overrides can layer
-// sparse transfer_policy blocks over identity-wide policy.
+// sparse transfer_policy blocks over product-wide policy.
 type TransferPolicy struct {
 	Enabled             bool
 	OnNoRoute           TransferOnNoRoute

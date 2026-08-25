@@ -7,18 +7,18 @@ import (
 	"net"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 // Product-mode Signer/IPCServer wrappers kept only for test convenience.
 
 // These Signer-level wrappers exist for test convenience and legacy
-// call sites. They route through productIdentityRuntime() which is the
-// only process-boundary use of the fixed product identity in the runtime path.
+// call sites. They route through productRuntime() which is the
+// only process-boundary use of the fixed product runtime in the runtime path.
 
 func (fs *Signer) getState() SignerState {
-	return fs.productIdentityRuntime().GetState()
+	return fs.productRuntime().GetState()
 }
 
 func (fs *Signer) isUnlocked() bool {
@@ -26,11 +26,11 @@ func (fs *Signer) isUnlocked() bool {
 }
 
 func (fs *Signer) setUnlocked() {
-	fs.productIdentityRuntime().SetUnlocked()
+	fs.productRuntime().SetUnlocked()
 }
 
 func (fs *Signer) lock() {
-	fs.productIdentityRuntime().Lock()
+	fs.productRuntime().Lock()
 }
 
 // hasClient is a product-mode test helper.
@@ -39,15 +39,15 @@ func (fs *Signer) hasClient() bool {
 }
 
 func (fs *Signer) pendingSignCount() int {
-	return fs.productIdentityRuntime().PendingSignCount()
+	return fs.productRuntime().PendingSignCount()
 }
 
 func (fs *Signer) failAllPendingApprovals(reason string) {
-	fs.productIdentityRuntime().FailAllPendingApprovals(reason)
+	fs.productRuntime().FailAllPendingApprovals(reason)
 }
 
-func (fs *Signer) newApprovalServiceForIdentity(ir *identity.Runtime) *signersigning.ApprovalService {
-	return fs.newApprovalServiceForIdentityWithAudit(ir, fs.auditLog)
+func (fs *Signer) newApprovalServiceForRuntime(ir *productruntime.Runtime) *signersigning.ApprovalService {
+	return fs.newApprovalServiceWithAudit(ir, fs.auditLog)
 }
 
 // offerDisplacement sends a client_exists message to the new connection and waits

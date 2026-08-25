@@ -9,15 +9,15 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
-func TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot(t *testing.T) {
+func TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot(t *testing.T) {
 	userAutoApprove := false
 	signer := &Signer{
 		config: &serverconfig.ServerConfig{},
 	}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator:   auth.NewTokenAuthenticator("test-token"),
 		UserAutoApprove: &userAutoApprove,
@@ -27,7 +27,7 @@ func TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot(t 
 	}
 	ir.SetPolicy(initialPolicy)
 
-	svc := signer.newSigningServiceForIdentityWithAudit(ir, nil)
+	svc := signer.newSigningServiceWithAudit(ir, nil)
 
 	ir.SetPolicy(&policy.Config{
 		RejectForeignRekey:          true,

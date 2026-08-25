@@ -15,16 +15,17 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
 func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}
@@ -35,11 +36,11 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 		t.Errorf("no config: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "none")
 	}
 
-	// Write identity-scoped passfile config
-	unlockCfg := &identity.UnlockConfig{
+	// Write product-store passfile config
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -53,9 +54,9 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	convertTestSignerToGenerational(t, server)
 	newPassphrase := []byte("new-admin-passphrase")
@@ -72,7 +73,7 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 	}
 	if !ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf(
-			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			"product-store state = unlocked %v recovery %v, want ordinary unlocked",
 			ir.IsUnlocked(),
 			ir.IsRecovery(),
 		)
@@ -94,9 +95,9 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	convertTestSignerToGenerational(t, server)
 	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("role: sentry\n"), 0o600); err != nil {
@@ -115,7 +116,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	}
 	if ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf(
-			"identity state = unlocked %v recovery %v, want locked",
+			"product-store state = unlocked %v recovery %v, want locked",
 			ir.IsUnlocked(),
 			ir.IsRecovery(),
 		)
@@ -126,9 +127,9 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	// Simulate the default config: 15m admin idle timeout, lock_on_disconnect true
@@ -137,7 +138,7 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 
 	svc := signerAdminServices{signer: server}
 
-	// Without passfile: settings should reflect identity config
+	// Without passfile: settings should reflect product runtime config
 	settings := svc.adminApp().BuildAdminSettings(ir)
 	if settings.PassphraseTimeout != "15m0s" {
 		t.Errorf("prompt mode: got PassphraseTimeout %q, want %q", settings.PassphraseTimeout, "15m0s")
@@ -147,10 +148,10 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	}
 
 	// Enable passfile via unlock.yaml
-	unlockCfg := &identity.UnlockConfig{
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
@@ -177,16 +178,16 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
-	// Enable identity-scoped passfile (headless mode)
-	unlockCfg := &identity.UnlockConfig{
+	// Enable product-store passfile (headless mode)
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,16 +224,16 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 		t.Fatal(err)
 	}
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
-	// Enable identity-scoped passfile (headless mode)
-	unlockCfg := &identity.UnlockConfig{
+	// Enable product-store passfile (headless mode)
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(server.dataDir, unlockCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -269,9 +270,9 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	err := (signerAdminServices{signer: server}).adminApp().UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
@@ -295,9 +296,9 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
 
@@ -355,7 +356,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 	if productRuntime == nil {
 		t.Fatal("expected product runtime")
 	}
@@ -397,7 +398,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 		}
 	}
 
-	stored, err := identity.LoadStoredConfig(server.dataDir)
+	stored, err := productruntime.LoadStoredConfig(server.dataDir)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig(product) error = %v", err)
 	}
@@ -416,9 +417,9 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}
@@ -464,9 +465,9 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}
@@ -500,9 +501,9 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}
@@ -537,9 +538,9 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	ir.Lock()
 
@@ -554,7 +555,7 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	}
 }
 
-func assertPolicySidecarVerifies(t *testing.T, ir *identity.Runtime, dataDir string) {
+func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime, dataDir string) {
 	t.Helper()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, masterKey)

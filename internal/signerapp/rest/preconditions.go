@@ -6,20 +6,20 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 // ensureSignable runs the preconditions shared by every signing-family
-// endpoint: a usable, unlocked identity runtime. It also defaults a nil
+// endpoint: a usable, unlocked product runtime. It also defaults a nil
 // context for endpoints that thread one
 // through. Role gates and dependency checks remain per-endpoint.
-func ensureSignable(ctx context.Context, ir *identity.Runtime) (context.Context, *signersigning.ServiceError) {
+func ensureSignable(ctx context.Context, ir *productruntime.Runtime) (context.Context, *signersigning.ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if ir == nil {
-		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
+		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "product runtime is nil"}
 	}
 	if !ir.IsUnlocked() {
 		return ctx, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}

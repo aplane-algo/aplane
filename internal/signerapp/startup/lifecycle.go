@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // LifecycleService is a long-lived process service started and stopped by the
@@ -31,8 +31,8 @@ type ServerAuditLogger interface {
 // configuration and identity assembly are complete.
 type LifecyclePlan struct {
 	Services        []LifecycleService
-	ProductRuntime  *identity.Runtime
-	StartWatcher    func(*identity.Runtime)
+	ProductRuntime  *productruntime.Runtime
+	StartWatcher    func(*productruntime.Runtime)
 	ShutdownTimeout time.Duration
 	AuditLog        ServerAuditLogger
 	Info            func(string)
@@ -41,7 +41,7 @@ type LifecyclePlan struct {
 }
 
 // RunLifecycle owns service start, wait, shutdown ordering, audit shutdown,
-// and identity runtime destruction for the signer process.
+// and product runtime destruction for the signer process.
 func RunLifecycle(ctx context.Context, plan LifecyclePlan) {
 	if plan.ProductRuntime != nil && plan.StartWatcher != nil && plan.ProductRuntime.IsUnlocked() {
 		plan.StartWatcher(plan.ProductRuntime)

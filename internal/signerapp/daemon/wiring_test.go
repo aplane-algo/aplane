@@ -8,7 +8,7 @@ import (
 )
 
 // testProductBuildOptions mirrors the startup options main() derives from the
-// server's resolved state, for tests that wire identity runtimes directly.
+// server's resolved state, for tests that wire product runtimes directly.
 func testProductBuildOptions(fs *Signer) signerstartup.ProductBuildOptions {
 	return signerstartup.ProductBuildOptions{
 		DataDir:  fs.dataDir,

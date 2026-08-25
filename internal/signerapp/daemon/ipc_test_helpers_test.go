@@ -9,7 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
@@ -22,13 +22,13 @@ func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 	return server
 }
 
-func newBoundTestSession(server *IPCServer, conn net.Conn, ir *identity.Runtime) *adminserver.Session {
+func newBoundTestSession(server *IPCServer, conn net.Conn, ir *productruntime.Runtime) *adminserver.Session {
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.signer.adminSessionDeps())
 	remoteAddr := "test-ipc"
 	if addr := conn.RemoteAddr(); addr != nil {
 		remoteAddr = addr.String()
 	}
 	session.SetTransportInfo(adminserver.TransportIPC, remoteAddr)
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session
 }

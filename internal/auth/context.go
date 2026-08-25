@@ -5,8 +5,6 @@ package auth
 
 import "context"
 
-import "github.com/aplane-algo/aplane/internal/productmode"
-
 // contextKey is an unexported type for context keys in this package.
 type contextKey struct{}
 
@@ -25,11 +23,14 @@ func IdentityFromContext(ctx context.Context) *Identity {
 	return id
 }
 
-// NewDefaultIdentity returns the effective product identity for the given auth method.
-func NewDefaultIdentity(method string) *Identity {
+const SystemProductAdminPrincipalID = "system:product-admin"
+
+// NewProductIdentity returns the reserved product-admin principal for the
+// given authentication method.
+func NewProductIdentity(method string) *Identity {
 	return &Identity{
-		ID:     productmode.IdentityID,
-		Type:   "service",
+		ID:     SystemProductAdminPrincipalID,
+		Type:   "system",
 		Method: method,
 	}
 }

@@ -771,7 +771,7 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 		want wantProjection
 	}{
 		{
-			name: "install creates enabled identity-local state",
+			name: "install creates enabled product-store state",
 			run: func(t *testing.T, paths storepaths.Paths, parsed ParsedTemplate, masterKey []byte) {
 				t.Helper()
 				if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey)); err != nil {

@@ -15,7 +15,6 @@ func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
 		viewState: ViewTokenProvisioningPopup,
 		tokenApproval: tokenApprovalState{request: &PendingTokenRequest{
 			ID:             "request-1",
-			IdentityID:     "default",
 			SSHFingerprint: "SHA256:abcdefghijklmnopqrstuvwxyz",
 			RemoteAddr:     "127.0.0.1:12345",
 		}},

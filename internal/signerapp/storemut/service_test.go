@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	util "github.com/aplane-algo/aplane/internal/tokenfile"
@@ -244,23 +244,23 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 	}
 }
 
-func TestSaveIdentitySettingPersistsIdentityConfigValue(t *testing.T) {
+func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 	dir := t.TempDir()
 
 	svc := New(utilkeys.NewPaths(dir), nil, nil)
-	if err := svc.SaveIdentitySetting(dir, "user_auto_approve", true); err != nil {
-		t.Fatalf("SaveIdentitySetting() error = %v", err)
+	if err := svc.SaveRuntimeSetting(dir, "user_auto_approve", true); err != nil {
+		t.Fatalf("SaveRuntimeSetting() error = %v", err)
 	}
-	if err := svc.SaveIdentitySetting(dir, "passphrase_timeout", "30m"); err != nil {
-		t.Fatalf("SaveIdentitySetting() error = %v", err)
+	if err := svc.SaveRuntimeSetting(dir, "passphrase_timeout", "30m"); err != nil {
+		t.Fatalf("SaveRuntimeSetting() error = %v", err)
 	}
 
-	cfg, err := identity.LoadStoredConfig(dir)
+	cfg, err := productruntime.LoadStoredConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadStoredConfig() error = %v", err)
 	}
 	if cfg.UserAutoApprove == nil || !*cfg.UserAutoApprove {
-		t.Fatal("user_auto_approve not persisted to identity config")
+		t.Fatal("user_auto_approve not persisted to product runtime config")
 	}
 	if cfg.PassphraseTimeout != "30m" {
 		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "30m")

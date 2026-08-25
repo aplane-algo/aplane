@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package identity
+package productruntime
 
 import (
 	"bytes"
@@ -19,10 +19,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// IdentityConfig holds identity-scoped configuration that may vary
-// per identity. Process-global settings (ports, SSH config, theme)
-// remain on ServerConfig.
-type IdentityConfig struct {
+// RuntimeConfig holds mutable settings for the product runtime. Process-global
+// settings (ports, SSH config, theme) remain on ServerConfig.
+type RuntimeConfig struct {
 	mu               sync.RWMutex
 	userAutoApprove  bool
 	lockOnDisconnect bool
@@ -30,7 +29,7 @@ type IdentityConfig struct {
 	approvalWait     time.Duration
 }
 
-// ConfigDefaults contains process-level defaults that an identity overlay can
+// ConfigDefaults contains process-level defaults that the product overlay can
 // inherit at startup.
 type ConfigDefaults struct {
 	UserAutoApprove  bool
@@ -39,7 +38,7 @@ type ConfigDefaults struct {
 	ApprovalWait     time.Duration
 }
 
-// EffectiveConfig contains the concrete runtime settings for one identity.
+// EffectiveConfig contains the concrete product runtime settings.
 type EffectiveConfig struct {
 	UserAutoApprove  bool
 	LockOnDisconnect bool
@@ -47,7 +46,7 @@ type EffectiveConfig struct {
 	ApprovalWait     time.Duration
 }
 
-// StoredConfig is the persisted per-identity configuration overlay.
+// StoredConfig is the persisted product runtime configuration overlay.
 // Zero values mean "inherit from process-global defaults" except for
 // PassphraseTimeout, where an empty string means "inherit".
 type StoredConfig struct {
@@ -58,12 +57,12 @@ type StoredConfig struct {
 	Mode              string `yaml:"mode,omitempty"`
 }
 
-// NewIdentityConfig creates an identity config with values from the process config.
-func NewIdentityConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, approvalWait time.Duration) *IdentityConfig {
+// NewRuntimeConfig creates runtime settings from the process config.
+func NewRuntimeConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, approvalWait time.Duration) *RuntimeConfig {
 	if approvalWait <= 0 {
 		approvalWait = serverconfig.DefaultApprovalWait
 	}
-	return &IdentityConfig{
+	return &RuntimeConfig{
 		userAutoApprove:  userAutoApprove,
 		lockOnDisconnect: lockOnDisconnect,
 		sessionTimeout:   sessionTimeout,
@@ -72,67 +71,67 @@ func NewIdentityConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, a
 }
 
 // UserAutoApprove returns whether unmatched signing requests skip operator approval.
-func (c *IdentityConfig) UserAutoApprove() bool {
+func (c *RuntimeConfig) UserAutoApprove() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.userAutoApprove
 }
 
 // SetUserAutoApprove updates whether unmatched signing requests skip operator approval.
-func (c *IdentityConfig) SetUserAutoApprove(v bool) {
+func (c *RuntimeConfig) SetUserAutoApprove(v bool) {
 	c.mu.Lock()
 	c.userAutoApprove = v
 	c.mu.Unlock()
 }
 
-// LockOnDisconnect returns whether the identity should lock when its admin session disconnects.
-func (c *IdentityConfig) LockOnDisconnect() bool {
+// LockOnDisconnect returns whether the product runtime should lock when its admin session disconnects.
+func (c *RuntimeConfig) LockOnDisconnect() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.lockOnDisconnect
 }
 
 // SetLockOnDisconnect updates the lock-on-disconnect setting.
-func (c *IdentityConfig) SetLockOnDisconnect(v bool) {
+func (c *RuntimeConfig) SetLockOnDisconnect(v bool) {
 	c.mu.Lock()
 	c.lockOnDisconnect = v
 	c.mu.Unlock()
 }
 
-// SessionTimeout returns the admin idle disconnect timeout for this identity.
-func (c *IdentityConfig) SessionTimeout() time.Duration {
+// SessionTimeout returns the product admin idle disconnect timeout.
+func (c *RuntimeConfig) SessionTimeout() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sessionTimeout
 }
 
 // SetSessionTimeout updates the admin idle disconnect timeout.
-func (c *IdentityConfig) SetSessionTimeout(d time.Duration) {
+func (c *RuntimeConfig) SetSessionTimeout(d time.Duration) {
 	c.mu.Lock()
 	c.sessionTimeout = d
 	c.mu.Unlock()
 }
 
-// ApprovalWait returns the maximum manual signing approval wait for this identity.
-func (c *IdentityConfig) ApprovalWait() time.Duration {
+// ApprovalWait returns the product's maximum manual signing approval wait.
+func (c *RuntimeConfig) ApprovalWait() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.approvalWait
 }
 
 // SetApprovalWait updates the manual signing approval wait.
-func (c *IdentityConfig) SetApprovalWait(d time.Duration) {
+func (c *RuntimeConfig) SetApprovalWait(d time.Duration) {
 	c.mu.Lock()
 	c.approvalWait = d
 	c.mu.Unlock()
 }
 
-// ConfigPath returns the path to an identity's persisted settings file.
+// ConfigPath returns the path to the product runtime's persisted settings file.
 func ConfigPath(dataRoot string) string {
 	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "config.yaml")
 }
 
-// LoadStoredConfig reads the per-identity settings overlay.
+// LoadStoredConfig reads the product runtime settings overlay.
 // Returns an empty config if the file does not exist.
 func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
 	path := ConfigPath(dataRoot)
@@ -141,7 +140,7 @@ func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
 		return &StoredConfig{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read identity config: %w", err)
+		return nil, fmt.Errorf("failed to read runtime config: %w", err)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return &StoredConfig{}, nil
@@ -151,27 +150,27 @@ func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("failed to parse identity config: %w", err)
+		return nil, fmt.Errorf("failed to parse runtime config: %w", err)
 	}
 	return &cfg, nil
 }
 
-// SaveStoredSetting writes a single per-identity setting atomically.
+// SaveStoredSetting writes a single product runtime setting atomically.
 func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 	path := ConfigPath(dataRoot)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("failed to create identity config directory: %w", err)
+		return fmt.Errorf("failed to create runtime config directory: %w", err)
 	}
 
 	existing := make(map[string]interface{})
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read identity config: %w", err)
+		return fmt.Errorf("failed to read runtime config: %w", err)
 	}
 	if len(data) > 0 {
 		if err := yaml.Unmarshal(data, &existing); err != nil {
-			return fmt.Errorf("failed to parse identity config: %w", err)
+			return fmt.Errorf("failed to parse runtime config: %w", err)
 		}
 	}
 
@@ -179,17 +178,17 @@ func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 
 	out, err := yaml.Marshal(existing)
 	if err != nil {
-		return fmt.Errorf("failed to marshal identity config: %w", err)
+		return fmt.Errorf("failed to marshal runtime config: %w", err)
 	}
 
 	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.PrivateStoreFileProfile); err != nil {
-		return fmt.Errorf("failed to write identity config: %w", err)
+		return fmt.Errorf("failed to write runtime config: %w", err)
 	}
 	return nil
 }
 
 // Apply returns the effective runtime values after overlaying the stored
-// identity settings on top of process-global defaults.
+// product settings on top of process-global defaults.
 func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	effective := EffectiveConfig(defaults)
 
@@ -204,7 +203,7 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	if c.PassphraseTimeout != "" {
 		parsed, err := serverconfig.ParsePassphraseTimeout(c.PassphraseTimeout)
 		if err != nil {
-			return EffectiveConfig{}, fmt.Errorf("invalid identity passphrase_timeout: %w", err)
+			return EffectiveConfig{}, fmt.Errorf("invalid runtime passphrase_timeout: %w", err)
 		}
 		effective.SessionTimeout = parsed
 	}
@@ -212,13 +211,13 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	if c.ApprovalWait != "" {
 		parsed, err := serverconfig.ParseApprovalWait(c.ApprovalWait)
 		if err != nil {
-			return EffectiveConfig{}, fmt.Errorf("invalid identity approval_wait: %w", err)
+			return EffectiveConfig{}, fmt.Errorf("invalid runtime approval_wait: %w", err)
 		}
 		effective.ApprovalWait = parsed
 	}
 
 	if c.Mode != "" {
-		return EffectiveConfig{}, fmt.Errorf("identity config mode is unsupported in this release; use root node.yaml role")
+		return EffectiveConfig{}, fmt.Errorf("runtime config mode is unsupported in this release; use root node.yaml role")
 	}
 
 	return effective, nil

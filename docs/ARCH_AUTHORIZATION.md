@@ -5,8 +5,8 @@ principal, explicit allowed actions, resources, and the enforcement points that
 protect signer operations.
 
 Product-store model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Fixed Product Store and Runtime). The
-product surface does not expose tenant management, principal management, group
-management, grant management, or multiple independent operator domains.
+product surface exposes one reserved administrator principal and no mutable
+principal, group, grant, or runtime-selection management.
 
 ## Purpose
 
@@ -49,14 +49,14 @@ subject.
 
 A principal is the actor used for authorization decisions.
 
-Compatibility credentials map to the reserved system principal:
+Product credentials authenticate the reserved system principal:
 
 ```text
 system:product-admin
 ```
 
-The compatibility attribution value `default` is not a principal. It names the
-one product signing store in durable paths and retained output fields.
+`default` is not a principal. It names the product signing store directory in
+durable paths.
 
 ### Product Store and Target Attribution
 
@@ -71,9 +71,8 @@ The one product store owns signer state:
 - runtime lock/unlock state
 - watcher and reload ownership
 
-Its durable namespace and retained target-attribution value are `default`.
-That value is written by status, admin, SSH, and audit boundary adapters; it is
-not an authorization principal or an internal target selector.
+Its durable namespace is `identities/default/`. The directory name is not an
+authorization principal or request value.
 
 ### Action
 
@@ -106,13 +105,12 @@ Conventions:
 - `ID` is the concrete resource identifier when one exists, such as a key
   address, request ID, or template key type.
 
-## Product Mode
+## Product Authorization
 
 The product mode is:
 
 ```text
 mode: product_single
-product store attribution: default
 admin principal: system:product-admin
 authorization source: closed product action allowlist
 identity/principal/group/grant management UI: none
@@ -130,10 +128,8 @@ credential
 
 Important implications:
 
-- Logging in with `apadmin` authenticates the one product store, and the admin
+- Logging in with `apadmin` authenticates against the product store, and the admin
   session authorizes as `system:product-admin`.
-- `default` is retained product-store attribution. It is not the authorization
-  principal or an authorization selector.
 - A known action is not automatically allowed. It must also appear in the
   explicit product action allowlist.
 
@@ -316,12 +312,10 @@ Wire behavior:
 
 ## Audit Attribution
 
-Audit records distinguish the actor from the signing identity being acted on.
+Audit records identify the actors and request context for sensitive operations.
 
 Relevant audit fields:
 
-- `identity_id`: owning or target identity
-- `target_identity_id`: signing identity targeted by the operation
 - `principal`: principal field
 - `requester_principal`: principal requesting the operation
 - `approver_principal`: principal approving or rejecting the operation
@@ -332,13 +326,13 @@ Relevant audit fields:
 Target invariant:
 
 ```text
-Every sensitive operation should be attributable to both a target identity and a
-principal.
+Every sensitive operation should be attributable to its principal and relevant
+operation-specific resource evidence.
 ```
 
 Authorization denials must also be attributable. Admin denials record the
-session, principal, target identity, action, resource, and denial reason. HTTP
-denials record the authenticated identity and remote address at the HTTP auth
+session, principal, action, resource, and denial reason. HTTP
+denials record the authenticated principal and remote address at the HTTP auth
 boundary.
 
 ## Security Invariants

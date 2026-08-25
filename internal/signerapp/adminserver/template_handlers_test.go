@@ -11,11 +11,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -86,7 +86,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.templateDeps())
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListLibraryTemplatesMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -227,7 +227,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 }
 
 func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -235,7 +235,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 	svc := &stubServices{}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.templateDeps())
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListLibraryTemplatesMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -307,7 +307,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 }
 
 func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -319,7 +319,7 @@ func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.templateDeps())
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	dispatchAdminMessage(t, session, protocol.ListKeyTypesMessage{
 		BaseMessage: protocol.BaseMessage{

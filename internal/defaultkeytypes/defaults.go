@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package defaultkeytypes owns staged bootstrap installation of the
-// identity-local key types enabled automatically for new signer stores. It
+// product-store key types enabled automatically for new signer stores. It
 // mutates the unpublished generation through templatelibrary and does not use
 // a live identity lock or runtime reload.
 package defaultkeytypes
@@ -36,7 +36,7 @@ var signerDefaultTemplates = []bundledTemplate{
 }
 
 // InstallForNewIdentity installs key types that should be available and enabled
-// immediately after a new identity store is initialized.
+// immediately after a new product store is initialized.
 //
 // The caller must be in an initialization or identity-mutation context and must
 // have already registered built-in LogicSig providers. Sentry nodes skip signer

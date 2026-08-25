@@ -7,11 +7,11 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func (s Service) SignComponents(ctx context.Context, ir *identity.Runtime, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
+func (s Service) SignComponents(ctx context.Context, ir *productruntime.Runtime, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {
 		return nil, preErr
@@ -33,7 +33,7 @@ func (s Service) SignComponents(ctx context.Context, ir *identity.Runtime, req s
 	return s.Deps.NewSigningService(ir).SignComponentsWithContext(ctx, req, ir.SnapshotKeySession())
 }
 
-func (s Service) Assemble(ctx context.Context, ir *identity.Runtime, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, *signersigning.ServiceError) {
+func (s Service) Assemble(ctx context.Context, ir *productruntime.Runtime, req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {
 		return nil, preErr

@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -52,8 +52,8 @@ func (d *stubDeps) Logf(string, ...interface{}) {}
 var testPassphrase = []byte("test-passphrase-for-templateadmin")
 
 // setupServiceWithReloadCounter constructs a templateadmin.Service with a real
-// identity runtime whose reload function increments the returned counter.
-func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *atomic.Int64) {
+// product runtime whose reload function increments the returned counter.
+func setupServiceWithReloadCounter(t *testing.T) (Service, *productruntime.Runtime, *atomic.Int64) {
 	t.Helper()
 	svc, ir, reloadCount, _ := setupServiceWithReload(t, nil)
 	return svc, ir, reloadCount
@@ -62,7 +62,7 @@ func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *a
 func setupServiceWithReload(
 	t *testing.T,
 	reload func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error),
-) (Service, *identity.Runtime, *atomic.Int64, *stubDeps) {
+) (Service, *productruntime.Runtime, *atomic.Int64, *stubDeps) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -82,7 +82,7 @@ func setupServiceWithReload(
 
 	deps := &stubDeps{keyPaths: keyPaths}
 	var reloadCount atomic.Int64
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
@@ -104,7 +104,7 @@ func setupServiceWithReload(
 	return svc, ir, &reloadCount, deps
 }
 
-func putInstalledTemplateForServiceTest(t *testing.T, ir *identity.Runtime, keyType string, state keytypestate.State) {
+func putInstalledTemplateForServiceTest(t *testing.T, ir *productruntime.Runtime, keyType string, state keytypestate.State) {
 	t.Helper()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		if _, err := templatestore.SaveTemplateActive(

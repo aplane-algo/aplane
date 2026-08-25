@@ -33,7 +33,7 @@ type CompletionReport struct {
 // inventory, publishes any required clean-cutover baseline, atomically closes
 // the pending root, and only then removes the now-unreferenced snapshot.
 //
-// The caller holds the identity mutation lock. A direct-filesystem mutation
+// The caller holds the store mutation lock. A direct-filesystem mutation
 // detected at either final scan leaves the root pending. A clean rollback
 // cutover receives its post-rewrap baseline before close; a diverged cutover
 // never receives a new baseline.

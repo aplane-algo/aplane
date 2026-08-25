@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
@@ -24,7 +24,7 @@ import (
 // Destination policy, templates, and key-type generation state are neither
 // read from the archive nor changed by this operation.
 func (s Service) RestoreBackup(
-	ir *identity.Runtime,
+	ir *productruntime.Runtime,
 	req adminproto.RestoreBackupRequest,
 ) adminproto.RestoreBackupResult {
 	result := adminproto.RestoreBackupResult{OperationID: req.OperationID}

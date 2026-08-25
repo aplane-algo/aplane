@@ -20,9 +20,9 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}
@@ -87,9 +87,9 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
 	generated := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
@@ -138,9 +138,9 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
 	svc := signerAdminServices{signer: server}

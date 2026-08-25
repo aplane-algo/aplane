@@ -102,9 +102,9 @@ func startPendingTestRotation(
 func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	newPassphrase := []byte("new-unlock-passphrase")
 	kr := startPendingTestRotation(t, server, newPassphrase)
@@ -126,7 +126,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 	}
 	if !ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf(
-			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			"runtime state = unlocked %v recovery %v, want ordinary unlocked",
 			ir.IsUnlocked(),
 			ir.IsRecovery(),
 		)
@@ -152,9 +152,9 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	convertTestSignerToGenerational(t, server)
 	kr, err := crypto.OpenKeyringStore(
@@ -200,7 +200,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	}
 	if !ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf(
-			"identity state = unlocked %v recovery %v, want ordinary unlocked",
+			"runtime state = unlocked %v recovery %v, want ordinary unlocked",
 			ir.IsUnlocked(),
 			ir.IsRecovery(),
 		)
@@ -215,9 +215,9 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	newPassphrase := []byte("new-recovery-passphrase")
 	kr := startPendingTestRotation(t, server, newPassphrase)
@@ -245,7 +245,7 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
 		t.Fatalf(
-			"identity state = recovery %v unlocked %v, want recovery",
+			"runtime state = recovery %v unlocked %v, want recovery",
 			ir.IsRecovery(),
 			ir.IsUnlocked(),
 		)
@@ -255,9 +255,9 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
 	generationID := convertTestSignerToGenerational(t, server)
@@ -276,7 +276,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
-		t.Fatalf("identity state = recovery %v unlocked %v, want recovery (signing blocked)", ir.IsRecovery(), ir.IsUnlocked())
+		t.Fatalf("runtime state = recovery %v unlocked %v, want recovery (signing blocked)", ir.IsRecovery(), ir.IsUnlocked())
 	}
 
 	// Removing the defect and unlocking again succeeds normally.
@@ -296,9 +296,9 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
 	generationID := convertTestSignerToGenerational(t, server)
@@ -318,7 +318,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
-		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+		t.Fatalf("runtime state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
 	}
 
 	if err := os.Remove(garbage); err != nil {
@@ -333,9 +333,9 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
 	generationID := convertTestSignerToGenerational(t, server)
@@ -360,7 +360,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
-		t.Fatalf("identity state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
+		t.Fatalf("runtime state = recovery %v unlocked %v, want recovery", ir.IsRecovery(), ir.IsUnlocked())
 	}
 
 	for _, stray := range strays {

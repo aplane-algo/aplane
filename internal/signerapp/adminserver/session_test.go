@@ -13,10 +13,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type queueConn struct {
@@ -44,7 +43,7 @@ func (c *queueConn) RemoteAddr() string { return "test" }
 func (c *queueConn) Close() error       { return nil }
 
 type stubServices struct {
-	runtime      *identity.Runtime
+	runtime      *productruntime.Runtime
 	verifyErrs   []error
 	unlockOK     bool
 	unlockErrMsg string
@@ -131,8 +130,8 @@ type stubServices struct {
 	validatePolicyResult   adminproto.ValidatePolicyResult
 }
 
-func (s *stubServices) ProductIdentityRuntime() *identity.Runtime { return s.runtime }
-func (s *stubServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
+func (s *stubServices) ProductRuntime() *productruntime.Runtime { return s.runtime }
+func (s *stubServices) VerifyPassphrase(ir *productruntime.Runtime, passphrase []byte) error {
 	s.verifyCalls++
 	if len(s.verifyErrs) == 0 {
 		return nil
@@ -141,7 +140,7 @@ func (s *stubServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte)
 	s.verifyErrs = s.verifyErrs[1:]
 	return err
 }
-func (s *stubServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
+func (s *stubServices) UnlockIdentity(ir *productruntime.Runtime, passphrase []byte) (bool, int, string, string) {
 	s.unlockCalls++
 	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
 }
@@ -151,7 +150,7 @@ func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) ad
 	}
 	return s.initializeStoreResult
 }
-func (s *stubServices) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s *stubServices) ChangeStorePassphrase(ir *productruntime.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	s.changePassphraseCalls++
 	s.lastChangePassphrase = adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: append([]byte(nil), req.CurrentPassphrase...),
@@ -163,69 +162,60 @@ func (s *stubServices) NewSessionIdentity(method string) *auth.Identity {
 	if s.newIdentity != nil {
 		return s.newIdentity
 	}
-	return auth.NewDefaultIdentity(method)
+	return auth.NewProductIdentity(method)
 }
-func (s *stubServices) RevokeProductToken(ir *identity.Runtime) error { return nil }
-func (s *stubServices) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
+func (s *stubServices) RevokeProductToken(ir *productruntime.Runtime) error { return nil }
+func (s *stubServices) BuildAdminSettings(ir *productruntime.Runtime) adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }
-func (s *stubServices) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s *stubServices) UpdateAdminSetting(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
 	return nil
 }
-func (s *stubServices) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+func (s *stubServices) BuildPolicySnapshot(ir *productruntime.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	s.policySnapshotCalls++
 	s.lastPolicySnapshot = target
-	if s.policySnapshotResult.IdentityID == "" {
-		s.policySnapshotResult.IdentityID = productmode.IdentityID
-	}
 	if s.policySnapshotResult.Target == "" {
 		s.policySnapshotResult.Target = target
 	}
 	return s.policySnapshotResult
 }
-func (s *stubServices) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+func (s *stubServices) ReplacePolicy(ir *productruntime.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
 	s.replacePolicyCalls++
 	s.lastReplacePolicy = req
-	if s.replacePolicyResult.IdentityID == "" {
-		s.replacePolicyResult.IdentityID = productmode.IdentityID
-	}
 	if s.replacePolicyResult.Target == "" {
 		s.replacePolicyResult.Target = req.Target
 	}
 	return s.replacePolicyResult
 }
-func (s *stubServices) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+func (s *stubServices) ValidatePolicy(ir *productruntime.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
 	s.validatePolicyCalls++
 	s.lastValidatePolicy = req
-	if s.validatePolicyResult.IdentityID == "" {
-		s.validatePolicyResult.IdentityID = productmode.IdentityID
-	}
 	if s.validatePolicyResult.Target == "" {
 		s.validatePolicyResult.Target = req.Target
 	}
 	return s.validatePolicyResult
 }
-func (s *stubServices) ListKeys(ir *identity.Runtime) ([]adminproto.KeyInfo, error) {
+func (s *stubServices) ListKeys(ir *productruntime.Runtime) ([]adminproto.KeyInfo, error) {
 	return nil, nil
 }
-func (s *stubServices) GetKeyDetails(ir *identity.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
+func (s *stubServices) GetKeyDetails(ir *productruntime.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
 	return adminproto.GetKeyDetailsResult{}
 }
-func (s *stubServices) GenerateKey(ctx context.Context, ir *identity.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
+func (s *stubServices) GenerateKey(ctx context.Context, ir *productruntime.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
 	s.generateKeyCalls++
 	s.lastGenerateKeyContext = ctx
 	s.lastGenerateKey = req
 	return s.generateKeyResult
 }
-func (s *stubServices) DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+func (s *stubServices) DeleteKey(ir *productruntime.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
 	return adminproto.DeleteKeyResult{}
 }
-func (s *stubServices) ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+func (s *stubServices) ImportKey(ir *productruntime.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	s.importKeyCalls++
 	s.lastImportKey = req
 	return s.importKeyResult
 }
-func (s *stubServices) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
+func (s *stubServices) BackupIdentity(ir *productruntime.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
 	s.backupCalls++
 	s.lastBackupRequest = adminproto.BackupIdentityRequest{
 		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
@@ -233,38 +223,38 @@ func (s *stubServices) BackupIdentity(ir *identity.Runtime, req adminproto.Backu
 	}
 	return s.backupResult
 }
-func (s *stubServices) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult {
+func (s *stubServices) ListBackups(ir *productruntime.Runtime) adminproto.ListBackupsResult {
 	s.listBackupsCalls++
 	return s.listBackupsResult
 }
-func (s *stubServices) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
+func (s *stubServices) DeleteBackup(ir *productruntime.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
 	s.deleteBackupCalls++
 	s.lastDeleteBackup = req
 	return s.deleteBackupResult
 }
-func (s *stubServices) BeginBackupImport(*identity.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+func (s *stubServices) BeginBackupImport(*productruntime.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	s.beginBackupImportCalls++
 	return adminproto.BeginBackupImportResult{}
 }
-func (s *stubServices) AppendBackupImport(*identity.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+func (s *stubServices) AppendBackupImport(*productruntime.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
 	s.appendBackupImportCalls++
 	return adminproto.AppendBackupImportResult{}
 }
-func (s *stubServices) CommitBackupImport(_ *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s *stubServices) CommitBackupImport(_ *productruntime.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	s.commitBackupImportCalls++
 	s.lastCommitBackupImport = req
 	s.lastCommitBackupImport.ExportPassphrase = append([]byte(nil), req.ExportPassphrase...)
 	return s.commitBackupImportResult
 }
-func (*stubServices) AbortBackupImport(*identity.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+func (*stubServices) AbortBackupImport(*productruntime.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	return adminproto.AbortBackupImportResult{}
 }
 
-func (s *stubServices) ReadBackupChunk(*identity.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+func (s *stubServices) ReadBackupChunk(*productruntime.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	s.readBackupChunkCalls++
 	return s.readBackupChunkResult
 }
-func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
+func (s *stubServices) PreviewRestore(ir *productruntime.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	s.previewRestoreCalls++
 	s.lastPreviewRestore = adminproto.PreviewRestoreRequest{
 		ArchivePath:      req.ArchivePath,
@@ -272,7 +262,7 @@ func (s *stubServices) PreviewRestore(ir *identity.Runtime, req adminproto.Previ
 	}
 	return s.previewRestoreResult
 }
-func (s *stubServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+func (s *stubServices) RestoreBackup(ir *productruntime.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	s.restoreBackupCalls++
 	s.lastRestoreBackup = adminproto.RestoreBackupRequest{
 		OperationID:      req.OperationID,
@@ -283,67 +273,67 @@ func (s *stubServices) RestoreBackup(ir *identity.Runtime, req adminproto.Restor
 	}
 	return s.restoreBackupResult
 }
-func (s *stubServices) RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+func (s *stubServices) RollbackRestore(ir *productruntime.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	s.rollbackRestoreCalls++
 	s.lastRollbackRestore = req
 	return s.rollbackRestoreResult
 }
-func (s *stubServices) ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult {
+func (s *stubServices) ReconcileStore(ir *productruntime.Runtime) adminproto.ReconcileStoreResult {
 	s.reconcileStoreCalls++
 	return s.reconcileStoreResult
 }
-func (s *stubServices) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult {
+func (s *stubServices) ListLibraryTemplates(ir *productruntime.Runtime) adminproto.ListLibraryTemplatesResult {
 	s.listLibraryCalls++
 	return s.listLibraryResult
 }
-func (s *stubServices) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
+func (s *stubServices) InstallLibraryTemplate(ir *productruntime.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
 	s.installLibraryCalls++
 	s.lastInstallTemplate = req
 	return s.installResult
 }
-func (s *stubServices) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListInstalledTemplatesResult {
+func (s *stubServices) ListInstalledTemplates(ir *productruntime.Runtime) adminproto.ListInstalledTemplatesResult {
 	s.listInstalledCalls++
 	return s.listInstalledResult
 }
-func (s *stubServices) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
+func (s *stubServices) ShowInstalledTemplate(ir *productruntime.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
 	s.showInstalledCalls++
 	s.lastShowInstalled = req
 	return s.showInstalledResult
 }
-func (s *stubServices) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
+func (s *stubServices) ShowLibraryTemplate(ir *productruntime.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
 	s.showLibraryCalls++
 	s.lastShowLibrary = req
 	return s.showLibraryResult
 }
-func (s *stubServices) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
+func (s *stubServices) ImportInstalledTemplate(ir *productruntime.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
 	s.importInstalledCalls++
 	s.lastImportInstalled = adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: append([]byte(nil), req.TemplateYAML...),
 	}
 	return s.importInstalledResult
 }
-func (s *stubServices) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
+func (s *stubServices) RemoveInstalledTemplate(ir *productruntime.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
 	s.removeInstalledCalls++
 	s.lastRemoveInstalled = req
 	return s.removeInstalledResult
 }
-func (s *stubServices) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
+func (s *stubServices) ActivateKeyType(ir *productruntime.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
 	s.activateKeyTypeCalls++
 	s.lastActivateKeyType = req
 	return s.activateResult
 }
-func (s *stubServices) DeactivateKeyType(ir *identity.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
+func (s *stubServices) DeactivateKeyType(ir *productruntime.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
 	s.deactivateKeyTypeCalls++
 	s.lastDeactivateKeyType = req
 	return s.deactivateResult
 }
-func (s *stubServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult {
+func (s *stubServices) ListKeyTypes(ir *productruntime.Runtime) adminproto.ListKeyTypesResult {
 	s.listKeyTypesCalls++
 	return s.keyTypesResult
 }
 func (s stubServices) deps() SessionDeps {
 	return SessionDeps{
-		Identity: &s,
+		Product:  &s,
 		Settings: &s,
 		Keys:     &s,
 	}
@@ -351,7 +341,7 @@ func (s stubServices) deps() SessionDeps {
 
 func (s *stubServices) templateDeps() SessionDeps {
 	return SessionDeps{
-		Identity:  s,
+		Product:   s,
 		Settings:  s,
 		Keys:      s,
 		Templates: s,
@@ -360,8 +350,8 @@ func (s *stubServices) templateDeps() SessionDeps {
 
 func (s *stubServices) backupDeps() SessionDeps {
 	return SessionDeps{
-		Identity: s,
-		Backups:  s,
+		Product: s,
+		Backups: s,
 	}
 }
 
@@ -371,7 +361,7 @@ func currentAdminProtocolVersion() *protocol.ProtocolVersion {
 }
 
 func TestSessionAuthenticateSuccess(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -390,7 +380,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	session := NewSession(conn, stubServices{
 		runtime:     ir,
 		unlockOK:    true,
-		newIdentity: auth.NewDefaultIdentity("ipc-passphrase"),
+		newIdentity: auth.NewProductIdentity("ipc-passphrase"),
 	}.deps())
 	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
 
@@ -410,9 +400,6 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.SessionID == "" {
 		t.Fatal("SessionContext().SessionID is empty")
 	}
-	if sessionCtx.TargetIdentityID != productmode.IdentityID {
-		t.Fatalf("SessionContext().TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
-	}
 	if sessionCtx.AuthMethod != "ipc-passphrase" {
 		t.Fatalf("SessionContext().AuthMethod = %q, want ipc-passphrase", sessionCtx.AuthMethod)
 	}
@@ -422,8 +409,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if sessionCtx.RemoteAddr != "unix:/tmp/aplane.sock" {
 		t.Fatalf("SessionContext().RemoteAddr = %q, want unix:/tmp/aplane.sock", sessionCtx.RemoteAddr)
 	}
-	if sessionCtx.AdminPrincipal.ID != productmode.IdentityID {
-		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, productmode.IdentityID)
+	if sessionCtx.AdminPrincipal.ID != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("SessionContext().AdminPrincipal.ID = %q, want %q", sessionCtx.AdminPrincipal.ID, auth.SystemProductAdminPrincipalID)
 	}
 	if sessionCtx.RequesterPrincipal.ID != sessionCtx.AdminPrincipal.ID {
 		t.Fatalf("SessionContext().RequesterPrincipal.ID = %q, want %q", sessionCtx.RequesterPrincipal.ID, sessionCtx.AdminPrincipal.ID)
@@ -456,7 +443,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 }
 
 func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -468,9 +455,9 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := &stubServices{runtime: ir, unlockOK: true, newIdentity: auth.NewDefaultIdentity("ipc-passphrase")}
+	svc := &stubServices{runtime: ir, unlockOK: true, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
 	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, SessionDeps{Identity: svc})
+	session := NewSession(conn, SessionDeps{Product: svc})
 	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
 
 	if !session.Authenticate() {
@@ -542,7 +529,7 @@ func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {
 		},
 	}
 	conn := &queueConn{reads: [][]byte{initMsg}}
-	session := NewSession(conn, SessionDeps{Identity: svc})
+	session := NewSession(conn, SessionDeps{Product: svc})
 	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
 
 	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
@@ -606,7 +593,7 @@ func TestSessionDispatchRejectsNonRequestEnvelope(t *testing.T) {
 }
 
 func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -615,10 +602,10 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	conn := &queueConn{}
 	svc := &stubServices{}
 	session := NewSession(conn, SessionDeps{
-		Identity: svc,
+		Product:  svc,
 		Settings: svc,
 	})
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	if !session.Dispatch([]byte(`{"kind":"request","type":"get_admin_settings","id":"settings-1"}`)) {
 		t.Fatal("Dispatch(get_admin_settings) = false, want true")
@@ -631,7 +618,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 }
 
 func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -640,10 +627,10 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 	session := NewSession(conn, SessionDeps{
 		Keys: svc,
 		NodeFailure: func() error {
-			return identity.ErrNodeFailClosed
+			return productruntime.ErrNodeFailClosed
 		},
 	})
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 
 	if !session.Dispatch([]byte(`{"kind":"request","type":"list_keys","id":"keys-1"}`)) {
 		t.Fatal("Dispatch(list_keys) = false, want handled fail-closed response")
@@ -655,7 +642,7 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 }
 
 func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -682,21 +669,18 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	if !session.Authenticate() {
 		t.Fatal("Authenticate() = false, want true")
 	}
-	if session.TargetIdentityID() != productmode.IdentityID {
-		t.Fatalf("TargetIdentityID() = %q, want %q", session.TargetIdentityID(), productmode.IdentityID)
-	}
 	if got := session.Identity(); got == nil || got.ID != "alice" {
 		t.Fatalf("authenticated principal = %#v, want alice", got)
 	}
 }
 
-func TestSessionAuthenticateRejectsStaleIdentitySelectorBeforePassphrase(t *testing.T) {
-	ir := identity.New(identity.Config{
+func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","identity_id":"bob","protocol_version":{"major":5,"minor":0}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":5,"minor":0}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -727,17 +711,17 @@ func TestSessionAuthenticateRejectsStaleIdentitySelectorBeforePassphrase(t *test
 		t.Fatal(err)
 	}
 	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "invalid auth message format" {
-		t.Fatalf("auth result = %+v, want stale selector rejection", result)
+		t.Fatalf("auth result = %+v, want unknown-field rejection", result)
 	}
 }
 
-func TestSessionAuthenticateRejectsOldVersionBeforeStaleSelector(t *testing.T) {
-	ir := identity.New(identity.Config{
+func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","identity_id":"alice","protocol_version":{"major":4,"minor":5}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"alice","protocol_version":{"major":4,"minor":5}}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -766,7 +750,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeStaleSelector(t *testing.T) {
 }
 
 func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -931,7 +915,7 @@ func TestValidateAdminProtocolVersionAcceptsCurrentAndMinorSkew(t *testing.T) {
 }
 
 func TestSessionBindUpdatesSessionContext(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -951,9 +935,6 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	session.Bind(principal, ir)
 
 	sessionCtx := session.SessionContext()
-	if sessionCtx.TargetIdentityID != productmode.IdentityID {
-		t.Fatalf("TargetIdentityID = %q, want %q", sessionCtx.TargetIdentityID, productmode.IdentityID)
-	}
 	if sessionCtx.AdminPrincipal.ID != "admin-1" {
 		t.Fatalf("AdminPrincipal.ID = %q, want admin-1", sessionCtx.AdminPrincipal.ID)
 	}
@@ -978,7 +959,7 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 
 func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	conn := &queueConn{}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})

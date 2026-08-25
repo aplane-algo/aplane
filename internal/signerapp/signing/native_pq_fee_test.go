@@ -201,7 +201,7 @@ func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 		raw := msgpack.Encode(stxn)
 		budgets, err := authorizationBudgets(
 			[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(raw)}},
-			PlannerIdentitySnapshot{}, nil, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
+			PlannerRuntimeSnapshot{}, nil, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
 		)
 		if err != nil {
 			t.Fatal(err)

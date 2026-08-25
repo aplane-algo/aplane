@@ -122,8 +122,8 @@ func TestOpenClosesEveryFailedSetup(t *testing.T) {
 func TestRequestPreservesProtocolErrorCode(t *testing.T) {
 	raw, err := json.Marshal(protocol.ErrorMessage{
 		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindResponse, Type: protocol.MsgTypeError},
-		Code:        protocol.ResultCodeIdentityBusy,
-		Error:       "identity is busy",
+		Code:        protocol.ResultCodeStoreBusy,
+		Error:       "store is busy",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestRequestPreservesProtocolErrorCode(t *testing.T) {
 	client := &Client{session: session, timeout: time.Second}
 	var result protocol.GenerationsListMessage
 	err = client.Request(struct{}{}, &result)
-	if got := protocol.CodeForError(err); got != protocol.ResultCodeIdentityBusy {
-		t.Fatalf("Request() code = %q error = %v, want identity_busy", got, err)
+	if got := protocol.CodeForError(err); got != protocol.ResultCodeStoreBusy {
+		t.Fatalf("Request() code = %q error = %v, want store_busy", got, err)
 	}
 }

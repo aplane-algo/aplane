@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package identity
+package productruntime
 
 import (
 	"fmt"
@@ -31,7 +31,7 @@ func ValidateProductStoreLayout(dataRoot string) error {
 		}
 		info, statErr := os.Lstat(path)
 		if statErr != nil {
-			return fmt.Errorf("inspect product identity entry %q: %w", entry.Name(), statErr)
+			return fmt.Errorf("inspect product-store entry %q: %w", entry.Name(), statErr)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("product store %q must be a real directory, not a symlink or other file type", productmode.IdentityID)

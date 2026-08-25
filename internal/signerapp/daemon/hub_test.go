@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -44,14 +44,14 @@ func TestSignerStateString(t *testing.T) {
 func TestRegistryInitializesSignerRuntime(t *testing.T) {
 	signer := &Signer{}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
-	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
-	if signer.productIdentityRuntime() == nil {
-		t.Fatal("registry did not store identity runtime")
+	if signer.productRuntime() == nil {
+		t.Fatal("registry did not store product runtime")
 	}
 
 	if signer.getState() != SignerStateLocked {
@@ -70,7 +70,7 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 func TestSignerIsUnlocked(t *testing.T) {
 	signer := &Signer{}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
@@ -105,11 +105,11 @@ func TestSignerHasClient(t *testing.T) {
 func TestFailAllPendingRequests(t *testing.T) {
 	signer := &Signer{}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
-	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
 	// Verify that failing with no pending requests doesn't panic
 	signer.failAllPendingApprovals("test disconnect")
@@ -124,11 +124,11 @@ func TestFailAllPendingRequests(t *testing.T) {
 func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	signer := &Signer{}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
-	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
 	approved, err := ir.RequestSigningApproval("req-timeout", "ADDR", "SENDER", "desc", 1, 2, nil, 10*time.Millisecond)
@@ -151,11 +151,11 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 		hub: hub,
 	}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
-	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
 	approved, err := ir.RequestSigningApproval("req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
 	if err == nil {
@@ -190,11 +190,11 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{hub: hub}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 
-	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.identityBuildHooks(), nil)
+	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.productBuildHooks(), nil)
 	if svc.NotifyKeysChanged == nil {
 		t.Fatal("NotifyKeysChanged = nil, want configured callback")
 	}
@@ -206,22 +206,22 @@ func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 }
 
 func TestReloadServiceFailsNodeClosedOnNodeRoleConflict(t *testing.T) {
-	nodeState := &identity.NodeFailState{}
+	nodeState := &productruntime.NodeFailState{}
 	signer := &Signer{nodeFailState: nodeState}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 
 		NodeRole: noderole.RoleSigner,
 	})
 
-	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.identityBuildHooks(), nil)
+	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.productBuildHooks(), nil)
 	err := svc.BeforePublish(nil, map[string]string{
 		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": witness.Falcon1024V1,
 	})
 	if err == nil {
 		t.Fatal("BeforePublish() error = nil, want node role conflict")
 	}
-	if closeErr := nodeState.Err(); !errors.Is(closeErr, identity.ErrNodeFailClosed) {
+	if closeErr := nodeState.Err(); !errors.Is(closeErr, productruntime.ErrNodeFailClosed) {
 		t.Fatalf("node failure = %v, want ErrNodeFailClosed", closeErr)
 	}
 }
@@ -231,12 +231,12 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 	signer := &Signer{
 		hub: hub,
 	}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
 
-	svc := signer.newApprovalServiceForIdentity(ir)
+	svc := signer.newApprovalServiceForRuntime(ir)
 	if svc.HasClient == nil {
 		t.Fatal("ApprovalService.HasClient = nil, want product callback")
 	}
@@ -251,11 +251,11 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 	signer := &Signer{}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
 	signer.runtime = ir
-	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
 	done := make(chan struct{})
@@ -300,7 +300,7 @@ func TestTryUnlockInvalidPassphraseLeavesSignerLocked(t *testing.T) {
 
 	server.lock()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	success, keyCount, errMsg := ir.TryUnlock([]byte("wrong-passphrase"), nil)
 	if success {
 		t.Fatal("success = true, want false")

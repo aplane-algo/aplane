@@ -6,11 +6,11 @@ package daemon
 import "net/http"
 
 func (fs *Signer) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productIdentityRuntime(), fs.currentSSHServer() != nil, fs.ipcServer != nil))
+	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productRuntime(), fs.currentSSHServer() != nil, fs.ipcServer != nil))
 }
 
 func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	ir, ok := requireMethodAndIdentity(fs, w, r, http.MethodGet)
+	ir, ok := requireMethodAndRuntime(fs, w, r, http.MethodGet)
 	if !ok {
 		return
 	}
@@ -18,7 +18,7 @@ func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *Signer) handleKeys(w http.ResponseWriter, r *http.Request) {
-	ir, status, errMsg := fs.identityFromRequest(r)
+	ir, status, errMsg := fs.productRuntimeFromRequest(r)
 	if errMsg != "" {
 		writeErrorJSON(w, status, errMsg)
 		return
@@ -33,13 +33,13 @@ func (fs *Signer) handleKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *Signer) handleKeyTypes(w http.ResponseWriter, r *http.Request) {
-	ir, status, errMsg := fs.identityFromRequest(r)
+	ir, status, errMsg := fs.productRuntimeFromRequest(r)
 	if errMsg != "" {
 		writeErrorJSON(w, status, errMsg)
 		return
 	}
 
-	result, err := fs.restService().KeyTypesForIdentity(ir)
+	result, err := fs.restService().KeyTypes(ir)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
 		return

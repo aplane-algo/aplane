@@ -91,7 +91,7 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 				}
 
 				// Only react to key files and key type template files. Key type
-				// state records (.json) are admin-mutated under the per-identity
+				// state records (.json) are admin-mutated under the product-store
 				// mutation lock; reacting to them would race the same admin
 				// handlers that wrote them.
 				if !isReloadCandidate(event.Name) {

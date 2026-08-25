@@ -42,7 +42,7 @@ type testKeyPair struct {
 }
 
 // setupTestKeysDir creates a temporary keys directory and explicit keystore paths.
-// Returns the identity-scoped keys directory, path helper, and a cleanup function.
+// Returns the product-store keys directory, path helper, and a cleanup function.
 func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 	t.Helper()
 

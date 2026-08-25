@@ -15,8 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	util "github.com/aplane-algo/aplane/internal/tokenfile"
@@ -51,7 +52,7 @@ func TestBuildProductRuntimeRejectsExtraIdentityBeforeLoadingSecrets(t *testing.
 
 func TestValidateProductStoreLayoutBlankStore(t *testing.T) {
 	root := t.TempDir()
-	if err := identity.ValidateProductStoreLayout(root); err != nil {
+	if err := productruntime.ValidateProductStoreLayout(root); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -64,16 +65,16 @@ func TestBuildProductRuntimeAppliesStoredConfig(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
-	if err := identity.SaveStoredSetting(root, "user_auto_approve", true); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "user_auto_approve", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "lock_on_disconnect", false); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "lock_on_disconnect", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root); err != nil {
@@ -111,7 +112,7 @@ func TestBuildProductRuntimeRejectsStaleDecommissionedConfig(t *testing.T) {
 	root := t.TempDir()
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
-	configPath := identity.ConfigPath(root)
+	configPath := productruntime.ConfigPath(root)
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestBuildProductRuntimeRejectsStoredMode(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
-	if err := identity.SaveStoredSetting(root, "mode", "sentry"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "mode", "sentry"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root); err != nil {
@@ -154,12 +155,12 @@ func TestBuildProductRuntimeRejectsStoredMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("BuildProductRuntime() error = nil")
 	}
-	if !strings.Contains(err.Error(), "identity config mode is unsupported") {
+	if !strings.Contains(err.Error(), "runtime config mode is unsupported") {
 		t.Fatalf("BuildProductRuntime() error = %q, want unsupported mode", err.Error())
 	}
 }
 
-func TestBuildProductRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *testing.T) {
+func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{
 		keyPaths: utilkeys.NewPaths(root),
@@ -170,20 +171,20 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *te
 	// Process-global config has NO passphrase_command_argv, so
 	// cfg.ShouldLockOnDisconnect() returns true (the default).
 
-	// Write identity-scoped unlock.yaml (simulates appass set passfile)
-	unlockCfg := &identity.UnlockConfig{
+	// Write product-store unlock.yaml (simulates appass set passfile)
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}
-	if err := identity.SaveUnlockConfig(root, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(root, unlockCfg); err != nil {
 		t.Fatal(err)
 	}
 
-	// Also save an explicit lock_on_disconnect=true in the identity stored config
+	// Also save an explicit lock_on_disconnect=true in the product runtime config.
 	// to prove the headless override wins over both the default AND stored overrides.
-	if err := identity.SaveStoredSetting(root, "lock_on_disconnect", true); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "lock_on_disconnect", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root); err != nil {
@@ -220,10 +221,10 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T)
 	// But also write a stored override to prove the headless path catches it.
 	cfg.PassphraseCommandArgv = []string{"/usr/local/bin/appass-file", "/tmp/secret"}
 
-	if err := identity.SaveStoredSetting(root, "lock_on_disconnect", true); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "lock_on_disconnect", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "passphrase_timeout", "10m"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "10m"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root); err != nil {
@@ -307,7 +308,7 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 		},
 	}},
 	}
-	masterKey := testKeyringForIdentity(t, server.keyPaths, "alice", passphrase)
+	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	if err := policy.SaveStoredConfigWithKeyring(root, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +442,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	}
 	maxFee := uint64(1234)
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
-	masterKey := testKeyringForIdentity(t, server.keyPaths, "alice", passphrase)
+	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	if err := policy.SaveStoredConfigWithKeyring(root, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +476,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	}
 }
 
-func testKeyringForIdentity(t *testing.T, paths utilkeys.Paths, identityID string, passphrase []byte) *crypto.Keyring {
+func testKeyringForStore(t *testing.T, paths utilkeys.Paths, passphrase []byte) *crypto.Keyring {
 	t.Helper()
 	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
 	if err != nil {

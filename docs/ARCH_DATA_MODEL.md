@@ -87,7 +87,7 @@ Important vocabulary:
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
 - identity keystores and key files,
-- identity config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
+- product runtime config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
   and key type state,
 - encrypted installed templates,
 - public sentry references and witness public metadata sidecars,
@@ -131,15 +131,15 @@ DTOs and contract fixtures.
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Live sentry discovery | Signing operation | authenticated `/keys` responses from configured sentry endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-sentry orchestration | `internal/engine/guarded` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
-| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/default/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, identity load, keyadmin, restore, signing dispatch |
-| Signing identity | Product signer | `identities/default/` | one `identity.Runtime` | fixed status/audit attribution | `internal/signerapp/identity` |
-| Identity config | Product signer | `identities/default/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
-| Unlock config | Product signer | `identities/default/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
+| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/default/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
+| Signing authority | Product signer | `identities/default/` | one `productruntime.Runtime` | lock, readiness, key, and principal-attributed audit state without a runtime ID | `internal/signerapp/productruntime` |
+| Product runtime config | Product signer | `identities/default/config.yaml` (parsed as `productruntime.StoredConfig`) | `productruntime.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/productruntime`, `internal/signerapp/admin` |
+| Unlock config | Product signer | `identities/default/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig`, `cmd/appass` |
 | Keyring root | Product signer | `identities/default/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
 | Keystore marker | Product signer | `identities/default/.keystore` | store format gate only | none | `internal/crypto` |
 | Term keys/session | Product runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
-| Account authority | Product signer | `identities/default/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Sentry witness authority | Product sentry | `identities/default/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
+| Account authority | Product signer | `identities/default/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
+| Sentry witness authority | Product sentry | `identities/default/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
 | Sentry public sidecar | Signer identity | `identities/default/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apadmin sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/default/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `internal/apadminapp` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
@@ -274,7 +274,7 @@ generation store. After the complete archive has been authenticated and every
 credential validated, restore applies the in-memory set to one staged
 generation and commits it with the normal durable `CURRENT` flip.
 
-`identity.Runtime` is the runtime projection. It owns:
+`productruntime.Runtime` is the runtime projection. It owns:
 
 - lock/unlock state,
 - key session,
@@ -282,7 +282,7 @@ generation and commits it with the normal durable `CURRENT` flip.
 - approval coordinator,
 - token authority,
 - SSH enrollment,
-- effective identity config,
+- effective product runtime config,
 - effective node-role policy: client-signing policy on signer nodes or sentry
   component policy on sentry nodes,
 - watcher and shutdown lifecycle.
@@ -401,8 +401,8 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 Key type discovery draws from three source classes:
 
 1. default-enabled compiled providers,
-2. library-visible compiled providers enabled by identity state records,
-3. installed YAML templates that are enabled for the identity.
+2. library-visible compiled providers enabled by product-store state records,
+3. installed YAML templates enabled in the product store.
 
 These classes are not assembled by a single function. Compiled and
 composed-template providers surface through the key generation / DSA registries
@@ -415,9 +415,9 @@ Default-enabled compiled providers include signer account providers
 (`aplane.witness-falcon1024.v1`). Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
-after identity-local enablement or installation.
+after product-store enablement or installation.
 
-Identity key type records are plaintext because they are not key material:
+Product-store key type records are plaintext because they are not key material:
 
 ```json
 {
@@ -432,9 +432,9 @@ Identity key type records are plaintext because they are not key material:
 Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
 plaintext install sources only; they are not active key types by presence
-alone. New signer stores initialize the product identity with
+alone. New signer-role stores initialize with
 `aplane.falcon1024-allowlist.v1` installed and enabled from the bundled library
-source; otherwise YAML templates become active only after identity-local
+source; otherwise YAML templates become active only after product-store
 installation and enablement.
 
 ### Policy
@@ -467,7 +467,7 @@ policy. It uses the same transfer routing model as deterministic authorization f
 are keyed by Algorand auth address.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
-identity config.
+product runtime config.
 
 ### Tokens, SSH, And Admin Sessions
 
@@ -487,8 +487,7 @@ Remote clients authenticate with SSH public key plus token. Admin protocol
 sessions then authenticate with the product passphrase.
 
 The one admin session is runtime-only. It is represented by session context,
-transport, principal, and fixed `default` attribution, not by a durable session
-record.
+transport, and principal, not by a durable session record.
 
 ### Audit
 
@@ -768,7 +767,7 @@ projections of shell application results, not a separate backend model.
 1. Load server config.
 2. Load root node role from `node.yaml`.
 3. Validate that `identities/` has no entry other than a real `default/` directory.
-4. Build the one product `identity.Runtime` for `default`.
+4. Build the one product `productruntime.Runtime` for `default`.
 5. Start locked, unlock headlessly, or unlock through admin depending on
    passphrase startup configuration.
 
@@ -848,11 +847,11 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 
 ### Token Provisioning Lifecycle
 
-1. Client connects over SSH as `request-token:default`.
+1. Client connects over SSH as `request-token`.
 2. Server verifies the fixed product username and SSH key-only bootstrap path.
 3. Server asks connected admin for approval.
 4. Admin approves.
-5. Server enrolls the SSH public key for `default`.
+5. Server enrolls the SSH public key.
 6. Server creates or loads the product API token.
 7. Token is delivered over the SSH channel.
 8. Audit records confirmed delivery.
@@ -882,7 +881,7 @@ Live restore is generation-transaction oriented:
   configuration are absent from the backup and remain destination-owned.
 
 `apstore rebuild` is the separate absent-store rescue path and may write active
-credentials directly because no live signer identity is being mutated.
+credentials directly because no live signer store is being mutated.
 
 ## Security-Sensitive Data
 
@@ -894,7 +893,7 @@ credentials directly because no live signer identity is being mutated.
 | `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
 | Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
-| Installed `.template` files | sensitive policy material | encrypted in identity store |
+| Installed `.template` files | sensitive policy material | encrypted in the product store |
 | `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or sentry policy according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
@@ -904,7 +903,7 @@ credentials directly because no live signer identity is being mutated.
 | Public sentry reference | public metadata | generation input only; not endpoint trust or ownership proof |
 | Endpoint-published sentries | public routing metadata | routing input only; not endpoint trust or ownership proof |
 
-Signer-wide ASA metadata and identity key type state records are not secrets.
+Signer-wide ASA metadata and product-store key type state records are not secrets.
 They still must be mutated through supported paths because they affect UX,
 generation availability, provenance, and policy editing behavior.
 
@@ -921,7 +920,7 @@ generation availability, provenance, and policy editing behavior.
 - Key files are signing authority for existing keys.
 - Templates are generation/provenance authority, not sign-time authority.
 - `GenesisHash` is signer policy chain identity; `GenesisID` is display data.
-- Server config can seed the default `user_auto_approve`; identity config owns
+- Server config can seed the default `user_auto_approve`; product runtime config owns
   the effective live setting; policy owns rule verdicts.
 - Policy HMAC authenticates exact YAML bytes and fails closed on mismatch.
 - `policy.yaml` is client-signing policy on signer nodes and sentry component
@@ -941,8 +940,8 @@ generation availability, provenance, and policy editing behavior.
 - Client caches are rebuildable and not authoritative for signing or policy.
 - Sign request cancellation is live runtime state, not durable workflow state.
 - Admin protocol and HTTP protocol are separate compatibility surfaces.
-- Product mode owns one fixed store (`identities/default/`) and one runtime;
-  `default` remains a compatibility attribution value rather than a selector.
+- The product owns one fixed store (`identities/default/`) and one runtime;
+  `default` is only the on-disk store directory name.
 
 ## Changing the Data Model
 
@@ -1004,7 +1003,7 @@ Current implementation constraints:
 | Network tokens and genesis hashes | `internal/config/networkid.go`, `internal/config/genesishash.go`, [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
 | Client/server config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go` |
 | Client endpoint registry | `internal/config/client_endpoints.go`, `internal/config/client_endpoint_writes.go` |
-| Product runtime/config (historical package name) | `internal/signerapp/identity` |
+| Product runtime/config | `internal/signerapp/productruntime` |
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |

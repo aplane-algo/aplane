@@ -58,7 +58,7 @@ Source: [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
 | P1 | implemented | Policy Snapshot; P1 | `internal/policy/integrity.go`; `internal/signerapp/policyruntime/policy.go` | `internal/policy/integrity_test.go`; `internal/policy/store_test.go` | HMAC sidecar verification. |
-| P2 | implemented | Runtime Snapshot Semantics; P2 | `internal/signerapp/policyruntime/policy.go` (snapshot capture per-request); `internal/signerapp/daemon/signing_service.go::newSigningServiceForIdentityWithAudit`; `internal/signerapp/daemon/approval_service.go::newApprovalServiceForIdentityWithAudit`; `internal/signerapp/signing/service.go::signGroupWithPlanContext` | `internal/signerapp/identity/identity_test.go::TestRuntimePolicySnapshotStoresDefensiveCopies`; `internal/signerapp/daemon/signing_service_test.go::TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot`; `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval` | Defensive policy copies, sign-service policy/default capture, and no post-approval policy re-evaluation are covered. |
+| P2 | implemented | Runtime Snapshot Semantics; P2 | `internal/signerapp/policyruntime/policy.go` (snapshot capture per-request); `internal/signerapp/daemon/signing_service.go::newSigningServiceWithAudit`; `internal/signerapp/daemon/approval_service.go::newApprovalServiceWithAudit`; `internal/signerapp/signing/service.go::signGroupWithPlanContext` | `internal/signerapp/productruntime/productruntime_test.go::TestRuntimePolicySnapshotStoresDefensiveCopies`; `internal/signerapp/daemon/signing_service_test.go::TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot`; `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval` | Defensive policy copies, sign-service policy/default capture, and no post-approval policy re-evaluation are covered. |
 | P3 | implemented | Planned Request | `internal/signerapp/signing/service.go::signGroupWithPlanContext` passes `allTxns` (plan output) to evaluators | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts` pins that policy follows finalized data when caller draft bytes diverge. | |
 | P4 | implemented | Deny Dominance | `internal/signerapp/signing/approval.go::EvaluateAutoRejectionRules` is called first | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation` | Machine-checked via `policy_precedence.tla::P4_DenyDominance`. |
 | P5 | derived | Decision Procedure | Order-of-evaluation in `signGroupWithPlanContext` and `EvaluateAlwaysReviewRules` | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove`; `*TransferRoutingReviewOverrides*` | Holds by construction of the short-circuit decision procedure. Machine-checked via `policy_precedence.tla::P5_ReviewDominance`. |
@@ -68,20 +68,11 @@ Source: [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 | P9 | implemented | P9 | `internal/policy/transfer_routing_eval.go` returns `Reject`/`Review`/no-verdict only | `internal/policy/transfer_routing_eval_test.go`; `internal/policy/ruleids_test.go` | |
 | P10 | implemented | Effective Policy Selection; P10 | `internal/policy/config.go::ForKey`; `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` passes auth addresses to policy evaluators | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 
-## Retired Lifecycle Claims and Retained Reload Order
+## Runtime Reload Order
 
-The single-product refactor removed the per-identity decommission state, transition, and operation lease. The former claims have these explicit dispositions:
-
-| ID | Disposition | Retained evidence |
-|---|---|---|
-| L1-L3 | retired: decommission persistence, transition, and rejection state were removed | strict identity config rejects the stale `decommissioned:` field |
-| L4 | lease-specific claim retired | `TestSignGroupWithPlanStopsBeforeExecute` remains a general no-output regression for a failed final-execution gate |
-| L5-L6 | retired: the decommission writer and lease race were removed | graceful server shutdown and key-session locks remain separate runtime contracts |
-| L7 | retired with runtime-registry removal | the process directly owns one runtime |
-| L8-L10 | retired: decommission approval, watcher, and startup states were removed | AP6 retains reason-independent fail-all queue draining |
-| L11 | retained: reload order is independent of decommission | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan`; `internal/signerapp/identity/identity_test.go::TestWatcherReloadUsesMutationLock` |
-
-L11 is owned here now: reload runs the configured pre-scan hook, reloads durable template and key-type state, then scans keys while holding the process store-mutation exclusion contract.
+| ID | Status | Contract | Test anchor |
+|---|---|---|---|
+| RL1 | implemented | Reload runs the configured pre-scan hook, reloads durable template and key-type state, then scans keys while holding the process store-mutation exclusion contract. | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan`; `internal/signerapp/productruntime/productruntime_test.go::TestWatcherReloadUsesMutationLock` |
 
 ## Signing Authority Model
 
@@ -98,8 +89,8 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S7 | implemented | Derivation Record Consistency, Not Address Authority; S7 | `internal/keys.Payload.Validate` requires or forbids `salt_counter` according to `lsig_derivation`; address identity still comes from stored bytecode | `internal/keys/payload_codec_test.go::TestAutoSaltedLogicSigPayloadContract`; manual-counter validation and scan/restore cases in `internal/keys/payload_codec_test.go` and `internal/keys/keys_test.go` | `algod_v13_auto_salt` omits the counter; compatible manual-counter records require it. |
 | S8 | implemented | S8 | Template fingerprint check is inventory-only; not consulted at sign time | `internal/keys/template_fingerprint_test.go::TestTemplateFingerprintComparison`; `*Unavailable`. Sign-time isolation follows from S5 anchors. | |
 | S9 | implemented | S9 | `internal/keys.ParsePayload` rejects duplicate JSON object members, unknown fields, and obsolete payload aliases | `internal/keys/payload_codec_test.go` | Fresh-system canonical schema removes cosmetic alias normalization. |
-| S10 | implemented | Runtime Key Index; S10 | `internal/signerapp/identity/runtime.go::KeyIndexSnapshot`; `internal/signerapp/signing/planner.go::PlanGroup`; `internal/signerapp/signing/planner_runtime.go::verifySignableKeys` | `internal/signerapp/identity/identity_test.go::TestKeyIndexSnapshotMaterializesConsistentCopy`; `internal/signerapp/signing/planner_runtime_test.go::TestPlannerUsesSingleIdentitySnapshot` | Planning materializes key files, key types, LogicSig resource profiles, and signer-local known addresses from one copied snapshot. |
-| S11 | implemented | Auth Address Binding; S11 | `internal/signerapp/signing/planner_runtime.go` resolves auth addresses through `PlannerIdentitySnapshot.KeyFiles` | `internal/signerapp/signing/planner_runtime_test.go::TestVerifySignableKeysRequiresKeyFileInSnapshot`; `::TestVerifySignableKeysRequiresKeyTypeMetadata` | |
+| S10 | implemented | Runtime Key Index; S10 | `internal/signerapp/productruntime/runtime.go::KeyIndexSnapshot`; `internal/signerapp/signing/planner.go::PlanGroup`; `internal/signerapp/signing/planner_runtime.go::verifySignableKeys` | `internal/signerapp/productruntime/productruntime_test.go::TestKeyIndexSnapshotMaterializesConsistentCopy`; `internal/signerapp/signing/planner_runtime_test.go::TestPlannerUsesSingleRuntimeSnapshot` | Planning materializes key files, key types, LogicSig resource profiles, and signer-local known addresses from one copied snapshot. |
+| S11 | implemented | Auth Address Binding; S11 | `internal/signerapp/signing/planner_runtime.go` resolves auth addresses through `PlannerRuntimeSnapshot.KeyFiles` | `internal/signerapp/signing/planner_runtime_test.go::TestVerifySignableKeysRequiresKeyFileInSnapshot`; `::TestVerifySignableKeysRequiresKeyTypeMetadata` | |
 | S12 | implemented | S12 | `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` for policy override selection; `policyCfg.ForKey` consumes it | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 | S13 | implemented | Canonical Filename Binding; S13 | `internal/keys/managed_files.go` owns `CanonicalName = Selector || ExtensionForCategory`; scan rejects selector and category/extension mismatches; save, backup/restore, deletion, rotation, and watching consume the central classes | `internal/keys/managed_files_test.go`; `internal/keys/keys_test.go::TestScanKeysDirectoryWithKeyring`; `internal/keys/save_test.go::TestSavePayloadWritesWitnessPublicMetadata`; `internal/keys/managed_files_test.go::TestManagedCredentialDestinationRejectsContradictoryClass`; `test/arch/managed_credential_files_test.go` | Account authority is `.key`; sentry witness authority is `.sen`; `.wit` is excluded. Accepted-selector collision invalidation remains a defensive fallback. |
 
@@ -296,10 +287,6 @@ operator copies in `composition.tla` are kept in sync with the
 component modules by code review, not by TLC; see the prose
 companion for the deliberate trade.
 
-### Retired lifecycle modules
-
-The two per-identity decommission/lease modules were deleted when their production state and transitions were removed. L1-L10 have the dispositions recorded above; L11 remains a Go-level reload-order contract.
-
 ### Approval coordinator module
 
 [formal/approval_coordinator.tla](formal/approval_coordinator.tla) models requests interleaving over one delivery turn with operator decisions, timeout, cancellation, disconnect, and client displacement. `Safety` checks AP4, AP5, AP6, and AP7. AP6 is `AP6_FailAllLeavesNoPending`, backed by the sticky `badPendingAfterFailAll` flag updated by both modeled fail-all actions. AP7 separately prevents a displaced client from orphaning a delivered prompt. AP1-AP3 hold by construction. `LiveSpec` retains weak fairness for delivery and timeout and checks `Progress`.
@@ -327,10 +314,6 @@ These are cross-module seam claims rather than new numbered invariants.
 
 Validated by mutation test: mapping the `Failed` (fail-all) outcome to `approve`
 produces a counterexample where a fail-all'd review-class request signs.
-
-### Retired lifecycle composition module
-
-The lifecycle/output composition was retired with the operation lease. The reason-independent retained seam is `approval_composition.tla::FailAllProducesNoSignedOutput`: any coordinator `Failed` outcome produces no signer output.
 
 ### Session ownership module
 
@@ -435,17 +418,16 @@ The following invariants have no TLA+ representation yet:
 - Most of I4-I6 and CS1-CS4 (planning details and client simulation composition).
 - P1, P2, P3, P8, P9, P10 (snapshot semantics, slot scope, routing,
   key overrides).
-- L11 (reload order) remains a Go-level contract without a TLA+
-  representation. L1-L10 were retired with the per-identity decommission
-  state and operation lease; the reason-independent fail-all property is
-  machine-checked as AP6 in `approval_coordinator.tla` and through
+- RL1 (reload order) remains a Go-level contract without a TLA+
+  representation. The reason-independent fail-all property is machine-checked
+  as AP6 in `approval_coordinator.tla` and through
   `FailAllProducesNoSignedOutput` in `approval_composition.tla`.
 - All of S1-S13 (signing authority) — **by decision, not omission** (2026-07-03
   review): S1/S3-S5/S8/S11/S12 are structural or definitional (a module would
   verify its own encoding), S2/S6/S7/S9 are single-guard checks whose only
   nontrivial content (cryptography, cross-path enforcement) is exactly what
   TLC must abstract away, and S10's snapshot-copy design holds by
-  construction (pinned by `TestPlannerUsesSingleIdentitySnapshot`). S13
+  construction (pinned by `TestPlannerUsesSingleRuntimeSnapshot`). S13
   (filename↔address binding with collision fallback) is the sole
   revisit-candidate, and only if the key-file scan ever gains a
   winner-picking rule instead of skip-and-warn.

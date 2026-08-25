@@ -48,10 +48,10 @@ type Config struct {
 	FormatASAAmount             func(network string, assetID uint64, raw uint64) (string, bool)
 }
 
-// StoredConfig is the persisted YAML representation for identity-scoped policy.
+// StoredConfig is the persisted YAML representation for signer policy.
 // Nil booleans mean "use default". Zero threshold values mean "no limit".
 // KeyOverrides is a map from concrete signing authority key to a sparse
-// StoredConfig that is layered on top of the identity-wide settings when that
+// StoredConfig that is layered on top of the product-wide settings when that
 // key signs. Overrides never recurse.
 type StoredConfig struct {
 	StoredPolicyCore `yaml:",inline"`
@@ -70,7 +70,7 @@ type StoredRoleConfig struct {
 
 // StoredPolicyCore is the policy field block shared by StoredConfig and
 // StoredRoleConfig. Adding a field here (plus storedPolicyCoreFields below)
-// extends both the identity-wide document and the role-domain blocks in one
+// extends both the product-wide document and the role-domain blocks in one
 // place.
 type StoredPolicyCore struct {
 	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`

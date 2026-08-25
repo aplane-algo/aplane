@@ -19,10 +19,10 @@ contracts; these models cover narrower security-critical transitions.
 | `generation_commit.tla` | generation commit crash protocol |
 | `rotation_transition.tla` | key-term rotation and resume |
 
-The obsolete per-identity runtime decommission state and operation lease were
-removed with the single-product architecture. Their two models were retired
-rather than retained as claims about code that no longer exists. Reload-order
-claim L11 remains owned by `FORMAL_TRACEABILITY.md` and its Go regression tests.
+The single-product runtime has no decommission state or operation lease, so the
+formal inventory contains no lifecycle model for those concepts. Runtime
+reload order is tracked as RL1 in `FORMAL_TRACEABILITY.md` and its Go regression
+tests.
 
 ## Working rules
 

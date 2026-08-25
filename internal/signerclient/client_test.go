@@ -145,7 +145,6 @@ func TestSignerClientContextAccessIsRaceSafe(t *testing.T) {
 
 func TestGetStatus_Success(t *testing.T) {
 	resp := signerapi.StatusResponse{
-		IdentityID:      "default",
 		State:           "unlocked",
 		ReadyForSigning: true,
 		KeyCount:        2,
@@ -162,8 +161,8 @@ func TestGetStatus_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStatus() error = %v", err)
 	}
-	if got.IdentityID != "default" || got.KeysetRevision != 5 || got.KeyCount != 2 {
-		t.Fatalf("GetStatus() = %+v, want default revision 5 count 2", got)
+	if got.KeysetRevision != 5 || got.KeyCount != 2 {
+		t.Fatalf("GetStatus() = %+v, want revision 5 count 2", got)
 	}
 }
 

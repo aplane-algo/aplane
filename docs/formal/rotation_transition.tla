@@ -50,7 +50,7 @@ historical reads require exact root anchors, resume promotes only a
 snapshot-pinned retiring-term buffer, and completion requires fresh final
 path-set/output-authority equality plus, for a clean rollback-eligible
 cutover, a clean baseline before atomically clearing the pending descriptor.
-The identity mutation lock excludes
+The store mutation lock excludes
 cooperating writers, but not the direct-filesystem attacker modelled here.
 The implementation scans both before and after baseline publication so an
 edit after an entry is pinned fails its exact digest or final comparison; one

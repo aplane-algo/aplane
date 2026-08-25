@@ -18,15 +18,15 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func tokenProofTestClientConfig(t *testing.T, srv *Server, signer ssh.Signer, identityID, token string) *ssh.ClientConfig {
+func tokenProofTestClientConfig(t *testing.T, srv *Server, signer ssh.Signer, token string) *ssh.ClientConfig {
 	t.Helper()
-	authState := newTokenProofClientAuth(identityID, token)
+	authState := newTokenProofClientAuth(token)
 	if err := authState.captureHostKey(srv.hostKey.PublicKey()); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(authState.clear)
 	return &ssh.ClientConfig{
-		User: identityID,
+		User: productSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 			ssh.KeyboardInteractive(authState.challenge),
@@ -62,7 +62,7 @@ func TestTokenProofHostKeyChangeReturnsTypedMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := newTokenProofClientAuth("default", "token")
+	auth := newTokenProofClientAuth("token")
 	if err := auth.captureHostKey(first); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,6 @@ func TestTokenProofContractVector(t *testing.T) {
 	}
 
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Identity:    vector.IdentityID,
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -147,7 +146,6 @@ type tokenProofContractVector struct {
 	SchemaVersion       int    `json:"schema_version"`
 	Protocol            string `json:"protocol"`
 	Token               string `json:"token"`
-	IdentityID          string `json:"identity_id"`
 	HostKeyHash         string `json:"host_key_hash"`
 	ClientNonce         string `json:"client_nonce"`
 	ServerNonce         string `json:"server_nonce"`
@@ -305,7 +303,6 @@ func TestTokenProofMessagesRejectInvalidShapes(t *testing.T) {
 
 func TestEncodeTokenProofTranscriptRejectsInvalidFields(t *testing.T) {
 	valid := tokenProofTranscript{
-		Identity:    "default",
 		HostKeyHash: bytes.Repeat([]byte{1}, tokenProofHostHashSize),
 		ClientNonce: bytes.Repeat([]byte{2}, tokenProofNonceSize),
 		ServerNonce: bytes.Repeat([]byte{3}, tokenProofNonceSize),
@@ -315,8 +312,6 @@ func TestEncodeTokenProofTranscriptRejectsInvalidFields(t *testing.T) {
 		name   string
 		mutate func(*tokenProofTranscript)
 	}{
-		{name: "empty identity", mutate: func(value *tokenProofTranscript) { value.Identity = "" }},
-		{name: "long identity", mutate: func(value *tokenProofTranscript) { value.Identity = strings.Repeat("x", tokenProofMaxIdentity+1) }},
 		{name: "host hash", mutate: func(value *tokenProofTranscript) { value.HostKeyHash = []byte{1} }},
 		{name: "client nonce", mutate: func(value *tokenProofTranscript) { value.ClientNonce = []byte{1} }},
 		{name: "server nonce", mutate: func(value *tokenProofTranscript) { value.ServerNonce = []byte{1} }},

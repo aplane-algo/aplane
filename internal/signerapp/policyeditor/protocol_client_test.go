@@ -29,7 +29,6 @@ func TestProtocolClientReplacePolicyMapsWireRequestAndResponse(t *testing.T) {
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: "response"},
 		Success:      true,
 		Target:       string(TargetSentry),
-		IdentityID:   "default",
 		PolicyYAML:   "reject_rekey: true\n",
 		PolicySHA256: "new-sha",
 	})

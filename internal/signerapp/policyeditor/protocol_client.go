@@ -63,7 +63,7 @@ func (c *ProtocolClient) ValidatePolicy(ctx context.Context, target Target, poli
 		resultTarget = target
 	}
 	return AdminPolicyValidation{
-		Success: out.Success, Target: resultTarget, IdentityID: out.IdentityID,
+		Success: out.Success, Target: resultTarget,
 		Code: out.Code, Error: out.Error,
 	}, nil
 }
@@ -110,7 +110,7 @@ func snapshotFromProtocol(msg protocol.PolicySnapshotMessage, requested Target) 
 		target = requested
 	}
 	return AdminPolicySnapshot{
-		Success: msg.Success, Target: target, IdentityID: msg.IdentityID,
+		Success: msg.Success, Target: target,
 		PolicyYAML: msg.PolicyYAML, PolicySHA256: msg.PolicySHA256,
 		Canonical: msg.Canonical, Code: msg.Code, Error: msg.Error,
 	}

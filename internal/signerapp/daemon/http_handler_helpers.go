@@ -10,7 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 )
 
@@ -68,9 +68,9 @@ func hasAuthenticatedPrincipal(r *http.Request) (int, string) {
 	return 0, ""
 }
 
-// identityFromRequest returns the fixed product runtime for an authenticated
+// productRuntimeFromRequest returns the fixed product runtime for an authenticated
 // principal. The principal never participates in runtime selection.
-func (fs *Signer) identityFromRequest(r *http.Request) (*identity.Runtime, int, string) {
+func (fs *Signer) productRuntimeFromRequest(r *http.Request) (*productruntime.Runtime, int, string) {
 	if err := fs.nodeFailure(); err != nil {
 		return nil, http.StatusServiceUnavailable, err.Error()
 	}
@@ -85,8 +85,8 @@ func (fs *Signer) identityFromRequest(r *http.Request) (*identity.Runtime, int, 
 	return ir, 0, ""
 }
 
-func authenticatedIdentity(fs *Signer, w http.ResponseWriter, r *http.Request) (*identity.Runtime, bool) {
-	ir, status, errMsg := fs.identityFromRequest(r)
+func authenticatedRuntime(fs *Signer, w http.ResponseWriter, r *http.Request) (*productruntime.Runtime, bool) {
+	ir, status, errMsg := fs.productRuntimeFromRequest(r)
 	if errMsg != "" {
 		writeErrorJSON(w, status, errMsg)
 		return nil, false
@@ -94,14 +94,14 @@ func authenticatedIdentity(fs *Signer, w http.ResponseWriter, r *http.Request) (
 	return ir, true
 }
 
-func decodeAuthenticatedJSONRequest[Req any](fs *Signer, w http.ResponseWriter, r *http.Request, method string) (*identity.Runtime, Req, bool) {
+func decodeAuthenticatedJSONRequest[Req any](fs *Signer, w http.ResponseWriter, r *http.Request, method string) (*productruntime.Runtime, Req, bool) {
 	var zero Req
 	if r.Method != method {
 		writeErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return nil, zero, false
 	}
 
-	ir, ok := authenticatedIdentity(fs, w, r)
+	ir, ok := authenticatedRuntime(fs, w, r)
 	if !ok {
 		return nil, zero, false
 	}
@@ -117,10 +117,10 @@ func decodeAuthenticatedJSONRequest[Req any](fs *Signer, w http.ResponseWriter, 
 	return ir, req, true
 }
 
-func requireMethodAndIdentity(fs *Signer, w http.ResponseWriter, r *http.Request, method string) (*identity.Runtime, bool) {
+func requireMethodAndRuntime(fs *Signer, w http.ResponseWriter, r *http.Request, method string) (*productruntime.Runtime, bool) {
 	if r.Method != method {
 		writeErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return nil, false
 	}
-	return authenticatedIdentity(fs, w, r)
+	return authenticatedRuntime(fs, w, r)
 }

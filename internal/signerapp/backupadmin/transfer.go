@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -29,7 +29,7 @@ var (
 	syncBackupImportDirectory = fsutil.SyncDir
 )
 
-func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+func (s Service) BeginBackupImport(ir *productruntime.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return beginImportError(err, s.Deps.KeyPaths().Root())
 	}
@@ -43,7 +43,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
 		}
-		// Product mode supports one writable upload per identity. Starting a new
+		// Product mode supports one writable upload per productruntime. Starting a new
 		// transfer supersedes client-disconnect residue, but never a claimed
 		// archive undergoing immutable deep validation.
 		if _, err := cleanupSupersededBackupUploads(s.Deps.KeyPaths()); err != nil {
@@ -81,7 +81,7 @@ func (s Service) BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBac
 	return adminproto.BeginBackupImportResult{Success: true, UploadID: uploadID}
 }
 
-func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+func (s Service) AppendBackupImport(ir *productruntime.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return appendImportError(err, s.Deps.KeyPaths().Root())
 	}
@@ -135,7 +135,7 @@ func (s Service) AppendBackupImport(ir *identity.Runtime, req adminproto.AppendB
 	return adminproto.AppendBackupImportResult{Success: true, NextOffset: next}
 }
 
-func (s Service) CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s Service) CommitBackupImport(ir *productruntime.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	defer crypto.ZeroBytes(req.ExportPassphrase)
 	if err := requireProductRuntime(ir); err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
@@ -270,7 +270,7 @@ func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize 
 	return claimPath, err
 }
 
-func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+func (s Service) AbortBackupImport(ir *productruntime.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
 	}
@@ -287,7 +287,7 @@ func (s Service) AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBac
 	return adminproto.AbortBackupImportResult{Success: true}
 }
 
-func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+func (s Service) ReadBackupChunk(ir *productruntime.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return readChunkError(err, s.Deps.KeyPaths().Root())
 	}
@@ -327,7 +327,7 @@ func (s Service) ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackup
 }
 
 // CleanupIncompleteBackupImports durably removes unpublished upload residue.
-// Callers serialize it with other identity mutations once the daemon is live.
+// Callers serialize it with other store mutations once the daemon is live.
 func CleanupIncompleteBackupImports(paths storepaths.Paths) (int, error) {
 	return cleanupBackupImportResidue(paths, true)
 }

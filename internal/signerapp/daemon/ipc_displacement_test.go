@@ -109,7 +109,7 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.productIdentityRuntime()
+	ir := signer.productRuntime()
 	ir.Config().SetLockOnDisconnect(true)
 
 	ipcServer := &IPCServer{
@@ -183,7 +183,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.productIdentityRuntime()
+	ir := signer.productRuntime()
 	ipcServer := &IPCServer{
 		signer:  signer,
 		manager: adminserver.NewSessionManager(),
@@ -193,7 +193,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	oldServer, oldClient := net.Pipe()
 	defer func() { _ = oldClient.Close() }()
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), signer.adminSessionDeps())
-	oldSession.Bind(auth.NewDefaultIdentity("test"), ir)
+	oldSession.Bind(auth.NewProductIdentity("test"), ir)
 	if !ipcServer.manager.RegisterPending(oldSession) {
 		t.Fatal("RegisterPending(oldSession) = false, want true")
 	}

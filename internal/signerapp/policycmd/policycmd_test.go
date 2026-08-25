@@ -92,7 +92,6 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: request.ID},
 			Success:      true,
 			Target:       target,
-			IdentityID:   "default",
 			PolicyYAML:   policyYAML,
 			PolicySHA256: policySHA,
 		})
@@ -102,7 +101,6 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: request.ID},
 			Success:     true,
 			Target:      target,
-			IdentityID:  "default",
 		})
 	case protocol.ReplacePolicyMessage:
 		f.replaceCalls++
@@ -116,7 +114,6 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID},
 			Success:      true,
 			Target:       "signer",
-			IdentityID:   "default",
 			PolicyYAML:   request.PolicyYAML,
 			PolicySHA256: "replacement-sha",
 		})

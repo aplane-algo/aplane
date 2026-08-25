@@ -2494,7 +2494,7 @@ for bin in "$BIN_SRC"/*; do
     fi
     cp "$bin" "$BINDIR/"
     # Passphrase helpers must be executable by the unprivileged service user.
-    # The appass-file secret itself stays protected by identity-scoped 0600 files.
+    # The appass-file secret itself stays protected by product-store 0600 files.
     case "$name" in
         appass-file)          chmod 755 "$BINDIR/$name" ;;
         appass-systemd-creds) chmod 755 "$BINDIR/$name" ;;

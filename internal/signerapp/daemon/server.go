@@ -10,7 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -49,8 +49,8 @@ func encodeTxnToHex(txn types.Transaction) string {
 // Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
-	runtime           *identity.Runtime                  // The one product identity runtime
-	nodeFailState     *identity.NodeFailState            // Process-wide first-error-sticky failure state
+	runtime           *productruntime.Runtime            // The one product product runtime
+	nodeFailState     *productruntime.NodeFailState      // Process-wide first-error-sticky failure state
 	httpAuth          auth.Authenticator                 // Product token authenticator; never selects a runtime
 	authorizer        auth.Authorizer                    // Pluggable authorization
 	auditLog          *AuditLogger                       // Audit logger for security events
@@ -108,14 +108,14 @@ func (fs *Signer) withStoreMutation(fn func() error) error {
 
 func (fs *Signer) tryWithStoreInspection(fn func() error) error {
 	if !fs.storeMutationLock.TryLock() {
-		return errIdentityStoreBusy
+		return errStoreBusy
 	}
 	defer fs.storeMutationLock.Unlock()
 	return fn()
 }
 
-// productIdentityRuntime returns the process-owned product runtime.
-func (fs *Signer) productIdentityRuntime() *identity.Runtime {
+// productRuntime returns the process-owned product runtime.
+func (fs *Signer) productRuntime() *productruntime.Runtime {
 	return fs.runtime
 }
 
@@ -130,7 +130,7 @@ func (fs *Signer) nodeFailure() error {
 // The token authenticator is updated before active SSH connections for the
 // product are closed, so connections authenticated with the old token are
 // invalidated after rotation.
-func (fs *Signer) RevokeProductToken(ir *identity.Runtime) error {
+func (fs *Signer) RevokeProductToken(ir *productruntime.Runtime) error {
 	var httpUpdater storemut.TokenUpdater
 	var tokenGeneration uint64
 	if ta, ok := ir.Authenticator().(*auth.TokenAuthenticator); ok {

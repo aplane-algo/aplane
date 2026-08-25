@@ -254,7 +254,7 @@ func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
 			request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
 		}
 	}
-	service.Planner.VerifySignableKeys = func(PlannerIdentitySnapshot, []signerapi.SignRequest, map[int]bool, map[int]bool) (int, *ServiceError) {
+	service.Planner.VerifySignableKeys = func(PlannerRuntimeSnapshot, []signerapi.SignRequest, map[int]bool, map[int]bool) (int, *ServiceError) {
 		return 0, badRequest("key not found")
 	}
 	service.IsUnlocked = func() bool { return false }

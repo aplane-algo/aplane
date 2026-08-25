@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package unlockconfig owns identity-scoped auto-unlock configuration.
+// Package unlockconfig owns product-store auto-unlock configuration.
 package unlockconfig
 
 import (
@@ -45,7 +45,7 @@ func LoadUnlockConfig(dataRoot string) (*UnlockConfig, error) {
 	return &cfg, nil
 }
 
-// SaveUnlockConfig writes the per-identity unlock config atomically.
+// SaveUnlockConfig writes the product-store unlock config atomically.
 func SaveUnlockConfig(dataRoot string, cfg *UnlockConfig) error {
 	return saveUnlockConfig(dataRoot, cfg, nil)
 }
@@ -82,7 +82,7 @@ func saveUnlockConfig(dataRoot string, cfg *UnlockConfig, owner *[2]int) error {
 	return nil
 }
 
-// ClearUnlockConfig removes the per-identity unlock config file.
+// ClearUnlockConfig removes the product-store unlock config file.
 func ClearUnlockConfig(dataRoot string) error {
 	path := UnlockConfigPath(dataRoot)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

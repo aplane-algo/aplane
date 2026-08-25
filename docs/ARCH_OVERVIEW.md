@@ -71,24 +71,17 @@ the keystore, lock state, approval coordinator, token authority, SSH enrollment,
 configuration, and watcher; it has no runtime ID, registry, or selector. IPC
 and SSH admin clients compete for one process-wide admin session.
 
-The durable namespace deliberately remains `identities/default/`, with managed
-archives under `backups/default/`. `default` is a literal compatibility
-namespace and retained attribution value, not a tenant locator, runtime ID, or
-authorization principal. `internal/storepaths.Paths` constructs these paths
-without accepting an identity argument. The same fixed layout applies to
-signer-role and sentry-role data roots.
-
-This contract removes a working internal multi-identity capability, including
-identity-local template activation and the former end-to-end `alice` routing
-scenario. It is not a description of previously dead code. A future tenant
-product must add an explicit composition and authorization layer instead of
-reactivating dormant branches.
+The durable namespace is `identities/default/`, with managed archives under
+`backups/default/`. `default` is the fixed on-disk directory name, not a runtime
+ID or authorization principal. `internal/storepaths.Paths` constructs these
+paths without accepting a selector. The same fixed layout applies to signer-role
+and sentry-role data roots.
 
 At startup, a no-follow layout-integrity check rejects any direct entry under
 `identities/` other than a real directory named `default`; it fails closed
 before tokens, keys, policy, or watchers are loaded. HTTP token authentication binds the reserved
 principal `system:product-admin` to the one product runtime. Normal SSH accepts
-only `default`; enrollment accepts only `request-token:default`; product request
+only `aplane`; enrollment accepts only `request-token`; product request
 and admin inputs expose no runtime selector.
 
 Signer transaction policy is product-scoped under `identities/default/` and uses the current verdict model
@@ -192,7 +185,7 @@ aplane/
 │   │   ├── daemon/                # Process composition and HTTP/IPC/SSH runtime
 │   │   ├── adminserver/           # Admin sessions, dispatch, handlers, displacement
 │   │   ├── startup/               # Startup validation and product runtime assembly
-│   │   ├── identity/              # Product runtime/config/lifecycle (historical package name)
+│   │   ├── productruntime/        # Product runtime/config/lifecycle
 │   │   ├── runtime/               # Lock state
 │   │   ├── approval/              # Approval queues
 │   │   ├── approvalpolicy/        # Signer approval policy integration
@@ -213,7 +206,7 @@ aplane/
 │   ├── keytypecatalog/            # Compiled key type visibility catalog
 │   ├── keytypestate/              # Product-store key type state records
 │   ├── templatelibrary/           # Plaintext KeyType Library parsing/install
-│   ├── templatestore/             # Encrypted identity template storage
+│   ├── templatestore/             # Encrypted product-store template storage
 │   ├── storepaths/                # Signer data path construction
 │   ├── keystore/, keys/, crypto/  # Keystore storage, key scanning, encryption
 │   ├── signing/, signingargs/, keygen/  # Native signing, signing-arg metadata, and keygen registries
@@ -354,11 +347,11 @@ process is systemd-managed through `APLANE_SYSTEMD_MANAGED=1` or parent PID 1.
    directory, with no extra files, directories, or symlinks.
 2. `startup.BuildProductRuntime` constructs the one product runtime from the
    default config overlay, API token, and keystore.
-3. In headless mode, the product identity is unlocked immediately; in locked
+3. In headless mode, the product store is unlocked immediately; in locked
    mode, unlock happens later via admin IPC.
 
-Both modes use the identity reload path after unlock:
-`identity.Runtime.Reload` or `ReloadWithPassphrase` delegates through
+Both modes use the runtime reload path after unlock:
+`productruntime.Runtime.Reload` or `ReloadWithPassphrase` delegates through
 `reloadLocked` to `templates.ReloadService.Reload`, wired by
 `startup.WireReloadFunc`. The reload verifies the node role and authenticated
 policy before registering enabled installed templates, scanning keys,
@@ -369,7 +362,7 @@ can be discovered, generated, or imported.
 
 **Product runtime state:**
 
-The process owns one `identity.Runtime` signing-state aggregate containing:
+The process owns one `productruntime.Runtime` signing-state aggregate containing:
 - key maps (`keys`, `keyTypes`, `keyMetadata`) protected by `keysLock`
 - key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
@@ -378,14 +371,13 @@ The process owns one `identity.Runtime` signing-state aggregate containing:
 - file watcher lifecycle
 - product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
 
-The retained on-disk namespace is rooted at `identities/default/`: keys live
+The on-disk namespace is rooted at `identities/default/`: keys live
 under `keys/`, encrypted templates and state records under `keytypes/`, deleted
 key/template archives under `deleted/`, node-role policy at `policy.yaml`, and
 runtime configuration at `config.yaml`. HTTP authentication authorizes access
 to that one aggregate; admin sessions over IPC or the SSH `aplane-admin`
-subsystem bind to the same aggregate at authentication time. The package name
-`internal/signerapp/identity` is historical and does not imply an identity
-selector or runtime registry.
+subsystem bind to the same aggregate at authentication time. The aggregate has
+no runtime selector or registry.
 
 **Admin protocol architecture:**
 

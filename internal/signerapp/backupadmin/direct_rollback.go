@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -33,7 +33,7 @@ func (e *restoreRollbackError) Unwrap() error { return e.err }
 // credential restore into a fresh current-term generation. It never rewinds
 // CURRENT to historical ciphertext.
 func (s Service) RollbackRestore(
-	ir *identity.Runtime,
+	ir *productruntime.Runtime,
 	req adminproto.RollbackRestoreRequest,
 ) adminproto.RollbackRestoreResult {
 	result := adminproto.RollbackRestoreResult{OperationID: req.OperationID}

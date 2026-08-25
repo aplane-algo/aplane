@@ -25,9 +25,9 @@ uses its own sticky flag because surviving client displacement is also a
 session-ownership and queue-visibility failure.
 
 `LiveSpec` adds weak fairness for `Deliver` and `Timeout`; `Progress` requires
-every queued or delivered request eventually to become terminal. The removed
-per-identity decommission drain is not part of the single-product runtime and
-therefore supplies neither state nor a fairness assumption.
+every queued or delivered request eventually to become terminal. The
+single-product runtime has no identity-decommission drain, so the model has no
+corresponding state or fairness assumption.
 
 Run both inventories with:
 

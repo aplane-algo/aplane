@@ -114,18 +114,17 @@ of the model's ownership or lock-state variables, adding it as an
 state space. Daemon lifecycle tests pin non-displacement and lock preservation;
 adminserver tests pin the explicit server-side request allowlist.
 
-The related non-blocking `identity_busy` result
-(`internal/signerapp/daemon/server.go` `tryWithIdentityInspection`) is a plain `TryLock` on the
+The related non-blocking `store_busy` result
+(`internal/signerapp/daemon/server.go` `tryWithStoreInspection`) is a plain `TryLock` on the
 existing store-mutation lock with client-side retry in
 `internal/apadminapp/catalog.go` (`requestInspectionWithRetry`). A failed
 acquire never becomes in-flight
 work, so it adds no actor and no new fairness obligation.
 
 Otherwise, no actionable formal test gaps remain. Per-invariant status lives
-in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The former L1-L10
-decommission/lease model was retired with that production state; retained
-shutdown, key-session, approval fail-all, and session-ownership contracts are
-covered by their current Go race tests and AP/SO formal invariants.
+in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). Shutdown, key-session,
+approval fail-all, and session-ownership contracts are covered by their Go
+race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
 [formal/bounded_sentry.tla](formal/bounded_sentry.tla): its BS1-BS7 transition

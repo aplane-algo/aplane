@@ -9,7 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
-const SystemProductAdminPrincipalID = "system:product-admin"
+const SystemProductAdminPrincipalID = auth.SystemProductAdminPrincipalID
 
 // ProductAuthorizer is the complete authorization model for the
 // single-operator product. It has no mutable principal, group, grant, or target
@@ -33,11 +33,7 @@ func NewProductSingleAuthorizer() *ProductAuthorizer {
 // NewProductPrincipalIdentity creates the reserved product principal used by
 // authenticated HTTP and admin sessions.
 func NewProductPrincipalIdentity(method string) *auth.Identity {
-	return &auth.Identity{
-		ID:     SystemProductAdminPrincipalID,
-		Type:   "system",
-		Method: method,
-	}
+	return auth.NewProductIdentity(method)
 }
 
 // ProductAllowedActions returns the explicit action vocabulary granted to the

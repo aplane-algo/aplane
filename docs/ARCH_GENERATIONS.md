@@ -236,7 +236,7 @@ are enforced by the fail-closed reload gate with the term key.
 ## 7. Post-crash reconciliation — discard, don't resume
 
 `CURRENT` is the sole commit record. At startup/unlock, under the store and
-identity mutation locks, before any new operation:
+store mutation locks, before any new operation:
 
 - `CURRENT` names the new generation → committed; keep, validate, finish
   runtime/audit reconciliation via the manifest's operation ID.
@@ -290,7 +290,7 @@ reference safety has soaked.
 
 - All resolution+mutation under `Signer.storeMutationLock` (documented in
   ARCH_SPEC).
-- `identity.Runtime.EnsureKeyWatcher` watches the identity directory for a
+- `productruntime.Runtime.EnsureKeyWatcher` watches the identity directory for a
   `CURRENT` replacement and binds `keys/`/`keytypes/` watches to the resolved
   current generation. Pointer changes trigger a coordinated reload under the
   mutation lock and re-arm the watches on the new generation's directories,
@@ -322,7 +322,7 @@ and accepted idempotently after a crash. The completion pass performs
 pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
 before atomically closing the root, and only then removes the snapshot.
 Rollback consumption and operator wiring are implemented: `changepass` appends
-and synchronously completes a durable term rotation under the identity mutation
+and synchronously completes a durable term rotation under the store mutation
 lock, and interactive and headless unlock resume a pending transition before
 publishing runtime state. Term GC remains deferred out of this implementation.
 See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).

@@ -43,7 +43,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			signer, cleanup := setupTestSigner(t)
 			defer cleanup()
 
-			ir := signer.productIdentityRuntime()
+			ir := signer.productRuntime()
 			ir.SetUnlocked()
 			ir.Config().SetLockOnDisconnect(tc.lockOnDisconnect)
 
@@ -105,7 +105,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.productIdentityRuntime()
+	ir := signer.productRuntime()
 	ir.SetUnlocked()
 	ir.Config().SetLockOnDisconnect(true)
 
@@ -116,7 +116,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	signer.ipcServer = ipcServer
 
 	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	owner.Bind(auth.NewDefaultIdentity("test-owner"), ir)
+	owner.Bind(auth.NewProductIdentity("test-owner"), ir)
 	if !ipcServer.manager.RegisterPending(owner) {
 		t.Fatal("RegisterPending(owner) = false, want true")
 	}
@@ -189,7 +189,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := signer.productIdentityRuntime()
+	ir := signer.productRuntime()
 	ir.Lock()
 	ir.Config().SetLockOnDisconnect(true)
 

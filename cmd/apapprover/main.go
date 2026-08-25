@@ -398,7 +398,6 @@ func displayTokenProvisioningRequest(req *protocol.TokenProvisioningRequestMessa
 		fmt.Println("🎫 TOKEN PROVISIONING REQUEST")
 	}
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Printf("Identity:    %s\n", req.IdentityID)
 	fmt.Printf("SSH Key:     %s\n", req.SSHFingerprint)
 	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
 	fmt.Printf("Timestamp:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))

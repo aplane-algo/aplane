@@ -6,7 +6,7 @@ package storepaths
 // ActivePaths is the resolved handle to an identity's active key and
 // key-type namespaces. Consumers take this instead of deriving those paths
 // from Paths, so one operation resolves the layout exactly once (under the
-// identity mutation lock, via internal/genstore.ResolveActive) and passes
+// store mutation lock, via internal/genstore.ResolveActive) and passes
 // the result down — never re-resolving mid-operation. GenPaths is the sole
 // implementation: every store is generation-based.
 type ActivePaths interface {

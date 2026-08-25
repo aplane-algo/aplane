@@ -17,7 +17,7 @@ import (
 func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	svc := server.adminServices()
 
 	publicKey := strings.Repeat("ab", witnessPublicKeySizeForTest(t))
@@ -59,7 +59,7 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 
 	result := server.adminServices().ListGenerations(ir)
 	if result.Error != "" || result.Current == "" {
@@ -70,7 +70,7 @@ func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -91,8 +91,8 @@ func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	}()
 
 	result := server.adminServices().ListGenerations(ir)
-	if result.Code != protocol.ResultCodeIdentityBusy || !strings.Contains(result.Error, "mutation is in progress") {
-		t.Fatalf("ListGenerations() = %#v, want immediate identity_busy result", result)
+	if result.Code != protocol.ResultCodeStoreBusy || !strings.Contains(result.Error, "mutation is in progress") {
+		t.Fatalf("ListGenerations() = %#v, want immediate store_busy result", result)
 	}
 }
 

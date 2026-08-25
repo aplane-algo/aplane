@@ -10,7 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -26,7 +26,7 @@ type Service struct {
 	Deps Deps
 }
 
-func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
+func (s Service) BackupIdentity(ir *productruntime.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
 	if err := requireProductRuntime(ir); err != nil {
@@ -74,7 +74,7 @@ func managedBackupTimestamp(t time.Time) string {
 	return t.UTC().Format("20060102-150405.000000000")
 }
 
-func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult {
+func (s Service) ListBackups(ir *productruntime.Runtime) adminproto.ListBackupsResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.ListBackupsResult{Code: protocol.ResultCodeListBackupsFailed, Error: err.Error()}
 	}
@@ -98,7 +98,7 @@ func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult 
 	return adminproto.ListBackupsResult{Backups: out}
 }
 
-func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
+func (s Service) DeleteBackup(ir *productruntime.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
 	if err := requireProductRuntime(ir); err != nil {
 		return adminproto.DeleteBackupResult{Code: protocol.ResultCodeDeleteBackupFailed, Error: err.Error()}
 	}
@@ -116,7 +116,7 @@ func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupR
 	return adminproto.DeleteBackupResult{Success: true}
 }
 
-func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
+func (s Service) PreviewRestore(ir *productruntime.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
 	if err := requireProductRuntime(ir); err != nil {

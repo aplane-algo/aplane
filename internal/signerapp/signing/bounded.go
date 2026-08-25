@@ -30,7 +30,7 @@ type boundedPlanItem struct {
 	RuntimeArgs       map[string][]byte
 }
 
-func resolveBoundedPlanItems(snapshot PlannerIdentitySnapshot, req []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) ([]*boundedPlanItem, *ServiceError) {
+func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) ([]*boundedPlanItem, *ServiceError) {
 	items := make([]*boundedPlanItem, len(req))
 	for i, request := range req {
 		if passthroughIndices[i] || foreignIndices[i] {

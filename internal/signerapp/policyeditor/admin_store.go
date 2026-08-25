@@ -25,7 +25,6 @@ type AdminPolicyClient interface {
 type AdminPolicySnapshot struct {
 	Success      bool
 	Target       Target
-	IdentityID   string
 	PolicyYAML   string
 	PolicySHA256 string
 	Canonical    bool
@@ -35,11 +34,10 @@ type AdminPolicySnapshot struct {
 
 // AdminPolicyValidation is the validation-only admin protocol result shape.
 type AdminPolicyValidation struct {
-	Success    bool
-	Target     Target
-	IdentityID string
-	Code       string
-	Error      string
+	Success bool
+	Target  Target
+	Code    string
+	Error   string
 }
 
 // AdminStore edits a signer-owned policy document through the online admin

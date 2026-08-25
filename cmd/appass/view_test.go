@@ -30,7 +30,7 @@ func TestRenderHomeViewWarnsNonRootProduction(t *testing.T) {
 	}
 }
 
-func TestStatusHelperInfoLabelsIdentityScopedPassphraseFile(t *testing.T) {
+func TestStatusHelperInfoLabelsProductStorePassphraseFile(t *testing.T) {
 	dataDir := t.TempDir()
 	passPath := filepath.Join(dataDir, "identities", "default", "passphrase")
 	if err := unlockconfig.SaveUnlockConfig(dataDir, &unlockconfig.UnlockConfig{
@@ -42,9 +42,9 @@ func TestStatusHelperInfoLabelsIdentityScopedPassphraseFile(t *testing.T) {
 	m := Model{dataDir: dataDir, method: "passfile"}
 	_, _, filePath, fileLabel, _ := m.statusHelperInfo()
 	if fileLabel != "Passphrase file" {
-		t.Fatalf("fileLabel = %q, want identity-scoped label", fileLabel)
+		t.Fatalf("fileLabel = %q, want product-store label", fileLabel)
 	}
 	if filePath != passPath {
-		t.Fatalf("filePath = %q, want identity-scoped path", filePath)
+		t.Fatalf("filePath = %q, want product-store path", filePath)
 	}
 }

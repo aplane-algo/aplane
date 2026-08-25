@@ -120,7 +120,6 @@ type PendingSignRequest struct {
 // PendingTokenRequest holds a token provisioning request waiting for approval
 type PendingTokenRequest struct {
 	ID             string
-	IdentityID     string
 	SSHFingerprint string
 	RemoteAddr     string
 	Timestamp      time.Time

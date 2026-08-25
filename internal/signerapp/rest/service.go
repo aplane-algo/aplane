@@ -8,8 +8,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -23,7 +23,7 @@ type SigningService interface {
 }
 
 type Dependencies struct {
-	NewSigningService   func(*identity.Runtime) SigningService
+	NewSigningService   func(*productruntime.Runtime) SigningService
 	PlanGroup           func(signerapi.GroupSignRequest) (*signersigning.PlanResult, *signersigning.ServiceError)
 	EncodeTxnHex        func(types.Transaction) string
 	KeyAdmin            keyadmin.Service

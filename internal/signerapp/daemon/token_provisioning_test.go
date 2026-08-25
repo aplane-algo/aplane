@@ -35,7 +35,7 @@ func TestTokenProvisioningRoutesToProductAdmin(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	server.ipcServer = ipcServer
 
@@ -64,10 +64,9 @@ func TestTokenProvisioningRoutesToProductAdmin(t *testing.T) {
 		}
 	}
 	if !reflectJSONSubset(messages[0], map[string]any{
-		"kind":        string(protocol.MessageKindNotification),
-		"type":        protocol.MsgTypeTokenProvisioningRequest,
-		"id":          "token-default",
-		"identity_id": "default",
+		"kind": string(protocol.MessageKindNotification),
+		"type": protocol.MsgTypeTokenProvisioningRequest,
+		"id":   "token-default",
 	}) {
 		t.Fatalf("product token provisioning request shape mismatch: %#v", messages[0])
 	}

@@ -62,8 +62,8 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
   path and runtime input; an explicit zero is rejected. APlane-owned library
   templates keep explicit reviewed declarations and maximum-input simulation
   vectors even when their ceiling equals the default.
-- Imported templates are identity-scoped. Installing a template for one signer
-  identity does not make it available to other identities.
+- Imported templates are enabled in the product store and become available to
+  its signer runtime.
 
 ### Merkle allowlist proof format
 

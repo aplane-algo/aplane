@@ -815,7 +815,7 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 // slot boundary; the executor consumes only runtime args accepted into the plan.
 func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 	authAddr := types.Address{1}.String()
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
 			PublicKeyHex:         "aabb",
 			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend),
@@ -844,7 +844,7 @@ func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("runtime metadata invalid: %v", err)
 	}
-	snapshot := PlannerIdentitySnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
+	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
 		PublicKeyHex: "aabb", BoundedAuthorization: metadata,
 	}}}
 	requests := []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: map[string]string{"preimage": "aabb"}}}

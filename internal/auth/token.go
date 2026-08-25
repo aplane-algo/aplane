@@ -55,7 +55,7 @@ func (t *TokenAuthenticator) Authenticate(ctx context.Context, r *http.Request) 
 		return nil, ErrInvalidCredentials
 	}
 
-	return NewDefaultIdentity(t.Method()), nil
+	return NewProductIdentity(t.Method()), nil
 }
 
 // ValidateToken checks whether the given token matches the expected token.

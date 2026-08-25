@@ -67,19 +67,30 @@ func TestEnforceAppassExecutionModeRejectsNonRootForProductionDataDir(t *testing
 	}
 }
 
-func TestRejectRemovedIdentityFlag(t *testing.T) {
-	for _, args := range [][]string{
-		{"-identity", "other"},
-		{"--identity", "other"},
-		{"-identity=other"},
-		{"--identity=other"},
-	} {
-		if err := rejectRemovedIdentityFlag(args); err == nil {
-			t.Fatalf("rejectRemovedIdentityFlag(%q) error = nil", args)
-		}
+func TestParseAppassOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    appassOptions
+		wantErr bool
+	}{
+		{name: "data dir", args: []string{"-d", "/tmp/signer"}, want: appassOptions{dataDir: "/tmp/signer"}},
+		{name: "version", args: []string{"--version"}, want: appassOptions{version: true}},
+		{name: "check", args: []string{"--check"}, want: appassOptions{check: true}},
+		{name: "unknown flag", args: []string{"--unknown"}, wantErr: true},
+		{name: "unknown flag with value", args: []string{"--unknown=value"}, wantErr: true},
+		{name: "positional argument", args: []string{"unexpected"}, wantErr: true},
 	}
-	if err := rejectRemovedIdentityFlag([]string{"-d", "/tmp/signer"}); err != nil {
-		t.Fatalf("rejectRemovedIdentityFlag(default args) error = %v", err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseAppassOptions(test.args)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("parseAppassOptions(%q) error = %v, wantErr %v", test.args, err, test.wantErr)
+			}
+			if !test.wantErr && got != test.want {
+				t.Fatalf("parseAppassOptions(%q) = %+v, want %+v", test.args, got, test.want)
+			}
+		})
 	}
 }
 
@@ -99,7 +110,7 @@ func stubSignerStopped(t *testing.T) {
 	})
 }
 
-// setupDataDir creates a minimal data directory with an identity-scoped unlock.yaml pointing to passfile.
+// setupDataDir creates a minimal data directory with an product-store unlock.yaml pointing to passfile.
 func setupDataDir(t *testing.T) string {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -120,7 +131,7 @@ func setupDataDir(t *testing.T) string {
 	return dataDir
 }
 
-func TestExecuteClear_ClearsIdentityScopedConfig(t *testing.T) {
+func TestExecuteClear_ClearsProductStoreConfig(t *testing.T) {
 	stubSignerStopped(t)
 
 	dataDir := setupDataDir(t)
@@ -153,7 +164,7 @@ func TestExecuteClear_ClearsIdentityScopedConfig(t *testing.T) {
 	}
 }
 
-func TestExecuteClear_RemovesIdentityScopedSystemdCredsFile(t *testing.T) {
+func TestExecuteClear_RemovesProductStoreSystemdCredsFile(t *testing.T) {
 	stubSignerStopped(t)
 
 	dataDir := t.TempDir()

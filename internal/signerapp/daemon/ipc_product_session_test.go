@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -45,14 +44,13 @@ func TestIPCSendSignRequestUsesActiveProductSession(t *testing.T) {
 func TestIPCTokenProvisioningUsesActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	recorder := addActiveProductSession(t, ipcServer)
-	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{ID: "token-1", IdentityID: "default"}) {
+	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{ID: "token-1"}) {
 		t.Fatal("SendTokenProvisioningRequest() = false, want true")
 	}
 	messages := recorder.messages(t)
 	if len(messages) != 1 || !reflectJSONSubset(messages[0], map[string]any{
-		"type":        protocol.MsgTypeTokenProvisioningRequest,
-		"id":          "token-1",
-		"identity_id": "default",
+		"type": protocol.MsgTypeTokenProvisioningRequest,
+		"id":   "token-1",
 	}) {
 		t.Fatalf("token provisioning shape mismatch: %#v", messages)
 	}
@@ -116,7 +114,7 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 		t.Fatal("SendSignRequestCanceled() = false, want true")
 	}
 	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{
-		ID: "token-1", IdentityID: productmode.IdentityID,
+		ID: "token-1",
 	}) {
 		t.Fatal("SendTokenProvisioningRequest() = false, want true")
 	}

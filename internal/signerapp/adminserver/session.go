@@ -14,9 +14,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type SessionState int
@@ -39,7 +38,7 @@ const (
 // Session owns one admin client protocol lifecycle.
 type Session struct {
 	conn               adminproto.AdminConn
-	identityServices   IdentityServices
+	productServices    ProductServices
 	settingsServices   SettingsServices
 	keyServices        KeyServices
 	backupServices     BackupServices
@@ -53,7 +52,7 @@ type Session struct {
 	state               SessionState
 	authenticatedOnly   bool
 	identity            *auth.Identity
-	bound               *identity.Runtime
+	bound               *productruntime.Runtime
 	method              string
 	context             SessionContext
 	ctx                 context.Context
@@ -92,7 +91,7 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
 		conn:               conn,
-		identityServices:   deps.Identity,
+		productServices:    deps.Product,
 		settingsServices:   deps.Settings,
 		keyServices:        deps.Keys,
 		backupServices:     deps.Backups,
@@ -110,13 +109,13 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 }
 
 func (s *Session) authorize(requestID string, action auth.Action, resource auth.Resource) bool {
-	if s.TargetIdentityID() == "" {
-		_ = s.SendError(requestID, protocol.ErrCodeNoIdentityBound, "no identity bound to session")
+	if s.BoundRuntime() == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeNoRuntimeBound, "no product runtime bound to session")
 		return false
 	}
 	identity := s.Identity()
 	if s.authorizer != nil && identity == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeNoIdentityBound, "no identity bound to session")
+		_ = s.SendError(requestID, protocol.ErrCodeNoRuntimeBound, "no product runtime bound to session")
 		return false
 	}
 	if err := s.authorizeIdentity(identity, action, resource); err != nil {
@@ -152,9 +151,6 @@ func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Ac
 	}
 	if ctx.ApproverPrincipal.ID == "" {
 		ctx.ApproverPrincipal = principal
-	}
-	if ctx.TargetIdentityID == "" {
-		ctx.TargetIdentityID = productmode.IdentityID
 	}
 	s.audit.LogAuthorizationDenied(ctx, action, resource, reason)
 }
@@ -222,7 +218,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 			return AuthOutcomeFailed
 		}
 
-		ir := s.identityServices.ProductIdentityRuntime()
+		ir := s.productServices.ProductRuntime()
 		if ir == nil {
 			authMsg.Passphrase.Zero()
 			s.sendAuthResult(false, protocol.ErrCodeAuthenticationFailed, "authentication failed")
@@ -231,20 +227,17 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 
 		passphraseBytes := authMsg.Passphrase.Clone()
 		authMsg.Passphrase.Zero()
-		if err := s.identityServices.VerifyPassphrase(ir, passphraseBytes); err != nil {
+		if err := s.productServices.VerifyPassphrase(ir, passphraseBytes); err != nil {
 			zeroBytes(passphraseBytes)
 			s.sendAuthResult(false, protocol.ErrCodeInvalidPassphrase, "invalid passphrase")
 			continue
 		}
 
-		sessionIdentity := s.identityServices.NewSessionIdentity(s.method)
+		sessionIdentity := s.productServices.NewSessionIdentity(s.method)
 		principal := principalFromIdentity(sessionIdentity)
 		authenticateOnly := base.Type == protocol.MsgTypeAuthOnly
 		if !authenticateOnly {
-			unlockResource := auth.Resource{
-				Type: "identity",
-				ID:   productmode.IdentityID,
-			}
+			unlockResource := auth.Resource{Type: "identity"}
 			if err := s.authorizeIdentity(sessionIdentity, auth.ActionIdentityUnlock, unlockResource); err != nil {
 				zeroBytes(passphraseBytes)
 				s.logAuthorizationDenied(sessionIdentity, auth.ActionIdentityUnlock, unlockResource, err.Error())
@@ -254,7 +247,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		if !authenticateOnly && !ir.IsUnlocked() {
-			success, _, errMsg, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
+			success, _, errMsg, code := s.productServices.UnlockIdentity(ir, passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {
 				if code == "" {
@@ -275,7 +268,6 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		s.context.AdminPrincipal = principal
 		s.context.RequesterPrincipal = principal
 		s.context.ApproverPrincipal = principal
-		s.context.TargetIdentityID = productmode.IdentityID
 		s.context.AuthMethod = s.method
 		s.mu.Unlock()
 		s.sendAuthResult(true, "", "")
@@ -291,7 +283,7 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
-	if s.identityServices == nil {
+	if s.productServices == nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInternal,
 			Error: "identity service unavailable",
@@ -309,7 +301,7 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 	defer msg.Passphrase.Zero()
 	passphrase := msg.Passphrase.Clone()
 	defer zeroBytes(passphrase)
-	result := s.identityServices.InitializeStore(adminproto.InitializeStoreRequest{Passphrase: passphrase})
+	result := s.productServices.InitializeStore(adminproto.InitializeStoreRequest{Passphrase: passphrase})
 	_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(msg.ID, result))
 	return AuthOutcomeBootstrapHandled
 }
@@ -346,7 +338,7 @@ func (s *Session) Context() context.Context {
 	return s.ctx
 }
 
-func (s *Session) BoundRuntime() *identity.Runtime {
+func (s *Session) BoundRuntime() *productruntime.Runtime {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bound
@@ -379,12 +371,6 @@ func (s *Session) SessionID() string {
 	return s.context.SessionID
 }
 
-func (s *Session) TargetIdentityID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.context.TargetIdentityID
-}
-
 func (s *Session) Transport() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -397,7 +383,7 @@ func (s *Session) State() SessionState {
 	return s.state
 }
 
-func (s *Session) Bind(identity *auth.Identity, bound *identity.Runtime) {
+func (s *Session) Bind(identity *auth.Identity, bound *productruntime.Runtime) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.identity = identity
@@ -406,9 +392,6 @@ func (s *Session) Bind(identity *auth.Identity, bound *identity.Runtime) {
 	s.context.AdminPrincipal = principal
 	s.context.RequesterPrincipal = principal
 	s.context.ApproverPrincipal = principal
-	if bound != nil {
-		s.context.TargetIdentityID = productmode.IdentityID
-	}
 	if bound != nil {
 		s.state = StateAuthenticated
 	}
@@ -456,24 +439,24 @@ func (s *Session) Conn() adminproto.AdminConn {
 	return s.conn
 }
 
-func (s *Session) productOrBoundRuntime() *identity.Runtime {
+func (s *Session) productOrBoundRuntime() *productruntime.Runtime {
 	ir := s.BoundRuntime()
-	if ir == nil && s.identityServices != nil {
-		ir = s.identityServices.ProductIdentityRuntime()
+	if ir == nil && s.productServices != nil {
+		ir = s.productServices.ProductRuntime()
 	}
 	return ir
 }
 
-func (s *Session) requireBoundRuntime(requestID string) *identity.Runtime {
+func (s *Session) requireBoundRuntime(requestID string) *productruntime.Runtime {
 	ir := s.BoundRuntime()
 	if ir != nil {
 		return ir
 	}
-	_ = s.SendError(requestID, protocol.ErrCodeNoIdentityBound, "no identity bound to session")
+	_ = s.SendError(requestID, protocol.ErrCodeNoRuntimeBound, "no product runtime bound to session")
 	return nil
 }
 
-func (s *Session) requireUnlockedRuntime(requestID string) *identity.Runtime {
+func (s *Session) requireUnlockedRuntime(requestID string) *productruntime.Runtime {
 	ir := s.requireBoundRuntime(requestID)
 	if ir == nil {
 		return nil
@@ -485,7 +468,7 @@ func (s *Session) requireUnlockedRuntime(requestID string) *identity.Runtime {
 	return nil
 }
 
-func (s *Session) requireRecoveryAdminRuntime(requestID string) *identity.Runtime {
+func (s *Session) requireRecoveryAdminRuntime(requestID string) *productruntime.Runtime {
 	ir := s.requireBoundRuntime(requestID)
 	if ir == nil {
 		return nil

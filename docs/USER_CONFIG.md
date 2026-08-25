@@ -1181,7 +1181,7 @@ Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lo
 
 ### Required Configuration
 
-Use `appass` to configure headless unlock for the product identity. It writes
+Use `appass` to configure headless unlock for the product store. It writes
 `identities/default/unlock.yaml` and removes process-global passphrase helper
 compatibility settings so they do not conflict.
 

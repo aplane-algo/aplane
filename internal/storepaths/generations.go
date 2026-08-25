@@ -62,7 +62,7 @@ func (p Paths) GenerationDir(generationID string) string {
 
 // GenerationPaths binds generation-qualified active-store paths. Pure
 // constructor: it does not consult CURRENT. Operations resolve CURRENT once
-// (internal/genstore.Resolve) under the identity mutation lock and pass the
+// (internal/genstore.Resolve) under the store mutation lock and pass the
 // result down; re-resolving mid-operation is a correctness bug.
 func (p Paths) GenerationPaths(generationID string) GenPaths {
 	return GenPaths{

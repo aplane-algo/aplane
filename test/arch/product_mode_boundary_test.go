@@ -11,9 +11,9 @@ import (
 	"testing"
 )
 
-// TestRetiredRuntimeAuthorizationShapesDoNotRegrow keeps removed registry,
-// grant, and per-identity ownership machinery out of the product runtime.
-func TestRetiredRuntimeAuthorizationShapesDoNotRegrow(t *testing.T) {
+// TestProductRuntimeHasNoSelectorOrOwnershipGraph keeps registry, grant, and
+// owner-keyed runtime-selection machinery out of the product runtime.
+func TestProductRuntimeHasNoSelectorOrOwnershipGraph(t *testing.T) {
 	root := filepath.Join("..", "..")
 	forbidden := []string{
 		"RegistryAuthenticator",
@@ -36,7 +36,7 @@ func TestRetiredRuntimeAuthorizationShapesDoNotRegrow(t *testing.T) {
 		}
 		for _, shape := range forbidden {
 			if strings.Contains(string(data), shape) {
-				t.Errorf("%s contains removed single-identity boundary shape %q", path, shape)
+				t.Errorf("%s violates the fixed product-runtime boundary with shape %q", path, shape)
 			}
 		}
 		return nil
@@ -47,7 +47,7 @@ func TestRetiredRuntimeAuthorizationShapesDoNotRegrow(t *testing.T) {
 }
 
 // TestProductCommandsExposeNoIdentitySelector keeps the product CLI fixed to
-// the one product store while preserving explicit rejection of stale flags.
+// the one product store.
 func TestProductCommandsExposeNoIdentitySelector(t *testing.T) {
 	root := filepath.Join("..", "..")
 	err := filepath.WalkDir(filepath.Join(root, "cmd"), func(path string, entry fs.DirEntry, walkErr error) error {
@@ -62,13 +62,6 @@ func TestProductCommandsExposeNoIdentitySelector(t *testing.T) {
 			return readErr
 		}
 		text := string(data)
-		if filepath.Clean(path) == filepath.Clean(filepath.Join(root, "cmd", "appass", "main.go")) {
-			// appass manually parses its small flag set. Keep exact stale-input
-			// rejection literals without treating them as a live selector.
-			for _, removed := range []string{`"-identity"`, `"--identity"`, `"-identity="`, `"--identity="`} {
-				text = strings.ReplaceAll(text, removed, "")
-			}
-		}
 		if strings.Contains(text, `"-identity"`) || strings.Contains(text, `"identity"`) {
 			t.Errorf("%s adds a product-facing identity selector", path)
 		}

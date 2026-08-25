@@ -37,7 +37,7 @@ func NewApshellHarness(t *testing.T, signerURL string) *ApshellHarness {
 		t.Fatalf("Failed to create work directory: %v", err)
 	}
 
-	// Create identity-scoped keys subdirectory
+	// Create the product store's keys subdirectory.
 	keysDir := filepath.Join(workDir, "identities", "default", "keys")
 	if err := os.MkdirAll(keysDir, 0755); err != nil {
 		t.Fatalf("Failed to create keys directory: %v", err)
@@ -81,7 +81,7 @@ func (a *ApshellHarness) Build() error {
 	return nil
 }
 
-// CopyTokenFrom copies the aplane.token from the signer's identity-scoped directory.
+// CopyTokenFrom copies aplane.token from the signer data directory.
 // Token is located at: <signerWorkDir>/identities/default/aplane.token
 func (a *ApshellHarness) CopyTokenFrom(signerWorkDir string) error {
 	srcPath := filepath.Join(signerWorkDir, "identities", "default", "aplane.token")

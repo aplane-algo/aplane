@@ -107,7 +107,7 @@ func WriteCurrent(paths storepaths.Paths, generationID string) error {
 }
 
 // Resolve reads CURRENT once and returns the bound generation paths.
-// Mutating callers must hold the identity mutation lock across Resolve and
+// Mutating callers must hold the store mutation lock across Resolve and
 // every use of the result; never re-resolve mid-operation.
 func Resolve(paths storepaths.Paths) (storepaths.GenPaths, error) {
 	generationID, err := ReadCurrent(paths)
@@ -124,7 +124,7 @@ func ResolveActive(paths storepaths.Paths) (storepaths.ActivePaths, error) {
 	return Resolve(paths)
 }
 
-// IsGenerational reports whether the identity store exists as a
+// IsGenerational reports whether the product store exists as a
 // generation-based store (all supported stores are). It distinguishes an
 // uninitialized store from one whose CURRENT pointer is present, so callers
 // can produce a friendly not-initialized error instead of a pointer error.

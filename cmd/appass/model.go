@@ -94,7 +94,7 @@ func (m Model) Init() tea.Cmd {
 	return loadStatusCmd(m.dataDir, m.svcInfo, m.isLocal)
 }
 
-// loadStatusCmd loads the current identity-scoped auto-unlock configuration.
+// loadStatusCmd loads the product store's auto-unlock configuration.
 func loadStatusCmd(dataDir string, svc *serviceInfo, isLocal bool) tea.Cmd {
 	return func() tea.Msg {
 		// Refresh mutable unit details (notably LoadCredentialEncrypted) after

@@ -19,7 +19,6 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 		switch req.URL.Path {
 		case "/status":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-				IdentityID:      "default",
 				State:           "unlocked",
 				ReadyForSigning: true,
 				KeyCount:        1,
@@ -61,7 +60,6 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 		switch req.URL.Path {
 		case "/status":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-				IdentityID:      "default",
 				State:           "unlocked",
 				ReadyForSigning: true,
 				KeyCount:        1,
@@ -97,7 +95,6 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 		}
 		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-			IdentityID:      "default",
 			State:           "locked",
 			SignerLocked:    true,
 			ReadyForSigning: false,

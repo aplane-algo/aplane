@@ -255,7 +255,6 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 func TestDecodeNotificationTokenProvisioningRequest(t *testing.T) {
 	raw, err := protocol.MarshalAdminMessage(protocol.TokenProvisioningRequestMessage{
 		BaseMessage:    protocol.BaseMessage{Type: protocol.MsgTypeTokenProvisioningRequest, ID: "token-1"},
-		IdentityID:     "default",
 		SSHFingerprint: "fp",
 		RemoteAddr:     "127.0.0.1",
 	})
@@ -276,7 +275,7 @@ func TestDecodeNotificationTokenProvisioningRequest(t *testing.T) {
 	if decoded.request == nil || decoded.request.kind != approvalKindTokenProvisioning || decoded.request.tokenRequest == nil {
 		t.Fatalf("decoded.request = %#v, want token provisioning request", decoded.request)
 	}
-	if decoded.request.tokenRequest.ID != "token-1" || decoded.request.tokenRequest.IdentityID != "default" {
+	if decoded.request.tokenRequest.ID != "token-1" {
 		t.Fatalf("decoded token request = %#v", decoded.request.tokenRequest)
 	}
 }

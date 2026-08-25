@@ -267,7 +267,7 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 	return ReadAndDecryptFile(keyFile, kr, ctx, "key file")
 }
 
-// ScanKeysDirectoryWithKeyring scans the identity-scoped keys subdirectory,
+// ScanKeysDirectoryWithKeyring scans the product store's keys subdirectory,
 // opening each credential with the keyring. Only term envelopes are read.
 func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	active, err := genstore.ResolveActive(paths)
@@ -287,7 +287,7 @@ func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypt
 	return report.Keys, nil
 }
 
-// ScanKeysDirectoryWithKeyringReport scans the identity-scoped keys
+// ScanKeysDirectoryWithKeyringReport scans the product store's keys
 // subdirectory and returns structured warnings for key files that were skipped.
 func ScanKeysDirectoryWithKeyringReport(paths storepaths.Paths, kr *crypto.Keyring) (*KeyScanReport, error) {
 	active, err := genstore.ResolveActive(paths)

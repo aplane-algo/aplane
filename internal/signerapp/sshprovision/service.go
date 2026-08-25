@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -61,6 +60,6 @@ func (s Service) AuditProvisioned(sshFingerprint, remoteAddr string) {
 		s.AuditLog.LogTokenProvisioned(sshFingerprint, remoteAddr)
 	}
 	if s.Logf != nil {
-		s.Logf("token provisioned for identity %q to %s (key: %s)", productmode.IdentityID, remoteAddr, sshFingerprint)
+		s.Logf("token provisioned to %s (key: %s)", remoteAddr, sshFingerprint)
 	}
 }

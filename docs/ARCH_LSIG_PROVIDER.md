@@ -28,13 +28,13 @@ This document describes the LogicSig provider architecture.
 │                            │    │ lsig/ed25519lsig/        Ed25519 LSig     │
 │ Sources:                   │    │ lsig/composeddsa/                         │
 │   Optional library YAML    │    │   └── template.go      YAML compositions  │
-│   Identity key type state  │    │ Shared TEAL substitution:                 │
+│   Product key type state   │    │ Shared TEAL substitution:                 │
 │                            │    │   tealtemplate scalar helpers               │
 │                            │    │                                           │
 │ Category: generic_lsig     │    │ Sources:                                  │
 └────────────────────────────┘    │   Hardcoded Go (v1)                       │
                                   │   Optional library YAML                   │
-                                  │   Identity key type state                 │
+                                  │   Product key type state                  │
                                   │                                           │
                                   │ Category: dsa_lsig                        │
                                   └───────────────────────────────────────────┘
@@ -44,14 +44,14 @@ Compiled DSA providers are registered from code and product visibility is
 recorded in `internal/keytypecatalog`. Optional YAML templates are install
 sources under `library/templates/`; generic and composed DSA templates are
 imported with `apadmin template import`. Installed templates are stored encrypted
-under identity key type state via `internal/templatestore/` and loaded by the
+under product-store key type state via `internal/templatestore/` and loaded by the
 signer template reload coordinator.
 
 **Scoping invariant:** compiled providers are shared product capabilities, while
 runtime-added `.template` files belong to the one durable `default` activation set. In practice:
 
 - default-enabled built-in key types are available wherever their providers are registered
-- library-visible built-in key types require an enabled identity state record before generation surfaces expose them
+- library-visible built-in key types require an enabled product-store state record before generation surfaces expose them
 - runtime-added `.template` files live under `identities/default/keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 
 **Schema invariant:** source-tree `.yaml` templates and runtime `.template`
@@ -115,7 +115,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
 | `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-sentry1024.v1`) |
 | `internal/boundedadmin` | External Falcon contract-admin identity, transcript, artifact, and ceremony validation |
-| `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-sentry Corridor profile; compiled by `lsig/composeddsa` after identity-local install |
+| `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-sentry Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
 | `internal/signerapp/templates` | Read-only keystore template reload coordinator and state/fingerprint policy |
@@ -510,9 +510,9 @@ Both composed templates and generic templates are stored by the signer through
 `templatelibrary`, which coordinates the primitive `templatestore` and
 `keytypestate` writes. The template store's storage
 type vocabulary is limited to `generic` and `composed`; compiled providers use
-identity key type state with `SourceCompiled` and are exposed to admin/library
+product-store key type state with `SourceCompiled` and are exposed to admin/library
 clients as `compiled_provider` without writing an encrypted `.template` file. At runtime
-`internal/signerapp/templates` walks the identity state once, decrypts enabled
+`internal/signerapp/templates` walks the product-store state once, decrypts enabled
 installed templates, and dispatches each template to the generic or composed
 parser/provider builder.
 
@@ -592,7 +592,7 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, sentry-gated spend, and external-admin pure rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in the product identity for new signer stores; Falcon + fixed receiver allowlist |
+| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 

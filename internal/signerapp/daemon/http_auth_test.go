@@ -210,7 +210,7 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 
 	invalid := httptest.NewRecorder()
 	invalidRequest := httptest.NewRequest(http.MethodGet, "/keys", nil)
@@ -232,9 +232,9 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 		if ident == nil || ident.ID != authzpkg.SystemProductAdminPrincipalID {
 			t.Fatalf("authenticated principal = %#v", ident)
 		}
-		ir, status, errMsg := server.identityFromRequest(r)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
 		if errMsg != "" || status != 0 || ir != productRuntime {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want product runtime", ir, status, errMsg)
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want product runtime", ir, status, errMsg)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})(w, r)
@@ -258,18 +258,18 @@ func TestIdentityFromRequestIgnoresPrincipalIDAndPreservesNodeFailClosed(t *test
 			Method: "aplane-token",
 		}))
 
-		ir, status, errMsg := server.identityFromRequest(r)
-		if ir != server.productIdentityRuntime() || status != 0 || errMsg != "" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
+		if ir != server.productRuntime() || status != 0 || errMsg != "" {
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
 		}
 	})
 
 	t.Run("node fail closed", func(t *testing.T) {
 		server.nodeFailState.Fail(context.Canceled)
 		r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-		ir, status, errMsg := server.identityFromRequest(r)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
 		if ir != nil || status != http.StatusServiceUnavailable || errMsg == "" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want node-fail-closed 503", ir, status, errMsg)
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want node-fail-closed 503", ir, status, errMsg)
 		}
 	})
 }

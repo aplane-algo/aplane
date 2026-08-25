@@ -40,21 +40,9 @@ var productStoreLocatorRoots = []string{
 	"internal/tokenfile",
 }
 
-var allowedCompatibilityIdentityParameters = map[string]bool{
-	"internal/signerapp/audit/audit.go:LogAuthFailed":       true,
-	"internal/signerapp/audit/audit.go:identityAuditFields": true,
-}
+var allowedCompatibilityIdentityParameters = map[string]bool{}
 
-var allowedCompatibilityIdentityFields = map[string]bool{
-	"internal/signerapp/adminserver/session_context.go:SessionContext.TargetIdentityID": true,
-	"internal/signerapp/approval/types.go:TokenProvisioningRequest.IdentityID":          true,
-	"internal/signerapp/audit/audit.go:Attribution.TargetIdentityID":                    true,
-	"internal/signerapp/audit/audit.go:AuditEntry.IdentityID":                           true,
-	"internal/signerapp/audit/audit.go:AuditEntry.TargetIdentityID":                     true,
-	"internal/signerapp/policyeditor/admin_store.go:AdminPolicySnapshot.IdentityID":     true,
-	"internal/signerapp/policyeditor/admin_store.go:AdminPolicyValidation.IdentityID":   true,
-	"internal/signerapp/signertui/model.go:PendingTokenRequest.IdentityID":              true,
-}
+var allowedCompatibilityIdentityFields = map[string]bool{}
 
 var forbiddenProductStoreFunctions = map[string]bool{
 	"BuildIdentityRuntime":           true,

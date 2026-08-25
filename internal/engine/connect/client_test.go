@@ -79,7 +79,6 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/status":
 			return connectJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-				IdentityID:     "default",
 				KeyCount:       1,
 				KeysetRevision: 2,
 			}, req), nil

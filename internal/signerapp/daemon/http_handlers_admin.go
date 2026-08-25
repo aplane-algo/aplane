@@ -26,7 +26,7 @@ func (fs *Signer) handleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 // handleAdminDelete handles DELETE /admin/keys for key deletion via REST.
 func (fs *Signer) handleAdminDelete(w http.ResponseWriter, r *http.Request) {
-	ir, ok := requireMethodAndIdentity(fs, w, r, http.MethodDelete)
+	ir, ok := requireMethodAndRuntime(fs, w, r, http.MethodDelete)
 	if !ok {
 		return
 	}

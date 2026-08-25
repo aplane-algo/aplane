@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
 
@@ -29,7 +28,6 @@ func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	if ident == nil {
 		return attr
 	}
-	attr.TargetIdentityID = productmode.IdentityID
 	attr.RequesterPrincipal = ident.ID
 	return attr
 }

@@ -442,7 +442,7 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		"backups/default/archive.tar.gz":          "standalone backup",
 		"identities/default/keyring.enc":          "independent root",
 		"identities/default/.keystore":            "independent marker",
-		"identities/default/config.yaml":          "identity config\n",
+		"identities/default/config.yaml":          "product config\n",
 		"identities/default/aplane.token":         "token",
 		"identities/default/unlock.yaml":          "unlock config\n",
 		"identities/default/.ssh/authorized_keys": "ssh key\n",

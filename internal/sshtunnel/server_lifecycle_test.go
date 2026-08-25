@@ -126,7 +126,7 @@ func TestProductAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing.T) {
 	srv.authKeysMu.Unlock()
 	srv.tokenMAC = testTokenMACs
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "default"}, pub)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: productSSHUsername}, pub)
 	if perms != nil {
 		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
 	}
@@ -146,11 +146,11 @@ func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 	}
 	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "default"}, pub)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: productSSHUsername}, pub)
 	if err != nil {
 		t.Fatalf("handlePublicKeyAuth() error = %v", err)
 	}
-	if !checked || perms.Extensions["identity_id"] != "default" {
+	if !checked || perms.Extensions["auth_method"] != "publickey_pending_token_proof" {
 		t.Fatalf("product binding = checked %v permissions %#v", checked, perms)
 	}
 }

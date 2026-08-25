@@ -90,7 +90,7 @@ func exitCodeForResultCode(code string) int {
 		protocol.ErrCodeUnlockFailed,
 		protocol.ErrCodeAuthorizationDenied,
 		protocol.ErrCodeSignerLocked,
-		protocol.ErrCodeNoIdentityBound:
+		protocol.ErrCodeNoRuntimeBound:
 		return apstoreExitUnavailable
 	case protocol.ResultCodeRestoreRateLimited:
 		return apstoreExitRateLimited

@@ -25,7 +25,7 @@ func TestPlanAndSignSuccessResponseShapes(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
+	server.productRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -40,7 +40,7 @@ func TestPlanAndSignSuccessResponseShapes(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{
@@ -120,7 +120,7 @@ func TestSignRejectsForeignModeWithStableErrorShape(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	sp := types.SuggestedParams{

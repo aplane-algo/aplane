@@ -44,7 +44,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -116,11 +116,11 @@ func (a *auditRecorder) LogKeyImported(address, keyType string) {
 	}{address: address, keyType: keyType})
 }
 
-func setupIdentityRuntime(t *testing.T) *identity.Runtime {
-	return setupIdentityRuntimeWithRole(t, noderole.RoleSigner)
+func setupProductRuntime(t *testing.T) *productruntime.Runtime {
+	return setupProductRuntimeWithRole(t, noderole.RoleSigner)
 }
 
-func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Runtime {
+func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productruntime.Runtime {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -136,7 +136,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 		t.Fatalf("Unlock(): %v", err)
 	}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
@@ -150,7 +150,7 @@ func setupIdentityRuntimeWithRole(t *testing.T, role noderole.Role) *identity.Ru
 	return ir
 }
 
-func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
+func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
 	ks := ir.KeyStore()
 	if err := ks.Scan(nil); err != nil {
 		return err
@@ -160,7 +160,7 @@ func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
 }
 
 func TestServiceGenerateKeyEd25519(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit}
 
@@ -198,7 +198,7 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 		witness.Falcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
+			ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
 			audit := &auditRecorder{}
 			svc := Service{AuditLog: audit}
 
@@ -243,7 +243,7 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 
 func TestServiceGenerateBoundedSentryFromReference(t *testing.T) {
 	configureFalconCompileMock(t)
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	const keyType = "test.falcon1024-bounded-sentry-keyadmin.v1"
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
@@ -338,7 +338,7 @@ func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
 }
 
 func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 
 	result, err := svc.GenerateKey(context.Background(), ir, witness.Falcon1024V1, nil, nil)
@@ -349,7 +349,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 		t.Fatalf("GenerateKey(component in signer node) error = %#v, want node role invalid input", err)
 	}
 
-	ir = setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
+	ir = setupProductRuntimeWithRole(t, noderole.RoleSentry)
 	result, err = svc.GenerateKey(context.Background(), ir, "ed25519", nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(ed25519 in sentry node) result = %#v, want nil", result)
@@ -360,7 +360,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 }
 
 func TestServiceGenerateKeyUsesMutationLock(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	lock := &recordingLock{}
 	svc := Service{
 		MutationLock: func() Locker {
@@ -377,7 +377,7 @@ func TestServiceGenerateKeyUsesMutationLock(t *testing.T) {
 }
 
 func TestServiceGenerateKeyRequiresKeyType(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 
 	result, err := svc.GenerateKey(context.Background(), ir, "", nil, nil)
@@ -390,7 +390,7 @@ func TestServiceGenerateKeyRequiresKeyType(t *testing.T) {
 }
 
 func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 
 	result, err := svc.GenerateKey(context.Background(), ir, "aplane.ed25519.v1", nil, nil)
@@ -403,7 +403,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 }
 
 func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 	keyType := "aplane.ed25519.v1"
 
@@ -427,10 +427,10 @@ func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	}
 }
 
-func TestServiceGenerateKeyRejectsGenericTemplateNotEnabledForIdentity(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+func TestServiceGenerateKeyRejectsGenericTemplateNotEnabledForRuntime(t *testing.T) {
+	ir := setupProductRuntime(t)
 	svc := Service{}
-	keyType := "test.generic-keyadmin-other-identity.v1"
+	keyType := "test.generic-keyadmin-other-productruntime.v1"
 	yamlData := []byte(`schema_version: 1
 template_type: generic
 template_mode: generated
@@ -438,7 +438,7 @@ publisher: test
 family: generic-keyadmin-other-identity
 version: 1
 display_name: Generic Keyadmin Other Identity
-description: Test identity-scoped generation
+description: Test product-store generation
 max_opcode_cost: 20000
 parameters: []
 runtime_args: []
@@ -457,7 +457,7 @@ teal: |
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 
 	called := false
-	result, genErr := svc.GenerateKey(context.Background(), ir, keyType, nil, func(context.Context, *identity.Runtime, string, map[string]string) (string, error) {
+	result, genErr := svc.GenerateKey(context.Background(), ir, keyType, nil, func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
 		called = true
 		return "ADDR", nil
 	})
@@ -473,7 +473,7 @@ teal: |
 }
 
 func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit}
 
@@ -508,7 +508,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 }
 
 func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
-	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
+	ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 
 	genResult, genErr := svc.GenerateKey(context.Background(), ir, witness.Falcon1024V1, nil, nil)
@@ -539,7 +539,7 @@ func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 }
 
 func TestServiceDeleteKeyValidatesAddressAndNotFound(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 
 	if result, err := svc.DeleteKey(ir, "not-an-address"); result != nil || err == nil || err.Kind != ErrorInvalidInput {
@@ -559,7 +559,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		fingerprint: "1:" + strings.Repeat("a", 64),
 	})
 
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressString(t, bytecode)
 	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
@@ -605,11 +605,11 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 	registerServiceGenericTemplate(t)
 
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	installServiceGenericTemplate(t, ir)
 	svc := Service{}
 
-	generate := func(_ context.Context, _ *identity.Runtime, keyType string, params map[string]string) (string, error) {
+	generate := func(_ context.Context, _ *productruntime.Runtime, keyType string, params map[string]string) (string, error) {
 		if keyType != serviceGenericKeyType {
 			t.Fatalf("keyType = %q, want %s", keyType, serviceGenericKeyType)
 		}
@@ -627,7 +627,7 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 		t.Fatalf("GenerateKey(generic) = %#v, want address ADDR keyType %s", result, serviceGenericKeyType)
 	}
 
-	badReq := func(context.Context, *identity.Runtime, string, map[string]string) (string, error) {
+	badReq := func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
 		return "", errors.New("boom")
 	}
 	if result, err := svc.GenerateKey(context.Background(), ir, serviceGenericKeyType, map[string]string{"owner": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}, badReq); result != nil || err == nil || err.Kind != ErrorInternal {
@@ -638,7 +638,7 @@ func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {
 func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	configureFalconCompileMock(t)
 
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
@@ -682,7 +682,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	configureFalconCompileMock(t)
 
-	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
+	ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
@@ -696,7 +696,7 @@ func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 }
 
 func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	ir.Lock()
 	svc := Service{}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
@@ -713,7 +713,7 @@ func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
 func TestServiceImportKeyCanonicalizesAddressListParams(t *testing.T) {
 	registerAddressListImportProvider(t)
 
-	ir := setupIdentityRuntime(t)
+	ir := setupProductRuntime(t)
 	svc := Service{}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
@@ -781,7 +781,7 @@ func registerServiceGenericTemplate(t *testing.T) {
 	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 }
 
-func installServiceGenericTemplate(t *testing.T, ir *identity.Runtime) {
+func installServiceGenericTemplate(t *testing.T, ir *productruntime.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)

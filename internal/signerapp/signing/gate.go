@@ -25,7 +25,7 @@ type gateInput struct {
 	ForeignIndices     map[int]bool
 	IsGroup            bool
 	// AuthKeys[i] selects the policy key override for position i ("" or short
-	// slice selects the identity-wide config).
+	// slice selects the product-wide config).
 	AuthKeys             []string
 	KnownAddresses       map[string]bool
 	RoutingExemptIndices map[int]bool

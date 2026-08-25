@@ -66,13 +66,13 @@ This separation is deliberate:
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/default/node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
-| Identity config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
-| Key type state record | `identities/default/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
-| Installed YAML template | `identities/default/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
+| Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
+| Key type state record | `identities/default/keytypes/<key_type>.json` | Product-store discovery/generation state. |
+| Installed YAML template | `identities/default/keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
 | Deleted key archive | `identities/default/deleted/keys/` | Removed key files; outside active scans. |
 | Deleted template archive | `identities/default/deleted/keytypes/` | Removed template files; outside active scans. |
-| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer stores install the bundled Falcon allowlist v1 source into the product identity during initialization; other entries require identity-local import/enablement. |
-| Compiled provider | Go provider registry and key type catalog | Binary capability; identity visibility may be default-enabled or opt-in. |
+| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer-role stores install the bundled Falcon allowlist v1 source during initialization; other entries require product-store import/enablement. |
+| Compiled provider | Go provider registry and key type catalog | Binary capability; product-store visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
@@ -129,7 +129,7 @@ Rules:
 - service endpoints reject role/use mismatches even if a forbidden key file is
   present on disk.
 
-A node hosts one product identity. Role-conflicting key inventory anywhere in
+A node hosts one product store. Role-conflicting key inventory anywhere in
 the data directory is a node-level store contradiction: startup/reload fails
 closed for the node rather than allowing the product runtime to continue.
 This is a deliberate
@@ -212,7 +212,7 @@ directly.
 There are two supported mutation contexts:
 
 - live administrative operations are owned by
-  `internal/signerapp/templateadmin`, which holds the identity mutation lock,
+  `internal/signerapp/templateadmin`, which holds the store mutation lock,
   calls `templatelibrary`, then asks the read-only
   `internal/signerapp/templates` runtime owner to reload;
 - initial default installation is owned by `internal/defaultkeytypes`, which
@@ -309,7 +309,7 @@ The relevant order is:
 
 1. open or reuse the identity keyring,
 2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
-3. load and validate identity config and the node-role policy domain from
+3. load and validate product runtime config and the node-role policy domain from
    `policy.yaml`,
 4. apply node role to key type discovery and service dispatch,
 5. register enabled compiled/YAML key type state,
@@ -350,7 +350,7 @@ is not published as valid runtime inventory.
 | Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind the `CURRENT` flip. | Destination policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
 | Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
 | Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
-| Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new identity store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
+| Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new product store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
 | Store passphrase change | Mints a fresh term key, re-encrypts installed templates and keys under it, rewrites role HMAC sidecars, and replaces `keyring.enc`. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |

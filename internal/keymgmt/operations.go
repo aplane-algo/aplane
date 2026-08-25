@@ -35,7 +35,7 @@ func GetValidKeyTypes() []string {
 }
 
 // GetValidKeyTypesWithActivated returns default-enabled key types plus
-// identity-activated library-visible compiled key types.
+// activated library-visible compiled key types.
 func GetValidKeyTypesWithActivated(activated []string) []string {
 	activatedSet := activatedKeyTypeSet(activated)
 	seen := make(map[string]bool)
@@ -94,10 +94,10 @@ func appendKeyType(types []string, seen map[string]bool, keyType string) []strin
 	return append(types, keyType)
 }
 
-// GetValidKeyTypesForIdentity returns default-enabled key types plus
-// identity-enabled opt-in compiled providers. Provider registries are
-// process-global; the enabled state records on disk are the identity boundary.
-func GetValidKeyTypesForIdentity(paths storepaths.Paths) ([]string, error) {
+// GetAvailableKeyTypes returns default-enabled key types plus opt-in compiled
+// providers enabled in the product store. Provider registries are
+// process-global; enabled-state records on disk select the available set.
+func GetAvailableKeyTypes(paths storepaths.Paths) ([]string, error) {
 	enabled, err := keytypestate.ListEnabled(paths)
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func isKeyTypeInList(keyType string, validTypes []string) bool {
 	return false
 }
 
-// DeleteKey moves a key file to the identity-local deleted/keys directory.
+// DeleteKey moves a key file to the product-store deleted/keys directory.
 func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return nil, fmt.Errorf("failed to create deleted keys directory: %w", err)

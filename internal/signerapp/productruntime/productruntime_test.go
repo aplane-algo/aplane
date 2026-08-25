@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package identity
+package productruntime
 
 import (
 	"context"
@@ -377,7 +377,7 @@ func TestStoredConfigApplyRejectsMode(t *testing.T) {
 
 	if _, err := (&StoredConfig{Mode: "sentry"}).Apply(ConfigDefaults{}); err == nil {
 		t.Fatal("Apply(mode) error = nil")
-	} else if !strings.Contains(err.Error(), "identity config mode is unsupported") {
+	} else if !strings.Contains(err.Error(), "runtime config mode is unsupported") {
 		t.Fatalf("Apply(mode) error = %q, want unsupported mode", err.Error())
 	}
 }
