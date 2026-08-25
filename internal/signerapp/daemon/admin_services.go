@@ -362,7 +362,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 }
 
 func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
-	ir := s.Service.Runtime
+	ir := s.Runtime
 	resp, err := s.signer.restService().KeyTypes(ir)
 	if err != nil {
 		return adminproto.ListKeyTypesResult{
