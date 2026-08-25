@@ -8,11 +8,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func requireAccountSigningRole(ir *identity.Runtime, operation string) *signersigning.ServiceError {
+func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *signersigning.ServiceError {
 	role := ir.NodeRole()
 	switch role {
 	case noderole.RoleSigner:
@@ -30,7 +30,7 @@ func requireAccountSigningRole(ir *identity.Runtime, operation string) *signersi
 	}
 }
 
-func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
+func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
 	switch role {
 	case signerapi.ComponentSignRoleSentry:
@@ -71,7 +71,7 @@ func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSign
 	}
 }
 
-func requireComponentTargetNodeRole(ir *identity.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
+func requireComponentTargetNodeRole(ir *productruntime.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
 	if kind == signerapi.ComponentTargetKindSentry {
 		return requireComponentNodeRole(ir, signerapi.ComponentSignRoleSentry)
 	}

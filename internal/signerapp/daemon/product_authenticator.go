@@ -8,19 +8,18 @@ import (
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // productAuthenticator verifies the one product runtime's token and maps the
 // credential to the reserved product-admin principal. Token authentication is
 // deliberately independent from runtime selection.
 type productAuthenticator struct {
-	nodeFailState *identity.NodeFailState
-	runtime       *identity.Runtime
+	nodeFailState *productruntime.NodeFailState
+	runtime       *productruntime.Runtime
 }
 
-func newProductAuthenticator(nodeFailState *identity.NodeFailState, runtime *identity.Runtime) *productAuthenticator {
+func newProductAuthenticator(nodeFailState *productruntime.NodeFailState, runtime *productruntime.Runtime) *productAuthenticator {
 	return &productAuthenticator{nodeFailState: nodeFailState, runtime: runtime}
 }
 
@@ -33,10 +32,14 @@ func (a *productAuthenticator) Authenticate(ctx context.Context, r *http.Request
 	if a.runtime == nil || a.runtime.Authenticator() == nil {
 		return nil, auth.ErrInvalidCredentials
 	}
-	if _, err := a.runtime.Authenticator().Authenticate(ctx, r); err != nil {
+	ident, err := a.runtime.Authenticator().Authenticate(ctx, r)
+	if err != nil {
 		return nil, err
 	}
-	return authz.NewProductPrincipalIdentity(a.Method()), nil
+	if ident == nil {
+		return nil, auth.ErrInvalidCredentials
+	}
+	return auth.NewProductIdentity(a.Method()), nil
 }
 
 func (*productAuthenticator) Method() string { return "aplane-token" }

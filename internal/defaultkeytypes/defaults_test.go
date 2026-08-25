@@ -19,15 +19,15 @@ import (
 	"github.com/aplane-algo/aplane/lsig"
 )
 
-func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *testing.T) {
+func TestInstallForNewStoreInstallsDefaultAllowlistTemplatesForSigner(t *testing.T) {
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForTest(t, paths)
 	masterKey := bytes.Repeat([]byte{1}, 32)
 
-	if err := InstallForNewIdentity(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
-		t.Fatalf("InstallForNewIdentity() error = %v", err)
+	if err := InstallForNewStore(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
+		t.Fatalf("InstallForNewStore() error = %v", err)
 	}
 
 	for _, keyType := range []string{Falcon1024AllowlistKeyType} {
@@ -67,13 +67,13 @@ func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *test
 
 }
 
-func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {
+func TestInstallForNewStoreSkipsSentryRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForTest(t, paths)
 	masterKey := bytes.Repeat([]byte{2}, 32)
 
-	if err := InstallForNewIdentity(paths, noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
-		t.Fatalf("InstallForNewIdentity() error = %v", err)
+	if err := InstallForNewStore(paths, noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
+		t.Fatalf("InstallForNewStore() error = %v", err)
 	}
 	if rec, ok, err := keytypestate.Get(paths, Falcon1024AllowlistKeyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
@@ -82,18 +82,18 @@ func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {
 	}
 }
 
-func TestInstallForNewIdentityIsIdempotent(t *testing.T) {
+func TestInstallForNewStoreIsIdempotent(t *testing.T) {
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	mintFirstGenerationForTest(t, paths)
 	masterKey := bytes.Repeat([]byte{3}, 32)
 
-	if err := InstallForNewIdentity(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
-		t.Fatalf("first InstallForNewIdentity() error = %v", err)
+	if err := InstallForNewStore(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
+		t.Fatalf("first InstallForNewStore() error = %v", err)
 	}
-	if err := InstallForNewIdentity(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
-		t.Fatalf("second InstallForNewIdentity() error = %v", err)
+	if err := InstallForNewStore(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
+		t.Fatalf("second InstallForNewStore() error = %v", err)
 	}
 	rec, ok, err := keytypestate.Get(paths, Falcon1024AllowlistKeyType)
 	if err != nil {

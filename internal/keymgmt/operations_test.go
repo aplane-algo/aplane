@@ -205,13 +205,13 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 	logicsigdsa.RegisterIfAbsent(keymgmtTestDSAProvider{keyType: keyType})
 
 	if containsKeyType(GetValidKeyTypes(), keyType) {
-		t.Fatal("GetValidKeyTypes() included non-default provider without identity state")
+		t.Fatal("GetValidKeyTypes() included non-default provider without product-store state")
 	}
 	if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 		t.Fatal("GetValidKeyTypesWithActivated() did not include identity-enabled composed provider")
 	}
 	if IsValidKeyType(keyType) {
-		t.Fatal("IsValidKeyType() accepted composed provider without identity state")
+		t.Fatal("IsValidKeyType() accepted composed provider without product-store state")
 	}
 	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
 		t.Fatal("IsValidKeyTypeWithActivated() rejected identity-enabled composed provider")
@@ -529,7 +529,7 @@ func TestDetectKeyInfoFromFileWithKeyringEncrypted(t *testing.T) {
 }
 
 func TestDeleteKey(t *testing.T) {
-	// Set up a key file in the identity-scoped keys directory
+	// Set up a key file in the product-store keys directory
 	tmpDir := t.TempDir()
 	identityID := "default"
 	keysDir := filepath.Join(tmpDir, "identities", identityID, "keys")
@@ -553,7 +553,7 @@ func TestDeleteKey(t *testing.T) {
 		t.Error("original key file should be deleted")
 	}
 
-	// Should exist in the identity-local deleted keys directory
+	// Should exist in the product-store deleted keys directory
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Errorf("key should exist at deleted path %s: %v", result.DeletedPath, err)
 	}

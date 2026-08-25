@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -32,20 +32,20 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 	if err := os.WriteFile(paths.CurrentPointerPath(), []byte("garbage"+"\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile(CURRENT) error = %v", err)
 	}
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      keystore.NewFileKeyStoreForPaths(paths),
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
-	service := signerAdminServices{}
+	service := signerAdminServices{product: ir}
 
-	success, keyCount, errMsg, code := service.UnlockIdentity(ir, passphrase)
+	success, keyCount, errMsg, code := service.UnlockIdentity(passphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q)", success, keyCount, errMsg, code)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() || ir.KeyCount() != 0 {
-		t.Fatalf("identity state = recovery %v unlocked %v keys %d",
+		t.Fatalf("runtime state = recovery %v unlocked %v keys %d",
 			ir.IsRecovery(),
 			ir.IsUnlocked(),
 			ir.KeyCount(),

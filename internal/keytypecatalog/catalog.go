@@ -16,7 +16,7 @@ type Availability string
 
 const (
 	// AvailabilityDefaultEnabled means every identity may see and create this
-	// key type without an identity-local state record.
+	// key type without a product-store state record.
 	AvailabilityDefaultEnabled Availability = "default_enabled"
 
 	// AvailabilityLibrary means the provider is registered as binary capability

@@ -49,7 +49,7 @@ func TestValidateRejectsAdditionalIdentityBeforeUnlockPlanning(t *testing.T) {
 	}
 	cfg := serverconfig.DefaultServerConfig()
 	_, err := Validate(&cfg, &RuntimeState{}, utilkeys.NewPaths(root))
-	if err == nil || !strings.Contains(err.Error(), "invalid product identity layout") {
+	if err == nil || !strings.Contains(err.Error(), "invalid product-store layout") {
 		t.Fatalf("Validate() error = %v, want product layout refusal", err)
 	}
 }

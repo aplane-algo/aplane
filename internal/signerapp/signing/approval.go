@@ -282,7 +282,7 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 // EvaluateAutoRejectionRules evaluates hard policy rules against each signable transaction.
 // authKeys[i] holds the concrete signing authority key for request i and is
 // used to pick a key override from policyCfg.KeyOverrides; an empty string or a
-// nil slice selects the identity-wide config. knownAddresses is the signer-local
+// nil slice selects the product-wide config. knownAddresses is the signer-local
 // address set used to distinguish local rekeys from foreign rekeys.
 func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, isGroup bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
 	console = consoleOf(console)

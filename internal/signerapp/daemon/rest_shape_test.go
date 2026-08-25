@@ -46,7 +46,6 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			},
 			wantStatus: http.StatusOK,
 			want: map[string]any{
-				"identity_id":           "default",
 				"node_role":             "signer",
 				"protocol_version":      map[string]any{"major": float64(2), "minor": float64(0)},
 				"build_version":         version.String(),

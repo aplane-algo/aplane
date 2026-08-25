@@ -17,6 +17,9 @@ import (
 )
 
 const (
+	// Version 1 remains pre-release and may be redefined until the first release.
+	// After that release, any transcript field, ordering, or encoding change
+	// requires a new protocol version and domain.
 	tokenProofVersion       = 1
 	tokenProofDomain        = "aplane-ssh-token-proof-v1"
 	tokenProofServerDomain  = "server"
@@ -24,8 +27,9 @@ const (
 	tokenProofNonceSize     = 32
 	tokenProofMACSize       = sha256.Size
 	tokenProofHostHashSize  = sha256.Size
-	tokenProofMaxIdentity   = 128
 	tokenProofMaxJSONLength = 1024
+	productSSHUsername      = "aplane"
+	tokenRequestSSHUsername = "request-token"
 )
 
 const (
@@ -34,7 +38,7 @@ const (
 )
 
 type tokenProofTranscript struct {
-	Identity    string
+	Username    string
 	HostKeyHash []byte
 	ClientNonce []byte
 	ServerNonce []byte
@@ -69,11 +73,8 @@ func hashSSHHostKey(key ssh.PublicKey) ([]byte, error) {
 }
 
 func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error) {
-	if transcript.Identity == "" {
-		return nil, fmt.Errorf("identity is empty")
-	}
-	if len(transcript.Identity) > tokenProofMaxIdentity {
-		return nil, fmt.Errorf("identity exceeds %d bytes", tokenProofMaxIdentity)
+	if transcript.Username != productSSHUsername {
+		return nil, fmt.Errorf("SSH username is %q, want %q", transcript.Username, productSSHUsername)
 	}
 	if len(transcript.HostKeyHash) != tokenProofHostHashSize {
 		return nil, fmt.Errorf("host key hash is %d bytes, want %d", len(transcript.HostKeyHash), tokenProofHostHashSize)
@@ -88,7 +89,7 @@ func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error)
 	var encoded bytes.Buffer
 	for _, field := range [][]byte{
 		[]byte(tokenProofDomain),
-		[]byte(transcript.Identity),
+		[]byte(transcript.Username),
 		transcript.HostKeyHash,
 		transcript.ClientNonce,
 		transcript.ServerNonce,

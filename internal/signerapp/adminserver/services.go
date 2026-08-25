@@ -8,70 +8,70 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
-type IdentityServices interface {
-	ProductIdentityRuntime() *identity.Runtime
-	VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error
-	UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
+type ProductServices interface {
+	ProductRuntime() *productruntime.Runtime
+	VerifyPassphrase(passphrase []byte) error
+	UnlockIdentity(passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
-	ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
+	ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
-	RevokeProductToken(ir *identity.Runtime) error
+	RevokeProductToken() error
 }
 
 type SettingsServices interface {
-	BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings
-	UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error
-	BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot
-	ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot
-	ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult
+	BuildAdminSettings() adminproto.AdminSettings
+	UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error
+	BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot
+	ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot
+	ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult
 }
 
 type KeyServices interface {
-	ListKeys(ir *identity.Runtime) ([]adminproto.KeyInfo, error)
-	GetKeyDetails(ir *identity.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult
-	GenerateKey(ctx context.Context, ir *identity.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
-	DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
-	ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult
+	ListKeys() ([]adminproto.KeyInfo, error)
+	GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult
+	GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
+	DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
+	ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult
 }
 
 type BackupServices interface {
-	BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult
-	ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult
-	DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult
-	BeginBackupImport(ir *identity.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult
-	AppendBackupImport(ir *identity.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult
-	CommitBackupImport(ir *identity.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult
-	AbortBackupImport(ir *identity.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult
-	ReadBackupChunk(ir *identity.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult
-	PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult
-	RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult
-	RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult
-	ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult
+	BackupIdentity(req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult
+	ListBackups() adminproto.ListBackupsResult
+	DeleteBackup(req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult
+	BeginBackupImport(req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult
+	AppendBackupImport(req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult
+	CommitBackupImport(req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult
+	AbortBackupImport(req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult
+	ReadBackupChunk(req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult
+	PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult
+	RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult
+	RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult
+	ReconcileStore() adminproto.ReconcileStoreResult
 }
 
 type TemplateServices interface {
-	ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibraryTemplatesResult
-	InstallLibraryTemplate(ir *identity.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult
-	ListInstalledTemplates(ir *identity.Runtime) adminproto.ListInstalledTemplatesResult
-	ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult
-	ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult
-	ImportInstalledTemplate(ir *identity.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult
-	RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult
-	ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult
-	DeactivateKeyType(ir *identity.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult
-	ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult
+	ListLibraryTemplates() adminproto.ListLibraryTemplatesResult
+	InstallLibraryTemplate(req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult
+	ListInstalledTemplates() adminproto.ListInstalledTemplatesResult
+	ShowInstalledTemplate(req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult
+	ShowLibraryTemplate(req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult
+	ImportInstalledTemplate(req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult
+	RemoveInstalledTemplate(req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult
+	ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult
+	DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult
+	ListKeyTypes() adminproto.ListKeyTypesResult
 }
 
 type StoreInspectionServices interface {
-	ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult
-	GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult
-	ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult
-	RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
-	ExportSentryPublic(ir *identity.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
-	ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory
+	ListSentryReferences() adminproto.ListSentryReferencesResult
+	GetSentryReference(req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult
+	ImportSentryReference(req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult
+	RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
+	ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
+	ListGenerations() adminproto.GenerationInventory
 }
 
 type AuthorizationAudit interface {
@@ -79,7 +79,7 @@ type AuthorizationAudit interface {
 }
 
 type SessionDeps struct {
-	Identity    IdentityServices
+	Product     ProductServices
 	Settings    SettingsServices
 	Keys        KeyServices
 	Backups     BackupServices

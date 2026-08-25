@@ -600,7 +600,6 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, TokenProvisioningRequestReceivedMsg{
 					Request: PendingTokenRequest{
 						ID:             req.ID,
-						IdentityID:     req.IdentityID,
 						SSHFingerprint: req.SSHFingerprint,
 						RemoteAddr:     req.RemoteAddr,
 						Timestamp:      time.Unix(req.Timestamp, 0),

@@ -20,13 +20,13 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
-	gen := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	svc := server.adminServices()
+	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)
 	}
@@ -87,12 +87,12 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
-	generated := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	svc := server.adminServices()
+	generated := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !generated.Success {
 		t.Fatalf("GenerateKey() = %+v", generated)
 	}
@@ -107,7 +107,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	if archivePath == "" {
 		t.Fatalf("backup response = %#v", backupMessages)
 	}
-	if result := svc.keyApp().DeleteKey(ir, adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
+	if result := svc.keyApp().DeleteKey(adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
 		t.Fatalf("DeleteKey() = %+v", result)
 	}
 	restoreRecorder := &ipcJSONRecorderConn{}
@@ -138,13 +138,13 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
-		t.Fatal("expected default identity runtime")
+		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
-	gen := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	svc := server.adminServices()
+	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)
 	}

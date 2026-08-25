@@ -6,13 +6,26 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	authzpkg "github.com/aplane-algo/aplane/internal/authz"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
+
+type stubHTTPAuthenticator struct {
+	identity *auth.Identity
+	err      error
+	method   string
+}
+
+func (s stubHTTPAuthenticator) Authenticate(context.Context, *http.Request) (*auth.Identity, error) {
+	return s.identity, s.err
+}
+
+func (s stubHTTPAuthenticator) Method() string { return s.method }
 
 type stubAuthorizer struct {
 	err error
@@ -119,6 +132,50 @@ func TestRequireAuthInvalidCredentials(t *testing.T) {
 	}
 }
 
+func TestProductAuthenticatorMintsPrincipalAfterCredentialValidation(t *testing.T) {
+	credential := &auth.Identity{ID: "credential:test", Type: "credential", Method: "test"}
+	runtime := productruntime.New(productruntime.Config{
+		Authenticator: stubHTTPAuthenticator{identity: credential, method: "test"},
+	})
+	authenticator := newProductAuthenticator(&productruntime.NodeFailState{}, runtime)
+
+	identity, err := authenticator.Authenticate(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+	if identity == nil || identity.ID != auth.SystemProductAdminPrincipalID || identity.Type != "system" {
+		t.Fatalf("Authenticate() identity = %#v, want reserved product principal", identity)
+	}
+}
+
+func TestProductAuthenticatorRejectsNilIdentity(t *testing.T) {
+	runtime := productruntime.New(productruntime.Config{
+		Authenticator: stubHTTPAuthenticator{method: "test"},
+	})
+	authenticator := newProductAuthenticator(&productruntime.NodeFailState{}, runtime)
+
+	identity, err := authenticator.Authenticate(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if identity != nil || !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("Authenticate() = (%#v, %v), want invalid credentials", identity, err)
+	}
+}
+
+func TestRequireAuthRejectsNilIdentity(t *testing.T) {
+	server, cleanup := newAuthTestSigner(t)
+	defer cleanup()
+	server.httpAuth = stubHTTPAuthenticator{method: "test"}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("next handler should not be called")
+	})(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+}
+
 func TestRequireAuthForbidden(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
@@ -139,11 +196,11 @@ func TestRequireAuthForbidden(t *testing.T) {
 	if got := decodeErrorResponse(t, w); got != "Forbidden" {
 		t.Fatalf("error = %q, want Forbidden", got)
 	}
-	if authz.got.identityID != authzpkg.SystemProductAdminPrincipalID {
-		t.Fatalf("identityID = %q, want %q", authz.got.identityID, authzpkg.SystemProductAdminPrincipalID)
+	if authz.got.identityID != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("identityID = %q, want %q", authz.got.identityID, auth.SystemProductAdminPrincipalID)
 	}
-	if authz.got.contextIdentityID != authzpkg.SystemProductAdminPrincipalID {
-		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, authzpkg.SystemProductAdminPrincipalID)
+	if authz.got.contextIdentityID != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, auth.SystemProductAdminPrincipalID)
 	}
 	if authz.got.action != auth.ActionKeysDelete {
 		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionKeysDelete)
@@ -192,8 +249,8 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 			t.Fatal("identity missing from context")
 			return
 		}
-		if ident.ID != authzpkg.SystemProductAdminPrincipalID {
-			t.Fatalf("principal ID = %q, want %q", ident.ID, authzpkg.SystemProductAdminPrincipalID)
+		if ident.ID != auth.SystemProductAdminPrincipalID {
+			t.Fatalf("principal ID = %q, want %q", ident.ID, auth.SystemProductAdminPrincipalID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})(w, r)
@@ -210,7 +267,7 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 
 	invalid := httptest.NewRecorder()
 	invalidRequest := httptest.NewRequest(http.MethodGet, "/keys", nil)
@@ -229,19 +286,19 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	r.Header.Set("Authorization", "aplane test-token")
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
 		ident := auth.IdentityFromContext(r.Context())
-		if ident == nil || ident.ID != authzpkg.SystemProductAdminPrincipalID {
+		if ident == nil || ident.ID != auth.SystemProductAdminPrincipalID {
 			t.Fatalf("authenticated principal = %#v", ident)
 		}
-		ir, status, errMsg := server.identityFromRequest(r)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
 		if errMsg != "" || status != 0 || ir != productRuntime {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want product runtime", ir, status, errMsg)
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want product runtime", ir, status, errMsg)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})(w, r)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
-	if authorizer.got.identityID != authzpkg.SystemProductAdminPrincipalID {
+	if authorizer.got.identityID != auth.SystemProductAdminPrincipalID {
 		t.Fatalf("authorization binding = %#v", authorizer.got)
 	}
 }
@@ -258,18 +315,18 @@ func TestIdentityFromRequestIgnoresPrincipalIDAndPreservesNodeFailClosed(t *test
 			Method: "aplane-token",
 		}))
 
-		ir, status, errMsg := server.identityFromRequest(r)
-		if ir != server.productIdentityRuntime() || status != 0 || errMsg != "" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
+		if ir != server.productRuntime() || status != 0 || errMsg != "" {
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want fixed product runtime", ir, status, errMsg)
 		}
 	})
 
 	t.Run("node fail closed", func(t *testing.T) {
 		server.nodeFailState.Fail(context.Canceled)
 		r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-		ir, status, errMsg := server.identityFromRequest(r)
+		ir, status, errMsg := server.productRuntimeFromRequest(r)
 		if ir != nil || status != http.StatusServiceUnavailable || errMsg == "" {
-			t.Fatalf("identityFromRequest() = (%v, %d, %q), want node-fail-closed 503", ir, status, errMsg)
+			t.Fatalf("productRuntimeFromRequest() = (%v, %d, %q), want node-fail-closed 503", ir, status, errMsg)
 		}
 	})
 }

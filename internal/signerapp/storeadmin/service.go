@@ -10,8 +10,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepass"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -32,19 +33,21 @@ type AuditLogger interface {
 	LogPassphraseChangeFailed(reason string)
 }
 
-type UnlockIdentityFunc func(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
+type UnlockIdentityFunc func(passphrase []byte) (bool, int, string, string)
 
 type Service struct {
 	Deps           Deps
+	Runtime        *productruntime.Runtime
 	AuditLog       AuditLogger
 	UnlockIdentity UnlockIdentityFunc
 }
 
-func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
+func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
+	ir := s.Runtime
 	if ir == nil {
 		return adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeNoIdentityBound,
-			Error: "product identity runtime unavailable",
+			Code:  protocol.ErrCodeNoRuntimeBound,
+			Error: "product runtime unavailable",
 		}
 	}
 	if len(req.Passphrase) == 0 {
@@ -89,7 +92,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	// mutations. Invoke it only after releasing the non-reentrant identity
 	// mutation lock used for initialization.
 	if err == nil {
-		success, _, errMsg, _ := s.UnlockIdentity(ir, req.Passphrase)
+		success, _, errMsg, _ := s.UnlockIdentity(req.Passphrase)
 		if !success {
 			err = fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
 		}
@@ -110,7 +113,8 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 	}
 }
 
-func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+	ir := s.Runtime
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
 		s.logPassphraseChangeFailed("current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{
@@ -172,7 +176,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 			return rotateErr
 		}
 		if _, reloadErr := ir.ReloadWithPassphrase(req.NewPassphrase); reloadErr != nil {
-			return fmt.Errorf("passphrase changed but identity reload failed: %w", reloadErr)
+			return fmt.Errorf("passphrase changed but runtime reload failed: %w", reloadErr)
 		}
 		// Completion has closed the root and reload has rebuilt every runtime
 		// index under the new passphrase, so signing authority may be
@@ -209,7 +213,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	}
 }
 
-func passphraseCommandConfigFromUnlock(unlockCfg *identity.UnlockConfig) *serverconfig.PassphraseCommandConfig {
+func passphraseCommandConfigFromUnlock(unlockCfg *unlockconfig.UnlockConfig) *serverconfig.PassphraseCommandConfig {
 	if unlockCfg == nil || !unlockCfg.HasPassphraseCommand() {
 		return nil
 	}

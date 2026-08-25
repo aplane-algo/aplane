@@ -26,7 +26,7 @@ type stubPlannerDeps struct {
 	keyMetadata map[string]PlannerKeyMetadata
 }
 
-func (d stubPlannerDeps) Snapshot() PlannerIdentitySnapshot {
+func (d stubPlannerDeps) Snapshot() PlannerRuntimeSnapshot {
 	keyFiles := d.keyFiles
 	if keyFiles == nil && d.keyTypes != nil {
 		keyFiles = make(map[string]string, len(d.keyTypes))
@@ -34,7 +34,7 @@ func (d stubPlannerDeps) Snapshot() PlannerIdentitySnapshot {
 			keyFiles[address] = "keys/" + address + ".key"
 		}
 	}
-	return PlannerIdentitySnapshot{
+	return PlannerRuntimeSnapshot{
 		KeyFiles:    keyFiles,
 		KeyTypes:    d.keyTypes,
 		KeyMetadata: d.keyMetadata,
@@ -46,7 +46,7 @@ type countingSnapshotPlannerDeps struct {
 	calls int
 }
 
-func (d *countingSnapshotPlannerDeps) Snapshot() PlannerIdentitySnapshot {
+func (d *countingSnapshotPlannerDeps) Snapshot() PlannerRuntimeSnapshot {
 	d.calls++
 	return d.stubPlannerDeps.Snapshot()
 }
@@ -79,7 +79,7 @@ func TestCalculateLogicSigResourcesV42SeparatesProgramArgumentsAndOpcode(t *test
 			MaxOpcodeCost: 39_999,
 		},
 	}
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{
 			"LSIG": {LogicSigResources: &profile},
 		},
@@ -118,7 +118,7 @@ func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 		ProgramBytes: 4_500,
 		Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 39_999},
 	}
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{"LSIG": {LogicSigResources: &profile}},
 	}
 	plan, _, err := calculateLogicSigResources(
@@ -145,7 +145,7 @@ func TestCalculateLogicSigResourcesUsesCompiledConsensus(t *testing.T) {
 func TestCalculateLogicSigResourcesAllowsNonLogicSigGroup(t *testing.T) {
 	_, _, err := calculateLogicSigResources(
 		nil,
-		PlannerIdentitySnapshot{},
+		PlannerRuntimeSnapshot{},
 
 		[]signerapi.SignRequest{{AuthAddress: "ED25519"}},
 		[]types.Transaction{{}},
@@ -166,7 +166,7 @@ func TestCalculateLogicSigResourcesRejectsOversizedNonLogicSigGroup(t *testing.T
 	txns := make([]types.Transaction, len(requests))
 	_, _, err := calculateLogicSigResources(
 		nil,
-		PlannerIdentitySnapshot{},
+		PlannerRuntimeSnapshot{},
 
 		requests,
 		txns,
@@ -188,7 +188,7 @@ func TestCalculateLogicSigResourcesRejectsOrphanPassthroughLogicSigFields(t *tes
 	})
 	_, _, err := calculateLogicSigResources(
 		nil,
-		PlannerIdentitySnapshot{},
+		PlannerRuntimeSnapshot{},
 
 		[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(encoded)}},
 		[]types.Transaction{{}},
@@ -262,7 +262,7 @@ func TestCalculateLogicSigResourcesRejectsUnderprovisionedImmutablePassthrough(t
 	})
 	_, _, err := calculateLogicSigResources(
 		nil,
-		PlannerIdentitySnapshot{},
+		PlannerRuntimeSnapshot{},
 
 		[]signerapi.SignRequest{{
 			SignedTxnHex: hex.EncodeToString(encoded),
@@ -291,7 +291,7 @@ func TestVerifySignableKeysRequiresKeyTypeMetadata(t *testing.T) {
 		TxnBytesHex: "deadbeef",
 	}}
 
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
 	}
 	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})
@@ -316,7 +316,7 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 		AuthAddress: addr,
 		TxnBytesHex: "deadbeef",
 	}}
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyTypes: map[string]string{addr: "ed25519"},
 	}
 
@@ -361,7 +361,7 @@ func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 				AuthAddress: addr,
 				TxnBytesHex: "deadbeef",
 			}}
-			snapshot := PlannerIdentitySnapshot{
+			snapshot := PlannerRuntimeSnapshot{
 				KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
 				KeyTypes: map[string]string{addr: tt.keyType},
 			}
@@ -390,7 +390,7 @@ func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
 		AuthAddress: addr,
 		TxnBytesHex: "deadbeef",
 	}}
-	snapshot := PlannerIdentitySnapshot{
+	snapshot := PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
 		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Sentry1024V1},
 	}
@@ -404,7 +404,7 @@ func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
 	}
 }
 
-func TestPlannerUsesSingleIdentitySnapshot(t *testing.T) {
+func TestPlannerUsesSingleRuntimeSnapshot(t *testing.T) {
 	var genesisHash types.Digest
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
 		base64.StdEncoding.EncodeToString(genesisHash[:]): "snapshot_test",

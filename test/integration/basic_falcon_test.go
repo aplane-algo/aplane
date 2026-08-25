@@ -25,26 +25,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	if harness.IntegrationNetwork() == harness.IntegrationNetworkFNet {
-		if _, err := harness.NewTestnetConfig(); err != nil {
-			panic("failed to validate FNet integration profile: " + err.Error())
-		}
-		if os.Getenv("APLANE_FNET_FULL_SUITE") == "1" {
-			fundingAccount, err := harness.NewFundingAccount()
-			if err != nil {
-				panic("failed to load FNet native Falcon funding account: " + err.Error())
-			}
-			network, err := harness.NewTestnetConfig()
-			if err != nil {
-				panic("failed to reconnect to FNet: " + err.Error())
-			}
-			if err := fundingAccount.EnsureFunded(network.Client); err != nil {
-				panic("FNet native Falcon funding account check failed: " + err.Error())
-			}
-		}
-		os.Exit(m.Run())
-	}
-
 	// Check for funding account
 	fundingAccount, err := harness.NewFundingAccount()
 	if err != nil {

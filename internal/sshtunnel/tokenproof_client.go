@@ -15,7 +15,6 @@ import (
 type tokenProofClientAuth struct {
 	mu sync.Mutex
 
-	identityID  string
 	token       string
 	hostHash    []byte
 	clientNonce []byte
@@ -23,8 +22,8 @@ type tokenProofClientAuth struct {
 	verified    bool
 }
 
-func newTokenProofClientAuth(identityID, token string) *tokenProofClientAuth {
-	return &tokenProofClientAuth{identityID: identityID, token: token}
+func newTokenProofClientAuth(token string) *tokenProofClientAuth {
+	return &tokenProofClientAuth{token: token}
 }
 
 func (a *tokenProofClientAuth) captureHostKey(key ssh.PublicKey) error {
@@ -73,7 +72,7 @@ func (a *tokenProofClientAuth) challenge(name, instruction string, questions []s
 			return nil, err
 		}
 		transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-			Identity:    a.identityID,
+			Username:    productSSHUsername,
 			HostKeyHash: a.hostHash,
 			ClientNonce: a.clientNonce,
 			ServerNonce: serverNonce,

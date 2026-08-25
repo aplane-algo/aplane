@@ -12,7 +12,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net"
 	"os"
@@ -63,14 +62,14 @@ type TokenAuditCallback func(sshFingerprint, remoteAddr string)
 type OperatorCheckCallback func() bool
 
 // TokenMACFunc computes the server and expected client token-proof MACs from
-// one identity token-generation snapshot. The raw token remains with the
-// identity authenticator.
+// one product token-generation snapshot. The raw token remains with the
+// product authenticator.
 type TokenMACFunc func(serverInput, clientInput []byte) (serverMAC, clientMAC []byte, tokenGeneration uint64, valid bool)
 
-// KeyCheckerFunc checks whether a public key is authorized for the given identity.
+// KeyCheckerFunc checks whether a public key is authorized for the product.
 type KeyCheckerFunc func(key ssh.PublicKey) bool
 
-// KeyEnrollerFunc enrolls a public key for the given identity.
+// KeyEnrollerFunc enrolls a public key for the product.
 type KeyEnrollerFunc func(key ssh.PublicKey) error
 
 // AdminChannelCallback handles an accepted admin subsystem channel.
@@ -123,7 +122,7 @@ type Server struct {
 	expectedToken string // API token used when tokenMAC is nil
 
 	// Optional product callbacks (override built-in single-token/single-keyfile behavior)
-	tokenMAC    TokenMACFunc    // If set, computes identity-scoped token proof MACs
+	tokenMAC    TokenMACFunc    // If set, computes product token proof MACs
 	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
 	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
 
@@ -287,7 +286,7 @@ func (s *Server) assertNotStartedLocked(method string) {
 //
 // Authentication requires both:
 //   - Valid SSH public key (enrolled via request-token or manually added to authorized_keys)
-//   - Mutual proof of the identity API token
+//   - Mutual proof of the product API token
 func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expectedToken string) (*Server, error) {
 	hostKey, err := loadOrGenerateHostKey(hostKeyPath)
 	if err != nil {
@@ -440,22 +439,22 @@ func loadAuthorizedKeys(path string) ([]ssh.PublicKey, error) {
 	return keys, nil
 }
 
-// handlePublicKeyAuth validates identity/key eligibility. Normal authentication
+// handlePublicKeyAuth validates product/key eligibility. Normal authentication
 // remains incomplete until handleVerifiedPublicKeyAuth transitions to mutual
 // token proof after SSH verifies possession of the private key.
 //
-// Special mode: If username is "request-token:default", this is a token provisioning
+// Special mode: If username is "request-token", this is a token provisioning
 // request. Only key authentication is required (no token). Fails fast if no operator connected.
 func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	remoteAddr := conn.RemoteAddr().String()
 	keyFingerprint := ssh.FingerprintSHA256(key)
 	username := conn.User()
 
-	if username == "request-token:"+productmode.IdentityID {
+	if username == tokenRequestSSHUsername {
 		return s.handleTokenProvisioningAuth(conn, key, username, remoteAddr, keyFingerprint)
 	}
-	if username != productmode.IdentityID {
-		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", productmode.IdentityID)
+	if username != productSSHUsername {
+		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", productSSHUsername)
 	}
 
 	var authorized bool
@@ -484,7 +483,6 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	return &ssh.Permissions{Extensions: map[string]string{
 		"auth_method":     "publickey_pending_token_proof",
 		"key_fingerprint": keyFingerprint,
-		"identity_id":     productmode.IdentityID,
 	}}, nil
 }
 
@@ -537,7 +535,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 		return nil, err
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Identity:    productmode.IdentityID,
+		Username:    conn.User(),
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -576,7 +574,6 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 
 	extensions := map[string]string{
 		"auth_method":     "publickey+token-proof",
-		"identity_id":     productmode.IdentityID,
 		"key_fingerprint": keyFingerprint,
 	}
 	if tokenGeneration > 0 {
@@ -607,11 +604,11 @@ func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason 
 }
 
 // handleTokenProvisioningAuth handles SSH auth for token provisioning requests.
-// Username is exactly "request-token:default".
+// Username is exactly "request-token".
 // Only requires valid SSH key - no token needed (that's what we're requesting!).
 // Fails fast if no operator is connected to approve the request.
 func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.PublicKey, username, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
-	if username != "request-token:"+productmode.IdentityID {
+	if username != tokenRequestSSHUsername {
 		return nil, fmt.Errorf("unsupported token provisioning username")
 	}
 
@@ -624,7 +621,6 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 		Extensions: map[string]string{
 			"auth_method":     "token_provisioning",
 			"key_fingerprint": keyFingerprint,
-			"identity_id":     productmode.IdentityID,
 			"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 		},
 	}, nil
@@ -827,7 +823,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		}
 	}
 
-	// Track connection for graceful shutdown and identity-scoped revocation
+	// Track connection for graceful shutdown and product token revocation.
 	s.sshConnsMu.Lock()
 	s.sshConns[sshConn] = info
 	staleAuth := s.connectionStaleLocked(info)
@@ -855,7 +851,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		if err := sshConn.Close(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close SSH connection: %v\n", err)
 		}
-		// Log session disconnect with resolved identity
+		// Log the session disconnect.
 		fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
 		if connectedLogged && s.sessionCallback != nil {
 			s.sessionCallback(remoteAddr, false)
@@ -867,7 +863,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		return
 	}
 
-	// Log successful SSH connection with resolved identity
+	// Log the successful SSH connection.
 	fmt.Printf("[SSH] Client connected from %s\n", remoteAddr)
 	if s.sessionCallback != nil {
 		s.sessionCallback(remoteAddr, true)

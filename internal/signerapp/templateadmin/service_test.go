@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -52,8 +52,8 @@ func (d *stubDeps) Logf(string, ...interface{}) {}
 var testPassphrase = []byte("test-passphrase-for-templateadmin")
 
 // setupServiceWithReloadCounter constructs a templateadmin.Service with a real
-// identity runtime whose reload function increments the returned counter.
-func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *atomic.Int64) {
+// product runtime whose reload function increments the returned counter.
+func setupServiceWithReloadCounter(t *testing.T) (Service, *productruntime.Runtime, *atomic.Int64) {
 	t.Helper()
 	svc, ir, reloadCount, _ := setupServiceWithReload(t, nil)
 	return svc, ir, reloadCount
@@ -62,7 +62,7 @@ func setupServiceWithReloadCounter(t *testing.T) (Service, *identity.Runtime, *a
 func setupServiceWithReload(
 	t *testing.T,
 	reload func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error),
-) (Service, *identity.Runtime, *atomic.Int64, *stubDeps) {
+) (Service, *productruntime.Runtime, *atomic.Int64, *stubDeps) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -82,7 +82,7 @@ func setupServiceWithReload(
 
 	deps := &stubDeps{keyPaths: keyPaths}
 	var reloadCount atomic.Int64
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
@@ -100,11 +100,11 @@ func setupServiceWithReload(
 	})
 	ir.SetUnlocked()
 
-	svc := Service{Deps: deps}
+	svc := Service{Deps: deps, Runtime: ir}
 	return svc, ir, &reloadCount, deps
 }
 
-func putInstalledTemplateForServiceTest(t *testing.T, ir *identity.Runtime, keyType string, state keytypestate.State) {
+func putInstalledTemplateForServiceTest(t *testing.T, ir *productruntime.Runtime, keyType string, state keytypestate.State) {
 	t.Helper()
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		if _, err := templatestore.SaveTemplateActive(
@@ -141,9 +141,9 @@ func assertReloadInsideMutation(t *testing.T, reloadCount *atomic.Int64, deps *s
 // writes a state record via keytypestate.Put and MUST call ir.Reload() before
 // returning, so the in-memory key index does not diverge from on-disk state.
 func TestActivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
-	svc, ir, reloadCount := setupServiceWithReloadCounter(t)
+	svc, _, reloadCount := setupServiceWithReloadCounter(t)
 
-	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+	result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: "aplane.ed25519.v1",
 	})
 	if !result.Success {
@@ -157,7 +157,7 @@ func TestActivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 func TestActivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
-	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+	result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: "ed25519.v1",
 	})
 	if result.Success {
@@ -179,14 +179,14 @@ func TestActivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	svc, ir, reloadCount := setupServiceWithReloadCounter(t)
 
-	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+	if result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: "aplane.ed25519.v1",
 	}); !result.Success {
 		t.Fatalf("setup ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
 	}
 	reloadCount.Store(0)
 
-	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
+	result := svc.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{
 		KeyType: "aplane.ed25519.v1",
 	})
 	if !result.Success {
@@ -206,13 +206,13 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 func TestDeactivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
-	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+	if result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: "aplane.ed25519.v1",
 	}); !result.Success {
 		t.Fatalf("setup ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
 	}
 
-	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
+	result := svc.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{
 		KeyType: "ed25519.v1",
 	})
 	if result.KeyType != "ed25519.v1" {
@@ -234,7 +234,7 @@ func TestActivateCompiledProviderReloadFailureLeavesStateRecord(t *testing.T) {
 		return nil, reloadErr
 	})
 
-	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{KeyType: "aplane.ed25519.v1"})
+	result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{KeyType: "aplane.ed25519.v1"})
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed {
 		t.Fatalf("ActivateKeyType() = %+v, want reload_failed", result)
 	}
@@ -262,7 +262,7 @@ func TestDeactivateCompiledProviderReloadFailureLeavesStateRemoved(t *testing.T)
 		t.Fatalf("Put() error = %v", err)
 	}
 
-	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
+	result := svc.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want reload_failed with removed=true", result)
 	}
@@ -302,7 +302,7 @@ func TestActivateInstalledTemplateFailureRestoresDisabledState(t *testing.T) {
 			keyType := "test.templateadmin-enable-rollback.v1"
 			putInstalledTemplateForServiceTest(t, ir, keyType, keytypestate.StateDisabled)
 
-			result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{KeyType: keyType})
+			result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{KeyType: keyType})
 			if result.Success || result.Code != tt.wantCode {
 				t.Fatalf("ActivateKeyType() = %+v, want code %q", result, tt.wantCode)
 			}
@@ -325,7 +325,7 @@ func TestDeactivateInstalledTemplateReloadFailureLeavesDisabledState(t *testing.
 	keyType := "test.templateadmin-disable-reload.v1"
 	putInstalledTemplateForServiceTest(t, ir, keyType, keytypestate.StateEnabled)
 
-	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
+	result := svc.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want reload_failed with removed=true", result)
 	}
@@ -346,7 +346,7 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	keyType := "test.templateadmin-remove-reload.v1"
 	putInstalledTemplateForServiceTest(t, ir, keyType, keytypestate.StateEnabled)
 
-	result := svc.RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
+	result := svc.RemoveInstalledTemplate(adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed || !result.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want reload_failed with removed=true", result)
 	}

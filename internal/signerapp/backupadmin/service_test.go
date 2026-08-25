@@ -24,7 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -41,8 +41,11 @@ func TestManagedBackupTimestampIncludesNanoseconds(t *testing.T) {
 
 func TestBackupIdentityZeroesRequestPassphraseOnFailure(t *testing.T) {
 	passphrase := []byte("export-passphrase")
-	service := Service{Deps: failingBackupDeps{paths: storepaths.NewPaths(t.TempDir())}}
-	result := service.BackupIdentity(testBackupIdentityRuntime(), adminproto.BackupIdentityRequest{
+	service := Service{
+		Deps:    failingBackupDeps{paths: storepaths.NewPaths(t.TempDir())},
+		Runtime: testBackupIdentityRuntime(),
+	}
+	result := service.BackupIdentity(adminproto.BackupIdentityRequest{
 		ExportPassphrase: passphrase,
 	})
 	if result.Success {
@@ -74,8 +77,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	result := (Service{Deps: backupServiceTestDeps{paths: paths}}).BackupIdentity(
-		ir,
+	result := (Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: ir}).BackupIdentity(
 		adminproto.BackupIdentityRequest{ExportPassphrase: []byte("export-passphrase")},
 	)
 	if !result.Success {
@@ -113,15 +115,16 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}}
+	ir := testBackupIdentityRuntime()
+	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}, Runtime: ir}
 	request := adminproto.PreviewRestoreRequest{
 		ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
 	}
-	if result := service.PreviewRestore(testBackupIdentityRuntime(), request); result.Code != protocol.ResultCodeRestorePreviewFailed {
+	if result := service.PreviewRestore(request); result.Code != protocol.ResultCodeRestorePreviewFailed {
 		t.Fatalf("PreviewRestore() = %+v", result)
 	}
 	request.ExportPassphrase = []byte("export-passphrase")
-	if result := service.PreviewRestore(testBackupIdentityRuntime(), request); result.Code != protocol.ResultCodeRestoreRateLimited {
+	if result := service.PreviewRestore(request); result.Code != protocol.ResultCodeRestoreRateLimited {
 		t.Fatalf("second PreviewRestore() = %+v", result)
 	}
 }
@@ -132,10 +135,10 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeMixedValidityManagedArchive(t, paths)
 	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}, Runtime: ir}
 
 	for i := 0; i < 2; i++ {
-		result := service.PreviewRestore(ir, adminproto.PreviewRestoreRequest{
+		result := service.PreviewRestore(adminproto.PreviewRestoreRequest{
 			ArchivePath:      archivePath,
 			ExportPassphrase: []byte("export-passphrase"),
 		})
@@ -148,7 +151,7 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 	}
 }
 
-func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *identity.Runtime {
+func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
 	if _, err := crypto.CreateKeyringStore(paths.ProductDir(), backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
@@ -159,7 +162,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		t.Fatal(err)
 	}
 	autoApprove := false
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		KeyStore: keyStore, KeyPaths: paths,
 		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
@@ -190,7 +193,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	return generationID
 }
 
-func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
+func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		return policy.SaveStoredConfigWithKeyring(
@@ -206,8 +209,8 @@ func installBackupAdminPolicy(t *testing.T, ir *identity.Runtime, paths storepat
 	ir.SetPolicyState(stored, effective)
 }
 
-func testBackupIdentityRuntime() *identity.Runtime {
-	return identity.New(identity.Config{
+func testBackupIdentityRuntime() *productruntime.Runtime {
+	return productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 }

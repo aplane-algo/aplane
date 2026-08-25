@@ -20,7 +20,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
+	server.productRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -35,7 +35,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 	ir.SnapshotKeySession().Destroy()
 
@@ -85,7 +85,7 @@ func TestHandleAdminGenerateReturnsForbiddenWhenMasterKeyClearedMidRequest(t *te
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.KeyStore().ClearKeys()
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})

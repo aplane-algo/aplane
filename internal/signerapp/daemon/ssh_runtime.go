@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"net"
 	"strconv"
 	"strings"
@@ -47,7 +46,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		return nil, err
 	}
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 	if loadErr := productRuntime.LoadAuthorizedKeys(); loadErr != nil {
 		logWarnf("failed to load product authorized keys: %v", loadErr)
 	}
@@ -71,9 +70,9 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	if auditLog != nil {
 		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
 			if connected {
-				auditLog.LogSessionConnected(remoteAddr, productmode.IdentityID)
+				auditLog.LogSessionConnected(remoteAddr, "ssh")
 			} else {
-				auditLog.LogSessionDisconnected(remoteAddr, productmode.IdentityID)
+				auditLog.LogSessionDisconnected(remoteAddr, "ssh")
 			}
 		})
 	}

@@ -4,7 +4,7 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
@@ -15,10 +15,10 @@ type signingAudit interface {
 	signersigning.AuditFailLogger
 }
 
-func (fs *Signer) newSigningServiceForIdentityWithAudit(ir *identity.Runtime, auditLog signingAudit) *signersigning.Service {
+func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLog signingAudit) *signersigning.Service {
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
-		Approval:                      fs.newApprovalServiceForIdentityWithAudit(ir, auditLog),
+		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
 		Console:                       signerConsole{},

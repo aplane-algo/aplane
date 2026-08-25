@@ -52,7 +52,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		foreign[position.TargetIndex] = true
 	}
 
-	var snapshot PlannerIdentitySnapshot
+	var snapshot PlannerRuntimeSnapshot
 	if s.Planner.Snapshot != nil {
 		snapshot = s.Planner.Snapshot()
 	}

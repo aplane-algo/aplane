@@ -10,7 +10,7 @@
 // - Register with: logicsigdsa, signing/scheme, algorithm, keygen, mnemonic registries
 //
 // TEMPLATE LIBRARY PROVIDERS:
-// - YAML templates in library/templates/ are optional and identity-scoped
+// - YAML templates in library/templates/ are optional and enabled per product store
 // - Register from the keystore after apadmin template import
 //
 // TO ADD A NEW PROVIDER:

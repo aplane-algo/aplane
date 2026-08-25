@@ -33,11 +33,10 @@ type ConsensusProfile struct {
 
 // ResolveConsensus verifies that an algod-reported identifier represents the
 // one consensus contract supported by this release, then returns the compiled
-// v42 profile. fnet5 is the explicit FNet deployment of the same v42 contract;
-// it is an identifier alias, not a second planning model.
+// v42 profile.
 func ResolveConsensus(version string) (ConsensusProfile, error) {
 	consensusVersion := protocol.ConsensusVersion(version)
-	if consensusVersion != CurrentConsensusVersion && consensusVersion != protocol.ConsensusVFnet5 {
+	if consensusVersion != CurrentConsensusVersion {
 		return ConsensusProfile{}, fmt.Errorf("%w: %q", ErrUnknownConsensus, version)
 	}
 	return CurrentConsensus()

@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net"
 	"os"
@@ -224,7 +223,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		}
 		return err
 	}
-	authState := newTokenProofClientAuth(productmode.IdentityID, token)
+	authState := newTokenProofClientAuth(token)
 	defer authState.clear()
 	verifiedHostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		if err := hostKeyCallback(hostname, remote, key); err != nil {
@@ -234,7 +233,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	}
 
 	config := &ssh.ClientConfig{
-		User: productmode.IdentityID,
+		User: productSSHUsername,
 		Auth: []ssh.AuthMethod{
 			authMethod,
 			ssh.KeyboardInteractive(authState.challenge),
@@ -763,10 +762,8 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	}
 
 	// Use special username for token provisioning
-	username := "request-token:" + productmode.IdentityID
-
 	config := &ssh.ClientConfig{
-		User:            username,
+		User:            tokenRequestSSHUsername,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         30 * time.Second,

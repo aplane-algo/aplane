@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"sync"
 	"time"
 )
@@ -486,7 +485,6 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 
 	request := &TokenProvisioningRequest{
 		ID:             requestID,
-		IdentityID:     productmode.IdentityID,
 		SSHFingerprint: sshFingerprint,
 		RemoteAddr:     remoteAddr,
 		Timestamp:      time.Now().Unix(),

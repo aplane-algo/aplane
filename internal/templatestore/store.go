@@ -2,10 +2,10 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package templatestore owns the encrypted YAML template document format and
-// primitive save, read, scan, and archive operations for identity stores.
+// primitive save, read, scan, and archive operations for the product store.
 // Feature-level mutation must route through templatelibrary; callers of these
 // primitives are responsible for already holding the appropriate live
-// identity-mutation lock or operating on an unpublished staged generation.
+// store-mutation lock or operating on an unpublished staged generation.
 //
 // This package is used by both:
 //   - lsig/generictemplate: Generic LogicSig templates (TEAL-only)

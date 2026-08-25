@@ -25,7 +25,7 @@ type authorizationBudget struct {
 	maxFee            uint64
 }
 
-func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerIdentitySnapshot, boundedItems []*boundedPlanItem, passthrough, foreign map[int]bool, passthroughBytes map[int][]byte) ([]authorizationBudget, *ServiceError) {
+func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRuntimeSnapshot, boundedItems []*boundedPlanItem, passthrough, foreign map[int]bool, passthroughBytes map[int][]byte) ([]authorizationBudget, *ServiceError) {
 	budgets := make([]authorizationBudget, len(requests))
 	for i, request := range requests {
 		switch {

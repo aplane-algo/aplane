@@ -135,7 +135,7 @@ func TestCatalogGenerationListRetriesIdentityBusy(t *testing.T) {
 		attempt++
 		out := result.(*protocol.GenerationsListMessage)
 		if attempt == 1 {
-			out.Code = protocol.ResultCodeIdentityBusy
+			out.Code = protocol.ResultCodeStoreBusy
 		} else {
 			out.Current = "gen-2"
 		}

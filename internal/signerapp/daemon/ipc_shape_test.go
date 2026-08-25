@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,11 +19,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func testAdminProtocolVersion() *protocol.ProtocolVersion {
@@ -88,8 +86,8 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	if session.Identity() == nil {
 		t.Fatal("Authenticate() did not attach identity")
 	}
-	if session.Identity().ID != authz.SystemProductAdminPrincipalID {
-		t.Fatalf("identity.ID = %q, want %q", session.Identity().ID, authz.SystemProductAdminPrincipalID)
+	if session.Identity().ID != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("identity.ID = %q, want %q", session.Identity().ID, auth.SystemProductAdminPrincipalID)
 	}
 	if session.Identity().Method != "ipc-passphrase" {
 		t.Fatalf("identity.Method = %q, want %q", session.Identity().Method, "ipc-passphrase")
@@ -153,7 +151,7 @@ func TestSendStatusEmitsCurrentStateAndKeyCount(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.PublishSnapshot(
 		map[string]string{"ADDR": "identities/default/keys/ADDR.key"},
 		map[string]string{"ADDR": "ed25519"},
@@ -218,7 +216,7 @@ func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 		"kind": string(protocol.MessageKindResponse),
 		"type": protocol.MsgTypeError,
 		"id":   "req-1",
-		"code": protocol.ErrCodeNoIdentityBound,
+		"code": protocol.ErrCodeNoRuntimeBound,
 	}) {
 		t.Fatalf("error shape mismatch: %#v", msgs[0])
 	}
@@ -228,7 +226,7 @@ func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 	}
 }
 
-func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testing.T) {
+func TestHandleUpdateAdminSettingPersistsProductStoreConfigSeparately(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -238,7 +236,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 	}
 
 	recorder := &ipcJSONRecorderConn{}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ipcServer := &IPCServer{signer: server}
 	session := newBoundTestSession(ipcServer, recorder, ir)
 	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
@@ -266,15 +264,15 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 		t.Fatal(err)
 	}
 	if diskCfg.UserAutoApprove {
-		t.Fatal("global config.yaml was modified for identity-scoped user_auto_approve")
+		t.Fatal("global config.yaml was modified for product-store user_auto_approve")
 	}
 
-	storedCfg, err := identity.LoadStoredConfig(server.dataDir)
+	storedCfg, err := productruntime.LoadStoredConfig(server.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if storedCfg.UserAutoApprove == nil || !*storedCfg.UserAutoApprove {
-		t.Fatal("identity config did not persist user_auto_approve override")
+		t.Fatal("product runtime config did not persist user_auto_approve override")
 	}
 }
 
@@ -312,17 +310,11 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if connected.Event != AuditSessionConnected {
 		t.Fatalf("first event = %q, want %q", connected.Event, AuditSessionConnected)
 	}
-	if connected.IdentityID != productmode.IdentityID {
-		t.Fatalf("connected identity_id = %q, want %q", connected.IdentityID, productmode.IdentityID)
-	}
 	if connected.AdminSessionID == "" {
 		t.Fatal("connected admin_session_id is empty")
 	}
 	if connected.Transport != adminserver.TransportIPC {
 		t.Fatalf("connected transport = %q, want %q", connected.Transport, adminserver.TransportIPC)
-	}
-	if connected.TargetIdentityID != productmode.IdentityID {
-		t.Fatalf("connected target_identity_id = %q, want %q", connected.TargetIdentityID, productmode.IdentityID)
 	}
 
 	var disconnected AuditEntry
@@ -332,17 +324,22 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if disconnected.Event != AuditSessionDisconnected {
 		t.Fatalf("second event = %q, want %q", disconnected.Event, AuditSessionDisconnected)
 	}
-	if disconnected.IdentityID != productmode.IdentityID {
-		t.Fatalf("disconnected identity_id = %q, want %q", disconnected.IdentityID, productmode.IdentityID)
-	}
 	if disconnected.AdminSessionID != connected.AdminSessionID {
 		t.Fatalf("disconnected admin_session_id = %q, want %q", disconnected.AdminSessionID, connected.AdminSessionID)
 	}
 	if disconnected.Transport != adminserver.TransportIPC {
 		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, adminserver.TransportIPC)
 	}
-	if disconnected.TargetIdentityID != productmode.IdentityID {
-		t.Fatalf("disconnected target_identity_id = %q, want %q", disconnected.TargetIdentityID, productmode.IdentityID)
+	for i, line := range lines {
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(line), &fields); err != nil {
+			t.Fatalf("decode audit fields %d: %v", i, err)
+		}
+		for _, field := range []string{"identity_id", "target_identity_id"} {
+			if _, ok := fields[field]; ok {
+				t.Fatalf("audit entry %d contains %s: %#v", i, field, fields)
+			}
+		}
 	}
 }
 

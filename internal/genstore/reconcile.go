@@ -46,7 +46,7 @@ func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileRepor
 }
 
 // Reconcile enforces CURRENT as the sole commit record. Run at
-// startup/unlock under the store and identity mutation locks, before any
+// startup/unlock under the store and store mutation locks, before any
 // new operation:
 //
 //   - CURRENT names a valid generation → it is authoritative; every

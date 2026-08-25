@@ -83,9 +83,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Node role | authoritative root config | `<APSIGNER_DATA>/node.yaml` plus `identities/default/node.yaml.hmac` | key-class and service-dispatch gates | `internal/noderole`, `internal/keyclass`, signer startup, identity load, keyadmin, restore, signing dispatch | Values: `signer`, `sentry`; no `dual`; no supported role changes; active role conflicts fail the whole node closed. |
-| Signing identity directory | authoritative root | `identities/default/` | the one `identity.Runtime` | `internal/signerapp/identity` | Any other direct `identities/` entry fails startup. |
-| Identity config | authoritative config | `identities/default/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved) | `internal/signerapp/identity`, `internal/signerapp/admin` | Unknown or invalid settings fail closed. Node role belongs only in root `node.yaml`. |
-| Unlock config | authoritative config | `identities/default/unlock.yaml` | passphrase helper command config | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` | Helper artifacts are product-scoped and independent of node role. |
+| Signing identity directory | authoritative root | `identities/default/` | the one `productruntime.Runtime` | `internal/signerapp/productruntime` | Any other direct `identities/` entry fails startup. |
+| Product runtime config | authoritative config | `identities/default/config.yaml` (parsed as `productruntime.StoredConfig`) | `productruntime.EffectiveConfig` (resolved) | `internal/signerapp/productruntime`, `internal/signerapp/admin` | Unknown or invalid settings fail closed. Node role belongs only in root `node.yaml`. |
+| Unlock config | authoritative config | `identities/default/unlock.yaml` | passphrase helper command config | `internal/signerapp/unlockconfig`, `cmd/appass` | Helper artifacts are product-scoped and independent of node role. |
 | Passphrase helper files | secret helper state | `passphrase`, `passphrase.cred` | startup/headless passphrase source | `cmd/appass`, `cmd/appass-file`, `cmd/appass-systemd-creds` | Mode `0600`; systemd/local ownership rules enforced by appass. |
 | Keyring root | authoritative cryptographic root | `identities/default/keyring.enc` | passphrase verification and the identity's term keys | `internal/crypto`, `internal/keystore` | Schema `aplane.keyring.v2`; plaintext Argon2id parameters and salt over an AEAD-sealed term set; the unwrap is the passphrase check; a passphrase change replaces it in one atomic write. |
 | Keystore marker | store format gate | `identities/default/.keystore` | none | `internal/crypto` | Static `{version: 5, layout: "keyring/v2", created}`; carries no salt, verifier, or KDF parameters, so it cannot disagree with the keyring; any other version fails closed. |
@@ -95,7 +95,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Client-signing policy domain | authoritative safety policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on signer nodes | client-signing `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
 | Sentry component policy domain | authoritative co-sign policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on sentry nodes | sentry policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | Same durable file contract as signer policy; no review/operator-default outcomes; missing/mismatched sidecar fails closed. |
 | Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `internal/signerapp/policycmd`, `cmd/apadmin`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
-| Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
+| Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled product-store key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
 | Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `internal/apadminapp` | Explicitly imported public metadata only; not endpoint ownership proof. |
 
@@ -128,12 +128,12 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Compiled provider registry | process authority | Go registrations in `lsig/all.go` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
-| Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require identity state record before generation. |
-| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary` | Not active by presence alone; new signer identities install the bundled Falcon allowlist v1 default; other entries require identity-local import/enablement, and invalid entries are reported but not enabled. |
+| Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
+| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary` | Not active by presence alone; new signer-role stores install the bundled Falcon allowlist v1 default; other entries require product-store import/enablement, and invalid entries are reported but not enabled. |
 | YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` | `internal/tealtemplate`, `internal/templatelibrary` | Unknown/missing required fields reject import/install. |
 | Template install result | wire/runtime projection | admin request response | install/rollback report | `internal/signerapp/templateadmin`, `internal/protocol` | Low-level template store owns encrypted bytes; admin path owns state record. |
 | `/keytypes` metadata | wire projection | enabled providers/templates plus references | `signerapi.KeyTypesResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Creation params are future-generation metadata; contract fixtures cover shape. |
-| Admin KeyType Library row | UI/wire projection | library source plus identity state | `protocol.LibraryTemplateInfo` | `internal/adminproto`, `internal/signerapp/signertui` | `compiled_provider` is a wire/display projection, not a template store type. |
+| Admin KeyType Library row | UI/wire projection | library source plus product-store state | `protocol.LibraryTemplateInfo` | `internal/adminproto`, `internal/signerapp/signertui` | `compiled_provider` is a wire/display projection, not a template store type. |
 
 ## Client Storage
 
@@ -236,7 +236,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/approval` | Approval prompts carry descriptions; response attaches approver principal. |
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/sshprovision` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | backup create/list/delete, bounded import/export, preview, direct restore, rollback, and reconcile DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/backupadmin` | Import authenticates the sealed manifest and validates every credential before publication; restore validates the complete set before publishing one generation; export passphrases are parsed as `SensitiveBytes`. |
-| Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
+| Admin settings messages | wire contract | settings get/update messages | process/product runtime config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
 | Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; interactive and batch apadmin workflows share the editor model. |
 
 ## Transaction And Signing Runtime Models
@@ -298,7 +298,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry component audit projection | audit projection | component-signing outcome | `SIGN_APPROVED`/`SIGN_REJECTED` rows | `internal/signerapp/signing`, `internal/signerapp/audit` | Uses sign events; Witness Key ID is `txn_auth`, decoded sender is `txn_sender`. |
 | Policy rule ID | stable identifier | policy constants and dynamic route grammar | audit/prompt/error context | `internal/policy` | Typos should be caught by tests; route IDs are persistent audit identifiers. |
 | Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; only live `/sign` IDs are cancelable in MVP. |
-| Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/identity`, `internal/engine` | Process-local; must not be compared across restarts. |
+| Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/productruntime`, `internal/engine` | Process-local; must not be compared across restarts. |
 
 ## Current Design Decisions
 
@@ -323,7 +323,7 @@ These decisions are part of the current data model and contract surface:
 | Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
 | Plugin manifest schema 2.0 is command-only. | `functions` and `protocol_version` are rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
-| Template `ReloadReport` is a reload projection. | It verifies identity-local activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
+| Template `ReloadReport` is a reload projection. | It verifies product-store activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
 
 ## Representative Test And Fixture Index
 
@@ -346,7 +346,7 @@ name a test inline:
 - Sentry references and public metadata:
   `internal/sentry/sentryrefs`, `internal/apadminapp/catalog.go`,
   related package tests.
-- Node role and key-class gates: signer startup, `internal/signerapp/identity`,
+- Node role and key-class gates: signer startup, `internal/signerapp/productruntime`,
   `internal/signerapp/rest/service_test.go`,
   `internal/signerapp/signing/sentry_gate.go`.
 - Policy domains, integrity, and conversion: `internal/policy/*_test.go`,

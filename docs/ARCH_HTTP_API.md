@@ -15,8 +15,8 @@ receive `404` and must be upgraded with apsigner.
 The product-facing HTTP API is a single-signer API. Successful token
 authentication maps to the product principal, and every authenticated handler
 uses the process-owned product runtime. HTTP requests and authorization
-resources carry no runtime or store selector. Compatibility-bearing status and
-audit fields continue to attribute product work to `default`.
+resources carry no runtime or store selector. Status and audit fields identify
+request state and principals without a runtime ID.
 
 ## Endpoints
 
@@ -96,7 +96,7 @@ Timeout behavior:
   `approval_wait_seconds` is known and valid, the `/sign` deadline is
   `approval_wait + 30s`, otherwise it falls back to 6 minutes.
 - external SDK clients should mirror the same effective behavior for `/sign`.
-  A fixed SDK default shorter than the identity-effective approval wait is a
+  A fixed SDK default shorter than the product-runtime approval wait is a
   compatibility bug because it can cancel a valid manual approval flow before
   apsigner's approval timeout expires.
 
@@ -106,8 +106,6 @@ Fixed runtime binding:
   product-admin principal.
 - authenticated handlers use the process-owned product runtime; requests carry
   no runtime or store selector.
-- `default` remains the compatibility attribution value in status and audit
-  output, not a client-selectable target.
 - missing or invalid credentials return `401`; authorization failures return
   `403`.
 
@@ -309,12 +307,8 @@ Cancel response states:
   canceled a pending approval prompt, or accepted a duplicate cancel while that
   live request was unwinding.
 - `not_found`: no live cancelable request matched the supplied `request_id`.
-  It only means the request is not live and cancelable for the
-  authenticated identity.
 
-Invalid `request_id` syntax returns `400`. `/sign/cancel` is scoped to the
-authenticated identity; a request ID belonging to another identity is not
-visible and behaves as `not_found`.
+Invalid `request_id` syntax returns `400`.
 
 ## Sign Cancellation Semantics
 
@@ -416,7 +410,6 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/status` response:
 
-- `identity_id`: authenticated identity ID resolved from the `aplane` token
 - `node_role`: optional signer node role (`signer` or `sentry`); omitted when unset
 - `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
   is diagnostic surfacing, not capability negotiation
@@ -431,7 +424,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
   status polls to decide whether to refresh `/keys`; it is not a durable
   storage version and must not be compared across apsigner restarts.
 - `approval_wait_seconds`: effective manual signing approval wait, in seconds,
-  for the authenticated identity. Clients may use this value to size `/sign`
+  for the product runtime. Clients may use this value to size `/sign`
   request deadlines. Clients must tolerate this field being omitted.
 
 `/keytypes` response:
@@ -496,7 +489,6 @@ neither is accepted as a separate creation input.
 | Wrong method | 405 |
 | Missing/invalid credentials | 401 |
 | Product runtime unavailable or locked | 403 |
-| Authenticated identity does not match target resource identity | 403 |
 | Authorization denied by `auth.Authorizer` | 403 |
 | Locked signer (handler entry) | 403 |
 | Operator/policy rejection | 403 |

@@ -27,9 +27,8 @@ negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
 
 Admin sessions bind directly to the one product runtime. The v5 auth shape has
-no identity selector. A stale `identity_id` field is rejected by strict
-known-field decoding before passphrase verification or runtime work; it is not
-silently ignored.
+no runtime selector. Strict known-field decoding rejects unknown fields before
+passphrase verification or runtime work.
 
 IPC and SSH share one process-wide authenticated-pending slot and one active
 admin slot. Local IPC additionally has one pre-auth pending slot until its
@@ -75,13 +74,13 @@ results are internal domain values, not a second JSON schema. The authenticated
 session in `internal/signerapp/adminserver` explicitly adapts between the two.
 Domain services must not construct `protocol.BaseMessage` values or serialize
 their results directly: projections intentionally omit internal state, signer
-paths, and recovery material while retaining compatibility-only wire fields.
+paths, and recovery material while emitting only the documented wire fields.
 
 ## Message Catalog
 
 Source: `internal/protocol/messages.go`. Unsupported client messages yield a generic `error` response.
 
-### Session and Identity
+### Session and Store Lifecycle
 
 Client to Server:
 
@@ -227,14 +226,14 @@ Server to Client:
 
 ## Key Payload Shapes
 
-### Session and Identity
+### Session and Store Lifecycle
 
 - `auth` / `auth_only`: `passphrase`, required `protocol_version`; unknown
   fields are rejected after the protocol major is validated
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
-- `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the identity's keyring root and format marker and may write the configured passphrase helper
+- `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
 - `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, optional `rotation_pending`, `code`, `error`; local IPC only, rejects identical current/new passphrases, appends and completes a durable key-term rotation for live encrypted artifacts and integrity sidecars, reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
 - `status`: `state`, `key_count`
 - `error`: optional `code`, `error`
@@ -242,7 +241,7 @@ Server to Client:
 - `displaced`: `reason`
 
 The pre-auth `auth` request verifies the passphrase and may also unlock and
-reload the bound identity. Therefore `auth_result{success:false}` does not
+reload the bound runtime. Therefore `auth_result{success:false}` does not
 always mean a bad passphrase. If passphrase verification succeeds but unlock or
 reload fails, the signer returns `auth_result` with `code:"unlock_failed"` and
 an `error` prefixed with `auth ok but unlock failed:`. Clients should surface
@@ -254,12 +253,12 @@ unlock/reload after passphrase verification through
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails,
 the result reports `success:true` with a zero key count and
-`code:"recovery_blocked"`. The identity is unlocked for administration only;
+`code:"recovery_blocked"`. The signer store is unlocked for administration only;
 signing stays blocked until the operator resolves the store from recovery
 mode.
 
 The pre-auth `auth_only` request performs the same passphrase verification and
-identity binding but never authorizes or invokes `identity.unlock`. It is a
+runtime binding but never authorizes or invokes `identity.unlock`. It is a
 distinct message type so an older server rejects it before processing instead
 of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
@@ -310,7 +309,7 @@ checks and locked/unlocked/recovery-state interlocks.
 - `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
-- `token_provisioning_request`: `identity_id`, `ssh_fingerprint`, `remote_addr`, `timestamp`
+- `token_provisioning_request`: `ssh_fingerprint`, `remote_addr`, `timestamp`
 - `token_provisioning_response`: `approved`, optional `reason`
 - `revoke_token` / `revoke_token_result`: `success`, optional `code`, `error`
 
@@ -331,7 +330,7 @@ checks and locked/unlocked/recovery-state interlocks.
   select repair material while signing remains blocked.
 - `delete_backup`: `archive_path` -> `delete_backup_result`.
 - backup import is a bounded transfer: `begin_backup_import` carries
-  `file_name`, removes any incomplete prior upload for the identity, allocates
+  `file_name`, removes any incomplete prior upload for the product store, allocates
   one daemon-owned temporary archive, and returns an opaque `upload_id`;
   `append_backup_import` accepts at most 256 KiB at the exact next `offset`;
   cumulative uploaded bytes are capped at 1 GiB;
@@ -339,7 +338,7 @@ checks and locked/unlocked/recovery-state interlocks.
   the declared size and SHA-256, authenticates the sealed manifest, deeply
   validates every credential payload, and only then atomically publishes the
   archive. Commit first renames the writable upload into a reserved immutable
-  claim while holding the identity mutation lock. Hashing, extraction, and
+  claim while holding the store mutation lock. Hashing, extraction, and
   memory-hard credential verification run outside that lock; the lock is
   reacquired only to publish the validated claim. Validation extraction uses a
   reserved owner-private directory on the signer store filesystem rather than
@@ -353,12 +352,12 @@ checks and locked/unlocked/recovery-state interlocks.
   never persists it; `abort_backup_import`
   durably removes an incomplete upload. Daemon startup also removes incomplete
   uploads left by a prior process. Abort remains available to an authenticated,
-  authorized bound session while the identity is locked because it can only
+  authorized bound session while the signer store is locked because it can only
   remove unpublished transfer residue.
 - `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
   `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
   a managed archive without filesystem access to the private signer store.
-  It requires the identity to be unlocked or recovery-blocked.
+  It requires the signer store to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
   `code`, `error`. Each key reports address, key type, destination
@@ -395,11 +394,11 @@ checks and locked/unlocked/recovery-state interlocks.
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
-- `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
+- `policy_snapshot`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
 - `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
-- `validate_policy_result`: `success`, optional `target`, optional `identity_id`, optional `code`, optional `error`
+- `validate_policy_result`: `success`, optional `target`, optional `code`, optional `error`
 - `replace_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
-- `replace_policy_result`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
+- `replace_policy_result`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
 
 ## Writable Settings
 
@@ -426,7 +425,7 @@ YAML-only runtime settings:
 - `endpoint.advertise_url`: optional operator-declared endpoint handoff URL
   used by endpoint export when `--host`/`--url` are omitted. Admin settings may
   report it but do not mutate it.
-- `approval_wait`: identity-effective manual signing approval timeout. It is
+- `approval_wait`: product-runtime manual signing approval timeout. It is
   not projected through admin IPC.
 
 Policy has no scalar admin setting surface. Read, validation, and mutation use
@@ -435,21 +434,21 @@ canonical YAML document.
 
 ### Sentry References And Generation Inventory
 
-- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns identity-owned public sentry-reference records. Read-only store inspection does not wait behind an identity mutation; it returns retryable `identity_busy` instead.
+- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns product-store public sentry-reference records. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
 - `get_sentry_reference`: `name` -> `sentry_reference`: `success`, optional `reference`, `code`, `error`
-- `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the identity mutation lock
+- `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
 - `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
 - `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
-- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If an identity mutation is active, it returns retryable `identity_busy` rather than waiting for the ordinary IPC timeout.
+- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If a store mutation is active, it returns retryable `store_busy` rather than waiting for the ordinary IPC timeout.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
-`sentries.manage`, an unlocked identity, and emit mutation audit events. A
+`sentries.manage`, an unlocked signer store, and emit mutation audit events. A
 reference alias selects the witness public key embedded during guarded-key
 generation, so public visibility does not make catalog mutation
 security-neutral. Import is idempotent for an identical reference and rejects
 a name already bound to a different Witness Key ID; replacement requires an
 explicit remove followed by import. Import and removal audit events include
-the affected Witness Key ID, and the identity mutation lock serializes
+the affected Witness Key ID, and the store mutation lock serializes
 publication. Generation inventory requires `generations.view`. `apstore
 generations prune` deliberately remains an offline recovery/maintenance
 operation.
@@ -457,34 +456,34 @@ operation.
 Key-type override semantics:
 
 - `policy.yaml` may include `key_overrides`, a map from concrete signing key selector to sparse policy blocks
-- override blocks inherit unset fields from the identity-wide effective policy
+- override blocks inherit unset fields from the product-wide effective policy
 - nested `key_overrides` are rejected at policy load
 - normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
 - sentry component signing selects an override by the request `component_key` Witness Key ID
 - overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
 - `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
 - `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
-- `policy.yaml` and sentry-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- `policy.yaml` and sentry-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound product runtime on unlock/reload; policy-mutation admin IPC requires an unlocked signer store and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 
 - `replace_policy` first verifies the current on-disk sidecar for the selected target, then parses and runtime-validates the submitted YAML
-- successful replacement writes the exact submitted YAML bytes plus a fresh sidecar, verifies the saved file, and updates the bound identity runtime without requiring a restart
-- failure is fail-closed: parse, validation, stale-snapshot, locked-identity, or current-policy verification errors do not overwrite the existing policy
+- successful replacement writes the exact submitted YAML bytes plus a fresh sidecar, verifies the saved file, and updates the bound product runtime without requiring a restart
+- failure is fail-closed: parse, validation, stale-snapshot, locked-store, or current-policy verification errors do not overwrite the existing policy
 - `replace_policy_result.policy_yaml` is canonical YAML for display; clients that need byte preservation should retain their own uploaded bytes
 
 ## Admin Lock Semantics
 
-- `list_key_types` requires an authenticated, identity-bound admin session but
-  does not require the identity runtime to be unlocked. Template-backed key
-  types are visible only after that identity loads them into the process
+- `list_key_types` requires an authenticated, runtime-bound admin session but
+  does not require the product runtime to be unlocked. Template-backed key
+  types are visible only after the product runtime loads them into the process
   registry. Like HTTP `/keytypes`, this is a metadata surface; internal
   registration may be split between client-visible metadata and signer-side
   execution registries, but the response schema remains the same key-type
   metadata schema.
-- `list_library_templates` requires the identity runtime to be unlocked because it reports identity-local
+- `list_library_templates` requires the product runtime to be unlocked because it reports product-store
   installed state against the encrypted template store.
-- `show_library_template` requires the identity runtime to be unlocked for the same identity-bound
+- `show_library_template` requires the product runtime to be unlocked for the same runtime-bound
   template administration surface, even though the returned library YAML is plaintext reference material.
 - `install_library_template` requires the product runtime to be unlocked because it writes into the encrypted `default` template store and immediately reloads that runtime.
 

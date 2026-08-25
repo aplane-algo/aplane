@@ -156,7 +156,7 @@ Used by apadmin for interactive key management and signer control over either:
        │<────────────────────────────────────────────│
        │                                             │
        │     Session bound to product runtime        │
-       │     (Session.bound = identity.Runtime)      │
+       │     (Session.bound = productruntime.Runtime)      │
        │                                             │
        │  ══════ SESSION AUTHENTICATED ══════════════│
        │                                             │
@@ -237,7 +237,7 @@ When apshell connects to a remote apsigner, it uses an SSH tunnel with configura
 ### SSH Authentication Model
 
 SSH authentication requires **both** a valid API token and a valid public key (2FA).
-The normal SSH username is the fixed non-secret value `default`. The bearer token never appears
+The normal SSH username is the fixed non-secret value `aplane`. The bearer token never appears
 in SSH metadata; the client proves possession through a programmatic,
 host-key-bound keyboard-interactive exchange after public-key authentication.
 
@@ -246,7 +246,7 @@ host-key-bound keyboard-interactive exchange after public-key authentication.
 ```
 Client                                               Server
   │                                                       │
-  │  1. SSH connect (username=default, pubkey=KEY)        │
+  │  1. SSH connect (username=aplane, pubkey=KEY)         │
   │──────────────────────────────────────────────────────>│
   │                                                       │
   │  2. Verify enrolled key possession; partial success  │
@@ -267,7 +267,7 @@ Keys are enrolled exclusively through the `request-token` operator-approved flow
 **Key points:**
 - Token is always required for normal connections (no "key-only" mode); the `request-token` bootstrap flow is the sole exception
 - The keyboard-interactive exchange is fully programmatic and never prompts a user
-- Proofs are HMAC-SHA256 values over the identity, accepted SSH host key, and two fresh nonces; server and client roles are domain-separated
+- Proofs are HMAC-SHA256 values over the accepted SSH host key and two fresh nonces; server and client roles are domain-separated
 - The server proves token possession before the client emits its proof
 - Clients reject an SSH server that accepts the public key without completing mutual token proof
 - Proof comparison is constant-time
@@ -310,7 +310,7 @@ fresh nonces differ.
 | Key enrollment | Operator-approved `request-token` flow only |
 | Host key verification | TOFU model with persistent known_hosts |
 | Token confidentiality | Token never appears in SSH username, metadata, challenge, or response |
-| Proof replay resistance | Fresh client/server nonces and accepted host-key hash bind each proof transcript |
+| Proof context and replay resistance | Fixed `aplane` username, accepted host-key hash, and fresh client/server nonces bind each proof transcript |
 | Token validation | HMAC-SHA256 with constant-time proof comparison |
 | Token revocation | Operator-initiated via apadmin; invalidates new HTTP requests and closes active SSH connections |
 | Transport encryption | SSH protocol (Ed25519 keys) |
@@ -327,8 +327,8 @@ attempt; garbage-collected SDKs cannot guarantee memory zeroization.
 All SSH connections are logged for audit purposes:
 
 ```json
-{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"default"}
-{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"default"}
+{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"ssh"}
+{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"ssh"}
 ```
 
 Logged information:
@@ -336,7 +336,7 @@ Logged information:
 - Key fingerprint (on registration)
 - Connect/disconnect events
 
-**Note:** The SSH username is the fixed non-secret product identity ID. The SSH auth-log
+**Note:** The SSH username is the fixed non-secret value `aplane`. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
 does not log the username, interactive responses, or authentication errors.
 
@@ -376,7 +376,7 @@ New clients without a token can request one through the SSH tunnel using the `re
 │  apshell │                                          │  apsigner │
 └────┬─────┘                                          └─────┬──────┘
      │                                                      │
-     │  1. SSH connect (username=request-token:default,     │
+     │  1. SSH connect (username=request-token,             │
      │     pubkey only)                                     │
      │─────────────────────────────────────────────────────>│
      │                                                      │
@@ -519,10 +519,9 @@ type Identity struct {
 
 ### Authorizer Interface
 
-The authorization model separates the actor principal from the target signing
-identity. In product mode, compatibility credentials map to
-`system:product-admin`; `default` is the signing identity being acted on,
-not the authorization principal.
+The authorization model separates the actor principal from the resource being
+acted on. Product credentials authenticate the reserved
+`system:product-admin` principal.
 
 ```go
 // internal/auth/authorizer.go
@@ -534,7 +533,6 @@ type Action string  // "sign.request", "keys.view", "keys.generate"
 type Resource struct {
     Type string     // "transaction", "keys", "system"
     ID   string     // Resource identifier (e.g., key address)
-    IdentityID string // Target signing identity
 }
 ```
 
@@ -559,8 +557,6 @@ type AuditLogger struct {
 type AuditEntry struct {
     Timestamp          time.Time
     Event              AuditEventType
-    IdentityID         string
-    TargetIdentityID   string
     Principal          string
     RequesterPrincipal string
     ApproverPrincipal  string
@@ -588,8 +584,6 @@ object per line, syncs each write, and rotates around the current 10 MB limit.
 
 Audit entries carry attribution fields:
 
-- `identity_id`: fixed `default` attribution for product-runtime work
-- `target_identity_id`: signing identity targeted by the action
 - `principal`: principal field
 - `requester_principal`: principal requesting the action
 - `approver_principal`: principal approving or rejecting the action
@@ -608,7 +602,7 @@ Denial behavior:
   `invalid_credentials`, or `unauthorized:<action>`.
 - Admin protocol authorization denials are recorded as
   `AUTHORIZATION_DENIED` with the admin session context, action/resource details,
-  target identity, principal attribution, transport, and denial reason.
+  principal attribution, transport, and denial reason.
 
 ### Auth Pipeline in Server
 
@@ -835,7 +829,7 @@ retrieval and is separately zeroed by the signing executor.
 
 #### Lock Path
 
-`Signer.lock()` (in `internal/signerapp/daemon/runtime.go`) delegates to `identity.Runtime.Lock()`, which conceptually executes the following steps in order:
+`Signer.lock()` (in `internal/signerapp/daemon/runtime.go`) delegates to `productruntime.Runtime.Lock()`, which conceptually executes the following steps in order:
 
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
 2. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
@@ -935,7 +929,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 | Caller | Verb | Purpose |
 |--------|------|---------|
 | `apsigner` startup (headless) | `read` | Auto-unlock signer at boot |
-| `appass` setup | `write` | Store the product identity's auto-unlock passphrase |
+| `appass` setup | `write` | Store the product store's auto-unlock passphrase |
 | `apstore initialize` | `write` | Store the chosen passphrase when a helper is already configured |
 | `apadmin changepass` | `write` | Require manual entry of the old passphrase, then store the new passphrase after atomic key re-encryption |
 

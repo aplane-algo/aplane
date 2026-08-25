@@ -4,7 +4,7 @@ Signer policy is the product-scoped safety layer that decides whether a
 signing request should be rejected, forced through operator review, explicitly
 approved, or left to the operator default.
 
-Policy is stored beside the product keys at the compatibility `default` path:
+Policy is stored beside the product keys in the product store:
 
 ```text
 identities/default/policy.yaml

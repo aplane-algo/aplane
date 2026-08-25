@@ -180,7 +180,7 @@ teal: |
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
 
-	// Verify file was created in the identity-local key type records directory.
+	// Verify file was created in the product-store key type records directory.
 	expectedDir := mustActiveTS(t, paths).KeyTypeRecordsDir()
 	if !strings.HasPrefix(outputPath, expectedDir) {
 		t.Errorf("Template saved to wrong directory. Expected prefix %s, got %s", expectedDir, outputPath)

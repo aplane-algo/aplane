@@ -17,14 +17,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
+func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
+	ir := s.Runtime
 	if ir == nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 
 	keysSnapshot, _ := ir.KeySnapshot()
@@ -54,9 +54,10 @@ func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
 	return keysList, nil
 }
 
-func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetailsResult, *Error) {
+func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
+	ir := s.Runtime
 	if ir == nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 
 	keyFile, err := ir.FindKeyFile(address)
@@ -126,10 +127,11 @@ func sentryComponentSelectorForDetails(keyType, publicKeyHex string) (string, er
 	return witness.ID(componentKeyType, publicKey)
 }
 
-func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
+func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
+	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ir == nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 	if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
@@ -174,7 +176,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 		return nil, mapGenerateError(err)
 	}
 
-	if reloadErr := reloadIdentityKeys(ir); reloadErr != nil {
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
 		return nil, reloadErr
 	}
 

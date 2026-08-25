@@ -587,7 +587,7 @@ private ownership contract.
 If `identities/default/passphrase.cred` exists, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the
 new unit so the daemon can auto-unlock without rerunning
-`appass set systemd-creds`.
+`sudo appass -d /var/lib/apsigner` and select **Systemd credentials**.
 
 ---
 
@@ -1044,7 +1044,8 @@ The passphrase flow uses three components working together:
 
 ```
 One-time setup:
-  appass systemd-creds setup
+  sudo appass -d /var/lib/apsigner
+    -> select Systemd credentials
     -> prompts for passphrase
     -> writes identities/default/unlock.yaml
     -> runs appass-systemd-creds write identities/default/passphrase.cred

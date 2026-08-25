@@ -10,7 +10,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
 type IPCService struct {
@@ -19,16 +18,16 @@ type IPCService struct {
 	Logf                func(format string, args ...interface{})
 }
 
-func (s IPCService) ListKeys(ir *identity.Runtime) ([]adminproto.KeyInfo, error) {
-	return ProjectListKeys(s.Service.ListKeys(ir))
+func (s IPCService) ListKeys() ([]adminproto.KeyInfo, error) {
+	return ProjectListKeys(s.Service.ListKeys())
 }
 
-func (s IPCService) GetKeyDetails(ir *identity.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
-	return ProjectKeyDetailsIPC(s.Service.GetKeyDetails(ir, req.Address))
+func (s IPCService) GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
+	return ProjectKeyDetailsIPC(s.Service.GetKeyDetails(req.Address))
 }
 
-func (s IPCService) GenerateKey(ctx context.Context, ir *identity.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
-	genResult, err := s.Service.GenerateKey(ctx, ir, req.KeyType, req.Parameters, s.GenerateGenericLSig)
+func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
+	genResult, err := s.Service.GenerateKey(ctx, req.KeyType, req.Parameters, s.GenerateGenericLSig)
 	ipcResult := ProjectGenerateIPC(genResult, err)
 	if !ipcResult.Success {
 		return ipcResult
@@ -38,8 +37,8 @@ func (s IPCService) GenerateKey(ctx context.Context, ir *identity.Runtime, req a
 	return ipcResult
 }
 
-func (s IPCService) DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
-	delResult, err := s.Service.DeleteKey(ir, req.Address)
+func (s IPCService) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+	delResult, err := s.Service.DeleteKey(req.Address)
 	ipcResult := ProjectDeleteIPC(err)
 	if !ipcResult.Success {
 		return ipcResult
@@ -51,8 +50,8 @@ func (s IPCService) DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequ
 	return ipcResult
 }
 
-func (s IPCService) ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
-	importResult, err := s.Service.ImportKey(ir, req.KeyType, req.Mnemonic, req.Parameters)
+func (s IPCService) ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+	importResult, err := s.Service.ImportKey(req.KeyType, req.Mnemonic, req.Parameters)
 	ipcResult := ProjectImportIPC(importResult, err)
 	if !ipcResult.Success {
 		return ipcResult

@@ -22,8 +22,6 @@ Each line is a JSON object with the following fields:
 |-------|------|-------------|
 | `timestamp` | string | UTC timestamp (RFC 3339) |
 | `event` | string | Event type (see below) |
-| `identity_id` | string | Backward-compatible owning product ID (`default`); omitted for process-level events |
-| `target_identity_id` | string | Backward-compatible target product ID (`default`) |
 | `principal` | string | Principal performing the action |
 | `requester_principal` | string | Principal requesting the action |
 | `approver_principal` | string | Principal approving or rejecting the action |
@@ -51,13 +49,11 @@ Fields are omitted when empty.
 
 ```json
 {"timestamp":"2026-02-28T16:00:00Z","event":"SERVER_START","key_count":3}
-{"timestamp":"2026-02-28T16:00:05Z","event":"SESSION_CONNECTED","identity_id":"default","target_identity_id":"default","principal":"system:product-admin","requester_principal":"system:product-admin","admin_session_id":"admin-1","transport":"ipc","outcome":"connected","remote_addr":"local"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","identity_id":"default","target_identity_id":"default","requester_principal":"system:product-admin","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","identity_id":"default","target_identity_id":"default","requester_principal":"system:product-admin","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
+{"timestamp":"2026-02-28T16:00:05Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","admin_session_id":"admin-1","transport":"ipc","outcome":"connected","remote_addr":"local"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","requester_principal":"system:product-admin","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","requester_principal":"system:product-admin","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
 {"timestamp":"2026-02-28T16:05:00Z","event":"SERVER_STOP"}
 ```
-
-The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
 ## Event Types
 
@@ -96,7 +92,7 @@ The examples show `"default"` as the identity. See [ARCH_OVERVIEW.md](ARCH_OVERV
 | `SENTRY_REFERENCE_CHANGED` | A product sentry-reference catalog record was imported, promoted, or removed |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
-`replace_existing`, and `key_count`, in addition to normal identity/session/
+`replace_existing`, and `key_count`, in addition to normal session/
 principal/transport attribution.
 
 ### Signing
@@ -121,7 +117,7 @@ principal/transport attribution.
 |-------|-------------|
 | `SESSION_CONNECTED` | IPC or SSH session established |
 | `SESSION_DISCONNECTED` | Session ended |
-| `IDENTITY_LOCKED` | Product runtime locked through an authenticated admin session (event name retained for compatibility) |
+| `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
 | `TOKEN_PROVISIONED` | API token provisioned via SSH connection |
 
 ## Log Rotation

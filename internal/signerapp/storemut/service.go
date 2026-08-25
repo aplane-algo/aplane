@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
@@ -73,19 +73,19 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the
-// identity-scoped activated compiled key type set.
+// product store's activated compiled key type set.
 func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
 	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, keyType, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivated imports and persists a standard key using
-// the identity-scoped activated compiled key type set.
+// the product store's activated compiled key type set.
 func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
 	return s.ImportKeyFromMnemonicWithActivatedContext(context.Background(), keyType, mnemonic, kr, params, activated)
 }
 
 // ImportKeyFromMnemonicWithActivatedContext imports and persists a standard key
-// using the identity-scoped activated compiled key type set.
+// using the product store's activated compiled key type set.
 func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
 	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, keyType, mnemonic, kr, params, activated)
 }
@@ -116,7 +116,7 @@ func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) erro
 	return serverconfig.SaveSetting(dataDir, key, value)
 }
 
-// SaveIdentitySetting persists a single identity-scoped setting.
-func (s *Service) SaveIdentitySetting(dataDir, key string, value interface{}) error {
-	return identity.SaveStoredSetting(dataDir, key, value)
+// SaveRuntimeSetting persists a single product-runtime setting.
+func (s *Service) SaveRuntimeSetting(dataDir, key string, value interface{}) error {
+	return productruntime.SaveStoredSetting(dataDir, key, value)
 }

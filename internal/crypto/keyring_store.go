@@ -144,7 +144,7 @@ func WriteKeyring(keystoreDir string, kr *Keyring, passphrase []byte) error {
 // term, promotes it, records the former current term as retiring, and adopts
 // the visible pending state into kr.
 //
-// The caller holds the identity mutation lock. writeSnapshot must use target
+// The caller holds the store mutation lock. writeSnapshot must use target
 // only to seal and durably publish the cutover snapshot; the root is written
 // only after it returns a valid exact-file reference.
 func StartRotation(
@@ -250,7 +250,7 @@ func StartRotation(
 // generation anchor; only current-state authority changes from
 // {current, from} back to {current}.
 //
-// The caller holds the identity mutation lock. The referenced snapshot must
+// The caller holds the store mutation lock. The referenced snapshot must
 // remain present until this function succeeds.
 func CloseRotation(
 	keystoreDir string,

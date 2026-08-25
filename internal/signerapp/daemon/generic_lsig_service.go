@@ -6,8 +6,8 @@ package daemon
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func (fs *Signer) genericLSigGenerator() keyadmin.GenericLSigGenerator {
@@ -23,6 +23,6 @@ func (fs *Signer) genericLSigGenerator() keyadmin.GenericLSigGenerator {
 	}
 }
 
-func (fs *Signer) generateGenericLSigForIdentityContext(ctx context.Context, ir *identity.Runtime, keyType string, parameters map[string]string) (string, error) {
+func (fs *Signer) generateGenericLSigForRuntimeContext(ctx context.Context, ir *productruntime.Runtime, keyType string, parameters map[string]string) (string, error) {
 	return fs.genericLSigGenerator().GenerateContext(ctx, ir, keyType, parameters)
 }

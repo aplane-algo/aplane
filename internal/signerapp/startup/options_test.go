@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
+func TestResolveUnlockConfigPrefersProductStore(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -24,11 +24,11 @@ func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
 	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
 	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
 
-	want := &identity.UnlockConfig{
+	want := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"identity-pass", "/tmp/identity"},
 		PassphraseCommandEnv:  map[string]string{"IDENTITY": "1"},
 	}
-	if err := identity.SaveUnlockConfig(root, want); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(root, want); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestResolveUnlockConfigFallsBackToGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveUnlockConfig() error = %v", err)
 	}
-	want := &identity.UnlockConfig{
+	want := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: cfg.PassphraseCommandArgv,
 		PassphraseCommandEnv:  cfg.PassphraseCommandEnv,
 	}
@@ -178,7 +178,7 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	}
 
 	_, _, err := ValidateAndBuildUnlockPlan(opts, &RuntimeState{}, "")
-	if err == nil || !strings.Contains(err.Error(), "invalid product identity layout") {
+	if err == nil || !strings.Contains(err.Error(), "invalid product-store layout") {
 		t.Fatalf("ValidateAndBuildUnlockPlan() error = %v, want product layout refusal", err)
 	}
 	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {

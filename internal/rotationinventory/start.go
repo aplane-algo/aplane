@@ -17,7 +17,7 @@ import (
 )
 
 // StartRotation performs the pre-append K8 gate and atomically commits the
-// pending cryptographic root. The caller holds the identity mutation lock and
+// pending cryptographic root. The caller holds the store mutation lock and
 // has reconciled generation staging residue.
 //
 // This function starts the durable window only. Rewrap, completion-baseline

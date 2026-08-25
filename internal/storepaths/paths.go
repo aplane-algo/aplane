@@ -84,7 +84,7 @@ func validatePathComponentValue(label, s string) error {
 }
 
 // ValidateKeyTypeComponent checks whether keyType is safe to use in
-// identity-local key type state and template paths.
+// product-store key type state and template paths.
 func ValidateKeyTypeComponent(keyType string) error {
 	if err := validatePathComponentValue("key type", keyType); err != nil {
 		return err

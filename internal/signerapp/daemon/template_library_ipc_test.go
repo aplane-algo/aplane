@@ -42,7 +42,7 @@ func TestIPCInstallLibraryTemplateActivatesKeyTypeWithoutRestart(t *testing.T) {
 	writeLibraryTemplateForTest(t, server, "install.yaml", renderGenericTemplateYAML(family, 1, "IPC Library Install", "installed over IPC"))
 
 	recorder := &ipcJSONRecorderConn{}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ipcServer := &IPCServer{signer: server}
 	session := newBoundTestSession(ipcServer, recorder, ir)
 	dispatchIPCMessage(t, session, protocol.InstallLibraryTemplateMessage{
@@ -86,7 +86,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "disable.yaml", renderGenericTemplateYAML(family, 1, "IPC Disable", "disabled over IPC"))
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ipcServer := &IPCServer{signer: server}
 	installRecorder := &ipcJSONRecorderConn{}
 	installSession := newBoundTestSession(ipcServer, installRecorder, ir)
@@ -168,8 +168,7 @@ func TestShowLibraryTemplateReturnsPlaintextYAML(t *testing.T) {
 	yamlData := renderGenericTemplateYAML(family, 1, "Show Library", "viewed via IPC")
 	writeLibraryTemplateForTest(t, server, "show.yaml", yamlData)
 
-	ir := server.productIdentityRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -195,8 +194,7 @@ func TestShowLibraryTemplateMissingEntryReturnsNotFound(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      "no-such-key-type-v1",
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -212,8 +210,7 @@ func TestShowLibraryTemplateRejectsCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      "aplane.ed25519.v1",
 		TemplateType: "compiled_provider",
 	})
@@ -229,8 +226,7 @@ func TestImportInstalledTemplateRejectsMalformedYAML(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
-	result := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	result := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte("schema_version: 1\ntemplate_type: generic\nfamily:"),
 	})
 	if result.Success || result.Code != protocol.ResultCodeInvalidTemplate {
@@ -245,8 +241,7 @@ func TestImportInstalledTemplateRejectsMissingTemplateMode(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productIdentityRuntime()
-	result := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	result := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte(`schema_version: 1
 template_type: generic
 publisher: test
@@ -271,16 +266,15 @@ func TestImportInstalledTemplateIdempotentAndRejectsConflictingDefinition(t *tes
 
 	family := fmt.Sprintf("ipc-template-import-%d", time.Now().UnixNano())
 	keyType := testTemplateKeyType(family)
-	ir := server.productIdentityRuntime()
 	templateYAML := renderGenericTemplateYAML(family, 1, "IPC Import", "imported over IPC")
 
-	initial := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	initial := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: templateYAML,
 	})
 	if !initial.Success || initial.AlreadyExists || initial.KeyType != keyType {
 		t.Fatalf("initial ImportInstalledTemplate() = %+v, want fresh success for %s", initial, keyType)
 	}
-	again := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	again := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: templateYAML,
 	})
 	if !again.Success || !again.AlreadyExists || again.KeyType != keyType {
@@ -288,7 +282,7 @@ func TestImportInstalledTemplateIdempotentAndRejectsConflictingDefinition(t *tes
 	}
 
 	conflicting := renderGenericTemplateYAMLWithTEAL(family, 1, "IPC Import Changed", "int 0")
-	conflict := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	conflict := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: conflicting,
 	})
 	if conflict.Success || conflict.Code != "import_failed" || conflict.KeyType != keyType {
@@ -307,8 +301,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "remove-disabled.yaml", renderGenericTemplateYAML(family, 1, "IPC Remove Disabled", "removed while disabled"))
 
-	ir := server.productIdentityRuntime()
-	install := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	install := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -316,7 +309,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 		t.Fatalf("InstallLibraryTemplate() = %+v, want success", install)
 	}
 
-	disabled := server.adminServices().templateApp().DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
+	disabled := server.adminServices().templateApp().DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
 	if !disabled.Success || !disabled.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want disabled template", disabled)
 	}
@@ -324,7 +317,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
 
-	removed := server.adminServices().templateApp().RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
+	removed := server.adminServices().templateApp().RemoveInstalledTemplate(adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
@@ -345,7 +338,7 @@ func TestIPCActivateKeyTypeEnablesCompiledProvider(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	recorder := &ipcJSONRecorderConn{}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ipcServer := &IPCServer{signer: server}
 	session := newBoundTestSession(ipcServer, recorder, ir)
 	dispatchIPCMessage(t, session, protocol.ActivateKeyTypeMessage{
@@ -383,7 +376,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 	defer cleanup()
 
 	keyType := "aplane.ed25519.v1"
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
@@ -427,7 +420,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	defer cleanup()
 
 	keyType := "aplane.ed25519.v1"
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
@@ -485,12 +478,12 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "reload-fail.yaml", renderGenericTemplateYAML(family, 1, "Reload Failure", "forces reload failure"))
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("forced reload failure")
 	})
 
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -508,8 +501,8 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "reinstall-fail.yaml", renderGenericTemplateYAML(family, 1, "Reinstall Failure", "existing install survives reload failure"))
 
-	ir := server.productIdentityRuntime()
-	initial := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	ir := server.productRuntime()
+	initial := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -527,7 +520,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("forced reload failure")
 	})
-	again := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	again := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -547,12 +540,12 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "activation-fail.yaml", renderGenericTemplateYAML(family, 1, "Activation Failure", "reload does not activate provider"))
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, nil
 	})
 
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -575,7 +568,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	if err != nil {
 		t.Fatalf("ParseYAML() error = %v", err)
 	}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		_, installErr := templatelibrary.InstallParsed(server.keyPaths, parsed, masterKey)
 		return installErr
@@ -598,7 +591,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, nil
 	})
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})

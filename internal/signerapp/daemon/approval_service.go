@@ -8,11 +8,11 @@ import (
 	"time"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func (fs *Signer) newApprovalServiceForIdentityWithAudit(ir *identity.Runtime, auditLog signersigning.AuditRejectLogger) *signersigning.ApprovalService {
+func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditLog signersigning.AuditRejectLogger) *signersigning.ApprovalService {
 	userAutoApprove := ir.Config().UserAutoApprove()
 	return &signersigning.ApprovalService{
 		UserAutoApprove: &userAutoApprove,

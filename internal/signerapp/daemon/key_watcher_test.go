@@ -84,7 +84,7 @@ func TestWatcherDirtyWhileLocked(t *testing.T) {
 		if !locked.Load() {
 			reloaded <- struct{}{}
 		}
-		// When locked, just record that we were called (the identity runtime
+		// When locked, just record that we were called (the product runtime
 		// would call MarkDirty; here we simulate by not sending to reloaded)
 		return nil
 	}

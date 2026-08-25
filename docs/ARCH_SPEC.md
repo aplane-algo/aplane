@@ -164,7 +164,7 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/rotationinventory`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
@@ -237,7 +237,7 @@ interleaved with domain logic on a single flat facade.
 
 The live consensus boundary is client-owned in `internal/engine/consensus.go`.
 Transaction construction validates algod SuggestedParams, and first-party
-planning and executable workflows refresh the v42/`fnet5` check before asking
+planning and executable workflows refresh the v42 check before asking
 apsigner to plan, releasing signatures, invoking plugin signers, or submitting
 or simulating immutable signed groups. The guarded flow enters through the same
 checked submit boundary. `NewInitializedEngine` may leave `AlgodClient` nil when
@@ -318,14 +318,14 @@ deciding where a change belongs:
 | `key*` | `internal/keygen` | Signer-side key generation registry and generation result model. |
 | `key*` | `internal/keymgmt` | Client/shell-facing key management request/result helpers. |
 | `key*` | `internal/signingargs` | Shared internal model for signing-time LogicSig argument metadata projected into key files, signer cache records, and wire DTOs. |
-| `key*` | `internal/keytypestate` | Identity-local key type state record format and primitive read/write/delete operations for installed/disabled/activated template or provider definitions. |
+| `key*` | `internal/keytypestate` | Product-store key type state record format and primitive read/write/delete operations for installed/disabled/activated template or provider definitions. |
 | `key*` | `internal/keytypecatalog` | Key type catalog metadata assembled from registered providers and template records. |
 | `key*` | `internal/keytypefmt` | Presentation-only key type formatting and publisher extraction. |
 | `template*` | `internal/templatelibrary` | Plaintext signer-data template parsing and sole feature-level coordinator for template files and key-type state mutation. |
-| `template*` | `internal/templatestore` | Encrypted identity-local `.template` format and primitive save, load, scan, remove, and archive operations. |
+| `template*` | `internal/templatestore` | Encrypted product-store `.template` format and primitive save, load, scan, remove, and archive operations. |
 | `template*` | `internal/templatepolicy` | Template registration outcome vocabulary and reload/report policy helpers. |
-| `signerapp/templates` | `internal/signerapp/templates` | Read-only runtime reload coordinator that walks installed identity templates and registers provider implementations. |
-| `signerapp/templateadmin` | `internal/signerapp/templateadmin` | Live admin/use-case owner for identity locking, library mutation, runtime reload/acceptance, results, and logging. |
+| `signerapp/templates` | `internal/signerapp/templates` | Read-only runtime reload coordinator that walks installed product-store templates and registers provider implementations. |
+| `signerapp/templateadmin` | `internal/signerapp/templateadmin` | Live admin/use-case owner for signing-authority locking, library mutation, runtime reload/acceptance, results, and logging. |
 | `defaultkeytypes` | `internal/defaultkeytypes` | Bootstrap use-case owner that installs defaults through `templatelibrary` into an unpublished staged generation. |
 
 Rule of thumb:
@@ -447,7 +447,7 @@ minisign-signed.
 ## Deployment Model
 
 - One `apsigner` on the signer host
-- Zero or one product-mode `apadmin`/`apapprover` admin workflow for the exposed product identity, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires a pre-enrolled default signer endpoint, its token, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
+- Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires a pre-enrolled default signer endpoint, its token, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; sentry enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
 - Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine local versus remote console mode and the client/signer data paths. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. In local sentry mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. In remote mode, `apconsole` preflights the client data directory and requires a default signer endpoint, its token, and a trusted signer host in the endpoint's `known_hosts` before the UI starts. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
@@ -470,25 +470,39 @@ exported backup archives carry only passphrase-encrypted credential records.
 
 Conceptual model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Fixed Product Store and Runtime).
 
-Identity plumbing rules specific to this spec:
+#### Fixed Store Namespace
 
-- every signer process owns exactly one signing-state aggregate, with no
-  runtime ID, registry, or selector,
-- preserving `identities/default/` preserves the storage namespace, not a
-  multi-identity runtime model,
-- `internal/storepaths.Paths` binds `identities/default/` and
-  `backups/default/` from the signer data root; storage, runtime, request,
-  authentication, SSH, and admin APIs accept no identity locator,
-- startup validates the direct `identities/` entries without following
-  symlinks and rejects every entry other than a real `default` directory before
-  loading identity secrets or starting watchers,
-- HTTP authentication verifies one product token and produces the reserved
-  `system:product-admin` principal; runtime binding is independently fixed to
-  the product runtime,
-- SSH accepts only `default` and `request-token:default`; the token proof keeps
-  `default` as its fixed domain-separated transcript value,
-- output and audit identity fields may retain `default` attribution even where
-  corresponding input selectors are removed.
+Every signer process owns exactly one product signing-state aggregate, with no
+runtime ID, registry, or selector. `internal/storepaths.Paths` binds the
+`identities/default/` and `backups/default/` directories from the signer data
+root; storage, runtime, request, authentication, SSH, admin, and audit APIs
+accept no runtime locator.
+
+Startup rejects any direct `identities/` entry other than a real `default`
+directory before loading secrets or starting watchers. HTTP authentication
+maps the one product token to `system:product-admin`. SSH accepts only
+`aplane` and `request-token`. Its mutual-proof transcript binds the protocol
+version, fixed `aplane` username, accepted host key, client nonce, server nonce,
+and proof role.
+
+#### Product Runtime Invariants
+
+The runtime enforces these single-product invariants:
+
+- `adminserver.SessionManager` owns one pre-auth pending slot, one authenticated
+  displacement slot, and one active product session across IPC and SSH;
+- template/provider registration is process-global and
+  `internal/lsigprovider.registerMu` has no per-owner reference counts;
+- one product runtime owns the watcher, approval coordinator, token authority,
+  SSH enrollment state, runtime settings, and lock state;
+- SSH uses the fixed usernames `aplane` and `request-token`; normal token-proof
+  transcripts bind `aplane` and carry no store or runtime identifier;
+- audit records attribute actors through principal and session fields and carry
+  no store or runtime identifier;
+- `node.yaml.hmac` and policy sidecars bind authenticated state to the one
+  product store root;
+- startup layout validation rejects additional direct entries under
+  `identities/` before secret loading.
 
 ## Runtime Configuration Model
 
@@ -544,7 +558,7 @@ Server config includes process-global settings such as:
 - memory protection requirement,
 - theme.
 
-Product runtime settings are owned separately by `internal/signerapp/identity.IdentityConfig`:
+Product runtime settings are owned separately by `internal/signerapp/productruntime.RuntimeConfig`:
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
@@ -552,8 +566,8 @@ Product runtime settings are owned separately by `internal/signerapp/identity.Id
 - `approval_wait` (maximum manual signing approval wait).
 
 Those values are persisted at `identities/default/config.yaml` via
-`internal/signerapp/identity.StoredConfig`. Unknown fields, including the
-removed `decommissioned` setting, fail strict parsing. On startup, stored
+`internal/signerapp/productruntime.StoredConfig`. Unknown fields, including
+`decommissioned`, fail strict parsing. On startup, stored
 runtime values overlay process-global defaults (nil/empty means inherit).
 Runtime reads resolve through the product runtime rather than directly from
 `ServerConfig`.
@@ -564,13 +578,12 @@ signer data directory has a root `node.yaml` with exactly one role:
 initialized as sentry nodes. The role is immutable in supported tools, is
 integrity-bound to the product store with an HMAC sidecar over the exact root
 `node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
-service dispatch. Identity config does not own node role; a `mode` field there
-is unsupported and must be rejected.
+service dispatch. Product runtime config does not own node role; a `mode` field
+there is unsupported and must be rejected.
 
 Passphrase helper configuration is product-store scoped via
 `internal/signerapp/unlockconfig.UnlockConfig`, stored at
-`identities/default/unlock.yaml`. `internal/signerapp/identity` re-exports
-that type and its path/load/save helpers for existing callsites:
+`identities/default/unlock.yaml`:
 
 - `passphrase_command_argv`
 - `passphrase_command_env`
@@ -629,7 +642,7 @@ installed. The compatibility details are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 `apsigner` startup resolves the product store's `unlock.yaml` before the
-process-global `config.yaml` passphrase command. `appass` has no identity
+process-global `config.yaml` passphrase command. `appass` has no runtime
 selector and always manages `identities/default/unlock.yaml`.
 
 Configuration behavior and validation rules are compatibility-bearing and are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). The network context model and genesis-hash mapping rules are explained in [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
@@ -712,9 +725,9 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 ## Server Ownership Model
 
 `Signer` (`internal/signerapp/daemon/server.go`) is the composition root. The
-one product signing-state aggregate lives in `identity.Runtime`
-(`internal/signerapp/identity/runtime.go`). The package name is historical and
-does not imply a runtime selector or registry.
+one product signing-state aggregate lives in `productruntime.Runtime`
+(`internal/signerapp/productruntime/runtime.go`). It has no runtime selector or
+registry.
 
 | Concern | Owner |
 |---------|-------|
@@ -725,7 +738,7 @@ does not imply a runtime selector or registry.
 | Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
 | Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
-| Product runtime aggregate, config, token, SSH enrollment, lifecycle | `internal/signerapp/identity` (historical package name) |
+| Product runtime aggregate, config, token, SSH enrollment, lifecycle | `internal/signerapp/productruntime` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` with `internal/signerapi` aliases |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
@@ -762,7 +775,7 @@ sends explicit cancellation.
 ### Server Startup
 
 `apsigner` validates that `identities/` is absent/empty or contains only a real
-`default/` directory, then constructs the one product `identity.Runtime`.
+`default/` directory, then constructs the one product `productruntime.Runtime`.
 
 Before normal startup option loading, `apsigner` rejects manual startup from a
 signer data directory containing `.prod` unless the process is systemd-managed.
@@ -777,7 +790,7 @@ Implemented startup modes:
 - forced locked startup when the keyring root does not exist.
 
 Both locked and headless paths converge through
-`identity.Runtime.reloadLocked`. Production wiring from
+`productruntime.Runtime.reloadLocked`. Production wiring from
 `startup.WireReloadFunc` delegates the work to
 `templates.ReloadService.Reload`, which:
 
@@ -817,7 +830,7 @@ The main server struct is `Signer`, which owns:
 - optional SSH server,
 - config and data-dir references.
 
-Sensitive product state lives under `internal/signerapp/identity.Runtime`, including:
+Sensitive product state lives under `internal/signerapp/productruntime.Runtime`, including:
 
 - `keySession`,
 - product `keys`, `keyTypes`, and `keyMetadata` resource profiles,
@@ -837,10 +850,10 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
-| `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
-| `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
-| `identity.Runtime.watcherMu` | Watcher lifecycle, dirty state |
-| `identity.Runtime.approval` | `atomic.Pointer` — approval coordinator |
+| `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
+| `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
+| `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
+| `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
@@ -876,7 +889,7 @@ Locking must:
 - clear or invalidate key caches as appropriate,
 - notify interested IPC clients.
 
-Store maintenance adds an identity-local state fence in `Runtime.stateMu`.
+Store maintenance adds a product-store state fence in `Runtime.stateMu`.
 Beginning maintenance clears and locks the published key session before any
 root transition. Unlock and recovery attempts that start during the fence are
 rejected without loading authority; attempts already in flight lose on the
@@ -884,10 +897,11 @@ generation check and clear anything they loaded. Only the matching successful
 maintenance token may republish after verified reload. Failure, a stale token,
 or a racing explicit lock leaves the runtime locked.
 
-The watcher model is identity-owned but not tied to every lock transition:
+The watcher is owned by the product runtime but is not tied to every lock
+transition:
 
-- when an identity is unlocked, the watcher reloads immediately on qualifying filesystem changes,
-- when an identity is locked, the watcher remains active and marks the identity dirty,
+- when the runtime is unlocked, the watcher reloads immediately on qualifying filesystem changes,
+- when the runtime is locked, the watcher remains active and marks the runtime dirty,
 - the next unlock reconciles dirty state by reloading,
 - watchers are stopped on runtime shutdown, not on every ordinary lock.
 
@@ -1257,7 +1271,7 @@ structurally separated.
 The root role gates key generation, mnemonic import, restore, key scan, and
 HTTP signing dispatch. A role-conflicting key in the inventory fails closed for
 the node rather than being silently skipped. `internal/noderole` owns
-`node.yaml` parsing and identity-bound integrity sidecars; `internal/keyclass`
+`node.yaml` parsing and runtime-bound integrity sidecars; `internal/keyclass`
 owns role-versus-key-type classification. The exact node-role contract and
 on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
@@ -1626,7 +1640,7 @@ Caches include:
 These caches are not interchangeable:
 
 - signer-side ASA metadata cache depends on signer-configured algod endpoints,
-  is process-wide rather than product-identity state, and has no long-lived
+  is process-wide rather than product-runtime state, and has no long-lived
   process-global in-memory map,
 - signer cache depends on remote signer state; interactive and embedded
   apshell sessions poll authenticated `/status` on the configured
@@ -1680,8 +1694,9 @@ The repo uses:
   `store_permissions_test.go` pins the audited shared-mode allowlist and keeps
   legacy group-bearing modes out of signer-store writers;
   `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,
-  and historical-term boundaries; `single_identity_test.go` pins the removed
-  tenant-selection shapes; `admin_binary_boundary_test.go` and
+  and historical-term boundaries; `product_mode_boundary_test.go` pins the
+  one-runtime ownership graph and absence of selectors;
+  `admin_binary_boundary_test.go` and
   `policy_command_subtraction_test.go` keep live administration and policy
   ownership in `apadmin` rather than regrowing retired command surfaces;
   `admin_protocol_boundary_test.go` pins wire/domain/transport
@@ -1746,11 +1761,6 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH token provisioning, client signer reachability, guarded
   signing, and corridor allowlist enforcement across the Docker network.
-- `make docker-fnet-test` runs the same installed signer, sentry, and
-  client/admin topology against the public FNet algod. Funding transactions
-  are authorized on the host by the protocol-native Falcon account in
-  `TEST_FUNDING_MNEMONIC`; the mnemonic is not copied into a container or
-  persisted in generated node configuration.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 
@@ -1760,17 +1770,17 @@ long-running LocalNet transaction coverage and
 
 The integration harness behavior is part of the effective repository contract:
 
-- `make integration-test` requires an explicit TestNet, LocalNet, or FNet
+- `make integration-test` requires an explicit TestNet or LocalNet
   profile and fails closed when the profile is absent or invalid;
-  `make integration-test-testnet`, `make integration-test-localnet`, and
-  `make integration-test-fnet` are the convenience targets,
+  `make integration-test-testnet` and `make integration-test-localnet` are the
+  convenience targets,
 - `TEST_FUNDING_MNEMONIC` has one authorization meaning on every integration
   network: it is a protocol-native Falcon-1024 recovery mnemonic; the harness
   adds the native-PQ fee contribution before group IDs and emits structured
   `PQsig` envelopes for direct fixture transactions,
 - LocalNet setup uses a KMD Ed25519 account only as a bootstrap source for a
-  disposable funded native Falcon account; TestNet/FNet use an operator-supplied
-  funded native Falcon account and therefore require a v42-capable network,
+  disposable funded native Falcon account; TestNet uses an operator-supplied
+  funded native Falcon account and therefore requires a v42-capable network,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,
@@ -1817,13 +1827,13 @@ Verification expectations remain:
 
 - HTTP: token auth (`Authorization: aplane <token>`). The one product token
   authenticates `system:product-admin`; handlers use the one product runtime.
-- IPC: passphrase auth. The admin protocol has no target-identity selector and
+- IPC: passphrase auth. The admin protocol has no runtime selector and
   binds to the product runtime after passphrase verification.
-- SSH: dual-factor for tunnel/admin connections. The non-secret identity ID is
-  fixed SSH username `default`. An enrolled public key is verified first, followed by a
-  programmatic mutual HMAC proof of the identity token bound to the accepted
+- SSH: dual-factor for tunnel/admin connections. The fixed non-secret username
+  is `aplane`. An enrolled public key is verified first, followed by a
+  programmatic mutual HMAC proof of the product token bound to the accepted
   SSH host key and fresh client/server nonces. Token provisioning remains a
-  key-only, operator-approved exception using `request-token:default`.
+  key-only, operator-approved exception using `request-token`.
 
 ## Approval Model
 
@@ -1866,11 +1876,11 @@ Architecturally:
 7. `/sign` and `/plan` share canonical group-shaping rules.
 8. Plugins are process-isolated with no direct keystore access.
 9. Offline keystore mutations (`apstore`) are guarded by the store lock, not transport-specific liveness probes.
-10. Durable signer state remains rooted at `identities/default/`; request and
-    runtime models do not expose an identity selector.
+10. Durable signer state is rooted at `identities/default/`; request and
+    runtime models do not expose a runtime selector.
 11. Product UI/docs are single-operator and single-signing-identity.
 12. Exactly one product runtime is constructed, and an extra direct entry under
-    `identities/` fails startup before identity secrets are consumed.
+    `identities/` fails startup before product-store secrets are consumed.
 13. File mutations and watcher reloads share the product store mutation lock.
 14. Pure shell binaries register only client-safe providers; binaries that own
     admin, store mutation, or local signer composition (`apsigner`, `apconsole`,
@@ -1966,7 +1976,7 @@ Product-level boundaries:
 | Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_GENERATIONS.md` |
 | Rotation Inventory | `internal/rotationinventory/*.go`, `internal/crypto/term_envelope.go`, `internal/genstore/records.go`, `internal/genstore/validate.go`, `docs/PHASE3_ONBOARDING.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
-| Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
+| Product Runtime | `internal/signerapp/productruntime/runtime.go`, `internal/signerapp/productruntime/config.go` |
 | Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `docs/RELEASE_NOTES.md`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
 
 ## Backup and Restore Ownership
@@ -1998,10 +2008,10 @@ check/sign/verify, private-store permission migration, offline generation
 pruning and key inventory, and `rebuild` replacement-keystore rescue. Managed
 backup import publication and export bytes are streamed through authenticated
 admin transport. Imports are capped
-at 1 GiB, only one incomplete import exists per identity, and startup removes
+at 1 GiB, only one incomplete import exists for the product store, and startup removes
 unpublished transfer residue. Archive chunk reads require unlocked or recovery
-state but do not take the identity mutation lock.
-Offline rebuild is deliberately distinct: it requires an absent identity,
+state but do not take the store mutation lock.
+Offline rebuild is deliberately distinct: it requires an absent product store,
 creates a new keyring and node-role integrity state, and commits the restored
 credentials as the first generation through `genstore.Mint`; it bypasses the
 live daemon, admin authorization, and durable audit path. The wire and on-disk

@@ -55,7 +55,7 @@ teal: |
   int 1
 `, family)))
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		signingArgs := []keys.StoredSigningArg{{
 			Name:       "preimage",

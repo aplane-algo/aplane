@@ -130,7 +130,7 @@ func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight`,
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \`,
 		`' > "$SERVICE_DEST"`,
-		`for f in "$DATA_DIR"/identities/*/passphrase.cred`,
+		`cred_file="$DATA_DIR/identities/default/passphrase.cred"`,
 	)
 	for _, forbidden := range []string{
 		`chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"`,
@@ -179,25 +179,6 @@ func TestGeneratedEnvironmentPreservesConfiguredIPCPath(t *testing.T) {
 	}
 	if strings.Contains(installer, "read_top_level_string") {
 		t.Error("install.sh still parses ipc_path independently of the Go resolver")
-	}
-}
-
-func TestInstallerGeneratedConfigsIncludeFNet(t *testing.T) {
-	root := repositoryRoot(t)
-	installer := readTextFile(t, filepath.Join(root, "install.sh"))
-
-	const endpoint = "https://fnet-api.4160.nodely.dev"
-	if got := strings.Count(installer, endpoint); got != 3 {
-		t.Fatalf("install.sh contains %d FNet algod endpoints; want one in each of the 3 generated configs", got)
-	}
-
-	const genesis = `genesis_hash: "kUt08LxeVAAGHnh4JoAoAMM9ql/hBwSoiFtlnKNeOxA="`
-	if got := strings.Count(installer, genesis); got != 1 {
-		t.Fatalf("install.sh contains %d FNet genesis mappings; want 1 in the signer config", got)
-	}
-
-	if got := strings.Count(installer, "  - fnet\n"); got != 2 {
-		t.Fatalf("install.sh contains %d FNet client allow-list entries; want 2", got)
 	}
 }
 

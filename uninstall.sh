@@ -847,7 +847,7 @@ if [ "$DATA_DIR_RETAINED" = "1" ]; then
         echo "  Contents:"
         while IFS= read -r entry; do
             case "$entry" in
-                identities)                       note="signing keys, per-identity unlock material" ;;
+                identities)                       note="signing keys and product-store unlock material" ;;
                 backups)                          note="encrypted backup tarballs" ;;
                 library)                          note="LogicSig template library" ;;
                 audit.log)                        note="audit trail" ;;
@@ -880,8 +880,8 @@ if [ "$DATA_DIR_RETAINED" = "1" ]; then
                             passphrase.cred)  sub_note="systemd-creds passphrase (host-bound TPM2/host key)"
                                               HAS_SYSTEMD_CREDS=1 ;;
                             unlock.yaml)      sub_note="passphrase helper configuration" ;;
-                            config.yaml)      sub_note="identity configuration" ;;
-                            .ssh)             sub_note="per-identity SSH keys" ;;
+                            config.yaml)      sub_note="product runtime configuration" ;;
+                            .ssh)             sub_note="product SSH keys" ;;
                             *)                sub_note="" ;;
                         esac
                         if [ -n "$sub_note" ]; then
@@ -904,8 +904,8 @@ if [ "$HAS_SYSTEMD_CREDS" = "1" ]; then
     echo ""
     echo "  Note: passphrase.cred is encrypted to this host's TPM2/host key, but the"
     echo "  systemd unit's LoadCredentialEncrypted= binding was removed with the unit."
-    echo "  On reinstall, re-run 'appass set systemd-creds' to rebind it (or the new"
-    echo "  installer should detect the existing .cred and rebind automatically)."
+    echo "  On reinstall, the installer should detect the existing .cred and rebind it."
+    echo "  If needed, run 'sudo appass -d $DATA_DIR' and select Systemd credentials."
 fi
 if [ "$DATA_DIR_RETAINED" = "1" ]; then
     echo ""

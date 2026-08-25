@@ -6,13 +6,12 @@ package rest
 import (
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/version"
 )
 
-func (s Service) Health(ir *identity.Runtime, sshEnabled, ipcEnabled bool) *signerapi.HealthResponse {
+func (s Service) Health(ir *productruntime.Runtime, sshEnabled, ipcEnabled bool) *signerapi.HealthResponse {
 	status := "healthy"
 	locked := false
 	readyForSigning := false
@@ -35,18 +34,16 @@ func (s Service) Health(ir *identity.Runtime, sshEnabled, ipcEnabled bool) *sign
 	}
 }
 
-func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
+func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 	state := "unknown"
 	locked := true
 	readyForSigning := false
 	keyCount := 0
 	keysetRevision := uint64(0)
 	approvalWaitSeconds := int64(0)
-	identityID := ""
 	nodeRole := ""
 
 	if ir != nil {
-		identityID = productmode.IdentityID
 		nodeRole = string(ir.NodeRole())
 		state = ir.GetState().String()
 		locked = !ir.IsUnlocked()
@@ -57,7 +54,6 @@ func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
 	}
 
 	return &signerapi.StatusResponse{
-		IdentityID:          identityID,
 		NodeRole:            nodeRole,
 		ProtocolVersion:     signerapi.CurrentProtocolVersion(),
 		BuildVersion:        version.String(),

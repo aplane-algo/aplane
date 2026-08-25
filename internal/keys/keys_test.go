@@ -70,7 +70,7 @@ func testEd25519Key(t *testing.T) (keyJSON []byte, address string) {
 	return keyJSON, address
 }
 
-// writeKeyFile writes key JSON to the identity-scoped keys directory, optionally encrypted.
+// writeKeyFile writes key JSON to the product-store keys directory, optionally encrypted.
 func writeKeyFile(t *testing.T, paths storepaths.Paths, address string, keyJSON, masterKey []byte) string {
 	return writeManagedCredentialFile(t, paths, address+AccountKeyExtension, keyJSON, masterKey)
 }

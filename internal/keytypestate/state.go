@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package keytypestate owns the identity-scoped key type state record format
+// Package keytypestate owns the product-store key type state record format
 // and primitive read, write, delete, and unused-key query operations.
 //
-// Records in this package control identity-local generation and discovery only.
+// Records in this package control product-store generation and discovery only.
 // They are not signing authority; existing keys sign from their key files.
 // Feature-level mutation must route through templatelibrary; callers of the
 // primitive writers are responsible for the live identity-mutation lock or an

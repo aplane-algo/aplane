@@ -74,7 +74,7 @@ func TestNodeRolePaths(t *testing.T) {
 	}
 }
 
-func TestRotationPathsAreIdentityScoped(t *testing.T) {
+func TestRotationPathsAreWithinProductStore(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
 	if got, want := paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc"); got != want {
@@ -85,7 +85,7 @@ func TestRotationPathsAreIdentityScoped(t *testing.T) {
 	}
 }
 
-func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
+func TestKeyTypePathsAreWithinProductStore(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	wantDir := filepath.Join("/tmp/test-keystore", "identities", "default", "keytypes")
 	if gotDir := paths.LegacyKeyTypeRecordsDir(); gotDir != wantDir {
@@ -100,7 +100,7 @@ func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 	}
 }
 
-func TestDeletedPathsAreIdentityScoped(t *testing.T) {
+func TestDeletedPathsAreWithinProductStore(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
 	if got, want := paths.DeletedDir(), filepath.Join(identityDir, "deleted"); got != want {

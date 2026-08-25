@@ -12,7 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 func TestSessionRejectsImportOutsideIPC(t *testing.T) {
@@ -163,7 +163,7 @@ func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 }
 
 func newKeyTransportTestSession(transport string) (*Session, *queueConn, *stubServices) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 	})
@@ -172,7 +172,7 @@ func newKeyTransportTestSession(transport string) (*Session, *queueConn, *stubSe
 	svc := &stubServices{}
 	session := NewSession(conn, SessionDeps{Keys: svc})
 	session.SetTransportInfo(transport, "remote")
-	session.Bind(auth.NewDefaultIdentity("test"), ir)
+	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session, conn, svc
 }
 

@@ -31,8 +31,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -59,7 +59,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	tmpDir := t.TempDir()
 
-	// Create identity-scoped keys directory
+	// Create product-store keys directory
 	keysDir := filepath.Join(tmpDir, "identities", "default", "keys")
 	if err := os.MkdirAll(keysDir, 0750); err != nil {
 		t.Fatalf("Failed to create keys dir: %v", err)
@@ -103,14 +103,14 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	}
 	t.Cleanup(func() { _ = auditLog.Close() })
 	server := &Signer{
-		nodeFailState: &identity.NodeFailState{},
+		nodeFailState: &productruntime.NodeFailState{},
 		config:        serverConfigForTest(),
 		keyPaths:      keyPaths,
 		dataDir:       tmpDir,
 		auditLog:      auditLog,
 	}
 
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 
 		KeyStore: ks,
@@ -122,8 +122,8 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	// All stores are generational in this release: mint the first
 	// generation the way initialize does before any test writes keys.
 	convertTestSignerToGenerational(t, server)
-	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.identityBuildHooks())
-	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
+	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.productBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, server.productBuildHooks())
 	ir.SetPolicy(initialPolicy)
 	ir.SetUnlocked()
 
@@ -443,7 +443,7 @@ func TestAdminGenerateEd25519IsImmediatelyVisibleInKeyCache(t *testing.T) {
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -479,7 +479,7 @@ func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	keyFile, err := ir.FindKeyFile(resp.Address)
 	if err != nil {
 		t.Fatalf("generated address %s not present in key cache immediately after generate: %v", resp.Address, err)
@@ -762,7 +762,7 @@ func TestAdminGenerateInvalidKeyType(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateRejectsGloballyRegisteredGenericTemplateNotInstalledForIdentity(t *testing.T) {
+func TestAdminGenerateRejectsGloballyRegisteredGenericTemplateNotInstalledForRuntime(t *testing.T) {
 	family := fmt.Sprintf("admin-uninstalled-generic-%d", time.Now().UnixNano())
 	keyType := family + "-v1"
 	registerGenericTemplateProviderForTest(t, renderGenericTemplateYAML(family, 1, "Admin Uninstalled Generic", "global registry only"))
@@ -1034,7 +1034,7 @@ func TestAdminGenerateThenDeleteEd25519(t *testing.T) {
 	}
 
 	// Verify key is gone
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	_, err := ir.FindKeyFile(address)
 	if err == nil {
 		t.Error("Key should not exist after deletion")
@@ -1071,7 +1071,7 @@ func TestAdminGenerateMultipleEd25519(t *testing.T) {
 // reloadKeysForTest rescans the keys directory to update in-memory maps.
 // This simulates what the file watcher does in production.
 func reloadKeysForTest(server *Signer) error {
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	if ir == nil {
 		return fmt.Errorf("identity not found")
 	}

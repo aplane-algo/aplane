@@ -7,8 +7,6 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 func TestTokenAuthenticator_Success(t *testing.T) {
@@ -26,10 +24,10 @@ func TestTokenAuthenticator_Success(t *testing.T) {
 	switch {
 	case identity == nil:
 		t.Fatal("expected identity, got nil")
-	case identity.ID != productmode.IdentityID:
-		t.Errorf("expected ID %q, got %q", productmode.IdentityID, identity.ID)
-	case identity.Type != "service":
-		t.Errorf("expected type 'service', got %q", identity.Type)
+	case identity.ID != productTokenCredentialID:
+		t.Errorf("expected ID %q, got %q", productTokenCredentialID, identity.ID)
+	case identity.Type != "credential":
+		t.Errorf("expected type 'credential', got %q", identity.Type)
 	case identity.Method != "aplane-token":
 		t.Errorf("expected method 'aplane-token', got %q", identity.Method)
 	}

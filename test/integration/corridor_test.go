@@ -740,7 +740,6 @@ func TestResolveCorridorTestAssetCreatesOnlyWhenAbsent(t *testing.T) {
 	}
 
 	for _, network := range []string{
-		harness.IntegrationNetworkFNet,
 		harness.IntegrationNetworkTestnet,
 		harness.IntegrationNetworkLocalnet,
 	} {

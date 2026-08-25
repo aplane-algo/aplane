@@ -18,7 +18,6 @@ func TestPinnedLogicSigConsensusContracts(t *testing.T) {
 		version protocol.ConsensusVersion
 	}{
 		{name: "v42", version: protocol.ConsensusV42},
-		{name: "fnet5 v42 deployment", version: protocol.ConsensusVFnet5},
 	}
 
 	for _, test := range tests {

@@ -139,8 +139,8 @@ func (p *componentGatePrompt) approvalService(audit *testAuditLogger) *ApprovalS
 
 func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, cfg *policy.Config, guardedAccount string) *Service {
 	return &Service{
-		Planner: &Planner{Snapshot: func() PlannerIdentitySnapshot {
-			return PlannerIdentitySnapshot{
+		Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+			return PlannerRuntimeSnapshot{
 				KeyFiles: map[string]string{guardedAccount: "guarded.key"},
 				KeyTypes: map[string]string{guardedAccount: keytypes.GuardedFalcon1024Sentry1024V1},
 			}

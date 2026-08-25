@@ -61,7 +61,7 @@ const (
 	ErrCodeUnlockFailed         = "unlock_failed"
 	ErrCodeInvalidRequest       = "invalid_request"
 	ErrCodeUnknownMessageType   = "unknown_message_type"
-	ErrCodeNoIdentityBound      = "no_identity_bound"
+	ErrCodeNoRuntimeBound       = "no_runtime_bound"
 	ErrCodeAuthorizationDenied  = "authorization_denied"
 	ErrCodeSignerLocked         = "signer_locked"
 	ErrCodeKeyNotFound          = "key_not_found"
@@ -95,7 +95,7 @@ const (
 	// the operator resolves the store from recovery.
 	ResultCodeRecoveryBlocked = "recovery_blocked"
 
-	ResultCodeIdentityBusy         = "identity_busy"
+	ResultCodeStoreBusy            = "store_busy"
 	ResultCodeListFailed           = "list_failed"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"
 	ResultCodeInstallFailed        = "install_failed"
@@ -143,8 +143,8 @@ func IPCErrorCode(errMsg string) string {
 		"invalid unlock message",
 		"invalid key details message":
 		return ErrCodeInvalidRequest
-	case "no identity bound to session":
-		return ErrCodeNoIdentityBound
+	case "no product runtime bound to session":
+		return ErrCodeNoRuntimeBound
 	case "authorization denied":
 		return ErrCodeAuthorizationDenied
 	case "signer is locked":

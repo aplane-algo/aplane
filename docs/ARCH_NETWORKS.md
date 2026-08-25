@@ -160,8 +160,7 @@ This prevents a display string from becoming the trust anchor for policy.
 
 This APlane release implements one compiled authorization contract: consensus
 v42. Client transaction construction validates algod's reported consensus
-identifier before using suggested parameters; FNet's `fnet5` identifier is an
-explicit alias for the same v42 contract. First-party planning and executable
+identifier before using suggested parameters. First-party planning and executable
 workflows refresh that validation before asking apsigner to plan, requesting
 signatures, or submitting/simulating pre-signed bytes, so prebuilt and
 plugin-produced groups cannot bypass it. A successful SuggestedParams check is

@@ -4,7 +4,6 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -16,7 +15,7 @@ func TestSSHAdminSessionBindsProductRuntimeInDaemon(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
@@ -32,13 +31,7 @@ func TestSSHAdminSessionBindsProductRuntimeInDaemon(t *testing.T) {
 	if !productRuntime.IsUnlocked() {
 		t.Fatal("product runtime was not unlocked")
 	}
-	if session.TargetIdentityID() != productmode.IdentityID {
-		t.Fatalf("TargetIdentityID() = %q, want product identity", session.TargetIdentityID())
-	}
 	sessionCtx := session.SessionContext()
-	if sessionCtx.TargetIdentityID != productmode.IdentityID {
-		t.Fatalf("SessionContext().TargetIdentityID = %q, want product identity", sessionCtx.TargetIdentityID)
-	}
 	if sessionCtx.Transport != adminserver.TransportSSH {
 		t.Fatalf("SessionContext().Transport = %q, want %q", sessionCtx.Transport, adminserver.TransportSSH)
 	}
@@ -59,13 +52,13 @@ func TestSSHAdminSessionBindsProductRuntimeInDaemon(t *testing.T) {
 	}
 }
 
-func TestSSHAdminSessionRejectsStaleIdentitySelectorInDaemon(t *testing.T) {
+func TestSSHAdminSessionRejectsUnknownAuthFieldInDaemon(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	productRuntime := server.productIdentityRuntime()
+	productRuntime := server.productRuntime()
 	productRuntime.Lock()
-	authLine := `{"kind":"request","type":"auth","identity_id":"other","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","unexpected_selector":"other","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
@@ -75,10 +68,10 @@ func TestSSHAdminSessionRejectsStaleIdentitySelectorInDaemon(t *testing.T) {
 		t.Fatal("Authenticate() = true, want false")
 	}
 	if productRuntime.IsUnlocked() {
-		t.Fatal("product runtime was unlocked after stale selector rejection")
+		t.Fatal("product runtime was unlocked after unknown-field rejection")
 	}
 	if session.BoundRuntime() != nil {
-		t.Fatal("BoundRuntime() != nil after rejected SSH identity mismatch")
+		t.Fatal("BoundRuntime() != nil after rejected SSH auth message")
 	}
 
 	msgs := parseJSONLines(t, conn.writes.Bytes())

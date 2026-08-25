@@ -151,7 +151,7 @@ func TestServiceAuditProvisionedDelegates(t *testing.T) {
 	if audit.sshFingerprint != "SHA256:test" || audit.remoteAddr != "10.0.0.1" {
 		t.Fatalf("audit = %#v", audit)
 	}
-	if gotLog != `token provisioned for identity "default" to 10.0.0.1 (key: SHA256:test)` {
+	if gotLog != `token provisioned to 10.0.0.1 (key: SHA256:test)` {
 		t.Fatalf("log format = %q", gotLog)
 	}
 }

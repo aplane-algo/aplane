@@ -27,7 +27,7 @@ The project uses a layered testing approach:
 3. **Architecture Tests**: Layering, guarded-surface, signing-flow,
    bounded-vocabulary, key-type inventory, managed-credential, and
    witness-boundary guards under `test/arch`
-4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile: public TestNet, native-PQ FNet, or a running AlgoKit LocalNet (Go test framework)
+4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile: public TestNet or a running AlgoKit LocalNet (Go test framework)
 5. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
 6. **REPL Tests**: Interactive command-line testing for user workflows (manual)
 
@@ -298,19 +298,6 @@ APLANE_INTEGRATION_NETWORK=localnet make integration-test
 APLANE_INTEGRATION_NETWORK=localnet ./test/setup-test-env.sh
 ```
 
-FNet has both a focused native Falcon-1024 authorization target and a full-suite
-profile. Both use the native Falcon `TEST_FUNDING_MNEMONIC` contract:
-
-```bash
-TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" \
-make native-falcon-fnet-test
-
-# Run the same general integration suite used on TestNet, plus the FNet-native
-# tests. TEST_FUNDING_MNEMONIC must identify a native Falcon account funded on
-# FNet.
-TEST_FUNDING_MNEMONIC="your funded native Falcon mnemonic" make integration-test-fnet
-```
-
 This creates `/tmp/aplane-test-env/` containing:
 
 ```
@@ -379,12 +366,10 @@ All per-test temp directories (binary builds, apshell work dirs) use Go's `t.Tem
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet`, `localnet`, or `fnet` | Always, before setup |
-| `TEST_FUNDING_MNEMONIC` | 25-word native Falcon-1024 funding mnemonic. Provided by the operator on TestNet/FNet; generated and funded from KMD on LocalNet. | TestNet/FNet input; LocalNet auto |
+| `APLANE_INTEGRATION_NETWORK` | Integration profile: `testnet` or `localnet` | Always, before setup |
+| `TEST_FUNDING_MNEMONIC` | 25-word native Falcon-1024 funding mnemonic. Provided by the operator on TestNet; generated and funded from KMD on LocalNet. | TestNet input; LocalNet auto |
 | `ALGOD_URL` | Algod endpoint. Defaults by profile. | Optional |
 | `ALGOD_TOKEN` | Algod token. Defaults empty for testnet and the AlgoKit token for localnet. | Optional |
-| `APLANE_FNET_ALGOD_URL` | FNet algod override; defaults to the Nodely FNet endpoint. | Optional |
-| `APLANE_FNET_INDEXER_URL` | FNet indexer override; defaults to the Nodely FNet endpoint. | Optional |
 | `APLANE_LOCALNET_ALGOD_URL` | LocalNet algod endpoint fallback when `ALGOD_URL` is unset. | Optional localnet |
 | `APLANE_LOCALNET_KMD_URL` | LocalNet KMD endpoint. | Optional localnet |
 | `APLANE_LOCALNET_TOKEN` | LocalNet algod/KMD token fallback when `ALGOD_TOKEN` is unset. | Optional localnet |
@@ -402,11 +387,6 @@ the only required user-provided variable is
 defaults and a funded account in the default KMD wallet. Override the secondary
 localnet variables only when your LocalNet uses nonstandard endpoints, token, or
 wallet settings.
-
-For either FNet target, set `TEST_FUNDING_MNEMONIC` to a native Falcon account
-funded on FNet. The same native address may be used on another v42 ledger, but
-it must hold funds independently there. Never use the mnemonic for production
-funds.
 
 Corridor integration reuses the oldest clean `Corridor Test Asset` (`CORR`,
 total 10) created by the funding account. If none exists, the test creates one
@@ -434,10 +414,6 @@ make integration-test
 
 # LocalNet prerequisite: AlgoKit LocalNet already running
 APLANE_INTEGRATION_NETWORK=localnet make integration-test
-
-# Full FNet suite, including native Falcon/v42 acceptance
-TEST_FUNDING_MNEMONIC="your native Falcon mnemonic funded on FNet" \
-make integration-test-fnet
 
 # Show live test progress during a full run
 APLANE_INTEGRATION_NETWORK=testnet make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v'
@@ -479,6 +455,20 @@ integration suite. The SDK bridge reuses `.env.test`, starts a temporary
 `apsigner` from the generated fixture, runs `make integration-test` in the SDK
 repo, and stops the signer afterward. If `APLANE_SDKS_REPO` is unset, SDK
 integration is skipped and the ordinary APlane integration flow is unchanged.
+
+The SDK integration bridge checks the SDK language-specific test prerequisites
+before starting the signer. If the SDK checkout contains the Python SDK, pytest
+is required. Install the Python SDK development dependencies with:
+
+```bash
+cd ~/aplanesdk/python
+python3 -m pip install -e '.[dev]'
+```
+
+The TypeScript SDK integration suite similarly requires Node.js, npm, and the
+TypeScript SDK's installed dependencies (`npm ci` in `~/aplanesdk/typescript`).
+These prerequisites are not required when `APLANE_SDKS_REPO` is unset, because
+the external SDK integration phase is skipped.
 
 Full testnet integration runs take about 1000 seconds. This is driven
 largely by Algorand block inclusion time: each confirmed transaction group waits
@@ -791,9 +781,6 @@ installer gate with comparable metadata.
 # Four-node local build using rootless APlane installs
 make docker-local-test
 
-# Three APlane containers using public FNet and host-side native Falcon funding
-TEST_FUNDING_MNEMONIC="your funded native Falcon mnemonic" make docker-fnet-test
-
 # Four-node test using published APlane and SDK packages
 make docker-local-release-test
 
@@ -808,15 +795,6 @@ LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
 sentry enrollment and discovery, guarded signing, Corridor allowlist and
 external-admin behavior, and guarded preparation/signing through a local Python
 SDK checkout.
-
-`make docker-fnet-test` selects the FNet profile of the same script. It starts
-only the signer, sentry, and client/admin containers, validates the configured
-FNet genesis and `fnet5` consensus through the public algod, and authorizes
-fixture funding on the host with `TEST_FUNDING_MNEMONIC`. The mnemonic is not
-copied into a container or written to generated configuration. Override the
-default endpoint with `APLANE_FNET_ALGOD_URL` and
-`APLANE_FNET_ALGOD_TOKEN`. Each run creates three ephemeral accounts and funds
-each with 0.15 ALGO; those test funds are not automatically recovered.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
@@ -1184,7 +1162,7 @@ make security-analysis # All local security analyzers, including seed phrase det
 **Integration Tests**
 
 1. **"APLANE_INTEGRATION_NETWORK must be set"**
-   - Set `APLANE_INTEGRATION_NETWORK=testnet` or `APLANE_INTEGRATION_NETWORK=localnet`, or use `make integration-test-fnet`
+   - Set `APLANE_INTEGRATION_NETWORK=testnet` or `APLANE_INTEGRATION_NETWORK=localnet`
    - The setup script intentionally has no implicit default.
 
 2. **"TEST_FUNDING_MNEMONIC not set"**
@@ -1193,7 +1171,7 @@ make security-analysis # All local security analyzers, including seed phrase det
    - For localnet, do not set this manually; run setup with `APLANE_INTEGRATION_NETWORK=localnet` so KMD bootstraps it.
 
 3. **"Keystore not initialized"**
-   - Run `APLANE_INTEGRATION_NETWORK=<testnet|localnet> make integration-test` or `make integration-test-fnet` to regenerate the test environment and run the suite
+   - Run `APLANE_INTEGRATION_NETWORK=<testnet|localnet> make integration-test` to regenerate the test environment and run the suite
    - The script initializes the keystore by piping the generated test passphrase to `apstore initialize`
 
 4. **"failed to connect to algod"**
@@ -1265,7 +1243,6 @@ Day-to-day shortcuts:
 | Staged release binaries | `make store-release-drill STORE_RELEASE_BIN_DIR=/path/to/bin` |
 | Integration on testnet | `APLANE_INTEGRATION_NETWORK=testnet TEST_FUNDING_MNEMONIC=... make integration-test` |
 | Integration on LocalNet | `APLANE_INTEGRATION_NETWORK=localnet make integration-test` |
-| Integration on FNet | `TEST_FUNDING_MNEMONIC=... make integration-test-fnet` |
 | Focused integration run | add `INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestX'` |
 | Reuse existing fixture | `make integration-test-reuse` |
 | Coverage HTML | `go test -coverprofile=coverage.out $PKGS && go tool cover -html=coverage.out` |

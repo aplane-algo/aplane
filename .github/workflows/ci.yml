@@ -44,9 +44,6 @@ jobs:
     name: Test
     needs: lint
     runs-on: ubuntu-latest
-    env:
-      # TODO: Remove this override after TestNet activates the v42 contract.
-      TEAL_COMPILE_ALGOD_URL: https://fnet-api.4160.nodely.dev
     steps:
       - uses: actions/checkout@v7
 

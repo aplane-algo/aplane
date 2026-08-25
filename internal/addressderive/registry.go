@@ -25,8 +25,8 @@ var globalRegistry = &registry{
 
 // Register registers an address deriver for a process-global key type name.
 // Identity-private provider namespaces are not supported. Existing keys are
-// isolated by identity-owned keystores; generation and inventory are gated by
-// identity-local activation and template install state before derivation.
+// isolated by product keystore; generation and inventory are gated by
+// product-store activation and template install state before derivation.
 func Register(keyType string, deriver Deriver) {
 	globalRegistry.mu.Lock()
 	defer globalRegistry.mu.Unlock()

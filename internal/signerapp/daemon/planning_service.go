@@ -41,10 +41,10 @@ type signerPlannerDeps struct {
 	signer *Signer
 }
 
-func (d signerPlannerDeps) Snapshot() signersigning.PlannerIdentitySnapshot {
+func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 	ir := d.signer.runtime
 	if ir == nil {
-		return signersigning.PlannerIdentitySnapshot{}
+		return signersigning.PlannerRuntimeSnapshot{}
 	}
 	// KeyIndexSnapshot deep-clones per call, so the snapshot (including its
 	// Parameters maps and bounded metadata) is owned by this request.
@@ -57,7 +57,7 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerIdentitySnapshot {
 			LogicSigResources:    metadata.LogicSigResources,
 		}
 	}
-	return signersigning.PlannerIdentitySnapshot{
+	return signersigning.PlannerRuntimeSnapshot{
 		Revision:    snapshot.Revision,
 		KeyFiles:    snapshot.KeyFiles,
 		KeyTypes:    snapshot.KeyTypes,

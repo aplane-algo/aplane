@@ -32,7 +32,7 @@ var storeOwningPackages = []string{
 	"internal/rotationinventory",
 	"internal/storepass",
 	"internal/signerapp/backupadmin",
-	"internal/signerapp/identity",
+	"internal/signerapp/productruntime",
 	"internal/signerapp/daemon",
 	"cmd/apstore",
 }
@@ -134,8 +134,8 @@ func permittedNonStoreHardlink(path, root string, file *ast.File, pos token.Pos)
 func TestLegacyRootStorePathsStayRecoveryOnly(t *testing.T) {
 	root := filepath.Join("..", "..")
 	allowed := map[string]struct{}{
-		filepath.ToSlash("internal/signerapp/identity/runtime.go"): {},
-		filepath.ToSlash("internal/storepaths/paths.go"):           {},
+		filepath.ToSlash("internal/signerapp/productruntime/runtime.go"): {},
+		filepath.ToSlash("internal/storepaths/paths.go"):                 {},
 	}
 	legacySelectors := map[string]struct{}{
 		"LegacyKeysDir":           {},

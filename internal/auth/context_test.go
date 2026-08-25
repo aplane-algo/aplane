@@ -6,8 +6,6 @@ package auth
 import (
 	"context"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 func TestContextWithIdentity_RoundTrip(t *testing.T) {
@@ -39,14 +37,14 @@ func TestIdentityFromContext_EmptyContext(t *testing.T) {
 	}
 }
 
-func TestNewDefaultIdentity(t *testing.T) {
-	id := NewDefaultIdentity("ipc-passphrase")
+func TestNewProductIdentity(t *testing.T) {
+	id := NewProductIdentity("ipc-passphrase")
 
-	if id.ID != productmode.IdentityID {
-		t.Errorf("expected ID %q, got %q", productmode.IdentityID, id.ID)
+	if id.ID != SystemProductAdminPrincipalID {
+		t.Errorf("expected ID %q, got %q", SystemProductAdminPrincipalID, id.ID)
 	}
-	if id.Type != "service" {
-		t.Errorf("expected Type 'service', got %q", id.Type)
+	if id.Type != "system" {
+		t.Errorf("expected Type 'system', got %q", id.Type)
 	}
 	if id.Method != "ipc-passphrase" {
 		t.Errorf("expected Method 'ipc-passphrase', got %q", id.Method)

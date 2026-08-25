@@ -10,7 +10,7 @@ import (
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -55,7 +55,7 @@ type UnlockPlan struct {
 }
 
 // ValidateAndBuildUnlockPlan validates every startup precondition, including
-// the single-product identity layout, before resolving a passphrase source.
+// the single-product-store layout, before resolving a passphrase source.
 // Keeping that order in one operation prevents an invalid store layout from
 // invoking an operator-configured passphrase helper.
 func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
@@ -74,8 +74,8 @@ func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassph
 // ResolveUnlockConfig returns the product-store passphrase command config.
 // It checks the product unlock.yaml first, then falls back to the
 // process-global config for backward compatibility.
-func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
-	unlockCfg, err := identity.LoadUnlockConfig(dataDir)
+func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*unlockconfig.UnlockConfig, error) {
+	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func ResolveUnlockConfig(dataDir string, config *serverconfig.ServerConfig) (*id
 	}
 
 	if len(config.PassphraseCommandArgv) > 0 {
-		return &identity.UnlockConfig{
+		return &unlockconfig.UnlockConfig{
 			PassphraseCommandArgv: config.PassphraseCommandArgv,
 			PassphraseCommandEnv:  config.PassphraseCommandEnv,
 		}, nil

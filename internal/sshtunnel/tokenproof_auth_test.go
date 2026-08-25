@@ -113,7 +113,7 @@ func TestClientRejectsInvalidServerTokenProof(t *testing.T) {
 func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 	_, observedHostKey := generateClientKey(t)
 	_, proofHostKey := generateClientKey(t)
-	authState := newTokenProofClientAuth("default", "test-token")
+	authState := newTokenProofClientAuth("test-token")
 	defer authState.clear()
 	if err := authState.captureHostKey(observedHostKey); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Identity:    "default",
+		Username:    productSSHUsername,
 		HostKeyHash: proofHostHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -161,13 +161,13 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 	}
 }
 
-func TestClientUsesProductIdentityBeforeDial(t *testing.T) {
+func TestClientConnectWithKeyReturnsDialError(t *testing.T) {
 	_, _, identityPath := generateClientIdentityFile(t, t.TempDir())
 	client := NewClient("127.0.0.1", 1, 0, 0, identityPath, filepath.Join(t.TempDir(), "known_hosts"))
 	client.SetAPIToken("test-token")
 	err := client.ConnectWithKey(context.Background())
-	if err == nil || strings.Contains(err.Error(), "identity ID required") {
-		t.Fatalf("ConnectWithKey() error = %v, want a dial failure after selecting the product identity", err)
+	if err == nil {
+		t.Fatal("ConnectWithKey() error = nil, want dial failure")
 	}
 }
 
@@ -175,17 +175,16 @@ func TestVerifiedPublicKeyTransitionsOnlyNormalAuthToTokenProof(t *testing.T) {
 	srv, _ := testServer(t)
 	permissions := &ssh.Permissions{Extensions: map[string]string{
 		"auth_method":     "publickey_pending_token_proof",
-		"identity_id":     "default",
 		"key_fingerprint": "SHA256:test",
 	}}
-	_, err := srv.handleVerifiedPublicKeyAuth(testConnMetadata{user: "default"}, nil, permissions, "")
+	_, err := srv.handleVerifiedPublicKeyAuth(testConnMetadata{user: productSSHUsername}, nil, permissions, "")
 	partial, ok := err.(*ssh.PartialSuccessError)
 	if !ok || partial.Next.KeyboardInteractiveCallback == nil {
 		t.Fatal("verified normal key did not require keyboard-interactive token proof")
 	}
 
 	provisioning := &ssh.Permissions{Extensions: map[string]string{"auth_method": "token_provisioning"}}
-	got, err := srv.handleVerifiedPublicKeyAuth(testConnMetadata{user: "request-token:default"}, nil, provisioning, "")
+	got, err := srv.handleVerifiedPublicKeyAuth(testConnMetadata{user: tokenRequestSSHUsername}, nil, provisioning, "")
 	if err != nil || got != provisioning {
 		t.Fatalf("verified provisioning key = (%#v, %v), want key-only success", got, err)
 	}

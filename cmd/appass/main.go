@@ -7,7 +7,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -20,40 +22,45 @@ import (
 
 var currentEUID = os.Geteuid
 
+type appassOptions struct {
+	dataDir string
+	version bool
+	check   bool
+}
+
+func parseAppassOptions(args []string) (appassOptions, error) {
+	var opts appassOptions
+	flags := flag.NewFlagSet("appass", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&opts.dataDir, "d", "", "signer data directory")
+	flags.BoolVar(&opts.version, "version", false, "print version")
+	flags.BoolVar(&opts.check, "check", false, "check execution mode")
+	if err := flags.Parse(args); err != nil {
+		return appassOptions{}, err
+	}
+	if flags.NArg() != 0 {
+		return appassOptions{}, fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	return opts, nil
+}
+
 func main() {
-	args := os.Args[1:]
-	if err := rejectRemovedIdentityFlag(args); err != nil {
+	opts, err := parseAppassOptions(os.Args[1:])
+	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
 
-	// Handle --version early
-	for _, arg := range args {
-		if arg == "--version" || arg == "-version" {
-			fmt.Printf("appass %s\n", version.String())
-			os.Exit(0)
-		}
+	if opts.version {
+		fmt.Printf("appass %s\n", version.String())
+		return
 	}
 
 	// --check runs the mode-detection / ownership gate non-interactively and
 	// exits. No TUI launch, no signer-stopped requirement. Used by the
 	// docker-systemd smoke test to assert systemd-install consistency.
-	var checkMode bool
-	for _, arg := range args {
-		if arg == "--check" || arg == "-check" {
-			checkMode = true
-			break
-		}
-	}
-
-	// Parse flags manually.
-	var dataDir string
-	for i := 0; i < len(args)-1; i++ {
-		switch args[i] {
-		case "-d":
-			dataDir = args[i+1]
-		}
-	}
+	checkMode := opts.check
+	dataDir := opts.dataDir
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(dataDir)
 	if err != nil {
@@ -149,15 +156,6 @@ func appassInvocation(useSudo bool, dataDir string) string {
 		parts[i] = shellQuoteArg(parts[i])
 	}
 	return strings.Join(parts, " ")
-}
-
-func rejectRemovedIdentityFlag(args []string) error {
-	for _, arg := range args {
-		if arg == "-identity" || arg == "--identity" || strings.HasPrefix(arg, "-identity=") || strings.HasPrefix(arg, "--identity=") {
-			return fmt.Errorf("-identity is no longer supported; appass manages the product identity")
-		}
-	}
-	return nil
 }
 
 func isShellSafeRune(r rune) bool {

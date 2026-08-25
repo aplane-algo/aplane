@@ -437,7 +437,7 @@ Implementation areas that should remain aligned with this model:
 - `internal/config/client_endpoints.go`
 - `internal/apshellapp/endpoints.go`
 - `internal/policy`
-- `internal/signerapp/identity`
+- `internal/signerapp/productruntime`
 - `internal/signerapp/keyadmin`
 
 High-value test anchors:

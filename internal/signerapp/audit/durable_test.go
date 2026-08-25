@@ -23,9 +23,8 @@ func TestLogCredentialRestoreIntentDurableWritesEntry(t *testing.T) {
 	defer func() { _ = a.Close() }()
 
 	ctx := adminserver.SessionContext{
-		TargetIdentityID: "alice",
-		SessionID:        "admin-session",
-		Transport:        "ipc",
+		SessionID: "admin-session",
+		Transport: "ipc",
 	}
 	if err := a.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", "backup.tar.gz", true); err != nil {
 		t.Fatalf("LogCredentialRestoreIntentDurableContext: %v", err)

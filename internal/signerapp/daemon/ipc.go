@@ -206,7 +206,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 			}
 			boundIR.FailAllPendingApprovals("apadmin disconnected")
 
-			// Lock behavior is driven by the live identity runtime config,
+			// Lock behavior is driven by the live product runtime config,
 			// which should already reflect any stored overrides.
 			if boundIR.Config().LockOnDisconnect() {
 				boundIR.Lock()

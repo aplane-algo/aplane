@@ -99,7 +99,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 }
 
 // TestRegisterClientMarksLibraryVisible pins the "compiled in but gated behind
-// per-identity activation" contract for every library-availability DSA
+// per-store activation" contract for every library-availability DSA
 // provider. Adding a new library-gated provider without a row here is a
 // reviewer-visible omission.
 func TestRegisterClientMarksLibraryVisible(t *testing.T) {

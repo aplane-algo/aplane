@@ -14,8 +14,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -38,15 +36,13 @@ func TestSigningProvidersAreRegistered(t *testing.T) {
 	}
 }
 
-func TestAuditIdentityScopedEventsCarryIdentityID(t *testing.T) {
+func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	logger, err := NewAuditLogger(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = logger.Close() }()
-
-	id := productmode.IdentityID
 
 	logger.LogSignRequest("ADDR", "SENDER", "pay", "send 1 ALGO")
 	logger.LogSignApproved("ADDR", "SENDER", "send 1 ALGO")
@@ -55,7 +51,7 @@ func TestAuditIdentityScopedEventsCarryIdentityID(t *testing.T) {
 	logger.LogKeyReload(5)
 	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
 	logger.LogTokenProvisioned("SHA256:abc", "10.0.0.1")
-	logger.LogAuthFailed(id, "10.0.0.1", "invalid_credentials")
+	logger.LogAuthFailedAttributed("alice", "10.0.0.1", "invalid_credentials")
 	logger.LogSessionConnected("10.0.0.1", "user")
 	logger.LogSessionDisconnected("10.0.0.1", "user")
 	logger.LogStoreInitialized("/data/identities/default")
@@ -74,16 +70,24 @@ func TestAuditIdentityScopedEventsCarryIdentityID(t *testing.T) {
 	}
 
 	for i, line := range lines {
-		var entry AuditEntry
+		var entry map[string]any
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("line %d: unmarshal error: %v", i, err)
 		}
-		if entry.IdentityID != id {
-			t.Errorf("line %d (%s): identity_id = %q, want %q", i, entry.Event, entry.IdentityID, id)
+		if _, ok := entry["identity_id"]; ok {
+			t.Errorf("line %d contains identity_id: %#v", i, entry)
 		}
-		if entry.TargetIdentityID != id {
-			t.Errorf("line %d (%s): target_identity_id = %q, want %q", i, entry.Event, entry.TargetIdentityID, id)
+		if _, ok := entry["target_identity_id"]; ok {
+			t.Errorf("line %d contains target_identity_id: %#v", i, entry)
 		}
+	}
+
+	var keyReload AuditEntry
+	if err := json.Unmarshal([]byte(lines[4]), &keyReload); err != nil {
+		t.Fatalf("decode key reload entry: %v", err)
+	}
+	if keyReload.Event != AuditKeyReload || keyReload.Principal != auth.SystemProductAdminPrincipalID || keyReload.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("key reload attribution = %#v", keyReload)
 	}
 }
 
@@ -127,13 +131,13 @@ func TestAuditSigningAttributionFields(t *testing.T) {
 		t.Fatalf("entry count = %d, want 3", len(entries))
 	}
 
-	if entries[0].TargetIdentityID != productmode.IdentityID || entries[0].RequesterPrincipal != "" || entries[0].ApproverPrincipal != "" || entries[0].Outcome != "requested" {
+	if entries[0].RequesterPrincipal != "" || entries[0].ApproverPrincipal != "" || entries[0].Outcome != "requested" {
 		t.Fatalf("request attribution = %#v", entries[0])
 	}
-	if entries[1].TargetIdentityID != productmode.IdentityID || entries[1].RequesterPrincipal != "" || entries[1].ApproverPrincipal != "" || entries[1].Outcome != "approved" {
+	if entries[1].RequesterPrincipal != "" || entries[1].ApproverPrincipal != "" || entries[1].Outcome != "approved" {
 		t.Fatalf("approval attribution = %#v", entries[1])
 	}
-	if entries[2].TargetIdentityID != productmode.IdentityID || entries[2].RequesterPrincipal != "" || entries[2].ApproverPrincipal != "" || entries[2].Outcome != "rejected" {
+	if entries[2].RequesterPrincipal != "" || entries[2].ApproverPrincipal != "" || entries[2].Outcome != "rejected" {
 		t.Fatalf("rejection attribution = %#v", entries[2])
 	}
 }
@@ -170,10 +174,9 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	ctx := adminserver.SessionContext{
-		SessionID:        "admin-42",
-		TargetIdentityID: "alice",
-		Transport:        adminserver.TransportSSH,
-		RemoteAddr:       "10.0.0.1:2222",
+		SessionID:  "admin-42",
+		Transport:  adminserver.TransportSSH,
+		RemoteAddr: "10.0.0.1:2222",
 		AdminPrincipal: adminserver.SessionPrincipal{
 			ID:     "alice-admin",
 			Type:   "service",
@@ -190,9 +193,6 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
 	for _, entry := range entries {
-		if entry.IdentityID != "alice" || entry.TargetIdentityID != "alice" {
-			t.Fatalf("session identity attribution = %#v", entry)
-		}
 		if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "requester" || entry.ApproverPrincipal != "approver" {
 			t.Fatalf("session principal attribution = %#v", entry)
 		}
@@ -214,11 +214,10 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 
 	ctx := adminserver.SessionContext{
-		SessionID:        "admin-42",
-		TargetIdentityID: "alice",
-		Transport:        adminserver.TransportSSH,
-		RemoteAddr:       "10.0.0.1:2222",
-		AdminPrincipal:   adminserver.SessionPrincipal{ID: "alice-admin"},
+		SessionID:      "admin-42",
+		Transport:      adminserver.TransportSSH,
+		RemoteAddr:     "10.0.0.1:2222",
+		AdminPrincipal: adminserver.SessionPrincipal{ID: "alice-admin"},
 	}
 	logger.LogAuthorizationDenied(ctx, auth.ActionKeysDelete, auth.Resource{
 		Type: "key",
@@ -232,9 +231,6 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	entry := entries[0]
 	if entry.Event != AuditAuthorizationDenied || entry.Outcome != "denied" {
 		t.Fatalf("entry event/outcome = %q/%q, want authorization denied", entry.Event, entry.Outcome)
-	}
-	if entry.IdentityID != "alice" || entry.TargetIdentityID != "alice" {
-		t.Fatalf("entry identity fields = %#v, want alice", entry)
 	}
 	if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "alice-admin" {
 		t.Fatalf("entry principal fields = %#v, want alice-admin", entry)
@@ -273,7 +269,7 @@ func TestHTTPSigningAuditAttributionUsesRequestIdentity(t *testing.T) {
 		t.Fatalf("entry count = %d, want 2", len(entries))
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != productmode.IdentityID || entry.RequesterPrincipal != "alice" {
+		if entry.RequesterPrincipal != "alice" {
 			t.Fatalf("HTTP signing attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.10:4000" {
@@ -296,7 +292,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	defer cleanup()
 
 	server.config.UserAutoApprove = true
-	server.productIdentityRuntime().Config().SetUserAutoApprove(true)
+	server.productRuntime().Config().SetUserAutoApprove(true)
 
 	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
 	genW := httptest.NewRecorder()
@@ -311,7 +307,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	if err := reloadKeysForTest(server); err != nil {
 		t.Fatalf("reloadKeysForTest() error = %v", err)
 	}
-	ir := server.productIdentityRuntime()
+	ir := server.productRuntime()
 	ir.SnapshotKeySession().InitializeSession()
 
 	path := filepath.Join(t.TempDir(), "audit.log")
@@ -371,7 +367,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.TargetIdentityID != productmode.IdentityID || entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
+		if entry.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
 			t.Fatalf("HTTP signing identity attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {
@@ -380,7 +376,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 	}
 }
 
-func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
+func TestAuditProcessLevelEventsOmitProductLocator(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	logger, err := NewAuditLogger(path)
 	if err != nil {
@@ -407,8 +403,15 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("line %d: unmarshal error: %v", i, err)
 		}
-		if entry.IdentityID != "" {
-			t.Errorf("line %d (%s): identity_id = %q, want empty", i, entry.Event, entry.IdentityID)
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(line), &fields); err != nil {
+			t.Fatalf("line %d: unmarshal fields: %v", i, err)
+		}
+		if _, ok := fields["identity_id"]; ok {
+			t.Errorf("line %d contains identity_id: %#v", i, fields)
+		}
+		if _, ok := fields["target_identity_id"]; ok {
+			t.Errorf("line %d contains target_identity_id: %#v", i, fields)
 		}
 		if entry.Event == AuditServerStopIncomplete && (entry.Outcome != "failed" || entry.Reason == "") {
 			t.Errorf("incomplete shutdown entry = %#v, want failed outcome and reason", entry)
@@ -416,7 +419,7 @@ func TestAuditProcessLevelEventsOmitIdentityID(t *testing.T) {
 	}
 }
 
-func TestAuditAuthFailedWithNoIdentity(t *testing.T) {
+func TestAuditPreAuthFailureHasNoPrincipalOrProductLocator(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	logger, err := NewAuditLogger(path)
 	if err != nil {
@@ -424,19 +427,21 @@ func TestAuditAuthFailedWithNoIdentity(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogAuthFailed("", "10.0.0.1", "missing_credentials")
+	logger.LogAuthFailed("10.0.0.1", "missing_credentials")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var entry AuditEntry
+	var entry map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.IdentityID != "" {
-		t.Errorf("identity_id = %q, want empty for pre-auth failure", entry.IdentityID)
+	for _, field := range []string{"identity_id", "target_identity_id", "principal"} {
+		if _, ok := entry[field]; ok {
+			t.Errorf("pre-auth failure contains %s: %#v", field, entry)
+		}
 	}
 }
 

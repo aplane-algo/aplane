@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
@@ -436,8 +435,6 @@ func (m Model) bodyView() string {
 	b.WriteString(subtitleStyle.Render(mode + " " + m.target.StatusNoun() + " editor"))
 	b.WriteString("\n\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("store: %s", m.dataDir)))
-	b.WriteString("\n")
-	b.WriteString(metadataStyle.Render(fmt.Sprintf("identity: %s", productmode.IdentityID)))
 	b.WriteString("\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("document: %s", m.target.DocumentName())))
 	b.WriteString("\n")

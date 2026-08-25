@@ -36,7 +36,7 @@ drives `apshell request-token` end-to-end as the non-root installing user (with
 apapprover unlocking the signer and auto-approving), confirms the client can
 reach the signer with the issued token, verifies a stopped in-place systemd
 upgrade preserves state, stages the on-disk state of
-`appass set systemd-creds` (passphrase.cred + unlock.yaml + unit
+the appass **Systemd credentials** action (passphrase.cred + unlock.yaml + unit
 LoadCredentialEncrypted= directive), then runs the bundled systemd uninstaller
 and verifies signer data is preserved. (Runtime auto-unlock via systemd's
 credential namespace is not asserted: LoadCredential[Encrypted]= is silently a
@@ -632,7 +632,7 @@ teardown_appass_file() {
 }
 
 setup_systemd_creds_artifacts() {
-    # Simulate the on-disk state left by `appass set systemd-creds`: encrypt
+    # Simulate the on-disk state left by the appass Systemd credentials action: encrypt
     # the passphrase via the systemd helper, write unlock.yaml, and inject
     # the matching LoadCredentialEncrypted= directive into the unit. We do
     # NOT restart the daemon: systemd's credential-namespace mounting at

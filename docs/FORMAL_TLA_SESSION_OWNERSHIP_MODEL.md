@@ -35,7 +35,7 @@ never became owner was nobody's responsibility.
 | Invariant | Source | TLA+ predicate |
 |---|---|---|
 | SO1: at most one active owner session | `SessionManager` single `active` slot | `SO1_SingleActiveOwner` |
-| SO2: no stranded unlock — an unlocked identity (with `lock_on_disconnect`) always has a live authenticated session | `daemon/ipc.go` disconnect defer | `SO2_UnlockedHasOwner` |
+| SO2: no stranded unlock — an unlocked product runtime (with `lock_on_disconnect`) always has a live authenticated session | `daemon/ipc.go` disconnect defer | `SO2_UnlockedHasOwner` |
 | state/authentication consistency | (TypeOK) | `TypeOK` |
 
 **SO2 is the point of the module.** It holds because of two code mechanisms,
@@ -115,7 +115,7 @@ states, depth 8, sub-second runtime. `make formal-test` includes the module.
 
 It proves that over every interleaving of up to three admin sessions —
 concurrent authentications, displacement chains, exits at any point — the
-modeled daemon never ends up with an unlocked identity, `lock_on_disconnect`
+modeled daemon never ends up with an unlocked product runtime, `lock_on_disconnect`
 set, and no live authenticated session responsible for re-locking. It does
 not model the keystore itself (a "locked" identity here is the daemon having
 called `Lock()`; the keystore's own session/term-key destruction is
@@ -141,7 +141,7 @@ traceability SO rows (`TestAdminAuthPromotionFailureCleansUnlockedIdentity`,
 ## Extension plan
 
 - **Liveness** (an authenticated session eventually owns or exits; an
-  unlocked identity with no live session is eventually locked) would need
+  unlocked product runtime with no live session is eventually locked) would need
   fairness choices for operator behavior that the safety story does not; add
   only if a real progress question arises.
 - **Provisional-unlock redesign.** If unlock is ever moved after promotion

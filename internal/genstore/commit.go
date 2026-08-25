@@ -248,7 +248,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 
 // RollbackTo repoints CURRENT at a previous sealed generation after
 // validating it, sealing the outgoing generation first: a rollback is a
-// pointer flip like any other. The caller holds the identity mutation lock.
+// pointer flip like any other. The caller holds the store mutation lock.
 func RollbackTo(paths storepaths.Paths, targetID string, now time.Time, kr *crypto.Keyring) error {
 	current, err := ReadCurrent(paths)
 	if err != nil {

@@ -20,13 +20,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
-func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
+func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInfo {
 	if ir == nil {
 		return []signerapi.KeyInfo{}
 	}
@@ -199,12 +199,9 @@ func signingArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.SigningArgIn
 	return out
 }
 
-func (s Service) Keys(ir *identity.Runtime) (*signerapi.KeysResponse, *signersigning.ServiceError) {
-	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
-	}
-	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
+func (s Service) Keys(ir *productruntime.Runtime) (*signerapi.KeysResponse, *signersigning.ServiceError) {
+	if err := ensureRuntimeUnlocked(ir); err != nil {
+		return nil, err
 	}
 
 	keyList := s.BuildKeyInfoList(ir)
@@ -214,8 +211,8 @@ func (s Service) Keys(ir *identity.Runtime) (*signerapi.KeysResponse, *signersig
 	}, nil
 }
 
-func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.KeyTypeInfo, error) {
-	validTypes, err := keymgmt.GetValidKeyTypesForIdentity(ir.KeyPaths())
+func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeInfo, error) {
+	validTypes, err := keymgmt.GetAvailableKeyTypes(ir.KeyPaths())
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +331,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 	for _, tmpl := range genericlsig.GetAll() {
 		// Generic template providers are process-global once registered, but
-		// identity inventory is gated by the identity-local installed/enabled set.
+		// identity inventory is gated by the product-store installed/enabled set.
 		if enabledGeneric != nil && !enabledGenericSet[strings.ToLower(strings.TrimSpace(tmpl.KeyType()))] {
 			continue
 		}
@@ -460,7 +457,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	return info
 }
 
-func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeInfo) {
+func applySentryReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) {
 	if ir == nil {
 		return
 	}
@@ -534,11 +531,11 @@ func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, descri
 	}
 }
 
-func (s Service) KeyTypesForIdentity(ir *identity.Runtime) (*signerapi.KeyTypesResponse, *signersigning.ServiceError) {
+func (s Service) KeyTypes(ir *productruntime.Runtime) (*signerapi.KeyTypesResponse, *signersigning.ServiceError) {
 	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "product runtime is nil"}
 	}
-	keyTypes, err := s.BuildKeyTypesForIdentity(ir)
+	keyTypes, err := s.BuildKeyTypes(ir)
 	if err != nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "failed to read key type activations"}
 	}

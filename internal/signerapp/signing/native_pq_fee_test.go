@@ -201,7 +201,7 @@ func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 		raw := msgpack.Encode(stxn)
 		budgets, err := authorizationBudgets(
 			[]signerapi.SignRequest{{SignedTxnHex: hex.EncodeToString(raw)}},
-			PlannerIdentitySnapshot{}, nil, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
+			PlannerRuntimeSnapshot{}, nil, map[int]bool{0: true}, map[int]bool{}, map[int][]byte{0: raw},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -215,7 +215,7 @@ func TestAuthorizationBudgetsRecognizePassthroughPQ(t *testing.T) {
 func TestPlanGroupBudgetsNativeFalconBeforeApproval(t *testing.T) {
 	genesisHash := types.Digest{5}
 	resolver, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{
-		base64.StdEncoding.EncodeToString(genesisHash[:]): "fnet_test",
+		base64.StdEncoding.EncodeToString(genesisHash[:]): "customnet_test",
 	})
 	if err != nil {
 		t.Fatal(err)

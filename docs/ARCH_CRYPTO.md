@@ -91,9 +91,9 @@ slices are valid only for the duration of the load call — the keystore zeroes
 them on return, so providers deep-copy anything they retain.
 
 Provider registries are process-global compatibility registries. Key type names
-are globally unique within one `apsigner` process. Identity isolation is
-enforced by identity-owned keystores plus identity-local key type state, not by
-giving each identity a private provider namespace. Compatible re-registration
+are globally unique within one `apsigner` process. Availability is enforced by
+the product keystore plus product-store key type state rather than a private
+provider namespace. Compatible re-registration
 of the same template definition is idempotent; conflicting same-`key_type`
 definitions are reported/rejected.
 
@@ -175,10 +175,10 @@ Generic LogicSig templates are TEAL-only providers. `internal/genericlsig`
 provides the template-oriented filtered view over the same unified registry.
 
 Template YAML files under top-level `library/templates/` are install sources,
-not active key types by presence alone. New signer identities initialize with
+not active key types by presence alone. New signer-role stores initialize with
 `aplane.falcon1024-allowlist.v1` installed and enabled as an encrypted
-identity-local `.template`; other templates and existing identities become
-active only after installation and reload/unlock by the signer.
+product-store `.template`; other templates become active only after
+installation and reload/unlock by the signer.
 
 ### Off-curve LogicSig salting
 
@@ -218,7 +218,7 @@ live in signer-side registries, not in `internal/lsigprovider`.
 The runtime model:
 
 - compiled providers are registered during process startup
-- enabled installed YAML templates are registered during identity reload/unlock
+- enabled installed YAML templates are registered during runtime reload/unlock
 - lookup is by stable versioned `key_type`
 - family lookup is metadata, not a second source of truth
 
@@ -271,9 +271,9 @@ sets the record state to disabled without removing the encrypted template.
 Removing
 a YAML template remains destructive and is also blocked while any stored
 identity key depends on that `key_type`. Restoring a key for a library-visible
-compiled provider also creates the same identity state record idempotently.
+compiled provider also creates the same product-store state record idempotently.
 
-Deletion archives are identity-local. Key deletion moves encrypted key files to
+Deletion archives are product-store. Key deletion moves encrypted key files to
 `identities/default/deleted/keys/`; template removal moves encrypted
 template files to `identities/default/deleted/keytypes/`. These archives are
 outside active key/template scans.
@@ -285,17 +285,17 @@ Optional YAML templates have a source-library lifecycle:
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
 - library YAML files are reference material only; they are not active key types by being present on disk,
-- new signer-store initialization installs the bundled `aplane.falcon1024-allowlist.v1` YAML into the identity store by default,
+- new signer-store initialization installs the bundled `aplane.falcon1024-allowlist.v1` YAML into the product store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under
   `identities/default/keytypes/<key_type>.template` and writes an enabled state record,
-- the identity reload path applies key-type state records, skips disabled installed templates, activates enabled
+- the runtime reload path applies key-type state records, skips disabled installed templates, activates enabled
   installed templates, and registers providers before key scanning.
 
 The user-facing mixed library is the KeyType Library. It can list both YAML
 template entries and compiled-provider entries. Template entries are installed
-from YAML and can then be enabled or disabled for the identity; compiled-provider
-entries are enabled or disabled for the identity.
+from YAML and can then be enabled or disabled in the product store;
+compiled-provider entries use the same product-store state.
 
 The encrypted product-store `.template` files are the runtime source of truth
 for optional key-type generation and discovery, not for signing already-created
@@ -413,7 +413,7 @@ signatures.
 
 Installed template definitions are stored as encrypted YAML. They are the
 runtime source of truth for optional installed templates. Template removal moves
-the encrypted source into the identity-local deleted-template archive rather
+the encrypted source into the product-store deleted-template archive rather
 than treating the library YAML as active state.
 
 ### Encryption model

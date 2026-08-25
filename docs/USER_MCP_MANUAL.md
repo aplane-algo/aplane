@@ -59,9 +59,9 @@ only an address.
  "write_mode":false,"signer_key_count":0, ...}
 ```
 
-Runtime model: APlane exposes one **single-product signing runtime**. The
-compatibility identity ID is `default`; it is not a tenant selector. Client SSH
-enrollments distinguish *which device/agent* is acting for that product runtime.
+Runtime model: APlane exposes one **single-product signing runtime** with no
+runtime selector. Client SSH enrollments distinguish *which device/agent* is
+acting for that product runtime.
 
 > Full detail: [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md), [ARCH_MCP.md](ARCH_MCP.md),
 > [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).

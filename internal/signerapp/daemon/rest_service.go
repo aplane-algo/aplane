@@ -4,8 +4,8 @@
 package daemon
 
 import (
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 )
 
@@ -32,18 +32,19 @@ func (fs *Signer) restServiceWithSigningAudit(auditLog signingAudit) signerrest.
 func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAudit signingAudit) signerrest.Service {
 	return signerrest.Service{
 		Deps: signerrest.Dependencies{
-			NewSigningService: func(ir *identity.Runtime) signerrest.SigningService {
-				return fs.newSigningServiceForIdentityWithAudit(ir, signingAudit)
+			NewSigningService: func(ir *productruntime.Runtime) signerrest.SigningService {
+				return fs.newSigningServiceWithAudit(ir, signingAudit)
 			},
 			PlanGroup:    fs.planGroupWithAudit(signingAudit),
 			EncodeTxnHex: encodeTxnToHex,
 			KeyAdmin: keyadmin.Service{
 				AuditLog: keyAudit,
+				Runtime:  fs.productRuntime(),
 				MutationLock: func() keyadmin.Locker {
 					return &fs.storeMutationLock
 				},
 			},
-			GenerateGenericLSig: fs.generateGenericLSigForIdentityContext,
+			GenerateGenericLSig: fs.generateGenericLSigForRuntimeContext,
 		},
 	}
 }

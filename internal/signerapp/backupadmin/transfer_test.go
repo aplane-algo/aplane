@@ -16,20 +16,16 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -40,7 +36,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "imported.tar.gz"})
 	if !begin.Success || begin.UploadID == "" {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -50,7 +46,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 		if end > int64(len(archiveBytes)) {
 			end = int64(len(archiveBytes))
 		}
-		result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{
+		result := service.AppendBackupImport(adminproto.AppendBackupImportRequest{
 			UploadID: begin.UploadID, Offset: offset, Data: archiveBytes[offset:end],
 		})
 		if !result.Success || result.NextOffset != end {
@@ -58,7 +54,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 		}
 		offset = end
 	}
-	commit := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+	commit := service.CommitBackupImport(adminproto.CommitBackupImportRequest{
 		UploadID: begin.UploadID, FileName: "imported.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
@@ -69,7 +65,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	var exported []byte
 	offset = 0
 	for {
-		chunk := service.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: "imported.tar.gz", Offset: offset})
+		chunk := service.ReadBackupChunk(adminproto.ReadBackupChunkRequest{FileName: "imported.tar.gz", Offset: offset})
 		if !chunk.Success || chunk.Offset != offset || len(chunk.Data) > adminproto.BackupTransferChunkBytes {
 			t.Fatalf("ReadBackupChunk() = %#v", chunk)
 		}
@@ -87,7 +83,6 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -97,17 +92,17 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "sync-warning.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "sync-warning.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
+	appendBackupImportBytes(t, service, begin.UploadID, archiveBytes)
 
 	originalSync := syncBackupImportDirectory
 	syncBackupImportDirectory = func(string) error { return errors.New("injected directory sync failure") }
 	t.Cleanup(func() { syncBackupImportDirectory = originalSync })
 
-	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+	result := service.CommitBackupImport(adminproto.CommitBackupImportRequest{
 		UploadID: begin.UploadID, FileName: "sync-warning.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
@@ -125,19 +120,18 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	if result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Offset: 1, Data: []byte("x")}); result.Success {
+	if result := service.AppendBackupImport(adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Offset: 1, Data: []byte("x")}); result.Success {
 		t.Fatalf("AppendBackupImport(wrong offset) = %#v", result)
 	}
-	if result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: []byte("x")}); !result.Success {
+	if result := service.AppendBackupImport(adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: []byte("x")}); !result.Success {
 		t.Fatalf("AppendBackupImport() = %#v", result)
 	}
 	passphrase := []byte("export-passphrase")
-	if result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{UploadID: begin.UploadID, FileName: "bad.tar.gz", ExpectedSize: 1, ExpectedSHA256: string(bytes.Repeat([]byte("0"), 64)), ExportPassphrase: passphrase}); result.Success {
+	if result := service.CommitBackupImport(adminproto.CommitBackupImportRequest{UploadID: begin.UploadID, FileName: "bad.tar.gz", ExpectedSize: 1, ExpectedSHA256: string(bytes.Repeat([]byte("0"), 64)), ExportPassphrase: passphrase}); result.Success {
 		t.Fatalf("CommitBackupImport(wrong checksum) = %#v", result)
 	}
 	if !bytes.Equal(passphrase, make([]byte, len(passphrase))) {
@@ -148,7 +142,6 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -158,12 +151,12 @@ func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "wrong-passphrase.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "wrong-passphrase.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
-	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+	appendBackupImportBytes(t, service, begin.UploadID, archiveBytes)
+	result := service.CommitBackupImport(adminproto.CommitBackupImportRequest{
 		UploadID: begin.UploadID, FileName: "wrong-passphrase.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
 		ExportPassphrase: []byte("wrong-passphrase"),
 	})
@@ -179,7 +172,6 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 	paths := storepaths.NewPaths(t.TempDir())
 	deps := &lockingBackupTransferDeps{paths: paths}
 	service := Service{Deps: deps}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -189,11 +181,11 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "concurrent.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "concurrent.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	appendBackupImportBytes(t, service, ir, begin.UploadID, archiveBytes)
+	appendBackupImportBytes(t, service, begin.UploadID, archiveBytes)
 
 	originalVerify := deepVerifyImportedBackup
 	verifyStarted := make(chan struct{})
@@ -207,7 +199,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 
 	commitDone := make(chan adminproto.CommitBackupImportResult, 1)
 	go func() {
-		commitDone <- service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+		commitDone <- service.CommitBackupImport(adminproto.CommitBackupImportRequest{
 			UploadID: begin.UploadID, FileName: "concurrent.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
 			ExportPassphrase: []byte("export-passphrase"),
 		})
@@ -228,7 +220,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 	select {
 	case <-mutationDone:
 	case <-time.After(time.Second):
-		t.Fatal("deep verification retained the identity mutation lock")
+		t.Fatal("deep verification retained the store mutation lock")
 	}
 	close(releaseVerify)
 	if result := <-commitDone; !result.Success {
@@ -239,8 +231,6 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "payload.bin"), []byte("not a credential backup"), 0o600); err != nil {
 		t.Fatal(err)
@@ -257,14 +247,14 @@ func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "invalid.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "invalid.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
-	if appended := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: archiveBytes}); !appended.Success {
+	if appended := service.AppendBackupImport(adminproto.AppendBackupImportRequest{UploadID: begin.UploadID, Data: archiveBytes}); !appended.Success {
 		t.Fatalf("AppendBackupImport() = %#v", appended)
 	}
-	result := service.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+	result := service.CommitBackupImport(adminproto.CommitBackupImportRequest{
 		UploadID: begin.UploadID, FileName: "invalid.tar.gz", ExpectedSize: size, ExpectedSHA256: checksum,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
@@ -309,7 +299,7 @@ func writeLargeValidImportArchive(t *testing.T) string {
 	return archivePath
 }
 
-func appendBackupImportBytes(t *testing.T, service Service, ir *identity.Runtime, uploadID string, data []byte) {
+func appendBackupImportBytes(t *testing.T, service Service, uploadID string, data []byte) {
 	t.Helper()
 	var offset int64
 	for offset < int64(len(data)) {
@@ -317,7 +307,7 @@ func appendBackupImportBytes(t *testing.T, service Service, ir *identity.Runtime
 		if end > int64(len(data)) {
 			end = int64(len(data))
 		}
-		result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{
+		result := service.AppendBackupImport(adminproto.AppendBackupImportRequest{
 			UploadID: uploadID, Offset: offset, Data: data[offset:end],
 		})
 		if !result.Success || result.NextOffset != end {
@@ -330,8 +320,7 @@ func appendBackupImportBytes(t *testing.T, service Service, ir *identity.Runtime
 func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-	begin := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "large.tar.gz"})
+	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "large.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
 	}
@@ -339,7 +328,7 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	if err := os.Truncate(path, adminproto.MaxBackupImportBytes); err != nil {
 		t.Fatal(err)
 	}
-	result := service.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{
+	result := service.AppendBackupImport(adminproto.AppendBackupImportRequest{
 		UploadID: begin.UploadID, Offset: adminproto.MaxBackupImportBytes, Data: []byte("x"),
 	})
 	if result.Success {
@@ -350,13 +339,12 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	service := Service{Deps: backupServiceTestDeps{paths: paths}}
-	ir := identity.New(identity.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-	first := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "first.tar.gz"})
+	first := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "first.tar.gz"})
 	if !first.Success {
 		t.Fatalf("first BeginBackupImport() = %#v", first)
 	}
 	firstPath := filepath.Join(paths.ProductBackupsDir(), first.UploadID)
-	second := service.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{FileName: "second.tar.gz"})
+	second := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "second.tar.gz"})
 	if !second.Success {
 		t.Fatalf("second BeginBackupImport() = %#v", second)
 	}

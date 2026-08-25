@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"gopkg.in/yaml.v3"
 )
@@ -303,14 +303,14 @@ func setSignerUserAutoApprove(dataDir string, userAutoApprove bool) error {
 	if err := setSignerBoolConfig(dataDir, "user_auto_approve", userAutoApprove); err != nil {
 		return err
 	}
-	return identity.SaveStoredSetting(dataDir, "user_auto_approve", userAutoApprove)
+	return productruntime.SaveStoredSetting(dataDir, "user_auto_approve", userAutoApprove)
 }
 
 func setSignerLockOnDisconnect(dataDir string, lockOnDisconnect bool) error {
 	if err := setSignerBoolConfig(dataDir, "lock_on_disconnect", lockOnDisconnect); err != nil {
 		return err
 	}
-	return identity.SaveStoredSetting(dataDir, "lock_on_disconnect", lockOnDisconnect)
+	return productruntime.SaveStoredSetting(dataDir, "lock_on_disconnect", lockOnDisconnect)
 }
 
 func setSignerBoolConfig(dataDir, key string, value bool) error {

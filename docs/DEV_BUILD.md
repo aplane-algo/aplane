@@ -49,7 +49,7 @@ aplane/
 │   ├── keytypestate/         # Product-store key type state records
 │   ├── keys/                 # Key file scanning and persistence helpers
 │   ├── keystore/             # Keystore metadata and encrypted key storage
-│   ├── templatestore/        # Encrypted identity template store
+│   ├── templatestore/        # Encrypted product template store
 │   ├── templatelibrary/      # Plaintext KeyType Library parsing and install prep
 │   ├── transport/            # Admin transport clients
 │   ├── sshtunnel/            # SSH tunnel server/client
@@ -359,7 +359,7 @@ bin/apstore verify /path/to/aplane-backup.tar.gz
 # Change passphrase
 bin/apadmin changepass
 
-# List, show, or install encrypted identity templates
+# List, show, or install encrypted product-store templates
 bin/apadmin template list
 bin/apadmin template show aplane.htlc.v1 --show-sensitive-template
 bin/apadmin template import library/templates/aplane.htlc.v1.yaml

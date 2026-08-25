@@ -65,7 +65,7 @@ disabled that installed template.
 Feature code must not write template files or key-type state records directly.
 Route install, import, enable, disable, and remove transitions through
 `internal/templatelibrary`. Live administrative workflows in
-`internal/signerapp/templateadmin` supply the identity mutation lock and
+`internal/signerapp/templateadmin` supply the store mutation lock and
 runtime reload; new-store defaults in `internal/defaultkeytypes` supply an
 unpublished staged generation and publish it through `internal/genstore`.
 `internal/templatestore` and `internal/keytypestate` expose persistence
@@ -211,7 +211,7 @@ default-visible for generation. Visibility is recorded in
 `aplane.witness-falcon1024.v1` are default-enabled, while
 `aplane.falcon1024-sentry1024.v1` and
 `aplane.ed25519.v1` are library-visible and not available for generation until
-the current identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
+the product store enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See
 `docs/ARCH_KEYTYPE_AXES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
@@ -221,9 +221,9 @@ Opt-in state records are plaintext product-store metadata under
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
 The default-enabled `ed25519`, `falcon1024`, and `aplane.falcon1024.v1` providers allow
-user-entered mnemonic import without identity-local activation; the
+user-entered mnemonic import without product-store activation; the
 library-visible `aplane.ed25519.v1` provider allows mnemonic import after it is
-enabled for the identity. YAML templates and the other library-visible compiled
+enabled in the product store. YAML templates and the other library-visible compiled
 providers do not allow user-entered mnemonic import. `apadmin restore` creates
 or enables this state record idempotently when restoring a key for a
 library-visible compiled provider.
@@ -239,7 +239,7 @@ Installed YAML templates use the same state-record model. The encrypted
 the durable installed source. The adjacent JSON record stores the source
 (`yaml_generic`, `yaml_composed`, or `compiled`), state (`enabled` or
 `disabled`), compatibility fingerprint, and enablement timestamp. Removing a YAML
-template moves the encrypted template source to the identity-local deleted key
+template moves the encrypted template source to the product-store deleted key
 type archive.
 
 ## Key Type Terminology
@@ -248,19 +248,19 @@ Use these terms consistently:
 
 | Term | Applies to | Meaning |
 |---|---|---|
-| **Registered provider** | Go-defined or loaded providers | Provider code is present in a process-global registry and can be looked up by key type. For compiled providers this happens at startup; for user-loaded YAML templates it happens on identity reload after installation. |
-| **Binary capability** | Compiled providers | The current binary contains and registers the provider code, even if not every identity can create that key type by default. |
-| **Default-enabled** | Compiled providers | Catalog availability `default_enabled`; every identity can see and create the key type without an identity-local state record. |
-| **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled identity state record is required before that identity sees it in generation surfaces. |
+| **Registered provider** | Go-defined or loaded providers | Provider code is present in a process-global registry and can be looked up by key type. For compiled providers this happens at startup; for user-loaded YAML templates it happens on runtime reload after installation. |
+| **Binary capability** | Compiled providers | The current binary contains and registers the provider code, whether or not the product store enables that key type. |
+| **Default-enabled** | Compiled providers | Catalog availability `default_enabled`; the product runtime can see and create the key type without a product-store state record. |
+| **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled product-store state record is required before it appears in generation surfaces. |
 | **Disabled** | Compiled providers | Catalog availability `disabled`; the provider may exist in source but should not be registered or exposed by the runtime path that owns the catalog entry. |
-| **Enabled for identity** | Library-visible compiled providers | The identity has an enabled `source:"compiled"` state record, so that compiled key type is enabled for that identity's discovery and generation surfaces. |
-| **Installed** | YAML templates | The identity has an encrypted `.template` file under `identities/default/keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
-| **Template disabled** | Installed YAML templates | The identity has a `source:"yaml_*"` state record with `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |
+| **Enabled in product store** | Library-visible compiled providers | An enabled `source:"compiled"` state record exposes the compiled key type to product discovery and generation surfaces. |
+| **Installed** | YAML templates | The product store has an encrypted `.template` file under `identities/default/keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
+| **Template disabled** | Installed YAML templates | A `source:"yaml_*"` state record has `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |
 | **Registered on reload** | Enabled installed YAML templates | On unlock/reload, the signer decrypts enabled installed templates and registers their providers before key scanning. Disabled installed templates are skipped. |
 
 Avoid using "inactive" as a durable technical term. Prefer precise phrases
-such as "library-visible but not enabled for this identity" or
-"installed but disabled for this identity".
+such as "library-visible but not enabled in the product store" or
+"installed but disabled".
 
 Bundled YAML templates, if installed:
 
@@ -274,22 +274,22 @@ Bundled YAML templates, if installed:
 | `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | `identities/default/keytypes/aplane.corridor.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
-appear in `apshell keytypes` or the `apadmin` generate view until installed into
-the active signer identity, enabled for that identity, and loaded by
-`apsigner`. New signer identities start with `aplane.falcon1024-allowlist.v1`
-already installed and enabled; sentry-role identities do not. The `apadmin`
+appear in `apshell keytypes` or the `apadmin` generate view until installed and
+enabled in the product store, then loaded by `apsigner`. New signer-role stores
+start with `aplane.falcon1024-allowlist.v1` already installed and enabled;
+sentry-role stores do not. The `apadmin`
 KeyType Library lists plaintext library entries and also reports installed
-identity templates that do not have a matching library YAML source; those
+templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
 filenames and may not have parameter metadata.
 
 ## Product Filesystem State
 
 All key-type state in this section belongs to the fixed product store under
-`identities/default/`; there is no operator-selectable tenant or runtime.
+`identities/default/`; no runtime selector is exposed.
 
 Template key type state is represented by one plaintext state record per
-identity/key type, plus an encrypted template body when the source is YAML:
+key type, plus an encrypted template body when the source is YAML:
 
 | State | Filesystem representation |
 |---|---|
@@ -307,7 +307,7 @@ Filesystem actions for YAML templates:
 | Enable | Leaves both files in place and changes the state record to `enabled` |
 | Remove | Deletes the state record and moves the active `.template` file to `deleted/keytypes/<key_type>.template` |
 
-Key deletion uses the same identity-local archive root:
+Key deletion uses the same product-store archive root:
 
 ```text
 identities/default/keys/<address>.key
@@ -1074,9 +1074,9 @@ Examples:
 ### TUI / Discovery
 
 - [ ] `go test ./cmd/apadmin/...`
-- [ ] ensure default-enabled key types are discoverable without identity-local enablement
-- [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after identity-local enablement
-- [ ] ensure user-loaded templates appear after installation and identity reload/unlock, disappear when disabled, and reappear when enabled again
+- [ ] ensure default-enabled key types are discoverable without product-store enablement
+- [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after product-store enablement
+- [ ] ensure user-loaded templates appear after installation and runtime reload/unlock, disappear when disabled, and reappear when enabled again
 
 ## User Docs Checklist
 

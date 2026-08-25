@@ -35,38 +35,29 @@
 ### Fixed Product Store Boundary
 
 An `apsigner` process owns exactly one signing-state aggregate and one product
-store. The aggregate has no runtime ID, registry, or selector. The exact
-durable roots remain `identities/default/` and `backups/default/`; `default` is
-a compatibility namespace and retained output/audit value, not a supported
-identity-routing surface or authorization principal.
+store. The aggregate has no runtime ID, registry, or selector. The durable
+roots are `identities/default/` and `backups/default/`; `default` is the fixed
+directory name, not an authorization principal or request value.
 
 Startup performs a no-follow check of direct `identities/` entries before it
 loads tokens, keys, policy, or watchers. A directory, ordinary file, hidden
 entry, or symlink with any name other than `default` is rejected. An existing
 `default` entry must be a real directory and not a symlink. A missing
-`identities/` tree or missing `default` retains the explicit blank-store
+`identities/` tree or missing `default` uses the explicit blank-store
 initialization behavior.
 
 HTTP authentication verifies the product token and produces
 `system:product-admin`; it cannot choose a runtime. Normal SSH usernames must be
-exactly `default`, and token enrollment must be exactly
-`request-token:default`. Product HTTP, admin, CLI, and SDK request inputs expose
-no identity selector. Output and audit fields may still attribute operations to
-`default`.
+exactly `aplane`, and token enrollment must be exactly `request-token`.
+Product HTTP, admin, CLI, SDK, and audit surfaces expose no runtime selector.
 
 Internal storage APIs also expose no product-store selector:
 `internal/storepaths.Paths` binds `identities/default/` and
 `backups/default/` when constructed from the signer data root, generation and
 backup operations accept that bound `Paths` value, and the runtime aggregate
 has no ID field or accessor. One process-wide store mutation lock serializes
-live mutation and watcher reload. These are internal architecture constraints;
-the literal paths, SSH transcript value, and retained output fields are the
-compatibility contract.
-
-This deliberately removes a working internal multi-identity capability,
-including identity-local template activation and the former `alice`
-integration path. No compatibility is promised for non-default stores or
-selectors in this pre-release change.
+live mutation and watcher reload. Template activation, authentication,
+administration, and signing always bind to that store.
 
 Until APlane reaches a stable `v1.0` compatibility contract, in-place
 installer upgrades are intentionally narrow:
@@ -78,14 +69,14 @@ installer upgrades are intentionally narrow:
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
-- signer identity stores unlock only with keystore marker version 5 and the
+- signer stores unlock only with keystore marker version 5 and the
   `keyring/v2` layout tag; stores in any other format are rejected at
   unlock, rotation, rebuild, and policy-sign. Keys move between installs via
   backup archives restored into a freshly initialized store,
 - usable apclient signer routing is endpoint-based and lives in
   `endpoints.yaml`; top-level client `config.yaml` `ssh:` and `signer_port:`
   routing is rejected in this release,
-- config files, identity settings, admin IPC names, SDK DTO field names, caches,
+- config files, product-runtime settings, admin IPC names, SDK DTO field names, caches,
   and generated docs examples may be reset or reshaped by a release before
   `v1.0`.
 
@@ -611,7 +602,7 @@ error-message codes:
 - `invalid_passphrase`
 - `unlock_failed`
 - `signer_locked`
-- `no_identity_bound`
+- `no_runtime_bound`
 - `authorization_denied`
 - `invalid_request`
 - `unknown_message_type`
@@ -661,7 +652,7 @@ parallel scalar policy RPC surface.
 
 These client capabilities describe the one product surface. Backend admin
 operations use the one process-owned runtime; `apadmin`, `apapprover`, and
-`appass` do not expose a tenant-management UI.
+`appass` expose no runtime-selection UI.
 
 `apadmin` test mode details:
 
@@ -688,10 +679,9 @@ Client config is loaded from `config.yaml` under the resolved data directory.
 It supports optional `schema_version: 1`; absent means v1 for existing configs,
 and unsupported versions fail during load.
 Installer-written client configs include `networks` entries for `testnet`,
-`mainnet`, `fnet`, and `localnet`, but restrict `networks_allowed` to `mainnet`,
-`testnet`, and `fnet` by default; existing configs are left unchanged if the
-installer is pointed at a supported in-place upgrade target. The FNet entry is
-an installer-configured custom network context, not a built-in reserved token.
+`mainnet`, and `localnet`, and restrict `networks_allowed` to `mainnet` and
+`testnet` by default; existing configs are left unchanged if the
+installer is pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
@@ -735,15 +725,14 @@ Loaded from `-d <path>` or `APSIGNER_DATA`.
 It supports optional `schema_version: 1`; absent means v1 for existing configs,
 and unsupported versions fail during load.
 Installer-written signer configs include `networks` entries for `testnet`,
-`mainnet`, `fnet`, and `localnet`. The FNet entry pins its public algod endpoint
-and genesis hash; existing configs are left unchanged if the installer is
-pointed at a supported in-place upgrade target.
+`mainnet`, and `localnet`; existing configs are left unchanged if the installer
+is pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
 Process-global settings live in `config.yaml`. Product runtime settings live in
 `identities/default/config.yaml`; nil means inherit from process defaults.
-Unknown fields, including the removed `decommissioned` setting, fail parsing.
+Unknown fields, including `decommissioned`, fail parsing.
 
 Signer policy participates in the ordered approval engine.
 The active node-role policy is product-store scoped and stored in
@@ -800,11 +789,11 @@ Validation:
 - at startup validation, headless mode rejects `lock_on_disconnect:true`
 - at startup validation, headless mode requires `passphrase_timeout:"0"`
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
-  30 minutes. The default is `60s`. Identity config may override the process
+  30 minutes. The default is `60s`. Product runtime config may override the process
   default for that identity.
 - initialized signer data roots must contain root `node.yaml` with role
   `signer` or `sentry`. New initialization defaults to `signer` unless an
-  sentry node is explicitly requested. Identity config `mode` is an
+  sentry node is explicitly requested. Product runtime config `mode` is an
   unsupported field and is rejected.
 - node role gates key generation, mnemonic import, restore, signer key reload,
   and signing service dispatch. Hand-placed key files or restored keys from the
@@ -842,7 +831,7 @@ Operational rules:
   `endpoint.ssh.port`, `passphrase_command_argv`, `passphrase_command_env`,
   `networks`, `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
-- identity-owned settings and policy writes are serialized by the target identity's mutation lock
+- product-runtime settings and policy writes are serialized by the store mutation lock
 - node role is immutable in supported tools; create a separate signer data root
   for the other role
 
@@ -1163,11 +1152,11 @@ Additional client-state notes:
 - `.apclient.lock` is the cooperative local mutation lock for shared `APCLIENT_DATA`
 - apshell passively watches the shared `cache/` directory when possible and reloads changed in-memory cache snapshots at command boundaries; this is best-effort freshness, not an authority or synchronization contract
 
-Identity key type records under `keytypes/` are plaintext metadata. One
+Product-store key type records under `keytypes/` are plaintext metadata. One
 `<key_type>.json` record stores `source`, `state`, optional compatibility
-`fingerprint`, and activation time for an identity opt-in key type. A
+`fingerprint`, and activation time for an opt-in key type. A
 `source:"compiled", state:"enabled"` record makes a compiled library-visible
-provider available to that identity for discovery and generation. YAML template
+provider available to the product runtime for discovery and generation. YAML template
 records use `source:"yaml_generic"` or `source:"yaml_composed"` and pair with an
 encrypted adjacent `<key_type>.template` file. A disabled YAML record keeps the
 encrypted template installed but hides that key type from discovery, reload, and
@@ -1217,9 +1206,9 @@ installer re-runs, and test setup flows may refresh this directory from the repo
 directory are reference material and are not active key types by themselves.
 New signer-store initialization installs and enables
 `aplane.falcon1024-allowlist.v1` from the bundled library source into the
-identity-local encrypted template store; sentry-role initialization skips this
+product-store encrypted template store; sentry-role initialization skips this
 signer account key type. Other bundled templates remain install sources until
-explicitly imported/enabled for an identity.
+explicitly imported/enabled in the product store.
 
 The bundled templates that ship under `library/templates/` are:
 
@@ -1236,12 +1225,12 @@ Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
 new signer stores; the rest are available to install from the library.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
-admin protocol and also includes installed identity templates that no longer have a matching plaintext
+admin protocol and also includes installed product-store templates that no longer have a matching plaintext
 library YAML entry. The list result includes parsed metadata (`key_type`, `template_type`, display text,
 creation parameters, and runtime arguments) when library source is available, plus install and enabled state.
 Invalid files are reported as invalid entries; duplicate or ambiguous library candidates are not activation
 events. Compiled providers that are `library` visible in `internal/keytypecatalog` also appear in this list
-with `template_type:"compiled_provider"`; their enabled state comes from identity key type state
+with `template_type:"compiled_provider"`; their enabled state comes from product-store key type state
 records. `compiled_provider` is an admin/library wire projection of
 `keytypestate.SourceCompiled`, not a `templatestore.TemplateType`; the encrypted
 template store accepts only YAML-backed `generic` and `composed` template types.
@@ -1260,13 +1249,13 @@ signing authorization gate for existing key files. The low-level template store
 persists encrypted template bytes only; `templatelibrary` coordinates it with
 the paired key-type state mutation. Store initialization uses the same encrypted template
 store and enabled state-record model for default YAML key types, but runs before
-the identity has a live reload surface. Activating a
+the runtime has a live reload surface. Activating a
 `compiled_provider` library entry uses `activate_key_type` and writes only the
-identity state record because the executable provider is already registered in
+product-store state record because the executable provider is already registered in
 the binary. Calling `activate_key_type` for an installed YAML template sets its
-state record to `enabled` and reloads the identity. Calling `deactivate_key_type`
+state record to `enabled` and reloads the runtime. Calling `deactivate_key_type`
 for an installed YAML template verifies that no key of that `key_type` exists
-for the identity, then sets the record to `disabled`. Calling
+in the product store, then sets the record to `disabled`. Calling
 `deactivate_key_type` for a compiled provider uses the same unused-key guard,
 then deletes the state record.
 
@@ -1280,10 +1269,10 @@ reported accurately). This lifecycle is not a single transactional filesystem
 unit. Editing or copying files into `<APSIGNER_DATA>/library/templates/` does
 not change available key types until an authenticated admin installs one.
 
-Removal helpers distinguish disabling from removal. Disabling a compiled provider removes only the identity
+Removal helpers distinguish disabling from removal. Disabling a compiled provider removes only the product-store
 state record and does not unregister process-global provider code. Disabling a YAML template leaves the
-encrypted `.template` installed and sets the identity state record to disabled. Removing an encrypted YAML template
-moves the `.template` source to the identity-local deleted key type archive and deletes the state record; this
+encrypted `.template` installed and sets the product-store state record to disabled. Removing an encrypted YAML template
+moves the `.template` source to the product-store deleted key type archive and deletes the state record; this
 removal is exposed through authenticated admin transport as `apadmin template remove`.
 Disabling or removing an installed YAML template requires that no stored product
 key depends on that `key_type`; compiled-provider disable has the same
@@ -1417,7 +1406,7 @@ The scanner covers:
   generations require an authenticated seal;
 - active and retained credentials/templates, key-type state, witness public
   metadata, exact manifest bytes, and retained-generation seal records;
-- identity-local deleted credential and template archives;
+- product-store deleted credential and template archives;
 - exact policy/node-role documents and their explicit-term sidecars;
 - optional rotation snapshot and baseline envelopes as classified durable
   records.
@@ -1498,7 +1487,7 @@ the complete retained-generation anchor set before invoking
 encrypted body before returning its exact root reference. Only then does
 `crypto.StartRotation` atomically replace `keyring.enc` with the appended
 current term, former-current descriptor, snapshot reference, and anchor set.
-The caller must hold the identity mutation lock.
+The caller must hold the store mutation lock.
 
 A failure before root rename leaves the old root and in-memory authority
 unchanged; the durable target-term snapshot may be an unreferenced orphan.
@@ -1719,9 +1708,9 @@ Policy load behavior:
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
-- admin policy writes require an unlocked identity and replace the
+- admin policy writes require an unlocked signer store and replace the
   node-role-selected policy document
-- online `apadmin policy` verbs authenticate and may unlock a locked identity;
+- online `apadmin policy` verbs authenticate and may unlock a locked signer store;
   online export emits the exact daemon snapshot bytes and online digest emits
   the daemon-reported snapshot SHA
 - direct YAML edits require offline `apadmin policy rescue apply -` or `apstore policy sign`
@@ -1831,7 +1820,7 @@ resource result to canonical group and fee planning.
 
 `/plan` and `/sign` never query a per-network algod. The client owns ordinary
 transaction fee selection through its algod SuggestedParams response and
-validates that response as v42-compatible (`fnet5` is the explicit FNet alias).
+validates that response as v42-compatible.
 First-party planning and executable workflows refresh this check before asking
 apsigner to plan, releasing signatures, or submitting, including JavaScript
 `plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
@@ -2003,7 +1992,7 @@ that status does not invalidate the key or alter signing behavior.
 
 `apstore keys list` is a local, passphrase-gated inventory surface for the
 product store's encrypted key files. It decrypts key metadata using
-the identity store passphrase and lists successfully scanned key addresses or
+the signer-store passphrase and lists successfully scanned key addresses or
 Witness Key IDs with their key type, durable category, creation timestamp, and
 key-file name.
 
@@ -2048,7 +2037,7 @@ trust claim.
 #### Sentry Public Key Reference Library
 
 `apadmin sentry import <export-json> <name>` imports an
-`aplane.witness-key-public.v1` envelope into the target identity's public
+`aplane.witness-key-public.v1` envelope into the product store's public
 sentry reference library:
 
 ```text
@@ -2189,12 +2178,10 @@ Template capability notes:
 
 ### Audit Log
 
-JSONL at `audit.log`, `0600` permissions, fsynced per write, UTC timestamps. Product-store events retain `identity_id:"default"`; process/pre-auth events omit it.
+JSONL at `audit.log`, `0600` permissions, fsynced per write, UTC timestamps.
 
 Audit entries may include:
 
-- `identity_id`: owning identity field,
-- `target_identity_id`: signing/admin identity targeted by the action,
 - `principal`: principal field,
 - `requester_principal`: principal that requested the action,
 - `approver_principal`: principal that approved or rejected the action,
@@ -2204,8 +2191,7 @@ Audit entries may include:
 - `reason`: rejection, failure, or denial reason when available,
 - `outcome`: requested, approved, rejected, failed, connected, disconnected, or similar action outcome.
 
-Product-mode audit values collapse to the product identity. Target identity,
-requester, and approver remain distinct fields in the log shape.
+Requester and approver remain distinct principal fields in the log shape.
 
 Rotation:
 
@@ -2254,15 +2240,15 @@ Signing-audit semantics:
 
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
-- signing audit over HTTP records `transport:"http"` and the token-authenticated identity as requester
+- signing audit over HTTP records `transport:"http"` and the token-authenticated principal as requester
 - sentry-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
   Witness Key ID, `txn_sender` is the decoded target sender, and
   `policy_rule_id` carries the deterministic sentry rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
-- admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, target identity, principal attribution, action/resource details in `reason`, and remote address when available
-- session connected/disconnected audit records the admin session ID, transport, target identity, and remote address
+- admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
+- session connected/disconnected audit records the admin session ID, transport, principal, and remote address
 - key-management audit events are emitted for both REST and authenticated IPC admin operations
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time key-file invariant; for LogicSig salt failures,
@@ -2315,7 +2301,7 @@ Authentication requires both factors in one handshake:
 - public key enrolled for the product in `identities/default/.ssh/authorized_keys`
 - mutual proof of the product API token
 
-Normal clients send the fixed non-secret username `default`. After SSH
+Normal clients send the fixed non-secret username `aplane`. After SSH
 verifies possession of an enrolled public key, the server returns partial
 success and requires keyboard-interactive authentication. That exchange is
 programmatic and has two rounds:
@@ -2324,13 +2310,16 @@ programmatic and has two rounds:
 2. server returns a fresh 32-byte nonce and its proof; the client verifies that proof before returning its own proof
 
 The v1 proof transcript is the concatenation of five uint32-big-endian
-length-prefixed fields: `aplane-ssh-token-proof-v1`, identity ID,
-SHA-256 of the canonical accepted SSH host-key blob, client nonce, and server
-nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
+length-prefixed fields: `aplane-ssh-token-proof-v1`, the fixed normal-auth SSH
+username `aplane`, SHA-256 of the canonical accepted SSH host-key blob, client
+nonce, and server nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
 followed by the length-prefixed transcript. Proofs are HMAC-SHA256 keyed by the
 raw token. JSON messages reject unknown or duplicate fields, non-canonical
 base64url, wrong sizes, and trailing data. The shared conformance vector is
 `test/contracts/sshtunnel/token_proof_v1.json`.
+
+Because the transcript encoding is compatibility-bearing, any post-v1 field,
+ordering, or encoding change requires a new protocol domain/version.
 
 The server computes both role proofs under one token-authenticator read lock
 and records that token generation on the authenticated connection. Clients
@@ -2361,21 +2350,20 @@ Unavailable or invalid client token proofs incur a 5-second delay.
 
 Token provisioning flow:
 
-1. client connects as `request-token:default`
+1. client connects as `request-token`
 2. server rejects every other username before SSH auth succeeds
-3. key-only SSH auth succeeds for the product identity
-4. the `provision` exec request remains bound to `default`
+3. key-only SSH auth succeeds for the product
+4. the `provision` exec request is accepted on that authenticated connection
 5. server verifies the product admin client is connected
 6. admin approves via TUI
-7. server enrolls the public key for `default`
+7. server enrolls the public key
 8. server generates or loads token
 9. token is sent over SSH exec channel
 10. audit log is written after confirmed delivery
 
 The callbacks are separated as approval, key enrollment, issuance, then audit.
 
-Product-facing clients request tokens with the fixed `request-token:default`
-username. There is no client-selected provisioning identity.
+Product-facing clients request tokens with the fixed `request-token` username.
 
 Token revocation behavior:
 
@@ -2454,7 +2442,7 @@ Auto-approval policy includes:
 - `auto_approve_self_noop_transfer`: approve a single signer-controlled request without operator review only when the real transaction is either a 0 ALGO payment to self or a 0-unit ASA transfer to self, has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and its fee after subtracting signer-added dummy fees is at most 1000 microAlgos. Server-generated LogicSig-resource dummy transactions are allowed only when they use APlane's embedded dummy LogicSig address, match the real transaction's network and validity window, carry no fee, and the real transaction fee increase exactly covers those dummies. Priced program bytes and native-PQ fee contributions disable this narrow auto-approval. The ASA form may opt into an asset if the account does not already hold it.
 
 `user_auto_approve` is not an auto-approval policy rule. It is the product-runtime
-fallback switch stored in identity config and shown in `apadmin` as
+fallback switch stored in product runtime config and shown in `apadmin` as
 `User Auto-Approve`. It controls only the operator-default fallback after
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
@@ -2488,7 +2476,7 @@ Warnings are displayed but do not block approval. They are relevant to the
 manual review fallback path; when `always_review_warnings:true`, warnings force
 operator review before auto-approval or the `user_auto_approve` fallback can
 sign the request. Groups get group-level approval; single transactions get
-transaction-level approval. Signing approval timeout is the identity-effective
+transaction-level approval. Signing approval timeout is the product-runtime
 `approval_wait` value, defaulting to 60 seconds.
 
 For HTTP `/sign`, request context cancellation cancels queued or pending manual
@@ -2509,7 +2497,7 @@ Broader group-level or structural policy constraints are not part of this compat
 
 ## Runtime Ownership and Shutdown
 
-The signer owns one product `*identity.Runtime` directly. There is no live
+The signer owns one product `*productruntime.Runtime` directly. There is no live
 identity-decommission state or operation lease. Graceful shutdown stops and
 drains request servers before destroying runtime key state. Lock, disconnect,
 displacement, and shutdown continue to fail pending approvals through the
@@ -2560,7 +2548,7 @@ Lifecycle:
 
 ## Template Reload Contract
 
-`identity.Runtime.reloadLocked` delegates through the production function wired
+`productruntime.Runtime.reloadLocked` delegates through the production function wired
 by `startup.WireReloadFunc` to `templates.ReloadService.Reload`. Its order is:
 
 1. open or reuse the keyring
@@ -2590,7 +2578,7 @@ Key type immutability:
 
 - a `key_type` is a compatibility boundary and must not be redefined in-place,
 - provider registries are process-global within one `apsigner` process,
-- identity-private provider namespaces are not part of the current contract,
+- private provider namespaces are not part of the product contract,
 - custom template/provider authors must use globally unique `key_type` values in one signer process,
 - signer-data library templates are authoritative install sources when present,
 - keystore templates may add new non-built-in `key_type` values but must not override built-ins,
@@ -2600,12 +2588,12 @@ Product key-type filtering:
 
 - a process-global provider can exist without being visible to the product store,
 - `/keytypes`, admin `list_key_types`, and key generation filter by the product
-  identity's default-enabled key types plus enabled identity state records,
+  store's default-enabled key types plus enabled product-store state records,
 - a globally registered generic/composed template that is not installed or
   enabled for the product store is not generatable by that store,
 - existing keys remain owned by the product keystore; provider
   lookup only supplies compatible signing/derivation code for keys already
-  owned by that identity.
+  owned by the product store.
 
 Key-type and key-instance inventory carry an additive `authorization_kind`
 field whose closed values are `ed25519`, `native_pq`, and `logic_sig`. The
@@ -2641,7 +2629,7 @@ Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 - `CompiledIdempotentKeyTypes`
 - `CompiledConflictingKeyTypes`
 
-Admin library template install verifies activation from the identity-local
+Admin library template install verifies activation from the product-store
 `ReloadReport`: the installed key type must appear in the activated or
 idempotent bucket for the requested template family. A process-global provider
 registry hit alone is not sufficient proof that the product runtime accepted the
@@ -2959,7 +2947,7 @@ admin timeout. Import does not compile or install templates because
 templates are not archive members. The IPC transfer declares its exact source
 size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
 one writable upload for the product store. Commit claims the completed upload under the
-identity mutation lock, releases that lock for hashing and deep verification,
+store mutation lock, releases that lock for hashing and deep verification,
 then reacquires it only for the final publish. A new import supersedes writable
 upload residue without deleting an archive already undergoing validation;
 daemon startup removes both kinds of residue left by a prior process. Deep
@@ -3051,7 +3039,7 @@ Divergence refuses rollback rather than discarding later mutations. Rollback
 reconstructs the sealed parent content into a fresh current-term generation; it
 never repoints `CURRENT` at historical ciphertext.
 
-Restored credentials immediately operate under the destination identity's
+Restored credentials immediately operate under the destination store's
 current policy, approval default, network mappings, endpoints, and installed
 configuration. No source-policy comparison or unattended-signing
 acknowledgement is part of restore. This matches bulk key import: the
@@ -3061,7 +3049,7 @@ responsible for the destination policy under which restored authority runs.
 ### Offline rebuild
 
 `apstore rebuild <archive-path> [--role signer|sentry]` remains the rescue
-path for an absent identity store. It applies the same credential validation
+path for an absent product store. It applies the same credential validation
 and credential-only semantics into a newly staged first generation. The sealed
 manifest source role supplies the default role; an explicit incompatible role
 or role-conflicting credential is rejected.
@@ -3151,7 +3139,7 @@ Cross-SDK compatibility-bearing behavior:
   (`pkg/signerapi/error_codes.go`). Clients classify failures by `code`
   (empty when the server does not supply one), never by `error` message text.
   Endpoint-specific success DTOs are not the error envelope.
-- SDK/client `/sign` deadlines must be long enough for the identity-effective
+- SDK/client `/sign` deadlines must be long enough for the product-runtime
   signer approval wait. The repo-owned signer client discovers
   `/status.approval_wait_seconds` and uses that value plus slack; external SDKs
   should avoid defaults shorter than the configured approval wait. When

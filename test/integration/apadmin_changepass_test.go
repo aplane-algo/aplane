@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -26,7 +26,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	if err := os.WriteFile(identityPassphrasePath, []byte(currentPassphrase), 0o600); err != nil {
 		t.Fatalf("failed to seed identity passphrase file: %v", err)
 	}
-	if err := identity.SaveUnlockConfig(env.SignerDataDir, &identity.UnlockConfig{
+	if err := unlockconfig.SaveUnlockConfig(env.SignerDataDir, &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBinary, identityPassphrasePath},
 	}); err != nil {
 		t.Fatalf("failed to write identity unlock config: %v", err)

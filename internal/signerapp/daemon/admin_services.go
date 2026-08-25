@@ -15,18 +15,16 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storeadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -35,7 +33,8 @@ import (
 )
 
 type signerAdminServices struct {
-	signer *Signer
+	signer  *Signer
+	product *productruntime.Runtime
 }
 
 type signerBackupServices struct {
@@ -48,21 +47,23 @@ type signerTemplateServices struct {
 	signer *Signer
 }
 
-var errIdentityStoreBusy = errors.New("identity store mutation is in progress")
+var errStoreBusy = errors.New("product store mutation is in progress")
 
 type signerAdminAppDeps struct {
 	signer *Signer
 }
 
 var (
-	_ adminserver.SettingsServices = signeradmin.Service{}
-	_ adminserver.KeyServices      = keyadmin.IPCService{}
-	_ adminserver.BackupServices   = signerBackupServices{}
-	_ adminserver.TemplateServices = signerTemplateServices{}
+	_ adminserver.ProductServices         = signerAdminServices{}
+	_ adminserver.SettingsServices        = signeradmin.Service{}
+	_ adminserver.KeyServices             = keyadmin.IPCService{}
+	_ adminserver.BackupServices          = signerBackupServices{}
+	_ adminserver.TemplateServices        = signerTemplateServices{}
+	_ adminserver.StoreInspectionServices = signerAdminServices{}
 )
 
 func (fs *Signer) adminServices() signerAdminServices {
-	return signerAdminServices{signer: fs}
+	return signerAdminServices{signer: fs, product: fs.productRuntime()}
 }
 
 func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
@@ -71,7 +72,7 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	}
 	svc := fs.adminServices()
 	return adminserver.SessionDeps{
-		Identity:    svc,
+		Product:     svc,
 		Settings:    svc.adminApp(),
 		Keys:        svc.keyApp(),
 		Backups:     svc.backupServices(),
@@ -83,18 +84,16 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	}
 }
 
-func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
-	if s.signer.nodeFailure() != nil {
-		return nil
-	}
-	return s.signer.productIdentityRuntime()
+func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
+	return s.product
 }
 
-func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte) error {
-	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir())
+func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
+	return crypto.VerifyPassphraseWithKeyring(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
 }
 
-func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
+func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
+	ir := s.ProductRuntime()
 	// Generation-based stores reconcile before unlock: CURRENT is the sole
 	// commit record, staging residue and uncommitted attempts are discarded
 	// (never resumed), and the selected generation must validate. Any
@@ -142,7 +141,7 @@ func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []b
 // reload can publish signing authority. It also removes a snapshot left behind
 // by a crash after the root was durably closed.
 func (s signerAdminServices) completePendingRotation(
-	ir *identity.Runtime,
+	ir *productruntime.Runtime,
 	passphrase []byte,
 ) error {
 	complete := func() error {
@@ -168,16 +167,14 @@ func (s signerAdminServices) completePendingRotation(
 		}
 		if report != nil && report.Resume != nil {
 			logInfof(
-				"completed pending key rotation for identity %s (%d rewrapped, %d re-signed)",
-				productmode.IdentityID,
+				"completed pending signer-store key rotation (%d rewrapped, %d re-signed)",
 				report.Resume.Rewrapped,
 				report.Resume.Resigned,
 			)
 		}
 		if report != nil && report.PreRootSnapshotDiscarded {
 			logInfof(
-				"discarded unreferenced pre-root rotation snapshot for identity %s",
-				productmode.IdentityID,
+				"discarded unreferenced pre-root signer-store rotation snapshot",
 			)
 		}
 		return nil
@@ -189,9 +186,9 @@ func (s signerAdminServices) completePendingRotation(
 }
 
 // reconcileGenerations enforces CURRENT as the sole commit record at unlock
-// (docs/ARCH_GENERATIONS.md §7) under the identity mutation lock, and
+// (docs/ARCH_GENERATIONS.md §7) under the store mutation lock, and
 // validates the selected generation fail-closed.
-func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
+func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime) error {
 	if s.signer == nil {
 		return s.reconcileGenerationsLocked(ir)
 	}
@@ -201,9 +198,9 @@ func (s signerAdminServices) reconcileGenerations(ir *identity.Runtime) error {
 }
 
 // reconcileGenerationsLocked performs reconciliation without acquiring the
-// identity mutation lock. Callers either use reconcileGenerations or hold the
+// store mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
-func (s signerAdminServices) reconcileGenerationsLocked(ir *identity.Runtime) error {
+func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime) error {
 	report, err := genstore.Reconcile(ir.KeyPaths(), nil)
 	if err != nil {
 		return err
@@ -235,15 +232,15 @@ func unlockFailureCode(errMsg string) string {
 }
 
 func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
-	return s.storeApp().InitializeStore(s.ProductIdentityRuntime(), req)
+	return s.storeApp().InitializeStore(req)
 }
 
-func (s signerAdminServices) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
-	return s.storeApp().ChangeStorePassphrase(ir, req)
+func (s signerAdminServices) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+	return s.storeApp().ChangeStorePassphrase(req)
 }
 
 func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {
-	return authz.NewProductPrincipalIdentity(method)
+	return auth.NewProductIdentity(method)
 }
 
 func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
@@ -253,13 +250,14 @@ func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionConte
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
-func (s signerAdminServices) RevokeProductToken(ir *identity.Runtime) error {
-	return s.signer.RevokeProductToken(ir)
+func (s signerAdminServices) RevokeProductToken() error {
+	return s.signer.RevokeProductToken(s.ProductRuntime())
 }
 
-func (s signerBackupServices) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+	ir := s.Runtime
 	wasRecovery := ir.IsRecovery()
-	result := s.Service.RestoreBackup(ir, req)
+	result := s.Service.RestoreBackup(req)
 	if result.Success && wasRecovery {
 		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
 			result.KeyCount = report.KeyCount
@@ -269,9 +267,10 @@ func (s signerBackupServices) RestoreBackup(ir *identity.Runtime, req adminproto
 	return result
 }
 
-func (s signerBackupServices) RollbackRestore(ir *identity.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+	ir := s.Runtime
 	wasRecovery := ir.IsRecovery()
-	result := s.Service.RollbackRestore(ir, req)
+	result := s.Service.RollbackRestore(req)
 	if result.Success && wasRecovery {
 		s.daemon.exitRecoveryIfReconciled(ir)
 	}
@@ -279,7 +278,8 @@ func (s signerBackupServices) RollbackRestore(ir *identity.Runtime, req adminpro
 	return result
 }
 
-func (s signerBackupServices) ReconcileStore(ir *identity.Runtime) adminproto.ReconcileStoreResult {
+func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
+	ir := s.Runtime
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
 	// bound before an uncertain CURRENT flip, including when this attempt
@@ -305,10 +305,10 @@ func (s signerBackupServices) ReconcileStore(ir *identity.Runtime) adminproto.Re
 }
 
 // reconcileReloadAndPromote keeps strict validation, key publication, and the
-// recovery-to-unlocked transition under one identity mutation lock. This
+// recovery-to-unlocked transition under one store mutation lock. This
 // prevents a concurrent admin mutation from landing between validation and
 // the runtime snapshot that authorizes signing.
-func (s signerAdminServices) reconcileReloadAndPromote(ir *identity.Runtime) (*signertemplates.ReloadReport, error) {
+func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
 	work := func() error {
 		if err := s.reconcileGenerationsLocked(ir); err != nil {
@@ -320,7 +320,7 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *identity.Runtime) (*s
 			return fmt.Errorf("current generation failed credential reload: %w", err)
 		}
 		if ir.IsRecovery() && !ir.PromoteRecoveryToUnlocked() {
-			return fmt.Errorf("identity state changed while store reconciliation completed")
+			return fmt.Errorf("runtime state changed while store reconciliation completed")
 		}
 		return nil
 	}
@@ -336,20 +336,20 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *identity.Runtime) (*s
 // generation's directories after a pointer flip: fsnotify watches bind to
 // inodes, so the watches armed before the flip still point at the prior
 // generation.
-func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *identity.Runtime) {
+func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *productruntime.Runtime) {
 	ir.StopKeyWatcher()
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 }
 
 // exitRecoveryIfReconciled promotes recovery only after the generation store
 // reconciles and validates cleanly.
-func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*signertemplates.ReloadReport, bool) {
+func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime) (*signertemplates.ReloadReport, bool) {
 	// The rescan re-runs generational reconciliation and fail-closed
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
 	report, err := s.reconcileReloadAndPromote(ir)
 	if err != nil {
-		logInfof("staying in recovery mode: %s failed reconciliation rescan: %v", productmode.IdentityID, err)
+		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
 		return nil, false
 	}
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
@@ -361,8 +361,9 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *identity.Runtime) (*si
 	return report, true
 }
 
-func (s signerTemplateServices) ListKeyTypes(ir *identity.Runtime) adminproto.ListKeyTypesResult {
-	resp, err := s.signer.restService().KeyTypesForIdentity(ir)
+func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
+	ir := s.Runtime
+	resp, err := s.signer.restService().KeyTypes(ir)
 	if err != nil {
 		return adminproto.ListKeyTypesResult{
 			Code:  "list_failed",
@@ -375,7 +376,8 @@ func (s signerTemplateServices) ListKeyTypes(ir *identity.Runtime) adminproto.Li
 	return adminproto.ListKeyTypesResult{KeyTypes: resp.KeyTypes}
 }
 
-func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminproto.ListSentryReferencesResult {
+func (s signerAdminServices) ListSentryReferences() adminproto.ListSentryReferencesResult {
+	ir := s.ProductRuntime()
 	var records []sentryrefs.Record
 	err := s.withStoreInspection(func() error {
 		var err error
@@ -393,7 +395,8 @@ func (s signerAdminServices) ListSentryReferences(ir *identity.Runtime) adminpro
 	return result
 }
 
-func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+func (s signerAdminServices) GetSentryReference(req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+	ir := s.ProductRuntime()
 	var record sentryrefs.Record
 	var found bool
 	err := s.withStoreInspection(func() error {
@@ -411,7 +414,8 @@ func (s signerAdminServices) GetSentryReference(ir *identity.Runtime, req adminp
 	return adminproto.GetSentryReferenceResult{Success: true, Reference: adminSentryReference(record)}
 }
 
-func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s signerAdminServices) ImportSentryReference(req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+	ir := s.ProductRuntime()
 	var record *sentryrefs.Record
 	err := s.withStoreMutation(func() error {
 		var err error
@@ -424,7 +428,8 @@ func (s signerAdminServices) ImportSentryReference(ir *identity.Runtime, req adm
 	return adminproto.ImportSentryReferenceResult{Success: true, Reference: adminSentryReference(*record)}
 }
 
-func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s signerAdminServices) RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+	ir := s.ProductRuntime()
 	var removed bool
 	var componentKey string
 	err := s.withStoreMutation(func() error {
@@ -446,7 +451,8 @@ func (s signerAdminServices) RemoveSentryReference(ir *identity.Runtime, req adm
 	}
 }
 
-func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+	ir := s.ProductRuntime()
 	componentKey, err := witness.NormalizeID(req.WitnessKeyID)
 	if err != nil {
 		return adminproto.ExportSentryPublicResult{Code: "invalid_witness_key_id", Error: err.Error()}
@@ -473,7 +479,8 @@ func (s signerAdminServices) ExportSentryPublic(ir *identity.Runtime, req adminp
 	return adminproto.ExportSentryPublicResult{Success: true, WitnessKeyID: componentKey, EnvelopeJSON: string(data)}
 }
 
-func (s signerAdminServices) ListGenerations(ir *identity.Runtime) adminproto.GenerationInventory {
+func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
+	ir := s.ProductRuntime()
 	var report genstore.ReconcileReport
 	err := s.withStoreInspection(func() error {
 		generational, err := genstore.IsGenerational(ir.KeyPaths())
@@ -512,8 +519,8 @@ func (s signerAdminServices) withStoreInspection(fn func() error) error {
 }
 
 func identityStoreInspectionError(err error, fallbackCode string) (string, string) {
-	if errors.Is(err, errIdentityStoreBusy) {
-		return protocol.ResultCodeIdentityBusy, err.Error()
+	if errors.Is(err, errStoreBusy) {
+		return protocol.ResultCodeStoreBusy, err.Error()
 	}
 	return fallbackCode, err.Error()
 }
@@ -585,11 +592,11 @@ func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.Sessi
 }
 
 func (s signerAdminServices) adminApp() signeradmin.Service {
-	return signeradmin.Service{Deps: signerAdminAppDeps(s)}
+	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
 }
 
 func (s signerAdminServices) backupApp() backupadmin.Service {
-	return backupadmin.Service{Deps: signerAdminAppDeps(s)}
+	return backupadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
 }
 
 func (s signerAdminServices) backupServices() signerBackupServices {
@@ -597,7 +604,7 @@ func (s signerAdminServices) backupServices() signerBackupServices {
 }
 
 func (s signerAdminServices) templateApp() templateadmin.Service {
-	return templateadmin.Service{Deps: signerAdminAppDeps(s)}
+	return templateadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
 }
 
 func (s signerAdminServices) templateServices() signerTemplateServices {
@@ -606,7 +613,8 @@ func (s signerAdminServices) templateServices() signerTemplateServices {
 
 func (s signerAdminServices) storeApp() storeadmin.Service {
 	return storeadmin.Service{
-		Deps:           signerAdminAppDeps(s),
+		Deps:           signerAdminAppDeps{signer: s.signer},
+		Runtime:        s.ProductRuntime(),
 		AuditLog:       s.signer.auditLog,
 		UnlockIdentity: s.UnlockIdentity,
 	}
@@ -615,7 +623,7 @@ func (s signerAdminServices) storeApp() storeadmin.Service {
 func (s signerAdminServices) keyApp() keyadmin.IPCService {
 	return keyadmin.IPCService{
 		Service:             s.signer.restService().Deps.KeyAdmin,
-		GenerateGenericLSig: s.signer.generateGenericLSigForIdentityContext,
+		GenerateGenericLSig: s.signer.generateGenericLSigForRuntimeContext,
 		Logf:                logInfof,
 	}
 }

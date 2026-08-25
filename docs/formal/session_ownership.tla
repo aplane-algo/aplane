@@ -197,12 +197,12 @@ TypeOK ==
     /\ \A s \in Sessions :
            sessState[s] \in {"Authed", "Active", "Displaced"} => authenticated[s]
 
-\* SO1: the SessionManager holds at most one active owner per identity
+\* SO1: the SessionManager holds at most one active owner
 \* (single map slot, swapped atomically).
 SO1_SingleActiveOwner ==
     Cardinality(ActiveSet) <= 1
 
-\* SO2: an unlocked identity with lock_on_disconnect set always has a live
+\* SO2: an unlocked product runtime with lock_on_disconnect set always has a live
 \* authenticated session -- the owner, or a session whose exit will run
 \* owner cleanup and re-lock. This is the "no stranded unlock" invariant
 \* the fix exists to establish: it fails on the pre-fix cleanup condition.

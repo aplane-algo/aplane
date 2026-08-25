@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -31,7 +31,7 @@ type GenericLSigGenerator struct {
 	AuditLog  AuditLogger
 }
 
-func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *identity.Runtime, keyType string, parameters map[string]string) (string, error) {
+func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productruntime.Runtime, keyType string, parameters map[string]string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}

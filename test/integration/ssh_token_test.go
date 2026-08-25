@@ -72,9 +72,6 @@ func TestRequestTokenHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
 	}()
 
 	req := mustReadIPCTokenProvisioningRequest(t, ipcClient, 10*time.Second)
-	if req.IdentityID != "default" {
-		t.Fatalf("expected default identity, got %s", req.IdentityID)
-	}
 	if req.SSHFingerprint == "" {
 		t.Fatal("expected SSH fingerprint in token provisioning request")
 	}
@@ -821,7 +818,7 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 	t.Cleanup(func() { _ = eng.Disconnect() })
 }
 
-func TestServerRejectsUnsupportedProvisioningIdentity(t *testing.T) {
+func TestServerRejectsUnsupportedProvisioningUsername(t *testing.T) {
 	env := prepareFreshProvisioningEnv(t, true)
 
 	signerd := harness.NewSignerHarness(t)
@@ -834,12 +831,12 @@ func TestServerRejectsUnsupportedProvisioningIdentity(t *testing.T) {
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	_, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token:nondefault", clientSigner, hostKey)
+	_, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token:other", clientSigner, hostKey)
 	if err == nil {
 		t.Fatal("expected unsupported identity provisioning handshake to fail")
 	}
-	if !strings.Contains(err.Error(), "authenticate") && !strings.Contains(err.Error(), "unsupported identity") {
-		t.Fatalf("expected unsupported-identity auth failure, got: %v", err)
+	if !strings.Contains(err.Error(), "authenticate") && !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported-username auth failure, got: %v", err)
 	}
 
 	clientToken, err := util.ReadToken(env.ClientTokenPath)
@@ -867,7 +864,7 @@ func TestProvisioningRejectsUnknownExecCommand(t *testing.T) {
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	client, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token:default", clientSigner, hostKey)
+	client, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token", clientSigner, hostKey)
 	if err != nil {
 		t.Fatalf("failed to establish provisioning SSH client: %v", err)
 	}
@@ -952,7 +949,7 @@ func TestProvisioningConnectionDropAfterApprovalResponseIsHandledSafely(t *testi
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	client, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token:default", clientSigner, hostKey)
+	client, err := dialProvisioningClient(t, sshCfg.Host, sshCfg.Port, "request-token", clientSigner, hostKey)
 	if err != nil {
 		t.Fatalf("failed to establish provisioning SSH client: %v", err)
 	}

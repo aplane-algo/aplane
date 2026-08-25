@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -185,7 +185,7 @@ func Run(dataDir string) int {
 
 	// Create the process root server (shared infrastructure only)
 	server := &Signer{
-		nodeFailState: &identity.NodeFailState{},
+		nodeFailState: &productruntime.NodeFailState{},
 		authorizer:    authorizer,
 		auditLog:      auditLog,
 		config:        &config,
@@ -198,14 +198,14 @@ func Run(dataDir string) int {
 		KeyPaths:              startupOpts.Paths,
 		Config:                &config,
 		DefaultSessionTimeout: passphraseTimeout,
-	}, server.identityBuildHooks())
+	}, server.productBuildHooks())
 	if err != nil {
 		logErrorf("%v", err)
 		return 1
 	}
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
-	logInfof("product identity runtime initialized")
+	logInfof("product runtime initialized")
 	removed, cleanupErr := backupadmin.CleanupIncompleteBackupImports(server.keyPaths)
 	if cleanupErr != nil {
 		logErrorf("failed to clean incomplete backup imports: %v", cleanupErr)
@@ -225,7 +225,7 @@ func Run(dataDir string) int {
 		// Generation-based stores reconcile before startup unlock: CURRENT
 		// is the sole commit record; uncommitted attempts are discarded and
 		// the selected generation must validate, else recovery mode.
-		adminServices := signerAdminServices{signer: server}
+		adminServices := server.adminServices()
 		generationErr := adminServices.reconcileGenerations(ir)
 		if generationErr != nil {
 			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
@@ -320,7 +320,7 @@ func Run(dataDir string) int {
 		ProductRuntime:  ir,
 		ShutdownTimeout: 5 * time.Second,
 		AuditLog:        auditLog,
-		StartWatcher: func(product *identity.Runtime) {
+		StartWatcher: func(product *productruntime.Runtime) {
 			product.EnsureKeyWatcher(startKeyWatcherForDir)
 		},
 		Services: []signerstartup.LifecycleService{

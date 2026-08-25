@@ -24,7 +24,7 @@ Adjacent tools:
 apadmin (TUI)
     ↓ line-delimited JSON admin protocol over IPC or SSH admin transport
 apsigner (daemon)
-    ↓ identity-scoped runtime, approval, key management
+    ↓ product runtime, approval, key management
 signer data directory
 ```
 
@@ -179,7 +179,7 @@ use the destination's current policy and configuration.
 `apadmin` imports external archives into the daemon-owned backup locker before
 restoring them. It does not perform offline recovery. With the daemon stopped,
 use `apstore verify` to inspect an external archive or `apstore rebuild` to
-recover an absent identity store.
+recover an absent product store.
 
 See `docs/USER_STORE_MGMT.md` for the complete live and offline command split.
 

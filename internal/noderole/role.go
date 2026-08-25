@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package noderole owns the durable single-purpose role for an apsigner data
-// root. The role is stored in root node.yaml and integrity-bound per identity.
+// root. The role is stored in root node.yaml and integrity-bound to the product store.
 package noderole
 
 import (

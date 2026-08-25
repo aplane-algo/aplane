@@ -49,7 +49,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 		return "", fmt.Errorf("appass-file not found at %s; ensure it is installed alongside apsigner", passFileBin)
 	}
 
-	// Write passphrase file to identity-scoped directory
+	// Write the passphrase file to the product store.
 	identityDir := storepaths.NewPaths(dataDir).ProductDir()
 	if err := os.MkdirAll(identityDir, 0700); err != nil {
 		return "", fmt.Errorf("creating identity directory: %w", err)
@@ -65,7 +65,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 		return "", fmt.Errorf("writing passphrase file: %w", err)
 	}
 
-	// Write identity-scoped unlock config
+	// Write the product store's unlock config.
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
@@ -154,7 +154,7 @@ func executeSetSystemcreds(dataDir string, passphrase []byte, svc *serviceInfo) 
 		return "", err
 	}
 
-	// Write identity-scoped unlock config
+	// Write the product store's unlock config.
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passCredsBin, credFile},
 	}
@@ -198,7 +198,7 @@ func executeClear(dataDir string) (string, error) {
 		return "", nil // nothing to clear
 	}
 
-	// Remove identity-scoped unlock config
+	// Remove the product store's unlock config.
 	if err := unlockconfig.ClearUnlockConfig(dataDir); err != nil {
 		return "", fmt.Errorf("clearing unlock config: %w", err)
 	}

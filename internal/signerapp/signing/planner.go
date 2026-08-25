@@ -20,8 +20,8 @@ type AuditLogger interface {
 	LogSignRequest(authAddress, txnSender, txnType, details string)
 }
 
-type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
+type VerifySignableKeysFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
@@ -61,7 +61,7 @@ type PlanResult struct {
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.
-type SnapshotFunc func() PlannerIdentitySnapshot
+type SnapshotFunc func() PlannerRuntimeSnapshot
 
 type Planner struct {
 	AuditLog               AuditLogger
@@ -121,7 +121,7 @@ func (p *Planner) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *Servi
 		}
 	}
 
-	var snapshot PlannerIdentitySnapshot
+	var snapshot PlannerRuntimeSnapshot
 	if p.Snapshot != nil {
 		snapshot = p.Snapshot()
 	}
@@ -238,7 +238,7 @@ func (p *Planner) logSignRequests(req signerapi.GroupSignRequest, txns []types.T
 	}
 }
 
-func knownAddressesFromSnapshot(snapshot PlannerIdentitySnapshot) map[string]bool {
+func knownAddressesFromSnapshot(snapshot PlannerRuntimeSnapshot) map[string]bool {
 	if len(snapshot.KeyFiles) == 0 {
 		return nil
 	}

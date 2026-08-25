@@ -234,7 +234,7 @@ func adminBatchExitCode(err error) int {
 		protocol.ErrCodeUnlockFailed,
 		protocol.ErrCodeAuthorizationDenied,
 		protocol.ErrCodeSignerLocked,
-		protocol.ErrCodeNoIdentityBound:
+		protocol.ErrCodeNoRuntimeBound:
 		return 3
 	case protocol.ResultCodeRestoreRateLimited:
 		return 4

@@ -49,7 +49,7 @@ func VerifyCurrentPassphrase(paths storepaths.Paths, passphrase []byte) error {
 // commits, the new passphrase is authoritative. Later failures deliberately
 // leave a resumable pending root instead of attempting cryptographic rollback.
 //
-// The caller holds the identity mutation lock.
+// The caller holds the store mutation lock.
 func Rotate(
 	paths storepaths.Paths,
 

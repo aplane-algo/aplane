@@ -45,7 +45,7 @@ type ResumeReport struct {
 // term and re-signs live integrity sidecars. It deliberately does not write a
 // completion baseline, clear the pending root, or remove the snapshot.
 //
-// The caller holds the identity mutation lock. Every retiring-term input must
+// The caller holds the store mutation lock. Every retiring-term input must
 // still match the snapshot's exact bytes. A target-term output is accepted on
 // retry only after context-bound authentication (or sidecar verification)
 // succeeds. Retained anchored generations are immutable and remain byte-for-

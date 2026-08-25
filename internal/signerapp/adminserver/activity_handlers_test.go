@@ -6,14 +6,13 @@ package adminserver
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type recordingIdentityLockAudit struct {
@@ -30,7 +29,7 @@ func (a *recordingIdentityLockAudit) LogIdentityLockedContext(ctx SessionContext
 }
 
 func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -65,8 +64,8 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	if audit.lockCalls != 1 {
 		t.Fatalf("audit lock calls = %d, want 1", audit.lockCalls)
 	}
-	if audit.lockCtx.TargetIdentityID != productmode.IdentityID || audit.lockCtx.AdminPrincipal.ID != "admin-principal" {
-		t.Fatalf("audit context = %+v, want target default and admin-principal", audit.lockCtx)
+	if audit.lockCtx.AdminPrincipal.ID != "admin-principal" {
+		t.Fatalf("audit context = %+v, want admin-principal", audit.lockCtx)
 	}
 	if audit.reason != "apadmin manual lock" {
 		t.Fatalf("audit reason = %q", audit.reason)
@@ -85,7 +84,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 }
 
 func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -141,7 +140,7 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 }
 
 func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})

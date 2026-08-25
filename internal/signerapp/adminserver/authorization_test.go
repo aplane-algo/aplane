@@ -5,13 +5,12 @@ package adminserver
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type recordingAuthorizer struct {
@@ -52,7 +51,7 @@ func (a *recordingAuthorizationAudit) LogAuthorizationDenied(ctx SessionContext,
 }
 
 func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -61,7 +60,7 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	audit := &recordingAuthorizationAudit{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{
-		Identity:   svc,
+		Product:    svc,
 		Settings:   svc,
 		Keys:       svc,
 		Templates:  svc,
@@ -95,8 +94,8 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	if audit.calls != 1 {
 		t.Fatalf("audit calls = %d, want 1", audit.calls)
 	}
-	if audit.ctx.TargetIdentityID != productmode.IdentityID || audit.ctx.AdminPrincipal.ID != "admin-principal" {
-		t.Fatalf("audit context = %+v, want target default and admin-principal", audit.ctx)
+	if audit.ctx.AdminPrincipal.ID != "admin-principal" {
+		t.Fatalf("audit context = %+v, want admin-principal", audit.ctx)
 	}
 	if audit.action != auth.ActionKeyTypesView || audit.resource.Type != "keytypes" {
 		t.Fatalf("audit decision = action %q resource %+v, want keytypes", audit.action, audit.resource)
@@ -106,7 +105,7 @@ func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
 	}
 }
 
-func TestSessionAuthorizationMissingIdentityFailsClosed(t *testing.T) {
+func TestSessionAuthorizationWithoutBoundRuntimeFailsClosed(t *testing.T) {
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{Authorizer: authorizer})
@@ -122,13 +121,72 @@ func TestSessionAuthorizationMissingIdentityFailsClosed(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("write count = %d, want 1", len(msgs))
 	}
-	if msgs[0].Type != protocol.MsgTypeError || msgs[0].Code != protocol.ErrCodeNoIdentityBound {
-		t.Fatalf("response = %+v, want no_identity_bound error", msgs[0])
+	if msgs[0].Type != protocol.MsgTypeError || msgs[0].Code != protocol.ErrCodeNoRuntimeBound {
+		t.Fatalf("response = %+v, want no_runtime_bound error", msgs[0])
+	}
+}
+
+func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle func(*Session)
+	}{
+		{
+			name: "revoke token",
+			handle: func(session *Session) {
+				session.HandleRevokeToken(&protocol.RevokeTokenMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "get admin settings",
+			handle: func(session *Session) {
+				session.HandleGetAdminSettings("request-1")
+			},
+		},
+		{
+			name: "update admin setting",
+			handle: func(session *Session) {
+				session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "get policy snapshot",
+			handle: func(session *Session) {
+				session.HandleGetPolicySnapshot(&protocol.GetPolicySnapshotMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "replace policy",
+			handle: func(session *Session) {
+				session.HandleReplacePolicy(&protocol.ReplacePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "validate policy",
+			handle: func(session *Session) {
+				session.HandleValidatePolicy(&protocol.ValidatePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			conn := &queueConn{}
+			test.handle(NewSession(conn, SessionDeps{}))
+
+			msgs := decodeAdminProtoWrites(t, conn)
+			if len(msgs) != 1 {
+				t.Fatalf("write count = %d, want 1", len(msgs))
+			}
+			if msgs[0].Type != protocol.MsgTypeError || msgs[0].ID != "request-1" || msgs[0].Code != protocol.ErrCodeNoRuntimeBound {
+				t.Fatalf("response = %+v, want no_runtime_bound error for request-1", msgs[0])
+			}
+		})
 	}
 }
 
 func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
@@ -136,7 +194,6 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 		policySnapshotResult: adminproto.PolicySnapshot{
 			Success:      true,
 			Target:       adminproto.PolicyTargetSentry,
-			IdentityID:   productmode.IdentityID,
 			PolicyYAML:   "reject_foreign_rekey: true\n",
 			PolicySHA256: "abc123",
 			Canonical:    true,
@@ -145,7 +202,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{
-		Identity:   svc,
+		Product:    svc,
 		Settings:   svc,
 		Authorizer: authorizer,
 	})
@@ -176,20 +233,20 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	if msgs[0].Type != protocol.MsgTypePolicySnapshot || msgs[0].ID != "snapshot-1" {
 		t.Fatalf("response = %+v, want policy_snapshot snapshot-1", msgs[0])
 	}
-	if !msgs[0].Success || msgs[0].Target != "sentry" || msgs[0].PolicyYAML != "reject_foreign_rekey: true\n" || !msgs[0].Canonical {
+	if !msgs[0].Success || msgs[0].Target != "sentry" ||
+		msgs[0].PolicyYAML != "reject_foreign_rekey: true\n" || !msgs[0].Canonical {
 		t.Fatalf("policy snapshot response = %+v, want successful canonical YAML", msgs[0])
 	}
 }
 
 func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
 		replacePolicyResult: adminproto.PolicySnapshot{
 			Success:    true,
-			IdentityID: productmode.IdentityID,
 			PolicyYAML: "reject_foreign_rekey: false\n",
 			Canonical:  true,
 		},
@@ -197,7 +254,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{
-		Identity:   svc,
+		Product:    svc,
 		Settings:   svc,
 		Authorizer: authorizer,
 	})
@@ -232,27 +289,27 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	if msgs[0].Type != protocol.MsgTypeReplacePolicyResult || msgs[0].ID != "replace-1" {
 		t.Fatalf("response = %+v, want replace_policy_result replace-1", msgs[0])
 	}
-	if !msgs[0].Success || msgs[0].PolicyYAML != "reject_foreign_rekey: false\n" || !msgs[0].Canonical {
+	if !msgs[0].Success ||
+		msgs[0].PolicyYAML != "reject_foreign_rekey: false\n" || !msgs[0].Canonical {
 		t.Fatalf("replace policy response = %+v, want successful canonical YAML", msgs[0])
 	}
 }
 
 func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
-	ir := identity.New(identity.Config{
+	ir := productruntime.New(productruntime.Config{
 
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
 		validatePolicyResult: adminproto.ValidatePolicyResult{
-			Success:    true,
-			Target:     adminproto.PolicyTargetSentry,
-			IdentityID: productmode.IdentityID,
+			Success: true,
+			Target:  adminproto.PolicyTargetSentry,
 		},
 	}
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{
-		Identity:   svc,
+		Product:    svc,
 		Settings:   svc,
 		Authorizer: authorizer,
 	})

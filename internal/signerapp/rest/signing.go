@@ -7,11 +7,11 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupSignResponse, *signersigning.ServiceError) {
+func (s Service) SignGroup(ctx context.Context, ir *productruntime.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupSignResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {
 		return nil, preErr
@@ -38,7 +38,7 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 	}, nil
 }
 
-func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *identity.Runtime, req signerapi.BoundedAdminRequest) (*signerapi.BoundedAdminPartialResponse, *signersigning.ServiceError) {
+func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *productruntime.Runtime, req signerapi.BoundedAdminRequest) (*signerapi.BoundedAdminPartialResponse, *signersigning.ServiceError) {
 	ctx, preErr := ensureSignable(ctx, ir)
 	if preErr != nil {
 		return nil, preErr
@@ -68,7 +68,7 @@ func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *identity.Runtime, 
 	}, nil
 }
 
-func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupPlanResponse, *signersigning.ServiceError) {
+func (s Service) Plan(ir *productruntime.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupPlanResponse, *signersigning.ServiceError) {
 	// Plan takes no context: it never signs, so there is no request to
 	// register or cancel; only the runtime preconditions apply.
 	if _, preErr := ensureSignable(context.Background(), ir); preErr != nil {
