@@ -255,7 +255,7 @@ func (s signerAdminServices) RevokeProductToken() error {
 }
 
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
-	ir := s.Service.Runtime
+	ir := s.Runtime
 	wasRecovery := ir.IsRecovery()
 	result := s.Service.RestoreBackup(req)
 	if result.Success && wasRecovery {
@@ -268,7 +268,7 @@ func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest)
 }
 
 func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
-	ir := s.Service.Runtime
+	ir := s.Runtime
 	wasRecovery := ir.IsRecovery()
 	result := s.Service.RollbackRestore(req)
 	if result.Success && wasRecovery {
@@ -279,7 +279,7 @@ func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequ
 }
 
 func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
-	ir := s.Service.Runtime
+	ir := s.Runtime
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
 	// bound before an uncertain CURRENT flip, including when this attempt
