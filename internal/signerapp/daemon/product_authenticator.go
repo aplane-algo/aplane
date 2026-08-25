@@ -36,7 +36,10 @@ func (a *productAuthenticator) Authenticate(ctx context.Context, r *http.Request
 	if err != nil {
 		return nil, err
 	}
-	return ident, nil
+	if ident == nil {
+		return nil, auth.ErrInvalidCredentials
+	}
+	return auth.NewProductIdentity(a.Method()), nil
 }
 
 func (*productAuthenticator) Method() string { return "aplane-token" }

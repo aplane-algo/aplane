@@ -21,26 +21,26 @@ type inspectionStub struct {
 	listResult  adminproto.ListSentryReferencesResult
 }
 
-func (s *inspectionStub) ListSentryReferences(*productruntime.Runtime) adminproto.ListSentryReferencesResult {
+func (s *inspectionStub) ListSentryReferences() adminproto.ListSentryReferencesResult {
 	s.listCalls++
 	return s.listResult
 }
-func (*inspectionStub) GetSentryReference(*productruntime.Runtime, adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+func (*inspectionStub) GetSentryReference(adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
 	return adminproto.GetSentryReferenceResult{}
 }
-func (s *inspectionStub) ImportSentryReference(*productruntime.Runtime, adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s *inspectionStub) ImportSentryReference(adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
 	s.importCalls++
 	return adminproto.ImportSentryReferenceResult{Success: true}
 }
-func (s *inspectionStub) RemoveSentryReference(*productruntime.Runtime, adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s *inspectionStub) RemoveSentryReference(adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
 	s.removeCalls++
 	return adminproto.RemoveSentryReferenceResult{Success: true}
 }
 
-func (*inspectionStub) ExportSentryPublic(*productruntime.Runtime, adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+func (*inspectionStub) ExportSentryPublic(adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
 	return adminproto.ExportSentryPublicResult{}
 }
-func (*inspectionStub) ListGenerations(*productruntime.Runtime) adminproto.GenerationInventory {
+func (*inspectionStub) ListGenerations() adminproto.GenerationInventory {
 	return adminproto.GenerationInventory{}
 }
 

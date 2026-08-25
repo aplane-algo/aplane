@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -81,6 +80,14 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 		if _, ok := entry["target_identity_id"]; ok {
 			t.Errorf("line %d contains target_identity_id: %#v", i, entry)
 		}
+	}
+
+	var keyReload AuditEntry
+	if err := json.Unmarshal([]byte(lines[4]), &keyReload); err != nil {
+		t.Fatalf("decode key reload entry: %v", err)
+	}
+	if keyReload.Event != AuditKeyReload || keyReload.Principal != auth.SystemProductAdminPrincipalID || keyReload.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("key reload attribution = %#v", keyReload)
 	}
 }
 
@@ -360,7 +367,7 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.RequesterPrincipal != authz.SystemProductAdminPrincipalID {
+		if entry.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
 			t.Fatalf("HTTP signing identity attribution = %#v", entry)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {

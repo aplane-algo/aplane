@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -29,10 +28,7 @@ var (
 	syncBackupImportDirectory = fsutil.SyncDir
 )
 
-func (s Service) BeginBackupImport(ir *productruntime.Runtime, req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return beginImportError(err, s.Deps.KeyPaths().Root())
-	}
+func (s Service) BeginBackupImport(req adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil {
 		return beginImportError(err, s.Deps.KeyPaths().Root())
@@ -43,7 +39,7 @@ func (s Service) BeginBackupImport(ir *productruntime.Runtime, req adminproto.Be
 		if err := fsutil.MkdirAllPrivate(dir); err != nil {
 			return err
 		}
-		// Product mode supports one writable upload per productruntime. Starting a new
+		// Product mode supports one writable upload at a time. Starting a new
 		// transfer supersedes client-disconnect residue, but never a claimed
 		// archive undergoing immutable deep validation.
 		if _, err := cleanupSupersededBackupUploads(s.Deps.KeyPaths()); err != nil {
@@ -81,10 +77,7 @@ func (s Service) BeginBackupImport(ir *productruntime.Runtime, req adminproto.Be
 	return adminproto.BeginBackupImportResult{Success: true, UploadID: uploadID}
 }
 
-func (s Service) AppendBackupImport(ir *productruntime.Runtime, req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return appendImportError(err, s.Deps.KeyPaths().Root())
-	}
+func (s Service) AppendBackupImport(req adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
 	if req.Offset < 0 || len(req.Data) == 0 || len(req.Data) > adminproto.BackupTransferChunkBytes {
 		return appendImportError(fmt.Errorf("invalid backup import chunk"), s.Deps.KeyPaths().Root())
 	}
@@ -135,11 +128,8 @@ func (s Service) AppendBackupImport(ir *productruntime.Runtime, req adminproto.A
 	return adminproto.AppendBackupImportResult{Success: true, NextOffset: next}
 }
 
-func (s Service) CommitBackupImport(ir *productruntime.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	defer crypto.ZeroBytes(req.ExportPassphrase)
-	if err := requireProductRuntime(ir); err != nil {
-		return commitImportError(err, s.Deps.KeyPaths().Root())
-	}
 	fileName, err := validBackupFileName(req.FileName)
 	if err != nil || req.ExpectedSize <= 0 || req.ExpectedSize > adminproto.MaxBackupImportBytes || len(req.ExpectedSHA256) != 64 || len(req.ExportPassphrase) == 0 {
 		if err == nil {
@@ -270,10 +260,7 @@ func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize 
 	return claimPath, err
 }
 
-func (s Service) AbortBackupImport(ir *productruntime.Runtime, req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
-	}
+func (s Service) AbortBackupImport(req adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	err := s.Deps.WithStoreMutation(func() error {
 		path, err := backupUploadPath(s.Deps.KeyPaths().ProductBackupsDir(), req.UploadID)
 		if err != nil {
@@ -287,10 +274,7 @@ func (s Service) AbortBackupImport(ir *productruntime.Runtime, req adminproto.Ab
 	return adminproto.AbortBackupImportResult{Success: true}
 }
 
-func (s Service) ReadBackupChunk(ir *productruntime.Runtime, req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return readChunkError(err, s.Deps.KeyPaths().Root())
-	}
+func (s Service) ReadBackupChunk(req adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	if req.Offset < 0 {
 		return readChunkError(fmt.Errorf("invalid backup offset"), s.Deps.KeyPaths().Root())
 	}

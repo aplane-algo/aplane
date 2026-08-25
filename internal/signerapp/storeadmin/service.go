@@ -45,7 +45,7 @@ func (s Service) InitializeStore(ir *productruntime.Runtime, req adminproto.Init
 	if ir == nil {
 		return adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeNoRuntimeBound,
-			Error: "product product runtime unavailable",
+			Error: "product runtime unavailable",
 		}
 	}
 	if len(req.Passphrase) == 0 {

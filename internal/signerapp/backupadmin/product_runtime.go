@@ -11,7 +11,7 @@ import (
 
 func requireProductRuntime(ir *productruntime.Runtime) error {
 	if ir == nil {
-		return fmt.Errorf("product product runtime is required")
+		return fmt.Errorf("product runtime is required")
 	}
 	return nil
 }

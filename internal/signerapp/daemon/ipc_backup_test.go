@@ -26,7 +26,7 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 	}
 
 	svc := signerAdminServices{signer: server}
-	gen := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)
 	}
@@ -92,7 +92,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 	svc := signerAdminServices{signer: server}
-	generated := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	generated := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !generated.Success {
 		t.Fatalf("GenerateKey() = %+v", generated)
 	}
@@ -107,7 +107,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	if archivePath == "" {
 		t.Fatalf("backup response = %#v", backupMessages)
 	}
-	if result := svc.keyApp().DeleteKey(ir, adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
+	if result := svc.keyApp().DeleteKey(adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
 		t.Fatalf("DeleteKey() = %+v", result)
 	}
 	restoreRecorder := &ipcJSONRecorderConn{}
@@ -144,7 +144,7 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 	}
 
 	svc := signerAdminServices{signer: server}
-	gen := svc.keyApp().GenerateKey(context.Background(), ir, adminproto.GenerateKeyRequest{KeyType: "ed25519"})
+	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)
 	}

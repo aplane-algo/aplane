@@ -286,7 +286,7 @@ func (s *Server) assertNotStartedLocked(method string) {
 //
 // Authentication requires both:
 //   - Valid SSH public key (enrolled via request-token or manually added to authorized_keys)
-//   - Mutual proof of the identity API token
+//   - Mutual proof of the product API token
 func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expectedToken string) (*Server, error) {
 	hostKey, err := loadOrGenerateHostKey(hostKeyPath)
 	if err != nil {

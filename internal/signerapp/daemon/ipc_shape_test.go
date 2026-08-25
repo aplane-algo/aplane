@@ -19,7 +19,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
@@ -87,8 +86,8 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	if session.Identity() == nil {
 		t.Fatal("Authenticate() did not attach identity")
 	}
-	if session.Identity().ID != authz.SystemProductAdminPrincipalID {
-		t.Fatalf("identity.ID = %q, want %q", session.Identity().ID, authz.SystemProductAdminPrincipalID)
+	if session.Identity().ID != auth.SystemProductAdminPrincipalID {
+		t.Fatalf("identity.ID = %q, want %q", session.Identity().ID, auth.SystemProductAdminPrincipalID)
 	}
 	if session.Identity().Method != "ipc-passphrase" {
 		t.Fatalf("identity.Method = %q, want %q", session.Identity().Method, "ipc-passphrase")

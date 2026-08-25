@@ -24,49 +24,59 @@ func (s *Session) SendError(requestID, code, errMsg string) error {
 }
 
 func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token"}) {
 		return
 	}
-	err := s.productServices.RevokeProductToken(ir)
+	err := s.productServices.RevokeProductToken()
 
 	_ = s.WriteJSON(ProtocolRevokeTokenResultMessage(msg.ID, err))
 }
 
 func (s *Session) HandleGetAdminSettings(requestID string) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(requestID, auth.ActionSettingsView, auth.Resource{Type: "settings"}) {
 		return
 	}
-	settings := s.settingsServices.BuildAdminSettings(ir)
+	settings := s.settingsServices.BuildAdminSettings()
 	_ = s.WriteJSON(ProtocolAdminSettingsMessage(requestID, settings))
 }
 
 func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessage) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings"}) {
 		return
 	}
 	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
-	err := s.settingsServices.UpdateAdminSetting(ir, request)
+	err := s.settingsServices.UpdateAdminSetting(request)
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
 
 func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
-	snapshot := s.settingsServices.BuildPolicySnapshot(ir, adminproto.NormalizePolicyTarget(msg.Target))
+	snapshot := s.settingsServices.BuildPolicySnapshot(adminproto.NormalizePolicyTarget(msg.Target))
 	_ = s.WriteJSON(ProtocolPolicySnapshotMessage(msg.ID, snapshot))
 }
 
 func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy"}) {
 		return
 	}
-	result := s.settingsServices.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+	result := s.settingsServices.ReplacePolicy(adminproto.ReplacePolicyRequest{
 		Target:                adminproto.NormalizePolicyTarget(msg.Target),
 		PolicyYAML:            msg.PolicyYAML,
 		ExpectedCurrentSHA256: msg.ExpectedCurrentSHA256,
@@ -75,11 +85,13 @@ func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 }
 
 func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
-	ir := s.productOrBoundRuntime()
+	if s.productOrBoundRuntime() == nil {
+		return
+	}
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
-	result := s.settingsServices.ValidatePolicy(ir, adminproto.ValidatePolicyRequest{
+	result := s.settingsServices.ValidatePolicy(adminproto.ValidatePolicyRequest{
 		Target:     adminproto.NormalizePolicyTarget(msg.Target),
 		PolicyYAML: msg.PolicyYAML,
 	})
@@ -98,7 +110,7 @@ func (s *Session) HandleListSentryReferences(requestID string) {
 		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	_ = s.WriteJSON(ProtocolSentryReferencesListMessage(requestID, s.inspectionServices.ListSentryReferences(ir)))
+	_ = s.WriteJSON(ProtocolSentryReferencesListMessage(requestID, s.inspectionServices.ListSentryReferences()))
 }
 
 func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessage) {
@@ -113,7 +125,7 @@ func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessa
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.GetSentryReference(ir, adminproto.GetSentryReferenceRequest{Name: msg.Name})
+	result := s.inspectionServices.GetSentryReference(adminproto.GetSentryReferenceRequest{Name: msg.Name})
 	_ = s.WriteJSON(ProtocolSentryReferenceMessage(msg.ID, protocol.MsgTypeSentryReference, result))
 }
 
@@ -131,7 +143,7 @@ func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenc
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.ImportSentryReference(ir, adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
+	result := s.inspectionServices.ImportSentryReference(adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
 	if audit, ok := s.audit.(interface {
 		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
@@ -156,7 +168,7 @@ func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenc
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
+	result := s.inspectionServices.RemoveSentryReference(adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
 	if audit, ok := s.audit.(interface {
 		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
@@ -177,7 +189,7 @@ func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessa
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.ExportSentryPublic(ir, adminproto.ExportSentryPublicRequest{WitnessKeyID: msg.WitnessKeyID})
+	result := s.inspectionServices.ExportSentryPublic(adminproto.ExportSentryPublicRequest{WitnessKeyID: msg.WitnessKeyID})
 	_ = s.WriteJSON(ProtocolExportSentryPublicResultMessage(msg.ID, result))
 }
 
@@ -193,7 +205,7 @@ func (s *Session) HandleListGenerations(requestID string) {
 		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations(ir)))
+	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations()))
 }
 
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
@@ -213,7 +225,7 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	passphraseBytes := msg.Passphrase.Clone()
 	defer zeroBytes(passphraseBytes)
 
-	success, keyCount, errStr, code := s.productServices.UnlockIdentity(ir, passphraseBytes)
+	success, keyCount, errStr, code := s.productServices.UnlockIdentity(passphraseBytes)
 	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr, code))
 }
 
@@ -277,7 +289,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.BackupIdentity(ir, adminproto.BackupIdentityRequest{
+	result := s.backupServices.BackupIdentity(adminproto.BackupIdentityRequest{
 		ExportPassphrase: exportPassphrase,
 		Addresses:        append([]string(nil), msg.Addresses...),
 	})
@@ -309,7 +321,7 @@ func (s *Session) HandleListBackups(requestID string) {
 		_ = s.SendError(requestID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.ListBackups(ir)
+	result := s.backupServices.ListBackups()
 	_ = s.WriteJSON(ProtocolBackupsListMessage(requestID, result))
 }
 
@@ -325,7 +337,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.DeleteBackup(ir, adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
+	result := s.backupServices.DeleteBackup(adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
 }
 
@@ -341,7 +353,7 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.BeginBackupImport(ir, adminproto.BeginBackupImportRequest{
+	result := s.backupServices.BeginBackupImport(adminproto.BeginBackupImportRequest{
 		FileName: msg.FileName,
 	})
 	_ = s.WriteJSON(ProtocolBeginBackupImportResultMessage(msg.ID, result))
@@ -359,7 +371,7 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.AppendBackupImport(ir, adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
+	result := s.backupServices.AppendBackupImport(adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
 	_ = s.WriteJSON(ProtocolAppendBackupImportResultMessage(msg.ID, result))
 }
 
@@ -376,7 +388,7 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.CommitBackupImport(ir, adminproto.CommitBackupImportRequest{
+	result := s.backupServices.CommitBackupImport(adminproto.CommitBackupImportRequest{
 		UploadID: msg.UploadID, FileName: msg.FileName,
 		ExpectedSize: msg.ExpectedSize, ExpectedSHA256: msg.ExpectedSHA256,
 		ExportPassphrase: msg.ExportPassphrase.Clone(),
@@ -412,7 +424,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.AbortBackupImport(ir, adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
+	result := s.backupServices.AbortBackupImport(adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
 	_ = s.WriteJSON(ProtocolAbortBackupImportResultMessage(msg.ID, result))
 }
 
@@ -428,7 +440,7 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.ReadBackupChunk(ir, adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
+	result := s.backupServices.ReadBackupChunk(adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
 	if result.Success {
 		if audit, ok := s.audit.(interface {
 			LogBackupExportStartedContext(SessionContext, string)
@@ -465,7 +477,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	newPassphrase := msg.NewPassphrase.Clone()
 	defer zeroBytes(currentPassphrase)
 	defer zeroBytes(newPassphrase)
-	result := s.productServices.ChangeStorePassphrase(ir, adminproto.ChangeStorePassphraseRequest{
+	result := s.productServices.ChangeStorePassphrase(adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: currentPassphrase,
 		NewPassphrase:     newPassphrase,
 	})
@@ -487,7 +499,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.PreviewRestore(ir, adminproto.PreviewRestoreRequest{
+	result := s.backupServices.PreviewRestore(adminproto.PreviewRestoreRequest{
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
 	})
@@ -552,7 +564,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	result := s.backupServices.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      msg.ID,
 		ArchivePath:      msg.ArchivePath,
 		Addresses:        append([]string(nil), msg.Addresses...),
@@ -579,7 +591,7 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.RollbackRestore(ir, adminproto.RollbackRestoreRequest{
+	result := s.backupServices.RollbackRestore(adminproto.RollbackRestoreRequest{
 		OperationID: msg.ID,
 	})
 	if audit, ok := s.audit.(interface {
@@ -602,7 +614,7 @@ func (s *Session) HandleReconcileStore(requestID string) {
 		_ = s.SendError(requestID, "", "backup service unavailable")
 		return
 	}
-	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, s.backupServices.ReconcileStore(ir)))
+	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, s.backupServices.ReconcileStore()))
 }
 
 func (s *Session) HandleListKeys(requestID string) {
@@ -614,7 +626,7 @@ func (s *Session) HandleListKeys(requestID string) {
 		return
 	}
 
-	keys, err := s.keyServices.ListKeys(ir)
+	keys, err := s.keyServices.ListKeys()
 	if err != nil {
 		_ = s.SendError(requestID, "", err.Error())
 		return
@@ -632,7 +644,7 @@ func (s *Session) HandleGetKeyDetails(msg *protocol.GetKeyDetailsMessage) {
 		return
 	}
 
-	details := s.keyServices.GetKeyDetails(ir, adminproto.GetKeyDetailsRequest{Address: msg.Address})
+	details := s.keyServices.GetKeyDetails(adminproto.GetKeyDetailsRequest{Address: msg.Address})
 	_ = s.WriteJSON(ProtocolKeyDetailsMessage(msg.ID, details))
 }
 
@@ -644,7 +656,7 @@ func (s *Session) HandleListLibraryTemplates(requestID string) {
 	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
 		return
 	}
-	result := s.templateServices.ListLibraryTemplates(ir)
+	result := s.templateServices.ListLibraryTemplates()
 	_ = s.WriteJSON(ProtocolLibraryTemplatesMessage(requestID, result))
 }
 
@@ -656,7 +668,7 @@ func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTempl
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := s.templateServices.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      msg.KeyType,
 		TemplateType: msg.TemplateType,
 	})
@@ -671,7 +683,7 @@ func (s *Session) HandleListInstalledTemplates(requestID string) {
 	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
 		return
 	}
-	result := s.templateServices.ListInstalledTemplates(ir)
+	result := s.templateServices.ListInstalledTemplates()
 	_ = s.WriteJSON(ProtocolInstalledTemplatesMessage(requestID, result))
 }
 
@@ -683,7 +695,7 @@ func (s *Session) HandleShowInstalledTemplate(msg *protocol.ShowInstalledTemplat
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.ShowInstalledTemplate(ir, adminproto.ShowInstalledTemplateRequest{
+	result := s.templateServices.ShowInstalledTemplate(adminproto.ShowInstalledTemplateRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolShowInstalledTemplateResultMessage(msg.ID, result))
@@ -697,7 +709,7 @@ func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMes
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := s.templateServices.ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      msg.KeyType,
 		TemplateType: msg.TemplateType,
 	})
@@ -712,7 +724,7 @@ func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTem
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template"}) {
 		return
 	}
-	result := s.templateServices.ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	result := s.templateServices.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte(msg.TemplateYAML),
 	})
 	_ = s.WriteJSON(ProtocolImportInstalledTemplateResultMessage(msg.ID, result))
@@ -726,7 +738,7 @@ func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTem
 	if !s.authorize(msg.ID, auth.ActionTemplatesRemove, auth.Resource{Type: "template", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{
+	result := s.templateServices.RemoveInstalledTemplate(adminproto.RemoveInstalledTemplateRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolRemoveInstalledTemplateResultMessage(msg.ID, result))
@@ -740,7 +752,7 @@ func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeyTypesActivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+	result := s.templateServices.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolActivateKeyTypeResultMessage(msg.ID, result))
@@ -754,7 +766,7 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 	if !s.authorize(msg.ID, auth.ActionKeyTypesDeactivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
 		return
 	}
-	result := s.templateServices.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
+	result := s.templateServices.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolDeactivateKeyTypeResultMessage(msg.ID, result))
@@ -768,7 +780,7 @@ func (s *Session) HandleListKeyTypes(requestID string) {
 	if !s.authorize(requestID, auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}) {
 		return
 	}
-	result := s.templateServices.ListKeyTypes(ir)
+	result := s.templateServices.ListKeyTypes()
 	_ = s.WriteJSON(ProtocolKeyTypesMessage(requestID, result))
 }
 
@@ -813,7 +825,7 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
-	gen := s.keyServices.GenerateKey(s.Context(), ir, adminproto.GenerateKeyRequest{
+	gen := s.keyServices.GenerateKey(s.Context(), adminproto.GenerateKeyRequest{
 		KeyType:    msg.KeyType,
 		Name:       msg.Name,
 		Parameters: msg.Parameters,
@@ -829,7 +841,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address}) {
 		return
 	}
-	del := s.keyServices.DeleteKey(ir, adminproto.DeleteKeyRequest{Address: msg.Address})
+	del := s.keyServices.DeleteKey(adminproto.DeleteKeyRequest{Address: msg.Address})
 	_ = s.WriteJSON(ProtocolDeleteResultMessage(msg.ID, del))
 }
 
@@ -860,7 +872,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.requireLocalImportTransport(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	imp := s.keyServices.ImportKey(ir, adminproto.ImportKeyRequest{
+	imp := s.keyServices.ImportKey(adminproto.ImportKeyRequest{
 		KeyType:    msg.KeyType,
 		Mnemonic:   msg.Mnemonic,
 		Parameters: msg.Parameters,

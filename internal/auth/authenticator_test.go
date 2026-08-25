@@ -24,10 +24,10 @@ func TestTokenAuthenticator_Success(t *testing.T) {
 	switch {
 	case identity == nil:
 		t.Fatal("expected identity, got nil")
-	case identity.ID != SystemProductAdminPrincipalID:
-		t.Errorf("expected ID %q, got %q", SystemProductAdminPrincipalID, identity.ID)
-	case identity.Type != "system":
-		t.Errorf("expected type 'system', got %q", identity.Type)
+	case identity.ID != productTokenCredentialID:
+		t.Errorf("expected ID %q, got %q", productTokenCredentialID, identity.ID)
+	case identity.Type != "credential":
+		t.Errorf("expected type 'credential', got %q", identity.Type)
 	case identity.Method != "aplane-token":
 		t.Errorf("expected method 'aplane-token', got %q", identity.Method)
 	}

@@ -159,7 +159,7 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 	ir.SetApprovalCoordinator(coordinator)
 }
 
-// NewReloadService builds the template reload service for an product runtime
+// NewReloadService builds the template reload service for a product runtime
 // using the process options and hooks. The session parameter is passed
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
@@ -211,7 +211,7 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 }
 
 // WireReloadFunc configures the reload function and the watcher reload
-// mutation lock on an product runtime.
+// mutation lock on a product runtime.
 func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks) {
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)

@@ -131,7 +131,7 @@ type stubServices struct {
 }
 
 func (s *stubServices) ProductRuntime() *productruntime.Runtime { return s.runtime }
-func (s *stubServices) VerifyPassphrase(ir *productruntime.Runtime, passphrase []byte) error {
+func (s *stubServices) VerifyPassphrase(passphrase []byte) error {
 	s.verifyCalls++
 	if len(s.verifyErrs) == 0 {
 		return nil
@@ -140,7 +140,7 @@ func (s *stubServices) VerifyPassphrase(ir *productruntime.Runtime, passphrase [
 	s.verifyErrs = s.verifyErrs[1:]
 	return err
 }
-func (s *stubServices) UnlockIdentity(ir *productruntime.Runtime, passphrase []byte) (bool, int, string, string) {
+func (s *stubServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
 	s.unlockCalls++
 	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
 }
@@ -150,7 +150,7 @@ func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) ad
 	}
 	return s.initializeStoreResult
 }
-func (s *stubServices) ChangeStorePassphrase(ir *productruntime.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s *stubServices) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	s.changePassphraseCalls++
 	s.lastChangePassphrase = adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: append([]byte(nil), req.CurrentPassphrase...),
@@ -164,14 +164,14 @@ func (s *stubServices) NewSessionIdentity(method string) *auth.Identity {
 	}
 	return auth.NewProductIdentity(method)
 }
-func (s *stubServices) RevokeProductToken(ir *productruntime.Runtime) error { return nil }
-func (s *stubServices) BuildAdminSettings(ir *productruntime.Runtime) adminproto.AdminSettings {
+func (s *stubServices) RevokeProductToken() error { return nil }
+func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }
-func (s *stubServices) UpdateAdminSetting(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s *stubServices) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
 	return nil
 }
-func (s *stubServices) BuildPolicySnapshot(ir *productruntime.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+func (s *stubServices) BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	s.policySnapshotCalls++
 	s.lastPolicySnapshot = target
 	if s.policySnapshotResult.Target == "" {
@@ -179,7 +179,7 @@ func (s *stubServices) BuildPolicySnapshot(ir *productruntime.Runtime, target ad
 	}
 	return s.policySnapshotResult
 }
-func (s *stubServices) ReplacePolicy(ir *productruntime.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+func (s *stubServices) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
 	s.replacePolicyCalls++
 	s.lastReplacePolicy = req
 	if s.replacePolicyResult.Target == "" {
@@ -187,7 +187,7 @@ func (s *stubServices) ReplacePolicy(ir *productruntime.Runtime, req adminproto.
 	}
 	return s.replacePolicyResult
 }
-func (s *stubServices) ValidatePolicy(ir *productruntime.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+func (s *stubServices) ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
 	s.validatePolicyCalls++
 	s.lastValidatePolicy = req
 	if s.validatePolicyResult.Target == "" {
@@ -195,27 +195,27 @@ func (s *stubServices) ValidatePolicy(ir *productruntime.Runtime, req adminproto
 	}
 	return s.validatePolicyResult
 }
-func (s *stubServices) ListKeys(ir *productruntime.Runtime) ([]adminproto.KeyInfo, error) {
+func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {
 	return nil, nil
 }
-func (s *stubServices) GetKeyDetails(ir *productruntime.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
+func (s *stubServices) GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
 	return adminproto.GetKeyDetailsResult{}
 }
-func (s *stubServices) GenerateKey(ctx context.Context, ir *productruntime.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
+func (s *stubServices) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
 	s.generateKeyCalls++
 	s.lastGenerateKeyContext = ctx
 	s.lastGenerateKey = req
 	return s.generateKeyResult
 }
-func (s *stubServices) DeleteKey(ir *productruntime.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+func (s *stubServices) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
 	return adminproto.DeleteKeyResult{}
 }
-func (s *stubServices) ImportKey(ir *productruntime.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+func (s *stubServices) ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	s.importKeyCalls++
 	s.lastImportKey = req
 	return s.importKeyResult
 }
-func (s *stubServices) BackupIdentity(ir *productruntime.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
+func (s *stubServices) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
 	s.backupCalls++
 	s.lastBackupRequest = adminproto.BackupIdentityRequest{
 		ExportPassphrase: append([]byte(nil), req.ExportPassphrase...),
@@ -223,38 +223,38 @@ func (s *stubServices) BackupIdentity(ir *productruntime.Runtime, req adminproto
 	}
 	return s.backupResult
 }
-func (s *stubServices) ListBackups(ir *productruntime.Runtime) adminproto.ListBackupsResult {
+func (s *stubServices) ListBackups() adminproto.ListBackupsResult {
 	s.listBackupsCalls++
 	return s.listBackupsResult
 }
-func (s *stubServices) DeleteBackup(ir *productruntime.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
+func (s *stubServices) DeleteBackup(req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
 	s.deleteBackupCalls++
 	s.lastDeleteBackup = req
 	return s.deleteBackupResult
 }
-func (s *stubServices) BeginBackupImport(*productruntime.Runtime, adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
+func (s *stubServices) BeginBackupImport(adminproto.BeginBackupImportRequest) adminproto.BeginBackupImportResult {
 	s.beginBackupImportCalls++
 	return adminproto.BeginBackupImportResult{}
 }
-func (s *stubServices) AppendBackupImport(*productruntime.Runtime, adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
+func (s *stubServices) AppendBackupImport(adminproto.AppendBackupImportRequest) adminproto.AppendBackupImportResult {
 	s.appendBackupImportCalls++
 	return adminproto.AppendBackupImportResult{}
 }
-func (s *stubServices) CommitBackupImport(_ *productruntime.Runtime, req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
+func (s *stubServices) CommitBackupImport(req adminproto.CommitBackupImportRequest) adminproto.CommitBackupImportResult {
 	s.commitBackupImportCalls++
 	s.lastCommitBackupImport = req
 	s.lastCommitBackupImport.ExportPassphrase = append([]byte(nil), req.ExportPassphrase...)
 	return s.commitBackupImportResult
 }
-func (*stubServices) AbortBackupImport(*productruntime.Runtime, adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
+func (*stubServices) AbortBackupImport(adminproto.AbortBackupImportRequest) adminproto.AbortBackupImportResult {
 	return adminproto.AbortBackupImportResult{}
 }
 
-func (s *stubServices) ReadBackupChunk(*productruntime.Runtime, adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
+func (s *stubServices) ReadBackupChunk(adminproto.ReadBackupChunkRequest) adminproto.ReadBackupChunkResult {
 	s.readBackupChunkCalls++
 	return s.readBackupChunkResult
 }
-func (s *stubServices) PreviewRestore(ir *productruntime.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
+func (s *stubServices) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
 	s.previewRestoreCalls++
 	s.lastPreviewRestore = adminproto.PreviewRestoreRequest{
 		ArchivePath:      req.ArchivePath,
@@ -262,7 +262,7 @@ func (s *stubServices) PreviewRestore(ir *productruntime.Runtime, req adminproto
 	}
 	return s.previewRestoreResult
 }
-func (s *stubServices) RestoreBackup(ir *productruntime.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+func (s *stubServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	s.restoreBackupCalls++
 	s.lastRestoreBackup = adminproto.RestoreBackupRequest{
 		OperationID:      req.OperationID,
@@ -273,61 +273,61 @@ func (s *stubServices) RestoreBackup(ir *productruntime.Runtime, req adminproto.
 	}
 	return s.restoreBackupResult
 }
-func (s *stubServices) RollbackRestore(ir *productruntime.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+func (s *stubServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	s.rollbackRestoreCalls++
 	s.lastRollbackRestore = req
 	return s.rollbackRestoreResult
 }
-func (s *stubServices) ReconcileStore(ir *productruntime.Runtime) adminproto.ReconcileStoreResult {
+func (s *stubServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	s.reconcileStoreCalls++
 	return s.reconcileStoreResult
 }
-func (s *stubServices) ListLibraryTemplates(ir *productruntime.Runtime) adminproto.ListLibraryTemplatesResult {
+func (s *stubServices) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 	s.listLibraryCalls++
 	return s.listLibraryResult
 }
-func (s *stubServices) InstallLibraryTemplate(ir *productruntime.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
+func (s *stubServices) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
 	s.installLibraryCalls++
 	s.lastInstallTemplate = req
 	return s.installResult
 }
-func (s *stubServices) ListInstalledTemplates(ir *productruntime.Runtime) adminproto.ListInstalledTemplatesResult {
+func (s *stubServices) ListInstalledTemplates() adminproto.ListInstalledTemplatesResult {
 	s.listInstalledCalls++
 	return s.listInstalledResult
 }
-func (s *stubServices) ShowInstalledTemplate(ir *productruntime.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
+func (s *stubServices) ShowInstalledTemplate(req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
 	s.showInstalledCalls++
 	s.lastShowInstalled = req
 	return s.showInstalledResult
 }
-func (s *stubServices) ShowLibraryTemplate(ir *productruntime.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
+func (s *stubServices) ShowLibraryTemplate(req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
 	s.showLibraryCalls++
 	s.lastShowLibrary = req
 	return s.showLibraryResult
 }
-func (s *stubServices) ImportInstalledTemplate(ir *productruntime.Runtime, req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
+func (s *stubServices) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
 	s.importInstalledCalls++
 	s.lastImportInstalled = adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: append([]byte(nil), req.TemplateYAML...),
 	}
 	return s.importInstalledResult
 }
-func (s *stubServices) RemoveInstalledTemplate(ir *productruntime.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
+func (s *stubServices) RemoveInstalledTemplate(req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
 	s.removeInstalledCalls++
 	s.lastRemoveInstalled = req
 	return s.removeInstalledResult
 }
-func (s *stubServices) ActivateKeyType(ir *productruntime.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
+func (s *stubServices) ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
 	s.activateKeyTypeCalls++
 	s.lastActivateKeyType = req
 	return s.activateResult
 }
-func (s *stubServices) DeactivateKeyType(ir *productruntime.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
+func (s *stubServices) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
 	s.deactivateKeyTypeCalls++
 	s.lastDeactivateKeyType = req
 	return s.deactivateResult
 }
-func (s *stubServices) ListKeyTypes(ir *productruntime.Runtime) adminproto.ListKeyTypesResult {
+func (s *stubServices) ListKeyTypes() adminproto.ListKeyTypesResult {
 	s.listKeyTypesCalls++
 	return s.keyTypesResult
 }

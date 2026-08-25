@@ -200,11 +200,8 @@ func signingArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.SigningArgIn
 }
 
 func (s Service) Keys(ir *productruntime.Runtime) (*signerapi.KeysResponse, *signersigning.ServiceError) {
-	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "product runtime is nil"}
-	}
-	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
+	if err := ensureRuntimeUnlocked(ir); err != nil {
+		return nil, err
 	}
 
 	keyList := s.BuildKeyInfoList(ir)

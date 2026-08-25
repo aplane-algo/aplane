@@ -115,7 +115,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 	ir.Lock()
 
 	success, _, errMsg, code := (signerAdminServices{signer: server}).
-		UnlockIdentity(ir, newPassphrase)
+		UnlockIdentity(newPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf(
 			"UnlockIdentity() = (%v, %q, %q), want normal unlock",
@@ -189,7 +189,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	ir.Lock()
 
 	success, _, errMsg, code := (signerAdminServices{signer: server}).
-		UnlockIdentity(ir, testPassphrase)
+		UnlockIdentity(testPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf(
 			"UnlockIdentity(old authority) = (%v, %q, %q), want normal unlock",
@@ -232,7 +232,7 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	ir.Lock()
 
 	success, keyCount, errMsg, code := (signerAdminServices{signer: server}).
-		UnlockIdentity(ir, newPassphrase)
+		UnlockIdentity(newPassphrase)
 	if !success || keyCount != 0 || errMsg != "" ||
 		code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf(
@@ -271,7 +271,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -284,7 +284,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 		t.Fatalf("remove garbage: %v", err)
 	}
 	ir.Lock()
-	success, _, errMsg, code = svc.UnlockIdentity(ir, testPassphrase)
+	success, _, errMsg, code = svc.UnlockIdentity(testPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
@@ -313,7 +313,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -325,7 +325,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 		t.Fatalf("remove garbage record: %v", err)
 	}
 	ir.Lock()
-	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
 }
@@ -355,7 +355,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(ir, testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -369,7 +369,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 		}
 	}
 	ir.Lock()
-	if success, _, errMsg, code := svc.UnlockIdentity(ir, testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
 }

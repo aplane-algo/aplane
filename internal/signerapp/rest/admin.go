@@ -15,11 +15,8 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if ir == nil {
-		return signerapi.AdminGenerateResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "product runtime is nil"}
-	}
-	if !ir.IsUnlocked() {
-		return signerapi.AdminGenerateResponse{}, &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
+	if err := ensureRuntimeUnlocked(ir); err != nil {
+		return signerapi.AdminGenerateResponse{}, err
 	}
 
 	result, err := s.Deps.KeyAdmin.GenerateKey(ctx, ir, req.KeyType, req.Parameters, s.Deps.GenerateGenericLSig)
@@ -38,11 +35,8 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 }
 
 func (s Service) AdminDelete(ir *productruntime.Runtime, address string) (signerapi.AdminDeleteResponse, *svcerr.Error) {
-	if ir == nil {
-		return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "product runtime is nil"}
-	}
-	if !ir.IsUnlocked() {
-		return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
+	if err := ensureRuntimeUnlocked(ir); err != nil {
+		return signerapi.AdminDeleteResponse{}, err
 	}
 
 	if _, err := s.Deps.KeyAdmin.DeleteKey(ir, address); err != nil {

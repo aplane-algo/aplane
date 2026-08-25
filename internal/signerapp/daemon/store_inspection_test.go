@@ -17,7 +17,6 @@ import (
 func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productRuntime()
 	svc := server.adminServices()
 
 	publicKey := strings.Repeat("ab", witnessPublicKeySizeForTest(t))
@@ -38,19 +37,19 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported := svc.ImportSentryReference(ir, adminproto.ImportSentryReferenceRequest{Name: "lab", EnvelopeJSON: string(raw)})
+	imported := svc.ImportSentryReference(adminproto.ImportSentryReferenceRequest{Name: "lab", EnvelopeJSON: string(raw)})
 	if !imported.Success || imported.Reference.Name != "lab" {
 		t.Fatalf("ImportSentryReference() = %#v", imported)
 	}
-	listed := svc.ListSentryReferences(ir)
+	listed := svc.ListSentryReferences()
 	if listed.Error != "" || len(listed.References) != 1 || listed.References[0].ComponentKey != witnessKeyID {
 		t.Fatalf("ListSentryReferences() = %#v", listed)
 	}
-	got := svc.GetSentryReference(ir, adminproto.GetSentryReferenceRequest{Name: "lab"})
+	got := svc.GetSentryReference(adminproto.GetSentryReferenceRequest{Name: "lab"})
 	if !got.Success || got.Reference.PublicKeyHex != publicKey {
 		t.Fatalf("GetSentryReference() = %#v", got)
 	}
-	removed := svc.RemoveSentryReference(ir, adminproto.RemoveSentryReferenceRequest{Name: "lab"})
+	removed := svc.RemoveSentryReference(adminproto.RemoveSentryReferenceRequest{Name: "lab"})
 	if !removed.Success || !removed.Removed || removed.ComponentKey != witnessKeyID {
 		t.Fatalf("RemoveSentryReference() = %#v", removed)
 	}
@@ -59,9 +58,7 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productRuntime()
-
-	result := server.adminServices().ListGenerations(ir)
+	result := server.adminServices().ListGenerations()
 	if result.Error != "" || result.Current == "" {
 		t.Fatalf("ListGenerations() = %#v", result)
 	}
@@ -70,8 +67,6 @@ func TestSignerAdminServicesListsGenerationInventoryReadOnly(t *testing.T) {
 func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	ir := server.productRuntime()
-
 	started := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan error, 1)
@@ -90,7 +85,7 @@ func TestSignerAdminServicesInspectionReturnsBusyDuringMutation(t *testing.T) {
 		}
 	}()
 
-	result := server.adminServices().ListGenerations(ir)
+	result := server.adminServices().ListGenerations()
 	if result.Code != protocol.ResultCodeStoreBusy || !strings.Contains(result.Error, "mutation is in progress") {
 		t.Fatalf("ListGenerations() = %#v, want immediate store_busy result", result)
 	}

@@ -13,7 +13,7 @@ import (
 
 func TestProductAuthorizer(t *testing.T) {
 	authorizer := NewProductSingleAuthorizer()
-	product := NewProductPrincipalIdentity("ipc-passphrase")
+	product := auth.NewProductIdentity("ipc-passphrase")
 
 	for _, tc := range []struct {
 		name     string
@@ -59,7 +59,7 @@ func TestProductAllowedActionsReturnsDefensiveSlice(t *testing.T) {
 	actions[0] = auth.ActionHealthGet
 
 	authorizer := NewProductSingleAuthorizer()
-	err := authorizer.Authorize(context.Background(), NewProductPrincipalIdentity("test"), auth.ActionHealthGet, auth.Resource{})
+	err := authorizer.Authorize(context.Background(), auth.NewProductIdentity("test"), auth.ActionHealthGet, auth.Resource{})
 	if !errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("Authorize(health.get) error = %v, want forbidden", err)
 	}

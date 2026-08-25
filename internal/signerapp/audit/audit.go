@@ -13,7 +13,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
@@ -284,8 +283,8 @@ func (attr Attribution) entry(includeApprover bool) AuditEntry {
 
 func productPrincipalAuditFields() AuditEntry {
 	return AuditEntry{
-		Principal:          authz.SystemProductAdminPrincipalID,
-		RequesterPrincipal: authz.SystemProductAdminPrincipalID,
+		Principal:          auth.SystemProductAdminPrincipalID,
+		RequesterPrincipal: auth.SystemProductAdminPrincipalID,
 	}
 }
 
@@ -489,7 +488,7 @@ func (a *AuditLogger) LogServerStopIncomplete(reason string) {
 
 // LogKeyReload logs when keys are reloaded from the keystore.
 func (a *AuditLogger) LogKeyReload(keyCount int) {
-	entry := AuditEntry{}
+	entry := productPrincipalAuditFields()
 	entry.Event = AuditKeyReload
 	entry.Outcome = "reloaded"
 	entry.KeyCount = keyCount

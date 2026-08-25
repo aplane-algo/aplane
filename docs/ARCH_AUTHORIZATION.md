@@ -234,7 +234,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `settings.view` | View admin settings | `settings` | No |
 | `settings.update` | Update admin settings | `settings` | No |
 | `token.provision` | Approve token provisioning | `token_provisioning` | No |
-| `token.revoke` | Revoke identity API token | `token` | No |
+| `token.revoke` | Revoke product API token | `token` | No |
 | `health.get` | Reserved action name; `/health` is unauthenticated and does not call the authorizer | `system` | No |
 
 New sensitive operations must either use an existing action with the same

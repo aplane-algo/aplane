@@ -36,7 +36,7 @@ type Service struct {
 	Deps Deps
 }
 
-func (s Service) ListLibraryTemplates(ir *productruntime.Runtime) adminproto.ListLibraryTemplatesResult {
+func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 	items, err := templatelibrary.List(s.Deps.KeyPaths())
 	if err != nil {
 		return adminproto.ListLibraryTemplatesResult{
@@ -148,7 +148,7 @@ func (s Service) InstallLibraryTemplate(ir *productruntime.Runtime, req adminpro
 	}
 }
 
-func (s Service) ListInstalledTemplates(ir *productruntime.Runtime) adminproto.ListInstalledTemplatesResult {
+func (s Service) ListInstalledTemplates() adminproto.ListInstalledTemplatesResult {
 	var out []adminproto.InstalledTemplateInfo
 	for _, templateType := range templatestore.ActiveTemplateTypes() {
 		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), templateType)
@@ -180,7 +180,7 @@ func (s Service) ListInstalledTemplates(ir *productruntime.Runtime) adminproto.L
 	return adminproto.ListInstalledTemplatesResult{Templates: out}
 }
 
-func (s Service) ShowLibraryTemplate(ir *productruntime.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
+func (s Service) ShowLibraryTemplate(req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType := templatestore.TemplateType(strings.ToLower(strings.TrimSpace(req.TemplateType)))
 	if keyType == "" {
@@ -554,9 +554,9 @@ func (s Service) DeactivateKeyType(ir *productruntime.Runtime, req adminproto.De
 				return stateErr
 			} else if ok {
 				disabledTemplate = true
-				removeResult, removeErr = s.disableInstalledTemplateKeyTypeLocked(ir, keyType, templateType, masterKey)
+				removeResult, removeErr = s.disableInstalledTemplateKeyTypeLocked(keyType, templateType, masterKey)
 			} else {
-				removeResult, removeErr = s.deactivateCompiledProviderKeyTypeLocked(ir, keyType, masterKey)
+				removeResult, removeErr = s.deactivateCompiledProviderKeyTypeLocked(keyType, masterKey)
 			}
 			return removeErr
 		}); err != nil {
@@ -603,11 +603,11 @@ func (s Service) DeactivateKeyType(ir *productruntime.Runtime, req adminproto.De
 	}
 }
 
-func (s Service) disableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
+func (s Service) disableInstalledTemplateKeyTypeLocked(keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
 }
 
-func (s Service) deactivateCompiledProviderKeyTypeLocked(ir *productruntime.Runtime, keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
+func (s Service) deactivateCompiledProviderKeyTypeLocked(keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
 	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), keyType, masterKey)
 }
 

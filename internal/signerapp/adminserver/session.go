@@ -227,7 +227,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 
 		passphraseBytes := authMsg.Passphrase.Clone()
 		authMsg.Passphrase.Zero()
-		if err := s.productServices.VerifyPassphrase(ir, passphraseBytes); err != nil {
+		if err := s.productServices.VerifyPassphrase(passphraseBytes); err != nil {
 			zeroBytes(passphraseBytes)
 			s.sendAuthResult(false, protocol.ErrCodeInvalidPassphrase, "invalid passphrase")
 			continue
@@ -247,7 +247,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		if !authenticateOnly && !ir.IsUnlocked() {
-			success, _, errMsg, code := s.productServices.UnlockIdentity(ir, passphraseBytes)
+			success, _, errMsg, code := s.productServices.UnlockIdentity(passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {
 				if code == "" {

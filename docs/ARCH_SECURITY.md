@@ -246,7 +246,7 @@ host-key-bound keyboard-interactive exchange after public-key authentication.
 ```
 Client                                               Server
   │                                                       │
-  │  1. SSH connect (username=default, pubkey=KEY)        │
+  │  1. SSH connect (username=aplane, pubkey=KEY)         │
   │──────────────────────────────────────────────────────>│
   │                                                       │
   │  2. Verify enrolled key possession; partial success  │
@@ -267,7 +267,7 @@ Keys are enrolled exclusively through the `request-token` operator-approved flow
 **Key points:**
 - Token is always required for normal connections (no "key-only" mode); the `request-token` bootstrap flow is the sole exception
 - The keyboard-interactive exchange is fully programmatic and never prompts a user
-- Proofs are HMAC-SHA256 values over the identity, accepted SSH host key, and two fresh nonces; server and client roles are domain-separated
+- Proofs are HMAC-SHA256 values over the accepted SSH host key and two fresh nonces; server and client roles are domain-separated
 - The server proves token possession before the client emits its proof
 - Clients reject an SSH server that accepts the public key without completing mutual token proof
 - Proof comparison is constant-time

@@ -25,12 +25,24 @@ func IdentityFromContext(ctx context.Context) *Identity {
 
 const SystemProductAdminPrincipalID = "system:product-admin"
 
+const productTokenCredentialID = "credential:product-token"
+
 // NewProductIdentity returns the reserved product-admin principal for the
 // given authentication method.
 func NewProductIdentity(method string) *Identity {
 	return &Identity{
 		ID:     SystemProductAdminPrincipalID,
 		Type:   "system",
+		Method: method,
+	}
+}
+
+// newProductTokenCredentialIdentity identifies a successfully validated token
+// credential. Authorization boundaries map it to an application principal.
+func newProductTokenCredentialIdentity(method string) *Identity {
+	return &Identity{
+		ID:     productTokenCredentialID,
+		Type:   "credential",
 		Method: method,
 	}
 }

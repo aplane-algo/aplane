@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package identity owns the product signing-state runtime.
+// Package productruntime owns the product signing-state runtime.
 package productruntime
 
 import (

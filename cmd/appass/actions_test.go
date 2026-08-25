@@ -110,7 +110,7 @@ func stubSignerStopped(t *testing.T) {
 	})
 }
 
-// setupDataDir creates a minimal data directory with an product-store unlock.yaml pointing to passfile.
+// setupDataDir creates a minimal data directory with a product-store unlock.yaml pointing to passfile.
 func setupDataDir(t *testing.T) string {
 	t.Helper()
 	dataDir := t.TempDir()

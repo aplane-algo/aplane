@@ -49,7 +49,7 @@ func encodeTxnToHex(txn types.Transaction) string {
 // Returns hex-encoded msgpack of the signed transaction, or error.
 
 type Signer struct {
-	runtime           *productruntime.Runtime            // The one product product runtime
+	runtime           *productruntime.Runtime            // The one product runtime
 	nodeFailState     *productruntime.NodeFailState      // Process-wide first-error-sticky failure state
 	httpAuth          auth.Authenticator                 // Product token authenticator; never selects a runtime
 	authorizer        auth.Authorizer                    // Pluggable authorization

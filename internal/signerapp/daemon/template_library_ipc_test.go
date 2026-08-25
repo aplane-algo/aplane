@@ -168,8 +168,7 @@ func TestShowLibraryTemplateReturnsPlaintextYAML(t *testing.T) {
 	yamlData := renderGenericTemplateYAML(family, 1, "Show Library", "viewed via IPC")
 	writeLibraryTemplateForTest(t, server, "show.yaml", yamlData)
 
-	ir := server.productRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -195,8 +194,7 @@ func TestShowLibraryTemplateMissingEntryReturnsNotFound(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      "no-such-key-type-v1",
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -212,8 +210,7 @@ func TestShowLibraryTemplateRejectsCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productRuntime()
-	result := server.adminServices().templateApp().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
+	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      "aplane.ed25519.v1",
 		TemplateType: "compiled_provider",
 	})

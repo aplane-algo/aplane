@@ -15,7 +15,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -34,7 +33,8 @@ import (
 )
 
 type signerAdminServices struct {
-	signer *Signer
+	signer  *Signer
+	product *productruntime.Runtime
 }
 
 type signerBackupServices struct {
@@ -54,10 +54,12 @@ type signerAdminAppDeps struct {
 }
 
 var (
-	_ adminserver.SettingsServices = signeradmin.Service{}
-	_ adminserver.KeyServices      = keyadmin.IPCService{}
-	_ adminserver.BackupServices   = signerBackupServices{}
-	_ adminserver.TemplateServices = signerTemplateServices{}
+	_ adminserver.ProductServices         = signerAdminServices{}
+	_ adminserver.SettingsServices        = signerSettingsServices{}
+	_ adminserver.KeyServices             = signerKeyServices{}
+	_ adminserver.BackupServices          = signerBackupServices{}
+	_ adminserver.TemplateServices        = signerTemplateServices{}
+	_ adminserver.StoreInspectionServices = signerAdminServices{}
 )
 
 func (fs *Signer) adminServices() signerAdminServices {
@@ -83,17 +85,28 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 }
 
 func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
+	if s.signer == nil {
+		return s.product
+	}
 	if s.signer.nodeFailure() != nil {
 		return nil
 	}
 	return s.signer.productRuntime()
 }
 
-func (s signerAdminServices) VerifyPassphrase(ir *productruntime.Runtime, passphrase []byte) error {
-	return crypto.VerifyPassphraseWithKeyring(passphrase, ir.KeyPaths().KeystoreMetadataDir())
+func (s signerAdminServices) runtime() *productruntime.Runtime {
+	if s.signer == nil {
+		return s.product
+	}
+	return s.signer.productRuntime()
 }
 
-func (s signerAdminServices) UnlockIdentity(ir *productruntime.Runtime, passphrase []byte) (bool, int, string, string) {
+func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
+	return crypto.VerifyPassphraseWithKeyring(passphrase, s.runtime().KeyPaths().KeystoreMetadataDir())
+}
+
+func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
+	ir := s.runtime()
 	// Generation-based stores reconcile before unlock: CURRENT is the sole
 	// commit record, staging residue and uncommitted attempts are discarded
 	// (never resumed), and the selected generation must validate. Any
@@ -235,12 +248,12 @@ func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreReque
 	return s.storeApp().InitializeStore(s.ProductRuntime(), req)
 }
 
-func (s signerAdminServices) ChangeStorePassphrase(ir *productruntime.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
-	return s.storeApp().ChangeStorePassphrase(ir, req)
+func (s signerAdminServices) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+	return s.storeApp().ChangeStorePassphrase(s.runtime(), req)
 }
 
 func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {
-	return authz.NewProductPrincipalIdentity(method)
+	return auth.NewProductIdentity(method)
 }
 
 func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
@@ -250,11 +263,12 @@ func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionConte
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
-func (s signerAdminServices) RevokeProductToken(ir *productruntime.Runtime) error {
-	return s.signer.RevokeProductToken(ir)
+func (s signerAdminServices) RevokeProductToken() error {
+	return s.signer.RevokeProductToken(s.runtime())
 }
 
-func (s signerBackupServices) RestoreBackup(ir *productruntime.Runtime, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+	ir := s.daemon.runtime()
 	wasRecovery := ir.IsRecovery()
 	result := s.Service.RestoreBackup(ir, req)
 	if result.Success && wasRecovery {
@@ -266,7 +280,8 @@ func (s signerBackupServices) RestoreBackup(ir *productruntime.Runtime, req admi
 	return result
 }
 
-func (s signerBackupServices) RollbackRestore(ir *productruntime.Runtime, req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
+	ir := s.daemon.runtime()
 	wasRecovery := ir.IsRecovery()
 	result := s.Service.RollbackRestore(ir, req)
 	if result.Success && wasRecovery {
@@ -276,7 +291,8 @@ func (s signerBackupServices) RollbackRestore(ir *productruntime.Runtime, req ad
 	return result
 }
 
-func (s signerBackupServices) ReconcileStore(ir *productruntime.Runtime) adminproto.ReconcileStoreResult {
+func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
+	ir := s.daemon.runtime()
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
 	// bound before an uncertain CURRENT flip, including when this attempt
@@ -358,7 +374,8 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	return report, true
 }
 
-func (s signerTemplateServices) ListKeyTypes(ir *productruntime.Runtime) adminproto.ListKeyTypesResult {
+func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
+	ir := s.runtime()
 	resp, err := s.signer.restService().KeyTypes(ir)
 	if err != nil {
 		return adminproto.ListKeyTypesResult{
@@ -372,7 +389,8 @@ func (s signerTemplateServices) ListKeyTypes(ir *productruntime.Runtime) adminpr
 	return adminproto.ListKeyTypesResult{KeyTypes: resp.KeyTypes}
 }
 
-func (s signerAdminServices) ListSentryReferences(ir *productruntime.Runtime) adminproto.ListSentryReferencesResult {
+func (s signerAdminServices) ListSentryReferences() adminproto.ListSentryReferencesResult {
+	ir := s.runtime()
 	var records []sentryrefs.Record
 	err := s.withStoreInspection(func() error {
 		var err error
@@ -390,7 +408,8 @@ func (s signerAdminServices) ListSentryReferences(ir *productruntime.Runtime) ad
 	return result
 }
 
-func (s signerAdminServices) GetSentryReference(ir *productruntime.Runtime, req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+func (s signerAdminServices) GetSentryReference(req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+	ir := s.runtime()
 	var record sentryrefs.Record
 	var found bool
 	err := s.withStoreInspection(func() error {
@@ -408,7 +427,8 @@ func (s signerAdminServices) GetSentryReference(ir *productruntime.Runtime, req 
 	return adminproto.GetSentryReferenceResult{Success: true, Reference: adminSentryReference(record)}
 }
 
-func (s signerAdminServices) ImportSentryReference(ir *productruntime.Runtime, req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s signerAdminServices) ImportSentryReference(req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+	ir := s.runtime()
 	var record *sentryrefs.Record
 	err := s.withStoreMutation(func() error {
 		var err error
@@ -421,7 +441,8 @@ func (s signerAdminServices) ImportSentryReference(ir *productruntime.Runtime, r
 	return adminproto.ImportSentryReferenceResult{Success: true, Reference: adminSentryReference(*record)}
 }
 
-func (s signerAdminServices) RemoveSentryReference(ir *productruntime.Runtime, req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s signerAdminServices) RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+	ir := s.runtime()
 	var removed bool
 	var componentKey string
 	err := s.withStoreMutation(func() error {
@@ -443,7 +464,8 @@ func (s signerAdminServices) RemoveSentryReference(ir *productruntime.Runtime, r
 	}
 }
 
-func (s signerAdminServices) ExportSentryPublic(ir *productruntime.Runtime, req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+	ir := s.runtime()
 	componentKey, err := witness.NormalizeID(req.WitnessKeyID)
 	if err != nil {
 		return adminproto.ExportSentryPublicResult{Code: "invalid_witness_key_id", Error: err.Error()}
@@ -470,7 +492,8 @@ func (s signerAdminServices) ExportSentryPublic(ir *productruntime.Runtime, req 
 	return adminproto.ExportSentryPublicResult{Success: true, WitnessKeyID: componentKey, EnvelopeJSON: string(data)}
 }
 
-func (s signerAdminServices) ListGenerations(ir *productruntime.Runtime) adminproto.GenerationInventory {
+func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
+	ir := s.runtime()
 	var report genstore.ReconcileReport
 	err := s.withStoreInspection(func() error {
 		generational, err := genstore.IsGenerational(ir.KeyPaths())
@@ -581,12 +604,15 @@ func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.Sessi
 	}
 }
 
-func (s signerAdminServices) adminApp() signeradmin.Service {
-	return signeradmin.Service{Deps: signerAdminAppDeps(s)}
+func (s signerAdminServices) adminApp() signerSettingsServices {
+	return signerSettingsServices{
+		service: signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}},
+		daemon:  s,
+	}
 }
 
 func (s signerAdminServices) backupApp() backupadmin.Service {
-	return backupadmin.Service{Deps: signerAdminAppDeps(s)}
+	return backupadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}}
 }
 
 func (s signerAdminServices) backupServices() signerBackupServices {
@@ -594,7 +620,7 @@ func (s signerAdminServices) backupServices() signerBackupServices {
 }
 
 func (s signerAdminServices) templateApp() templateadmin.Service {
-	return templateadmin.Service{Deps: signerAdminAppDeps(s)}
+	return templateadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}}
 }
 
 func (s signerAdminServices) templateServices() signerTemplateServices {
@@ -603,17 +629,22 @@ func (s signerAdminServices) templateServices() signerTemplateServices {
 
 func (s signerAdminServices) storeApp() storeadmin.Service {
 	return storeadmin.Service{
-		Deps:           signerAdminAppDeps(s),
-		AuditLog:       s.signer.auditLog,
-		UnlockIdentity: s.UnlockIdentity,
+		Deps:     signerAdminAppDeps{signer: s.signer},
+		AuditLog: s.signer.auditLog,
+		UnlockIdentity: func(_ *productruntime.Runtime, passphrase []byte) (bool, int, string, string) {
+			return s.UnlockIdentity(passphrase)
+		},
 	}
 }
 
-func (s signerAdminServices) keyApp() keyadmin.IPCService {
-	return keyadmin.IPCService{
-		Service:             s.signer.restService().Deps.KeyAdmin,
-		GenerateGenericLSig: s.signer.generateGenericLSigForRuntimeContext,
-		Logf:                logInfof,
+func (s signerAdminServices) keyApp() signerKeyServices {
+	return signerKeyServices{
+		service: keyadmin.IPCService{
+			Service:             s.signer.restService().Deps.KeyAdmin,
+			GenerateGenericLSig: s.signer.generateGenericLSigForRuntimeContext,
+			Logf:                logInfof,
+		},
+		daemon: s,
 	}
 }
 

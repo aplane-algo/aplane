@@ -36,6 +36,9 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 		ctx := r.Context()
 
 		ident, err := fs.httpAuth.Authenticate(ctx, r)
+		if err == nil && ident == nil {
+			err = auth.ErrInvalidCredentials
+		}
 		if err != nil {
 			if fs.auditLog != nil {
 				fs.auditLog.LogAuthFailed(r.RemoteAddr, authFailureReason(err))
