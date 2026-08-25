@@ -77,6 +77,7 @@ type stubServices struct {
 	readBackupChunkResult    adminproto.ReadBackupChunkResult
 
 	changePassphraseCalls  int
+	initializeStoreCalls   int
 	previewRestoreCalls    int
 	restoreBackupCalls     int
 	rollbackRestoreCalls   int
@@ -145,6 +146,7 @@ func (s *stubServices) UnlockIdentity(passphrase []byte) (bool, int, string, str
 	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
 }
 func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
+	s.initializeStoreCalls++
 	s.lastInitializeStore = adminproto.InitializeStoreRequest{
 		Passphrase: append([]byte(nil), req.Passphrase...),
 	}
@@ -547,6 +549,43 @@ func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {
 	}
 	if !result.Success || result.MetadataDir != "/data/identities/default" {
 		t.Fatalf("initialize result = %#v", result)
+	}
+}
+
+func TestSessionAuthenticateOutcomeRejectsInitializeAfterNodeFailure(t *testing.T) {
+	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
+		Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &stubServices{}
+	conn := &queueConn{reads: [][]byte{initMsg}}
+	session := NewSession(conn, SessionDeps{
+		Product: svc,
+		NodeFailure: func() error {
+			return productruntime.ErrNodeFailClosed
+		},
+	})
+	session.SetTransportInfo(TransportIPC, "unix:/tmp/aplane.sock")
+
+	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
+		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
+	}
+	if svc.initializeStoreCalls != 0 {
+		t.Fatalf("InitializeStore calls = %d, want 0", svc.initializeStoreCalls)
+	}
+	if len(conn.writes) != 2 {
+		t.Fatalf("writes = %d, want auth_required and initialize result", len(conn.writes))
+	}
+	var result protocol.InitializeStoreResultMessage
+	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.ID != "init-1" || result.Code != protocol.ErrCodeNodeFailClosed {
+		t.Fatalf("initialize result = %#v, want node-fail-closed response for init-1", result)
 	}
 }
 

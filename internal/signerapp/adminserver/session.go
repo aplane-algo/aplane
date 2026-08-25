@@ -276,6 +276,13 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 }
 
 func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutcome {
+	if s.nodeFailure != nil && s.nodeFailure() != nil {
+		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
+			Code:  protocol.ErrCodeNodeFailClosed,
+			Error: "signer node is fail-closed; restart required",
+		}))
+		return AuthOutcomeBootstrapHandled
+	}
 	if s.Transport() != "ipc" {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeAuthorizationDenied,
