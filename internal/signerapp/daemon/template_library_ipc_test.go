@@ -226,8 +226,7 @@ func TestImportInstalledTemplateRejectsMalformedYAML(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productRuntime()
-	result := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	result := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte("schema_version: 1\ntemplate_type: generic\nfamily:"),
 	})
 	if result.Success || result.Code != protocol.ResultCodeInvalidTemplate {
@@ -242,8 +241,7 @@ func TestImportInstalledTemplateRejectsMissingTemplateMode(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	ir := server.productRuntime()
-	result := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	result := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte(`schema_version: 1
 template_type: generic
 publisher: test
@@ -268,16 +266,15 @@ func TestImportInstalledTemplateIdempotentAndRejectsConflictingDefinition(t *tes
 
 	family := fmt.Sprintf("ipc-template-import-%d", time.Now().UnixNano())
 	keyType := testTemplateKeyType(family)
-	ir := server.productRuntime()
 	templateYAML := renderGenericTemplateYAML(family, 1, "IPC Import", "imported over IPC")
 
-	initial := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	initial := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: templateYAML,
 	})
 	if !initial.Success || initial.AlreadyExists || initial.KeyType != keyType {
 		t.Fatalf("initial ImportInstalledTemplate() = %+v, want fresh success for %s", initial, keyType)
 	}
-	again := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	again := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: templateYAML,
 	})
 	if !again.Success || !again.AlreadyExists || again.KeyType != keyType {
@@ -285,7 +282,7 @@ func TestImportInstalledTemplateIdempotentAndRejectsConflictingDefinition(t *tes
 	}
 
 	conflicting := renderGenericTemplateYAMLWithTEAL(family, 1, "IPC Import Changed", "int 0")
-	conflict := server.adminServices().templateApp().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
+	conflict := server.adminServices().templateApp().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: conflicting,
 	})
 	if conflict.Success || conflict.Code != "import_failed" || conflict.KeyType != keyType {
@@ -304,8 +301,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "remove-disabled.yaml", renderGenericTemplateYAML(family, 1, "IPC Remove Disabled", "removed while disabled"))
 
-	ir := server.productRuntime()
-	install := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	install := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -313,7 +309,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 		t.Fatalf("InstallLibraryTemplate() = %+v, want success", install)
 	}
 
-	disabled := server.adminServices().templateApp().DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
+	disabled := server.adminServices().templateApp().DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{KeyType: keyType})
 	if !disabled.Success || !disabled.Removed {
 		t.Fatalf("DeactivateKeyType() = %+v, want disabled template", disabled)
 	}
@@ -321,7 +317,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
 
-	removed := server.adminServices().templateApp().RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
+	removed := server.adminServices().templateApp().RemoveInstalledTemplate(adminproto.RemoveInstalledTemplateRequest{KeyType: keyType})
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
@@ -487,7 +483,7 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 		return nil, errors.New("forced reload failure")
 	})
 
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -506,7 +502,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	writeLibraryTemplateForTest(t, server, "reinstall-fail.yaml", renderGenericTemplateYAML(family, 1, "Reinstall Failure", "existing install survives reload failure"))
 
 	ir := server.productRuntime()
-	initial := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	initial := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -524,7 +520,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("forced reload failure")
 	})
-	again := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	again := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -549,7 +545,7 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 		return nil, nil
 	})
 
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
@@ -595,7 +591,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, nil
 	})
-	result := server.adminServices().templateApp().InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
+	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})

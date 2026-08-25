@@ -72,6 +72,7 @@ func (a *tokenProofClientAuth) challenge(name, instruction string, questions []s
 			return nil, err
 		}
 		transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
+			Username:    productSSHUsername,
 			HostKeyHash: a.hostHash,
 			ClientNonce: a.clientNonce,
 			ServerNonce: serverNonce,

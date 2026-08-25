@@ -421,12 +421,7 @@ func (a *AuditLogger) LogSignFailedAttributed(attr Attribution, address, txnSend
 
 // LogAuthFailed logs an authentication failure before a principal is known.
 func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
-	entry := AuditEntry{}
-	entry.Event = AuditAuthFailed
-	entry.Outcome = "failed"
-	entry.RemoteAddr = remoteAddr
-	entry.Reason = reason
-	a.Log(entry)
+	a.LogAuthFailedAttributed("", remoteAddr, reason)
 }
 
 // LogAuthFailedAttributed logs a failed authorization attempt by an

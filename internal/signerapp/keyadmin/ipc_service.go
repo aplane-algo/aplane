@@ -15,20 +15,21 @@ import (
 
 type IPCService struct {
 	Service             Service
+	Runtime             *productruntime.Runtime
 	GenerateGenericLSig GenerateGenericLSigFunc
 	Logf                func(format string, args ...interface{})
 }
 
-func (s IPCService) ListKeys(ir *productruntime.Runtime) ([]adminproto.KeyInfo, error) {
-	return ProjectListKeys(s.Service.ListKeys(ir))
+func (s IPCService) ListKeys() ([]adminproto.KeyInfo, error) {
+	return ProjectListKeys(s.Service.ListKeys(s.Runtime))
 }
 
-func (s IPCService) GetKeyDetails(ir *productruntime.Runtime, req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
-	return ProjectKeyDetailsIPC(s.Service.GetKeyDetails(ir, req.Address))
+func (s IPCService) GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult {
+	return ProjectKeyDetailsIPC(s.Service.GetKeyDetails(s.Runtime, req.Address))
 }
 
-func (s IPCService) GenerateKey(ctx context.Context, ir *productruntime.Runtime, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
-	genResult, err := s.Service.GenerateKey(ctx, ir, req.KeyType, req.Parameters, s.GenerateGenericLSig)
+func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult {
+	genResult, err := s.Service.GenerateKey(ctx, s.Runtime, req.KeyType, req.Parameters, s.GenerateGenericLSig)
 	ipcResult := ProjectGenerateIPC(genResult, err)
 	if !ipcResult.Success {
 		return ipcResult
@@ -38,8 +39,8 @@ func (s IPCService) GenerateKey(ctx context.Context, ir *productruntime.Runtime,
 	return ipcResult
 }
 
-func (s IPCService) DeleteKey(ir *productruntime.Runtime, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
-	delResult, err := s.Service.DeleteKey(ir, req.Address)
+func (s IPCService) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+	delResult, err := s.Service.DeleteKey(s.Runtime, req.Address)
 	ipcResult := ProjectDeleteIPC(err)
 	if !ipcResult.Success {
 		return ipcResult
@@ -51,8 +52,8 @@ func (s IPCService) DeleteKey(ir *productruntime.Runtime, req adminproto.DeleteK
 	return ipcResult
 }
 
-func (s IPCService) ImportKey(ir *productruntime.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
-	importResult, err := s.Service.ImportKey(ir, req.KeyType, req.Mnemonic, req.Parameters)
+func (s IPCService) ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+	importResult, err := s.Service.ImportKey(s.Runtime, req.KeyType, req.Mnemonic, req.Parameters)
 	ipcResult := ProjectImportIPC(importResult, err)
 	if !ipcResult.Success {
 		return ipcResult

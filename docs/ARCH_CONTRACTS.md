@@ -2309,14 +2309,17 @@ programmatic and has two rounds:
 1. server asks `{"version":1,"step":"client_nonce"}` and the client returns a fresh 32-byte nonce as unpadded base64url
 2. server returns a fresh 32-byte nonce and its proof; the client verifies that proof before returning its own proof
 
-The v1 proof transcript is the concatenation of four uint32-big-endian
-length-prefixed fields: `aplane-ssh-token-proof-v1`, SHA-256 of the canonical
-accepted SSH host-key blob, client nonce, and server
-nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
+The v1 proof transcript is the concatenation of five uint32-big-endian
+length-prefixed fields: `aplane-ssh-token-proof-v1`, the fixed normal-auth SSH
+username `aplane`, SHA-256 of the canonical accepted SSH host-key blob, client
+nonce, and server nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
 followed by the length-prefixed transcript. Proofs are HMAC-SHA256 keyed by the
 raw token. JSON messages reject unknown or duplicate fields, non-canonical
 base64url, wrong sizes, and trailing data. The shared conformance vector is
 `test/contracts/sshtunnel/token_proof_v1.json`.
+
+Because the transcript encoding is compatibility-bearing, any post-v1 field,
+ordering, or encoding change requires a new protocol domain/version.
 
 The server computes both role proofs under one token-authenticator read lock
 and records that token generation on the authenticated connection. Clients

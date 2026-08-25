@@ -202,25 +202,15 @@ sed -e "s|@@BINDIR@@|${BINDIR}|g" \
 chmod 644 "$SERVICE_DEST"
 echo "Installed $SERVICE_DEST"
 
-# If any identity has a passphrase.cred from a previous install, re-add the
-# matching LoadCredentialEncrypted= directive so apsigner can auto-unlock without
-# requiring the operator to re-run 'appass set systemd-creds' after reinstall.
+# Bind the product store's systemd credential when it is present so apsigner
+# can auto-unlock without reopening appass after installation.
 SYSTEMD_CREDENTIAL_NAME="aplane-passphrase"
-existing_cred_files=()
-for f in "$DATA_DIR"/identities/*/passphrase.cred; do
-    if [ -L "$f" ]; then
-        echo "Error: refusing symlinked systemd credential: $f" >&2
-        exit 1
-    fi
-    [ -f "$f" ] && existing_cred_files+=("$f")
-done
-if [ "${#existing_cred_files[@]}" -gt 0 ]; then
-    if [ "${#existing_cred_files[@]}" -gt 1 ]; then
-        echo "Warning: multiple identities have passphrase.cred; only the first will be bound:" >&2
-        printf '  %s\n' "${existing_cred_files[@]}" >&2
-        echo "  Re-run 'appass set systemd-creds' for the intended identity if this is wrong." >&2
-    fi
-    cred_file="${existing_cred_files[0]}"
+cred_file="$DATA_DIR/identities/default/passphrase.cred"
+if [ -L "$cred_file" ]; then
+    echo "Error: refusing symlinked systemd credential: $cred_file" >&2
+    exit 1
+fi
+if [ -f "$cred_file" ]; then
     load_line="LoadCredentialEncrypted=${SYSTEMD_CREDENTIAL_NAME}:${cred_file}"
     awk -v line="$load_line" '
         { print }

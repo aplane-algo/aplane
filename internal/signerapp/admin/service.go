@@ -46,16 +46,18 @@ type Deps interface {
 }
 
 type Service struct {
-	Deps Deps
+	Deps    Deps
+	Runtime *productruntime.Runtime
 }
 
 var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
 
-func (s Service) BuildAdminSettings(ir *productruntime.Runtime) adminproto.AdminSettings {
+func (s Service) BuildAdminSettings() adminproto.AdminSettings {
+	ir := s.Runtime
 	cfg := s.Deps.Config()
 	sshInfo := s.Deps.SSHInfo()
 	icfg := ir.Config()
-	passphraseMethod := s.detectPassphraseMethod(ir, cfg)
+	passphraseMethod := s.detectPassphraseMethod(cfg)
 
 	timeoutStr := "0"
 	if identityTimeout := icfg.SessionTimeout(); identityTimeout > 0 {
@@ -142,7 +144,8 @@ func primaryOutboundIPv4() string {
 	return ip.String()
 }
 
-func (s Service) UpdateAdminSetting(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
+	ir := s.Runtime
 	if req.Key == adminproto.AdminSettingTheme {
 		return s.Deps.WithProcessConfigMutation(func() error {
 			return s.updateAdminSettingLocked(ir, req)
@@ -184,7 +187,7 @@ func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminp
 		saveKey, saveValue = adminproto.AdminSettingUserAutoApprove, v
 	case adminproto.AdminSettingLockOnDisconnect:
 		v := req.Value == "true"
-		passphraseMethod := s.detectPassphraseMethod(ir, cfg)
+		passphraseMethod := s.detectPassphraseMethod(cfg)
 		if passphraseMethod != "none" && v {
 			err = fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		} else {
@@ -196,7 +199,7 @@ func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminp
 		if parseErr != nil {
 			err = parseErr
 		} else {
-			passphraseMethod := s.detectPassphraseMethod(ir, cfg)
+			passphraseMethod := s.detectPassphraseMethod(cfg)
 			if passphraseMethod != "none" && duration > 0 {
 				err = fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 			} else {
@@ -248,7 +251,8 @@ type policyTargetOps struct {
 	setState                func(*productruntime.Runtime, *policy.StoredConfig, *policy.Config)
 }
 
-func (s Service) BuildPolicySnapshot(ir *productruntime.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+func (s Service) BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+	ir := s.Runtime
 	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
 	ops, err := s.policyTargetOps(ir, target)
 	if err != nil {
@@ -393,7 +397,8 @@ func newPolicyReplaceError(code string, err error) policyReplaceError {
 	return policyReplaceError{code: code, msg: err.Error()}
 }
 
-func (s Service) ReplacePolicy(ir *productruntime.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+func (s Service) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+	ir := s.Runtime
 	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.PolicySnapshot {
 		return adminproto.PolicySnapshot{
@@ -426,7 +431,7 @@ func (s Service) ReplacePolicy(ir *productruntime.Runtime, req adminproto.Replac
 	err = s.Deps.WithStoreMutation(func() error {
 		expectedSHA := strings.TrimSpace(req.ExpectedCurrentSHA256)
 		if expectedSHA != "" {
-			current := s.BuildPolicySnapshot(ir, target)
+			current := s.BuildPolicySnapshot(target)
 			if !current.Success {
 				return policyReplaceError{code: current.Code, msg: current.Error}
 			}
@@ -482,7 +487,8 @@ func (s Service) ReplacePolicy(ir *productruntime.Runtime, req adminproto.Replac
 	return canonicalPolicySnapshot(target, ops, storedSnapshot)
 }
 
-func (s Service) ValidatePolicy(ir *productruntime.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+func (s Service) ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+	ir := s.Runtime
 	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.ValidatePolicyResult {
 		return adminproto.ValidatePolicyResult{
@@ -520,7 +526,7 @@ func policyTargetFileName() string {
 	return "policy.yaml"
 }
 
-func (s Service) detectPassphraseMethod(ir *productruntime.Runtime, cfg *serverconfig.ServerConfig) string {
+func (s Service) detectPassphraseMethod(cfg *serverconfig.ServerConfig) string {
 	unlockCfg, _ := unlockconfig.LoadUnlockConfig(s.Deps.DataDir())
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)

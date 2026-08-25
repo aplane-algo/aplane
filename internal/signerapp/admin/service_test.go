@@ -106,7 +106,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
 		NodeRole:      role,
 	})
-	return Service{Deps: deps}, ir, deps
+	return Service{Deps: deps, Runtime: ir}, ir, deps
 }
 
 func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *productruntime.Runtime, target adminproto.PolicyTarget, stored *policy.StoredConfig) {
@@ -178,9 +178,9 @@ func TestDetectPassphraseMethod(t *testing.T) {
 }
 
 func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
+	svc, _, deps := setupAdminService(t)
 
-	got := svc.detectPassphraseMethod(ir, deps.config)
+	got := svc.detectPassphraseMethod(deps.config)
 	if got != "none" {
 		t.Fatalf("before unlock.yaml: got %q, want %q", got, "none")
 	}
@@ -192,25 +192,25 @@ func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	got = svc.detectPassphraseMethod(ir, deps.config)
+	got = svc.detectPassphraseMethod(deps.config)
 	if got != "passfile" {
 		t.Fatalf("after unlock.yaml with appass-file: got %q, want %q", got, "passfile")
 	}
 }
 
 func TestServiceDetectPassphraseMethodFallsBackToGlobalConfig(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
+	svc, _, deps := setupAdminService(t)
 
 	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
 
-	got := svc.detectPassphraseMethod(ir, deps.config)
+	got := svc.detectPassphraseMethod(deps.config)
 	if got != "systemd-creds" {
 		t.Fatalf("global fallback: got %q, want %q", got, "systemd-creds")
 	}
 }
 
 func TestServiceDetectPassphraseMethodProductStoreOverridesGlobal(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
+	svc, _, deps := setupAdminService(t)
 
 	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
 	unlockCfg := &unlockconfig.UnlockConfig{
@@ -220,7 +220,7 @@ func TestServiceDetectPassphraseMethodProductStoreOverridesGlobal(t *testing.T) 
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	got := svc.detectPassphraseMethod(ir, deps.config)
+	got := svc.detectPassphraseMethod(deps.config)
 	if got != "passfile" {
 		t.Fatalf("product-store should override global: got %q, want %q", got, "passfile")
 	}
@@ -269,12 +269,12 @@ func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
 			detectPrimaryOutboundIPv4 = func() string {
 				return tt.detectedIP
 			}
-			svc, ir, deps := setupAdminService(t)
+			svc, _, deps := setupAdminService(t)
 			deps.config.Endpoint.SSH.ListenAddress = tt.listenAddress
 			deps.config.Endpoint.AdvertiseURL = tt.advertiseURL
 			deps.sshInfo = SSHInfo{Enabled: true, Port: 64804}
 
-			settings := svc.BuildAdminSettings(ir)
+			settings := svc.BuildAdminSettings()
 			if settings.EndpointAdvertiseURL != tt.advertiseURL {
 				t.Fatalf("EndpointAdvertiseURL = %q, want %q", settings.EndpointAdvertiseURL, tt.advertiseURL)
 			}
@@ -287,12 +287,12 @@ func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
 
 func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	t.Run("theme uses process config mutation lock", func(t *testing.T) {
-		svc, ir, deps := setupAdminService(t)
+		svc, _, deps := setupAdminService(t)
 		if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingTheme, Value: "dark"}); err != nil {
+		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingTheme, Value: "dark"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(theme) error = %v", err)
 		}
 		if deps.processMutationCalls != 1 {
@@ -304,12 +304,12 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	})
 
 	t.Run("identity setting uses store mutation lock", func(t *testing.T) {
-		svc, ir, deps := setupAdminService(t)
+		svc, _, deps := setupAdminService(t)
 		if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"}); err != nil {
+		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(user_auto_approve) error = %v", err)
 		}
 		if deps.processMutationCalls != 0 {
@@ -332,12 +332,12 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			svc, ir, deps := setupAdminService(t)
+			svc, _, deps := setupAdminService(t)
 			if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
 				t.Fatal(err)
 			}
 
-			err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
+			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
 				Key:   tt.key,
 				Value: tt.value,
 			})
@@ -373,7 +373,7 @@ func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	effective.MaxFeeMicroAlgos = maxFee
 	ir.SetPolicyState(stored, effective)
 
-	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSigner)
+	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSigner)
 	if !snapshot.Success {
 		t.Fatalf("BuildPolicySnapshot() success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
@@ -394,7 +394,7 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	svc, ir, _ := setupAdminService(t)
 	ir.SetPolicy(policy.DefaultConfig())
 
-	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSigner)
+	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSigner)
 	if snapshot.Success {
 		t.Fatal("BuildPolicySnapshot() success = true, want false without stored snapshot")
 	}
@@ -412,7 +412,7 @@ func TestBuildSentryPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	}
 	ir.SetSentryPolicyState(stored, effective)
 
-	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSentry)
+	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSentry)
 	if !snapshot.Success {
 		t.Fatalf("BuildPolicySnapshot(sentry) success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
@@ -432,9 +432,9 @@ func TestBuildSentryPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 }
 
 func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
-	svc, signerIR, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
+	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
 	sentryYAML := sentryPolicyYAMLForAdminTest("allow_validate")
-	result := svc.ValidatePolicy(signerIR, adminproto.ValidatePolicyRequest{
+	result := svc.ValidatePolicy(adminproto.ValidatePolicyRequest{
 		Target:     adminproto.PolicyTargetSentry,
 		PolicyYAML: sentryYAML,
 	})
@@ -445,8 +445,8 @@ func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
 	}
 
-	sentrySvc, sentryIR, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	result = sentrySvc.ValidatePolicy(sentryIR, adminproto.ValidatePolicyRequest{
+	sentrySvc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
+	result = sentrySvc.ValidatePolicy(adminproto.ValidatePolicyRequest{
 		Target:     adminproto.PolicyTargetSentry,
 		PolicyYAML: sentryYAML,
 	})
@@ -462,13 +462,13 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	initial := storedSentryPolicyForAdminTest(t, "allow_initial")
 	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetSentry, initial)
-	initialSnapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSentry)
+	initialSnapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSentry)
 	if !initialSnapshot.Success {
 		t.Fatalf("initial snapshot success = false, code %q error %q", initialSnapshot.Code, initialSnapshot.Error)
 	}
 
 	updatedYAML := sentryPolicyYAMLForAdminTest("allow_updated")
-	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
 		Target:                adminproto.PolicyTargetSentry,
 		PolicyYAML:            updatedYAML,
 		ExpectedCurrentSHA256: initialSnapshot.PolicySHA256,
@@ -507,8 +507,8 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 }
 
 func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
+	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
 		Target:     adminproto.PolicyTargetSigner,
 		PolicyYAML: "reject_foreign_rekey: true\n",
 	})

@@ -130,7 +130,7 @@ func TestInstallerPreflightsBeforeStoreChildMutation(t *testing.T) {
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions preflight`,
 		`"$BINDIR/apstore" -d "$DATA_DIR" permissions convert-managed \`,
 		`' > "$SERVICE_DEST"`,
-		`for f in "$DATA_DIR"/identities/*/passphrase.cred`,
+		`cred_file="$DATA_DIR/identities/default/passphrase.cred"`,
 	)
 	for _, forbidden := range []string{
 		`chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"`,

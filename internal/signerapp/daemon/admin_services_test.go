@@ -28,7 +28,7 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	// No unlock config → "none"
 	settings := svc.adminApp().BuildAdminSettings()
@@ -47,7 +47,7 @@ func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	// Should now report "passfile"
 	settings = svc.adminApp().BuildAdminSettings()
 	if settings.PassphraseMethod != "passfile" {
-		t.Errorf("after appass set passfile: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")
+		t.Errorf("after selecting Passfile in appass: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")
 	}
 }
 
@@ -61,7 +61,7 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 	convertTestSignerToGenerational(t, server)
 	newPassphrase := []byte("new-admin-passphrase")
 
-	result := (signerAdminServices{signer: server}).ChangeStorePassphrase(
+	result := server.adminServices().ChangeStorePassphrase(
 		adminproto.ChangeStorePassphraseRequest{
 			CurrentPassphrase: testPassphrase,
 			NewPassphrase:     newPassphrase,
@@ -103,7 +103,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 		t.Fatalf("tamper node role: %v", err)
 	}
 
-	result := (signerAdminServices{signer: server}).ChangeStorePassphrase(
+	result := server.adminServices().ChangeStorePassphrase(
 		adminproto.ChangeStorePassphraseRequest{
 			CurrentPassphrase: testPassphrase,
 			NewPassphrase:     []byte("new-failing-passphrase"),
@@ -134,7 +134,7 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	ir.Config().SetSessionTimeout(15 * time.Minute)
 	ir.Config().SetLockOnDisconnect(true)
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	// Without passfile: settings should reflect product runtime config
 	settings := svc.adminApp().BuildAdminSettings()
@@ -189,7 +189,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	// Attempting to enable lock_on_disconnect in headless mode must fail
 	err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
@@ -235,7 +235,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 		t.Fatal(err)
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	// Attempting to set a non-zero timeout in headless mode must fail
 	err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
@@ -273,7 +273,7 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	err := (signerAdminServices{signer: server}).adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err := server.adminServices().adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
 		Key:   "mode",
 		Value: "sentry",
 	})
@@ -298,7 +298,7 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	start := make(chan struct{})
 	errs := make(chan error, 8)
@@ -358,7 +358,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 	if productRuntime == nil {
 		t.Fatal("expected product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 
 	start := make(chan struct{})
 	errs := make(chan error, 2)
@@ -420,7 +420,7 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	uploaded := "reject_foreign_rekey: false\nmax_fee_microalgos: 4321\nalways_review_warnings: true\n"
 	result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: uploaded})
 	if !result.Success {
@@ -468,7 +468,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	baseline := "reject_foreign_rekey: false\nmax_fee_microalgos: 4321\n"
 	if result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: baseline}); !result.Success {
 		t.Fatalf("ReplacePolicy(baseline) success = false, code %q error %q", result.Code, result.Error)
@@ -504,7 +504,7 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	baseline := "max_fee_microalgos: 4321\n"
 	if result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: baseline}); !result.Success {
 		t.Fatalf("ReplacePolicy(baseline) success = false, code %q error %q", result.Code, result.Error)
@@ -542,7 +542,7 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	}
 	ir.Lock()
 
-	result := (signerAdminServices{signer: server}).adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{
+	result := server.adminServices().adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{
 		PolicyYAML: "max_fee_microalgos: 4321\n",
 	})
 	if result.Success {

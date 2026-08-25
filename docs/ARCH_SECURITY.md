@@ -310,7 +310,7 @@ fresh nonces differ.
 | Key enrollment | Operator-approved `request-token` flow only |
 | Host key verification | TOFU model with persistent known_hosts |
 | Token confidentiality | Token never appears in SSH username, metadata, challenge, or response |
-| Proof replay resistance | Fresh client/server nonces and accepted host-key hash bind each proof transcript |
+| Proof context and replay resistance | Fixed `aplane` username, accepted host-key hash, and fresh client/server nonces bind each proof transcript |
 | Token validation | HMAC-SHA256 with constant-time proof comparison |
 | Token revocation | Operator-initiated via apadmin; invalidates new HTTP requests and closes active SSH connections |
 | Transport encryption | SSH protocol (Ed25519 keys) |

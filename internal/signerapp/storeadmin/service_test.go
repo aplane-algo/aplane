@@ -44,7 +44,7 @@ func (l *recordingAuditLog) LogPassphraseChangeFailed(reason string) {
 }
 
 func TestInitializeStoreRejectsNilRuntime(t *testing.T) {
-	result := Service{}.InitializeStore(nil, adminproto.InitializeStoreRequest{
+	result := Service{}.InitializeStore(adminproto.InitializeStoreRequest{
 		Passphrase: []byte("passphrase"),
 	})
 	if result.Code != protocol.ErrCodeNoRuntimeBound {
@@ -56,7 +56,7 @@ func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
 	audit := &recordingAuditLog{}
 	ir := testIdentityRuntime()
 
-	result := Service{AuditLog: audit}.InitializeStore(ir, adminproto.InitializeStoreRequest{})
+	result := Service{Runtime: ir, AuditLog: audit}.InitializeStore(adminproto.InitializeStoreRequest{})
 	if result.Code != protocol.ErrCodeInvalidPassphrase {
 		t.Fatalf("Code = %q, want %q", result.Code, protocol.ErrCodeInvalidPassphrase)
 	}
@@ -95,11 +95,9 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 	ir := testIdentityRuntime()
 	unlockCalled := false
 	service := Service{
-		Deps: deps,
-		UnlockIdentity: func(
-			_ *productruntime.Runtime,
-			_ []byte,
-		) (bool, int, string, string) {
+		Deps:    deps,
+		Runtime: ir,
+		UnlockIdentity: func(_ []byte) (bool, int, string, string) {
 			unlockCalled = true
 			if err := deps.WithStoreMutation(func() error {
 				return nil
@@ -111,7 +109,7 @@ func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
 	}
 	done := make(chan adminproto.InitializeStoreResult, 1)
 	go func() {
-		done <- service.InitializeStore(ir, adminproto.InitializeStoreRequest{
+		done <- service.InitializeStore(adminproto.InitializeStoreRequest{
 			Passphrase: []byte("initialize-passphrase"),
 		})
 	}()
@@ -164,7 +162,7 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 			audit := &recordingAuditLog{}
 			ir := testIdentityRuntime()
 
-			result := Service{AuditLog: audit}.ChangeStorePassphrase(ir, tt.req)
+			result := Service{Runtime: ir, AuditLog: audit}.ChangeStorePassphrase(tt.req)
 			if result.Code != "invalid_passphrase" {
 				t.Fatalf("Code = %q, want invalid_passphrase", result.Code)
 			}

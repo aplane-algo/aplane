@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -28,9 +29,9 @@ func TestDirectRestoreCommitsCredentialsAndIsPlaintextIdempotent(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, selector := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
+	service := directRestoreTestService(paths, ir)
 
-	first := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	first := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-first",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -62,7 +63,7 @@ func TestDirectRestoreCommitsCredentialsAndIsPlaintextIdempotent(t *testing.T) {
 		t.Fatalf("restore created key-type state: %v", keyTypeEntries)
 	}
 
-	second := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	second := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-second",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -80,8 +81,8 @@ func TestIdempotentRecoveryRestoreReloadsBeforePromotion(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
-	first := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	service := directRestoreTestService(paths, ir)
+	first := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-initial",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -91,7 +92,7 @@ func TestIdempotentRecoveryRestoreReloadsBeforePromotion(t *testing.T) {
 	}
 	before := reloads.Load()
 	ir.SetRecovery()
-	result := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-idempotent-recovery",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -109,9 +110,9 @@ func TestDirectRestoreTreatsUnreadableDestinationAsReplaceableConflict(t *testin
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, selector := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
+	service := directRestoreTestService(paths, ir)
 
-	first := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	first := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-initial",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -127,7 +128,7 @@ func TestDirectRestoreTreatsUnreadableDestinationAsReplaceableConflict(t *testin
 		t.Fatal(err)
 	}
 
-	refused := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	refused := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-refused",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -135,7 +136,7 @@ func TestDirectRestoreTreatsUnreadableDestinationAsReplaceableConflict(t *testin
 	if refused.Success || refused.Code != protocol.ResultCodeRestoreConflict || len(refused.Conflicts) != 1 {
 		t.Fatalf("restore without replacement = %+v", refused)
 	}
-	repaired := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	repaired := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-repair",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -151,8 +152,8 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
-	if result := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	service := directRestoreTestService(paths, ir)
+	if result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-for-rollback",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -160,7 +161,7 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 		t.Fatalf("RestoreBackup() = %+v", result)
 	}
 
-	rolledBack := service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{OperationID: "rollback-one"})
+	rolledBack := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-one"})
 	if !rolledBack.Success {
 		t.Fatalf("RollbackRestore() = %+v", rolledBack)
 	}
@@ -171,7 +172,7 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 	if manifest.Operation != genstore.OperationCredentialRestoreRollback {
 		t.Fatalf("rollback operation = %q", manifest.Operation)
 	}
-	second := service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{OperationID: "rollback-two"})
+	second := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-two"})
 	if second.Success || second.Code != protocol.ResultCodeRestoreRollbackRefused {
 		t.Fatalf("second RollbackRestore() = %+v", second)
 	}
@@ -182,7 +183,7 @@ func TestDirectRestoreReportsVisibleDurabilityUnknownAsUncertain(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
+	service := directRestoreTestService(paths, ir)
 
 	injected := errors.New("simulated identity-directory sync failure")
 	identityDir := paths.ProductDir()
@@ -193,7 +194,7 @@ func TestDirectRestoreReportsVisibleDurabilityUnknownAsUncertain(t *testing.T) {
 		return nil
 	}
 	defer func() { fsutil.TestHook = nil }()
-	result := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-uncertain",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -217,8 +218,8 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
-	restored := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	service := directRestoreTestService(paths, ir)
+	restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-before-uncertain-rollback",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -236,7 +237,7 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 		return nil
 	}
 	defer func() { fsutil.TestHook = nil }()
-	result := service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{
+	result := service.RollbackRestore(adminproto.RollbackRestoreRequest{
 		OperationID: "rollback-uncertain",
 	})
 	fsutil.TestHook = nil
@@ -267,7 +268,7 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	}
 	ir.SetRecovery()
 
-	result := directRestoreTestService(paths).RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-over-invalid-current",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -289,8 +290,8 @@ func TestDirectRollbackRefusesDivergedRestoreGeneration(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
-	restored := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	service := directRestoreTestService(paths, ir)
+	restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-before-divergence",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -306,7 +307,7 @@ func TestDirectRollbackRefusesDivergedRestoreGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := service.RollbackRestore(ir, adminproto.RollbackRestoreRequest{OperationID: "rollback-diverged"})
+	result := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-diverged"})
 	if result.Success || result.Code != protocol.ResultCodeRestoreRollbackDiverged {
 		t.Fatalf("RollbackRestore(diverged) = %+v", result)
 	}
@@ -320,9 +321,9 @@ func TestDirectRestoreDuplicateSelectorsFailWithoutRateLimitingValidPassphrase(t
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, selector := writeCredentialOnlyManagedArchive(t, paths)
-	service := directRestoreTestService(paths)
+	service := directRestoreTestService(paths, ir)
 
-	duplicate := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	duplicate := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-duplicates",
 		ArchivePath:      archivePath,
 		Addresses:        []string{selector, selector},
@@ -331,7 +332,7 @@ func TestDirectRestoreDuplicateSelectorsFailWithoutRateLimitingValidPassphrase(t
 	if duplicate.Success || !strings.Contains(duplicate.Error, "duplicate backup selector") {
 		t.Fatalf("RestoreBackup(duplicates) = %+v", duplicate)
 	}
-	retry := service.RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	retry := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-after-duplicates",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -350,7 +351,7 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := directRestoreTestService(paths).RestoreBackup(ir, adminproto.RestoreBackupRequest{
+	result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-one-bad",
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
@@ -371,11 +372,11 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	}
 }
 
-func directRestoreTestService(paths storepaths.Paths) Service {
+func directRestoreTestService(paths storepaths.Paths, ir *productruntime.Runtime) Service {
 	return Service{Deps: backupServiceTestDeps{
 		paths:   paths,
 		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
-	}}
+	}, Runtime: ir}
 }
 
 func writeCredentialOnlyManagedArchive(t *testing.T, paths storepaths.Paths) (string, string) {

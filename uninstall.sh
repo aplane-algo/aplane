@@ -904,8 +904,8 @@ if [ "$HAS_SYSTEMD_CREDS" = "1" ]; then
     echo ""
     echo "  Note: passphrase.cred is encrypted to this host's TPM2/host key, but the"
     echo "  systemd unit's LoadCredentialEncrypted= binding was removed with the unit."
-    echo "  On reinstall, re-run 'appass set systemd-creds' to rebind it (or the new"
-    echo "  installer should detect the existing .cred and rebind automatically)."
+    echo "  On reinstall, the installer should detect the existing .cred and rebind it."
+    echo "  If needed, run 'sudo appass -d $DATA_DIR' and select Systemd credentials."
 fi
 if [ "$DATA_DIR_RETAINED" = "1" ]; then
     echo ""

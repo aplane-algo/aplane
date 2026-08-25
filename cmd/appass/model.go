@@ -4,13 +4,13 @@
 package main
 
 import (
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // ViewState represents which screen the TUI is showing.
@@ -195,7 +195,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 
 	switch m.method {
 	case "passfile":
-		filePath = filepath.Join(m.dataDir, "identities", productIdentityID(), "passphrase")
+		filePath = filepath.Join(storepaths.NewPaths(m.dataDir).ProductDir(), "passphrase")
 		if len(argv) > 1 {
 			filePath = argv[1]
 		}
@@ -207,7 +207,7 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 		}
 
 	case "systemd-creds":
-		filePath = filepath.Join(m.dataDir, "identities", productIdentityID(), "passphrase.cred")
+		filePath = filepath.Join(storepaths.NewPaths(m.dataDir).ProductDir(), "passphrase.cred")
 		if len(argv) > 1 {
 			filePath = argv[1]
 		}
@@ -220,8 +220,4 @@ func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel
 	}
 
 	return
-}
-
-func productIdentityID() string {
-	return productmode.IdentityID
 }

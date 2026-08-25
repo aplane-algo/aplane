@@ -137,6 +137,7 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
+		Username:    productSSHUsername,
 		HostKeyHash: proofHostHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,

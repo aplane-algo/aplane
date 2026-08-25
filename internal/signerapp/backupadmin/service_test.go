@@ -41,8 +41,11 @@ func TestManagedBackupTimestampIncludesNanoseconds(t *testing.T) {
 
 func TestBackupIdentityZeroesRequestPassphraseOnFailure(t *testing.T) {
 	passphrase := []byte("export-passphrase")
-	service := Service{Deps: failingBackupDeps{paths: storepaths.NewPaths(t.TempDir())}}
-	result := service.BackupIdentity(testBackupIdentityRuntime(), adminproto.BackupIdentityRequest{
+	service := Service{
+		Deps:    failingBackupDeps{paths: storepaths.NewPaths(t.TempDir())},
+		Runtime: testBackupIdentityRuntime(),
+	}
+	result := service.BackupIdentity(adminproto.BackupIdentityRequest{
 		ExportPassphrase: passphrase,
 	})
 	if result.Success {
@@ -74,8 +77,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	result := (Service{Deps: backupServiceTestDeps{paths: paths}}).BackupIdentity(
-		ir,
+	result := (Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: ir}).BackupIdentity(
 		adminproto.BackupIdentityRequest{ExportPassphrase: []byte("export-passphrase")},
 	)
 	if !result.Success {
@@ -113,15 +115,16 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}}
+	ir := testBackupIdentityRuntime()
+	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}, Runtime: ir}
 	request := adminproto.PreviewRestoreRequest{
 		ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
 	}
-	if result := service.PreviewRestore(testBackupIdentityRuntime(), request); result.Code != protocol.ResultCodeRestorePreviewFailed {
+	if result := service.PreviewRestore(request); result.Code != protocol.ResultCodeRestorePreviewFailed {
 		t.Fatalf("PreviewRestore() = %+v", result)
 	}
 	request.ExportPassphrase = []byte("export-passphrase")
-	if result := service.PreviewRestore(testBackupIdentityRuntime(), request); result.Code != protocol.ResultCodeRestoreRateLimited {
+	if result := service.PreviewRestore(request); result.Code != protocol.ResultCodeRestoreRateLimited {
 		t.Fatalf("second PreviewRestore() = %+v", result)
 	}
 }
@@ -132,10 +135,10 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeMixedValidityManagedArchive(t, paths)
 	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}, Runtime: ir}
 
 	for i := 0; i < 2; i++ {
-		result := service.PreviewRestore(ir, adminproto.PreviewRestoreRequest{
+		result := service.PreviewRestore(adminproto.PreviewRestoreRequest{
 			ArchivePath:      archivePath,
 			ExportPassphrase: []byte("export-passphrase"),
 		})

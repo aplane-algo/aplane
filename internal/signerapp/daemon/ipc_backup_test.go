@@ -25,7 +25,7 @@ func TestIPCBackupCreatesManagedArchive(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)
@@ -91,7 +91,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	generated := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !generated.Success {
 		t.Fatalf("GenerateKey() = %+v", generated)
@@ -143,7 +143,7 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	gen := svc.keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
 	if !gen.Success {
 		t.Fatalf("GenerateKey() failed: %s", gen.Error)

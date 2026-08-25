@@ -114,7 +114,7 @@ func TestUnlockCompletesPendingKeyRotationBeforePublishingIdentity(t *testing.T)
 	kr.Zero()
 	ir.Lock()
 
-	success, _, errMsg, code := (signerAdminServices{signer: server}).
+	success, _, errMsg, code := server.adminServices().
 		UnlockIdentity(newPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf(
@@ -188,7 +188,7 @@ func TestUnlockDiscardsPreRootRotationSnapshotUnderOldAuthority(t *testing.T) {
 	fsutil.TestHook = nil
 	ir.Lock()
 
-	success, _, errMsg, code := (signerAdminServices{signer: server}).
+	success, _, errMsg, code := server.adminServices().
 		UnlockIdentity(testPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf(
@@ -231,7 +231,7 @@ func TestUnlockEntersRecoveryWhenPendingRotationCannotComplete(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := (signerAdminServices{signer: server}).
+	success, keyCount, errMsg, code := server.adminServices().
 		UnlockIdentity(newPassphrase)
 	if !success || keyCount != 0 || errMsg != "" ||
 		code != protocol.ResultCodeRecoveryBlocked {
@@ -259,7 +259,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	generationID := convertTestSignerToGenerational(t, server)
 
 	// A malformed credential inside the selected generation: structural
@@ -300,7 +300,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	generationID := convertTestSignerToGenerational(t, server)
 
 	// A corrupt key-type state record inside the selected generation: the
@@ -337,7 +337,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default product runtime")
 	}
-	svc := signerAdminServices{signer: server}
+	svc := server.adminServices()
 	generationID := convertTestSignerToGenerational(t, server)
 
 	// Files that are neither managed credentials nor witness artifacts are

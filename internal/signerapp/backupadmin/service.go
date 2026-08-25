@@ -23,15 +23,14 @@ type Deps interface {
 }
 
 type Service struct {
-	Deps Deps
+	Deps    Deps
+	Runtime *productruntime.Runtime
 }
 
-func (s Service) BackupIdentity(ir *productruntime.Runtime, req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
+func (s Service) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto.BackupIdentityResult {
+	ir := s.Runtime
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
-	if err := requireProductRuntime(ir); err != nil {
-		return adminproto.BackupIdentityResult{Code: protocol.ResultCodeBackupFailed, Error: err.Error()}
-	}
 
 	timestamp := managedBackupTimestamp(time.Now())
 	archivePath := backup.BuildManagedArchivePath(s.Deps.KeyPaths(), timestamp)
@@ -74,10 +73,7 @@ func managedBackupTimestamp(t time.Time) string {
 	return t.UTC().Format("20060102-150405.000000000")
 }
 
-func (s Service) ListBackups(ir *productruntime.Runtime) adminproto.ListBackupsResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return adminproto.ListBackupsResult{Code: protocol.ResultCodeListBackupsFailed, Error: err.Error()}
-	}
+func (s Service) ListBackups() adminproto.ListBackupsResult {
 	items, err := backup.ListManagedBackups(s.Deps.KeyPaths())
 	if err != nil {
 		return adminproto.ListBackupsResult{
@@ -98,10 +94,7 @@ func (s Service) ListBackups(ir *productruntime.Runtime) adminproto.ListBackupsR
 	return adminproto.ListBackupsResult{Backups: out}
 }
 
-func (s Service) DeleteBackup(ir *productruntime.Runtime, req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
-	if err := requireProductRuntime(ir); err != nil {
-		return adminproto.DeleteBackupResult{Code: protocol.ResultCodeDeleteBackupFailed, Error: err.Error()}
-	}
+func (s Service) DeleteBackup(req adminproto.DeleteBackupRequest) adminproto.DeleteBackupResult {
 	err := s.Deps.WithStoreMutation(func() error {
 		return backup.DeleteManagedBackup(s.Deps.KeyPaths(), req.ArchivePath)
 	})
@@ -116,12 +109,10 @@ func (s Service) DeleteBackup(ir *productruntime.Runtime, req adminproto.DeleteB
 	return adminproto.DeleteBackupResult{Success: true}
 }
 
-func (s Service) PreviewRestore(ir *productruntime.Runtime, req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
+func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto.RestorePreviewResult {
+	ir := s.Runtime
 	passphraseBytes := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphraseBytes)
-	if err := requireProductRuntime(ir); err != nil {
-		return adminproto.RestorePreviewResult{Code: protocol.ResultCodeRestorePreviewFailed, Error: err.Error()}
-	}
 
 	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), req.ArchivePath)
 	if err != nil {

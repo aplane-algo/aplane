@@ -33,15 +33,17 @@ type AuditLogger interface {
 	LogPassphraseChangeFailed(reason string)
 }
 
-type UnlockIdentityFunc func(ir *productruntime.Runtime, passphrase []byte) (bool, int, string, string)
+type UnlockIdentityFunc func(passphrase []byte) (bool, int, string, string)
 
 type Service struct {
 	Deps           Deps
+	Runtime        *productruntime.Runtime
 	AuditLog       AuditLogger
 	UnlockIdentity UnlockIdentityFunc
 }
 
-func (s Service) InitializeStore(ir *productruntime.Runtime, req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
+func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
+	ir := s.Runtime
 	if ir == nil {
 		return adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeNoRuntimeBound,
@@ -90,7 +92,7 @@ func (s Service) InitializeStore(ir *productruntime.Runtime, req adminproto.Init
 	// mutations. Invoke it only after releasing the non-reentrant identity
 	// mutation lock used for initialization.
 	if err == nil {
-		success, _, errMsg, _ := s.UnlockIdentity(ir, req.Passphrase)
+		success, _, errMsg, _ := s.UnlockIdentity(req.Passphrase)
 		if !success {
 			err = fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
 		}
@@ -111,7 +113,8 @@ func (s Service) InitializeStore(ir *productruntime.Runtime, req adminproto.Init
 	}
 }
 
-func (s Service) ChangeStorePassphrase(ir *productruntime.Runtime, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+	ir := s.Runtime
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
 		s.logPassphraseChangeFailed("current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{

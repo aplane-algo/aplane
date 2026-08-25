@@ -535,6 +535,7 @@ func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.Keybo
 		return nil, err
 	}
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
+		Username:    conn.User(),
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,

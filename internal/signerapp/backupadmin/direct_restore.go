@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
@@ -24,18 +23,12 @@ import (
 // Destination policy, templates, and key-type generation state are neither
 // read from the archive nor changed by this operation.
 func (s Service) RestoreBackup(
-	ir *productruntime.Runtime,
 	req adminproto.RestoreBackupRequest,
 ) adminproto.RestoreBackupResult {
+	ir := s.Runtime
 	result := adminproto.RestoreBackupResult{OperationID: req.OperationID}
 	passphrase := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphrase)
-	if err := requireProductRuntime(ir); err != nil {
-		result.Code = protocol.ResultCodeRestoreFailed
-		result.Error = err.Error()
-		return result
-	}
-
 	if req.OperationID == "" {
 		result.Code = protocol.ResultCodeRestoreFailed
 		result.Error = "restore requires an operation ID"

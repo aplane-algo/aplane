@@ -225,7 +225,7 @@ func Run(dataDir string) int {
 		// Generation-based stores reconcile before startup unlock: CURRENT
 		// is the sole commit record; uncommitted attempts are discarded and
 		// the selected generation must validate, else recovery mode.
-		adminServices := signerAdminServices{signer: server}
+		adminServices := server.adminServices()
 		generationErr := adminServices.reconcileGenerations(ir)
 		if generationErr != nil {
 			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)

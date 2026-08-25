@@ -17,6 +17,8 @@ import (
 )
 
 const (
+	// Any change to the transcript fields, ordering, or encoding after v1 ships
+	// requires a new protocol version and domain.
 	tokenProofVersion       = 1
 	tokenProofDomain        = "aplane-ssh-token-proof-v1"
 	tokenProofServerDomain  = "server"
@@ -35,6 +37,7 @@ const (
 )
 
 type tokenProofTranscript struct {
+	Username    string
 	HostKeyHash []byte
 	ClientNonce []byte
 	ServerNonce []byte
@@ -69,6 +72,9 @@ func hashSSHHostKey(key ssh.PublicKey) ([]byte, error) {
 }
 
 func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error) {
+	if transcript.Username != productSSHUsername {
+		return nil, fmt.Errorf("SSH username is %q, want %q", transcript.Username, productSSHUsername)
+	}
 	if len(transcript.HostKeyHash) != tokenProofHostHashSize {
 		return nil, fmt.Errorf("host key hash is %d bytes, want %d", len(transcript.HostKeyHash), tokenProofHostHashSize)
 	}
@@ -82,6 +88,7 @@ func encodeTokenProofTranscript(transcript tokenProofTranscript) ([]byte, error)
 	var encoded bytes.Buffer
 	for _, field := range [][]byte{
 		[]byte(tokenProofDomain),
+		[]byte(transcript.Username),
 		transcript.HostKeyHash,
 		transcript.ClientNonce,
 		transcript.ServerNonce,

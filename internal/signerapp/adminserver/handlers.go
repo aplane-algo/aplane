@@ -99,8 +99,7 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 }
 
 func (s *Session) HandleListSentryReferences(requestID string) {
-	ir := s.requireBoundRuntime(requestID)
-	if ir == nil {
+	if s.requireBoundRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references"}) {
@@ -114,8 +113,7 @@ func (s *Session) HandleListSentryReferences(requestID string) {
 }
 
 func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessage) {
-	ir := s.requireBoundRuntime(msg.ID)
-	if ir == nil {
+	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
@@ -132,8 +130,7 @@ func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessa
 func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenceMessage) {
 	// Reference aliases select the witness public key embedded during guarded
 	// key generation, so mutation shares key generation's unlocked interlock.
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
@@ -157,8 +154,7 @@ func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenc
 }
 
 func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenceMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
@@ -178,8 +174,7 @@ func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenc
 }
 
 func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessage) {
-	ir := s.requireBoundRuntime(msg.ID)
-	if ir == nil {
+	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID}) {
@@ -194,8 +189,7 @@ func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessa
 }
 
 func (s *Session) HandleListGenerations(requestID string) {
-	ir := s.requireBoundRuntime(requestID)
-	if ir == nil {
+	if s.requireBoundRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations"}) {
@@ -214,8 +208,7 @@ func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 
 func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	defer msg.Passphrase.Zero()
-	ir := s.requireBoundRuntime(msg.ID)
-	if ir == nil {
+	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity"}) {
@@ -275,8 +268,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 }
 
 func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
@@ -310,8 +302,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 }
 
 func (s *Session) HandleListBackups(requestID string) {
-	ir := s.requireRecoveryAdminRuntime(requestID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
@@ -326,8 +317,7 @@ func (s *Session) HandleListBackups(requestID string) {
 }
 
 func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
@@ -342,8 +332,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 }
 
 func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
@@ -360,8 +349,7 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 }
 
 func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
@@ -377,8 +365,7 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 
 func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessage) {
 	defer msg.ExportPassphrase.Zero()
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
@@ -413,8 +400,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 	// Abort removes only an unpublished, path-confined .part upload. Keep this
 	// authorized cleanup available while the bound identity is locked so a
 	// failed import does not require unlocking merely to discard residue.
-	ir := s.requireBoundRuntime(msg.ID)
-	if ir == nil {
+	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
@@ -429,8 +415,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 }
 
 func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName}) {
@@ -462,8 +447,7 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphraseMessage) {
 	defer msg.CurrentPassphrase.Zero()
 	defer msg.NewPassphrase.Zero()
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity"}) {
@@ -485,8 +469,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 }
 
 func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
@@ -527,8 +510,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 }
 
 func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
@@ -580,8 +562,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 }
 
 func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
-	ir := s.requireRecoveryAdminRuntime(msg.ID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
@@ -603,8 +584,7 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 }
 
 func (s *Session) HandleReconcileStore(requestID string) {
-	ir := s.requireRecoveryAdminRuntime(requestID)
-	if ir == nil {
+	if s.requireRecoveryAdminRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
@@ -618,8 +598,7 @@ func (s *Session) HandleReconcileStore(requestID string) {
 }
 
 func (s *Session) HandleListKeys(requestID string) {
-	ir := s.requireUnlockedRuntime(requestID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionKeysView, auth.Resource{Type: "keys"}) {
@@ -636,8 +615,7 @@ func (s *Session) HandleListKeys(requestID string) {
 }
 
 func (s *Session) HandleGetKeyDetails(msg *protocol.GetKeyDetailsMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionKeysView, auth.Resource{Type: "key", ID: msg.Address}) {
@@ -649,8 +627,7 @@ func (s *Session) HandleGetKeyDetails(msg *protocol.GetKeyDetailsMessage) {
 }
 
 func (s *Session) HandleListLibraryTemplates(requestID string) {
-	ir := s.requireUnlockedRuntime(requestID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
@@ -661,8 +638,7 @@ func (s *Session) HandleListLibraryTemplates(requestID string) {
 }
 
 func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTemplateMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", ID: msg.KeyType}) {
@@ -676,8 +652,7 @@ func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTempl
 }
 
 func (s *Session) HandleListInstalledTemplates(requestID string) {
-	ir := s.requireUnlockedRuntime(requestID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionTemplatesView, auth.Resource{Type: "templates"}) {
@@ -688,8 +663,7 @@ func (s *Session) HandleListInstalledTemplates(requestID string) {
 }
 
 func (s *Session) HandleShowInstalledTemplate(msg *protocol.ShowInstalledTemplateMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
@@ -702,8 +676,7 @@ func (s *Session) HandleShowInstalledTemplate(msg *protocol.ShowInstalledTemplat
 }
 
 func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType}) {
@@ -717,8 +690,7 @@ func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMes
 }
 
 func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTemplateMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template"}) {
@@ -731,8 +703,7 @@ func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTem
 }
 
 func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTemplateMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionTemplatesRemove, auth.Resource{Type: "template", ID: msg.KeyType}) {
@@ -745,8 +716,7 @@ func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTem
 }
 
 func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionKeyTypesActivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
@@ -759,8 +729,7 @@ func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
 }
 
 func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionKeyTypesDeactivate, auth.Resource{Type: "keytype", ID: msg.KeyType}) {
@@ -773,8 +742,7 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 }
 
 func (s *Session) HandleListKeyTypes(requestID string) {
-	ir := s.requireBoundRuntime(requestID)
-	if ir == nil {
+	if s.requireBoundRuntime(requestID) == nil {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}) {
@@ -817,8 +785,7 @@ func (s *Session) HandleTokenProvisioningResponse(msg *protocol.TokenProvisionin
 }
 
 func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	resource := auth.Resource{Type: "key"}
@@ -834,8 +801,7 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 }
 
 func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address}) {
@@ -847,8 +813,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 
 func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 	msg.Passphrase.Zero()
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	resource := auth.Resource{Type: "key", ID: msg.Address}
@@ -861,8 +826,7 @@ func (s *Session) HandleExportKey(msg *protocol.ExportKeyMessage) {
 }
 
 func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
-	ir := s.requireUnlockedRuntime(msg.ID)
-	if ir == nil {
+	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
 	resource := auth.Resource{Type: "key"}

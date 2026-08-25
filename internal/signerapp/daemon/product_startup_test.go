@@ -171,7 +171,7 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 	// Process-global config has NO passphrase_command_argv, so
 	// cfg.ShouldLockOnDisconnect() returns true (the default).
 
-	// Write product-store unlock.yaml (simulates appass set passfile)
+	// Write product-store unlock.yaml (simulates selecting Passfile in appass)
 	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/secret"},
 	}

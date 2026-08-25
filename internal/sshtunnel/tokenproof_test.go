@@ -87,6 +87,7 @@ func TestTokenProofContractVector(t *testing.T) {
 	}
 
 	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
+		Username:    vector.Username,
 		HostKeyHash: hostKeyHash,
 		ClientNonce: clientNonce,
 		ServerNonce: serverNonce,
@@ -145,6 +146,7 @@ func TestTokenProofContractVector(t *testing.T) {
 type tokenProofContractVector struct {
 	SchemaVersion       int    `json:"schema_version"`
 	Protocol            string `json:"protocol"`
+	Username            string `json:"username"`
 	Token               string `json:"token"`
 	HostKeyHash         string `json:"host_key_hash"`
 	ClientNonce         string `json:"client_nonce"`
@@ -171,7 +173,7 @@ func loadTokenProofContractVector(t *testing.T) tokenProofContractVector {
 	if err := decoder.Decode(&vector); err != nil {
 		t.Fatalf("decode token proof contract vector: %v", err)
 	}
-	if vector.SchemaVersion != 1 || vector.Protocol != tokenProofDomain {
+	if vector.SchemaVersion != tokenProofVersion || vector.Protocol != tokenProofDomain || vector.Username != productSSHUsername {
 		t.Fatalf("unexpected token proof contract vector version: %#v", vector)
 	}
 	return vector
@@ -303,6 +305,7 @@ func TestTokenProofMessagesRejectInvalidShapes(t *testing.T) {
 
 func TestEncodeTokenProofTranscriptRejectsInvalidFields(t *testing.T) {
 	valid := tokenProofTranscript{
+		Username:    productSSHUsername,
 		HostKeyHash: bytes.Repeat([]byte{1}, tokenProofHostHashSize),
 		ClientNonce: bytes.Repeat([]byte{2}, tokenProofNonceSize),
 		ServerNonce: bytes.Repeat([]byte{3}, tokenProofNonceSize),
@@ -312,6 +315,7 @@ func TestEncodeTokenProofTranscriptRejectsInvalidFields(t *testing.T) {
 		name   string
 		mutate func(*tokenProofTranscript)
 	}{
+		{name: "username", mutate: func(value *tokenProofTranscript) { value.Username = "other" }},
 		{name: "host hash", mutate: func(value *tokenProofTranscript) { value.HostKeyHash = []byte{1} }},
 		{name: "client nonce", mutate: func(value *tokenProofTranscript) { value.ClientNonce = []byte{1} }},
 		{name: "server nonce", mutate: func(value *tokenProofTranscript) { value.ServerNonce = []byte{1} }},

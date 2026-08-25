@@ -482,7 +482,8 @@ Startup rejects any direct `identities/` entry other than a real `default`
 directory before loading secrets or starting watchers. HTTP authentication
 maps the one product token to `system:product-admin`. SSH accepts only
 `aplane` and `request-token`. Its mutual-proof transcript binds the protocol
-version, accepted host key, client nonce, server nonce, and proof role.
+version, fixed `aplane` username, accepted host key, client nonce, server nonce,
+and proof role.
 
 #### Product Runtime Invariants
 
@@ -494,8 +495,8 @@ The runtime enforces these single-product invariants:
   `internal/lsigprovider.registerMu` has no per-owner reference counts;
 - one product runtime owns the watcher, approval coordinator, token authority,
   SSH enrollment state, runtime settings, and lock state;
-- SSH uses the fixed usernames `aplane` and `request-token`; token-proof
-  transcripts carry no store or runtime identifier;
+- SSH uses the fixed usernames `aplane` and `request-token`; normal token-proof
+  transcripts bind `aplane` and carry no store or runtime identifier;
 - audit records attribute actors through principal and session fields and carry
   no store or runtime identifier;
 - `node.yaml.hmac` and policy sidecars bind authenticated state to the one
