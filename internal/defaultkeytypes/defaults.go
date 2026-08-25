@@ -4,7 +4,7 @@
 // Package defaultkeytypes owns staged bootstrap installation of the
 // product-store key types enabled automatically for new signer stores. It
 // mutates the unpublished generation through templatelibrary and does not use
-// a live identity lock or runtime reload.
+// a live runtime lock or runtime reload.
 package defaultkeytypes
 
 import (
@@ -35,24 +35,24 @@ var signerDefaultTemplates = []bundledTemplate{
 	},
 }
 
-// InstallForNewIdentity installs key types that should be available and enabled
+// InstallForNewStore installs key types that should be available and enabled
 // immediately after a new product store is initialized.
 //
-// The caller must be in an initialization or identity-mutation context and must
+// The caller must be in an initialization or store-mutation context and must
 // have already registered built-in LogicSig providers. Sentry nodes skip signer
 // account key types.
-func InstallForNewIdentity(paths storepaths.Paths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
+func InstallForNewStore(paths storepaths.Paths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return err
 	}
-	return InstallForNewIdentityActive(active, role, kr, logf)
+	return InstallForNewStoreActive(active, role, kr, logf)
 }
 
-// InstallForNewIdentityActive is InstallForNewIdentity against resolved
+// InstallForNewStoreActive is InstallForNewStore against resolved
 // active-store paths — including a staged, not-yet-published generation
 // during store initialization or migration.
-func InstallForNewIdentityActive(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
+func InstallForNewStoreActive(active storepaths.ActivePaths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
 	if role != noderole.RoleSigner {
 		return nil
 	}

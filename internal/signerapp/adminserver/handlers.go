@@ -24,9 +24,6 @@ func (s *Session) SendError(requestID, code, errMsg string) error {
 }
 
 func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token"}) {
 		return
 	}
@@ -36,9 +33,6 @@ func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
 }
 
 func (s *Session) HandleGetAdminSettings(requestID string) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(requestID, auth.ActionSettingsView, auth.Resource{Type: "settings"}) {
 		return
 	}
@@ -47,9 +41,6 @@ func (s *Session) HandleGetAdminSettings(requestID string) {
 }
 
 func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessage) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings"}) {
 		return
 	}
@@ -59,9 +50,6 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 }
 
 func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
@@ -70,9 +58,6 @@ func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage
 }
 
 func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy"}) {
 		return
 	}
@@ -85,9 +70,6 @@ func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 }
 
 func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
-	if s.productOrBoundRuntime() == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}

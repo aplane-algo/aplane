@@ -161,13 +161,13 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 	}
 }
 
-func TestClientUsesProductIdentityBeforeDial(t *testing.T) {
+func TestClientConnectWithKeyReturnsDialError(t *testing.T) {
 	_, _, identityPath := generateClientIdentityFile(t, t.TempDir())
 	client := NewClient("127.0.0.1", 1, 0, 0, identityPath, filepath.Join(t.TempDir(), "known_hosts"))
 	client.SetAPIToken("test-token")
 	err := client.ConnectWithKey(context.Background())
-	if err == nil || strings.Contains(err.Error(), "identity ID required") {
-		t.Fatalf("ConnectWithKey() error = %v, want a dial failure after selecting the product runtime", err)
+	if err == nil {
+		t.Fatal("ConnectWithKey() error = nil, want dial failure")
 	}
 }
 

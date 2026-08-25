@@ -117,7 +117,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			OperationID:     "init-" + generationID,
 			CreatedAt:       time.Now(),
 			Apply: func(staged storepaths.GenPaths) error {
-				return defaultkeytypes.InstallForNewIdentityActive(staged, role, keyring, opts.Logf)
+				return defaultkeytypes.InstallForNewStoreActive(staged, role, keyring, opts.Logf)
 			},
 		}); err != nil {
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)

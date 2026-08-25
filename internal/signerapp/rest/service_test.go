@@ -388,7 +388,7 @@ func TestServicePlanShapesResponse(t *testing.T) {
 
 func TestServiceKeysAndAdminMutations(t *testing.T) {
 	ir := setupProductRuntime(t, true)
-	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
+	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{Runtime: ir}}}
 
 	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: "ed25519"})
 	if genErr != nil {
@@ -444,7 +444,7 @@ func TestAuthorizationKindForCategory(t *testing.T) {
 
 func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	ir := setupProductRuntimeWithRole(t, true, noderole.RoleSentry)
-	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
+	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{Runtime: ir}}}
 
 	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: witness.Falcon1024V1})
 	if genErr != nil {
@@ -1341,7 +1341,7 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 
 	svc = Service{
 		Deps: Dependencies{
-			KeyAdmin: keyadmin.Service{},
+			KeyAdmin: keyadmin.Service{Runtime: ir},
 			GenerateGenericLSig: func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error) {
 				return "", errors.New("boom")
 			},

@@ -126,6 +126,65 @@ func TestSessionAuthorizationWithoutBoundRuntimeFailsClosed(t *testing.T) {
 	}
 }
 
+func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle func(*Session)
+	}{
+		{
+			name: "revoke token",
+			handle: func(session *Session) {
+				session.HandleRevokeToken(&protocol.RevokeTokenMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "get admin settings",
+			handle: func(session *Session) {
+				session.HandleGetAdminSettings("request-1")
+			},
+		},
+		{
+			name: "update admin setting",
+			handle: func(session *Session) {
+				session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "get policy snapshot",
+			handle: func(session *Session) {
+				session.HandleGetPolicySnapshot(&protocol.GetPolicySnapshotMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "replace policy",
+			handle: func(session *Session) {
+				session.HandleReplacePolicy(&protocol.ReplacePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "validate policy",
+			handle: func(session *Session) {
+				session.HandleValidatePolicy(&protocol.ValidatePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			conn := &queueConn{}
+			test.handle(NewSession(conn, SessionDeps{}))
+
+			msgs := decodeAdminProtoWrites(t, conn)
+			if len(msgs) != 1 {
+				t.Fatalf("write count = %d, want 1", len(msgs))
+			}
+			if msgs[0].Type != protocol.MsgTypeError || msgs[0].ID != "request-1" || msgs[0].Code != protocol.ErrCodeNoRuntimeBound {
+				t.Fatalf("response = %+v, want no_runtime_bound error for request-1", msgs[0])
+			}
+		})
+	}
+}
+
 func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{
 

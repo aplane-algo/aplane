@@ -22,8 +22,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
-	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -57,7 +57,7 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 	cfg := s.Deps.Config()
 	sshInfo := s.Deps.SSHInfo()
 	icfg := ir.Config()
-	passphraseMethod := s.detectPassphraseMethod(cfg)
+	passphraseMethod := s.detectPassphraseMethod()
 
 	timeoutStr := "0"
 	if identityTimeout := icfg.SessionTimeout(); identityTimeout > 0 {
@@ -145,21 +145,21 @@ func primaryOutboundIPv4() string {
 }
 
 func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
-	ir := s.Runtime
 	if req.Key == adminproto.AdminSettingTheme {
 		return s.Deps.WithProcessConfigMutation(func() error {
-			return s.updateAdminSettingLocked(ir, req)
+			return s.updateAdminSettingLocked(req)
 		})
 	}
 	if req.Key == adminproto.AdminSettingSSHListenAddress || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
 		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 	return s.Deps.WithStoreMutation(func() error {
-		return s.updateAdminSettingLocked(ir, req)
+		return s.updateAdminSettingLocked(req)
 	})
 }
 
-func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminproto.UpdateAdminSettingRequest) error {
+func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingRequest) error {
+	ir := s.Runtime
 	cfg := s.Deps.Config()
 
 	changed, checkErr := serverconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg)
@@ -187,7 +187,7 @@ func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminp
 		saveKey, saveValue = adminproto.AdminSettingUserAutoApprove, v
 	case adminproto.AdminSettingLockOnDisconnect:
 		v := req.Value == "true"
-		passphraseMethod := s.detectPassphraseMethod(cfg)
+		passphraseMethod := s.detectPassphraseMethod()
 		if passphraseMethod != "none" && v {
 			err = fmt.Errorf("cannot enable lock_on_disconnect in headless mode (passphrase method: %s)", passphraseMethod)
 		} else {
@@ -199,7 +199,7 @@ func (s Service) updateAdminSettingLocked(ir *productruntime.Runtime, req adminp
 		if parseErr != nil {
 			err = parseErr
 		} else {
-			passphraseMethod := s.detectPassphraseMethod(cfg)
+			passphraseMethod := s.detectPassphraseMethod()
 			if passphraseMethod != "none" && duration > 0 {
 				err = fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 			} else {
@@ -254,7 +254,7 @@ type policyTargetOps struct {
 func (s Service) BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	ir := s.Runtime
 	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
-	ops, err := s.policyTargetOps(ir, target)
+	ops, err := s.policyTargetOps(target)
 	if err != nil {
 		return policySnapshotError(target, err)
 	}
@@ -300,8 +300,8 @@ func canonicalPolicySnapshot(target adminproto.PolicyTarget, ops policyTargetOps
 	}
 }
 
-func (s Service) policyTargetOps(ir *productruntime.Runtime, target adminproto.PolicyTarget) (policyTargetOps, error) {
-	if err := validatePolicyTargetForNodeRole(ir.NodeRole(), target); err != nil {
+func (s Service) policyTargetOps(target adminproto.PolicyTarget) (policyTargetOps, error) {
+	if err := validatePolicyTargetForNodeRole(s.Runtime.NodeRole(), target); err != nil {
 		return policyTargetOps{}, err
 	}
 	switch target {
@@ -408,7 +408,7 @@ func (s Service) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.P
 			Error:   msg,
 		}
 	}
-	ops, err := s.policyTargetOps(ir, target)
+	ops, err := s.policyTargetOps(target)
 	if err != nil {
 		var replaceErr policyReplaceError
 		if errors.As(err, &replaceErr) {
@@ -498,7 +498,7 @@ func (s Service) ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto
 			Error:   msg,
 		}
 	}
-	ops, err := s.policyTargetOps(ir, target)
+	ops, err := s.policyTargetOps(target)
 	if err != nil {
 		var replaceErr policyReplaceError
 		if errors.As(err, &replaceErr) {
@@ -526,12 +526,15 @@ func policyTargetFileName() string {
 	return "policy.yaml"
 }
 
-func (s Service) detectPassphraseMethod(cfg *serverconfig.ServerConfig) string {
-	unlockCfg, _ := unlockconfig.LoadUnlockConfig(s.Deps.DataDir())
-	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
+func (s Service) detectPassphraseMethod() string {
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), s.Deps.Config())
+	if err != nil {
+		return DetectPassphraseMethod(s.Deps.Config().PassphraseCommandArgv)
+	}
+	if unlockCfg != nil {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)
 	}
-	return DetectPassphraseMethod(cfg.PassphraseCommandArgv)
+	return "none"
 }
 
 func DetectPassphraseMethod(argv []string) string {

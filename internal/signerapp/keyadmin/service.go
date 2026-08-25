@@ -90,6 +90,7 @@ type Locker interface {
 type Service struct {
 	AuditLog     AuditLogger
 	MutationLock func() Locker
+	Runtime      *productruntime.Runtime
 }
 
 type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
@@ -98,7 +99,8 @@ type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
 }
 
-func (s Service) GenerateKey(ctx context.Context, ir *productruntime.Runtime, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+func (s Service) GenerateKey(ctx context.Context, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
+	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ctx == nil {
 		ctx = context.Background()
@@ -232,7 +234,8 @@ func validateVisibleSentryAuthorityCollisions(ir *productruntime.Runtime, sentry
 	return nil
 }
 
-func (s Service) DeleteKey(ir *productruntime.Runtime, address string) (*DeleteResult, *Error) {
+func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
+	ir := s.Runtime
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}

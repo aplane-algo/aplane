@@ -180,7 +180,7 @@ func TestDetectPassphraseMethod(t *testing.T) {
 func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
 	svc, _, deps := setupAdminService(t)
 
-	got := svc.detectPassphraseMethod(deps.config)
+	got := svc.detectPassphraseMethod()
 	if got != "none" {
 		t.Fatalf("before unlock.yaml: got %q, want %q", got, "none")
 	}
@@ -192,7 +192,7 @@ func TestServiceDetectPassphraseMethodReadsUnlockYAML(t *testing.T) {
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	got = svc.detectPassphraseMethod(deps.config)
+	got = svc.detectPassphraseMethod()
 	if got != "passfile" {
 		t.Fatalf("after unlock.yaml with appass-file: got %q, want %q", got, "passfile")
 	}
@@ -203,7 +203,7 @@ func TestServiceDetectPassphraseMethodFallsBackToGlobalConfig(t *testing.T) {
 
 	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
 
-	got := svc.detectPassphraseMethod(deps.config)
+	got := svc.detectPassphraseMethod()
 	if got != "systemd-creds" {
 		t.Fatalf("global fallback: got %q, want %q", got, "systemd-creds")
 	}
@@ -220,9 +220,26 @@ func TestServiceDetectPassphraseMethodProductStoreOverridesGlobal(t *testing.T) 
 		t.Fatalf("SaveUnlockConfig: %v", err)
 	}
 
-	got := svc.detectPassphraseMethod(deps.config)
+	got := svc.detectPassphraseMethod()
 	if got != "passfile" {
 		t.Fatalf("product-store should override global: got %q, want %q", got, "passfile")
+	}
+}
+
+func TestServiceDetectPassphraseMethodMalformedUnlockYAMLFallsBackToGlobal(t *testing.T) {
+	svc, _, deps := setupAdminService(t)
+	deps.config.PassphraseCommandArgv = []string{"/usr/bin/appass-systemd-creds"}
+
+	unlockPath := unlockconfig.UnlockConfigPath(deps.dataDir)
+	if err := os.MkdirAll(filepath.Dir(unlockPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(unlock config dir): %v", err)
+	}
+	if err := os.WriteFile(unlockPath, []byte("passphrase_command: [\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(unlock.yaml): %v", err)
+	}
+
+	if got := svc.detectPassphraseMethod(); got != "systemd-creds" {
+		t.Fatalf("malformed unlock.yaml fallback = %q, want systemd-creds", got)
 	}
 }
 

@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	// Any change to the transcript fields, ordering, or encoding after v1 ships
+	// Version 1 remains pre-release and may be redefined until the first release.
+	// After that release, any transcript field, ordering, or encoding change
 	// requires a new protocol version and domain.
 	tokenProofVersion       = 1
 	tokenProofDomain        = "aplane-ssh-token-proof-v1"
