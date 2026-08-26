@@ -426,6 +426,8 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `approval_wait_seconds`: effective manual signing approval wait, in seconds,
   for the product runtime. Clients may use this value to size `/sign`
   request deadlines. Clients must tolerate this field being omitted.
+- `warnings`: optional persistent operator-facing health warnings. Clients
+  should display non-empty warnings and must tolerate this field being omitted.
 
 `/keytypes` response:
 
@@ -479,6 +481,7 @@ neither is accepted as a separate creation input.
 - `ready_for_signing`
 - `ssh_enabled`
 - `ipc_enabled`
+- `warnings`: optional persistent operator-facing health warnings
 
 ## HTTP Status Mapping
 

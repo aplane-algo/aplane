@@ -2871,8 +2871,8 @@ Cross-SDK compatibility-bearing behavior:
   its configured algod simulation endpoint.
 - SDKs expose the authenticated `/status` DTO, including
   `protocol_version`, `build_version`, `keyset_revision`, and
-  `approval_wait_seconds`, and include the matching signer API fixture in their
-  contract suites.
+  `approval_wait_seconds`, plus optional persistent operator-facing `warnings`,
+  and include the matching signer API fixture in their contract suites.
 - SDKs decode non-2xx HTTP bodies as `signerapi.ErrorResponse` with top-level
   `error` plus a stable machine-readable `code`
   (`pkg/signerapi/error_codes.go`). Clients classify failures by `code`
