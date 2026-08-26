@@ -28,7 +28,7 @@ func TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes(t *testing.T) {
 	if err := env.stopSigner(); err != nil {
 		t.Fatalf("stop destination before checkpoint restart: %v", err)
 	}
-	env.configureCheckpoint("restore.current_flipped", "error")
+	env.configureCheckpoint("restore.store_root_replaced", "error")
 	env.startSigner(passphrase)
 
 	source := newFreshStoreEnv(t, sourcePass)
@@ -87,7 +87,7 @@ func TestReconcileCommandPromotesVisibleUncertainRestore(t *testing.T) {
 
 	destination := newFreshStoreEnv(t, destPass)
 	destination.initialize()
-	destination.configureCheckpoint("restore.current_flipped", "error")
+	destination.configureCheckpoint("restore.store_root_replaced", "error")
 	destination.startSigner(destPass)
 	incoming := filepath.Join(destination.root, "reconcile-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
@@ -111,7 +111,7 @@ func TestReconcileCommandPromotesVisibleUncertainRestore(t *testing.T) {
 	assertCanSign(t, destination, address)
 }
 
-func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T) {
+func TestInterruptedRestoreAfterStoreRootReplacementLoadsCommittedGeneration(t *testing.T) {
 	const (
 		sourcePass = "restore-crash-source"
 		destPass   = "restore-crash-destination"
@@ -126,7 +126,7 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 
 	destination := newFreshStoreEnv(t, destPass)
 	destination.initialize()
-	destination.configureCheckpoint("restore.current_flipped", "block")
+	destination.configureCheckpoint("restore.store_root_replaced", "block")
 	destination.startSigner(destPass)
 	incoming := filepath.Join(destination.root, "crash-"+filepath.Base(archive))
 	copyFile(t, archive, incoming)
@@ -140,7 +140,7 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 	)
 	destination.waitForCheckpoint(15 * time.Second)
 	if err := destination.crashSigner(); err != nil {
-		t.Fatalf("crash signer after CURRENT flip: %v", err)
+		t.Fatalf("crash signer after store-root replacement: %v", err)
 	}
 	_, _ = restore.wait(10 * time.Second)
 
@@ -149,10 +149,14 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 	assertSignerState(t, destination, "unlocked")
 	mustWaitForAddresses(t, destination, address)
 	assertCanSign(t, destination, address)
-	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir))
+	active, keyring, err := genstore.ResolveStoreRoot(
+		storepaths.NewPaths(destination.dataDir),
+		[]byte(destPass),
+	)
 	if err != nil {
 		t.Fatalf("resolve committed restore after restart: %v", err)
 	}
+	keyring.Zero()
 	manifest, err := genstore.ReadManifest(active)
 	if err != nil {
 		t.Fatalf("read committed restore manifest: %v", err)
@@ -162,7 +166,7 @@ func TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration(t *testing.T
 	}
 }
 
-func TestRestoreReloadFailureRollsBackAutomatically(t *testing.T) {
+func TestRestoreReloadFailureEntersRecoveryUntilExplicitRollback(t *testing.T) {
 	const (
 		sourcePass = "reload-failure-source"
 		destPass   = "reload-failure-destination"
@@ -188,19 +192,98 @@ func TestRestoreReloadFailureRollsBackAutomatically(t *testing.T) {
 	output, err = destination.runApadminBatch(
 		exportPass+"\n", "restore", "apply", filepath.Base(incoming),
 	)
-	if err == nil || !strings.Contains(output, "restore rolled back") {
-		t.Fatalf("reload failure did not report automatic rollback: err=%v\n%s", err, output)
+	if err == nil || !strings.Contains(output, "signing is blocked pending recovery") {
+		t.Fatalf("reload failure did not report blocked recovery: err=%v\n%s", err, output)
+	}
+	assertSignerState(t, destination, "recovery")
+	assertSigningBlocked(t, destination, address)
+
+	output, err = destination.runApadminBatch("y\n", "restore", "rollback")
+	if err != nil {
+		t.Fatalf("explicit rollback after reload failure: %v\n%s", err, output)
 	}
 	assertSignerState(t, destination, "unlocked")
 	keysResult, err := storeClient(t, destination).GetKeys()
 	if err != nil {
-		t.Fatalf("list keys after automatic rollback: %v", err)
+		t.Fatalf("list keys after explicit rollback: %v", err)
 	}
 	for _, key := range keysResult.Keys {
 		if key.Address == address {
-			t.Fatalf("automatically rolled-back credential %s remains active", address)
+			t.Fatalf("explicitly rolled-back credential %s remains active", address)
 		}
 	}
+}
+
+func TestInterruptedChangePassBeforeRootReplacementKeepsOldAuthority(t *testing.T) {
+	const (
+		oldPass = "changepass-before-root-old"
+		newPass = "changepass-before-root-new"
+	)
+	env := newFreshStoreEnv(t, oldPass)
+	env.initialize()
+	env.startSigner(oldPass)
+	address := mustGenerateEd25519(t, env)
+	mustWaitForAddresses(t, env, address)
+	if err := env.stopSigner(); err != nil {
+		t.Fatalf("stop signer before checkpoint restart: %v", err)
+	}
+	env.configureCheckpoint("changepass.successor_published", "block")
+	env.startSigner(oldPass)
+
+	input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
+	change := env.startApadminBatch(input, "changepass")
+	env.waitForCheckpoint(15 * time.Second)
+	if err := env.crashSigner(); err != nil {
+		t.Fatalf("crash signer before store-root replacement: %v", err)
+	}
+	_, _ = change.wait(10 * time.Second)
+
+	env.clearCheckpoint()
+	env.startSigner(oldPass)
+	assertSignerState(t, env, "unlocked")
+	mustWaitForAddresses(t, env, address)
+	assertCanSign(t, env, address)
+	assertPassphraseRejected(t, env, newPass)
+	records, err := genstore.ListQuarantined(storepaths.NewPaths(env.dataDir))
+	if err != nil {
+		t.Fatalf("list quarantined successor: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("quarantined successors = %d, want 1", len(records))
+	}
+}
+
+func TestInterruptedChangePassAfterRootReplacementUsesNewAuthority(t *testing.T) {
+	const (
+		oldPass = "changepass-after-root-old"
+		newPass = "changepass-after-root-new"
+	)
+	env := newFreshStoreEnv(t, oldPass)
+	env.initialize()
+	env.startSigner(oldPass)
+	address := mustGenerateEd25519(t, env)
+	mustWaitForAddresses(t, env, address)
+	if err := env.stopSigner(); err != nil {
+		t.Fatalf("stop signer before checkpoint restart: %v", err)
+	}
+	env.configureCheckpoint("changepass.store_root_replaced", "block")
+	env.startSigner(oldPass)
+
+	input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
+	change := env.startApadminBatch(input, "changepass")
+	env.waitForCheckpoint(15 * time.Second)
+	if err := env.crashSigner(); err != nil {
+		t.Fatalf("crash signer after store-root replacement: %v", err)
+	}
+	_, _ = change.wait(10 * time.Second)
+
+	env.clearCheckpoint()
+	env.passphrase = newPass
+	env.startSigner(newPass)
+	assertSignerState(t, env, "unlocked")
+	mustWaitForAddresses(t, env, address)
+	assertCanSign(t, env, address)
+	assertPassphraseRejected(t, env, oldPass)
 }
 
 func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
@@ -248,10 +331,11 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	assertSignerState(t, env, "unlocked")
 	mustWaitForAddresses(t, env, address)
 	assertCanSign(t, env, address)
-	current, err := genstore.Resolve(paths)
+	current, repairedKeyring, err := genstore.ResolveStoreRoot(paths, []byte(passphrase))
 	if err != nil {
 		t.Fatalf("resolve repaired generation: %v", err)
 	}
+	repairedKeyring.Zero()
 	manifest, err := genstore.ReadManifest(current)
 	if err != nil {
 		t.Fatalf("read repaired generation manifest: %v", err)

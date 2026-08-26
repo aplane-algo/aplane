@@ -36,15 +36,16 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 		t.Fatalf("initialize output did not report offline bootstrap completion:\n%s", output)
 	}
 
-	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
+	if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
 		t.Fatal("keystore metadata missing after apstore initialize")
 	}
 	// New stores are generational: the keys namespace lives in the first
-	// generation behind CURRENT.
-	active, err := genstore.ResolveActive(paths)
+	// generation selected by store-root.enc.
+	active, kr, err := genstore.ResolveStoreRoot(paths, []byte(passphrase))
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
+	kr.Zero()
 	if _, err := os.Stat(active.KeysDir()); err != nil {
 		t.Fatalf("keys dir missing after apstore initialize: %v", err)
 	}

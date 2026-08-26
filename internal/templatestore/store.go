@@ -199,7 +199,7 @@ func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string, templat
 }
 
 // GetTemplateFilePathActive is GetTemplateFilePathForPaths against resolved
-// active-store paths (generational or legacy).
+// authenticated active-generation paths.
 func GetTemplateFilePathActive(active storepaths.ActivePaths, keyType string, _ TemplateType) string {
 	return active.KeyTypeTemplate(normalizeKeyType(keyType))
 }

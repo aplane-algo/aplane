@@ -278,7 +278,7 @@ func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (m
 }
 
 // ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
-// against resolved active-store paths (generational or legacy).
+// against an authenticated generation capability.
 func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {

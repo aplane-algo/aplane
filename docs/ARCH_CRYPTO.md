@@ -251,7 +251,7 @@ Visibility states recorded by `internal/keytypecatalog`:
 
 Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
-`identities/default/keytypes/<key_type>.json` via
+the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
 library-visible providers such as `aplane.falcon1024-sentry1024.v1` and
 `aplane.ed25519.v1` available to that identity for key type discovery and
@@ -259,7 +259,7 @@ generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
 Installed YAML templates use the same record with `source:"yaml_generic"` or
 `source:"yaml_composed"` and store the encrypted template body in the adjacent
-`identities/default/keytypes/<key_type>.template` file.
+selected-generation `keytypes/<key_type>.template` file.
 
 The operator-facing CLI and TUI expose these transitions as `Enable` and
 `Disable`. The stable admin protocol wire messages remain `activate_key_type`
@@ -274,8 +274,8 @@ identity key depends on that `key_type`. Restoring a key for a library-visible
 compiled provider also creates the same product-store state record idempotently.
 
 Deletion archives are product-store. Key deletion moves encrypted key files to
-`identities/default/deleted/keys/`; template removal moves encrypted
-template files to `identities/default/deleted/keytypes/`. These archives are
+the selected generation's `deleted/keys/`; template removal moves encrypted
+template files to its `deleted/keytypes/`. These archives are
 outside active key/template scans.
 
 Optional YAML templates have a source-library lifecycle:
@@ -288,7 +288,7 @@ Optional YAML templates have a source-library lifecycle:
 - new signer-store initialization installs the bundled `aplane.falcon1024-allowlist.v1` YAML into the product store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under
-  `identities/default/keytypes/<key_type>.template` and writes an enabled state record,
+  the selected generation's `keytypes/<key_type>.template` and writes an enabled state record,
 - the runtime reload path applies key-type state records, skips disabled installed templates, activates enabled
   installed templates, and registers providers before key scanning.
 
@@ -330,66 +330,38 @@ For terminology and lifecycle rules, defer to
 
 ## Storage And Encryption
 
-### `keyring.enc`
+### `store-root.enc` and `.keystore`
 
-The keyring is the store's cryptographic root, defined in
-`internal/crypto/keyring.go` and `internal/crypto/keyring_store.go`.
+`internal/crypto/store_root.go` defines strict `aplane.store-root.v1`. The
+record combines the passphrase-wrapped `aplane.keyring.v3` payload with the
+selected generation ID and a current-term selection MAC. The MAC includes an
+exact digest of the wrapped-keyring subobject, preventing keyring/selector
+mix-and-match.
 
-- schema `aplane.keyring.v2`, one product-store file beside `.keystore`
-- plaintext header: Argon2id parameters and the KEK salt, so the file is
-  self-describing
-- sealed body: the set of numbered term keys, wrapped under the
-  passphrase-derived KEK with AES-256-GCM
-- sealed payload fields are `schema`, `current_term`, sorted `terms`, required
-  `historical_anchors`, and optional `rotation`; fresh stores write one term
-  and no pending rotation, while transition start appends one successor and
-  publishes the pending descriptor
-- each `HistoricalGenerationAnchor` binds a canonical generation ID to the
-  exact byte size and SHA-256 of its pre-retirement generation seal
-- a rotation descriptor's snapshot size/digest uses
-  `RotationSnapshotReference`, which pins the exact encrypted snapshot under
-  an independent 16 MiB cap; the payload validator and runtime enforce the
-  same shape for pending multi-term roots
-- ordinary envelope and integrity reads authorize exactly the current term
-  when settled and the current plus `rotation.from_term` when pending; older
-  resident terms are usable only through exact-anchor-gated historical APIs
-- `crypto.StartRotation` rejects an existing descriptor, appends exactly one
-  successor term, requires the target-term snapshot to be durable first, and
-  publishes the descriptor, exact snapshot reference, and historical anchors
-  in one root replacement
-- `Keyring.RequireSettled` blocks ordinary signing and mutation during that
-  descriptor's lifetime; normal reload maps `ErrRotationPending` to recovery,
-  and offline passphrase/policy/generation mutation uses the same guard
-- `rotationinventory.ResumeRotation` is the explicit internal bypass: it
-  reopens the root-pinned snapshot, promotes only exact retiring-term inputs,
-  and accepts already-written target-term outputs only after context-bound
-  authentication; it does not close the descriptor
-- `rotationinventory.CompleteRotation` verifies the final path/authority
-  shape and baseline-before-close ordering before calling
-  `crypto.CloseRotation`; close preserves terms and anchors while atomically
-  removing only the pending descriptor
-- a successful unwrap is the passphrase check; there is no separate verifier
-- the KEK exists only inside seal and open, and is zeroed before either returns
+The keyring contains a single current term plus any retained historical terms
+and exact generation-seal anchors. Ordinary envelope and integrity operations
+authorize only the current term. Retired terms are exposed only through the
+anchor-gated historical APIs in `internal/genstore`.
 
-Term keys are stored random keys, not passphrase-derived values. Fresh stores
-start at term 1; multi-term residency does not itself grant current-state
-authority.
+The plaintext root header carries the bounded Argon2id parameters and salt
+needed to derive the KEK. The keyring payload is AES-256-GCM sealed; successful
+unwrap is the passphrase check. The KEK is zeroed before return and is not
+cached. Strict parsing and size/KDF limits run before expensive derivation.
 
-Sealing and opening the root route term keys through base64 in Go strings,
-which are immutable and so cannot be zeroed. Those copies live only inside the
-seal and open calls, not for the life of a session, but they are a residual
-the passphrase-derived master key did not have: that key was never serialized.
-Removing it requires a binary payload layout rather than JSON.
+Ordinary generation commits authenticate a fresh exact root read under the
+mutation lock, preserve its wrapped-keyring bytes, and recompute only the
+selector and MAC. Passphrase change creates a fresh term and publishes the new
+wrapped keyring with the successor selector in that same atomic replacement.
+There is no pending-term authority or resumable rotation state.
 
-### `.keystore`
+`.keystore` is the static version 6, `store-root/v1` layout gate. Older stores
+are rejected with rebuild-from-backup guidance; no in-place migration or
+compatibility parser is provided.
 
-`.keystore` is a static marker, defined in `internal/crypto/keyring_store.go`.
-
-- `{"version": 5, "layout": "keyring/v2", "created": ...}`
-- it carries no salt, no verifier, and no KDF parameters, so nothing in it can
-  disagree with the keyring
-- the version gate rejects any store this release did not initialize, before
-  anything else is read
+Term keys are random stored keys, not passphrase-derived values. JSON base64
+encoding creates short-lived immutable string copies during root seal/open;
+they do not persist for a session. Eliminating those copies would require a
+binary root payload.
 
 ### `.key` and `.sen`
 
@@ -438,27 +410,6 @@ object's logical identity: a class and a canonical selector.
 | `account-key` | Algorand address |
 | `sentry-credential` | Witness Key ID |
 | `keytype-template` | key type |
-| `rotation-snapshot` | fixed selector `pending` |
-| `rotation-baseline` | fixed selector `current` |
-
-The identity is logical, never a path: generations copy ciphertext between
-namespaces and into `deleted/` without re-encrypting it. Binding it means a
-credential filed under another account or a template opened as a credential
-fails to decrypt.
-
-`internal/rotationinventory` uses those contexts to open the same encrypted
-buffer it hashes for the Phase 3 K8 inventory. `crypto.EnvelopeTerm` exposes
-the envelope header for classification only; it is not authority without that
-context-bound open. Snapshot recovery first verifies the pending root's exact
-encrypted-file size and digest, then opens that same bounded, no-follow buffer
-under `rotation-snapshot:pending`.
-
-The divergence baseline is a separate small current-state authority.
-`internal/rotationinventory` bounds its exact encrypted file to 4 KiB,
-requires its envelope term to equal the keyring current term, and opens the
-same buffer under `rotation-baseline:current` before strictly parsing the
-record. Retired-term membership never authorizes a baseline.
-
 Historical generation authority is deliberately separate from ordinary
 current-state opening. `VerifyHistoricalGenerationSealIntegrity` verifies only
 the generation-seal domain under a resident retired term, and
@@ -562,7 +513,7 @@ Start here when changing the subsystem:
 - `internal/keytypecatalog/catalog.go`
 - `internal/keytypestate/state.go`
 - `internal/crypto/keyring.go`
-- `internal/crypto/keyring_store.go`
+- `internal/crypto/store_root.go`
 - `internal/crypto/term_envelope.go`
 - `internal/crypto/encryption.go`
 - `internal/keys/file_types.go`

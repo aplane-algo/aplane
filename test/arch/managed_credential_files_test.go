@@ -42,7 +42,13 @@ func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(filepath.ToSlash(rel), "internal/keys/") {
+		slashed := filepath.ToSlash(rel)
+		// genstore's closed archive/quarantine grammar must classify filenames
+		// without importing keys, which depends on genstore for authenticated
+		// active-generation resolution.
+		if strings.HasPrefix(slashed, "internal/keys/") ||
+			slashed == "internal/genstore/archive_prune.go" ||
+			slashed == "internal/genstore/quarantine.go" {
 			return nil
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)

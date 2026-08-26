@@ -28,10 +28,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	defer syscall.Umask(oldUmask)
 
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
-	}
+	paths = mintFirstGenerationForBackupTest(t, paths)
 
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
@@ -98,10 +95,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 
 func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
-		t.Fatal(err)
-	}
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
 	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
 	if err != nil {
@@ -198,10 +192,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 
 	const badAddress = "BADCANONICALKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
-	}
+	paths = mintFirstGenerationForBackupTest(t, paths)
 
 	address, keyJSON := testEd25519BackupKeyJSON(t)
 	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
@@ -260,10 +251,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 
 func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
-	if err := fsutil.MkdirAll(paths.LegacyKeysDir()); err != nil {
-		t.Fatalf("MkdirAll(keys) error = %v", err)
-	}
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	const badAddress = "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	encryptedBad, err := cryptotest.Keyring(t, testExportMasterKey).Seal([]byte(`{"key_type":"ed25519"}`), crypto.AccountKeyContext(badAddress))
 	if err != nil {
@@ -291,7 +279,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 // Infrastructure failures also abort the complete archive.
 func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)

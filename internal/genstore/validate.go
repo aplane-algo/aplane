@@ -24,7 +24,7 @@ import (
 // recovery". Content-level (decryption) validation happens at reload with
 // the keyring; everything structural and digest-shaped is enforced here.
 
-// ValidateCurrent structurally validates the generation CURRENT selects:
+// ValidateCurrent structurally validates the generation selected by the store root:
 // manifest present, schema-valid, and complete; only permitted entries in
 // the generation directory; namespaces are regular directories holding only
 // regular files. At-mint inventory equality is deliberately NOT required —

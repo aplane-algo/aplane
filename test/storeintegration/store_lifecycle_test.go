@@ -59,10 +59,14 @@ func TestFreshStoreBackupRestoreAndSign(t *testing.T) {
 	assertCanSign(t, destination, generated)
 	assertCanSign(t, destination, imported)
 
-	active, err := genstore.Resolve(storepaths.NewPaths(destination.dataDir))
+	active, restoredKeyring, err := genstore.ResolveStoreRoot(
+		storepaths.NewPaths(destination.dataDir),
+		[]byte(destPass),
+	)
 	if err != nil {
 		t.Fatalf("resolve restored destination generation: %v", err)
 	}
+	restoredKeyring.Zero()
 	manifest, err := genstore.ReadManifest(active)
 	if err != nil {
 		t.Fatalf("read restored destination manifest: %v", err)
@@ -90,10 +94,11 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 	mustImportAndApplyBackup(t, env, archive, exportPass)
 
 	paths := storepaths.NewPaths(env.dataDir)
-	before, err := genstore.Resolve(paths)
+	before, oldKeyring, err := genstore.ResolveStoreRoot(paths, []byte(oldPass))
 	if err != nil {
 		t.Fatalf("resolve pre-rotation generation: %v", err)
 	}
+	oldKeyring.Zero()
 	manifest, err := genstore.ReadManifest(before)
 	if err != nil || manifest.ParentID == "" {
 		t.Fatalf("rotation fixture lacks retained prior generation: manifest=%+v err=%v", manifest, err)

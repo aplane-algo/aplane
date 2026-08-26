@@ -178,7 +178,7 @@ func (s Service) RestoreBackup(
 			}
 			return nil
 		}
-		if checkpointErr := testcheckpoint.Reach("restore.current_flipped"); checkpointErr != nil {
+		if checkpointErr := testcheckpoint.Reach("restore.store_root_replaced"); checkpointErr != nil {
 			ir.SetRecovery()
 			return restoreFailure(
 				protocol.ResultCodeRestoreRollbackFailed,

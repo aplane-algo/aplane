@@ -251,7 +251,7 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	ir := s.Runtime
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
-	// bound before an uncertain CURRENT flip, including when this attempt
+	// bound before an uncertain store-root replacement, including when this attempt
 	// fails before promotion.
 	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	report, err := s.daemon.reconcileReloadAndPromote(ir)

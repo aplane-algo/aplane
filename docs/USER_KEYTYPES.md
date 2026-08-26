@@ -161,7 +161,7 @@ After activation, `aplane.ed25519.v1` also supports mnemonic import.
 Enabling writes or updates:
 
 ```text
-identities/default/keytypes/<key_type>.json
+identities/default/generations/<selected-generation>/keytypes/<key_type>.json
 ```
 
 with:

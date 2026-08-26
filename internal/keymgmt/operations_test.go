@@ -542,8 +542,8 @@ func TestDeleteKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	result, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
+	deletedKeysDir := filepath.Join(tmpDir, "deleted", "keys")
+	result, err := DeleteKey("TESTADDR", keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
@@ -559,7 +559,7 @@ func TestDeleteKey(t *testing.T) {
 	}
 
 	// Verify deleted path structure.
-	expectedDir := paths.DeletedKeysDir()
+	expectedDir := deletedKeysDir
 	if filepath.Dir(result.DeletedPath) != expectedDir {
 		t.Errorf("deleted dir = %q, want %q", filepath.Dir(result.DeletedPath), expectedDir)
 	}
@@ -577,11 +577,12 @@ func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := DeleteKey(selector, keyFile, paths.DeletedKeysDir())
+	deletedKeysDir := filepath.Join(filepath.Dir(activeKeysDirForKeymgmtTest(t, paths)), "deleted", "keys")
+	result, err := DeleteKey(selector, keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	want := filepath.Join(paths.DeletedKeysDir(), selector+keys.SentryCredentialExtension)
+	want := filepath.Join(deletedKeysDir, selector+keys.SentryCredentialExtension)
 	if result.DeletedPath != want {
 		t.Fatalf("DeletedPath = %q, want %q", result.DeletedPath, want)
 	}
@@ -597,8 +598,7 @@ func TestDeleteKey_MissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), paths.DeletedKeysDir())
+	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), filepath.Join(tmpDir, "deleted", "keys"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -617,8 +617,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	deletedDir := paths.DeletedKeysDir()
+	deletedDir := filepath.Join(tmpDir, "deleted", "keys")
 	if err := os.MkdirAll(deletedDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +626,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
+	_, err := DeleteKey("TESTADDR", keyFile, deletedDir)
 	if err == nil || !strings.Contains(err.Error(), "failed to move key file") {
 		t.Fatalf("DeleteKey(rename failure) error = %v, want move failure", err)
 	}

@@ -10,6 +10,7 @@ Run the normal lifecycle and crash matrices with:
 ```bash
 make store-lifecycle-test
 make store-crash-test
+make store-capacity-test
 ```
 
 The lifecycle matrix covers generate/import, cryptographic signing, managed
@@ -17,16 +18,17 @@ backup export/verification, fresh atomic restore, passphrase rotation,
 historical-generation authority, and restart. The crash matrix covers these
 durability boundaries:
 
-- `rotation.snapshot_published`: the snapshot exists but the new root does not;
-  restart keeps the old passphrase authoritative and removes the orphan.
-- `rotation.pending_root_published`: the new pending root is authoritative;
-  restart with the new passphrase resumes and settles rotation.
-- `rotation.root_settled`: the keyring is settled but snapshot cleanup has not
-  happened; restart finishes cleanup.
-- `restore.current_flipped`: the restored generation is committed but the
+- `changepass.successor_published`: the complete successor exists but the old
+  root remains authoritative; restart accepts only the old passphrase and
+  quarantines the abandoned publication.
+- `changepass.store_root_replaced`: the new root is authoritative; restart
+  accepts only the new passphrase and loads the complete successor without a
+  resume protocol.
+- `restore.store_root_replaced`: the restored generation is committed but the
   daemon has not reloaded it; restart validates and loads the committed state.
 - `restore.reload_started` with error injection: the committed generation
-  cannot reload, so the daemon automatically restores the sealed parent.
+  cannot reload, so signing remains blocked until explicit authenticated
+  rollback.
 
 The package also verifies that malformed active credentials put the signer in
 recovery mode, block signing, and leave the damaged evidence untouched, and
@@ -34,6 +36,12 @@ that interrupted restore cleanup can be explicitly rolled back, an unreadable
 credential can be repaired from recovery mode with explicit replacement.
 Focused service coverage separately verifies that a rollback generation cannot
 itself be rolled back.
+
+The opt-in capacity gate fills the deleted archive to the exact operational
+warning threshold, proves the maximum-sized emergency-deletion reserve, runs a
+full changepass, and records copy time, re-encryption time, seal size, and
+retained disk cost. It writes and processes roughly 256 MiB and is therefore
+kept out of ordinary unit-test runs.
 
 Checkpoints exist only in an `apsigner` built with the `storetest` tag. Normal
 builds compile a no-op implementation and do not interpret checkpoint

@@ -85,7 +85,7 @@ type RollbackCapability struct {
 
 // Manifest is the immutable at-mint operation record. It describes the
 // minting transaction, not the live directory: single-file mutations to the
-// current generation do not falsify it. CURRENT answers which state
+// current generation do not falsify it. The authenticated store root answers which state
 // committed; the manifest answers which operation produced it.
 type Manifest struct {
 	Schema        string `json:"schema"`
@@ -546,7 +546,7 @@ func validateManifest(manifest *Manifest, generationID string) error {
 		if manifest.ParentID == manifest.GenerationID {
 			// A self-parent manifest would make rollback resolve to the
 			// current generation itself — reporting a rollback that never
-			// moved CURRENT.
+			// replaced the store-root selection.
 			return fmt.Errorf("generation manifest names itself as its parent")
 		}
 	}

@@ -225,6 +225,32 @@ Server to Client:
 - `validate_policy_result`
 - `replace_policy_result`
 
+### Sentry References And Store Inventory
+
+Client to Server:
+
+- `list_sentry_references`
+- `get_sentry_reference`
+- `import_sentry_reference`
+- `remove_sentry_reference`
+- `export_sentry_public`
+- `list_generations`
+- `prune_generation_quarantine`
+- `list_deleted_archive`
+- `prune_deleted_archive`
+
+Server to Client:
+
+- `sentry_references_list`
+- `sentry_reference`
+- `import_sentry_reference_result`
+- `remove_sentry_reference_result`
+- `export_sentry_public_result`
+- `generations_list`
+- `prune_generation_quarantine_result`
+- `deleted_archive_list`
+- `prune_deleted_archive_result`
+
 ## Key Payload Shapes
 
 ### Session and Store Lifecycle
@@ -454,6 +480,13 @@ canonical YAML document.
   requires `confirm:true`, and records a durable audit intent before mutation.
   An already-absent selected ID is successful and reported as such, making an
   interrupted multi-ID request safely retryable.
+- `list_deleted_archive` -> `deleted_archive_list`: canonical `entries[]` with
+  `path` and `encoded_bytes`, aggregate `entry_count`, `encoded_bytes`, and a
+  `warning` when release headroom has been consumed; optional `code`, `error`.
+- `prune_deleted_archive`: canonical `entries[]`, `confirm` ->
+  `prune_deleted_archive_result`: `success`, `pruned[]`, optional `code`,
+  `error`. Each result carries `path`, `encoded_bytes`, and optional
+  `already_absent`, so interrupted explicit selections are safely retryable.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
 `sentries.manage`, an unlocked signer store, and emit mutation audit events. A
@@ -468,6 +501,12 @@ deletion requires `identity.generation.quarantine.prune`, an unlocked or
 recovery-admin runtime, explicit confirmation, and durable audit. Retained
 authoritative generation pruning remains a distinct offline
 `apstore generations prune` recovery/maintenance operation.
+
+Deleted-archive inspection requires `generations.view`. Live archive pruning
+requires `identity.archive.prune`, an unlocked or recovery-admin runtime,
+explicit confirmation, and a durable audit intent written before any removal.
+Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
+are accepted; arbitrary filesystem paths are not an admin-protocol surface.
 
 Key-type override semantics:
 

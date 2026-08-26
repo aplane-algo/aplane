@@ -16,8 +16,7 @@ contracts; these models cover narrower security-critical transitions.
 | `guarded_assembly.tla` | guarded component assembly |
 | `plugin_signing.tla` | plugin signing trust boundary |
 | `bounded_sentry.tla` | bounded-sentry composition |
-| `generation_commit.tla` | generation commit crash protocol |
-| `rotation_transition.tla` | key-term rotation and resume |
+| `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -59,7 +58,7 @@ make formal-test-deep
 ```
 
 The metrics JSON files are the authoritative run inventories. Expected-failure
-negative controls, such as the rotation R5 mutation, must remain explicitly
+negative controls, such as the store-root exact-input mutation, must remain explicitly
 marked rather than being treated as successful safety runs.
 
 ## Drift reviews

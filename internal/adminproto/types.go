@@ -264,7 +264,7 @@ type RestoreBackupResult struct {
 	ArchiveSHA256 string
 	GenerationID  string
 	// CommitUncertain is process-local audit metadata. It is set when the
-	// CURRENT flip is visible but its durability could not be confirmed and
+	// store-root replacement is visible but its durability could not be confirmed and
 	// is deliberately not projected onto the admin protocol.
 	CommitUncertain bool
 	Restored        []RestoreCredential

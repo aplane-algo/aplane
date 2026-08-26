@@ -590,6 +590,7 @@ func TestKeysDirectoryCreation(t *testing.T) {
 
 	// Ensure identities directory doesn't exist
 	_ = os.RemoveAll("identities")
+	paths = utilkeys.NewPaths(".")
 
 	generator := newTestGenerator()
 	seed := make([]byte, 64)

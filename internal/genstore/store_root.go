@@ -13,7 +13,7 @@ import (
 // ResolveStoreRoot is the read-only resolution path for the gated atomic-root
 // layout. It authenticates the wrapped keyring and generation selection from
 // the same exact root, then validates the selected generation without
-// consulting CURRENT. The caller owns the returned keyring and must Zero it.
+// consulting a public pointer. The caller owns the returned keyring and must Zero it.
 func ResolveStoreRoot(
 	paths storepaths.Paths,
 	passphrase []byte,

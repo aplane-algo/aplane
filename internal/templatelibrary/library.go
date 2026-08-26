@@ -269,7 +269,7 @@ func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyri
 }
 
 // InstallParsedActive is InstallParsed against resolved active-store paths
-// (generational or legacy); the caller resolved the layout once for the
+// authenticated generation; the caller resolved the layout once for the
 // whole operation.
 func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{

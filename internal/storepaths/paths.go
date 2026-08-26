@@ -77,10 +77,6 @@ func (p Paths) NodeRolePath() string {
 	return filepath.Join(p.root, "node.yaml")
 }
 
-func (p Paths) NodeRoleIntegritySidecar() string {
-	return filepath.Join(p.ProductDir(), "node.yaml.hmac")
-}
-
 func validatePathComponent(label, s string) {
 	if err := validatePathComponentValue(label, s); err != nil {
 		panic(err.Error())
@@ -112,30 +108,8 @@ func validateKeyTypeComponent(keyType string) {
 	}
 }
 
-// LegacyKeysDir returns the pre-generation key namespace. It is not an active
-// store path; normal consumers must resolve storepaths.ActivePaths through
-// genstore.ResolveActive. This path remains available only for recovery probes
-// and tests that verify legacy state is not treated as active.
-func (p Paths) LegacyKeysDir() string {
-	return filepath.Join(p.ProductDir(), "keys")
-}
-
-func (p Paths) DeletedDir() string {
-	return filepath.Join(p.ProductDir(), "deleted")
-}
-
-func (p Paths) DeletedKeysDir() string {
-	return filepath.Join(p.DeletedDir(), "keys")
-}
-
 func (p Paths) BackupsRootDir() string {
 	return filepath.Join(p.root, "backups")
-}
-
-// LegacyKeyTypeRecordsDir returns the pre-generation key-type namespace. It is
-// not an active store path; see LegacyKeysDir.
-func (p Paths) LegacyKeyTypeRecordsDir() string {
-	return filepath.Join(p.ProductDir(), "keytypes")
 }
 
 func (p Paths) SentryRefsDir() string {
@@ -145,21 +119,6 @@ func (p Paths) SentryRefsDir() string {
 func (p Paths) SentryRefPath(name string) string {
 	validatePathComponent("sentry reference name", name)
 	return filepath.Join(p.SentryRefsDir(), name+".json")
-}
-
-func (p Paths) LegacyKeyTypeRecord(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".json")
-}
-
-func (p Paths) LegacyKeyTypeTemplate(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".template")
-}
-
-func (p Paths) DeletedKeyTypeTemplate(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.DeletedDir(), "keytypes", keyType+".template")
 }
 
 func (p Paths) KeystoreMetadataDir() string {

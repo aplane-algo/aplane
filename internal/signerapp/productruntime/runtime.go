@@ -764,7 +764,7 @@ func (ir *Runtime) ActivePaths() (storepaths.GenPaths, error) {
 
 // ActiveKeyPaths returns a path configuration bound to the runtime's
 // authenticated active generation. Routine mutation helpers may pass this
-// capability through existing Paths-based APIs without consulting CURRENT.
+// capability through existing Paths-based APIs without consulting a public pointer.
 func (ir *Runtime) ActiveKeyPaths() (storepaths.Paths, error) {
 	active, err := ir.ActivePaths()
 	if err != nil {

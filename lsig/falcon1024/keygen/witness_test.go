@@ -21,8 +21,9 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
-	kr, _ := genstoretest.MintFirstAtomic(t, paths, passphrase)
+	kr, active := genstoretest.MintFirstAtomic(t, paths, passphrase)
 	defer kr.Zero()
+	paths = genstoretest.BindActive(t, paths, active)
 
 	g := &WitnessFalcon1024Generator{}
 	result, err := g.GenerateRandom(context.Background(), paths, kr, witness.Falcon1024V1, nil)

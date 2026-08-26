@@ -56,7 +56,7 @@ type MintRequest struct {
 	RollbackCapability *RollbackCapability
 	// RollbackSourceGenerationID records a sealed generation whose content
 	// is reconstructed into the new generation. It is distinct from Parent,
-	// which must still be the outgoing CURRENT generation.
+	// which must still be the outgoing store-root selection.
 	RollbackSourceGenerationID string
 	CreatedAt                  time.Time
 	// Integrity authenticates the outgoing generation seal. It is required
@@ -81,18 +81,26 @@ type MintRequest struct {
 	// of the parent's content, or are empty for a first generation or an
 	// authenticated StartEmpty reconstruction.
 	Apply func(staged storepaths.GenPaths) error
+	// AfterPublication runs after the complete successor directory and its
+	// parent-directory entry are durable, but before the store root changes.
+	// It exists for semantic process checkpoints and must not mutate the store.
+	AfterPublication func() error
+	// AfterRootCommit runs after store-root.enc has selected the successor.
+	// It exists for semantic process checkpoints and must not mutate the store.
+	AfterRootCommit func() error
 }
 
 // Mint stages, applies, validates, and publishes a complete generation, then
-// commits it with a durable CURRENT flip. The caller holds the identity
-// mutation lock for the whole call. On any error the staging directory is
-// removed and CURRENT is untouched: the old generation remains
-// authoritative, and a crash at any point leaves either the complete old
-// state or the complete new state selected — never a mixture.
+// commits it with a durable store-root replacement. The caller holds the
+// identity mutation lock for the whole call. Before publication, errors remove
+// staging. After publication but before root replacement, errors can leave a
+// complete non-authoritative successor for reconciliation to quarantine. A
+// crash at any point leaves either the complete old state or the complete new
+// state selected — never a mixture.
 //
 // Commit order (docs/ARCH_GENERATIONS.md §2):
 // stage → copy parent → apply → validate → manifest → fsync all →
-// publish rename → fsync generations/ → seal outgoing → flip CURRENT.
+// publish rename → fsync generations/ → seal outgoing → replace store root.
 func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
 	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
@@ -139,7 +147,7 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// reconciliation would then classify as an uncommitted attempt and
 	// quarantine. A parentless mint is valid only on a store with no root
 	// (initialize or rebuild). This also subsumes the
-	// self-parent and parent-must-exist checks: CURRENT's generation
+	// self-parent and parent-must-exist checks: the store root's generation
 	// directory is verified by the authenticated selection, and a self-parent request
 	// would collide with the existing current directory below.
 	if req.FirstGeneration {
@@ -275,6 +283,11 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	if err := fsutil.SyncDir(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
+	if req.AfterPublication != nil {
+		if err := req.AfterPublication(); err != nil {
+			return storepaths.GenPaths{}, err
+		}
+	}
 
 	// Seal the outgoing generation while it is still current: the last
 	// write it ever receives, and what makes it a valid rollback target.
@@ -284,33 +297,38 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		}
 	}
 
+	var commitErr error
 	if replacingRoot {
-		if err := CommitReplacementStoreRoot(
+		commitErr = CommitReplacementStoreRoot(
 			paths,
 			req.Integrity,
 			req.Parent,
 			req.ReplacementKeyring,
 			req.ReplacementPassphrase,
 			req.GenerationID,
-		); err != nil {
-			return storepaths.GenPaths{}, err
-		}
+		)
 	} else {
 		if req.FirstGeneration {
-			if err := CommitInitialStoreRoot(
+			commitErr = CommitInitialStoreRoot(
 				paths,
 				req.Integrity,
 				req.InitialPassphrase,
 				req.GenerationID,
-			); err != nil {
-				return storepaths.GenPaths{}, err
-			}
-		} else if err := CommitStoreRoot(
-			paths,
-			req.Integrity,
-			req.Parent,
-			req.GenerationID,
-		); err != nil {
+			)
+		} else {
+			commitErr = CommitStoreRoot(
+				paths,
+				req.Integrity,
+				req.Parent,
+				req.GenerationID,
+			)
+		}
+	}
+	if commitErr != nil {
+		return storepaths.GenPaths{}, commitErr
+	}
+	if req.AfterRootCommit != nil {
+		if err := req.AfterRootCommit(); err != nil {
 			return storepaths.GenPaths{}, err
 		}
 	}

@@ -222,8 +222,9 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `keys.delete` | Delete a key | `key` | Yes |
 | `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
 | `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | Yes |
-| `generations.view` | Inspect current and retained generation inventory | `generations` | No |
+| `generations.view` | Inspect current/retained generations, quarantine, and selected deleted-archive usage | `generations`, `deleted_archive` | No; runtime must be unlocked or authenticated recovery |
 | `identity.generation.quarantine.prune` | Irreversibly delete explicitly selected non-authoritative quarantined generation publications after durable audit | `generation_quarantine` | Yes; recovery-admin state is allowed |
+| `identity.archive.prune` | Irreversibly delete explicitly selected canonical entries from the selected generation's deleted credential/template archive after durable intent audit | `deleted_archive` | Yes; recovery-admin state is allowed |
 | `keytypes.view` | List available key types | `keytypes` | No |
 | `keytypes.activate` | Activate a key type | `keytype` | Yes |
 | `keytypes.deactivate` | Deactivate a key type | `keytype` | Yes |

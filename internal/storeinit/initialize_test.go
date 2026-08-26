@@ -58,7 +58,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(active.KeysDir()); err != nil {
 		t.Fatalf("generational keys dir stat error = %v", err)
 	}
-	if _, err := os.Stat(paths.LegacyKeysDir()); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "keys")); !os.IsNotExist(err) {
 		t.Fatalf("legacy keys dir exists on a new store: err = %v", err)
 	}
 	if err := genstore.ValidateCurrent(active); err != nil {

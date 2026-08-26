@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
 type Logger func(format string, args ...any)
@@ -142,6 +143,12 @@ func Rotate(
 		OperationID:                "changepass-" + generationID,
 		RollbackCapability:         rollbackCapability,
 		CreatedAt:                  now,
+		AfterPublication: func() error {
+			return testcheckpoint.Reach("changepass.successor_published")
+		},
+		AfterRootCommit: func() error {
+			return testcheckpoint.Reach("changepass.store_root_replaced")
+		},
 		Apply: func(staged storepaths.GenPaths) error {
 			counts, err := reencryptSealedGeneration(paths, active, staged, oldKeyring, successorKeyring, now)
 			if err != nil {

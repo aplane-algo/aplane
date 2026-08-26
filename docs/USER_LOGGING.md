@@ -83,7 +83,7 @@ Fields are omitted when empty.
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
 | `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
 | `CREDENTIAL_RESTORE_FAILED` | Credential restore failed or was automatically rolled back |
-| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's `CURRENT` flip is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
+| `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
 | `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded or failed |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
