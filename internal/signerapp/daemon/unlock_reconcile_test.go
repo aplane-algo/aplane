@@ -126,7 +126,7 @@ func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.
 		t.Fatal("Mint succeeded despite injected pre-flip crash")
 	}
 
-	if err := server.adminServices().reconcileGenerations(server.runtime); err != nil {
+	if err := server.adminServices().reconcileGenerations(server.runtime, testPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(server.keyPaths.QuarantinedGenerationDir(successor)); err != nil {

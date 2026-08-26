@@ -18,7 +18,7 @@ func ResolveStoreRoot(
 	paths storepaths.Paths,
 	passphrase []byte,
 ) (storepaths.GenPaths, *crypto.Keyring, error) {
-	kr, selection, err := crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	gen, kr, err := OpenStoreRootSelection(paths, passphrase)
 	if err != nil {
 		return storepaths.GenPaths{}, nil, err
 	}
@@ -28,15 +28,37 @@ func ResolveStoreRoot(
 			kr.Zero()
 		}
 	}()
-	gen := paths.GenerationPaths(selection.CurrentGenerationID)
-	if err := requireRegularDirectory(gen.Dir()); err != nil {
-		return storepaths.GenPaths{}, nil, fmt.Errorf("store root selected generation: %w", err)
-	}
-	if err := ValidateCurrent(gen); err != nil {
-		return storepaths.GenPaths{}, nil, fmt.Errorf("store root selected generation: %w", err)
+	if err := validateStoreRootSelectionTarget(gen); err != nil {
+		return storepaths.GenPaths{}, nil, err
 	}
 	success = true
 	return gen, kr, nil
+}
+
+// OpenStoreRootSelection authenticates the sole root and returns its selected
+// generation handle without validating generation contents. Recovery unlock
+// uses this separation: a correct passphrase and root may enter recovery even
+// when the selected generation is damaged or absent.
+func OpenStoreRootSelection(
+	paths storepaths.Paths,
+	passphrase []byte,
+) (storepaths.GenPaths, *crypto.Keyring, error) {
+	kr, selection, err := crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	if err != nil {
+		return storepaths.GenPaths{}, nil, err
+	}
+	gen := paths.GenerationPaths(selection.CurrentGenerationID)
+	return gen, kr, nil
+}
+
+func validateStoreRootSelectionTarget(gen storepaths.GenPaths) error {
+	if err := requireRegularDirectory(gen.Dir()); err != nil {
+		return fmt.Errorf("store root selected generation: %w", err)
+	}
+	if err := ValidateCurrent(gen); err != nil {
+		return fmt.Errorf("store root selected generation: %w", err)
+	}
+	return nil
 }
 
 // ResolveStoreRootWithKeyring authenticates a fresh exact root read with an
@@ -56,11 +78,8 @@ func ResolveStoreRootWithKeyring(
 		return storepaths.GenPaths{}, fmt.Errorf("authenticate store root: %w", err)
 	}
 	gen := paths.GenerationPaths(selection.CurrentGenerationID)
-	if err := requireRegularDirectory(gen.Dir()); err != nil {
-		return storepaths.GenPaths{}, fmt.Errorf("store root selected generation: %w", err)
-	}
-	if err := ValidateCurrent(gen); err != nil {
-		return storepaths.GenPaths{}, fmt.Errorf("store root selected generation: %w", err)
+	if err := validateStoreRootSelectionTarget(gen); err != nil {
+		return storepaths.GenPaths{}, err
 	}
 	return gen, nil
 }

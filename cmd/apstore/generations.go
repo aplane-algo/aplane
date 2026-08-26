@@ -27,12 +27,8 @@ func cmdGenerations(args []string) error {
 	switch args[0] {
 	case "prune":
 		paths := keystorePaths()
-		generational, err := genstore.IsGenerational(paths)
-		if err != nil {
-			return err
-		}
-		if !generational {
-			return fmt.Errorf("store does not use generation-based storage; this release only supports stores it initialized (restore from a backup archive into a fresh store)")
+		if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+			return fmt.Errorf("store is not initialized with the required atomic store-root layout")
 		}
 		retainRollbackParent := true
 		switch {
@@ -53,13 +49,7 @@ func cmdGenerations(args []string) error {
 				return fmt.Errorf("prune cancelled")
 			}
 		}
-		if !retainRollbackParent {
-			if err := validateCurrentGenerationForContent(paths); err != nil {
-				return err
-			}
-			logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
-		}
-		kr, err := readStoreKeyring()
+		active, kr, err := readStore()
 		if err != nil {
 			return err
 		}
@@ -68,11 +58,12 @@ func cmdGenerations(args []string) error {
 			return fmt.Errorf("generation prune blocked: %w", err)
 		}
 		if !retainRollbackParent {
-			if err := verifyCurrentGenerationContentWithKeyring(paths, kr); err != nil {
+			logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
+			if err := verifyCurrentGenerationContentWithKeyring(paths, active, kr); err != nil {
 				return err
 			}
 		}
-		removed, err := genstore.CollectGarbage(paths, nil, retainRollbackParent, kr)
+		removed, err := genstore.CollectGarbageStoreRoot(paths, nil, retainRollbackParent, kr)
 		if err != nil {
 			return err
 		}
@@ -94,26 +85,24 @@ func cmdGenerations(args []string) error {
 	}
 }
 
-func validateCurrentGenerationForContent(paths storepaths.Paths) error {
-	gen, err := genstore.Resolve(paths)
-	if err != nil {
-		return err
-	}
+func validateCurrentGenerationForContent(gen storepaths.GenPaths) error {
 	if err := genstore.ValidateCurrent(gen); err != nil {
 		return fmt.Errorf("refusing to prune: current generation failed validation: %w", err)
 	}
 	return nil
 }
 
-func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) error {
-	templateReport, err := signertemplates.NewManager(paths).RegisterKeystoreTemplates(kr)
+func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, active storepaths.GenPaths, kr *crypto.Keyring) error {
+	manager := signertemplates.NewManager(paths)
+	manager.ActivePaths = active
+	templateReport, err := manager.RegisterKeystoreTemplates(kr)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)
 	}
 	if defects := templateReport.ContentDefectKeyTypes(); len(defects) > 0 {
 		return fmt.Errorf("refusing to prune: %d template/key-type defect(s) in the current generation (first: %s)", len(defects), defects[0])
 	}
-	scan, err := keys.ScanKeysDirectoryWithKeyringReport(paths, kr)
+	scan, err := keys.ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}

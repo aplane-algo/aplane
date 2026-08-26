@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -94,30 +93,15 @@ func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
 	ir := s.ProductRuntime()
-	// Generation-based stores reconcile before unlock: CURRENT is the sole
-	// commit record, staging residue and uncommitted attempts are discarded
-	// (never resumed), and the selected generation must validate. Any
-	// failure enters recovery mode with nothing deleted.
-	//
-	// Reconcile runs before the passphrase is verified. That ordering is
-	// deliberate and safe: reconcile only removes state that is provably
-	// uncommitted (no seal, not named by CURRENT) — state no caller,
-	// authenticated or not, could resume — and it is exactly what startup
-	// does unauthenticated. Keep it free of anything auth-gated.
-	if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
+	// Reconciliation authenticates the sole store root before it relocates or
+	// deletes residue. A valid root with damaged selected content still opens
+	// the keyring and enters recovery; no generation is selected heuristically.
+	if reconcileErr := s.reconcileGenerations(ir, passphrase); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
 			return false, 0, errMsg, unlockFailureCode(errMsg)
 		}
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
-		return true, 0, "", protocol.ResultCodeRecoveryBlocked
-	}
-	if rotationErr := s.completePendingRotation(ir, passphrase); rotationErr != nil {
-		success, errMsg := ir.TryRecoveryUnlock(passphrase)
-		if !success {
-			return false, 0, errMsg, unlockFailureCode(errMsg)
-		}
-		logWarnf("identity is recovery-blocked by incomplete key rotation: %v", rotationErr)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
@@ -137,71 +121,28 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
 }
 
-// completePendingRotation resumes a root-pinned rotation before ordinary
-// reload can publish signing authority. It also removes a snapshot left behind
-// by a crash after the root was durably closed.
-func (s signerAdminServices) completePendingRotation(
-	ir *productruntime.Runtime,
-	passphrase []byte,
-) error {
-	complete := func() error {
-		kr, err := crypto.OpenKeyringStore(
-			ir.KeyPaths().KeystoreMetadataDir(),
-			passphrase,
-		)
+// reconcileGenerations opens the authenticated root under the store mutation
+// lock and validates the selected generation fail-closed.
+func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, passphrase []byte) error {
+	work := func() error {
+		_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
 		if err != nil {
 			return err
 		}
 		defer kr.Zero()
-		report, err := rotationinventory.CompleteRotation(
-			ir.KeyPaths(),
-
-			kr,
-			passphrase,
-		)
-		if errors.Is(err, rotationinventory.ErrNoRotationPending) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if report != nil && report.Resume != nil {
-			logInfof(
-				"completed pending signer-store key rotation (%d rewrapped, %d re-signed)",
-				report.Resume.Rewrapped,
-				report.Resume.Resigned,
-			)
-		}
-		if report != nil && report.PreRootSnapshotDiscarded {
-			logInfof(
-				"discarded unreferenced pre-root signer-store rotation snapshot",
-			)
-		}
-		return nil
+		return s.reconcileGenerationsLocked(ir, kr)
 	}
 	if s.signer == nil {
-		return complete()
+		return work()
 	}
-	return s.signer.withStoreMutation(complete)
-}
-
-// reconcileGenerations enforces CURRENT as the sole commit record at unlock
-// (docs/ARCH_GENERATIONS.md §7) under the store mutation lock, and
-// validates the selected generation fail-closed.
-func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime) error {
-	if s.signer == nil {
-		return s.reconcileGenerationsLocked(ir)
-	}
-	return s.signer.withStoreMutation(func() error {
-		return s.reconcileGenerationsLocked(ir)
-	})
+	return s.signer.withStoreMutation(work)
 }
 
 // reconcileGenerationsLocked performs reconciliation without acquiring the
 // store mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
-func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime) error {
-	preview, err := genstore.Inspect(ir.KeyPaths(), nil)
+func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
+	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
 	if err != nil {
 		return err
 	}
@@ -219,7 +160,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 			}
 		}
 	}
-	report, err := genstore.Reconcile(ir.KeyPaths(), nil)
+	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr, nil)
 	if s.signer != nil && s.signer.auditLog != nil {
 		for _, quarantined := range report.Quarantined {
 			s.signer.auditLog.LogGenerationQuarantined(quarantined)
@@ -239,11 +180,8 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 	for _, staging := range report.DiscardedStaging {
 		logInfof("discarded generation staging residue %s", staging)
 	}
-	gen, err := genstore.Resolve(ir.KeyPaths())
-	if err != nil {
-		return err
-	}
-	return genstore.ValidateCurrent(gen)
+	_, err = genstore.ResolveStoreRootWithKeyring(ir.KeyPaths(), kr)
+	return err
 }
 
 func unlockFailureCode(errMsg string) string {
@@ -321,8 +259,8 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 		result.State = ir.GetState().String()
 		return result
 	}
-	if current, err := genstore.ReadCurrent(ir.KeyPaths()); err == nil {
-		result.GenerationID = current
+	if active, err := ir.ActivePaths(); err == nil {
+		result.GenerationID = active.GenerationID()
 	}
 	if report != nil {
 		result.KeyCount = report.KeyCount
@@ -339,7 +277,9 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
 	work := func() error {
-		if err := s.reconcileGenerationsLocked(ir); err != nil {
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			return s.reconcileGenerationsLocked(ir, kr)
+		}); err != nil {
 			return err
 		}
 		var err error

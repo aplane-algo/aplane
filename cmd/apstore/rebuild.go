@@ -116,12 +116,11 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return fmt.Errorf("passphrases do not match")
 	}
 
-	// Rebuilt stores use generation-based active storage: a fresh keyring
-	// root plus the restored keys committed as the first generation behind a
-	// durable CURRENT flip.
-	kr, err := crypto.CreateKeyringStore(keystorePaths().KeystoreMetadataDir(), storePassphrase)
+	// Rebuild stages the complete first generation and publishes one root that
+	// commits its fresh key authority and generation selection together.
+	kr, err := crypto.NewKeyring()
 	if err != nil {
-		return fmt.Errorf("failed to create keyring store: %w", err)
+		return fmt.Errorf("failed to create store keyring: %w", err)
 	}
 	defer kr.Zero()
 
@@ -134,11 +133,14 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return err
 	}
 	if _, err := genstore.Mint(keystorePaths(), genstore.MintRequest{
-		GenerationID:    generationID,
-		FirstGeneration: true,
-		Operation:       "store-rebuild",
-		OperationID:     "rebuild-" + generationID,
-		CreatedAt:       time.Now(),
+		GenerationID:      generationID,
+		FirstGeneration:   true,
+		AtomicStoreRoot:   true,
+		InitialPassphrase: storePassphrase,
+		Operation:         "store-rebuild",
+		OperationID:       "rebuild-" + generationID,
+		CreatedAt:         time.Now(),
+		Integrity:         kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			if err := noderole.SaveGenerationSidecarWithKeyring(
 				keystorePaths(),

@@ -44,7 +44,12 @@ func cmdPolicy(args []string) error {
 }
 
 func cmdPolicyCheck() error {
-	docs, err := policyCommandDocuments()
+	active, kr, err := readStore()
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
 	if err != nil {
 		return err
 	}
@@ -69,15 +74,15 @@ func cmdPolicyCheck() error {
 }
 
 func cmdPolicyVerify() error {
-	docs, err := policyCommandDocuments()
-	if err != nil {
-		return err
-	}
-	kr, err := readPolicyKeyring()
+	active, kr, err := readStore()
 	if err != nil {
 		return err
 	}
 	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
+	if err != nil {
+		return err
+	}
 
 	for _, doc := range docs {
 		stored, err := doc.verify(kr)
@@ -93,7 +98,12 @@ func cmdPolicyVerify() error {
 }
 
 func cmdPolicySign() error {
-	docs, err := policyCommandDocuments()
+	active, kr, err := readStore()
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
 	if err != nil {
 		return err
 	}
@@ -102,11 +112,6 @@ func cmdPolicySign() error {
 			return err
 		}
 	}
-	kr, err := readPolicyKeyring()
-	if err != nil {
-		return err
-	}
-	defer kr.Zero()
 	if err := kr.RequireSettled(); err != nil {
 		return fmt.Errorf("policy signing blocked: %w", err)
 	}
@@ -124,12 +129,8 @@ func cmdPolicySign() error {
 	return nil
 }
 
-func policyCommandDocuments() ([]policyCommandDocument, error) {
+func policyCommandDocuments(active storepaths.ActivePaths) ([]policyCommandDocument, error) {
 	paths := storepaths.NewPaths(dataDirectory)
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve active generation: %w", err)
-	}
 	policyPath := active.PolicyPath()
 	nodeDoc, _, err := noderole.Load(paths)
 	if err != nil {
@@ -195,22 +196,23 @@ func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.
 	return stored, nil
 }
 
-func readPolicyKeyring() (*crypto.Keyring, error) {
-	return readStoreKeyring()
+func readStoreKeyring() (*crypto.Keyring, error) {
+	_, kr, err := readStore()
+	return kr, err
 }
 
-func readStoreKeyring() (*crypto.Keyring, error) {
+func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {
 	fmt.Fprint(os.Stderr, "Enter store passphrase: ")
 	passphrase, err := readPassword()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		return storepaths.GenPaths{}, nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
 	defer crypto.ZeroBytes(passphrase)
 	fmt.Fprintln(os.Stderr)
 
-	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), passphrase)
 	if err != nil {
-		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
+		return storepaths.GenPaths{}, nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("store root verification failed: %v", err)}
 	}
-	return kr, nil
+	return active, kr, nil
 }

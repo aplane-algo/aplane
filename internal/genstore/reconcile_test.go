@@ -96,6 +96,87 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 	}
 }
 
+func TestReconcileStoreRootAuthenticatesSelectionAndQuarantinesAttempt(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	kr := testKeyring(t)
+	passphrase := []byte("reconcile-store-root-passphrase")
+	if _, err := Mint(paths, MintRequest{
+		GenerationID:      testGenA,
+		FirstGeneration:   true,
+		AtomicStoreRoot:   true,
+		InitialPassphrase: passphrase,
+		Integrity:         kr,
+		Operation:         "test-initialize",
+		OperationID:       "op-" + testGenA,
+		CreatedAt:         time.Unix(1_753_500_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			if err := writeTestGenerationAuthority(staged); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(staged.KeysDir(), "A.key"), []byte("a"), 0o600)
+		},
+	}); err != nil {
+		t.Fatalf("Mint(first atomic generation) error = %v", err)
+	}
+	if _, err := os.Lstat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+		t.Fatalf("CURRENT exists in atomic store: %v", err)
+	}
+	attempt := mintTestGeneration(t, paths, testGenD, nil)
+
+	preview, err := InspectStoreRoot(paths, kr, nil)
+	if err != nil {
+		t.Fatalf("InspectStoreRoot() error = %v", err)
+	}
+	if preview.Current != testGenA || !slices.Equal(quarantinedIDs(preview), []string{testGenD}) {
+		t.Fatalf("preview = %+v", preview)
+	}
+	report, err := ReconcileStoreRoot(paths, kr, nil)
+	if err != nil {
+		t.Fatalf("ReconcileStoreRoot() error = %v", err)
+	}
+	if !slices.Equal(quarantinedIDs(report), []string{testGenD}) {
+		t.Fatalf("quarantined = %v, want [%s]", quarantinedIDs(report), testGenD)
+	}
+	if _, err := os.Stat(attempt.Dir()); !os.IsNotExist(err) {
+		t.Fatalf("attempt remained in generations: %v", err)
+	}
+}
+
+func TestReconcileStoreRootPreservesResidueWhenRootIsInvalid(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	kr := testKeyring(t)
+	passphrase := []byte("reconcile-invalid-root-passphrase")
+	if _, err := Mint(paths, MintRequest{
+		GenerationID:      testGenA,
+		FirstGeneration:   true,
+		AtomicStoreRoot:   true,
+		InitialPassphrase: passphrase,
+		Integrity:         kr,
+		Operation:         "test-initialize",
+		OperationID:       "op-" + testGenA,
+		CreatedAt:         time.Unix(1_753_500_000, 0),
+		Apply:             writeTestGenerationAuthority,
+	}); err != nil {
+		t.Fatalf("Mint(first atomic generation) error = %v", err)
+	}
+	attempt := mintTestGeneration(t, paths, testGenD, nil)
+	root, err := os.ReadFile(paths.StoreRootPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root[len(root)-2] ^= 1
+	if err := os.WriteFile(paths.StoreRootPath(), root, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReconcileStoreRoot(paths, kr, nil); err == nil {
+		t.Fatal("ReconcileStoreRoot accepted invalid root")
+	}
+	if _, err := os.Stat(attempt.Dir()); err != nil {
+		t.Fatalf("invalid-root reconciliation changed residue: %v", err)
+	}
+}
+
 func TestReconcileKeepsReferencedUnsealedAttempt(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)

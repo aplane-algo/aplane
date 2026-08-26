@@ -86,7 +86,7 @@ func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	)
 	if f.atomicStoreRoot {
 		var resolved storepaths.GenPaths
-		resolved, kr, err = genstore.ResolveStoreRoot(f.paths, passphrase)
+		resolved, kr, err = genstore.OpenStoreRootSelection(f.paths, passphrase)
 		if err == nil {
 			active = &resolved
 		}

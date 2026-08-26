@@ -90,20 +90,16 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if !apcrypto.KeyringExistsIn(keystorePaths().KeystoreMetadataDir()) {
-		t.Fatal("keystore metadata missing after rebuild")
+	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
+		t.Fatal("store root missing after rebuild")
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), address)); err != nil {
-		t.Fatalf("rebuilt key file missing: %v", err)
-	}
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	active, err := genstore.ResolveActive(keystorePaths())
-	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(active, address)); err != nil {
+		t.Fatalf("rebuilt key file missing: %v", err)
 	}
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
@@ -147,15 +143,11 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
 
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	active, err := genstore.ResolveActive(keystorePaths())
-	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
-	}
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
@@ -163,10 +155,10 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("rebuilt node role = %q, want sentry", role.Role)
 	}
-	if _, err := os.Stat(apkeys.SentryCredentialFilePath(keystorePaths(), componentKey)); err != nil {
+	if _, err := os.Stat(apkeys.SentryCredentialFilePathActive(active, componentKey)); err != nil {
 		t.Fatalf("rebuilt sentry key file missing: %v", err)
 	}
-	env, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), componentKey)
+	env, ok, err := apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
 	if err != nil {
 		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}

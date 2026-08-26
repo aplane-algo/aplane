@@ -22,13 +22,13 @@ func cmdKeys(args []string) error {
 }
 
 func cmdKeysList() error {
-	kr, err := readStoreKeyring()
+	active, kr, err := readStore()
 	if err != nil {
 		return err
 	}
 	defer kr.Zero()
 
-	report, err := apkeys.ScanKeysDirectoryWithKeyringReport(keystorePaths(), kr)
+	report, err := apkeys.ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
 		return err
 	}

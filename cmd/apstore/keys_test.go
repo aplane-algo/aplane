@@ -9,16 +9,18 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 )
 
 func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		kr := deriveTestKeyring(t, passphrase)
-		edResult, err := keymgmt.GenerateKey(keystorePaths(), "ed25519", kr, nil)
+		activePaths, kr := deriveTestStore(t, passphrase)
+		edResult, err := keymgmt.GenerateKey(activePaths, "ed25519", kr, nil)
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
@@ -58,9 +60,9 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 
 func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
 	t.Helper()
-	kr := deriveTestKeyring(t, passphrase)
+	activePaths, kr := deriveTestStore(t, passphrase)
 	generator := &falconkeygen.WitnessFalcon1024Generator{}
-	result, err := generator.GenerateRandom(context.Background(), keystorePaths(), kr, witness.Falcon1024V1, nil)
+	result, err := generator.GenerateRandom(context.Background(), activePaths, kr, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
 	}
@@ -70,14 +72,18 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 	return result, result.PublicKeyHex
 }
 
-func deriveTestKeyring(t *testing.T, passphrase []byte) *crypto.Keyring {
+func deriveTestStore(t *testing.T, passphrase []byte) (storepaths.Paths, *crypto.Keyring) {
 	t.Helper()
-	keyring, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
+	active, keyring, err := genstore.ResolveStoreRoot(keystorePaths(), passphrase)
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	t.Cleanup(keyring.Zero)
-	return keyring
+	bound, err := keystorePaths().BindActive(active)
+	if err != nil {
+		t.Fatalf("BindActive() error = %v", err)
+	}
+	return bound, keyring
 }
 
 func TestCmdKeysRejectsUnknownSubcommand(t *testing.T) {
