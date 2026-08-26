@@ -194,3 +194,79 @@ func TestRetiredStoreCommitArtifactsStayDeleted(t *testing.T) {
 		}
 	}
 }
+
+// TestDirectGenerationWritersStayConfined prevents a caller from resolving an
+// arbitrary generation ID directly into a filesystem mutation. The two
+// confined exceptions are genstore's current-generation seal at commit and
+// authenticated historical pruning/reconciliation.
+func TestDirectGenerationWritersStayConfined(t *testing.T) {
+	root := filepath.Join("..", "..")
+	allowed := map[string]bool{
+		"internal/genstore/commit.go":     true,
+		"internal/genstore/reconcile.go":  true,
+		"internal/genstore/quarantine.go": true,
+	}
+	mutationCalls := map[string]bool{
+		"WriteFile": true, "WriteFileDurable": true, "RemoveDurable": true,
+		"RemoveAll": true, "Rename": true, "WriteSeal": true,
+	}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "temp", "vendor", "node_modules":
+				if path != root {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil || allowed[filepath.ToSlash(rel)] {
+			return err
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !mutationCalls[selector.Sel.Name] || !containsGenerationPathsCall(call) {
+				return true
+			}
+			t.Errorf("%s: direct GenerationPaths capability flows into mutation %s; use current/staged authority or confined pruning", fset.Position(call.Pos()), selector.Sel.Name)
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func containsGenerationPathsCall(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(child ast.Node) bool {
+		call, ok := child.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "GenerationPaths" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}

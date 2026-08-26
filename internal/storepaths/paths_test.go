@@ -174,3 +174,12 @@ func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
 		}()
 	}
 }
+
+func TestBindActiveRejectsQuarantineCapability(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	id := "gen-1-0123abcd"
+	quarantined := StagedGenerationPaths(id, paths.QuarantinedGenerationDir(id))
+	if _, err := paths.BindActive(quarantined); err == nil {
+		t.Fatal("BindActive() accepted a quarantine-rooted generation capability")
+	}
+}
