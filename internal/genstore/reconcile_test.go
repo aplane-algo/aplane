@@ -46,6 +46,14 @@ func buildGenerationChain(t *testing.T, paths storepaths.Paths) {
 	}
 }
 
+func quarantinedIDs(report ReconcileReport) []string {
+	ids := make([]string, 0, len(report.Quarantined))
+	for _, candidate := range report.Quarantined {
+		ids = append(ids, candidate.GenerationID)
+	}
+	return ids
+}
+
 func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)
@@ -75,8 +83,8 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 	if report.Current != testGenC {
 		t.Fatalf("current = %s, want %s", report.Current, testGenC)
 	}
-	if !slices.Equal(report.DiscardedAttempts, []string{testGenD}) {
-		t.Fatalf("discarded attempts = %v, want [%s]", report.DiscardedAttempts, testGenD)
+	if !slices.Equal(quarantinedIDs(report), []string{testGenD}) {
+		t.Fatalf("quarantined attempts = %v, want [%s]", quarantinedIDs(report), testGenD)
 	}
 	if len(report.DiscardedStaging) != 1 {
 		t.Fatalf("discarded staging = %v", report.DiscardedStaging)
@@ -85,7 +93,10 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 		t.Fatalf("sealed priors = %v, want newest-first [%s %s]", report.SealedPriors, testGenB, testGenA)
 	}
 	if _, err := os.Lstat(attempt.Dir()); !os.IsNotExist(err) {
-		t.Fatalf("uncommitted attempt survived reconciliation: %v", err)
+		t.Fatalf("uncommitted attempt remained authoritative: %v", err)
+	}
+	if _, err := os.Lstat(paths.QuarantinedGenerationDir(testGenD)); err != nil {
+		t.Fatalf("uncommitted attempt was not quarantined: %v", err)
 	}
 	// Sealed priors and current survive.
 	for _, id := range []string{testGenA, testGenB, testGenC} {
@@ -107,11 +118,60 @@ func TestReconcileKeepsReferencedUnsealedAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
-	if len(report.DiscardedAttempts) != 0 {
-		t.Fatalf("referenced attempt was discarded: %v", report.DiscardedAttempts)
+	if len(report.Quarantined) != 0 {
+		t.Fatalf("referenced attempt was quarantined: %v", report.Quarantined)
 	}
 	if _, err := os.Lstat(attempt.Dir()); err != nil {
 		t.Fatalf("referenced attempt missing: %v", err)
+	}
+}
+
+func TestReconcilePreservesUnsafeAttemptInPlaceAndBlocks(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	attempt := paths.GenerationPaths(testGenD)
+	for _, namespace := range []string{"keys", "keytypes"} {
+		if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+	}
+	// No manifest: this directory cannot be safely classified or audited as
+	// a complete publication, so it must neither be deleted nor relocated.
+	if _, err := Reconcile(paths, nil); err == nil || !strings.Contains(err.Error(), "preserved in place") {
+		t.Fatalf("Reconcile(unsafe attempt) error = %v, want fail-closed preservation", err)
+	}
+	if _, err := os.Stat(attempt.Dir()); err != nil {
+		t.Fatalf("unsafe attempt was not preserved in place: %v", err)
+	}
+	if _, err := os.Stat(paths.QuarantinedGenerationDir(testGenD)); !os.IsNotExist(err) {
+		t.Fatalf("unsafe attempt was relocated without classification: %v", err)
+	}
+}
+
+func TestReconcilePreservesCandidateWhenQuarantineIsFull(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	if err := os.MkdirAll(paths.QuarantinedGenerationsDir(), 0o700); err != nil {
+		t.Fatalf("MkdirAll(quarantine): %v", err)
+	}
+	for i := 0; i < quarantineMaxGenerations; i++ {
+		id := fmt.Sprintf("gen-%d-%08x", 1_700_000_000+i, i+1)
+		if err := os.MkdirAll(paths.QuarantinedGenerationDir(id), 0o700); err != nil {
+			t.Fatalf("MkdirAll(quarantined %s): %v", id, err)
+		}
+	}
+	attempt := mintTestGeneration(t, paths, testGenD, map[string]string{
+		"keys/ACCOUNT.key": "candidate",
+	})
+
+	if _, err := Reconcile(paths, nil); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("Reconcile(full quarantine) error = %v, want capacity refusal", err)
+	}
+	if _, err := os.Stat(attempt.Dir()); err != nil {
+		t.Fatalf("candidate was destroyed when quarantine was full: %v", err)
+	}
+	if _, err := Inspect(paths, nil); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("Inspect(full quarantine) error = %v, want matching capacity refusal", err)
 	}
 }
 
@@ -436,8 +496,8 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
-	if len(report.DiscardedAttempts) != 0 {
-		t.Fatalf("discarded = %v, want the unsealed parent retained", report.DiscardedAttempts)
+	if len(report.Quarantined) != 0 {
+		t.Fatalf("quarantined = %v, want the unsealed parent retained", report.Quarantined)
 	}
 	if report.RetainedUnsealedParent != testGenB {
 		t.Fatalf("RetainedUnsealedParent = %q, want %s", report.RetainedUnsealedParent, testGenB)
@@ -707,6 +767,15 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 	}
+	if err := WriteManifest(attempt, Manifest{
+		GenerationID:  testGenD,
+		CreatedAtUnix: 1,
+		Operation:     "test",
+		OperationID:   "op-inspect",
+		Complete:      true,
+	}); err != nil {
+		t.Fatalf("WriteManifest: %v", err)
+	}
 	staging := filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"leftover")
 	if err := os.MkdirAll(staging, 0o770); err != nil {
 		t.Fatalf("MkdirAll(staging): %v", err)
@@ -716,8 +785,8 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
-	if !slices.Equal(report.DiscardedAttempts, []string{testGenD}) || len(report.DiscardedStaging) != 1 {
-		t.Fatalf("classification = %v/%v, want the attempt and staging residue reported", report.DiscardedAttempts, report.DiscardedStaging)
+	if !slices.Equal(quarantinedIDs(report), []string{testGenD}) || len(report.DiscardedStaging) != 1 {
+		t.Fatalf("classification = %v/%v, want the attempt and staging residue reported", quarantinedIDs(report), report.DiscardedStaging)
 	}
 	// Nothing was deleted.
 	for _, path := range []string{attempt.Dir(), staging} {
@@ -725,7 +794,8 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 			t.Fatalf("Inspect deleted %s: %v", path, err)
 		}
 	}
-	// Reconcile still deletes the same set.
+	// Reconcile deletes staging and moves the complete publication into the
+	// non-authoritative quarantine namespace.
 	if _, err := Reconcile(paths, nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -733,6 +803,9 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("Reconcile left %s behind: %v", path, err)
 		}
+	}
+	if _, err := os.Stat(paths.QuarantinedGenerationDir(testGenD)); err != nil {
+		t.Fatalf("Reconcile did not preserve the attempt in quarantine: %v", err)
 	}
 }
 

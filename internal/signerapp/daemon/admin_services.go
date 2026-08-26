@@ -205,8 +205,13 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 	if err != nil {
 		return err
 	}
-	for _, discarded := range report.DiscardedAttempts {
-		logInfof("discarded uncommitted generation %s (never committed; restore again if needed)", discarded)
+	for _, quarantined := range report.Quarantined {
+		logInfof(
+			"quarantined non-authoritative generation %s (at_mint_match=%t bytes=%d)",
+			quarantined.GenerationID,
+			quarantined.AtMintInventoryMatch,
+			quarantined.EncodedBytes,
+		)
 	}
 	for _, staging := range report.DiscardedStaging {
 		logInfof("discarded generation staging residue %s", staging)
@@ -497,9 +502,13 @@ func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 		code, message := identityStoreInspectionError(err, "inspect_failed")
 		return adminproto.GenerationInventory{Code: code, Error: message}
 	}
+	pendingAttempts := make([]string, 0, len(report.Quarantined))
+	for _, quarantined := range report.Quarantined {
+		pendingAttempts = append(pendingAttempts, quarantined.GenerationID)
+	}
 	return adminproto.GenerationInventory{
 		Current: report.Current, SealedPriors: report.SealedPriors,
-		PendingAttempts: report.DiscardedAttempts, PendingStaging: report.DiscardedStaging,
+		PendingAttempts: pendingAttempts, PendingStaging: report.DiscardedStaging,
 		RetainedUnsealedParent: report.RetainedUnsealedParent,
 	}
 }

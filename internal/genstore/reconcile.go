@@ -15,13 +15,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// ReconcileReport records what startup reconciliation found and removed.
+// ReconcileReport records what startup reconciliation found and changed.
 type ReconcileReport struct {
 	Current string
-	// DiscardedAttempts are published-but-uncommitted generations that were
-	// deleted (non-current, unsealed, unreferenced). Each is an activation
-	// or migration that never committed; the operator reviews again.
-	DiscardedAttempts []string
+	// Quarantined are safely relocatable, published-but-uncommitted
+	// generations (non-current, unsealed, unreferenced). Inspect reports what
+	// Reconcile would quarantine; Reconcile moves them without granting them
+	// selection, rollback, or historical authority.
+	Quarantined []QuarantineRecord
 	// DiscardedStaging are .staging-* directories that never published,
 	// plus orphaned durable-write temp files (seal.json.tmp-*) inside the
 	// current generation — both crash residue that never carried state.
@@ -38,8 +39,8 @@ type ReconcileReport struct {
 
 // Inspect classifies the generations directory without deleting anything:
 // the same validation and classification Reconcile applies, with
-// DiscardedStaging and DiscardedAttempts reporting what reconciliation
-// WOULD remove. Read-only callers (apadmin generations list) use this;
+// DiscardedStaging and Quarantined reporting what reconciliation WOULD remove
+// or relocate. Read-only callers (apadmin generations list) use this;
 // everything else goes through Reconcile.
 func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
 	return reconcile(paths, referenced, false)
@@ -51,8 +52,8 @@ func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileRepor
 //
 //   - CURRENT names a valid generation → it is authoritative; every
 //     published-but-uncommitted attempt (non-current, unsealed, not in
-//     referenced) is discarded, never resumed. Staging directories are
-//     unconditionally garbage.
+//     referenced) is moved to bounded non-authoritative quarantine, never
+//     resumed. Staging directories are unconditionally garbage.
 //   - CURRENT missing or invalid → error; the caller enters recovery mode
 //     and nothing is deleted.
 //
@@ -142,6 +143,10 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	if err != nil {
 		return report, err
 	}
+	quarantineCount, quarantineBytes, err := quarantineUsage(paths)
+	if err != nil {
+		return report, fmt.Errorf("inspect generation quarantine: %w", err)
+	}
 	removedAny := false
 	for _, entry := range entries {
 		name := entry.Name()
@@ -175,15 +180,29 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 				}
 				continue
 			}
-			// Non-current and unsealed: by construction an uncommitted
-			// attempt (the seal precedes every flip). Discard.
-			if remove {
-				if err := os.RemoveAll(gen.Dir()); err != nil {
-					return report, fmt.Errorf("discard uncommitted generation %s: %w", name, err)
-				}
-				removedAny = true
+			// Non-current and unsealed is ambiguous: normally it is an
+			// uncommitted attempt, but restoring an older authentic store root
+			// can give the real newer state the same shape. Classify it only for
+			// safe bounded relocation; quarantine never grants authority.
+			candidate, err := classifyQuarantineCandidate(gen)
+			if err != nil {
+				return report, fmt.Errorf(
+					"generation %s cannot be safely quarantined and was preserved in place: %w",
+					name,
+					err,
+				)
 			}
-			report.DiscardedAttempts = append(report.DiscardedAttempts, name)
+			if err := checkQuarantineCapacity(quarantineCount, quarantineBytes, candidate); err != nil {
+				return report, err
+			}
+			if remove {
+				if err := quarantinePublication(paths, candidate); err != nil {
+					return report, err
+				}
+			}
+			report.Quarantined = append(report.Quarantined, candidate)
+			quarantineCount++
+			quarantineBytes += candidate.EncodedBytes
 		}
 	}
 	if removedAny {
@@ -208,8 +227,8 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 // after a rollback the "newest" prior is the rolled-away child rather than
 // an ancestor. Never call during activation, rotation, reload, or
 // migration; the caller holds the mutation locks. Reconcile runs first
-// (staging and unsealed attempts are discarded, an invalid CURRENT aborts
-// with nothing deleted).
+// (staging is discarded, ambiguous unsealed publications are quarantined,
+// and an invalid CURRENT aborts with nothing changed).
 func CollectGarbage(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
 	report, err := Reconcile(paths, referenced)
 	if err != nil {

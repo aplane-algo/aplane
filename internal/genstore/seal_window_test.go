@@ -81,23 +81,26 @@ func TestMintSealFlipCrashWindowIsRecoverable(t *testing.T) {
 		t.Fatalf("sealed-but-current generation failed validation: %v", err)
 	}
 
-	// Reconciliation discards the uncommitted successor and keeps both the
+	// Reconciliation quarantines the uncommitted successor and keeps both the
 	// current generation and its precommit seal.
 	report, err := Reconcile(paths, nil)
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	found := false
-	for _, discarded := range report.DiscardedAttempts {
-		if discarded == g2 {
+	for _, quarantined := range report.Quarantined {
+		if quarantined.GenerationID == g2 {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("uncommitted generation %s not discarded: %+v", g2, report)
+		t.Fatalf("uncommitted generation %s not quarantined: %+v", g2, report)
 	}
 	if _, err := os.Stat(paths.GenerationDir(g2)); !os.IsNotExist(err) {
-		t.Fatalf("uncommitted generation survived reconciliation: %v", err)
+		t.Fatalf("uncommitted generation remained in active namespace: %v", err)
+	}
+	if _, err := os.Stat(paths.QuarantinedGenerationDir(g2)); err != nil {
+		t.Fatalf("uncommitted generation missing from quarantine: %v", err)
 	}
 	if _, err := os.Stat(g1p.SealPath()); err != nil {
 		t.Fatalf("precommit seal removed by reconciliation: %v", err)
