@@ -620,7 +620,11 @@ func aadFor(term int64, ctx ObjectContext) []byte {
 }
 
 func validateKeyringPayload(payload *keyringPayload) error {
-	if payload.Schema != KeyringSchema {
+	return validateKeyringPayloadSchema(payload, KeyringSchema)
+}
+
+func validateKeyringPayloadSchema(payload *keyringPayload, expectedSchema string) error {
+	if payload.Schema != expectedSchema {
 		return fmt.Errorf("unsupported sealed keyring schema %q", payload.Schema)
 	}
 	if len(payload.Terms) == 0 {
