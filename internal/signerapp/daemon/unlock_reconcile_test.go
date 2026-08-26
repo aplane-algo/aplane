@@ -49,12 +49,12 @@ func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.
 		return nil
 	}
 	_, mintErr := genstore.Mint(server.keyPaths, genstore.MintRequest{
-		GenerationID:    successor,
-		Parent:          current,
-		Integrity:       keyring,
-		Operation:       "test-quarantine-audit",
-		OperationID:     "op-" + successor,
-		CreatedAt:       time.Unix(1_753_800_001, 0),
+		GenerationID: successor,
+		Parent:       current,
+		Integrity:    keyring,
+		Operation:    "test-quarantine-audit",
+		OperationID:  "op-" + successor,
+		CreatedAt:    time.Unix(1_753_800_001, 0),
 	})
 	fsutil.TestHook = nil
 	if mintErr == nil {
