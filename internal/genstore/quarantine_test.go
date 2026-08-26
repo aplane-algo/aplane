@@ -116,3 +116,67 @@ func TestClassifyQuarantineCandidateRejectsSymlink(t *testing.T) {
 		t.Fatal("classifyQuarantineCandidate accepted a symlinked member")
 	}
 }
+
+func TestPruneQuarantinedRemovesOnlySelectedQuarantineState(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	mintTestGeneration(t, paths, testGenD, map[string]string{
+		"keys/ACCOUNT.key": "candidate",
+	})
+	if _, err := Reconcile(paths, nil); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	results, err := PruneQuarantined(paths, []string{testGenD})
+	if err != nil {
+		t.Fatalf("PruneQuarantined() error = %v", err)
+	}
+	if len(results) != 1 || results[0].GenerationID != testGenD ||
+		results[0].AlreadyAbsent || results[0].EncodedBytes == 0 {
+		t.Fatalf("PruneQuarantined() results = %#v", results)
+	}
+	if _, err := os.Stat(paths.QuarantinedGenerationDir(testGenD)); !os.IsNotExist(err) {
+		t.Fatalf("selected quarantine generation survived prune: %v", err)
+	}
+	for _, id := range []string{testGenA, testGenB, testGenC} {
+		if _, err := os.Stat(paths.GenerationDir(id)); err != nil {
+			t.Fatalf("authoritative generation %s changed during quarantine prune: %v", id, err)
+		}
+	}
+
+	results, err = PruneQuarantined(paths, []string{testGenD})
+	if err != nil {
+		t.Fatalf("PruneQuarantined(retry) error = %v", err)
+	}
+	if len(results) != 1 || !results[0].AlreadyAbsent {
+		t.Fatalf("PruneQuarantined(retry) results = %#v, want already absent", results)
+	}
+}
+
+func TestPruneQuarantinedValidatesEntireSelectionBeforeDeleting(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if err := os.MkdirAll(paths.QuarantinedGenerationDir(testGenD), 0o700); err != nil {
+		t.Fatalf("MkdirAll(quarantine): %v", err)
+	}
+	if _, err := PruneQuarantined(paths, []string{testGenD, "../escape"}); err == nil {
+		t.Fatal("PruneQuarantined accepted an unsafe generation ID")
+	}
+	if _, err := os.Stat(paths.QuarantinedGenerationDir(testGenD)); err != nil {
+		t.Fatalf("valid target was deleted before full request validation: %v", err)
+	}
+}
+
+func TestPruneQuarantinedCannotDeleteActiveGeneration(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	results, err := PruneQuarantined(paths, []string{testGenC})
+	if err != nil {
+		t.Fatalf("PruneQuarantined(active ID) error = %v", err)
+	}
+	if len(results) != 1 || !results[0].AlreadyAbsent {
+		t.Fatalf("PruneQuarantined(active ID) = %#v, want absent quarantine target", results)
+	}
+	if _, err := os.Stat(paths.GenerationDir(testGenC)); err != nil {
+		t.Fatalf("active generation was affected by quarantine prune: %v", err)
+	}
+}

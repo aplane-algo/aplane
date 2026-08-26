@@ -27,6 +27,7 @@ const (
 	quarantineManifestMaxBytes      = 16 << 20
 	quarantineMaxGenerations        = 8
 	quarantineMaxBytes              = 1 << 30
+	quarantineMaxPruneSelection     = 64
 )
 
 // QuarantineRecord is non-authoritative metadata used to decide whether a
@@ -41,6 +42,75 @@ type QuarantineRecord struct {
 	AtMintInventoryMatch bool   `json:"at_mint_inventory_match"`
 	EntryCount           int    `json:"entry_count"`
 	EncodedBytes         int64  `json:"encoded_bytes"`
+}
+
+// QuarantinePruneResult records one explicit quarantine disposition. An
+// already-absent target is successful so an interrupted multi-target prune is
+// safely retryable with the same request.
+type QuarantinePruneResult struct {
+	GenerationID  string `json:"generation_id"`
+	EncodedBytes  int64  `json:"encoded_bytes"`
+	AlreadyAbsent bool   `json:"already_absent,omitempty"`
+}
+
+// PruneQuarantined irreversibly removes only explicitly selected
+// non-authoritative quarantine directories. The caller must hold the store
+// mutation lock and enforce authorization, confirmation, and durable audit.
+// Active and retained generation paths are not accepted by construction.
+func PruneQuarantined(
+	paths storepaths.Paths,
+	generationIDs []string,
+) ([]QuarantinePruneResult, error) {
+	if len(generationIDs) == 0 {
+		return nil, fmt.Errorf("quarantine prune requires at least one generation ID")
+	}
+	if len(generationIDs) > quarantineMaxPruneSelection {
+		return nil, fmt.Errorf(
+			"quarantine prune selection exceeds limit %d",
+			quarantineMaxPruneSelection,
+		)
+	}
+	seen := make(map[string]struct{}, len(generationIDs))
+	for _, generationID := range generationIDs {
+		if err := storepaths.ValidateGenerationID(generationID); err != nil {
+			return nil, err
+		}
+		if _, duplicate := seen[generationID]; duplicate {
+			return nil, fmt.Errorf("duplicate quarantine generation ID %s", generationID)
+		}
+		seen[generationID] = struct{}{}
+	}
+
+	results := make([]QuarantinePruneResult, 0, len(generationIDs))
+	for _, generationID := range generationIDs {
+		result := QuarantinePruneResult{GenerationID: generationID}
+		path := paths.QuarantinedGenerationDir(generationID)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			result.AlreadyAbsent = true
+			results = append(results, result)
+			continue
+		}
+		if err != nil {
+			return results, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return results, fmt.Errorf("quarantine target is not a regular directory: %s", path)
+		}
+		size, err := boundedTreeSize(path, quarantineMaxBytes)
+		if err != nil {
+			return results, err
+		}
+		result.EncodedBytes = size
+		if err := os.RemoveAll(path); err != nil {
+			return results, fmt.Errorf("prune quarantined generation %s: %w", generationID, err)
+		}
+		if err := fsutil.SyncDir(paths.QuarantinedGenerationsDir()); err != nil {
+			return results, fmt.Errorf("confirm quarantine prune %s: %w", generationID, err)
+		}
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 // classifyQuarantineCandidate proves only safe, bounded relocation. It does
