@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -65,6 +66,69 @@ func TestMintFirstGenerationCommits(t *testing.T) {
 	entries, err := os.ReadDir(paths.GenerationsDir())
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("generations dir entries = %d (%v), want 1", len(entries), err)
+	}
+}
+
+func TestMintAtomicStoreRootFirstAndSuccessorNeverWriteCurrent(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	kr := testKeyring(t)
+	passphrase := []byte("atomic-root-mint-passphrase")
+	first, err := Mint(paths, MintRequest{
+		GenerationID:      testGenA,
+		FirstGeneration:   true,
+		AtomicStoreRoot:   true,
+		InitialPassphrase: passphrase,
+		Integrity:         kr,
+		Operation:         "test-init",
+		OperationID:       "atomic-init",
+		CreatedAt:         time.Unix(1_753_500_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			if err := writeTestGenerationAuthority(staged); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(staged.KeysDir(), "A.key"), []byte("a"), 0o600)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Mint(first atomic store root) error = %v", err)
+	}
+	if _, err := os.Lstat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+		t.Fatalf("atomic first mint created retired CURRENT: %v", err)
+	}
+	opened, selection, err := crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	if err != nil {
+		t.Fatalf("OpenStoreRootStore(first) error = %v", err)
+	}
+	if selection.CurrentGenerationID != first.GenerationID() {
+		t.Fatalf("first selection = %s, want %s", selection.CurrentGenerationID, first.GenerationID())
+	}
+	opened.Zero()
+
+	second, err := Mint(paths, MintRequest{
+		GenerationID:    testGenB,
+		Parent:          first.GenerationID(),
+		AtomicStoreRoot: true,
+		Integrity:       kr,
+		Operation:       "test-successor",
+		OperationID:     "atomic-successor",
+		CreatedAt:       time.Unix(1_753_500_001, 0),
+	})
+	if err != nil {
+		t.Fatalf("Mint(successor atomic store root) error = %v", err)
+	}
+	if _, err := os.Lstat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+		t.Fatalf("atomic successor mint created retired CURRENT: %v", err)
+	}
+	opened, selection, err = crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	if err != nil {
+		t.Fatalf("OpenStoreRootStore(successor) error = %v", err)
+	}
+	defer opened.Zero()
+	if selection.CurrentGenerationID != second.GenerationID() {
+		t.Fatalf("successor selection = %s, want %s", selection.CurrentGenerationID, second.GenerationID())
+	}
+	if err := ValidateSealed(first, kr); err != nil {
+		t.Fatalf("atomic successor did not seal outgoing generation: %v", err)
 	}
 }
 

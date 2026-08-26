@@ -43,6 +43,14 @@ type MintRequest struct {
 	// Mint still verifies the store shows no evidence of generational
 	// history before honoring this.
 	FirstGeneration bool
+	// AtomicStoreRoot commits selection and key authority through the sole
+	// store-root record instead of the retired CURRENT pointer. New production
+	// call sites must set this; the temporary false branch exists only while
+	// the runtime path-resolution conversion lands in the same redesign.
+	AtomicStoreRoot bool
+	// InitialPassphrase is required only for an AtomicStoreRoot first mint. It
+	// seals the first wrapped keyring into store-root.enc and is never retained.
+	InitialPassphrase []byte
 	// Operation and OperationID become the manifest's durable operation
 	// identity.
 	Operation   string
@@ -108,6 +116,12 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	if req.Parent != "" && req.Integrity == nil {
 		return storepaths.GenPaths{}, fmt.Errorf("mint with a parent requires an integrity keyring")
 	}
+	if req.AtomicStoreRoot && req.Integrity == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("atomic store-root mint requires an integrity keyring")
+	}
+	if req.AtomicStoreRoot && req.FirstGeneration && len(req.InitialPassphrase) == 0 {
+		return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint requires an initial passphrase")
+	}
 	// The parent must be exactly the generation CURRENT names: Mint seals
 	// req.Parent as "the outgoing generation", so a stale parent — or an
 	// empty parent on a store that already has a CURRENT — would seal the
@@ -118,7 +132,40 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// self-parent and parent-must-exist checks: CURRENT's generation
 	// directory is verified by ReadCurrent, and a self-parent request
 	// would collide with the existing current directory below.
-	if _, err := os.Lstat(paths.CurrentPointerPath()); err != nil {
+	if req.AtomicStoreRoot {
+		if req.FirstGeneration {
+			if req.Parent != "" {
+				return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint must be parentless")
+			}
+			if _, err := os.Lstat(paths.StoreRootPath()); err == nil {
+				return storepaths.GenPaths{}, fmt.Errorf("mint: store root already exists")
+			} else if !os.IsNotExist(err) {
+				return storepaths.GenPaths{}, err
+			}
+			if err := verifyFirstMintPreconditions(paths); err != nil {
+				return storepaths.GenPaths{}, err
+			}
+		} else {
+			if req.Parent == "" {
+				return storepaths.GenPaths{}, fmt.Errorf("atomic store-root successor mint requires a parent")
+			}
+			exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+			if err != nil {
+				return storepaths.GenPaths{}, fmt.Errorf("mint: %w", err)
+			}
+			selection, err := crypto.AuthenticateStoreRoot(exact, req.Integrity)
+			if err != nil {
+				return storepaths.GenPaths{}, fmt.Errorf("mint: authenticate store root: %w", err)
+			}
+			if selection.CurrentGenerationID != req.Parent {
+				return storepaths.GenPaths{}, fmt.Errorf(
+					"mint parent %q is not the store-root current generation %s",
+					req.Parent,
+					selection.CurrentGenerationID,
+				)
+			}
+		}
+	} else if _, err := os.Lstat(paths.CurrentPointerPath()); err != nil {
 		if !os.IsNotExist(err) {
 			return storepaths.GenPaths{}, err
 		}
@@ -238,7 +285,25 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		}
 	}
 
-	if err := WriteCurrent(paths, req.GenerationID); err != nil {
+	if req.AtomicStoreRoot {
+		if req.FirstGeneration {
+			if err := CommitInitialStoreRoot(
+				paths,
+				req.Integrity,
+				req.InitialPassphrase,
+				req.GenerationID,
+			); err != nil {
+				return storepaths.GenPaths{}, err
+			}
+		} else if err := CommitStoreRoot(
+			paths,
+			req.Integrity,
+			req.Parent,
+			req.GenerationID,
+		); err != nil {
+			return storepaths.GenPaths{}, err
+		}
+	} else if err := WriteCurrent(paths, req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
