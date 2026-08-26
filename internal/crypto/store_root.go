@@ -112,6 +112,27 @@ func OpenStoreRoot(
 	}, nil
 }
 
+// AuthenticateStoreRoot verifies a fresh exact root read using an already
+// open keyring. It does not unwrap or return the wrapped keyring and is the
+// confined verification path used by ordinary generation commits that do not
+// retain the passphrase-derived KEK.
+func AuthenticateStoreRoot(
+	encoded []byte,
+	kr *Keyring,
+) (StoreRootSelection, error) {
+	file, err := parseStoreRoot(encoded)
+	if err != nil {
+		return StoreRootSelection{}, err
+	}
+	if err := verifyStoreRootSelection(file, kr); err != nil {
+		return StoreRootSelection{}, err
+	}
+	return StoreRootSelection{
+		CurrentGenerationID: file.CurrentGenerationID,
+		SelectionTerm:       file.SelectionTerm,
+	}, nil
+}
+
 // ReselectStoreRoot verifies a fresh exact root read with the already-open
 // keyring, then returns a canonical candidate selecting generationID. The
 // wrapped keyring RawMessage is copied byte-for-byte; ordinary generation
@@ -537,6 +558,22 @@ func writeStoreRootMarker(keystoreDir string) error {
 		return fmt.Errorf("write store root marker: %w", err)
 	}
 	return nil
+}
+
+// InitializeStoreRootMarker writes the hard v6/store-root-v1 layout gate. A
+// supported existing marker is an idempotent crash retry; every other marker
+// is rejected and never translated.
+func InitializeStoreRootMarker(keystoreDir string) error {
+	markerPath := filepath.Join(keystoreDir, keystoreMetaFile)
+	if _, err := os.Lstat(markerPath); err == nil {
+		return checkStoreRootMarker(keystoreDir)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := fsutil.MkdirAllPrivate(keystoreDir); err != nil {
+		return err
+	}
+	return writeStoreRootMarker(keystoreDir)
 }
 
 func checkStoreRootMarker(keystoreDir string) error {
