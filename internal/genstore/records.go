@@ -22,12 +22,12 @@ import (
 
 const (
 	// ManifestSchema identifies the immutable at-mint operation record.
-	ManifestSchema = "aplane.generation-manifest.v1"
+	ManifestSchema = "aplane.generation-manifest.v2"
 	// SealSchema identifies the final content record written before a
 	// generation stops being current.
 	SealSchema = "aplane.generation-seal.v2"
 
-	manifestSchemaVersion = 1
+	manifestSchemaVersion = 2
 	sealSchemaVersion     = 2
 
 	generationSealMACDomain = "aplane.generation-seal-mac.v1"
@@ -69,6 +69,20 @@ type InventoryEntry struct {
 	Term int64 `json:"term,omitempty"`
 }
 
+// RollbackCapability is the complete authority required to decide whether an
+// explicit credential-restore rollback is still safe. Maintenance may carry
+// it forward only after proving that the outgoing live inventory exactly
+// matches InventorySHA256 and EntryCount. The successor mint then replaces
+// those two fields with its own at-mint inventory authority.
+type RollbackCapability struct {
+	OriginOperationID  string `json:"origin_operation_id"`
+	ArchiveSHA256      string `json:"archive_sha256"`
+	SourceGenerationID string `json:"source_generation_id"`
+	CleanAtCutover     bool   `json:"clean_at_cutover"`
+	EntryCount         int64  `json:"entry_count"`
+	InventorySHA256    string `json:"inventory_sha256"`
+}
+
 // Manifest is the immutable at-mint operation record. It describes the
 // minting transaction, not the live directory: single-file mutations to the
 // current generation do not falsify it. CURRENT answers which state
@@ -85,22 +99,64 @@ type Manifest struct {
 	// post-crash idempotency and audit correlation.
 	Operation   string `json:"operation"`
 	OperationID string `json:"operation_id"`
-	// RestoreArchiveSHA256 authenticates the portable archive that supplied
-	// a direct credential restore. RestoreRollbackEligible is false for a
-	// repair begun from recovery mode, whose damaged parent must not later be
-	// promoted back into service by an explicit rollback.
-	RestoreArchiveSHA256    string `json:"restore_archive_sha256,omitempty"`
-	RestoreRollbackEligible bool   `json:"restore_rollback_eligible,omitempty"`
-	// RollbackSourceGenerationID names the sealed generation whose content
-	// was reconstructed into this mint. ParentID remains the outgoing
-	// current generation, preserving commit lineage; the rollback source is
-	// separate because rollback mints content instead of rewinding CURRENT.
-	RollbackSourceGenerationID string `json:"rollback_source_generation_id,omitempty"`
+	// RollbackCapability is present only while an explicit rollback of an
+	// authenticated credential restore remains safe. Recovery-mode restores
+	// and rollback mints do not create one.
+	RollbackCapability *RollbackCapability `json:"rollback_capability,omitempty"`
 	// Inventory is the at-mint content record.
 	Inventory []InventoryEntry `json:"inventory"`
 	// Complete is written true before publication; a manifest without it is
 	// an aborted mint.
 	Complete bool `json:"complete"`
+}
+
+// NewRollbackCapabilitySeed creates the provenance portion of a rollback
+// capability. Mint binds it to the successor's exact at-mint inventory.
+func NewRollbackCapabilitySeed(operationID, archiveSHA256, sourceGenerationID string) *RollbackCapability {
+	return &RollbackCapability{
+		OriginOperationID:  operationID,
+		ArchiveSHA256:      archiveSHA256,
+		SourceGenerationID: sourceGenerationID,
+		CleanAtCutover:     true,
+	}
+}
+
+// CarryRollbackCapability returns a provenance-only copy when live still
+// matches the manifest's authenticated rollback authority. A mismatch is a
+// normal divergence decision, not a parse error.
+func CarryRollbackCapability(manifest *Manifest, live []InventoryEntry) (*RollbackCapability, bool, error) {
+	if manifest == nil || manifest.RollbackCapability == nil {
+		return nil, false, nil
+	}
+	capability := manifest.RollbackCapability
+	if err := validateRollbackCapability(capability); err != nil {
+		return nil, false, err
+	}
+	digest, err := CanonicalInventoryDigest(live)
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(live)) != capability.EntryCount || digest != capability.InventorySHA256 {
+		return nil, false, nil
+	}
+	return NewRollbackCapabilitySeed(
+		capability.OriginOperationID,
+		capability.ArchiveSHA256,
+		capability.SourceGenerationID,
+	), true, nil
+}
+
+// RollbackCapabilityMatches reports whether live still equals the authority
+// recorded at the latest clean mint or changepass cutover.
+func RollbackCapabilityMatches(capability *RollbackCapability, live []InventoryEntry) (bool, error) {
+	if err := validateRollbackCapability(capability); err != nil {
+		return false, err
+	}
+	digest, err := CanonicalInventoryDigest(live)
+	if err != nil {
+		return false, err
+	}
+	return int64(len(live)) == capability.EntryCount && digest == capability.InventorySHA256, nil
 }
 
 // Seal is the final content record of a generation, written durably while
@@ -494,33 +550,46 @@ func validateManifest(manifest *Manifest, generationID string) error {
 			return fmt.Errorf("generation manifest names itself as its parent")
 		}
 	}
-	if manifest.RollbackSourceGenerationID != "" {
-		if manifest.ParentID == "" {
-			return fmt.Errorf("generation manifest rollback source requires a parent")
-		}
-		if err := storepaths.ValidateGenerationID(manifest.RollbackSourceGenerationID); err != nil {
-			return fmt.Errorf("generation manifest rollback source: %w", err)
-		}
-		if manifest.RollbackSourceGenerationID == manifest.GenerationID {
-			return fmt.Errorf("generation manifest names itself as its rollback source")
-		}
-		if manifest.RollbackSourceGenerationID == manifest.ParentID {
-			return fmt.Errorf("generation manifest rollback source is its outgoing parent")
-		}
-	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {
 		return fmt.Errorf("generation manifest metadata is incomplete")
 	}
-	if manifest.RestoreArchiveSHA256 != "" {
-		if err := validateCanonicalSHA256(manifest.RestoreArchiveSHA256); err != nil {
-			return fmt.Errorf("generation manifest restore_archive_sha256: %w", err)
+	if manifest.RollbackCapability != nil {
+		if manifest.ParentID == "" {
+			return fmt.Errorf("generation manifest rollback capability requires a parent")
+		}
+		if err := validateRollbackCapability(manifest.RollbackCapability); err != nil {
+			return fmt.Errorf("generation manifest rollback capability: %w", err)
+		}
+		if manifest.RollbackCapability.SourceGenerationID == manifest.GenerationID {
+			return fmt.Errorf("generation manifest names itself as its rollback source")
 		}
 	}
-	if manifest.RestoreRollbackEligible &&
-		(manifest.Operation != OperationCredentialRestore || manifest.ParentID == "" || manifest.RestoreArchiveSHA256 == "") {
-		return fmt.Errorf("generation manifest has invalid restore rollback eligibility")
-	}
 	return validateInventory(manifest.Inventory)
+}
+
+func validateRollbackCapability(capability *RollbackCapability) error {
+	if capability == nil {
+		return fmt.Errorf("missing rollback capability")
+	}
+	if capability.OriginOperationID == "" {
+		return fmt.Errorf("origin_operation_id is required")
+	}
+	if err := validateCanonicalSHA256(capability.ArchiveSHA256); err != nil {
+		return fmt.Errorf("archive_sha256: %w", err)
+	}
+	if err := storepaths.ValidateGenerationID(capability.SourceGenerationID); err != nil {
+		return fmt.Errorf("source_generation_id: %w", err)
+	}
+	if !capability.CleanAtCutover {
+		return fmt.Errorf("clean_at_cutover must be true")
+	}
+	if capability.EntryCount < 0 {
+		return fmt.Errorf("entry_count must be non-negative")
+	}
+	if err := validateCanonicalSHA256(capability.InventorySHA256); err != nil {
+		return fmt.Errorf("inventory_sha256: %w", err)
+	}
+	return nil
 }
 
 func validateInventory(inventory []InventoryEntry) error {

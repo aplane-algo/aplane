@@ -55,10 +55,10 @@ type MintRequest struct {
 	// identity.
 	Operation   string
 	OperationID string
-	// RestoreArchiveSHA256 and RestoreRollbackEligible are direct-restore
-	// provenance. Recovery-mode repairs are never rollback-eligible.
-	RestoreArchiveSHA256    string
-	RestoreRollbackEligible bool
+	// RollbackCapability carries authenticated restore provenance. Mint binds
+	// it to the successor's exact at-mint inventory. Recovery-mode repairs and
+	// rollback reconstructions leave it nil.
+	RollbackCapability *RollbackCapability
 	// RollbackSourceGenerationID records a sealed generation whose content
 	// is reconstructed into the new generation. It is distinct from Parent,
 	// which must still be the outgoing CURRENT generation.
@@ -106,15 +106,14 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
 	}
 	if req.StartEmpty {
-		if req.Parent == "" || req.RollbackSourceGenerationID == "" || req.Apply == nil {
+		if req.Parent == "" || req.Apply == nil {
 			return storepaths.GenPaths{}, fmt.Errorf(
-				"empty reconstruction requires a parent, rollback source, and apply function",
+				"empty reconstruction requires a parent and apply function",
 			)
 		}
-	} else if req.RollbackSourceGenerationID != "" {
-		return storepaths.GenPaths{}, fmt.Errorf(
-			"rollback source requires an empty authenticated reconstruction",
-		)
+	}
+	if req.RollbackSourceGenerationID != "" && (req.Parent == "" || req.Apply == nil) {
+		return storepaths.GenPaths{}, fmt.Errorf("rollback source requires a parent and apply function")
 	}
 	if req.RollbackSourceGenerationID == req.Parent &&
 		req.RollbackSourceGenerationID != "" {
@@ -269,17 +268,19 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}
+	rollbackCapability, err := bindRollbackCapability(req.RollbackCapability, inventory)
+	if err != nil {
+		return storepaths.GenPaths{}, err
+	}
 	if err := WriteManifest(staged, Manifest{
-		GenerationID:               req.GenerationID,
-		ParentID:                   req.Parent,
-		CreatedAtUnix:              req.CreatedAt.Unix(),
-		Operation:                  req.Operation,
-		OperationID:                req.OperationID,
-		RestoreArchiveSHA256:       req.RestoreArchiveSHA256,
-		RestoreRollbackEligible:    req.RestoreRollbackEligible,
-		RollbackSourceGenerationID: req.RollbackSourceGenerationID,
-		Inventory:                  inventory,
-		Complete:                   true,
+		GenerationID:       req.GenerationID,
+		ParentID:           req.Parent,
+		CreatedAtUnix:      req.CreatedAt.Unix(),
+		Operation:          req.Operation,
+		OperationID:        req.OperationID,
+		RollbackCapability: rollbackCapability,
+		Inventory:          inventory,
+		Complete:           true,
 	}); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -339,6 +340,26 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		return storepaths.GenPaths{}, err
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
+}
+
+func bindRollbackCapability(seed *RollbackCapability, inventory []InventoryEntry) (*RollbackCapability, error) {
+	if seed == nil {
+		return nil, nil
+	}
+	if seed.OriginOperationID == "" || seed.ArchiveSHA256 == "" || seed.SourceGenerationID == "" || !seed.CleanAtCutover {
+		return nil, fmt.Errorf("rollback capability provenance is incomplete")
+	}
+	digest, err := CanonicalInventoryDigest(inventory)
+	if err != nil {
+		return nil, err
+	}
+	bound := *seed
+	bound.EntryCount = int64(len(inventory))
+	bound.InventorySHA256 = digest
+	if err := validateRollbackCapability(&bound); err != nil {
+		return nil, err
+	}
+	return &bound, nil
 }
 
 // RollbackTo repoints CURRENT at a previous sealed generation after

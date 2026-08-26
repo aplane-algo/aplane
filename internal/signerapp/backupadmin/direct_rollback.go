@@ -12,7 +12,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -28,9 +27,10 @@ type restoreRollbackError struct {
 func (e *restoreRollbackError) Error() string { return e.err.Error() }
 func (e *restoreRollbackError) Unwrap() error { return e.err }
 
-// RollbackRestore reconstructs the sealed parent content of the latest direct
-// credential restore into a fresh current-term generation. It never rewinds
-// CURRENT to historical ciphertext.
+// RollbackRestore reconstructs active credential and key-type authority from
+// the authenticated source named by the current manifest's rollback
+// capability. It preserves the outgoing generation's deleted archive, policy,
+// and node-role authority and never selects historical ciphertext directly.
 func (s Service) RollbackRestore(
 	req adminproto.RollbackRestoreRequest,
 ) adminproto.RollbackRestoreResult {
@@ -44,85 +44,65 @@ func (s Service) RollbackRestore(
 	mutated := false
 	err := s.Deps.WithStoreMutation(func() error {
 		paths := s.Deps.KeyPaths()
-		current, err := genstore.Resolve(paths)
-		if err != nil {
-			return err
-		}
-		manifest, err := genstore.ReadManifest(current)
-		if err != nil {
-			return err
-		}
-		if manifest.Operation != genstore.OperationCredentialRestore ||
-			!manifest.RestoreRollbackEligible {
-			return restoreFailure(
-				protocol.ResultCodeRestoreRollbackRefused,
-				"current generation %s was not produced by a rollback-eligible credential restore",
-				current.GenerationID(),
-			)
-		}
-		if manifest.ParentID == "" {
-			return restoreFailure(
-				protocol.ResultCodeRestoreRollbackRefused,
-				"credential restore generation %s has no parent",
-				current.GenerationID(),
-			)
-		}
-
-		inventory, err := genstore.BuildInventory(current)
-		if err != nil {
-			return err
-		}
-		target := paths.GenerationPaths(manifest.ParentID)
-		var source *rollbackGenerationSource
-		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			cutover, err := rotationinventory.EvaluateRollback(
-				paths,
-
-				current.GenerationID(),
-				inventory,
-				manifest,
-				masterKey,
-			)
+		var generationID string
+		err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+			current, err := genstore.ResolveStoreRootWithKeyring(paths, masterKey)
 			if err != nil {
 				return err
 			}
-			if cutover.Decision != rotationinventory.DecisionClean {
+			manifest, err := genstore.ReadManifest(current)
+			if err != nil {
+				return err
+			}
+			capability := manifest.RollbackCapability
+			if capability == nil {
 				return restoreFailure(
-					protocol.ResultCodeRestoreRollbackDiverged,
-					"generation %s changed after credential restore; rollback would discard later state",
+					protocol.ResultCodeRestoreRollbackRefused,
+					"current generation %s has no restore rollback capability",
 					current.GenerationID(),
 				)
 			}
-			if anchor, anchored := masterKey.HistoricalGenerationAnchor(
-				target.GenerationID(),
-			); anchored {
+			inventory, err := genstore.BuildInventory(current)
+			if err != nil {
+				return err
+			}
+			clean, err := genstore.RollbackCapabilityMatches(capability, inventory)
+			if err != nil {
+				return err
+			}
+			if !clean {
+				return restoreFailure(
+					protocol.ResultCodeRestoreRollbackDiverged,
+					"generation %s changed after its clean restore authority; rollback would discard later state",
+					current.GenerationID(),
+				)
+			}
+			target := paths.GenerationPaths(capability.SourceGenerationID)
+			if anchor, anchored := masterKey.HistoricalGenerationAnchor(target.GenerationID()); anchored {
 				if err := genstore.ValidateAnchoredSealed(target, anchor, masterKey); err != nil {
 					return fmt.Errorf("rollback target: %w", err)
 				}
 			} else if err := genstore.ValidateSealed(target, masterKey); err != nil {
 				return fmt.Errorf("rollback target: %w", err)
 			}
-			source, err = loadRollbackGenerationSource(target, masterKey)
-			return err
-		})
-		if err != nil {
-			return err
-		}
+			source, err := loadRollbackGenerationSource(target, masterKey)
+			if err != nil {
+				return err
+			}
 
-		generationID, err := genstore.NewGenerationID(time.Now())
-		if err != nil {
-			return err
-		}
-		err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+			generationID, err = genstore.NewGenerationID(time.Now())
+			if err != nil {
+				return err
+			}
 			_, mintErr := genstore.Mint(paths, genstore.MintRequest{
 				GenerationID:               generationID,
 				Parent:                     current.GenerationID(),
+				AtomicStoreRoot:            true,
 				Operation:                  genstore.OperationCredentialRestoreRollback,
 				OperationID:                req.OperationID,
-				RollbackSourceGenerationID: manifest.ParentID,
+				RollbackSourceGenerationID: capability.SourceGenerationID,
 				CreatedAt:                  time.Now(),
 				Integrity:                  masterKey,
-				StartEmpty:                 true,
 				Apply: func(staged storepaths.GenPaths) error {
 					return populateRollbackGeneration(source, staged, masterKey)
 				},
@@ -132,18 +112,20 @@ func (s Service) RollbackRestore(
 			}
 			mutated = true
 			result.GenerationID = generationID
-			_, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				paths, generationID, masterKey,
-			)
-			return reconcileErr
+			return nil
 		})
 		if err != nil {
-			visible, visibleErr := genstore.ReadCurrent(paths)
-			if visibleErr == nil && visible == generationID {
-				mutated = true
-				result.GenerationID = generationID
+			if generationID != "" {
+				_ = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+					visible, visibleErr := genstore.ResolveStoreRootWithKeyring(paths, masterKey)
+					if visibleErr == nil && visible.GenerationID() == generationID {
+						mutated = true
+						result.GenerationID = generationID
+					}
+					return nil
+				})
 			}
-			if errors.Is(err, genstore.ErrCommitDurabilityUnknown) || mutated {
+			if errors.Is(err, genstore.ErrStoreRootCommitDurabilityUnknown) || mutated {
 				ir.SetRecovery()
 			}
 			return err

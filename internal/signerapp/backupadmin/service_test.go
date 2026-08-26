@@ -70,11 +70,15 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 	address, payload := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(payload)
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
+		if err != nil {
+			return err
+		}
 		sealed, err := kr.Seal(payload, crypto.AccountKeyContext(address))
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(keys.AccountKeyFilePath(paths, address), sealed, 0o600)
+		return os.WriteFile(keys.AccountKeyFilePathActive(active, address), sealed, 0o600)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +120,8 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	limiter := NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) })
-	ir := testBackupIdentityRuntime()
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	service := Service{Deps: backupServiceTestDeps{paths: paths, limiter: limiter}, Runtime: ir}
 	request := adminproto.PreviewRestoreRequest{
 		ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
@@ -154,11 +159,8 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
-	if _, err := crypto.CreateKeyringStore(paths.ProductDir(), backupAdminTestPassphrase); err != nil {
-		t.Fatal(err)
-	}
-	convertToGenerationalStore(t, paths)
-	keyStore := keystore.NewFileKeyStoreForPaths(paths)
+	initializeAtomicTestStore(t, paths, backupAdminTestPassphrase)
+	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
 	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
@@ -176,17 +178,20 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 	return ir
 }
 
-func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
+func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase []byte) string {
 	t.Helper()
-	if current, err := genstore.ReadCurrent(paths); err == nil {
-		return current
+	kr, err := crypto.NewKeyring()
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer kr.Zero()
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_700_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: generationID, FirstGeneration: true, Operation: "test-init",
+		GenerationID: generationID, FirstGeneration: true, AtomicStoreRoot: true,
+		InitialPassphrase: passphrase, Integrity: kr, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
 		Apply: genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
@@ -198,7 +203,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-		active, err := genstore.ResolveActive(paths)
+		active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
 		if err != nil {
 			return err
 		}

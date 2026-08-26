@@ -5,6 +5,7 @@ package backupadmin
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -67,11 +68,10 @@ func loadRollbackGenerationSource(
 	return source, nil
 }
 
-// populateRollbackGeneration reconstructs exactly the authenticated source
-// inventory into an empty staging generation. Plaintext members are copied
-// from seal-verified buffers. Envelopes are opened through ordinary current
-// authority or the root-anchor-gated historical path, then freshly sealed
-// under the current term.
+// populateRollbackGeneration replaces only active keys/ and keytypes/ in a
+// staging copy of the outgoing generation. Deleted archives, policy, and node
+// role authority remain monotonic and therefore come from the outgoing state.
+// Source members are consumed only from exact seal-verified buffers.
 func populateRollbackGeneration(
 	source *rollbackGenerationSource,
 	staged storepaths.GenPaths,
@@ -80,7 +80,21 @@ func populateRollbackGeneration(
 	if source == nil || source.seal == nil {
 		return fmt.Errorf("rollback source is not authenticated")
 	}
+	for _, dir := range []string{staged.KeysDir(), staged.KeyTypeRecordsDir()} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+				return fmt.Errorf("clear rollback target %s: %w", entry.Name(), err)
+			}
+		}
+	}
 	for _, entry := range source.seal.Inventory {
+		if !strings.HasPrefix(entry.Path, "keys/") && !strings.HasPrefix(entry.Path, "keytypes/") {
+			continue
+		}
 		memberPath := filepath.Join(
 			source.gen.Dir(),
 			filepath.FromSlash(entry.Path),

@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
@@ -70,7 +69,7 @@ func (s Service) RestoreBackup(
 			defer set.ZeroSecrets()
 			result.ArchiveSHA256 = set.ArchiveSHA256
 
-			current, resolveErr := genstore.Resolve(s.Deps.KeyPaths())
+			current, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
 			if resolveErr != nil {
 				return fmt.Errorf("resolve current generation: %w", resolveErr)
 			}
@@ -99,24 +98,27 @@ func (s Service) RestoreBackup(
 			}
 
 			parent = current.GenerationID()
-			if _, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				s.Deps.KeyPaths(), parent, masterKey,
-			); reconcileErr != nil {
-				return fmt.Errorf("restore rotation baseline preflight: %w", reconcileErr)
-			}
 			generationID, generationErr := genstore.NewGenerationID(time.Now())
 			if generationErr != nil {
 				return generationErr
 			}
+			var rollbackCapability *genstore.RollbackCapability
+			if !wasRecovery {
+				rollbackCapability = genstore.NewRollbackCapabilitySeed(
+					req.OperationID,
+					set.ArchiveSHA256,
+					parent,
+				)
+			}
 			_, mintErr := genstore.Mint(s.Deps.KeyPaths(), genstore.MintRequest{
-				GenerationID:            generationID,
-				Parent:                  parent,
-				Operation:               genstore.OperationCredentialRestore,
-				OperationID:             req.OperationID,
-				RestoreArchiveSHA256:    set.ArchiveSHA256,
-				RestoreRollbackEligible: !wasRecovery,
-				CreatedAt:               time.Now(),
-				Integrity:               masterKey,
+				GenerationID:       generationID,
+				Parent:             parent,
+				AtomicStoreRoot:    true,
+				Operation:          genstore.OperationCredentialRestore,
+				OperationID:        req.OperationID,
+				RollbackCapability: rollbackCapability,
+				CreatedAt:          time.Now(),
+				Integrity:          masterKey,
 				Apply: func(staged storepaths.GenPaths) error {
 					for i := range classification.Pending {
 						entry := classification.Pending[i]
@@ -130,9 +132,9 @@ func (s Service) RestoreBackup(
 				},
 			})
 			if mintErr != nil {
-				visible, visibleErr := genstore.ReadCurrent(s.Deps.KeyPaths())
-				if errors.Is(mintErr, genstore.ErrCommitDurabilityUnknown) ||
-					(visibleErr == nil && visible == generationID) {
+				visible, visibleErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
+				if errors.Is(mintErr, genstore.ErrStoreRootCommitDurabilityUnknown) ||
+					(visibleErr == nil && visible.GenerationID() == generationID) {
 					committedGeneration = generationID
 					result.GenerationID = generationID
 					result.CommitUncertain = true
@@ -149,16 +151,6 @@ func (s Service) RestoreBackup(
 			committedGeneration = generationID
 			result.Restored = projectCredentialEntries(classification.Pending)
 
-			if _, reconcileErr := rotationinventory.ReconcileBaselineForPreflight(
-				s.Deps.KeyPaths(), generationID, masterKey,
-			); reconcileErr != nil {
-				ir.SetRecovery()
-				return restoreFailure(
-					protocol.ResultCodeRestoreRollbackFailed,
-					"restore committed as generation %s but rollback baseline reconciliation failed; signing is blocked pending reconciliation: %v",
-					generationID, reconcileErr,
-				)
-			}
 			return nil
 		})
 		if prepareErr != nil {
@@ -207,31 +199,11 @@ func (s Service) RestoreBackup(
 		if reloadErr == nil {
 			return nil
 		}
-		rollbackErr := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-			return genstore.RollbackTo(
-				s.Deps.KeyPaths(), parent, time.Now(), masterKey,
-			)
-		})
-		if rollbackErr != nil {
-			ir.SetRecovery()
-			return restoreFailure(
-				protocol.ResultCodeRestoreRollbackFailed,
-				"restored generation failed reload (%v) and pointer rollback failed: %v",
-				reloadErr, rollbackErr,
-			)
-		}
-		if _, err := ir.Reload(); err != nil {
-			ir.SetRecovery()
-			return restoreFailure(
-				protocol.ResultCodeRestoreRollbackFailed,
-				"restored generation failed reload (%v) and prior generation failed reload after rollback: %v",
-				reloadErr, err,
-			)
-		}
+		ir.SetRecovery()
 		return restoreFailure(
-			protocol.ResultCodeRestoreFailed,
-			"restore rolled back: restored generation failed reload: %v",
-			reloadErr,
+			protocol.ResultCodeRestoreRollbackFailed,
+			"restore committed as generation %s but runtime reload failed; signing is blocked pending recovery: %v",
+			committedGeneration, reloadErr,
 		)
 	})
 	if err != nil {

@@ -439,6 +439,39 @@ func TestCanonicalInventoryDigestIsStableAndDomainSeparated(t *testing.T) {
 	}
 }
 
+func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
+	inventory := []InventoryEntry{{
+		Path: "policy.yaml", SHA256: strings.Repeat("a", 64), Size: 12,
+	}}
+	digest, err := CanonicalInventoryDigest(inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := &Manifest{RollbackCapability: &RollbackCapability{
+		OriginOperationID:  "restore-op",
+		ArchiveSHA256:      strings.Repeat("b", 64),
+		SourceGenerationID: testGenA,
+		CleanAtCutover:     true,
+		EntryCount:         1,
+		InventorySHA256:    digest,
+	}}
+
+	seed, clean, err := CarryRollbackCapability(manifest, slices.Clone(inventory))
+	if err != nil || !clean || seed == nil {
+		t.Fatalf("CarryRollbackCapability(clean) = (%+v, %v, %v)", seed, clean, err)
+	}
+	if seed.EntryCount != 0 || seed.InventorySHA256 != "" || seed.SourceGenerationID != testGenA {
+		t.Fatalf("carried seed = %+v", seed)
+	}
+
+	diverged := slices.Clone(inventory)
+	diverged[0].Size++
+	seed, clean, err = CarryRollbackCapability(manifest, diverged)
+	if err != nil || clean || seed != nil {
+		t.Fatalf("CarryRollbackCapability(diverged) = (%+v, %v, %v)", seed, clean, err)
+	}
+}
+
 func inventoryEntry(t *testing.T, inventory []InventoryEntry, path string) InventoryEntry {
 	t.Helper()
 	index := slices.IndexFunc(inventory, func(entry InventoryEntry) bool {

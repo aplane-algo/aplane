@@ -180,7 +180,7 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	}
 	switch s.target() {
 	case TargetSentry:
-		active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+		active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
 		if err != nil {
 			return err
 		}
@@ -195,7 +195,7 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 			return err
 		}
 	default:
-		active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+		active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
 		if err != nil {
 			return err
 		}
@@ -399,8 +399,8 @@ func (s OfflineStore) unlock(ctx context.Context) (*apcrypto.Keyring, func(), er
 		return nil, func() {}, fmt.Errorf("passphrase is required")
 	}
 
-	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir()
-	kr, err := apcrypto.OpenKeyringStore(metadataDir, passphrase)
+	paths := storepaths.NewPaths(s.DataDir)
+	_, kr, err := genstore.OpenStoreRootSelection(paths, passphrase)
 	clearPassphrase()
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to unlock keystore: %w", err)
@@ -414,7 +414,7 @@ func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.Sto
 }
 
 func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, []byte, error) {
-	active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+	active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -427,7 +427,7 @@ func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy
 }
 
 func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) error {
-	active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+	active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
 	if err != nil {
 		return err
 	}

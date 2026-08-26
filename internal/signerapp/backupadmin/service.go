@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -38,9 +39,17 @@ func (s Service) BackupIdentity(req adminproto.BackupIdentityRequest) adminproto
 	var result *backup.ArchiveResult
 	err := s.Deps.WithStoreMutation(func() error {
 		return ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+			active, err := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
+			if err != nil {
+				return err
+			}
+			bound, err := s.Deps.KeyPaths().BindActive(active)
+			if err != nil {
+				return err
+			}
 			var backupErr error
 			result, backupErr = backup.CreateKeysArchive(backup.CreateKeysArchiveRequest{
-				Paths:            s.Deps.KeyPaths(),
+				Paths:            bound,
 				ArchivePath:      archivePath,
 				Addresses:        req.Addresses,
 				Keyring:          masterKey,
@@ -130,7 +139,20 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 		}
 	}
 
-	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), archivePath, passphraseBytes, ir.NodeRole())
+	var preview *backup.RestorePreview
+	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
+		active, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		bound, bindErr := s.Deps.KeyPaths().BindActive(active)
+		if bindErr != nil {
+			return bindErr
+		}
+		var previewErr error
+		preview, previewErr = backup.PreviewRestoreWithNodeRole(bound, archivePath, passphraseBytes, ir.NodeRole())
+		return previewErr
+	})
 	if err != nil {
 		if backup.ArchiveAuthenticated(err) {
 			limiter.RecordSuccess(archivePath)

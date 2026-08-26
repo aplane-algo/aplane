@@ -96,6 +96,24 @@ func Rotate(
 	if err := genstore.WriteSeal(active, now.Unix(), oldKeyring); err != nil {
 		return result, fmt.Errorf("seal outgoing generation: %w", err)
 	}
+	outgoingSeal, err := genstore.ReadSeal(active, oldKeyring)
+	if err != nil {
+		return result, fmt.Errorf("read outgoing generation seal: %w", err)
+	}
+	outgoingManifest, err := genstore.ReadManifest(active)
+	if err != nil {
+		return result, fmt.Errorf("read outgoing generation manifest: %w", err)
+	}
+	rollbackCapability, cleanRollback, err := genstore.CarryRollbackCapability(
+		outgoingManifest,
+		outgoingSeal.Inventory,
+	)
+	if err != nil {
+		return result, fmt.Errorf("evaluate restore rollback capability: %w", err)
+	}
+	if outgoingManifest.RollbackCapability != nil && !cleanRollback {
+		logf(opts.Logf, "dropping diverged restore rollback capability")
+	}
 	anchors, err := collectHistoricalAnchors(paths, active, oldKeyring)
 	if err != nil {
 		return result, err
@@ -123,6 +141,7 @@ func Rotate(
 		ReplacementPassphrase:      newPassphrase,
 		Operation:                  "store-passphrase-change",
 		OperationID:                "changepass-" + generationID,
+		RollbackCapability:         rollbackCapability,
 		CreatedAt:                  now,
 		Apply: func(staged storepaths.GenPaths) error {
 			counts, err := reencryptSealedGeneration(paths, active, staged, oldKeyring, successorKeyring, now)
