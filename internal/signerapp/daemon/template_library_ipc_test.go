@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -127,7 +128,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
-	if !templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("installed template file was removed during disable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -321,7 +322,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
-	if templatestore.TemplateExistsForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatalf("template %s still exists after removal", keyType)
 	}
 	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
@@ -377,7 +378,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(mustActiveKeyPaths(t, server), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 
@@ -421,7 +422,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 
 	keyType := "aplane.ed25519.v1"
 	ir := server.productRuntime()
-	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, keyType); err != nil {
+	if _, err := templatelibrary.ActivateCompiledProvider(mustActiveKeyPaths(t, server), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
@@ -431,7 +432,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}
-		_, saveErr := apkeys.SavePayload(server.keyPaths, payload, masterKey)
+		_, saveErr := apkeys.SavePayload(mustActiveKeyPaths(t, server), payload, masterKey)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SavePayload() error = %v", err)
@@ -509,7 +510,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -570,12 +571,12 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	}
 	ir := server.productRuntime()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, installErr := templatelibrary.InstallParsed(server.keyPaths, parsed, masterKey)
+		_, installErr := templatelibrary.InstallParsed(mustActiveKeyPaths(t, server), parsed, masterKey)
 		return installErr
 	}); err != nil {
 		t.Fatalf("preinstall template: %v", err)
 	}
-	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templatestore.TemplateTypeGeneric)
+	installedPath, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -605,7 +606,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 
 func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, yamlData []byte) {
 	t.Helper()
-	dir := server.keyPaths.TemplateLibraryDir()
+	dir := mustActiveKeyPaths(t, server).TemplateLibraryDir()
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir template library: %v", err)
 	}
@@ -616,7 +617,7 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 
 func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
 	t.Helper()
-	path, pathErr := templatestore.GetTemplateFilePathForPaths(server.keyPaths, keyType, templateType)
+	path, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType, templateType)
 	if pathErr != nil {
 		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
 	}
@@ -630,13 +631,30 @@ func testTemplateKeyType(family string) string {
 }
 
 func keyTypeStateEnabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
+	paths, err := server.productRuntime().ActiveKeyPaths()
+	if err != nil {
+		return false
+	}
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
 func keyTypeStateDisabled(server *Signer, identityID, keyType string) bool {
-	rec, ok, err := keytypestate.Get(server.keyPaths, keyType)
+	paths, err := server.productRuntime().ActiveKeyPaths()
+	if err != nil {
+		return false
+	}
+	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
+}
+
+func mustActiveKeyPaths(t *testing.T, server *Signer) storepaths.Paths {
+	t.Helper()
+	paths, err := server.productRuntime().ActiveKeyPaths()
+	if err != nil {
+		t.Fatalf("ActiveKeyPaths() error = %v", err)
+	}
+	return paths
 }
 
 func renderGenericTemplateYAMLWithTEAL(family string, version int, displayName, teal string) []byte {

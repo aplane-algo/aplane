@@ -86,6 +86,28 @@ func (s signerAdminServices) LogGenerationQuarantinePruneContext(
 	}
 }
 
+func (s signerAdminServices) LogDeletedArchivePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	entries []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing archive prune without a durable intent record")
+	}
+	return audit.LogDeletedArchivePruneIntentDurableContext(ctx, operationID, entries)
+}
+
+func (s signerAdminServices) LogDeletedArchivePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneDeletedArchiveResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogDeletedArchivePruneContext(ctx, operationID, result)
+	}
+}
+
 func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupCreatedContext(ctx, archivePath)

@@ -175,19 +175,6 @@ func TestStoreRootReselectRejectsStaleOrUnrelatedAuthority(t *testing.T) {
 	}
 }
 
-func TestStoreRootV3RejectsRetiredPendingRotationState(t *testing.T) {
-	kr, err := NewKeyring()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer kr.Zero()
-	kr.rotation = &rotationDescriptor{FromTerm: FirstTerm}
-	if _, err := SealStoreRoot(kr, []byte("passphrase"), testStoreRootGenerationA); err == nil ||
-		!strings.Contains(err.Error(), "does not encode pending rotation") {
-		t.Fatalf("SealStoreRoot(pending rotation) error = %v", err)
-	}
-}
-
 func TestStoreRootRejectedSelectionZeroesDecodedTermKeys(t *testing.T) {
 	kr, err := NewKeyring()
 	if err != nil {
@@ -314,9 +301,9 @@ func TestStoreRootStrictCanonicalParsing(t *testing.T) {
 			return mutate(t, func(root *storeRootFile) { root.CurrentGenerationID = testStoreRootGenerationB })
 		}},
 		{name: "wrong term", data: func(t *testing.T) []byte { return mutate(t, func(root *storeRootFile) { root.SelectionTerm++ }) }},
-		{name: "keyring schema", data: func(t *testing.T) []byte { return withBadKeyringHeader(t, "schema", KeyringSchema) }},
+		{name: "keyring schema", data: func(t *testing.T) []byte { return withBadKeyringHeader(t, "schema", "aplane.keyring.v2") }},
 		{name: "keyring version", data: func(t *testing.T) []byte {
-			return withBadKeyringHeader(t, "envelope_version", float64(KeyringFileVersion))
+			return withBadKeyringHeader(t, "envelope_version", float64(2))
 		}},
 		{name: "keyring KDF", data: func(t *testing.T) []byte { return withBadKeyringHeader(t, "kdf_memory", float64(argon2Memory+1)) }},
 		{name: "keyring unknown field", data: func(t *testing.T) []byte { return withBadKeyringHeader(t, "unexpected", true) }},
@@ -363,9 +350,9 @@ func TestStoreRootLayoutGateRejectsLegacyAndNonRegularRoots(t *testing.T) {
 		t.Fatalf("selection = %+v", selection)
 	}
 
-	legacyMarker, err := json.Marshal(keyringMarker{
-		Version: KeyringKeystoreMetadataVersion,
-		Layout:  KeystoreLayoutKeyringV2,
+	legacyMarker, err := json.Marshal(storeRootMarker{
+		Version: 5,
+		Layout:  "keyring/v2",
 		Created: "2026-01-01T00:00:00Z",
 	})
 	if err != nil {

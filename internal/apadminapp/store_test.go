@@ -260,7 +260,7 @@ func TestStoreChangePassphraseCopiesSecretsAndPreservesCommittedWarning(t *testi
 			return errors.New("message aliases caller secrets")
 		}
 		*result.(*protocol.ChangeStorePassphraseResultMessage) = protocol.ChangeStorePassphraseResultMessage{
-			Success: false, Code: "rotation_failed", Error: "helper failed", RootCommitted: true, RotationPending: true,
+			Success: false, Code: "rotation_failed", Error: "helper failed", RootCommitted: true,
 		}
 		return nil
 	}}
@@ -269,7 +269,7 @@ func TestStoreChangePassphraseCopiesSecretsAndPreservesCommittedWarning(t *testi
 	if err == nil || protocol.CodeForError(err) != "rotation_failed" {
 		t.Fatalf("error = %v", err)
 	}
-	if !strings.Contains(stderr.String(), "new passphrase is authoritative") || !strings.Contains(stderr.String(), "resume") {
+	if !strings.Contains(stderr.String(), "new passphrase and generation are authoritative") || !strings.Contains(stderr.String(), "reconcile") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

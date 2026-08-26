@@ -88,7 +88,9 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths)
+	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, []byte("admin-policy-test-passphrase"))
+	keyring.Zero()
+	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.Theme = "auto"
@@ -98,7 +100,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		keyPaths: keyPaths,
 		theme:    cfg.Theme,
 	}
-	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths)
+	keyStore := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	ir := productruntime.New(productruntime.Config{
 
 		KeyStore:      keyStore,
@@ -113,16 +115,13 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *productruntime.
 	t.Helper()
 
 	passphrase := []byte("admin-policy-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(ir.KeyPaths().KeystoreMetadataDir(), passphrase); err != nil {
-		t.Fatalf("CreateKeyringStore(): %v", err)
-	}
 	if err := ir.KeyStore().Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 	ir.SetUnlocked()
 
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
-		active, err := genstore.ResolveActive(ir.KeyPaths())
+		active, err := genstore.ResolveStoreRootWithKeyring(ir.KeyPaths(), masterKey)
 		if err != nil {
 			return err
 		}

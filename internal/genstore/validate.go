@@ -34,6 +34,9 @@ func ValidateCurrent(gen storepaths.GenPaths) error {
 	if err := validateStructure(gen); err != nil {
 		return err
 	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
+		return err
+	}
 	manifest, err := ReadManifest(gen)
 	if err != nil {
 		return err
@@ -52,6 +55,9 @@ func ValidateCurrent(gen storepaths.GenPaths) error {
 // generation with no seal fails here — the seal precedes every flip.
 func ValidateSealed(gen storepaths.GenPaths, kr *crypto.Keyring) error {
 	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
 		return err
 	}
 	manifest, err := ReadManifest(gen)
@@ -85,6 +91,9 @@ func ValidateAnchoredSealed(
 	kr *crypto.Keyring,
 ) error {
 	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
 		return err
 	}
 	seal, err := ReadAnchoredSeal(gen, anchor, kr)

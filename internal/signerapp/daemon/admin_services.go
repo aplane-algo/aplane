@@ -171,10 +171,13 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 	}
 	for _, quarantined := range report.Quarantined {
 		logInfof(
-			"quarantined non-authoritative generation %s (at_mint_match=%t bytes=%d)",
+			"quarantined non-authoritative generation %s (at_mint_match=%t bytes=%d term_verified=%d term_unavailable=%d term_failed=%d)",
 			quarantined.GenerationID,
 			quarantined.AtMintInventoryMatch,
 			quarantined.EncodedBytes,
+			quarantined.TermValidation.Verified,
+			quarantined.TermValidation.TermUnavailable,
+			quarantined.TermValidation.Failed,
 		)
 	}
 	for _, staging := range report.DiscardedStaging {
@@ -452,19 +455,15 @@ func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 	var report genstore.ReconcileReport
 	var quarantined []genstore.QuarantineRecord
 	err := s.withStoreInspection(func() error {
-		generational, err := genstore.IsGenerational(ir.KeyPaths())
-		if err != nil {
+		return ir.WithKeyring(func(kr *crypto.Keyring) error {
+			var err error
+			report, err = genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
+			if err != nil {
+				return err
+			}
+			quarantined, err = genstore.ListQuarantinedWithKeyring(ir.KeyPaths(), kr)
 			return err
-		}
-		if !generational {
-			return fmt.Errorf("store does not use generation-based storage")
-		}
-		report, err = genstore.Inspect(ir.KeyPaths(), nil)
-		if err != nil {
-			return err
-		}
-		quarantined, err = genstore.ListQuarantined(ir.KeyPaths())
-		return err
+		})
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "inspect_failed")
@@ -511,6 +510,53 @@ func (s signerAdminServices) PruneGenerationQuarantine(
 	return result
 }
 
+func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
+	ir := s.ProductRuntime()
+	active, err := ir.ActivePaths()
+	if err != nil {
+		return adminproto.DeletedArchiveInventory{Code: protocol.ResultCodeArchiveListFailed, Error: err.Error()}
+	}
+	entries, usage, err := genstore.ListDeletedArchive(active)
+	result := adminproto.DeletedArchiveInventory{
+		Entries:    make([]adminproto.DeletedArchiveEntry, 0, len(entries)),
+		EntryCount: usage.Entries, EncodedBytes: usage.EncodedBytes, Warning: usage.Warning(),
+	}
+	for _, entry := range entries {
+		result.Entries = append(result.Entries, adminproto.DeletedArchiveEntry{Path: entry.Path, EncodedBytes: entry.EncodedBytes})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeArchiveListFailed
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func (s signerAdminServices) PruneDeletedArchive(req adminproto.PruneDeletedArchiveRequest) adminproto.PruneDeletedArchiveResult {
+	ir := s.ProductRuntime()
+	var pruned []genstore.DeletedArchivePruneResult
+	err := s.withStoreMutation(func() error {
+		active, err := ir.ActivePaths()
+		if err != nil {
+			return err
+		}
+		pruned, err = genstore.PruneDeletedArchive(active, req.Entries)
+		return err
+	})
+	result := adminproto.PruneDeletedArchiveResult{Pruned: make([]adminproto.PrunedDeletedArchiveEntry, 0, len(pruned))}
+	for _, item := range pruned {
+		result.Pruned = append(result.Pruned, adminproto.PrunedDeletedArchiveEntry{
+			Path: item.Path, EncodedBytes: item.EncodedBytes, AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeArchivePruneFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
 func adminQuarantinedGeneration(record genstore.QuarantineRecord) adminproto.QuarantinedGenerationInfo {
 	return adminproto.QuarantinedGenerationInfo{
 		GenerationID:         record.GenerationID,
@@ -520,6 +566,9 @@ func adminQuarantinedGeneration(record genstore.QuarantineRecord) adminproto.Qua
 		AtMintInventoryMatch: record.AtMintInventoryMatch,
 		EntryCount:           record.EntryCount,
 		EncodedBytes:         record.EncodedBytes,
+		TermVerified:         record.TermValidation.Verified,
+		TermUnavailable:      record.TermValidation.TermUnavailable,
+		TermFailed:           record.TermValidation.Failed,
 	}
 }
 
@@ -657,6 +706,9 @@ func (d signerAdminAppDeps) Config() *serverconfig.ServerConfig {
 }
 
 func (d signerAdminAppDeps) KeyPaths() storepaths.Paths {
+	if bound, err := d.signer.productRuntime().ActiveKeyPaths(); err == nil {
+		return bound
+	}
 	return d.signer.keyPaths
 }
 

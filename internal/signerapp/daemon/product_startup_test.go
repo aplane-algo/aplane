@@ -310,7 +310,7 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 	}},
 	}
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
-	active, err := genstore.ResolveActive(server.keyPaths)
+	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,8 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := genstore.ResolveActive(server.keyPaths)
+	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
+	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,8 +387,8 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("ReloadWithPassphrase() error = nil, want policy integrity failure")
 	}
-	if !strings.Contains(err.Error(), "policy verification failed") {
-		t.Fatalf("ReloadWithPassphrase() error = %v, want policy verification failure", err)
+	if !strings.Contains(err.Error(), "policy.yaml.hmac") {
+		t.Fatalf("ReloadWithPassphrase() error = %v, want missing policy integrity sidecar", err)
 	}
 	if pol := ir.Policy(); pol != nil {
 		t.Fatalf("Policy() after failed unlock = %+v, want nil", pol)
@@ -452,7 +453,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	maxFee := uint64(1234)
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
-	active, err := genstore.ResolveActive(server.keyPaths)
+	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,9 +492,9 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 
 func testKeyringForStore(t *testing.T, paths utilkeys.Paths, passphrase []byte) *crypto.Keyring {
 	t.Helper()
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
+	_, kr, err := genstore.OpenStoreRootSelection(paths, passphrase)
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("OpenStoreRootSelection() error = %v", err)
 	}
 	t.Cleanup(kr.Zero)
 	return kr

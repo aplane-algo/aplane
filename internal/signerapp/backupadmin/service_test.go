@@ -190,7 +190,7 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 		t.Fatal(err)
 	}
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: generationID, FirstGeneration: true, AtomicStoreRoot: true,
+		GenerationID: generationID, FirstGeneration: true,
 		InitialPassphrase: passphrase, Integrity: kr, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
 		Apply: genstoretest.ApplyAuthorityPlaceholders,

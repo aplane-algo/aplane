@@ -256,6 +256,63 @@ func (s *Session) HandlePruneGenerationQuarantine(
 	_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleListDeletedArchive(requestID string) {
+	if s.requireRecoveryAdminRuntime(requestID) == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "deleted_archive"}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "archive service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolDeletedArchiveListMessage(requestID, s.inspectionServices.ListDeletedArchive()))
+}
+
+func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMessage) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionArchivePrune, auth.Resource{Type: "deleted_archive"}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "archive service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code: protocol.ResultCodeConfirmationRequired, Error: "archive prune requires explicit confirmation",
+		}))
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogDeletedArchivePruneIntentDurableContext(SessionContext, string, []string) error
+	})
+	if !ok {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code: protocol.ResultCodeArchiveAuditFailed, Error: "archive prune aborted: durable audit is unavailable",
+		}))
+		return
+	}
+	entries := append([]string(nil), msg.Entries...)
+	if err := audit.LogDeletedArchivePruneIntentDurableContext(s.SessionContext(), msg.ID, entries); err != nil {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code:  protocol.ResultCodeArchiveAuditFailed,
+			Error: fmt.Sprintf("archive prune aborted: durable audit failed: %v", err),
+		}))
+		return
+	}
+	result := s.inspectionServices.PruneDeletedArchive(adminproto.PruneDeletedArchiveRequest{Entries: entries})
+	if audit, ok := s.audit.(interface {
+		LogDeletedArchivePruneContext(SessionContext, string, adminproto.PruneDeletedArchiveResult)
+	}); ok {
+		audit.LogDeletedArchivePruneContext(s.SessionContext(), msg.ID, result)
+	}
+	_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, result))
+}
+
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	s.handleRevokeToken(msg)
 }

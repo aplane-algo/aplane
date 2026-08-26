@@ -54,9 +54,6 @@ func cmdGenerations(args []string) error {
 			return err
 		}
 		defer kr.Zero()
-		if err := kr.RequireSettled(); err != nil {
-			return fmt.Errorf("generation prune blocked: %w", err)
-		}
 		if !retainRollbackParent {
 			logInfof("pruning all priors abandons every rollback fallback; validating current generation content first")
 			if err := verifyCurrentGenerationContentWithKeyring(paths, active, kr); err != nil {

@@ -10,15 +10,12 @@ import (
 )
 
 // Generation-based active storage (docs/ARCH_GENERATIONS.md): the active
-// keys/ and keytypes/ namespaces live inside immutable-after-flip generation
-// directories selected by the CURRENT pointer. Everything here is pure path
-// construction; reading and validating CURRENT lives in internal/genstore.
+// keys/ and keytypes/ namespaces live inside generation directories selected
+// by the authenticated store root. Everything here is pure path construction.
 const (
 	// StoreRootName is the sole generation-selection and key-authority commit
 	// record in the atomic store-root layout.
 	StoreRootName = "store-root.enc"
-	// CurrentPointerName is the file naming the active generation.
-	CurrentPointerName = "CURRENT"
 	// GenerationsDirName holds one directory per generation.
 	GenerationsDirName = "generations"
 	// QuarantineDirName holds non-authoritative state preserved for explicit
@@ -59,11 +56,6 @@ func (p Paths) StoreRootPath() string {
 	return filepath.Join(p.ProductDir(), StoreRootName)
 }
 
-// CurrentPointerPath is identities/default/CURRENT.
-func (p Paths) CurrentPointerPath() string {
-	return filepath.Join(p.ProductDir(), CurrentPointerName)
-}
-
 // GenerationsDir is identities/default/generations.
 func (p Paths) GenerationsDir() string {
 	return filepath.Join(p.ProductDir(), GenerationsDirName)
@@ -95,9 +87,9 @@ func (p Paths) QuarantinedGenerationDir(generationID string) string {
 }
 
 // GenerationPaths binds generation-qualified active-store paths. Pure
-// constructor: it does not consult CURRENT. Operations resolve CURRENT once
-// (internal/genstore.Resolve) under the store mutation lock and pass the
-// result down; re-resolving mid-operation is a correctness bug.
+// constructor: it does not authenticate store-root.enc. Runtime operations
+// authenticate selection once under the store mutation lock and pass the
+// resulting capability down; re-resolving mid-operation is a correctness bug.
 func (p Paths) GenerationPaths(generationID string) GenPaths {
 	return GenPaths{
 		root:         p.GenerationDir(generationID),

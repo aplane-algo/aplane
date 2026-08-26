@@ -68,7 +68,7 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 
 func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	generated, err := GenerateKey(paths, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
@@ -90,8 +90,8 @@ func init() {
 
 func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	_, err := GenerateKey(paths, "", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "key type must be specified") {
@@ -106,8 +106,8 @@ func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 
 func TestImportKeyRejectsInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	_, err := ImportKey(paths, "not-a-real-key-type", "mnemonic words here", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
@@ -140,8 +140,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	keyType := falcon1024guarded.KeyTypeV1
 	_, err := ImportKeyWithActivatedContext(context.Background(), paths, keyType, "mnemonic words here", nil, nil, []string{keyType})
@@ -152,8 +152,8 @@ func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 
 func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	first, err := GenerateKey(paths, "ed25519", cryptotest.Keyring(t, masterKey), nil)
@@ -271,8 +271,8 @@ func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 
 func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	for _, keyType := range []string{
@@ -304,8 +304,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKeyWithActivatedContext(
@@ -378,8 +378,8 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKey(paths, keyType, cryptotest.Keyring(t, masterKey), nil)
@@ -567,7 +567,7 @@ func TestDeleteKey(t *testing.T) {
 
 func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	selector := "WITNESSID"
 	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), selector+keys.SentryCredentialExtension)
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {

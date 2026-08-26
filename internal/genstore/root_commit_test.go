@@ -28,7 +28,7 @@ func TestStoreRootCommitInitialAndOrdinarySelection(t *testing.T) {
 	if err := CommitInitialStoreRoot(paths, kr, passphrase, testGenA); err != nil {
 		t.Fatal(err)
 	}
-	for _, retired := range []string{paths.CurrentPointerPath(), crypto.KeyringPath(paths.ProductDir())} {
+	for _, retired := range []string{filepath.Join(paths.ProductDir(), "CURRENT"), filepath.Join(paths.ProductDir(), "keyring.enc")} {
 		if _, err := os.Lstat(retired); !os.IsNotExist(err) {
 			t.Fatalf("retired layout artifact exists at %s: %v", retired, err)
 		}

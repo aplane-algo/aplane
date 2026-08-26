@@ -22,7 +22,7 @@ func TestClassifyQuarantineCandidateRecordsExactAtMintMatch(t *testing.T) {
 		"keytypes/example.v1.json": "{}\n",
 	})
 
-	candidate, err := classifyQuarantineCandidate(gen)
+	candidate, err := classifyQuarantineCandidate(gen, nil)
 	if err != nil {
 		t.Fatalf("classifyQuarantineCandidate() error = %v", err)
 	}
@@ -53,7 +53,7 @@ func TestClassifyQuarantineCandidateAllowsPostMintMutation(t *testing.T) {
 		t.Fatalf("mutate current-state member: %v", err)
 	}
 
-	candidate, err := classifyQuarantineCandidate(gen)
+	candidate, err := classifyQuarantineCandidate(gen, nil)
 	if err != nil {
 		t.Fatalf("classifyQuarantineCandidate(mutated) error = %v", err)
 	}
@@ -76,12 +76,61 @@ func TestClassifyQuarantineCandidateDoesNotRequireTermKey(t *testing.T) {
 		t.Fatalf("write future-term member: %v", err)
 	}
 
-	candidate, err := classifyQuarantineCandidate(gen)
+	current := testKeyring(t)
+	candidate, err := classifyQuarantineCandidate(gen, current)
 	if err != nil {
 		t.Fatalf("unknown future term prevented safe classification: %v", err)
 	}
 	if candidate.AtMintInventoryMatch {
 		t.Fatal("future-term mutation unexpectedly matches at-mint inventory")
+	}
+	if candidate.TermValidation.TermUnavailable != 1 || candidate.TermValidation.Failed != 0 {
+		t.Fatalf("future-term validation = %+v", candidate.TermValidation)
+	}
+}
+
+func TestClassifyQuarantineCandidateRecordsKnownTermVerificationFailureWithoutBlocking(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
+		"keys/ACCOUNT.key": "at-mint",
+	})
+	kr := testKeyring(t)
+	sealed, err := kr.Seal([]byte("credential"), crypto.AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed[len(sealed)-2] ^= 1
+	if err := os.WriteFile(filepath.Join(gen.KeysDir(), "ACCOUNT.key"), sealed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := classifyQuarantineCandidate(gen, kr)
+	if err != nil {
+		t.Fatalf("known-term integrity failure blocked safe relocation: %v", err)
+	}
+	if candidate.TermValidation.Failed != 1 || candidate.TermValidation.Verified != 0 {
+		t.Fatalf("term validation = %+v", candidate.TermValidation)
+	}
+}
+
+func TestClassifyQuarantineCandidateRecordsKnownTermVerification(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
+		"keys/ACCOUNT.key": "at-mint",
+	})
+	kr := testKeyring(t)
+	sealed, err := kr.Seal([]byte("credential"), crypto.AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gen.KeysDir(), "ACCOUNT.key"), sealed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := classifyQuarantineCandidate(gen, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.TermValidation.Verified != 1 || candidate.TermValidation.Failed != 0 {
+		t.Fatalf("term validation = %+v", candidate.TermValidation)
 	}
 }
 
@@ -95,7 +144,7 @@ func TestClassifyQuarantineCandidateRejectsOversizedFileBeforeReadingIt(t *testi
 		t.Fatalf("Truncate: %v", err)
 	}
 
-	_, err := classifyQuarantineCandidate(gen)
+	_, err := classifyQuarantineCandidate(gen, nil)
 	if err == nil || !strings.Contains(err.Error(), "exceeds size limit") {
 		t.Fatalf("oversized candidate error = %v, want bounded-read rejection", err)
 	}
@@ -112,7 +161,7 @@ func TestClassifyQuarantineCandidateRejectsSymlink(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	if _, err := classifyQuarantineCandidate(gen); err == nil {
+	if _, err := classifyQuarantineCandidate(gen, nil); err == nil {
 		t.Fatal("classifyQuarantineCandidate accepted a symlinked member")
 	}
 }
@@ -123,7 +172,7 @@ func TestPruneQuarantinedRemovesOnlySelectedQuarantineState(t *testing.T) {
 	mintTestGeneration(t, paths, testGenD, map[string]string{
 		"keys/ACCOUNT.key": "candidate",
 	})
-	if _, err := Reconcile(paths, nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
@@ -159,7 +208,7 @@ func TestListQuarantinedReturnsNonAuthoritativeMetadata(t *testing.T) {
 	mintTestGeneration(t, paths, testGenD, map[string]string{
 		"keys/ACCOUNT.key": "candidate",
 	})
-	if _, err := Reconcile(paths, nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 

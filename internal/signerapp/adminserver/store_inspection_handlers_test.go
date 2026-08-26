@@ -15,13 +15,18 @@ import (
 )
 
 type inspectionStub struct {
-	listCalls   int
-	importCalls int
-	removeCalls int
-	pruneCalls  int
-	lastPrune   adminproto.PruneGenerationQuarantineRequest
-	pruneResult adminproto.PruneGenerationQuarantineResult
-	listResult  adminproto.ListSentryReferencesResult
+	listCalls          int
+	importCalls        int
+	removeCalls        int
+	pruneCalls         int
+	archiveListCalls   int
+	archivePruneCalls  int
+	lastPrune          adminproto.PruneGenerationQuarantineRequest
+	lastArchivePrune   adminproto.PruneDeletedArchiveRequest
+	pruneResult        adminproto.PruneGenerationQuarantineResult
+	archiveListResult  adminproto.DeletedArchiveInventory
+	archivePruneResult adminproto.PruneDeletedArchiveResult
+	listResult         adminproto.ListSentryReferencesResult
 }
 
 func (s *inspectionStub) ListSentryReferences() adminproto.ListSentryReferencesResult {
@@ -53,6 +58,15 @@ func (s *inspectionStub) PruneGenerationQuarantine(
 	s.lastPrune = req
 	return s.pruneResult
 }
+func (s *inspectionStub) ListDeletedArchive() adminproto.DeletedArchiveInventory {
+	s.archiveListCalls++
+	return s.archiveListResult
+}
+func (s *inspectionStub) PruneDeletedArchive(req adminproto.PruneDeletedArchiveRequest) adminproto.PruneDeletedArchiveResult {
+	s.archivePruneCalls++
+	s.lastArchivePrune = req
+	return s.archivePruneResult
+}
 
 type quarantinePruneAudit struct {
 	recordingAuthorizationAudit
@@ -61,6 +75,35 @@ type quarantinePruneAudit struct {
 	intentErr     error
 	operationID   string
 	generationIDs []string
+}
+
+type archivePruneAudit struct {
+	recordingAuthorizationAudit
+	intentCalls  int
+	outcomeCalls int
+	intentErr    error
+	operationID  string
+	entries      []string
+}
+
+func (a *archivePruneAudit) LogDeletedArchivePruneIntentDurableContext(
+	_ SessionContext,
+	operationID string,
+	entries []string,
+) error {
+	a.intentCalls++
+	a.operationID = operationID
+	a.entries = append([]string(nil), entries...)
+	return a.intentErr
+}
+
+func (a *archivePruneAudit) LogDeletedArchivePruneContext(
+	_ SessionContext,
+	operationID string,
+	_ adminproto.PruneDeletedArchiveResult,
+) {
+	a.outcomeCalls++
+	a.operationID = operationID
 }
 
 func (a *quarantinePruneAudit) LogGenerationQuarantinePruneIntentDurableContext(
@@ -260,6 +303,99 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 			}
 			if response.Code != test.wantCode {
 				t.Fatalf("response code = %q, want %q", response.Code, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestHandleListDeletedArchiveAuthorizesBeforeReading(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	inspection := &inspectionStub{archiveListResult: adminproto.DeletedArchiveInventory{
+		Entries:    []adminproto.DeletedArchiveEntry{{Path: "deleted/keys/A.key", EncodedBytes: 12}},
+		EntryCount: 1, EncodedBytes: 12,
+	}}
+	authorizer := &recordingAuthorizer{}
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
+	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+
+	session.HandleListDeletedArchive("archive-list")
+
+	if inspection.archiveListCalls != 1 {
+		t.Fatalf("ListDeletedArchive calls = %d, want 1", inspection.archiveListCalls)
+	}
+	if authorizer.got.action != auth.ActionGenerationsView || authorizer.got.resource.Type != "deleted_archive" {
+		t.Fatalf("authorization = %q %+v", authorizer.got.action, authorizer.got.resource)
+	}
+	var response protocol.DeletedArchiveListMessage
+	if err := decodeSingleWrite(conn, &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Entries) != 1 || response.Entries[0].Path != "deleted/keys/A.key" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestHandlePruneDeletedArchiveRequiresAuthorizationAndDurableAudit(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	inspection := &inspectionStub{archivePruneResult: adminproto.PruneDeletedArchiveResult{
+		Success: true,
+		Pruned:  []adminproto.PrunedDeletedArchiveEntry{{Path: "deleted/keys/A.key", EncodedBytes: 12}},
+	}}
+	authorizer := &recordingAuthorizer{}
+	audit := &archivePruneAudit{}
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer, Audit: audit})
+	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+
+	session.HandlePruneDeletedArchive(&protocol.PruneDeletedArchiveMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchive, ID: "archive-prune"},
+		Entries:     []string{"deleted/keys/A.key"}, Confirm: true,
+	})
+
+	if authorizer.got.action != auth.ActionArchivePrune || authorizer.got.resource.Type != "deleted_archive" {
+		t.Fatalf("authorization = %q %+v", authorizer.got.action, authorizer.got.resource)
+	}
+	if audit.intentCalls != 1 || audit.outcomeCalls != 1 || audit.operationID != "archive-prune" {
+		t.Fatalf("audit = intent:%d outcome:%d operation:%q", audit.intentCalls, audit.outcomeCalls, audit.operationID)
+	}
+	if inspection.archivePruneCalls != 1 || len(inspection.lastArchivePrune.Entries) != 1 {
+		t.Fatalf("prune calls=%d request=%#v", inspection.archivePruneCalls, inspection.lastArchivePrune)
+	}
+}
+
+func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		confirm      bool
+		authorizeErr error
+		audit        AuthorizationAudit
+		wantCode     string
+	}{
+		{name: "authorization", confirm: true, authorizeErr: auth.ErrForbidden, audit: &archivePruneAudit{}, wantCode: protocol.ErrCodeAuthorizationDenied},
+		{name: "confirmation", audit: &archivePruneAudit{}, wantCode: protocol.ResultCodeConfirmationRequired},
+		{name: "audit unavailable", confirm: true, audit: &recordingAuthorizationAudit{}, wantCode: protocol.ResultCodeArchiveAuditFailed},
+		{name: "audit failure", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("disk full")}, wantCode: protocol.ResultCodeArchiveAuditFailed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+			ir.SetUnlocked()
+			inspection := &inspectionStub{}
+			conn := &queueConn{}
+			session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{err: test.authorizeErr}, Audit: test.audit})
+			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+			session.HandlePruneDeletedArchive(&protocol.PruneDeletedArchiveMessage{
+				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchive, ID: "archive-prune-fail"},
+				Entries:     []string{"deleted/keys/A.key"}, Confirm: test.confirm,
+			})
+			if inspection.archivePruneCalls != 0 {
+				t.Fatalf("archive prune called %d times", inspection.archivePruneCalls)
+			}
+			msgs := decodeAdminProtoWrites(t, conn)
+			if len(msgs) != 1 || msgs[0].Code != test.wantCode {
+				t.Fatalf("responses = %#v, want code %q", msgs, test.wantCode)
 			}
 		})
 	}

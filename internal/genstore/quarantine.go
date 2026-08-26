@@ -42,6 +42,17 @@ type QuarantineRecord struct {
 	AtMintInventoryMatch bool   `json:"at_mint_inventory_match"`
 	EntryCount           int    `json:"entry_count"`
 	EncodedBytes         int64  `json:"encoded_bytes"`
+	// TermValidation records best-effort integrity classification. Failures
+	// and unavailable terms never grant authority and do not veto safe,
+	// bounded relocation.
+	TermValidation TermValidation `json:"term_validation"`
+}
+
+// TermValidation summarizes envelope checks over a quarantine candidate.
+type TermValidation struct {
+	Verified        int `json:"verified"`
+	TermUnavailable int `json:"term_unavailable"`
+	Failed          int `json:"failed"`
 }
 
 // QuarantinePruneResult records one explicit quarantine disposition. An
@@ -57,6 +68,16 @@ type QuarantinePruneResult struct {
 // currently quarantined generation publications. It never returns GenPaths or
 // otherwise makes the namespace addressable by signing and history APIs.
 func ListQuarantined(paths storepaths.Paths) ([]QuarantineRecord, error) {
+	return listQuarantined(paths, nil)
+}
+
+// ListQuarantinedWithKeyring additionally classifies envelope terms under the
+// currently authenticated authority without opening or returning plaintext.
+func ListQuarantinedWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRecord, error) {
+	return listQuarantined(paths, kr)
+}
+
+func listQuarantined(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRecord, error) {
 	if _, _, err := quarantineUsage(paths); err != nil {
 		return nil, err
 	}
@@ -78,7 +99,7 @@ func ListQuarantined(paths storepaths.Paths) ([]QuarantineRecord, error) {
 			entry.Name(),
 			paths.QuarantinedGenerationDir(entry.Name()),
 		)
-		record, err := classifyQuarantineCandidate(gen)
+		record, err := classifyQuarantineCandidate(gen, kr)
 		if err != nil {
 			return nil, fmt.Errorf("inspect quarantined generation %s: %w", entry.Name(), err)
 		}
@@ -155,7 +176,7 @@ func PruneQuarantined(
 // root rollback may have been current and legitimately mutated after mint.
 // Envelope terms are inspected for inventory classification but never opened,
 // so a term absent from the restored keyring is not a classification failure.
-func classifyQuarantineCandidate(gen storepaths.GenPaths) (QuarantineRecord, error) {
+func classifyQuarantineCandidate(gen storepaths.GenPaths, kr *crypto.Keyring) (QuarantineRecord, error) {
 	candidate := QuarantineRecord{GenerationID: gen.GenerationID()}
 	if err := validateStructure(gen); err != nil {
 		return candidate, fmt.Errorf("classify abandoned generation: %w", err)
@@ -181,7 +202,7 @@ func classifyQuarantineCandidate(gen storepaths.GenPaths) (QuarantineRecord, err
 	candidate.EntryCount = 1
 	candidate.EncodedBytes = int64(len(manifestBytes))
 
-	live, liveBytes, err := buildBoundedQuarantineInventory(gen)
+	live, liveBytes, validation, err := buildBoundedQuarantineInventory(gen, kr)
 	if err != nil {
 		return candidate, err
 	}
@@ -200,6 +221,7 @@ func classifyQuarantineCandidate(gen storepaths.GenPaths) (QuarantineRecord, err
 	}
 	candidate.LiveInventorySHA256 = digest
 	candidate.AtMintInventoryMatch = slices.Equal(live, manifest.Inventory)
+	candidate.TermValidation = validation
 	return candidate, nil
 }
 
@@ -337,9 +359,10 @@ func boundedTreeSize(root string, remaining int64) (int64, error) {
 	return total, err
 }
 
-func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry, int64, error) {
+func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring) ([]InventoryEntry, int64, TermValidation, error) {
 	var inventory []InventoryEntry
 	var totalBytes int64
+	var validation TermValidation
 	addMember := func(relative string) error {
 		data, _, err := fsutil.ReadRegularFileLimited(
 			filepath.Join(gen.Dir(), filepath.FromSlash(relative)),
@@ -357,11 +380,29 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry,
 			)
 		}
 		sum := sha256.Sum256(data)
-		term, present, err := crypto.InspectTermEnvelope(data)
-		if err != nil {
-			return fmt.Errorf("classify %s term envelope: %w", relative, err)
+		term, present, inspectErr := crypto.InspectTermEnvelope(data)
+		ctx, termBearing := quarantineMemberContext(relative)
+		switch {
+		case inspectErr != nil:
+			validation.Failed++
+			term = 0
+		case termBearing && !present:
+			validation.Failed++
+		case !termBearing && present:
+			validation.Failed++
+		case termBearing && kr == nil:
+			validation.TermUnavailable++
+		case termBearing:
+			_, available, verifyErr := kr.VerifyKnownTermEnvelope(data, ctx)
+			if !available && verifyErr == nil {
+				validation.TermUnavailable++
+			} else if verifyErr != nil {
+				validation.Failed++
+			} else {
+				validation.Verified++
+			}
 		}
-		if !present {
+		if !present || inspectErr != nil {
 			term = 0
 		}
 		inventory = append(inventory, InventoryEntry{
@@ -374,24 +415,24 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry,
 	}
 	for _, relative := range generationAuthorityFiles {
 		if len(inventory)+1 > quarantineCandidateMaxFiles {
-			return nil, 0, fmt.Errorf(
+			return nil, 0, validation, fmt.Errorf(
 				"generation %s exceeds quarantine file limit %d",
 				gen.GenerationID(),
 				quarantineCandidateMaxFiles,
 			)
 		}
 		if err := addMember(relative); err != nil {
-			return nil, 0, err
+			return nil, 0, validation, err
 		}
 	}
 	for _, namespace := range generationLeafNamespaces {
 		dir := filepath.Join(gen.Dir(), namespace)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, validation, err
 		}
 		if len(inventory)+len(entries) > quarantineCandidateMaxFiles {
-			return nil, 0, fmt.Errorf(
+			return nil, 0, validation, fmt.Errorf(
 				"generation %s exceeds quarantine file limit %d",
 				gen.GenerationID(),
 				quarantineCandidateMaxFiles,
@@ -399,12 +440,26 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry,
 		}
 		for _, entry := range entries {
 			if err := addMember(filepath.ToSlash(filepath.Join(namespace, entry.Name()))); err != nil {
-				return nil, 0, err
+				return nil, 0, validation, err
 			}
 		}
 	}
 	slices.SortFunc(inventory, func(a, b InventoryEntry) int {
 		return strings.Compare(a.Path, b.Path)
 	})
-	return inventory, totalBytes, nil
+	return inventory, totalBytes, validation, nil
+}
+
+func quarantineMemberContext(relative string) (crypto.ObjectContext, bool) {
+	base := filepath.Base(relative)
+	switch {
+	case strings.HasSuffix(base, ".key"):
+		return crypto.AccountKeyContext(strings.TrimSuffix(base, ".key")), true
+	case strings.HasSuffix(base, ".sen"):
+		return crypto.SentryCredentialContext(strings.TrimSuffix(base, ".sen")), true
+	case strings.HasSuffix(base, ".template"):
+		return crypto.KeyTypeTemplateContext(strings.TrimSuffix(base, ".template")), true
+	default:
+		return crypto.ObjectContext{}, false
+	}
 }

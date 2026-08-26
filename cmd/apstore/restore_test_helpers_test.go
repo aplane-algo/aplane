@@ -6,10 +6,15 @@ package main
 import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 )
 
 func restoreContextForTest() backup.Restorer {
-	return backup.NewRestorer(keystorePaths()).WithLogger(logInfof).WithOverwrite(true)
+	paths := keystorePaths()
+	if bound, err := genstoretest.BindDefault(paths); err == nil {
+		paths = bound
+	}
+	return backup.NewRestorer(paths).WithLogger(logInfof).WithOverwrite(true)
 }
 
 func restoreKey(keysDir, address string, kr *crypto.Keyring, exportPassphrase []byte) (string, error) {

@@ -51,7 +51,6 @@ func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.
 	_, mintErr := genstore.Mint(server.keyPaths, genstore.MintRequest{
 		GenerationID:    successor,
 		Parent:          current,
-		AtomicStoreRoot: true,
 		Integrity:       keyring,
 		Operation:       "test-quarantine-audit",
 		OperationID:     "op-" + successor,

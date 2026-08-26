@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -128,8 +129,8 @@ func CommitInitialStoreRoot(
 		return err
 	}
 	for _, retired := range []string{
-		paths.CurrentPointerPath(),
-		crypto.KeyringPath(paths.KeystoreMetadataDir()),
+		filepath.Join(paths.ProductDir(), "CURRENT"),
+		filepath.Join(paths.KeystoreMetadataDir(), "keyring.enc"),
 	} {
 		if _, err := os.Lstat(retired); err == nil {
 			return fmt.Errorf("refusing atomic store-root initialization over retired layout artifact %s", retired)

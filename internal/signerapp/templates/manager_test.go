@@ -26,7 +26,7 @@ import (
 
 func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, masterKey)
 	saveTemplateRecord(t, paths, "conflicting-generic", templatestore.TemplateTypeGeneric, masterKey)
@@ -92,7 +92,7 @@ func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *test
 
 func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	keyType := "templates-compiled-conflict-v1"
 	lsigprovider.RegisterIfAbsent(templatesTestProvider{
 		keyType:     keyType,
@@ -130,7 +130,7 @@ func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.
 
 func TestRegisterKeystoreTemplatesReturnsStateListError(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	stateDir := mustResolveActiveForTemplatesTest(t, paths).KeyTypeRecordsDir()
 	if err := os.RemoveAll(stateDir); err != nil {
 		t.Fatalf("RemoveAll() error = %v", err)
@@ -151,7 +151,7 @@ func TestRegisterKeystoreTemplatesReturnsStateListError(t *testing.T) {
 func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testing.T) {
 	registerManagerTestBase("test.manager-base.v1")
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	genericKeyType := "test.manager-generic.v1"
 	composedKeyType := "test.manager-composed.v1"
@@ -185,7 +185,7 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 
 func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-product-provider.v1"
 	fingerprint := "1:" + strings.Repeat("a", 64)
@@ -244,7 +244,7 @@ func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 func TestRegisterKeystoreTemplatesSkipsDisabledComposedTemplate(t *testing.T) {
 	registerManagerTestBase("test.manager-disabled-base.v1")
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-disabled.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeComposed, managerComposedTemplateYAML("manager-disabled-base", "manager-disabled"), masterKey)
@@ -385,7 +385,7 @@ func TestRegisterKeystoreTemplatesLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
 			masterKey := testTemplateMasterKey()
 			registered := make(map[string]bool)
 			tt.setup(t, paths, tt.keyType, tt.templateType, masterKey)
@@ -405,7 +405,7 @@ func TestRegisterKeystoreTemplatesLifecycleMatrix(t *testing.T) {
 
 func TestRegisterKeystoreTemplatesReportsOrphanedTemplateRecords(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	genericKeyType := "test.manager-orphan-generic.v1"
 	composedKeyType := "test.manager-orphan-composed.v1"
 	if err := keytypestate.Put(paths, keytypestate.Record{
@@ -437,7 +437,7 @@ func TestRegisterKeystoreTemplatesReportsOrphanedTemplateRecords(t *testing.T) {
 
 func TestRegisterKeystoreTemplatesReportsInvalidStateRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-invalid-record.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("manager-invalid-record"), masterKey)
@@ -464,7 +464,7 @@ func TestRegisterKeystoreTemplatesReportsInvalidStateRecord(t *testing.T) {
 
 func TestRegisterKeystoreTemplatesReportsUnreadableTemplateAsInvalid(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-unreadable-template.v1"
 	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, keyType, templatestore.TemplateTypeGeneric)
@@ -728,7 +728,7 @@ func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []stri
 
 func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	saveTemplateYAML(t, paths, "test.sweep-clean.v1", templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-clean"), masterKey)
 
@@ -739,7 +739,7 @@ func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceFlagsTemplateWithoutRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-stray.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-stray"), masterKey)
@@ -755,7 +755,7 @@ func TestSweepKeyTypeNamespaceFlagsTemplateWithoutRecord(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceFlagsUnexpectedEntries(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	saveTemplateYAML(t, paths, "test.sweep-unexpected.v1", templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-unexpected"), masterKey)
 	dir := mustResolveActiveForTemplatesTest(t, paths).KeyTypeRecordsDir()
@@ -774,7 +774,7 @@ func TestSweepKeyTypeNamespaceFlagsUnexpectedEntries(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceValidatesDisabledTemplates(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-disabled.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-disabled"), masterKey)
@@ -796,7 +796,7 @@ func TestSweepKeyTypeNamespaceValidatesDisabledTemplates(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceValidatesDisabledTemplateContent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-disabled-yaml.v1"
 	// Validly encrypted but semantically malformed template: decryption
@@ -814,7 +814,7 @@ func TestSweepKeyTypeNamespaceValidatesDisabledTemplateContent(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceFlagsDisabledRecordMissingTemplate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-disabled-missing.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-disabled-missing"), masterKey)
@@ -832,7 +832,7 @@ func TestSweepKeyTypeNamespaceFlagsDisabledRecordMissingTemplate(t *testing.T) {
 
 func TestSweepKeyTypeNamespaceFlagsTemplatePairedWithCompiledRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-compiled.v1"
 	if err := keytypestate.Put(paths, keytypestate.Record{
@@ -856,7 +856,7 @@ func TestSweepKeyTypeNamespaceFlagsTemplatePairedWithCompiledRecord(t *testing.T
 
 func TestSweepKeyTypeNamespaceFlagsNoncanonicalFilenames(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.sweep-canonical.v1"
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("sweep-canonical"), masterKey)

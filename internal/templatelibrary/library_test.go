@@ -944,7 +944,7 @@ func TestParseFileAsRejectsMismatchedDeclaredTemplateType(t *testing.T) {
 func newLibraryTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	if err := EnsureLibraryDir(paths); err != nil {
 		t.Fatalf("EnsureLibraryDir() error = %v", err)
 	}

@@ -50,7 +50,6 @@ func newRotateFixture(t *testing.T) rotateFixture {
 	_, err = genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:      rotateFirstGeneration,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: oldPassphrase,
 		Integrity:         kr,
 		Operation:         "store-initialize",
@@ -184,10 +183,10 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	}
 	crypto.ZeroBytes(plaintext)
 	for _, retired := range []string{
-		fixture.paths.CurrentPointerPath(),
-		crypto.KeyringPath(fixture.paths.KeystoreMetadataDir()),
-		fixture.paths.RotationSnapshotPath(),
-		fixture.paths.RotationBaselinePath(),
+		filepath.Join(fixture.paths.ProductDir(), "CURRENT"),
+		filepath.Join(fixture.paths.KeystoreMetadataDir(), "keyring.enc"),
+		filepath.Join(fixture.paths.ProductDir(), "rotation.snapshot.enc"),
+		filepath.Join(fixture.paths.ProductDir(), "rotation.baseline.enc"),
 	} {
 		if _, err := os.Lstat(retired); !os.IsNotExist(err) {
 			t.Fatalf("retired artifact exists at %s: %v", retired, err)

@@ -69,6 +69,10 @@ var dispatchTable = map[string]dispatchFunc{
 		"prune generation quarantine",
 		(*Session).HandlePruneGenerationQuarantine,
 	),
+	protocol.MsgTypeListDeletedArchive: typed("list deleted archive", func(s *Session, m *protocol.ListDeletedArchiveMessage) {
+		s.HandleListDeletedArchive(m.ID)
+	}),
+	protocol.MsgTypePruneDeletedArchive: typed("prune deleted archive", (*Session).HandlePruneDeletedArchive),
 
 	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
 	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),

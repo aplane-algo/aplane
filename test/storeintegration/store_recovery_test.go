@@ -14,84 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestInterruptedRotationResumesOnUnlock(t *testing.T) {
-	for _, checkpoint := range []string{
-		"rotation.pending_root_published",
-		"rotation.root_settled",
-	} {
-		t.Run(checkpoint, func(t *testing.T) {
-			const (
-				oldPass = "interrupted-rotation-old"
-				newPass = "interrupted-rotation-new"
-			)
-			env := newFreshStoreEnv(t, oldPass)
-			env.initialize()
-			env.configureCheckpoint(checkpoint, "block")
-			env.startSigner(oldPass)
-			address := mustGenerateEd25519(t, env)
-			mustWaitForAddresses(t, env, address)
-
-			input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
-			change := env.startApadminBatch(input, "changepass")
-			env.waitForCheckpoint(15 * time.Second)
-			if err := env.crashSigner(); err != nil {
-				t.Fatalf("crash signer at %s: %v", checkpoint, err)
-			}
-			_, _ = change.wait(10 * time.Second)
-
-			env.clearCheckpoint()
-			env.passphrase = newPass
-			env.startSigner(newPass)
-			assertSignerState(t, env, "unlocked")
-			mustWaitForAddresses(t, env, address)
-			assertCanSign(t, env, address)
-			assertPassphraseRejected(t, env, oldPass)
-			kr := mustOpenKeyring(t, env, newPass)
-			if _, pending := kr.PendingRotation(); pending {
-				kr.Zero()
-				t.Fatal("restart did not settle interrupted rotation")
-			}
-			kr.Zero()
-			assertNoRotationSnapshot(t, env)
-		})
-	}
-}
-
-func TestInterruptedRotationBeforeRootCommitKeepsOldAuthority(t *testing.T) {
-	const (
-		oldPass = "precommit-rotation-old"
-		newPass = "precommit-rotation-new"
-	)
-	env := newFreshStoreEnv(t, oldPass)
-	env.initialize()
-	env.configureCheckpoint("rotation.snapshot_published", "block")
-	env.startSigner(oldPass)
-	address := mustGenerateEd25519(t, env)
-	mustWaitForAddresses(t, env, address)
-
-	input := strings.Join([]string{oldPass, newPass, newPass, "y", ""}, "\n")
-	change := env.startApadminBatch(input, "changepass")
-	env.waitForCheckpoint(15 * time.Second)
-	if err := env.crashSigner(); err != nil {
-		t.Fatalf("crash signer before rotation root commit: %v", err)
-	}
-	_, _ = change.wait(10 * time.Second)
-
-	env.clearCheckpoint()
-	env.startSigner(oldPass)
-	assertSignerState(t, env, "unlocked")
-	mustWaitForAddresses(t, env, address)
-	assertCanSign(t, env, address)
-	assertPassphraseRejected(t, env, newPass)
-	kr := mustOpenKeyring(t, env, oldPass)
-	if _, pending := kr.PendingRotation(); pending {
-		kr.Zero()
-		t.Fatal("pre-commit interruption unexpectedly published a pending root")
-	}
-	kr.Zero()
-	assertNoRotationSnapshot(t, env)
-}
-
 func TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes(t *testing.T) {
 	const (
 		passphrase = "restore-recovery-passphrase"
@@ -297,10 +219,11 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(env.dataDir)
-	active, err := genstore.ResolveActive(paths)
+	active, keyring, err := genstore.ResolveStoreRoot(paths, []byte(passphrase))
 	if err != nil {
 		t.Fatalf("resolve current generation: %v", err)
 	}
+	keyring.Zero()
 	keyPath := filepath.Join(active.KeysDir(), address+".key")
 	if err := os.WriteFile(keyPath, []byte("deliberately malformed credential"), 0o600); err != nil {
 		t.Fatalf("damage current credential: %v", err)
@@ -333,7 +256,7 @@ func TestRestoreRepairsDamagedCredentialFromRecoveryMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read repaired generation manifest: %v", err)
 	}
-	if manifest.RestoreRollbackEligible {
+	if manifest.RollbackCapability != nil {
 		t.Fatal("recovery-mode repair must not be rollback-eligible")
 	}
 }
@@ -350,10 +273,11 @@ func TestMalformedCurrentCredentialRemainsRecoveryBlocked(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(env.dataDir)
-	active, err := genstore.ResolveActive(paths)
+	active, keyring, err := genstore.ResolveStoreRoot(paths, []byte(passphrase))
 	if err != nil {
 		t.Fatalf("resolve current generation: %v", err)
 	}
+	keyring.Zero()
 	keyPath := filepath.Join(active.KeysDir(), address+".key")
 	if err := os.WriteFile(keyPath, []byte("deliberately malformed credential"), 0o600); err != nil {
 		t.Fatalf("damage current credential: %v", err)

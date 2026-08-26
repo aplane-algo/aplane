@@ -38,7 +38,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		t.Fatal(err)
 	}
 	first, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: genA, FirstGeneration: true, AtomicStoreRoot: true,
+		GenerationID: genA, FirstGeneration: true,
 		InitialPassphrase: passphrase, Integrity: kr, Operation: "test-init",
 		OperationID: "init-a", CreatedAt: time.Unix(1_785_300_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
@@ -60,7 +60,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		t.Fatal(err)
 	}
 	second, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: genB, Parent: first.GenerationID(), AtomicStoreRoot: true,
+		GenerationID: genB, Parent: first.GenerationID(),
 		Operation: genstore.OperationCredentialRestore, OperationID: "restore-b",
 		CreatedAt: time.Unix(1_785_300_001, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
@@ -79,7 +79,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		t.Fatal(err)
 	}
 	third, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: genC, Parent: second.GenerationID(), AtomicStoreRoot: true,
+		GenerationID: genC, Parent: second.GenerationID(),
 		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
 		RollbackSourceGenerationID: first.GenerationID(),
 		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,

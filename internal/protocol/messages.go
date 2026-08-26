@@ -153,6 +153,10 @@ const (
 	MsgTypeGenerationsList                 = "generations_list"
 	MsgTypePruneGenerationQuarantine       = "prune_generation_quarantine"
 	MsgTypePruneGenerationQuarantineResult = "prune_generation_quarantine_result"
+	MsgTypeListDeletedArchive              = "list_deleted_archive"
+	MsgTypeDeletedArchiveList              = "deleted_archive_list"
+	MsgTypePruneDeletedArchive             = "prune_deleted_archive"
+	MsgTypePruneDeletedArchiveResult       = "prune_deleted_archive_result"
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -1102,6 +1106,9 @@ type QuarantinedGenerationInfo struct {
 	AtMintInventoryMatch bool   `json:"at_mint_inventory_match"`
 	EntryCount           int    `json:"entry_count"`
 	EncodedBytes         int64  `json:"encoded_bytes"`
+	TermVerified         int    `json:"term_verified"`
+	TermUnavailable      int    `json:"term_unavailable"`
+	TermFailed           int    `json:"term_failed"`
 }
 
 type GenerationsListMessage struct {
@@ -1133,6 +1140,43 @@ type PruneGenerationQuarantineResultMessage struct {
 	Pruned  []PrunedQuarantinedGeneration `json:"pruned"`
 	Code    string                        `json:"code,omitempty"`
 	Error   string                        `json:"error,omitempty"`
+}
+
+type ListDeletedArchiveMessage struct{ BaseMessage }
+
+type DeletedArchiveEntry struct {
+	Path         string `json:"path"`
+	EncodedBytes int64  `json:"encoded_bytes"`
+}
+
+type DeletedArchiveListMessage struct {
+	BaseMessage
+	Entries      []DeletedArchiveEntry `json:"entries"`
+	EntryCount   int                   `json:"entry_count"`
+	EncodedBytes int64                 `json:"encoded_bytes"`
+	Warning      bool                  `json:"warning"`
+	Code         string                `json:"code,omitempty"`
+	Error        string                `json:"error,omitempty"`
+}
+
+type PruneDeletedArchiveMessage struct {
+	BaseMessage
+	Entries []string `json:"entries"`
+	Confirm bool     `json:"confirm"`
+}
+
+type PrunedDeletedArchiveEntry struct {
+	Path          string `json:"path"`
+	EncodedBytes  int64  `json:"encoded_bytes"`
+	AlreadyAbsent bool   `json:"already_absent,omitempty"`
+}
+
+type PruneDeletedArchiveResultMessage struct {
+	BaseMessage
+	Success bool                        `json:"success"`
+	Pruned  []PrunedDeletedArchiveEntry `json:"pruned"`
+	Code    string                      `json:"code,omitempty"`
+	Error   string                      `json:"error,omitempty"`
 }
 
 // ClientExistsMessage is sent by the server to a new client when another apadmin is already connected.

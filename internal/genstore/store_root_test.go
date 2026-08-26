@@ -14,13 +14,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-func TestResolveStoreRootUsesAuthenticatedSelectionNotCurrentPointer(t *testing.T) {
+func TestResolveStoreRootUsesAuthenticatedSelection(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
 	mintTestGeneration(t, paths, testGenB, map[string]string{"keys/B.key": "b"})
-	if err := WriteCurrent(paths, testGenB); err != nil {
-		t.Fatal(err)
-	}
 	passphrase := []byte("passphrase")
 	kr, err := crypto.NewKeyring()
 	if err != nil {

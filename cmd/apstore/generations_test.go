@@ -32,7 +32,6 @@ func newGenerationalTestStore(t *testing.T, passphrase string) storepaths.Paths 
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:      generationID,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: []byte(passphrase),
 		Integrity:         kr,
 		Operation:         "store-initialize",

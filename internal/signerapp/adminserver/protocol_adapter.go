@@ -448,6 +448,8 @@ func ProtocolGenerationsListMessage(id string, result adminproto.GenerationInven
 			ManifestSHA256: item.ManifestSHA256, LiveInventorySHA256: item.LiveInventorySHA256,
 			AtMintInventoryMatch: item.AtMintInventoryMatch,
 			EntryCount:           item.EntryCount, EncodedBytes: item.EncodedBytes,
+			TermVerified: item.TermVerified, TermUnavailable: item.TermUnavailable,
+			TermFailed: item.TermFailed,
 		})
 	}
 	return protocol.GenerationsListMessage{
@@ -479,6 +481,31 @@ func ProtocolPruneGenerationQuarantineResultMessage(
 		Pruned:  pruned,
 		Code:    result.Code,
 		Error:   result.Error,
+	}
+}
+
+func ProtocolDeletedArchiveListMessage(id string, result adminproto.DeletedArchiveInventory) protocol.DeletedArchiveListMessage {
+	entries := make([]protocol.DeletedArchiveEntry, 0, len(result.Entries))
+	for _, item := range result.Entries {
+		entries = append(entries, protocol.DeletedArchiveEntry{Path: item.Path, EncodedBytes: item.EncodedBytes})
+	}
+	return protocol.DeletedArchiveListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDeletedArchiveList, ID: id},
+		Entries:     entries, EntryCount: result.EntryCount, EncodedBytes: result.EncodedBytes,
+		Warning: result.Warning, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolPruneDeletedArchiveResultMessage(id string, result adminproto.PruneDeletedArchiveResult) protocol.PruneDeletedArchiveResultMessage {
+	pruned := make([]protocol.PrunedDeletedArchiveEntry, 0, len(result.Pruned))
+	for _, item := range result.Pruned {
+		pruned = append(pruned, protocol.PrunedDeletedArchiveEntry{
+			Path: item.Path, EncodedBytes: item.EncodedBytes, AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.PruneDeletedArchiveResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchiveResult, ID: id},
+		Success:     result.Success, Pruned: pruned, Code: result.Code, Error: result.Error,
 	}
 }
 

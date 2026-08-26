@@ -430,13 +430,6 @@ func (s Service) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.P
 	var storedSnapshot *policy.StoredConfig
 	var effective *policy.Config
 	err = s.Deps.WithStoreMutation(func() error {
-		active, err := genstore.ResolveActive(s.Deps.KeyPaths())
-		if err != nil {
-			return newPolicyReplaceError(
-				"policy_verify_failed",
-				fmt.Errorf("resolve active generation: %w", err),
-			)
-		}
 		expectedSHA := strings.TrimSpace(req.ExpectedCurrentSHA256)
 		if expectedSHA != "" {
 			current := s.BuildPolicySnapshot(target)
@@ -452,6 +445,13 @@ func (s Service) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.P
 		}
 
 		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			active, err := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), kr)
+			if err != nil {
+				return newPolicyReplaceError(
+					"policy_verify_failed",
+					fmt.Errorf("resolve active generation: %w", err),
+				)
+			}
 			if _, err := ops.loadVerified(active, kr); err != nil {
 				return newPolicyReplaceError(
 					"policy_verify_failed",

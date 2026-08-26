@@ -97,7 +97,6 @@ func (s Service) RollbackRestore(
 			_, mintErr := genstore.Mint(paths, genstore.MintRequest{
 				GenerationID:               generationID,
 				Parent:                     current.GenerationID(),
-				AtomicStoreRoot:            true,
 				Operation:                  genstore.OperationCredentialRestoreRollback,
 				OperationID:                req.OperationID,
 				RollbackSourceGenerationID: capability.SourceGenerationID,

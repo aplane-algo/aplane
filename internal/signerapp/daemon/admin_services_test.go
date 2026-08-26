@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -22,9 +21,9 @@ import (
 
 func activeDaemonPolicyPath(t *testing.T, server *Signer) string {
 	t.Helper()
-	active, err := genstore.ResolveActive(server.keyPaths)
+	active, err := server.productRuntime().ActivePaths()
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("ActivePaths() error = %v", err)
 	}
 	return active.PolicyPath()
 }
@@ -87,13 +86,13 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 			ir.IsRecovery(),
 		)
 	}
-	if err := crypto.VerifyPassphraseWithKeyring(
+	if err := crypto.VerifyPassphraseWithStoreRoot(
 		newPassphrase,
 		server.keyPaths.KeystoreMetadataDir(),
 	); err != nil {
 		t.Fatalf("new passphrase does not open rotated root: %v", err)
 	}
-	if err := crypto.VerifyPassphraseWithKeyring(
+	if err := crypto.VerifyPassphraseWithStoreRoot(
 		testPassphrase,
 		server.keyPaths.KeystoreMetadataDir(),
 	); err == nil {
@@ -566,7 +565,7 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		active, err := genstore.ResolveActive(ir.KeyPaths())
+		active, err := ir.ActivePaths()
 		if err != nil {
 			return err
 		}

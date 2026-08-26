@@ -50,6 +50,8 @@ const (
 	AuditGenerationQuarantined           = signeraudit.AuditGenerationQuarantined
 	AuditGenerationQuarantinePruneIntent = signeraudit.AuditGenerationQuarantinePruneIntent
 	AuditGenerationQuarantinePruned      = signeraudit.AuditGenerationQuarantinePruned
+	AuditDeletedArchivePruneIntent       = signeraudit.AuditDeletedArchivePruneIntent
+	AuditDeletedArchivePruned            = signeraudit.AuditDeletedArchivePruned
 )
 
 func NewAuditLogger(path string) (*AuditLogger, error) {

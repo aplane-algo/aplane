@@ -113,7 +113,6 @@ func (s Service) RestoreBackup(
 			_, mintErr := genstore.Mint(s.Deps.KeyPaths(), genstore.MintRequest{
 				GenerationID:       generationID,
 				Parent:             parent,
-				AtomicStoreRoot:    true,
 				Operation:          genstore.OperationCredentialRestore,
 				OperationID:        req.OperationID,
 				RollbackCapability: rollbackCapability,

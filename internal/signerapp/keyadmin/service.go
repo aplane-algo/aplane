@@ -266,7 +266,7 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	}
 	delResult, err := storemut.New(activeKeyPaths, nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
+		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
 	}
 
 	if reloadErr := reloadKeys(ir); reloadErr != nil {

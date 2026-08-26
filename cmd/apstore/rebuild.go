@@ -135,7 +135,6 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if _, err := genstore.Mint(keystorePaths(), genstore.MintRequest{
 		GenerationID:      generationID,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: storePassphrase,
 		Operation:         "store-rebuild",
 		OperationID:       "rebuild-" + generationID,

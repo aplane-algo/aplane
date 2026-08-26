@@ -656,6 +656,13 @@ func archiveInstalled(paths storepaths.Paths, keyType string, templateType templ
 		return "", err
 	}
 	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
+	gen, ok := active.(storepaths.GenPaths)
+	if !ok {
+		return "", fmt.Errorf("template archival requires generation-qualified active paths")
+	}
+	if _, err := genstore.PreflightDeletedArchiveAppend(gen, sourcePath); err != nil {
+		return "", err
+	}
 	deletedKeysDir := active.DeletedKeysDir()
 	deletedTemplatePath := active.DeletedKeyTypeTemplate(keyType)
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {

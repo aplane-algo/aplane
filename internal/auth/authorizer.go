@@ -41,6 +41,7 @@ const (
 	ActionSentriesManage            Action = "sentries.manage"
 	ActionGenerationsView           Action = "generations.view"
 	ActionGenerationQuarantinePrune Action = "identity.generation.quarantine.prune"
+	ActionArchivePrune              Action = "identity.archive.prune"
 	ActionKeyTypesView              Action = "keytypes.view"
 	ActionKeyTypesActivate          Action = "keytypes.activate"
 	ActionKeyTypesDeactivate        Action = "keytypes.deactivate"
@@ -80,6 +81,7 @@ var knownActions = map[Action]struct{}{
 	ActionSentriesManage:            {},
 	ActionGenerationsView:           {},
 	ActionGenerationQuarantinePrune: {},
+	ActionArchivePrune:              {},
 	ActionKeyTypesView:              {},
 	ActionKeyTypesActivate:          {},
 	ActionKeyTypesDeactivate:        {},

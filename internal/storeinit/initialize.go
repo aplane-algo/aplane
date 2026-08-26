@@ -66,7 +66,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 	// Prove that ownership normalization is possible before publishing the
 	// keystore control file. Root-run initialization may target a service-owned
-	// data directory; detecting chown failures after CreateKeyringStore would
+	// data directory; detecting chown failures after root initialization would
 	// leave an initialized identity behind while reporting failure.
 	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
 		return result, fmt.Errorf("failed to prepare initialized identity ownership: %w", err)
@@ -109,7 +109,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		if _, err := genstore.Mint(opts.Paths, genstore.MintRequest{
 			GenerationID:      generationID,
 			FirstGeneration:   true,
-			AtomicStoreRoot:   true,
 			InitialPassphrase: passphrase,
 			Operation:         "store-initialize",
 			OperationID:       "init-" + generationID,

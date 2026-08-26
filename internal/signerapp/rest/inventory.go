@@ -212,12 +212,19 @@ func (s Service) Keys(ir *productruntime.Runtime) (*signerapi.KeysResponse, *sig
 }
 
 func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeInfo, error) {
-	validTypes, err := keymgmt.GetAvailableKeyTypes(ir.KeyPaths())
+	activePaths, err := ir.ActiveKeyPaths()
+	if err != nil {
+		activePaths = ir.KeyPaths()
+		if _, ok := activePaths.BoundActiveGeneration(); !ok {
+			return nil, err
+		}
+	}
+	validTypes, err := keymgmt.GetAvailableKeyTypes(activePaths)
 	if err != nil {
 		return nil, err
 	}
 	validTypes = filterKeyTypesForNodeRole(validTypes, ir.NodeRole())
-	enabled, err := keytypestate.ListEnabled(ir.KeyPaths())
+	enabled, err := keytypestate.ListEnabled(activePaths)
 	if err != nil {
 		return nil, err
 	}

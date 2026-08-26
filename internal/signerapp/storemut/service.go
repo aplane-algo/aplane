@@ -74,7 +74,7 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 	if err != nil {
 		return nil, err
 	}
-	return keymgmt.DeleteKey(address, keyFile, active.DeletedKeysDir())
+	return keymgmt.DeleteKeyActive(active, address, keyFile)
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the

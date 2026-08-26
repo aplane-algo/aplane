@@ -206,7 +206,6 @@ func createAtomicStoreRootForOptionsTest(t *testing.T, paths storepaths.Paths, p
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:      generationID,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: passphrase,
 		Operation:         "test-initialize",
 		OperationID:       "test-init-" + generationID,

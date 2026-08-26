@@ -511,7 +511,7 @@ func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := policyeditor.TargetSigner.Path(root)
+	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = shared.Close() }()
-	path, err := policyeditor.TargetSigner.Path(root)
+	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

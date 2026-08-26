@@ -61,6 +61,8 @@ const (
 	AuditGenerationQuarantined           AuditEventType = "GENERATION_QUARANTINED"
 	AuditGenerationQuarantinePruneIntent AuditEventType = "GENERATION_QUARANTINE_PRUNE_INTENT"
 	AuditGenerationQuarantinePruned      AuditEventType = "GENERATION_QUARANTINE_PRUNED"
+	AuditDeletedArchivePruneIntent       AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
+	AuditDeletedArchivePruned            AuditEventType = "DELETED_ARCHIVE_PRUNED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -95,6 +97,10 @@ type AuditEntry struct {
 	LiveInventorySHA256  string         `json:"live_inventory_sha256,omitempty"`
 	AtMintInventoryMatch *bool          `json:"at_mint_inventory_match,omitempty"`
 	QuarantineEntryCount int            `json:"quarantine_entry_count,omitempty"`
+	TermVerified         int            `json:"term_verified,omitempty"`
+	TermUnavailable      int            `json:"term_unavailable,omitempty"`
+	TermFailed           int            `json:"term_failed,omitempty"`
+	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -735,6 +741,9 @@ func quarantineAuditEntry(record genstore.QuarantineRecord) AuditEntry {
 	entry.AtMintInventoryMatch = &atMintMatch
 	entry.QuarantineEntryCount = record.EntryCount
 	entry.ByteCount = record.EncodedBytes
+	entry.TermVerified = record.TermValidation.Verified
+	entry.TermUnavailable = record.TermValidation.TermUnavailable
+	entry.TermFailed = record.TermValidation.Failed
 	return entry
 }
 
@@ -763,6 +772,39 @@ func (a *AuditLogger) LogGenerationQuarantinePruneContext(
 	entry.GenerationIDs = make([]string, 0, len(result.Pruned))
 	for _, item := range result.Pruned {
 		entry.GenerationIDs = append(entry.GenerationIDs, item.GenerationID)
+		entry.ByteCount += item.EncodedBytes
+	}
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogDeletedArchivePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	entries []string,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditDeletedArchivePruneIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.ArchiveEntries = append([]string(nil), entries...)
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogDeletedArchivePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneDeletedArchiveResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditDeletedArchivePruned
+	entry.Outcome = "pruned"
+	entry.OperationID = operationID
+	for _, item := range result.Pruned {
+		entry.ArchiveEntries = append(entry.ArchiveEntries, item.Path)
 		entry.ByteCount += item.EncodedBytes
 	}
 	if !result.Success {

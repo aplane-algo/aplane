@@ -49,10 +49,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	if _, err := os.Stat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "CURRENT")); !os.IsNotExist(err) {
 		t.Fatalf("CURRENT exists on a new store: err = %v", err)
 	}
-	if _, err := os.Stat(crypto.KeyringPath(paths.KeystoreMetadataDir())); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(paths.KeystoreMetadataDir(), "keyring.enc")); !os.IsNotExist(err) {
 		t.Fatalf("keyring.enc exists on a new store: err = %v", err)
 	}
 	if _, err := os.Stat(active.KeysDir()); err != nil {

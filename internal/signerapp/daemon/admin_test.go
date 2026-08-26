@@ -74,7 +74,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		t.Fatal(err)
 	}
 	active, err := genstore.Mint(keyPaths, genstore.MintRequest{
-		GenerationID: generationID, FirstGeneration: true, AtomicStoreRoot: true,
+		GenerationID: generationID, FirstGeneration: true,
 		InitialPassphrase: testPassphrase, Integrity: masterKeyRing,
 		Operation: "test-init", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_753_800_000, 0),

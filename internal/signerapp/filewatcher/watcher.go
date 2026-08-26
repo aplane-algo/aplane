@@ -126,9 +126,9 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 }
 
 func isReloadCandidate(path string) bool {
-	// CURRENT replacement commits a new generation of the active
+	// Store-root replacement commits a new generation of the active
 	// namespaces; the reload it triggers re-resolves the layout.
-	if filepath.Base(path) == storepaths.CurrentPointerName {
+	if filepath.Base(path) == storepaths.StoreRootName {
 		return true
 	}
 	return strings.HasSuffix(path, keys.AccountKeyExtension) ||

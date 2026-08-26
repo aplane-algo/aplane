@@ -52,6 +52,12 @@ type storeRootFile struct {
 	SelectionMAC        string          `json:"selection_mac"`
 }
 
+type storeRootMarker struct {
+	Version int    `json:"version"`
+	Layout  string `json:"layout"`
+	Created string `json:"created"`
+}
+
 // storeRootKeyringPayload is keyring/v3's sealed shape. The retired pending
 // rotation descriptor is deliberately absent: unknown-field rejection makes
 // a v2 transition payload invalid rather than silently translating it.
@@ -291,9 +297,6 @@ func sealStoreRootKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
 		return nil, ErrKeyringNotOpen
 	}
-	if kr.rotation != nil {
-		return nil, fmt.Errorf("store root keyring v3 does not encode pending rotation state")
-	}
 	if len(passphrase) == 0 {
 		return nil, fmt.Errorf("sealing the store root requires a passphrase")
 	}
@@ -304,7 +307,7 @@ func sealStoreRootKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
 	payload := storeRootKeyringPayload{
 		Schema:            StoreRootKeyringSchema,
 		CurrentTerm:       kr.currentTerm,
-		Terms:             payloadFromKeyring(kr).Terms,
+		Terms:             sealedTermsFromKeyring(kr),
 		HistoricalAnchors: slices.Clone(kr.historicalAnchors),
 	}
 	if payload.HistoricalAnchors == nil {
@@ -409,12 +412,40 @@ func openStoreRootKeyring(encoded, passphrase []byte) (*Keyring, error) {
 }
 
 func validateStoreRootKeyringPayload(payload *storeRootKeyringPayload) error {
-	return validateKeyringPayloadSchema(&keyringPayload{
-		Schema:            payload.Schema,
-		CurrentTerm:       payload.CurrentTerm,
-		Terms:             payload.Terms,
-		HistoricalAnchors: payload.HistoricalAnchors,
-	}, StoreRootKeyringSchema)
+	if payload == nil || payload.Schema != StoreRootKeyringSchema {
+		return fmt.Errorf("unsupported sealed keyring schema")
+	}
+	if len(payload.Terms) == 0 {
+		return fmt.Errorf("keyring terms must be a non-empty array")
+	}
+	if payload.HistoricalAnchors == nil {
+		return fmt.Errorf("keyring historical_anchors must be an array")
+	}
+	var previous int64
+	for i := range payload.Terms {
+		term := &payload.Terms[i]
+		if term.Term < FirstTerm || (i > 0 && term.Term <= previous) {
+			return fmt.Errorf("keyring terms are not strictly increasing")
+		}
+		if len(term.Key) != argon2KeyLen {
+			return fmt.Errorf("term %d key has wrong length %d", term.Term, len(term.Key))
+		}
+		previous = term.Term
+	}
+	if payload.CurrentTerm != previous {
+		return fmt.Errorf("current term %d is not the greatest resident term %d", payload.CurrentTerm, previous)
+	}
+	previousGeneration := ""
+	for i, anchor := range payload.HistoricalAnchors {
+		if err := anchor.Validate(); err != nil {
+			return fmt.Errorf("historical anchor: %w", err)
+		}
+		if i > 0 && anchor.GenerationID <= previousGeneration {
+			return fmt.Errorf("historical anchors are not strictly increasing by generation_id")
+		}
+		previousGeneration = anchor.GenerationID
+	}
+	return nil
 }
 
 func validateStoreRootKeyringHeader(encoded []byte) error {
@@ -557,7 +588,7 @@ func StoreRootExistsIn(keystoreDir string) bool {
 }
 
 func writeStoreRootMarker(keystoreDir string) error {
-	data, err := json.MarshalIndent(keyringMarker{
+	data, err := json.MarshalIndent(storeRootMarker{
 		Version: StoreRootKeystoreMetadataVersion,
 		Layout:  KeystoreLayoutStoreRootV1,
 		Created: time.Now().UTC().Format(time.RFC3339),
@@ -595,7 +626,7 @@ func checkStoreRootMarker(keystoreDir string) error {
 	if err != nil {
 		return fmt.Errorf("read store root marker: %w", err)
 	}
-	var marker keyringMarker
+	var marker storeRootMarker
 	if err := decodeJSONStrict(data, &marker); err != nil {
 		return fmt.Errorf("parse store root marker: %w", err)
 	}

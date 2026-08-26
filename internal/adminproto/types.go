@@ -386,6 +386,9 @@ type QuarantinedGenerationInfo struct {
 	AtMintInventoryMatch bool
 	EntryCount           int
 	EncodedBytes         int64
+	TermVerified         int
+	TermUnavailable      int
+	TermFailed           int
 }
 
 type PruneGenerationQuarantineRequest struct {
@@ -401,6 +404,37 @@ type PrunedQuarantinedGeneration struct {
 type PruneGenerationQuarantineResult struct {
 	Success bool
 	Pruned  []PrunedQuarantinedGeneration
+	Code    string
+	Error   string
+}
+
+type DeletedArchiveInventory struct {
+	Entries      []DeletedArchiveEntry
+	EntryCount   int
+	EncodedBytes int64
+	Warning      bool
+	Code         string
+	Error        string
+}
+
+type DeletedArchiveEntry struct {
+	Path         string
+	EncodedBytes int64
+}
+
+type PruneDeletedArchiveRequest struct {
+	Entries []string
+}
+
+type PrunedDeletedArchiveEntry struct {
+	Path          string
+	EncodedBytes  int64
+	AlreadyAbsent bool
+}
+
+type PruneDeletedArchiveResult struct {
+	Success bool
+	Pruned  []PrunedDeletedArchiveEntry
 	Code    string
 	Error   string
 }

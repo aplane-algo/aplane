@@ -48,10 +48,7 @@ func TestCanonicalProductStorePathMatrix(t *testing.T) {
 		{"sentry references", paths.SentryRefsDir(), filepath.Join(identityDir, "sentries")},
 		{"sentry reference", paths.SentryRefPath("primary"), filepath.Join(identityDir, "sentries", "primary.json")},
 		{"node role sidecar", paths.NodeRoleIntegritySidecar(), filepath.Join(identityDir, "node.yaml.hmac")},
-		{"rotation snapshot", paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc")},
-		{"rotation baseline", paths.RotationBaselinePath(), filepath.Join(identityDir, "rotation.baseline.enc")},
 		{"store root", paths.StoreRootPath(), filepath.Join(identityDir, StoreRootName)},
-		{"current", paths.CurrentPointerPath(), filepath.Join(identityDir, CurrentPointerName)},
 		{"generations", paths.GenerationsDir(), filepath.Join(identityDir, GenerationsDirName)},
 		{"generation", paths.GenerationDir(generationID), filepath.Join(identityDir, GenerationsDirName, generationID)},
 		{"quarantine", paths.QuarantineDir(), filepath.Join(identityDir, QuarantineDirName)},
@@ -142,17 +139,6 @@ func TestNodeRolePaths(t *testing.T) {
 	wantSidecar := filepath.Join("/tmp/test-keystore", "identities", "default", "node.yaml.hmac")
 	if got := paths.NodeRoleIntegritySidecar(); got != wantSidecar {
 		t.Fatalf("NodeRoleIntegritySidecar() = %q, want %q", got, wantSidecar)
-	}
-}
-
-func TestRotationPathsAreWithinProductStore(t *testing.T) {
-	paths := NewPaths("/tmp/test-keystore")
-	identityDir := filepath.Join("/tmp/test-keystore", "identities", "default")
-	if got, want := paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc"); got != want {
-		t.Fatalf("RotationSnapshotPath() = %q, want %q", got, want)
-	}
-	if got, want := paths.RotationBaselinePath(), filepath.Join(identityDir, "rotation.baseline.enc"); got != want {
-		t.Fatalf("RotationBaselinePath() = %q, want %q", got, want)
 	}
 }
 

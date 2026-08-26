@@ -202,7 +202,7 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
 	paths := utilkeys.NewPaths(".")
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}

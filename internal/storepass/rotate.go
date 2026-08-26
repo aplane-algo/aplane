@@ -134,7 +134,6 @@ func Rotate(
 	_, mintErr := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:               generationID,
 		Parent:                     active.GenerationID(),
-		AtomicStoreRoot:            true,
 		Integrity:                  oldKeyring,
 		OutgoingSealAlreadyWritten: true,
 		ReplacementKeyring:         successorKeyring,

@@ -37,19 +37,6 @@ type ReconcileReport struct {
 	RetainedUnsealedParent string
 }
 
-// Inspect classifies the generations directory without deleting anything:
-// the same validation and classification Reconcile applies, with
-// DiscardedStaging and Quarantined reporting what reconciliation WOULD remove
-// or relocate. Read-only callers (apadmin generations list) use this;
-// everything else goes through Reconcile.
-func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
-	current, err := ReadCurrent(paths)
-	if err != nil {
-		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
-	}
-	return reconcileSelected(paths, current, referenced, false)
-}
-
 // InspectStoreRoot authenticates a fresh root read and classifies generation
 // residue without changing it.
 func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map[string]bool) (ReconcileReport, error) {
@@ -57,30 +44,7 @@ func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map
 	if err != nil {
 		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
 	}
-	return reconcileSelected(paths, current, referenced, false)
-}
-
-// Reconcile enforces CURRENT as the sole commit record. Run at
-// startup/unlock under the store and store mutation locks, before any
-// new operation:
-//
-//   - CURRENT names a valid generation → it is authoritative; every
-//     published-but-uncommitted attempt (non-current, unsealed, not in
-//     referenced) is moved to bounded non-authoritative quarantine, never
-//     resumed. Staging directories are unconditionally garbage.
-//   - CURRENT missing or invalid → error; the caller enters recovery mode
-//     and nothing is deleted.
-//
-// referenced names generation IDs that incomplete-operation or audit
-// recovery metadata still points at; those survive regardless of seal
-// state. Eligibility is reachability-based, not parentage-based: a stale
-// attempt whose parent has since been superseded is still collected.
-func Reconcile(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
-	current, err := ReadCurrent(paths)
-	if err != nil {
-		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
-	}
-	return reconcileSelected(paths, current, referenced, true)
+	return reconcileSelected(paths, current, kr, referenced, false)
 }
 
 // ReconcileStoreRoot authenticates the sole commit record before relocating or
@@ -90,7 +54,7 @@ func ReconcileStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced m
 	if err != nil {
 		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
 	}
-	return reconcileSelected(paths, current, referenced, true)
+	return reconcileSelected(paths, current, kr, referenced, true)
 }
 
 func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (string, error) {
@@ -105,7 +69,7 @@ func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring)
 	return selection.CurrentGenerationID, nil
 }
 
-func reconcileSelected(paths storepaths.Paths, current string, referenced map[string]bool, remove bool) (ReconcileReport, error) {
+func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) {
 	report := ReconcileReport{}
 	report.Current = current
 
@@ -220,7 +184,7 @@ func reconcileSelected(paths storepaths.Paths, current string, referenced map[st
 			// uncommitted attempt, but restoring an older authentic store root
 			// can give the real newer state the same shape. Classify it only for
 			// safe bounded relocation; quarantine never grants authority.
-			candidate, err := classifyQuarantineCandidate(gen)
+			candidate, err := classifyQuarantineCandidate(gen, kr)
 			if err != nil {
 				return report, fmt.Errorf(
 					"generation %s cannot be safely quarantined and was preserved in place: %w",
@@ -253,24 +217,6 @@ func reconcileSelected(paths storepaths.Paths, current string, referenced map[st
 	slices.Sort(report.SealedPriors)
 	slices.Reverse(report.SealedPriors)
 	return report, nil
-}
-
-// CollectGarbage removes sealed prior generations beyond the retention set:
-// the current generation, its manifest's ParentID (the true rollback target,
-// unless retainRollbackParent is false — the pre-rotation quiescence prune),
-// and anything in referenced. Retention is manifest-driven, never
-// ID-ordering-driven: same-second mints tie-break on a random suffix, and
-// after a rollback the "newest" prior is the rolled-away child rather than
-// an ancestor. Never call during activation, rotation, reload, or
-// migration; the caller holds the mutation locks. Reconcile runs first
-// (staging is discarded, ambiguous unsealed publications are quarantined,
-// and an invalid CURRENT aborts with nothing changed).
-func CollectGarbage(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
-	report, err := Reconcile(paths, referenced)
-	if err != nil {
-		return nil, err
-	}
-	return collectGarbageFromReport(paths, referenced, retainRollbackParent, kr, report)
 }
 
 // CollectGarbageStoreRoot prunes retained generations only after the sole

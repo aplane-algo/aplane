@@ -5,9 +5,7 @@ package templateadmin
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -68,15 +66,10 @@ func setupServiceWithReload(
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
-		t.Fatalf("MkdirAll(keysDir): %v", err)
-	}
-	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata: %v", err)
-	}
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
+	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, testPassphrase)
+	keyring.Zero()
+	keyPaths = genstoretest.BindActive(t, keyPaths, active)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}

@@ -18,7 +18,7 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	sharedClient := filepath.Join(sharedRoot, "apclient")
 
 	sharedPaths := storepaths.NewPaths(sharedSigner)
-	genstoretest.MintFirst(t, sharedPaths)
+	sharedPaths = genstoretest.MintFirst(t, sharedPaths)
 	mustMkdirAll(t, filepath.Join(sharedSigner, ".ssh"))
 	mustMkdirAll(t, filepath.Join(sharedClient, ".ssh"))
 

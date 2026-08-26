@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -23,7 +22,7 @@ const (
 	testGenD = "gen-1753500003-3badc0de"
 )
 
-// buildGenerationChain mints A (first), then B, then C, leaving CURRENT=C
+// buildGenerationChain mints A (first), then B, then C, leaving store root=C
 // with A and B sealed priors.
 func buildGenerationChain(t *testing.T, paths storepaths.Paths) {
 	t.Helper()
@@ -66,7 +65,7 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 		t.Fatalf("MkdirAll(staging): %v", err)
 	}
 
-	report, err := Reconcile(paths, nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -103,7 +102,6 @@ func TestReconcileStoreRootAuthenticatesSelectionAndQuarantinesAttempt(t *testin
 	if _, err := Mint(paths, MintRequest{
 		GenerationID:      testGenA,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: passphrase,
 		Integrity:         kr,
 		Operation:         "test-initialize",
@@ -118,7 +116,7 @@ func TestReconcileStoreRootAuthenticatesSelectionAndQuarantinesAttempt(t *testin
 	}); err != nil {
 		t.Fatalf("Mint(first atomic generation) error = %v", err)
 	}
-	if _, err := os.Lstat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(paths.ProductDir(), "CURRENT")); !os.IsNotExist(err) {
 		t.Fatalf("CURRENT exists in atomic store: %v", err)
 	}
 	attempt := mintTestGeneration(t, paths, testGenD, nil)
@@ -149,7 +147,6 @@ func TestReconcileStoreRootPreservesResidueWhenRootIsInvalid(t *testing.T) {
 	if _, err := Mint(paths, MintRequest{
 		GenerationID:      testGenA,
 		FirstGeneration:   true,
-		AtomicStoreRoot:   true,
 		InitialPassphrase: passphrase,
 		Integrity:         kr,
 		Operation:         "test-initialize",
@@ -185,7 +182,7 @@ func TestReconcileKeepsReferencedUnsealedAttempt(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	report, err := Reconcile(paths, map[string]bool{testGenD: true})
+	report, err := ReconcileStoreRoot(paths, testKeyring(t), map[string]bool{testGenD: true})
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -208,7 +205,7 @@ func TestReconcilePreservesUnsafeAttemptInPlaceAndBlocks(t *testing.T) {
 	}
 	// No manifest: this directory cannot be safely classified or audited as
 	// a complete publication, so it must neither be deleted nor relocated.
-	if _, err := Reconcile(paths, nil); err == nil || !strings.Contains(err.Error(), "preserved in place") {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "preserved in place") {
 		t.Fatalf("Reconcile(unsafe attempt) error = %v, want fail-closed preservation", err)
 	}
 	if _, err := os.Stat(attempt.Dir()); err != nil {
@@ -235,34 +232,14 @@ func TestReconcilePreservesCandidateWhenQuarantineIsFull(t *testing.T) {
 		"keys/ACCOUNT.key": "candidate",
 	})
 
-	if _, err := Reconcile(paths, nil); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("Reconcile(full quarantine) error = %v, want capacity refusal", err)
 	}
 	if _, err := os.Stat(attempt.Dir()); err != nil {
 		t.Fatalf("candidate was destroyed when quarantine was full: %v", err)
 	}
-	if _, err := Inspect(paths, nil); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, err := InspectStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("Inspect(full quarantine) error = %v, want matching capacity refusal", err)
-	}
-}
-
-func TestReconcileFailsClosedOnInvalidCurrent(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths)
-	if err := os.WriteFile(paths.CurrentPointerPath(), []byte("garbage\n"), 0o660); err != nil {
-		t.Fatalf("corrupt CURRENT: %v", err)
-	}
-	// Plant an attempt that must NOT be deleted while CURRENT is invalid.
-	attempt := paths.GenerationPaths(testGenD)
-	if err := os.MkdirAll(filepath.Join(attempt.Dir(), "keys"), 0o770); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-
-	if _, err := Reconcile(paths, nil); err == nil {
-		t.Fatal("Reconcile accepted an invalid CURRENT")
-	}
-	if _, err := os.Lstat(attempt.Dir()); err != nil {
-		t.Fatalf("reconcile deleted state under an invalid CURRENT: %v", err)
 	}
 }
 
@@ -272,7 +249,7 @@ func TestReconcileFailsClosedOnUnexpectedEntry(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(paths.GenerationsDir(), "not-a-generation"), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if _, err := Reconcile(paths, nil); err == nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil {
 		t.Fatal("Reconcile accepted an unexpected generations entry")
 	}
 }
@@ -281,9 +258,9 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbage(paths, nil, true, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, nil, true, testKeyring(t))
 	if err != nil {
-		t.Fatalf("CollectGarbage() error = %v", err)
+		t.Fatalf("CollectGarbageStoreRoot() error = %v", err)
 	}
 	if !slices.Equal(removed, []string{testGenA}) {
 		t.Fatalf("removed = %v, want oldest prior [%s]", removed, testGenA)
@@ -293,116 +270,17 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 			t.Fatalf("retained generation %s missing: %v", id, err)
 		}
 	}
-	// Rollback to the retained prior still works.
-	if err := RollbackTo(paths, testGenB, time.Unix(1_753_500_400, 0), testKeyring(t)); err != nil {
-		t.Fatalf("RollbackTo(retained prior) error = %v", err)
-	}
 }
 
 func TestCollectGarbageHonorsReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)
-	removed, err := CollectGarbage(paths, map[string]bool{testGenA: true}, true, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, map[string]bool{testGenA: true}, true, testKeyring(t))
 	if err != nil {
-		t.Fatalf("CollectGarbage() error = %v", err)
+		t.Fatalf("CollectGarbageStoreRoot() error = %v", err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("removed referenced generation: %v", removed)
-	}
-}
-
-func TestCollectGarbageValidatesRotatedRollbackParentWithHistoricalAnchor(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	identityDir := paths.ProductDir()
-	passphrase := []byte("collect-anchored-parent")
-	kr, err := crypto.CreateKeyringStore(identityDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
-	t.Cleanup(kr.Zero)
-
-	mint := func(id, parent string, first bool, created int64) {
-		t.Helper()
-		_, mintErr := Mint(paths, MintRequest{
-			GenerationID:    id,
-			Parent:          parent,
-			FirstGeneration: first,
-			Integrity:       kr,
-			Operation:       "test-activation",
-			OperationID:     "op-" + id,
-			CreatedAt:       time.Unix(created, 0),
-			Apply: func(staged storepaths.GenPaths) error {
-				if first {
-					if err := writeTestGenerationAuthority(staged); err != nil {
-						return err
-					}
-				}
-				return os.WriteFile(
-					filepath.Join(staged.KeysDir(), "ACCOUNT.key"),
-					[]byte(id),
-					0o660,
-				)
-			},
-		})
-		if mintErr != nil {
-			t.Fatalf("Mint(%s) error = %v", id, mintErr)
-		}
-	}
-	mint(testGenA, "", true, 1_753_500_000)
-	mint(testGenB, testGenA, false, 1_753_500_001)
-	mint(testGenC, testGenB, false, 1_753_500_002)
-
-	var anchors []crypto.HistoricalGenerationAnchor
-	for _, id := range []string{testGenA, testGenB} {
-		anchor, anchorErr := BuildHistoricalAnchor(
-			paths.GenerationPaths(id),
-			kr,
-		)
-		if anchorErr != nil {
-			t.Fatalf("BuildHistoricalAnchor(%s) error = %v", id, anchorErr)
-		}
-		anchors = append(anchors, anchor)
-	}
-	if err := crypto.StartRotation(
-		identityDir,
-		kr,
-		passphrase,
-		anchors,
-		func(
-			target *crypto.Keyring,
-			_, _ int64,
-		) (crypto.RotationSnapshotReference, error) {
-			sealed, sealErr := target.Seal(
-				[]byte("snapshot"),
-				crypto.RotationSnapshotContext(),
-			)
-			if sealErr != nil {
-				return crypto.RotationSnapshotReference{}, sealErr
-			}
-			return crypto.NewRotationSnapshotReference(sealed)
-		},
-	); err != nil {
-		t.Fatalf("StartRotation() error = %v", err)
-	}
-	if err := crypto.CloseRotation(identityDir, kr, passphrase); err != nil {
-		t.Fatalf("CloseRotation() error = %v", err)
-	}
-	if err := ValidateSealed(
-		paths.GenerationPaths(testGenB),
-		kr,
-	); err == nil {
-		t.Fatal("ValidateSealed() accepted a parent authenticated by the retired term")
-	}
-
-	removed, err := CollectGarbage(paths, nil, true, kr)
-	if err != nil {
-		t.Fatalf("CollectGarbage() error = %v", err)
-	}
-	if !slices.Equal(removed, []string{testGenA}) {
-		t.Fatalf("removed = %v, want oldest prior [%s]", removed, testGenA)
-	}
-	if _, err := os.Stat(paths.GenerationPaths(testGenB).Dir()); err != nil {
-		t.Fatalf("anchored rollback parent was not retained: %v", err)
 	}
 }
 
@@ -410,9 +288,9 @@ func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbage(paths, nil, false, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
 	if err != nil {
-		t.Fatalf("CollectGarbage(all priors) error = %v", err)
+		t.Fatalf("CollectGarbageStoreRoot(all priors) error = %v", err)
 	}
 	if !slices.Equal(removed, []string{testGenB, testGenA}) {
 		t.Fatalf("removed = %v, want both priors newest-first", removed)
@@ -427,64 +305,11 @@ func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 // trap: after a rollback the lexicographically newest prior is the
 // rolled-away child, while the true rollback target is the current
 // generation's manifest parent.
-func TestCollectGarbageRetainsManifestParentAfterRollback(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if err := RollbackTo(paths, testGenB, time.Unix(1_753_500_500, 0), testKeyring(t)); err != nil {
-		t.Fatalf("RollbackTo(B) error = %v", err)
-	}
-	// CURRENT=B; sealed priors are A (B's parent) and C (the rolled-away
-	// child, lexicographically newest).
-
-	removed, err := CollectGarbage(paths, nil, true, testKeyring(t))
-	if err != nil {
-		t.Fatalf("CollectGarbage() error = %v", err)
-	}
-	if !slices.Equal(removed, []string{testGenC}) {
-		t.Fatalf("removed = %v, want the rolled-away child [%s]", removed, testGenC)
-	}
-	// The manifest parent survives and remains a valid rollback target.
-	if err := ValidateSealed(paths.GenerationPaths(testGenA), testKeyring(t)); err != nil {
-		t.Fatalf("manifest parent A invalid after prune: %v", err)
-	}
-	if err := RollbackTo(paths, testGenA, time.Unix(1_753_500_600, 0), testKeyring(t)); err != nil {
-		t.Fatalf("RollbackTo(parent) error = %v", err)
-	}
-}
-
-func TestCollectGarbageRefusesToPruneWhenRollbackParentInvalid(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if err := RollbackTo(paths, testGenB, time.Unix(1_753_500_500, 0), testKeyring(t)); err != nil {
-		t.Fatalf("RollbackTo(B) error = %v", err)
-	}
-	// CURRENT=B, rollback parent A. Corrupt A's seal: A can no longer serve
-	// as the rollback target, so the prune must delete nothing rather than
-	// destroy C, the only other recovery material.
-	sealPath := paths.GenerationPaths(testGenA).SealPath()
-	if err := os.WriteFile(sealPath, []byte("{corrupt"), 0600); err != nil {
-		t.Fatalf("corrupt seal: %v", err)
-	}
-
-	removed, err := CollectGarbage(paths, nil, true, testKeyring(t))
-	if err == nil {
-		t.Fatalf("CollectGarbage() = %v, want error for invalid rollback parent", removed)
-	}
-	if len(removed) != 0 {
-		t.Fatalf("removed = %v, want nothing deleted on aborted prune", removed)
-	}
-	for _, gen := range []string{testGenA, testGenC} {
-		if _, statErr := os.Stat(paths.GenerationPaths(gen).Dir()); statErr != nil {
-			t.Fatalf("generation %s missing after aborted prune: %v", gen, statErr)
-		}
-	}
-}
-
 func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 	for _, retainParent := range []bool{true, false} {
 		t.Run(fmt.Sprintf("retainRollbackParent=%v", retainParent), func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+			buildGenerationChain(t, paths) // A -> B -> C, store root=C
 			// The pointer resolves and the directory exists, but the current
 			// generation is structurally broken: no manifest. Deleting any
 			// prior now would abandon the only recovery material.
@@ -493,9 +318,9 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 				t.Fatalf("remove manifest: %v", err)
 			}
 
-			removed, err := CollectGarbage(paths, nil, retainParent, testKeyring(t))
+			removed, err := CollectGarbageStoreRoot(paths, nil, retainParent, testKeyring(t))
 			if err == nil {
-				t.Fatalf("CollectGarbage() = %v, want error for invalid current generation", removed)
+				t.Fatalf("CollectGarbageStoreRoot() = %v, want error for invalid current generation", removed)
 			}
 			if len(removed) != 0 {
 				t.Fatalf("removed = %v, want nothing deleted on aborted prune", removed)
@@ -511,21 +336,21 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 
 func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
-	if _, err := CollectGarbage(paths, nil, false, testKeyring(t)); err != nil {
-		t.Fatalf("CollectGarbage(all priors) error = %v", err)
+	buildGenerationChain(t, paths) // A -> B -> C, store root=C
+	if _, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t)); err != nil {
+		t.Fatalf("CollectGarbageStoreRoot(all priors) error = %v", err)
 	}
 	// Current's immutable manifest still names the deleted parent B; an
 	// ordinary prune must be a successful no-op, not a missing-parent error.
-	removed, err := CollectGarbage(paths, nil, true, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, nil, true, testKeyring(t))
 	if err != nil {
-		t.Fatalf("CollectGarbage(after all-priors) error = %v, want no-op", err)
+		t.Fatalf("CollectGarbageStoreRoot(after all-priors) error = %v, want no-op", err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("removed = %v, want nothing", removed)
 	}
-	if _, err := CollectGarbage(paths, nil, false, testKeyring(t)); err != nil {
-		t.Fatalf("CollectGarbage(all priors, repeated) error = %v, want no-op", err)
+	if _, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t)); err != nil {
+		t.Fatalf("CollectGarbageStoreRoot(all priors, repeated) error = %v, want no-op", err)
 	}
 }
 
@@ -554,9 +379,9 @@ func TestValidateCurrentRequiresCompleteAuthorityShape(t *testing.T) {
 				t.Fatalf("ValidateCurrent accepted a generation missing %s", name)
 			}
 			// The prune path inherits the rejection: nothing is deleted.
-			removed, err := CollectGarbage(paths, nil, false, testKeyring(t))
+			removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
 			if err == nil {
-				t.Fatalf("CollectGarbage() = %v, want error for missing namespace", removed)
+				t.Fatalf("CollectGarbageStoreRoot() = %v, want error for missing namespace", removed)
 			}
 			for _, id := range []string{testGenA, testGenB} {
 				if _, statErr := os.Stat(paths.GenerationPaths(id).Dir()); statErr != nil {
@@ -569,7 +394,7 @@ func TestValidateCurrentRequiresCompleteAuthorityShape(t *testing.T) {
 
 func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	buildGenerationChain(t, paths) // A -> B -> C, store root=C
 	// C's manifest names B as parent. B was committed once; deleting its
 	// seal simulates damage — reconciliation must retain it as lineage,
 	// never classify it as an uncommitted attempt.
@@ -577,7 +402,7 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 		t.Fatalf("remove parent seal: %v", err)
 	}
 
-	report, err := Reconcile(paths, nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -593,9 +418,9 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 
 	// Both prune modes refuse while the damaged parent exists.
 	for _, retainParent := range []bool{true, false} {
-		removed, err := CollectGarbage(paths, nil, retainParent, testKeyring(t))
+		removed, err := CollectGarbageStoreRoot(paths, nil, retainParent, testKeyring(t))
 		if err == nil || len(removed) != 0 {
-			t.Fatalf("CollectGarbage(retain=%v) = (%v, %v), want fail-closed refusal", retainParent, removed, err)
+			t.Fatalf("CollectGarbageStoreRoot(retain=%v) = (%v, %v), want fail-closed refusal", retainParent, removed, err)
 		}
 	}
 	if _, err := os.Stat(paths.GenerationPaths(testGenA).Dir()); err != nil {
@@ -623,7 +448,7 @@ func TestReconcileDeletesNothingWhenCurrentManifestIncomplete(t *testing.T) {
 		t.Fatalf("corrupt manifest: %v", err)
 	}
 
-	if _, err := Reconcile(paths, nil); err == nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil {
 		t.Fatal("Reconcile accepted an invalid current manifest")
 	}
 	for _, path := range []string{staging, attempt.Dir()} {
@@ -635,7 +460,7 @@ func TestReconcileDeletesNothingWhenCurrentManifestIncomplete(t *testing.T) {
 
 func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+	buildGenerationChain(t, paths) // A -> B -> C, store root=C
 
 	t.Run("mint rejects self-parent", func(t *testing.T) {
 		_, err := Mint(paths, MintRequest{
@@ -684,22 +509,12 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 			t.Fatalf("restore manifest: %v", err)
 		}
 	})
-
-	t.Run("rollback to current is an error not a silent success", func(t *testing.T) {
-		if err := RollbackTo(paths, testGenC, time.Unix(1_753_500_702, 0), testKeyring(t)); err == nil {
-			t.Fatal("RollbackTo(current) reported success without moving CURRENT")
-		}
-		current, err := ReadCurrent(paths)
-		if err != nil || current != testGenC {
-			t.Fatalf("CURRENT = %s (%v), want unchanged %s", current, err, testGenC)
-		}
-	})
 }
 
 func TestMintRequiresParentToBeCurrent(t *testing.T) {
 	t.Run("stale parent is rejected", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
-		buildGenerationChain(t, paths) // A -> B -> C, CURRENT=C
+		buildGenerationChain(t, paths) // A -> B -> C, store root=C
 		// Minting with sealed prior A as parent would seal A (again) and
 		// flip to D, leaving the real outgoing generation C unsealed for
 		// reconciliation to delete as an uncommitted attempt.
@@ -733,13 +548,13 @@ func TestMintRequiresParentToBeCurrent(t *testing.T) {
 	})
 }
 
-// assertChainUntouched verifies a rejected mint changed nothing: CURRENT
-// still names C, C survives, and no D directory or staging residue exists.
+// assertChainUntouched verifies a rejected mint changed nothing: the root
+// still selects C, C survives, and no D directory or staging residue exists.
 func assertChainUntouched(t *testing.T, paths storepaths.Paths) {
 	t.Helper()
-	current, err := ReadCurrent(paths)
-	if err != nil || current != testGenC {
-		t.Fatalf("CURRENT = %s (%v), want unchanged %s", current, err, testGenC)
+	current := selectedForTest(t, paths).GenerationID()
+	if current != testGenC {
+		t.Fatalf("store root = %s, want unchanged %s", current, testGenC)
 	}
 	if err := ValidateCurrent(paths.GenerationPaths(testGenC)); err != nil {
 		t.Fatalf("current generation damaged by rejected mint: %v", err)
@@ -789,8 +604,8 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 	t.Run("unauthorized parentless mint is refused", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-		if err := os.Remove(paths.CurrentPointerPath()); err != nil {
-			t.Fatalf("remove CURRENT: %v", err)
+		if err := os.Remove(paths.StoreRootPath()); err != nil {
+			t.Fatalf("remove store root: %v", err)
 		}
 		if err := mintD(paths, false); err == nil {
 			t.Fatal("Mint accepted a parentless mint without first-generation authorization")
@@ -799,33 +614,15 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 	})
 
 	t.Run("authorized first mint refused when generations exist without metadata", func(t *testing.T) {
-		// The reviewer's scenario: mint A, remove CURRENT, parentlessly
+		// The reviewer's scenario: mint A, remove store root, parentlessly
 		// mint D. D must not become current; A must survive.
 		paths := storepaths.NewPaths(t.TempDir())
 		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-		if err := os.Remove(paths.CurrentPointerPath()); err != nil {
-			t.Fatalf("remove CURRENT: %v", err)
+		if err := os.Remove(paths.StoreRootPath()); err != nil {
+			t.Fatalf("remove store root: %v", err)
 		}
 		if err := mintD(paths, true); err == nil {
-			t.Fatal("Mint created a new lineage over an established store missing its CURRENT pointer")
-		}
-		generationsUntouched(t, paths, []string{testGenA})
-	})
-
-	t.Run("authorized first mint refused when metadata carries the layout marker", func(t *testing.T) {
-		paths := storepaths.NewPaths(t.TempDir())
-		if err := fsutil.MkdirAll(paths.KeystoreMetadataDir()); err != nil {
-			t.Fatalf("MkdirAll(metadata): %v", err)
-		}
-		if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), []byte("pw")); err != nil {
-			t.Fatalf("CreateKeyringStore() error = %v", err)
-		}
-		mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-		if err := os.Remove(paths.CurrentPointerPath()); err != nil {
-			t.Fatalf("remove CURRENT: %v", err)
-		}
-		if err := mintD(paths, true); err == nil {
-			t.Fatal("Mint created a new lineage over a marked generational store missing its CURRENT pointer")
+			t.Fatal("Mint created a new lineage over an established store missing its store root")
 		}
 		generationsUntouched(t, paths, []string{testGenA})
 	})
@@ -833,8 +630,8 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 	t.Run("authorized first mint refused when sealed history exists", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		buildGenerationChain(t, paths) // A, B sealed; C current
-		if err := os.Remove(paths.CurrentPointerPath()); err != nil {
-			t.Fatalf("remove CURRENT: %v", err)
+		if err := os.Remove(paths.StoreRootPath()); err != nil {
+			t.Fatalf("remove store root: %v", err)
 		}
 		if err := mintD(paths, true); err == nil {
 			t.Fatal("Mint created a new lineage over sealed generational history")
@@ -852,7 +649,7 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 		t.Fatalf("MkdirAll(staging): %v", err)
 	}
 
-	report, err := Inspect(paths, nil)
+	report, err := InspectStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -867,7 +664,7 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 	}
 	// Reconcile deletes staging and moves the complete publication into the
 	// non-authoritative quarantine namespace.
-	if _, err := Reconcile(paths, nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	for _, path := range []string{attempt.Dir(), staging} {
@@ -893,7 +690,7 @@ func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if _, err := Reconcile(paths, nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	if !identityDirSynced {
@@ -902,7 +699,7 @@ func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
 
 	// The read-only classification must not perform the sync.
 	identityDirSynced = false
-	if _, err := Inspect(paths, nil); err != nil {
+	if _, err := InspectStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
 	if identityDirSynced {
@@ -966,7 +763,7 @@ func TestSealTempResidueIsToleratedAndCollected(t *testing.T) {
 	if err := ValidateCurrent(gen); err != nil {
 		t.Fatalf("ValidateCurrent() error = %v, want tolerance for durable-write residue", err)
 	}
-	report, err := Inspect(paths, nil)
+	report, err := InspectStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -977,7 +774,7 @@ func TestSealTempResidueIsToleratedAndCollected(t *testing.T) {
 		t.Fatalf("Inspect deleted the residue: %v", err)
 	}
 
-	if _, err := Reconcile(paths, nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	if _, err := os.Stat(residue); !os.IsNotExist(err) {
@@ -1026,9 +823,9 @@ func TestCrashedPruneRetriesAsNoOp(t *testing.T) {
 
 	// The retry neither wedges on the residue nor misclassifies it: the
 	// tombstone is staging garbage, and the remaining prior still prunes.
-	removed, err := CollectGarbage(paths, nil, false, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
 	if err != nil {
-		t.Fatalf("CollectGarbage(retry) error = %v, want crash-idempotent retry", err)
+		t.Fatalf("CollectGarbageStoreRoot(retry) error = %v, want crash-idempotent retry", err)
 	}
 	if !slices.Equal(removed, []string{testGenB}) {
 		t.Fatalf("removed = %v, want [%s]", removed, testGenB)
@@ -1089,7 +886,7 @@ func TestReconcileCollectsNamespaceDurableWriteResidue(t *testing.T) {
 		t.Fatalf("write residue: %v", err)
 	}
 
-	report, err := Reconcile(paths, nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -1120,7 +917,7 @@ func TestReconcileKeepsRecordsWhoseNamesMerelyContainTmpDash(t *testing.T) {
 		}
 	}
 
-	report, err := Reconcile(paths, nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
