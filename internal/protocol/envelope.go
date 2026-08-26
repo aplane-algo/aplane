@@ -58,6 +58,7 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeRemoveSentryReference,
 		MsgTypeExportSentryPublic,
 		MsgTypeListGenerations,
+		MsgTypePruneGenerationQuarantine,
 		MsgTypeDisplaceConfirm:
 		return MessageKindRequest, true
 	case MsgTypeAuthResult,
@@ -105,7 +106,8 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeImportSentryReferenceResult,
 		MsgTypeRemoveSentryReferenceResult,
 		MsgTypeExportSentryPublicResult,
-		MsgTypeGenerationsList:
+		MsgTypeGenerationsList,
+		MsgTypePruneGenerationQuarantineResult:
 		return MessageKindResponse, true
 	case MsgTypeAuthRequired,
 		MsgTypeStatus,

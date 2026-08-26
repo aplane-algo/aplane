@@ -64,6 +64,28 @@ func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionCon
 	}
 }
 
+func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing quarantine prune without a durable intent record")
+	}
+	return audit.LogGenerationQuarantinePruneIntentDurableContext(ctx, operationID, generationIDs)
+}
+
+func (s signerAdminServices) LogGenerationQuarantinePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneGenerationQuarantineResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogGenerationQuarantinePruneContext(ctx, operationID, result)
+	}
+}
+
 func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupCreatedContext(ctx, archivePath)

@@ -475,6 +475,20 @@ destructive pruning:
 ./apstore generations prune --all-priors  # keep only current
 ```
 
+Complete generation publications that were never committed are preserved in a
+bounded, non-authoritative quarantine. Inspect them through the running signer
+and irreversibly remove only explicitly selected entries:
+
+```bash
+apadmin generations list
+apadmin generations prune --confirm <generation-id> [generation-id...]
+```
+
+Quarantine is not a backup or rollback source. The live prune requires an
+unlocked or recovery-admin session, the stable
+`identity.generation.quarantine.prune` authorization action, explicit
+confirmation, and a durable audit intent before any deletion.
+
 Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
 **Pruning permanently deletes the generation rollback history**: after

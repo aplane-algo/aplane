@@ -18,6 +18,9 @@ type inspectionStub struct {
 	listCalls   int
 	importCalls int
 	removeCalls int
+	pruneCalls  int
+	lastPrune   adminproto.PruneGenerationQuarantineRequest
+	pruneResult adminproto.PruneGenerationQuarantineResult
 	listResult  adminproto.ListSentryReferencesResult
 }
 
@@ -42,6 +45,42 @@ func (*inspectionStub) ExportSentryPublic(adminproto.ExportSentryPublicRequest) 
 }
 func (*inspectionStub) ListGenerations() adminproto.GenerationInventory {
 	return adminproto.GenerationInventory{}
+}
+func (s *inspectionStub) PruneGenerationQuarantine(
+	req adminproto.PruneGenerationQuarantineRequest,
+) adminproto.PruneGenerationQuarantineResult {
+	s.pruneCalls++
+	s.lastPrune = req
+	return s.pruneResult
+}
+
+type quarantinePruneAudit struct {
+	recordingAuthorizationAudit
+	intentCalls   int
+	outcomeCalls  int
+	intentErr     error
+	operationID   string
+	generationIDs []string
+}
+
+func (a *quarantinePruneAudit) LogGenerationQuarantinePruneIntentDurableContext(
+	_ SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	a.intentCalls++
+	a.operationID = operationID
+	a.generationIDs = append([]string(nil), generationIDs...)
+	return a.intentErr
+}
+
+func (a *quarantinePruneAudit) LogGenerationQuarantinePruneContext(
+	_ SessionContext,
+	operationID string,
+	_ adminproto.PruneGenerationQuarantineResult,
+) {
+	a.outcomeCalls++
+	a.operationID = operationID
 }
 
 func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
@@ -122,6 +161,107 @@ func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
 	msgs := decodeAdminProtoWrites(t, conn)
 	if len(msgs) != 1 || msgs[0].Code != protocol.ErrCodeAuthorizationDenied {
 		t.Fatalf("responses = %#v", msgs)
+	}
+}
+
+func TestHandlePruneGenerationQuarantineRequiresAuditBeforeMutation(t *testing.T) {
+	const generationID = "gen-1700000000-0123abcd"
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir.SetUnlocked()
+	inspection := &inspectionStub{pruneResult: adminproto.PruneGenerationQuarantineResult{
+		Success: true,
+		Pruned:  []adminproto.PrunedQuarantinedGeneration{{GenerationID: generationID, EncodedBytes: 12}},
+	}}
+	authorizer := &recordingAuthorizer{}
+	audit := &quarantinePruneAudit{}
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{
+		Inspection: inspection,
+		Authorizer: authorizer,
+		Audit:      audit,
+	})
+	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+
+	session.HandlePruneGenerationQuarantine(&protocol.PruneGenerationQuarantineMessage{
+		BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypePruneGenerationQuarantine, ID: "prune-1"},
+		GenerationIDs: []string{generationID},
+		Confirm:       true,
+	})
+
+	if authorizer.got.action != auth.ActionGenerationQuarantinePrune ||
+		authorizer.got.resource.Type != "generation_quarantine" {
+		t.Fatalf("authorization = %q %+v", authorizer.got.action, authorizer.got.resource)
+	}
+	if audit.intentCalls != 1 || audit.outcomeCalls != 1 || audit.operationID != "prune-1" {
+		t.Fatalf("audit calls = intent:%d outcome:%d operation:%q", audit.intentCalls, audit.outcomeCalls, audit.operationID)
+	}
+	if inspection.pruneCalls != 1 || len(inspection.lastPrune.GenerationIDs) != 1 ||
+		inspection.lastPrune.GenerationIDs[0] != generationID {
+		t.Fatalf("prune service calls=%d request=%#v", inspection.pruneCalls, inspection.lastPrune)
+	}
+	var response protocol.PruneGenerationQuarantineResultMessage
+	if err := decodeSingleWrite(conn, &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Success || len(response.Pruned) != 1 || response.Pruned[0].GenerationID != generationID {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t *testing.T) {
+	const generationID = "gen-1700000000-0123abcd"
+	for _, test := range []struct {
+		name     string
+		confirm  bool
+		audit    AuthorizationAudit
+		wantCode string
+	}{
+		{
+			name:     "confirmation required",
+			confirm:  false,
+			audit:    &quarantinePruneAudit{},
+			wantCode: protocol.ResultCodeConfirmationRequired,
+		},
+		{
+			name:     "durable audit required",
+			confirm:  true,
+			audit:    &recordingAuthorizationAudit{},
+			wantCode: protocol.ResultCodeQuarantineAuditFailed,
+		},
+		{
+			name:     "durable audit failure",
+			confirm:  true,
+			audit:    &quarantinePruneAudit{intentErr: fmt.Errorf("disk full")},
+			wantCode: protocol.ResultCodeQuarantineAuditFailed,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+			ir.SetUnlocked()
+			inspection := &inspectionStub{}
+			conn := &queueConn{}
+			session := NewSession(conn, SessionDeps{
+				Inspection: inspection,
+				Authorizer: &recordingAuthorizer{},
+				Audit:      test.audit,
+			})
+			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+			session.HandlePruneGenerationQuarantine(&protocol.PruneGenerationQuarantineMessage{
+				BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypePruneGenerationQuarantine, ID: "prune-fail"},
+				GenerationIDs: []string{generationID},
+				Confirm:       test.confirm,
+			})
+			if inspection.pruneCalls != 0 {
+				t.Fatalf("prune service called %d times", inspection.pruneCalls)
+			}
+			var response protocol.PruneGenerationQuarantineResultMessage
+			if err := decodeSingleWrite(conn, &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != test.wantCode {
+				t.Fatalf("response code = %q, want %q", response.Code, test.wantCode)
+			}
+		})
 	}
 }
 

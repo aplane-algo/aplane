@@ -72,6 +72,7 @@ type StoreInspectionServices interface {
 	RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
 	ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
 	ListGenerations() adminproto.GenerationInventory
+	PruneGenerationQuarantine(req adminproto.PruneGenerationQuarantineRequest) adminproto.PruneGenerationQuarantineResult
 }
 
 type AuthorizationAudit interface {

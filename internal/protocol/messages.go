@@ -16,7 +16,7 @@ const (
 )
 
 const (
-	AdminProtocolVersionMajor = 5
+	AdminProtocolVersionMajor = 6
 	AdminProtocolVersionMinor = 0
 )
 
@@ -139,18 +139,20 @@ const (
 	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
 
 	// Signer-owned sentry reference and generation inventory messages.
-	MsgTypeListSentryReferences        = "list_sentry_references"
-	MsgTypeSentryReferencesList        = "sentry_references_list"
-	MsgTypeGetSentryReference          = "get_sentry_reference"
-	MsgTypeSentryReference             = "sentry_reference"
-	MsgTypeImportSentryReference       = "import_sentry_reference"
-	MsgTypeImportSentryReferenceResult = "import_sentry_reference_result"
-	MsgTypeRemoveSentryReference       = "remove_sentry_reference"
-	MsgTypeRemoveSentryReferenceResult = "remove_sentry_reference_result"
-	MsgTypeExportSentryPublic          = "export_sentry_public"
-	MsgTypeExportSentryPublicResult    = "export_sentry_public_result"
-	MsgTypeListGenerations             = "list_generations"
-	MsgTypeGenerationsList             = "generations_list"
+	MsgTypeListSentryReferences            = "list_sentry_references"
+	MsgTypeSentryReferencesList            = "sentry_references_list"
+	MsgTypeGetSentryReference              = "get_sentry_reference"
+	MsgTypeSentryReference                 = "sentry_reference"
+	MsgTypeImportSentryReference           = "import_sentry_reference"
+	MsgTypeImportSentryReferenceResult     = "import_sentry_reference_result"
+	MsgTypeRemoveSentryReference           = "remove_sentry_reference"
+	MsgTypeRemoveSentryReferenceResult     = "remove_sentry_reference_result"
+	MsgTypeExportSentryPublic              = "export_sentry_public"
+	MsgTypeExportSentryPublicResult        = "export_sentry_public_result"
+	MsgTypeListGenerations                 = "list_generations"
+	MsgTypeGenerationsList                 = "generations_list"
+	MsgTypePruneGenerationQuarantine       = "prune_generation_quarantine"
+	MsgTypePruneGenerationQuarantineResult = "prune_generation_quarantine_result"
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -1093,15 +1095,45 @@ type ExportSentryPublicResultMessage struct {
 
 type ListGenerationsMessage struct{ BaseMessage }
 
+type QuarantinedGenerationInfo struct {
+	GenerationID         string `json:"generation_id"`
+	ParentID             string `json:"parent_id,omitempty"`
+	ManifestSHA256       string `json:"manifest_sha256"`
+	LiveInventorySHA256  string `json:"live_inventory_sha256"`
+	AtMintInventoryMatch bool   `json:"at_mint_inventory_match"`
+	EntryCount           int    `json:"entry_count"`
+	EncodedBytes         int64  `json:"encoded_bytes"`
+}
+
 type GenerationsListMessage struct {
 	BaseMessage
-	Current                string   `json:"current,omitempty"`
-	SealedPriors           []string `json:"sealed_priors"`
-	PendingAttempts        []string `json:"pending_attempts"`
-	PendingStaging         []string `json:"pending_staging"`
-	RetainedUnsealedParent string   `json:"retained_unsealed_parent,omitempty"`
-	Code                   string   `json:"code,omitempty"`
-	Error                  string   `json:"error,omitempty"`
+	Current                string                      `json:"current,omitempty"`
+	SealedPriors           []string                    `json:"sealed_priors"`
+	Quarantined            []QuarantinedGenerationInfo `json:"quarantined"`
+	PendingStaging         []string                    `json:"pending_staging"`
+	RetainedUnsealedParent string                      `json:"retained_unsealed_parent,omitempty"`
+	Code                   string                      `json:"code,omitempty"`
+	Error                  string                      `json:"error,omitempty"`
+}
+
+type PruneGenerationQuarantineMessage struct {
+	BaseMessage
+	GenerationIDs []string `json:"generation_ids"`
+	Confirm       bool     `json:"confirm"`
+}
+
+type PrunedQuarantinedGeneration struct {
+	GenerationID  string `json:"generation_id"`
+	EncodedBytes  int64  `json:"encoded_bytes"`
+	AlreadyAbsent bool   `json:"already_absent,omitempty"`
+}
+
+type PruneGenerationQuarantineResultMessage struct {
+	BaseMessage
+	Success bool                          `json:"success"`
+	Pruned  []PrunedQuarantinedGeneration `json:"pruned"`
+	Code    string                        `json:"code,omitempty"`
+	Error   string                        `json:"error,omitempty"`
 }
 
 // ClientExistsMessage is sent by the server to a new client when another apadmin is already connected.

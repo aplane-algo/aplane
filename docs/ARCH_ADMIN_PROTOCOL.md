@@ -46,11 +46,12 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 5.0; `auth_required` carries it as
+- the current admin protocol version is 6.0; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
-  but accepted,
+  but accepted; v6 intentionally removes the retired `pending_attempts`
+  generation-inventory field and does not provide a v5 compatibility shim,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -439,7 +440,20 @@ canonical YAML document.
 - `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
 - `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
 - `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
-- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If a store mutation is active, it returns retryable `store_busy` rather than waiting for the ordinary IPC timeout.
+- `list_generations` -> `generations_list`: current generation, sealed priors,
+  bounded non-authoritative `quarantined[]` metadata, pending staging, retained
+  unsealed parent, `code`, `error`; this is read-only inspection and never
+  reconciles or prunes. Each quarantine record includes the generation and
+  parent IDs, manifest and live-inventory digests, at-mint inventory-match
+  classification, entry count, and encoded byte count. If a store mutation is
+  active, the request returns retryable `store_busy` rather than waiting for
+  the ordinary IPC timeout.
+- `prune_generation_quarantine`: `generation_ids[]`, `confirm` ->
+  `prune_generation_quarantine_result`: `success`, `pruned[]`, optional `code`,
+  `error`; deletion is restricted to explicitly selected quarantine IDs,
+  requires `confirm:true`, and records a durable audit intent before mutation.
+  An already-absent selected ID is successful and reported as such, making an
+  interrupted multi-ID request safely retryable.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
 `sentries.manage`, an unlocked signer store, and emit mutation audit events. A
@@ -449,9 +463,11 @@ security-neutral. Import is idempotent for an identical reference and rejects
 a name already bound to a different Witness Key ID; replacement requires an
 explicit remove followed by import. Import and removal audit events include
 the affected Witness Key ID, and the store mutation lock serializes
-publication. Generation inventory requires `generations.view`. `apstore
-generations prune` deliberately remains an offline recovery/maintenance
-operation.
+publication. Generation inventory requires `generations.view`. Live quarantine
+deletion requires `identity.generation.quarantine.prune`, an unlocked or
+recovery-admin runtime, explicit confirmation, and durable audit. Retained
+authoritative generation pruning remains a distinct offline
+`apstore generations prune` recovery/maintenance operation.
 
 Key-type override semantics:
 

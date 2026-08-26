@@ -442,11 +442,44 @@ func ProtocolExportSentryPublicResultMessage(id string, result adminproto.Export
 }
 
 func ProtocolGenerationsListMessage(id string, result adminproto.GenerationInventory) protocol.GenerationsListMessage {
+	quarantined := make([]protocol.QuarantinedGenerationInfo, 0, len(result.Quarantined))
+	for _, item := range result.Quarantined {
+		quarantined = append(quarantined, protocol.QuarantinedGenerationInfo{
+			GenerationID: item.GenerationID, ParentID: item.ParentID,
+			ManifestSHA256: item.ManifestSHA256, LiveInventorySHA256: item.LiveInventorySHA256,
+			AtMintInventoryMatch: item.AtMintInventoryMatch,
+			EntryCount:           item.EntryCount, EncodedBytes: item.EncodedBytes,
+		})
+	}
 	return protocol.GenerationsListMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGenerationsList, ID: id},
 		Current:     result.Current, SealedPriors: result.SealedPriors,
-		PendingAttempts: result.PendingAttempts, PendingStaging: result.PendingStaging,
+		Quarantined: quarantined, PendingStaging: result.PendingStaging,
 		RetainedUnsealedParent: result.RetainedUnsealedParent, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolPruneGenerationQuarantineResultMessage(
+	id string,
+	result adminproto.PruneGenerationQuarantineResult,
+) protocol.PruneGenerationQuarantineResultMessage {
+	pruned := make([]protocol.PrunedQuarantinedGeneration, 0, len(result.Pruned))
+	for _, item := range result.Pruned {
+		pruned = append(pruned, protocol.PrunedQuarantinedGeneration{
+			GenerationID:  item.GenerationID,
+			EncodedBytes:  item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.PruneGenerationQuarantineResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePruneGenerationQuarantineResult,
+			ID:   id,
+		},
+		Success: result.Success,
+		Pruned:  pruned,
+		Code:    result.Code,
+		Error:   result.Error,
 	}
 }
 

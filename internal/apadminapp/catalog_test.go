@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,7 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 		{"keytype", "enable", "aplane.ed25519.v1"},
 		{"sentry", "import", "sentry.json", "lab"},
 		{"sentry", "remove", "lab"},
+		{"generations", "prune", "--confirm", "gen-1700000000-0123abcd"},
 	}
 	for _, command := range mutating {
 		mode, err := CatalogAuthMode(command[0], command[1:])
@@ -152,6 +154,47 @@ func TestCatalogGenerationListRetriesIdentityBusy(t *testing.T) {
 	}
 	if attempt != 2 || !bytes.Contains(stderr.Bytes(), []byte("current: gen-2")) {
 		t.Fatalf("attempts=%d stderr=%q", attempt, stderr.String())
+	}
+}
+
+func TestCatalogGenerationQuarantinePruneSendsExplicitSelection(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.PruneGenerationQuarantineMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		if !request.Confirm {
+			return fmt.Errorf("confirmation = false")
+		}
+		want := []string{"gen-1700000000-0123abcd", "gen-1700000001-4567abcd"}
+		if !reflect.DeepEqual(request.GenerationIDs, want) {
+			return fmt.Errorf("generation IDs = %v, want %v", request.GenerationIDs, want)
+		}
+		out := result.(*protocol.PruneGenerationQuarantineResultMessage)
+		*out = protocol.PruneGenerationQuarantineResultMessage{
+			Success: true,
+			Pruned: []protocol.PrunedQuarantinedGeneration{
+				{GenerationID: want[0], EncodedBytes: 42},
+				{GenerationID: want[1], AlreadyAbsent: true},
+			},
+		}
+		return nil
+	}}
+	var stderr bytes.Buffer
+	err := (Catalog{Client: requester, Streams: Streams{Stderr: &stderr}}).Run(
+		"generations",
+		[]string{
+			"prune", "--confirm",
+			"gen-1700000000-0123abcd",
+			"gen-1700000001-4567abcd",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "pruned quarantined generation gen-1700000000-0123abcd (42 bytes)") ||
+		!strings.Contains(stderr.String(), "gen-1700000001-4567abcd already absent") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 

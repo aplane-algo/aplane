@@ -53,6 +53,43 @@ type QuarantinePruneResult struct {
 	AlreadyAbsent bool   `json:"already_absent,omitempty"`
 }
 
+// ListQuarantined returns deterministic non-authoritative metadata for the
+// currently quarantined generation publications. It never returns GenPaths or
+// otherwise makes the namespace addressable by signing and history APIs.
+func ListQuarantined(paths storepaths.Paths) ([]QuarantineRecord, error) {
+	if _, _, err := quarantineUsage(paths); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(paths.QuarantinedGenerationsDir())
+	if os.IsNotExist(err) {
+		return []QuarantineRecord{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	records := make([]QuarantineRecord, 0, len(entries))
+	for _, entry := range entries {
+		if err := storepaths.ValidateGenerationID(entry.Name()); err != nil {
+			return nil, fmt.Errorf("unexpected quarantine entry %q", entry.Name())
+		}
+		// This internal handle exists only to reuse strict bounded generation
+		// parsing. It is rooted at quarantine and is never returned to a caller.
+		gen := storepaths.StagedGenerationPaths(
+			entry.Name(),
+			paths.QuarantinedGenerationDir(entry.Name()),
+		)
+		record, err := classifyQuarantineCandidate(gen)
+		if err != nil {
+			return nil, fmt.Errorf("inspect quarantined generation %s: %w", entry.Name(), err)
+		}
+		records = append(records, record)
+	}
+	slices.SortFunc(records, func(a, b QuarantineRecord) int {
+		return strings.Compare(a.GenerationID, b.GenerationID)
+	})
+	return records, nil
+}
+
 // PruneQuarantined irreversibly removes only explicitly selected
 // non-authoritative quarantine directories. The caller must hold the store
 // mutation lock and enforce authorization, confirmation, and durable audit.

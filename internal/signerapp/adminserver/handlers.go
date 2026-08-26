@@ -184,6 +184,78 @@ func (s *Session) HandleListGenerations(requestID string) {
 	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations()))
 }
 
+func (s *Session) HandlePruneGenerationQuarantine(
+	msg *protocol.PruneGenerationQuarantineMessage,
+) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	resource := auth.Resource{Type: "generation_quarantine"}
+	if !s.authorize(msg.ID, auth.ActionGenerationQuarantinePrune, resource) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code:  protocol.ResultCodeConfirmationRequired,
+				Error: "quarantine prune requires explicit confirmation",
+			},
+		))
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogGenerationQuarantinePruneIntentDurableContext(
+			SessionContext,
+			string,
+			[]string,
+		) error
+	})
+	if !ok {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code:  protocol.ResultCodeQuarantineAuditFailed,
+				Error: "quarantine prune aborted: durable audit is unavailable",
+			},
+		))
+		return
+	}
+	generationIDs := append([]string(nil), msg.GenerationIDs...)
+	if err := audit.LogGenerationQuarantinePruneIntentDurableContext(
+		s.SessionContext(), msg.ID, generationIDs,
+	); err != nil {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code: protocol.ResultCodeQuarantineAuditFailed,
+				Error: fmt.Sprintf(
+					"quarantine prune aborted: durable audit failed: %v",
+					err,
+				),
+			},
+		))
+		return
+	}
+	result := s.inspectionServices.PruneGenerationQuarantine(
+		adminproto.PruneGenerationQuarantineRequest{GenerationIDs: generationIDs},
+	)
+	if audit, ok := s.audit.(interface {
+		LogGenerationQuarantinePruneContext(
+			SessionContext,
+			string,
+			adminproto.PruneGenerationQuarantineResult,
+		)
+	}); ok {
+		audit.LogGenerationQuarantinePruneContext(s.SessionContext(), msg.ID, result)
+	}
+	_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(msg.ID, result))
+}
+
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	s.handleRevokeToken(msg)
 }

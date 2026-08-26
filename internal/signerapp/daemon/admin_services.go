@@ -201,7 +201,30 @@ func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime) er
 // store mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime) error {
+	preview, err := genstore.Inspect(ir.KeyPaths(), nil)
+	if err != nil {
+		return err
+	}
+	if len(preview.Quarantined) > 0 {
+		if s.signer == nil || s.signer.auditLog == nil {
+			return fmt.Errorf("reconcile: durable audit unavailable; refusing generation quarantine")
+		}
+		for _, candidate := range preview.Quarantined {
+			if err := s.signer.auditLog.LogGenerationQuarantineIntentDurable(candidate); err != nil {
+				return fmt.Errorf(
+					"reconcile: record durable quarantine intent for %s: %w",
+					candidate.GenerationID,
+					err,
+				)
+			}
+		}
+	}
 	report, err := genstore.Reconcile(ir.KeyPaths(), nil)
+	if s.signer != nil && s.signer.auditLog != nil {
+		for _, quarantined := range report.Quarantined {
+			s.signer.auditLog.LogGenerationQuarantined(quarantined)
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -487,6 +510,7 @@ func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPubli
 func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 	ir := s.ProductRuntime()
 	var report genstore.ReconcileReport
+	var quarantined []genstore.QuarantineRecord
 	err := s.withStoreInspection(func() error {
 		generational, err := genstore.IsGenerational(ir.KeyPaths())
 		if err != nil {
@@ -496,20 +520,66 @@ func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 			return fmt.Errorf("store does not use generation-based storage")
 		}
 		report, err = genstore.Inspect(ir.KeyPaths(), nil)
+		if err != nil {
+			return err
+		}
+		quarantined, err = genstore.ListQuarantined(ir.KeyPaths())
 		return err
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "inspect_failed")
 		return adminproto.GenerationInventory{Code: code, Error: message}
 	}
-	pendingAttempts := make([]string, 0, len(report.Quarantined))
-	for _, quarantined := range report.Quarantined {
-		pendingAttempts = append(pendingAttempts, quarantined.GenerationID)
+	quarantined = append(quarantined, report.Quarantined...)
+	quarantineInfo := make([]adminproto.QuarantinedGenerationInfo, 0, len(quarantined))
+	for _, record := range quarantined {
+		quarantineInfo = append(quarantineInfo, adminQuarantinedGeneration(record))
 	}
 	return adminproto.GenerationInventory{
 		Current: report.Current, SealedPriors: report.SealedPriors,
-		PendingAttempts: pendingAttempts, PendingStaging: report.DiscardedStaging,
+		Quarantined: quarantineInfo, PendingStaging: report.DiscardedStaging,
 		RetainedUnsealedParent: report.RetainedUnsealedParent,
+	}
+}
+
+func (s signerAdminServices) PruneGenerationQuarantine(
+	req adminproto.PruneGenerationQuarantineRequest,
+) adminproto.PruneGenerationQuarantineResult {
+	ir := s.ProductRuntime()
+	var pruned []genstore.QuarantinePruneResult
+	err := s.withStoreMutation(func() error {
+		var err error
+		pruned, err = genstore.PruneQuarantined(ir.KeyPaths(), req.GenerationIDs)
+		return err
+	})
+	result := adminproto.PruneGenerationQuarantineResult{
+		Pruned: make([]adminproto.PrunedQuarantinedGeneration, 0, len(pruned)),
+	}
+	for _, item := range pruned {
+		result.Pruned = append(result.Pruned, adminproto.PrunedQuarantinedGeneration{
+			GenerationID:  item.GenerationID,
+			EncodedBytes:  item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeQuarantinePruneFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
+func adminQuarantinedGeneration(record genstore.QuarantineRecord) adminproto.QuarantinedGenerationInfo {
+	return adminproto.QuarantinedGenerationInfo{
+		GenerationID:         record.GenerationID,
+		ParentID:             record.ParentID,
+		ManifestSHA256:       record.ManifestSHA256,
+		LiveInventorySHA256:  record.LiveInventorySHA256,
+		AtMintInventoryMatch: record.AtMintInventoryMatch,
+		EntryCount:           record.EntryCount,
+		EncodedBytes:         record.EncodedBytes,
 	}
 }
 

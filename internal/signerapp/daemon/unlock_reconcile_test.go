@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,65 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 		}
 	}
 	return generationID
+}
+
+func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	current, err := genstore.ReadCurrent(server.keyPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyring, err := crypto.OpenKeyringStore(
+		server.keyPaths.KeystoreMetadataDir(),
+		testPassphrase,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keyring.Zero()
+	successor, err := genstore.NewGenerationID(time.Unix(1_753_800_001, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpFileSync && filepath.Base(path) == "CURRENT" {
+			return errors.New("injected pre-flip crash")
+		}
+		return nil
+	}
+	_, mintErr := genstore.Mint(server.keyPaths, genstore.MintRequest{
+		GenerationID: successor,
+		Parent:       current,
+		Integrity:    keyring,
+		Operation:    "test-quarantine-audit",
+		OperationID:  "op-" + successor,
+		CreatedAt:    time.Unix(1_753_800_001, 0),
+	})
+	fsutil.TestHook = nil
+	if mintErr == nil {
+		t.Fatal("Mint succeeded despite injected pre-flip crash")
+	}
+
+	if err := server.adminServices().reconcileGenerations(server.runtime); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(server.keyPaths.QuarantinedGenerationDir(successor)); err != nil {
+		t.Fatalf("successor was not quarantined: %v", err)
+	}
+	auditBytes, err := os.ReadFile(filepath.Join(server.dataDir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditText := string(auditBytes)
+	intent := strings.Index(auditText, "GENERATION_QUARANTINE_INTENT")
+	outcome := strings.Index(auditText, "GENERATION_QUARANTINED")
+	if intent < 0 || outcome < 0 || intent >= outcome {
+		t.Fatalf("quarantine audit intent/outcome ordering missing: %s", auditText)
+	}
+	if !strings.Contains(auditText, `"generation_id":"`+successor+`"`) {
+		t.Fatalf("quarantine audit missing generation ID %s: %s", successor, auditText)
+	}
 }
 
 func startPendingTestRotation(

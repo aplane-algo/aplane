@@ -153,6 +153,28 @@ func TestPruneQuarantinedRemovesOnlySelectedQuarantineState(t *testing.T) {
 	}
 }
 
+func TestListQuarantinedReturnsNonAuthoritativeMetadata(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	buildGenerationChain(t, paths)
+	mintTestGeneration(t, paths, testGenD, map[string]string{
+		"keys/ACCOUNT.key": "candidate",
+	})
+	if _, err := Reconcile(paths, nil); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	records, err := ListQuarantined(paths)
+	if err != nil {
+		t.Fatalf("ListQuarantined() error = %v", err)
+	}
+	if len(records) != 1 || records[0].GenerationID != testGenD || records[0].EncodedBytes == 0 {
+		t.Fatalf("ListQuarantined() = %#v", records)
+	}
+	if _, err := os.Stat(paths.GenerationDir(testGenD)); !os.IsNotExist(err) {
+		t.Fatalf("listing quarantine changed active namespace: %v", err)
+	}
+}
+
 func TestPruneQuarantinedValidatesEntireSelectionBeforeDeleting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if err := os.MkdirAll(paths.QuarantinedGenerationDir(testGenD), 0o700); err != nil {

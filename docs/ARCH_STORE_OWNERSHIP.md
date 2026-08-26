@@ -89,7 +89,7 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
 | `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
-| `apstore generations prune` | Offline mutation pending a separately authorized live-prune design |
+| `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |

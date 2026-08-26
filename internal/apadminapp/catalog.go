@@ -158,6 +158,17 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		if len(args) == 1 && args[0] == "list" {
 			return AuthReadOnly, nil
 		}
+		if len(args) > 0 && args[0] == "prune" {
+			fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			_ = fs.Bool("confirm", false, "")
+			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
+				return AuthUnlock, errors.New(
+					"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
+				)
+			}
+			return AuthUnlock, nil
+		}
 	}
 	return AuthUnlock, fmt.Errorf("unknown or malformed apadmin command: %s", strings.TrimSpace(command+" "+strings.Join(args, " ")))
 }
@@ -570,8 +581,14 @@ func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
 }
 
 func (c Catalog) runGenerations(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: apadmin generations <list|prune>")
+	}
+	if args[0] == "prune" {
+		return c.runGenerationQuarantinePrune(args[1:])
+	}
 	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: apadmin generations list")
+		return fmt.Errorf("usage: apadmin generations <list|prune>")
 	}
 	result, err := requestInspectionWithRetry(c, func() any {
 		return protocol.ListGenerationsMessage{
@@ -584,8 +601,14 @@ func (c Catalog) runGenerations(args []string) error {
 	if result.Error != "" {
 		return resultError("generation list failed", result.Code, result.Error)
 	}
-	for _, attempt := range result.PendingAttempts {
-		c.info("uncommitted generation %s (discarded at next unlock or prune)", attempt)
+	for _, item := range result.Quarantined {
+		c.info(
+			"quarantined generation %s (bytes=%d entries=%d at_mint_match=%t)",
+			item.GenerationID,
+			item.EncodedBytes,
+			item.EntryCount,
+			item.AtMintInventoryMatch,
+		)
 	}
 	for _, staging := range result.PendingStaging {
 		c.info("staging residue %s (discarded at next unlock or prune)", staging)
@@ -599,6 +622,39 @@ func (c Catalog) runGenerations(args []string) error {
 	}
 	if len(result.SealedPriors) == 0 && result.RetainedUnsealedParent == "" {
 		c.info("no prior generations (rotation quiescence satisfied)")
+	}
+	return nil
+}
+
+func (c Catalog) runGenerationQuarantinePrune(args []string) error {
+	fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirm := fs.Bool("confirm", false, "confirm irreversible quarantine deletion")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return errors.New(
+			"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
+		)
+	}
+	var result protocol.PruneGenerationQuarantineResultMessage
+	if err := c.Client.Request(protocol.PruneGenerationQuarantineMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePruneGenerationQuarantine,
+			ID:   c.requestID("generation-quarantine-prune"),
+		},
+		GenerationIDs: append([]string(nil), fs.Args()...),
+		Confirm:       *confirm,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("generation quarantine prune failed", result.Code, result.Error)
+	}
+	for _, item := range result.Pruned {
+		if item.AlreadyAbsent {
+			c.info("quarantined generation %s already absent", item.GenerationID)
+			continue
+		}
+		c.info("pruned quarantined generation %s (%d bytes)", item.GenerationID, item.EncodedBytes)
 	}
 	return nil
 }

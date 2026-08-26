@@ -372,11 +372,38 @@ type ExportSentryPublicResult struct {
 type GenerationInventory struct {
 	Current                string
 	SealedPriors           []string
-	PendingAttempts        []string
+	Quarantined            []QuarantinedGenerationInfo
 	PendingStaging         []string
 	RetainedUnsealedParent string
 	Code                   string
 	Error                  string
+}
+
+type QuarantinedGenerationInfo struct {
+	GenerationID         string
+	ParentID             string
+	ManifestSHA256       string
+	LiveInventorySHA256  string
+	AtMintInventoryMatch bool
+	EntryCount           int
+	EncodedBytes         int64
+}
+
+type PruneGenerationQuarantineRequest struct {
+	GenerationIDs []string
+}
+
+type PrunedQuarantinedGeneration struct {
+	GenerationID  string
+	EncodedBytes  int64
+	AlreadyAbsent bool
+}
+
+type PruneGenerationQuarantineResult struct {
+	Success bool
+	Pruned  []PrunedQuarantinedGeneration
+	Code    string
+	Error   string
 }
 
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
