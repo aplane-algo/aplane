@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type storedConfigParser func([]byte) (*StoredConfig, error)
@@ -34,6 +35,26 @@ func LoadVerifiedStoredConfigDocument(dataRoot string, kr *crypto.Keyring) (*Sto
 	)
 }
 
+// LoadVerifiedStoredConfigDocumentActive reads the signer policy from one
+// already-resolved generation. The caller is responsible for resolving the
+// generation once under the applicable mutation or runtime lock.
+func LoadVerifiedStoredConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+	return loadVerifiedStoredConfigAtPath(
+		active.PolicyPath(),
+		kr,
+		ParseStoredConfig,
+		"policy",
+		"policy config",
+	)
+}
+
+// LoadVerifiedStoredConfigActive verifies and parses the signer policy in one
+// already-resolved generation.
+func LoadVerifiedStoredConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedStoredConfigDocumentActive(active, kr)
+	return stored, err
+}
+
 // LoadVerifiedSentryConfig reads policy.yaml for a sentry node, verifies
 // policy.yaml.hmac against the document bytes, then parses the stored sentry
 // policy.
@@ -52,6 +73,25 @@ func LoadVerifiedSentryConfigDocument(dataRoot string, kr *crypto.Keyring) (*Sto
 		"sentry policy",
 		"sentry policy config",
 	)
+}
+
+// LoadVerifiedSentryConfigDocumentActive reads the sentry policy from one
+// already-resolved generation.
+func LoadVerifiedSentryConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+	return loadVerifiedStoredConfigAtPath(
+		active.PolicyPath(),
+		kr,
+		ParseStoredSentryConfig,
+		"sentry policy",
+		"sentry policy config",
+	)
+}
+
+// LoadVerifiedSentryConfigActive verifies and parses the sentry policy in one
+// already-resolved generation.
+func LoadVerifiedSentryConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedSentryConfigDocumentActive(active, kr)
+	return stored, err
 }
 
 func loadVerifiedStoredConfigAtPath(path string, kr *crypto.Keyring, parser storedConfigParser, docLabel, parseLabel string) (*StoredConfig, []byte, error) {
@@ -111,6 +151,66 @@ func SaveStoredSentryConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr 
 		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
 	}
 	return SaveSentryBytesWithIntegrity(dataRoot, sentryBytes, kr, signedAt)
+}
+
+// SaveStoredConfigActiveWithKeyring writes the signer policy and integrity
+// sidecar into one already-resolved generation.
+func SaveStoredConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	policyBytes, err := MarshalStoredConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal policy config: %w", err)
+	}
+	return savePolicyBytesWithIntegrityAtPath(
+		active.PolicyPath(),
+		policyBytes,
+		kr,
+		signedAt,
+		"policy config",
+		"policy integrity sidecar",
+	)
+}
+
+// SaveStoredSentryConfigActiveWithKeyring writes the sentry policy and
+// integrity sidecar into one already-resolved generation.
+func SaveStoredSentryConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	policyBytes, err := MarshalStoredSentryConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
+	}
+	return savePolicyBytesWithIntegrityAtPath(
+		active.PolicyPath(),
+		policyBytes,
+		kr,
+		signedAt,
+		"sentry policy config",
+		"policy integrity sidecar",
+	)
+}
+
+// SavePolicyBytesActiveWithKeyring writes exact signer-policy bytes and their
+// integrity sidecar into one already-resolved generation.
+func SavePolicyBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(
+		active.PolicyPath(),
+		policyBytes,
+		kr,
+		signedAt,
+		"policy config",
+		"policy integrity sidecar",
+	)
+}
+
+// SaveSentryBytesActiveWithKeyring writes exact sentry-policy bytes and their
+// integrity sidecar into one already-resolved generation.
+func SaveSentryBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(
+		active.PolicyPath(),
+		policyBytes,
+		kr,
+		signedAt,
+		"sentry policy config",
+		"policy integrity sidecar",
+	)
 }
 
 // SavePolicyBytesWithIntegrity writes exact policy.yaml bytes plus
@@ -224,4 +324,32 @@ func SignPolicyFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, sig
 // policy.yaml with the identity keyring.
 func SignSentryFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
 	return SignSentryFileIntegrity(dataRoot, kr, signedAt)
+}
+
+// SignPolicyFileIntegrityActiveWithKeyring signs the current signer-policy
+// bytes in one already-resolved generation.
+func SignPolicyFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(
+		active.PolicyPath(),
+		kr,
+		signedAt,
+		ParseStoredConfig,
+		"policy",
+		"policy config",
+		"policy integrity sidecar",
+	)
+}
+
+// SignSentryFileIntegrityActiveWithKeyring signs the current sentry-policy
+// bytes in one already-resolved generation.
+func SignSentryFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(
+		active.PolicyPath(),
+		kr,
+		signedAt,
+		ParseStoredSentryConfig,
+		"sentry policy",
+		"sentry policy config",
+		"policy integrity sidecar",
+	)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -56,6 +57,19 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 					if err := os.WriteFile(filepath.Join(dst, entry.Name()), data, 0o660); err != nil {
 						return err
 					}
+				}
+			}
+			for src, dst := range map[string]string{
+				policy.PolicyPath(server.dataDir):                                    staged.PolicyPath(),
+				policy.PolicyIntegritySidecarPath(policy.PolicyPath(server.dataDir)): staged.PolicyIntegritySidecar(),
+				server.keyPaths.NodeRoleIntegritySidecar():                           staged.NodeRoleIntegritySidecar(),
+			} {
+				data, err := os.ReadFile(src)
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(dst, data, 0o600); err != nil {
+					return err
 				}
 			}
 			return nil

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,7 @@ func setupTestKeystore(t *testing.T) (utilpaths.Paths, func()) {
 		Operation:       "store-initialize",
 		OperationID:     "init-" + generationID,
 		CreatedAt:       time.Unix(1_785_200_000, 0),
+		Apply:           genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first): %v", err)
 	}

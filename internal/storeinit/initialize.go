@@ -90,18 +90,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
 	createdNodeRole = true
-	if err := noderole.SaveIdentitySidecarWithKeyring(opts.Paths, roleBytes, keyring, time.Now()); err != nil {
-		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
-	}
-	var policyErr error
-	if role == noderole.RoleSentry {
-		policyErr = policy.SaveStoredSentryConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
-	} else {
-		policyErr = policy.SaveStoredConfigWithKeyring(opts.DataDir, &policy.StoredConfig{}, keyring, time.Now())
-	}
-	if policyErr != nil {
-		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
-	}
 	{
 		// Mint the store's first generation, installing the default key
 		// types into the staged namespaces; the commit flips CURRENT
@@ -117,6 +105,34 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			OperationID:     "init-" + generationID,
 			CreatedAt:       time.Now(),
 			Apply: func(staged storepaths.GenPaths) error {
+				if err := noderole.SaveGenerationSidecarWithKeyring(
+					opts.Paths,
+					staged,
+					roleBytes,
+					keyring,
+					time.Now(),
+				); err != nil {
+					return fmt.Errorf("create generation node role integrity sidecar: %w", err)
+				}
+				var policyErr error
+				if role == noderole.RoleSentry {
+					policyErr = policy.SaveStoredSentryConfigActiveWithKeyring(
+						staged,
+						&policy.StoredConfig{},
+						keyring,
+						time.Now(),
+					)
+				} else {
+					policyErr = policy.SaveStoredConfigActiveWithKeyring(
+						staged,
+						&policy.StoredConfig{},
+						keyring,
+						time.Now(),
+					)
+				}
+				if policyErr != nil {
+					return fmt.Errorf("create generation policy integrity baseline: %w", policyErr)
+				}
 				return defaultkeytypes.InstallForNewStoreActive(staged, role, keyring, opts.Logf)
 			},
 		}); err != nil {

@@ -651,12 +651,13 @@ func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType 
 }
 
 func archiveInstalled(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) (string, error) {
-	sourcePath, err := templatestore.GetTemplateFilePathForPaths(paths, keyType, templateType)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", err
 	}
-	deletedKeysDir := paths.DeletedKeysDir()
-	deletedTemplatePath := paths.DeletedKeyTypeTemplate(keyType)
+	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
+	deletedKeysDir := active.DeletedKeysDir()
+	deletedTemplatePath := active.DeletedKeyTypeTemplate(keyType)
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return "", fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}

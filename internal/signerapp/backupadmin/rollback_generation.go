@@ -146,6 +146,17 @@ func populateRollbackGeneration(
 func rollbackMemberContext(
 	entry genstore.InventoryEntry,
 ) (crypto.ObjectContext, bool, error) {
+	switch entry.Path {
+	case "policy.yaml", "policy.yaml.hmac", "node.yaml.hmac":
+		if entry.Term != 0 {
+			return crypto.ObjectContext{}, false, fmt.Errorf(
+				"rollback plaintext authority member %s carries term %d",
+				entry.Path,
+				entry.Term,
+			)
+		}
+		return crypto.ObjectContext{}, false, nil
+	}
 	namespace, name, ok := strings.Cut(entry.Path, "/")
 	if !ok {
 		return crypto.ObjectContext{}, false, fmt.Errorf(
@@ -155,45 +166,29 @@ func rollbackMemberContext(
 	}
 	switch namespace {
 	case "keys":
-		if strings.HasSuffix(name, keys.WitnessPublicMetadataSuffix) {
-			if entry.Term != 0 {
-				return crypto.ObjectContext{}, false, fmt.Errorf(
-					"rollback plaintext member %s carries term %d",
-					entry.Path,
-					entry.Term,
-				)
-			}
-			return crypto.ObjectContext{}, false, nil
-		}
-		selector, class, ok := keys.ParseManagedCredentialFilename(name)
-		if !ok || entry.Term <= 0 {
+		return rollbackCredentialContext(entry.Path, name, entry.Term)
+	case "deleted":
+		deletedNamespace, deletedName, ok := strings.Cut(name, "/")
+		if !ok {
 			return crypto.ObjectContext{}, false, fmt.Errorf(
-				"rollback source has invalid managed credential %q",
+				"rollback source has invalid deleted archive path %q",
 				entry.Path,
 			)
 		}
-		switch class {
-		case keys.ManagedCredentialAccount:
-			return crypto.AccountKeyContext(selector), true, nil
-		case keys.ManagedCredentialSentry:
-			return crypto.SentryCredentialContext(selector), true, nil
-		default:
-			return crypto.ObjectContext{}, false, fmt.Errorf(
-				"rollback source has unsupported credential class %q",
-				class,
-			)
+		switch deletedNamespace {
+		case "keys":
+			return rollbackCredentialContext(entry.Path, deletedName, entry.Term)
+		case "keytypes":
+			return rollbackTemplateContext(entry.Path, deletedName, entry.Term)
 		}
+		return crypto.ObjectContext{}, false, fmt.Errorf(
+			"rollback source has unsupported deleted archive member %q",
+			entry.Path,
+		)
 	case "keytypes":
 		switch {
 		case strings.HasSuffix(name, templatestore.TemplateFileExtension):
-			if entry.Term <= 0 {
-				return crypto.ObjectContext{}, false, fmt.Errorf(
-					"rollback template %s is not a term envelope",
-					entry.Path,
-				)
-			}
-			ctx, err := templatestore.TemplateContextForFile(name)
-			return ctx, true, err
+			return rollbackTemplateContext(entry.Path, name, entry.Term)
 		case strings.HasSuffix(name, ".json"):
 			keyType := strings.TrimSuffix(name, ".json")
 			if err := storepaths.ValidateKeyTypeComponent(keyType); err != nil {
@@ -213,4 +208,46 @@ func rollbackMemberContext(
 		"rollback source has unsupported inventory member %q",
 		entry.Path,
 	)
+}
+
+func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
+	if strings.HasSuffix(name, keys.WitnessPublicMetadataSuffix) {
+		if term != 0 {
+			return crypto.ObjectContext{}, false, fmt.Errorf(
+				"rollback plaintext member %s carries term %d",
+				path,
+				term,
+			)
+		}
+		return crypto.ObjectContext{}, false, nil
+	}
+	selector, class, ok := keys.ParseManagedCredentialFilename(name)
+	if !ok || term <= 0 {
+		return crypto.ObjectContext{}, false, fmt.Errorf(
+			"rollback source has invalid managed credential %q",
+			path,
+		)
+	}
+	switch class {
+	case keys.ManagedCredentialAccount:
+		return crypto.AccountKeyContext(selector), true, nil
+	case keys.ManagedCredentialSentry:
+		return crypto.SentryCredentialContext(selector), true, nil
+	default:
+		return crypto.ObjectContext{}, false, fmt.Errorf(
+			"rollback source has unsupported credential class %q",
+			class,
+		)
+	}
+}
+
+func rollbackTemplateContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
+	if !strings.HasSuffix(name, templatestore.TemplateFileExtension) || term <= 0 {
+		return crypto.ObjectContext{}, false, fmt.Errorf(
+			"rollback template %s is not a term envelope",
+			path,
+		)
+	}
+	ctx, err := templatestore.TemplateContextForFile(name)
+	return ctx, true, err
 }

@@ -30,15 +30,31 @@ func testKeyring(t *testing.T) *crypto.Keyring {
 	return cryptotest.Keyring(t, bytes.Repeat([]byte{0x5a}, 32))
 }
 
+func writeTestGenerationAuthority(staged storepaths.GenPaths) error {
+	for _, path := range []string{
+		staged.PolicyPath(),
+		staged.PolicyIntegritySidecar(),
+		staged.NodeRoleIntegritySidecar(),
+	} {
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // mintTestGeneration lays down a structurally valid generation with a
 // complete manifest and the given namespace files.
 func mintTestGeneration(t *testing.T, paths storepaths.Paths, generationID string, files map[string]string) storepaths.GenPaths {
 	t.Helper()
 	gen := paths.GenerationPaths(generationID)
-	for _, namespace := range []string{"keys", "keytypes"} {
+	for _, namespace := range []string{"keys", "keytypes", "deleted/keys", "deleted/keytypes"} {
 		if err := os.MkdirAll(filepath.Join(gen.Dir(), namespace), 0o770); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", namespace, err)
 		}
+	}
+	if err := writeTestGenerationAuthority(gen); err != nil {
+		t.Fatalf("write authority files: %v", err)
 	}
 	for relative, content := range files {
 		if err := os.WriteFile(filepath.Join(gen.Dir(), filepath.FromSlash(relative)), []byte(content), 0o660); err != nil {

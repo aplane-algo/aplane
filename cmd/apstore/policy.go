@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -124,8 +125,13 @@ func cmdPolicySign() error {
 }
 
 func policyCommandDocuments() ([]policyCommandDocument, error) {
-	policyPath := policy.PolicyPath(dataDirectory)
-	nodeDoc, _, err := noderole.Load(storepaths.NewPaths(dataDirectory))
+	paths := storepaths.NewPaths(dataDirectory)
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve active generation: %w", err)
+	}
+	policyPath := active.PolicyPath()
+	nodeDoc, _, err := noderole.Load(paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node role: %w", err)
 	}
@@ -142,13 +148,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedSentryConfigWithKeyring(dataDirectory, kr)
+			return policy.LoadVerifiedSentryConfigActive(active, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignSentryFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
+			return policy.SignSentryFileIntegrityActiveWithKeyring(active, kr, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
@@ -157,13 +163,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedStoredConfigWithKeyring(dataDirectory, kr)
+			return policy.LoadVerifiedStoredConfigActive(active, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignPolicyFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
+			return policy.SignPolicyFileIntegrityActiveWithKeyring(active, kr, signedAt)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)

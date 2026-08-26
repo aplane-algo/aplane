@@ -18,6 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -86,9 +88,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
-		t.Fatalf("MkdirAll(keysDir): %v", err)
-	}
+	genstoretest.MintFirst(t, keyPaths)
 
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.Theme = "auto"
@@ -122,21 +122,25 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *productruntime.
 	ir.SetUnlocked()
 
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
+		active, err := genstore.ResolveActive(ir.KeyPaths())
+		if err != nil {
+			return err
+		}
 		switch target {
 		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredSentryConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
 			if err != nil {
 				return err
 			}
 			ir.SetSentryPolicyState(verified, effective)
 		default:
-			if err := policy.SaveStoredConfigWithKeyring(svc.Deps.DataDir(), stored, masterKey, testPolicyTime()); err != nil {
+			if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
 			if err != nil {
 				return err
 			}
@@ -502,9 +506,13 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 
 	var verified *policy.StoredConfig
 	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
-		var err error
-		verified, err = policy.LoadVerifiedSentryConfigWithKeyring(svc.Deps.DataDir(), masterKey)
-		return err
+		active, err := genstore.ResolveActive(svc.Deps.KeyPaths())
+		if err != nil {
+			return err
+		}
+		loaded, loadErr := policy.LoadVerifiedSentryConfigActive(active, masterKey)
+		verified = loaded
+		return loadErr
 	})
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring(): %v", err)

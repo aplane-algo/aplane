@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -169,12 +170,16 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 		Session:         session,
 		TemplateManager: newTemplateManager(ir.KeyPaths()),
 		BeforeKeyScan: func(kr *crypto.Keyring) error {
-			if verifiedRole, err := noderole.LoadAndVerifyWithKeyring(opts.KeyPaths, kr); err != nil {
+			active, err := genstore.ResolveActive(opts.KeyPaths)
+			if err != nil {
+				return fmt.Errorf("resolve active product generation: %w", err)
+			}
+			if verifiedRole, err := noderole.LoadAndVerifyGenerationWithKeyring(opts.KeyPaths, active, kr); err != nil {
 				return fmt.Errorf("node role verification failed for product store: %w", err)
 			} else if verifiedRole.Role != ir.NodeRole() {
 				return fmt.Errorf("node role verification failed: runtime role %q does not match verified role %q", ir.NodeRole(), verifiedRole.Role)
 			}
-			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, opts.Config, kr)
+			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStoredActive(ir.NodeRole(), opts.DataDir, opts.Config, active, kr)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for product store: %w", err)
 			}

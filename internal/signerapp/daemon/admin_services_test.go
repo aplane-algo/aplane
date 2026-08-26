@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -18,6 +19,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
+
+func activeDaemonPolicyPath(t *testing.T, server *Signer) string {
+	t.Helper()
+	active, err := genstore.ResolveActive(server.keyPaths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	return active.PolicyPath()
+}
 
 func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
@@ -434,7 +444,7 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 		t.Fatalf("canonical policy missing uploaded settings:\n%s", result.PolicyYAML)
 	}
 
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
+	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -456,7 +466,7 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 	if !got.AlwaysReviewWarnings {
 		t.Fatal("AlwaysReviewWarnings = false, want true")
 	}
-	assertPolicySidecarVerifies(t, ir, server.dataDir)
+	assertPolicySidecarVerifies(t, ir)
 }
 
 func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
@@ -482,7 +492,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	if result.Code != "policy_validation_failed" {
 		t.Fatalf("ReplacePolicy(invalid) code = %q, want policy_validation_failed; error %q", result.Code, result.Error)
 	}
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
+	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -492,7 +502,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 4321 || got.RejectForeignRekey {
 		t.Fatalf("Policy() = %+v, want unchanged baseline", got)
 	}
-	assertPolicySidecarVerifies(t, ir, server.dataDir)
+	assertPolicySidecarVerifies(t, ir)
 }
 
 func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
@@ -520,7 +530,7 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	if result.Code != "policy_snapshot_changed" {
 		t.Fatalf("ReplacePolicy(stale) code = %q, want policy_snapshot_changed; error %q", result.Code, result.Error)
 	}
-	onDisk, err := os.ReadFile(policy.PolicyPath(server.dataDir))
+	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
 	}
@@ -553,10 +563,14 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	}
 }
 
-func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime, dataDir string) {
+func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		_, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, masterKey)
+		active, err := genstore.ResolveActive(ir.KeyPaths())
+		if err != nil {
+			return err
+		}
+		_, err = policy.LoadVerifiedStoredConfigActive(active, masterKey)
 		return err
 	}); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)

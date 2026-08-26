@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -95,8 +96,12 @@ func (t Target) StatusNoun() string {
 	}
 }
 
-func (t Target) Path(dataDir string) string {
-	return policy.PolicyPath(dataDir)
+func (t Target) Path(dataDir string) (string, error) {
+	active, err := genstore.ResolveActive(storepaths.NewPaths(dataDir))
+	if err != nil {
+		return "", err
+	}
+	return active.PolicyPath(), nil
 }
 
 func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {

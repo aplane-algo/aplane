@@ -961,22 +961,22 @@ execution, output decoding, environment filtering, and validation.
       keys/*.wit.json       # derived public witness reference; not private authority
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
+      deleted/keys/*.{key,sen}
+      deleted/keytypes/<key_type>.template
+      node.yaml.hmac
+      policy.yaml
+      policy.yaml.hmac
     keyring.enc             # cryptographic root: KDF header over the sealed
                             # term set (aplane.keyring.v2)
     .keystore               # static marker: version 5 + keyring/v2 layout (the
                             # only supported store format; others rejected)
-    node.yaml.hmac
     aplane.token
     config.yaml
-    policy.yaml
-    policy.yaml.hmac
     unlock.yaml
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     sentries/<name>.json
-    deleted/keys/*.{key,sen}
-    deleted/keytypes/<key_type>.template
 ```
 
 Additional signer-state notes:
@@ -1162,10 +1162,11 @@ encrypted adjacent `<key_type>.template` file. A disabled YAML record keeps the
 encrypted template installed but hides that key type from discovery, reload, and
 generation. These records do not gate signing for keys that already exist.
 
-Product-store deletion archives live under `deleted/`. Key deletion moves the
-encrypted key file from `keys/` to `deleted/keys/`. Template removal deletes the
-state record and moves the encrypted `.template` file from `keytypes/` to
-`deleted/keytypes/`. Archived files are outside active scans.
+Product-store deletion archives live inside the selected generation under
+`deleted/`. Key deletion moves the encrypted key file from `keys/` to
+`deleted/keys/`. Template removal deletes the state record and moves the
+encrypted `.template` file from `keytypes/` to `deleted/keytypes/`. Archived
+files are outside active signing scans but remain part of the generation seal.
 
 #### Key Type Records
 
@@ -1623,10 +1624,11 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 - generation IDs match `gen-<unix-seconds>-<8 hex chars>`
   (`internal/storepaths.ValidateGenerationID`); directories under
   `generations/` with the `.staging-` prefix are unpublished mint state
-- a generation holds exactly `manifest.json`, `seal.json` (once sealed), and
-  the `keys/` and `keytypes/` namespace directories; both namespaces are
-  required, entries are regular files, and symlinks and hardlinks are
-  rejected everywhere
+- a generation holds exactly `manifest.json`, `seal.json` (once sealed), the
+  active and deleted key/key-type namespaces, `policy.yaml`,
+  `policy.yaml.hmac`, and `node.yaml.hmac`; every directory and authority file
+  is required, leaf namespaces contain only regular files, and symlinks and
+  hardlinks are rejected everywhere
 - `manifest.json` (schema `aplane.generation-manifest.v1`) is the immutable
   at-mint operation record: operation, operation ID, parent generation ID,
   and timestamps
@@ -1634,7 +1636,7 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
   generation stops being current and is the content authority for sealed
   priors. It pins the SHA-256 of the exact immutable manifest bytes, records a
   positive `integrity_term`, and carries a canonical HMAC-SHA256 over all
-  security-bearing seal fields and the full two-namespace inventory. Each
+  security-bearing seal fields and the complete generation authority inventory. Each
   inventory entry records `term`: zero for plaintext, or the positive
   term-envelope term. The seal MAC and canonical inventory digest bind
   `(path, digest, size, term)`. Rollback and retained-parent pruning verify it
@@ -1669,7 +1671,7 @@ specified in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 ### Policy File (`policy.yaml`)
 
 The product-store active policy is stored at
-`identities/default/policy.yaml`. Signer nodes parse that file as
+`identities/default/generations/<selected-generation>/policy.yaml`. Signer nodes parse that file as
 client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.

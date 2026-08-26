@@ -340,7 +340,51 @@ func boundedTreeSize(root string, remaining int64) (int64, error) {
 func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry, int64, error) {
 	var inventory []InventoryEntry
 	var totalBytes int64
-	for _, namespace := range generationNamespaces {
+	addMember := func(relative string) error {
+		data, _, err := fsutil.ReadRegularFileLimited(
+			filepath.Join(gen.Dir(), filepath.FromSlash(relative)),
+			quarantineCandidateMaxFileBytes,
+		)
+		if err != nil {
+			return fmt.Errorf("classify %s: %w", relative, err)
+		}
+		totalBytes += int64(len(data))
+		if totalBytes > quarantineCandidateMaxBytes {
+			return fmt.Errorf(
+				"generation %s exceeds quarantine byte limit %d",
+				gen.GenerationID(),
+				quarantineCandidateMaxBytes,
+			)
+		}
+		sum := sha256.Sum256(data)
+		term, present, err := crypto.InspectTermEnvelope(data)
+		if err != nil {
+			return fmt.Errorf("classify %s term envelope: %w", relative, err)
+		}
+		if !present {
+			term = 0
+		}
+		inventory = append(inventory, InventoryEntry{
+			Path:   relative,
+			SHA256: hex.EncodeToString(sum[:]),
+			Size:   int64(len(data)),
+			Term:   term,
+		})
+		return nil
+	}
+	for _, relative := range generationAuthorityFiles {
+		if len(inventory)+1 > quarantineCandidateMaxFiles {
+			return nil, 0, fmt.Errorf(
+				"generation %s exceeds quarantine file limit %d",
+				gen.GenerationID(),
+				quarantineCandidateMaxFiles,
+			)
+		}
+		if err := addMember(relative); err != nil {
+			return nil, 0, err
+		}
+	}
+	for _, namespace := range generationLeafNamespaces {
 		dir := filepath.Join(gen.Dir(), namespace)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -354,38 +398,9 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths) ([]InventoryEntry,
 			)
 		}
 		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			data, _, err := fsutil.ReadRegularFileLimited(path, quarantineCandidateMaxFileBytes)
-			if err != nil {
-				return nil, 0, fmt.Errorf("classify %s/%s: %w", namespace, entry.Name(), err)
+			if err := addMember(filepath.ToSlash(filepath.Join(namespace, entry.Name()))); err != nil {
+				return nil, 0, err
 			}
-			totalBytes += int64(len(data))
-			if totalBytes > quarantineCandidateMaxBytes {
-				return nil, 0, fmt.Errorf(
-					"generation %s exceeds quarantine byte limit %d",
-					gen.GenerationID(),
-					quarantineCandidateMaxBytes,
-				)
-			}
-			sum := sha256.Sum256(data)
-			term, present, err := crypto.InspectTermEnvelope(data)
-			if err != nil {
-				return nil, 0, fmt.Errorf(
-					"classify %s/%s term envelope: %w",
-					namespace,
-					entry.Name(),
-					err,
-				)
-			}
-			if !present {
-				term = 0
-			}
-			inventory = append(inventory, InventoryEntry{
-				Path:   namespace + "/" + entry.Name(),
-				SHA256: hex.EncodeToString(sum[:]),
-				Size:   int64(len(data)),
-				Term:   term,
-			})
 		}
 	}
 	slices.SortFunc(inventory, func(a, b InventoryEntry) int {

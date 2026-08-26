@@ -52,6 +52,7 @@ func scan(
 	}
 	scanner := inventoryScanner{
 		paths:             paths,
+		currentPaths:      paths.GenerationPaths(current),
 		currentGeneration: current,
 		kr:                kr,
 		excludeSnapshot:   excludeSnapshot,
@@ -84,6 +85,7 @@ func scan(
 
 type inventoryScanner struct {
 	paths             storepaths.Paths
+	currentPaths      storepaths.GenPaths
 	currentGeneration string
 	kr                *crypto.Keyring
 	excludeSnapshot   bool
@@ -293,7 +295,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 	if err != nil {
 		return err
 	}
-	nodeSidecarPath := s.paths.NodeRoleIntegritySidecar()
+	nodeSidecarPath := s.currentPaths.NodeRoleIntegritySidecar()
 	nodeSidecarBytes, _, err := fsutil.ReadRegularFile(nodeSidecarPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory node role sidecar: %w", err)
@@ -312,7 +314,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 		return err
 	}
 
-	policyPath := policy.PolicyPath(s.paths.Root())
+	policyPath := s.currentPaths.PolicyPath()
 	policyBytes, _, err := fsutil.ReadRegularFile(policyPath)
 	if err != nil {
 		return fmt.Errorf("rotation inventory policy: %w", err)
@@ -353,7 +355,7 @@ func (s *inventoryScanner) scanIntegrityDocuments() error {
 }
 
 func (s *inventoryScanner) scanDeleted() error {
-	root := s.paths.DeletedDir()
+	root := s.currentPaths.DeletedDir()
 	present, err := directoryExists(root)
 	if err != nil || !present {
 		return err

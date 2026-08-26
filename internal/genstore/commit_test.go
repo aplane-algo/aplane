@@ -23,6 +23,9 @@ func mintFirst(t *testing.T, paths storepaths.Paths, files map[string]string) st
 		OperationID:     "op-init",
 		CreatedAt:       time.Unix(1_753_500_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
+			if err := writeTestGenerationAuthority(staged); err != nil {
+				return err
+			}
 			for relative, content := range files {
 				if err := os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(relative)), []byte(content), 0o660); err != nil {
 					return err
@@ -55,7 +58,7 @@ func TestMintFirstGenerationCommits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadManifest() error = %v", err)
 	}
-	if manifest.Operation != "test-init" || !manifest.Complete || len(manifest.Inventory) != 1 {
+	if manifest.Operation != "test-init" || !manifest.Complete || len(manifest.Inventory) != 4 {
 		t.Fatalf("manifest = %+v", manifest)
 	}
 	// No staging residue.

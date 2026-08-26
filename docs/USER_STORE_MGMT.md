@@ -236,9 +236,10 @@ It also creates the product `aplane.token` under `identities/default/` if one do
 exist. Normal clients should use the operator-approved `request-token`
 flow to receive a client-side copy of that token.
 
-`apstore initialize` also creates the initial signed policy baseline:
-`identities/default/policy.yaml`,
-`identities/default/policy.yaml.hmac`.
+`apstore initialize` also creates the initial signed policy baseline inside
+the first selected generation:
+`identities/default/generations/<generation-id>/policy.yaml` and its
+`policy.yaml.hmac` sidecar.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role sentry` creates a dedicated

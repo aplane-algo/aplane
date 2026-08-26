@@ -119,7 +119,11 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Fatalf("expected deleted key at %s: %v", result.DeletedPath, err)
 	}
-	if wantDir := paths.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if wantDir := active.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
 		t.Fatalf("deleted path dir = %s, want %s", filepath.Dir(result.DeletedPath), wantDir)
 	}
 }

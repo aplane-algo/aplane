@@ -109,7 +109,7 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	// they are removed.
 	currentDir := paths.GenerationPaths(current).Dir()
 	residueDirs := []string{currentDir}
-	for _, namespace := range generationNamespaces {
+	for _, namespace := range generationLeafNamespaces {
 		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
 	}
 	for _, dir := range residueDirs {

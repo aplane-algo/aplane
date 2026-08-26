@@ -5,6 +5,7 @@
 package genstoretest
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -29,9 +30,27 @@ func MintFirst(t testing.TB, paths storepaths.Paths) {
 		Operation:       "store-initialize",
 		OperationID:     "init-" + generationID,
 		CreatedAt:       time.Unix(1_785_200_000, 0),
+		Apply:           ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first generation): %v", err)
 	}
+}
+
+// ApplyAuthorityPlaceholders supplies structurally complete, deliberately
+// unauthenticated authority members to low-level tests that do not exercise
+// policy or node-role verification. Production initialization must create
+// authenticated members with policy and noderole APIs instead.
+func ApplyAuthorityPlaceholders(staged storepaths.GenPaths) error {
+	for _, path := range []string{
+		staged.PolicyPath(),
+		staged.PolicyIntegritySidecar(),
+		staged.NodeRoleIntegritySidecar(),
+	} {
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Active resolves an identity's current generation for tests that exercise an

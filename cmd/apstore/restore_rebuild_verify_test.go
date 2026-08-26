@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -100,7 +101,11 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
+	active, err := genstore.ResolveActive(keystorePaths())
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -147,7 +152,11 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
+	active, err := genstore.ResolveActive(keystorePaths())
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}

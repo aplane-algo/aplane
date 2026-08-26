@@ -181,10 +181,8 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 			return storepaths.GenPaths{}, fmt.Errorf("copy parent generation: %w", err)
 		}
 	} else {
-		for _, namespace := range generationNamespaces {
-			if err := makeNamespaceDir(filepath.Join(stagingDir, namespace)); err != nil {
-				return storepaths.GenPaths{}, err
-			}
+		if err := makeGenerationDirectories(staged); err != nil {
+			return storepaths.GenPaths{}, err
 		}
 	}
 
@@ -302,12 +300,12 @@ func stagedGenPaths(paths storepaths.Paths, generationID, stagingDir string) sto
 }
 
 func copyNamespaces(from, to storepaths.GenPaths) error {
-	for _, namespace := range generationNamespaces {
+	if err := makeGenerationDirectories(to); err != nil {
+		return err
+	}
+	for _, namespace := range generationLeafNamespaces {
 		srcDir := filepath.Join(from.Dir(), namespace)
 		dstDir := filepath.Join(to.Dir(), namespace)
-		if err := makeNamespaceDir(dstDir); err != nil {
-			return err
-		}
 		info, err := os.Lstat(srcDir)
 		if err != nil {
 			// A parent namespace that is missing is damage, never a valid
@@ -338,6 +336,35 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 			if err := os.Chmod(dst, targetMode); err != nil {
 				return err
 			}
+		}
+	}
+	for _, relative := range generationAuthorityFiles {
+		data, mode, err := fsutil.ReadRegularFile(filepath.Join(from.Dir(), relative))
+		if err != nil {
+			return fmt.Errorf("copy generation authority file %s: %w", relative, err)
+		}
+		targetMode := mode.Perm() & fsutil.StoreFilePerm
+		dst := filepath.Join(to.Dir(), relative)
+		if err := os.WriteFile(dst, data, targetMode); err != nil {
+			return err
+		}
+		if err := os.Chmod(dst, targetMode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func makeGenerationDirectories(gen storepaths.GenPaths) error {
+	for _, dir := range []string{
+		gen.KeysDir(),
+		gen.KeyTypeRecordsDir(),
+		gen.DeletedDir(),
+		gen.DeletedKeysDir(),
+		gen.DeletedKeyTypeRecordsDir(),
+	} {
+		if err := makeNamespaceDir(dir); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -394,6 +421,10 @@ func syncTreeBottomUp(root string) error {
 // validateStructureAt runs the structural validator against an unpublished
 // root (staging) or a published generation directory.
 func validateStructureAt(dir, generationID string, requireManifest bool) error {
+	gen := storepaths.StagedGenerationPaths(generationID, dir)
+	if err := validateGenerationAuthorityShape(gen); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -410,10 +441,10 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 				// before the generation ever became current. Never accept.
 				return fmt.Errorf("staged generation %s carries a seal", generationID)
 			}
-		case "keys", "keytypes":
-			if err := validateNamespaceDir(filepath.Join(dir, name)); err != nil {
-				return fmt.Errorf("generation %s: %w", generationID, err)
-			}
+		case "keys", "keytypes", "deleted":
+			// Validated unconditionally above.
+		case "policy.yaml", "policy.yaml.hmac", "node.yaml.hmac":
+			// Validated unconditionally above.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", generationID, name)
 		}

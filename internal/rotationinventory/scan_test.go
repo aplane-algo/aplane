@@ -335,19 +335,6 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 	if err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(paths, nodeBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
-		t.Fatalf("SaveIdentitySidecarWithKeyring() error = %v", err)
-	}
-	if err := policy.SaveStoredConfigWithKeyring(
-		paths.Root(),
-
-		&policy.StoredConfig{},
-		kr,
-		time.Unix(1_785_200_000, 0),
-	); err != nil {
-		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
-	}
-
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID:    inventoryGenA,
 		FirstGeneration: true,
@@ -355,6 +342,23 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		OperationID:     "inventory-fixture-a",
 		CreatedAt:       time.Unix(1_785_200_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
+			if err := noderole.SaveGenerationSidecarWithKeyring(
+				paths,
+				staged,
+				nodeBytes,
+				kr,
+				time.Unix(1_785_200_000, 0),
+			); err != nil {
+				return err
+			}
+			if err := policy.SaveStoredConfigActiveWithKeyring(
+				staged,
+				&policy.StoredConfig{},
+				kr,
+				time.Unix(1_785_200_000, 0),
+			); err != nil {
+				return err
+			}
 			artifacts := []struct {
 				path      string
 				plaintext string
@@ -394,20 +398,15 @@ func newInventoryFixture(t *testing.T) inventoryFixture {
 		t.Fatalf("Mint(second) error = %v", err)
 	}
 
-	if err := fsutil.MkdirAll(paths.DeletedKeysDir()); err != nil {
-		t.Fatalf("MkdirAll(deleted keys) error = %v", err)
-	}
-	if err := fsutil.MkdirAll(filepath.Dir(paths.DeletedKeyTypeTemplate("archived.type.v1"))); err != nil {
-		t.Fatalf("MkdirAll(deleted keytypes) error = %v", err)
-	}
+	current := paths.GenerationPaths(inventoryGenB)
 	for _, artifact := range []struct {
 		path      string
 		plaintext string
 		ctx       crypto.ObjectContext
 	}{
-		{filepath.Join(paths.DeletedKeysDir(), "ARCHIVED.key"), "archived account", crypto.AccountKeyContext("ARCHIVED")},
-		{filepath.Join(paths.DeletedKeysDir(), "ARCHWIT.sen"), "archived sentry", crypto.SentryCredentialContext("ARCHWIT")},
-		{paths.DeletedKeyTypeTemplate("archived.type.v1"), "archived template", crypto.KeyTypeTemplateContext("archived.type.v1")},
+		{filepath.Join(current.DeletedKeysDir(), "ARCHIVED.key"), "archived account", crypto.AccountKeyContext("ARCHIVED")},
+		{filepath.Join(current.DeletedKeysDir(), "ARCHWIT.sen"), "archived sentry", crypto.SentryCredentialContext("ARCHWIT")},
+		{current.DeletedKeyTypeTemplate("archived.type.v1"), "archived template", crypto.KeyTypeTemplateContext("archived.type.v1")},
 	} {
 		if err := writeEnvelope(artifact.path, []byte(artifact.plaintext), artifact.ctx, kr); err != nil {
 			t.Fatalf("writeEnvelope(%s) error = %v", artifact.path, err)

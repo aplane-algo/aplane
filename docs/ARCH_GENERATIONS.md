@@ -30,12 +30,19 @@ identities/default/
       seal.json                # final content record, written before flip-away (§5)
       keys/                    # *.key *.sen *.wit.json
       keytypes/                # *.json records, *.template
-  deleted/  sentries/  .ssh/  files/
-  policy.yaml  policy.yaml.hmac  node.yaml.hmac  config.yaml
+      deleted/
+        keys/                  # archived *.key and *.sen
+        keytypes/              # archived *.template
+      policy.yaml
+      policy.yaml.hmac
+      node.yaml.hmac
+  sentries/  .ssh/  files/  config.yaml
   unlock.yaml  aplane.token  passphrase  passphrase.cred
 ```
 
-**Generational (exactly two namespaces):** `keys/` and `keytypes/` — i.e.
+**Generational (one complete security-bearing authority set):** `keys/`,
+`keytypes/`, `deleted/keys/`, `deleted/keytypes/`, `policy.yaml`,
+`policy.yaml.hmac`, and `node.yaml.hmac` — i.e.
 `storepaths.KeysDir`, `KeyTypeRecordsDir`, `KeyTypeRecord`, `KeyTypeTemplate`,
 and the `internal/keys` file constructors rooted at them
 (`CanonicalManagedCredentialPath`, `AccountKeyFilePath`,
@@ -45,9 +52,8 @@ and the `internal/keys` file constructors rooted at them
 
 | Paths | Why they stay outside |
 |---|---|
-| `deleted/keys/`, `deleted/keytypes/` | tombstone namespace, not active state; a deleted key is *supposed* to reappear on generation rollback — the prior generation's copy is the rollback semantic, the tombstone is just an archive |
 | `keyring.enc` and `.keystore` | the product store's cryptographic root and format marker are not generation-scoped |
-| `policy.yaml(+.hmac)`, `node.yaml.hmac`, `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | not part of any activation transaction |
+| `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | product-local operational state, not generation authority |
 | `<root>/backups`, `<root>/library`, `<root>/node.yaml` | not identity-active state |
 
 **Generation ID:** `gen-<unix-seconds>-<8 hex random>` — sortable, no
@@ -97,8 +103,8 @@ current generation in place (§4).
 - `Paths` keeps every non-generational method unchanged.
 - `genstore.Resolve` / `ResolveActive` read and
   validates `CURRENT` once and returns a `GenPaths` carrying the resolved
-  generation-qualified `KeysDir`/`KeyTypeRecordsDir`/`KeyTypeRecord`/
-  `KeyTypeTemplate`. Legacy active-namespace path methods are not used for
+  generation-qualified key, key-type, deleted-archive, policy, and node-role
+  integrity paths. Legacy identity-root path methods are not used for
   generation-qualified consumers, preventing stale-path resolution.
 
 **Lifetime rule: resolve once per operation, under the product store mutation

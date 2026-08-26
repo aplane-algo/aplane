@@ -60,17 +60,7 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 
 	// A published-but-uncommitted attempt (no seal, not current) and a
 	// leftover staging directory.
-	attempt := paths.GenerationPaths(testGenD)
-	for _, namespace := range []string{"keys", "keytypes"} {
-		if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-	}
-	if err := WriteManifest(attempt, Manifest{
-		GenerationID: testGenD, CreatedAtUnix: 1, Operation: "test", OperationID: "op-d", Complete: true,
-	}); err != nil {
-		t.Fatalf("WriteManifest: %v", err)
-	}
+	attempt := mintTestGeneration(t, paths, testGenD, nil)
 	staging := filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"leftover")
 	if err := os.MkdirAll(staging, 0o770); err != nil {
 		t.Fatalf("MkdirAll(staging): %v", err)
@@ -261,6 +251,11 @@ func TestCollectGarbageValidatesRotatedRollbackParentWithHistoricalAnchor(t *tes
 			OperationID:     "op-" + id,
 			CreatedAt:       time.Unix(created, 0),
 			Apply: func(staged storepaths.GenPaths) error {
+				if first {
+					if err := writeTestGenerationAuthority(staged); err != nil {
+						return err
+					}
+				}
 				return os.WriteFile(
 					filepath.Join(staged.KeysDir(), "ACCOUNT.key"),
 					[]byte(id),
@@ -453,20 +448,29 @@ func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
 	}
 }
 
-func TestValidateCurrentRequiresBothNamespaces(t *testing.T) {
-	for _, namespace := range []string{"keys", "keytypes"} {
-		t.Run(namespace, func(t *testing.T) {
+func TestValidateCurrentRequiresCompleteAuthorityShape(t *testing.T) {
+	tests := map[string]func(storepaths.GenPaths) string{
+		"keys":             func(gen storepaths.GenPaths) string { return gen.KeysDir() },
+		"keytypes":         func(gen storepaths.GenPaths) string { return gen.KeyTypeRecordsDir() },
+		"deleted-keys":     func(gen storepaths.GenPaths) string { return gen.DeletedKeysDir() },
+		"deleted-keytypes": func(gen storepaths.GenPaths) string { return gen.DeletedKeyTypeRecordsDir() },
+		"policy":           func(gen storepaths.GenPaths) string { return gen.PolicyPath() },
+		"policy-integrity": func(gen storepaths.GenPaths) string { return gen.PolicyIntegritySidecar() },
+		"node-integrity":   func(gen storepaths.GenPaths) string { return gen.NodeRoleIntegritySidecar() },
+	}
+	for name, target := range tests {
+		t.Run(name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
 			buildGenerationChain(t, paths)
 			gen := paths.GenerationPaths(testGenC)
 			if err := ValidateCurrent(gen); err != nil {
 				t.Fatalf("ValidateCurrent(intact) error = %v", err)
 			}
-			if err := os.RemoveAll(filepath.Join(gen.Dir(), namespace)); err != nil {
-				t.Fatalf("remove namespace: %v", err)
+			if err := os.RemoveAll(target(gen)); err != nil {
+				t.Fatalf("remove authority member: %v", err)
 			}
 			if err := ValidateCurrent(gen); err == nil {
-				t.Fatalf("ValidateCurrent accepted a generation missing %s/", namespace)
+				t.Fatalf("ValidateCurrent accepted a generation missing %s", name)
 			}
 			// The prune path inherits the rejection: nothing is deleted.
 			removed, err := CollectGarbage(paths, nil, false, testKeyring(t))
@@ -761,21 +765,7 @@ func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) 
 func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths)
-	attempt := paths.GenerationPaths(testGenD)
-	for _, namespace := range []string{"keys", "keytypes"} {
-		if err := os.MkdirAll(filepath.Join(attempt.Dir(), namespace), 0o770); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-	}
-	if err := WriteManifest(attempt, Manifest{
-		GenerationID:  testGenD,
-		CreatedAtUnix: 1,
-		Operation:     "test",
-		OperationID:   "op-inspect",
-		Complete:      true,
-	}); err != nil {
-		t.Fatalf("WriteManifest: %v", err)
-	}
+	attempt := mintTestGeneration(t, paths, testGenD, nil)
 	staging := filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"leftover")
 	if err := os.MkdirAll(staging, 0o770); err != nil {
 		t.Fatalf("MkdirAll(staging): %v", err)

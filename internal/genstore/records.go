@@ -41,9 +41,23 @@ const (
 	OperationCredentialRestoreRollback = "credential-restore-rollback"
 )
 
-// generationNamespaces are the directories a generation carries. Order is
-// load-bearing for inventory comparison.
-var generationNamespaces = []string{"keys", "keytypes"}
+// generationLeafNamespaces are the flat file namespaces carried by every
+// generation. Order is load-bearing for inventory comparison. The deleted/
+// directory itself is only a closed container for its two leaf namespaces.
+var generationLeafNamespaces = []string{
+	"keys",
+	"keytypes",
+	"deleted/keys",
+	"deleted/keytypes",
+}
+
+// generationAuthorityFiles are generation-root files whose exact bytes are
+// part of the selected authority state.
+var generationAuthorityFiles = []string{
+	"policy.yaml",
+	"policy.yaml.hmac",
+	"node.yaml.hmac",
+}
 
 // InventoryEntry pins one regular file by namespace-relative path.
 type InventoryEntry struct {
@@ -129,19 +143,23 @@ func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// BuildInventory walks the generation's namespaces and pins every regular
-// file. Strict: symlinks, subdirectories, and irregular files are errors,
-// never skipped. A missing namespace directory contributes no entries.
+// BuildInventory walks every generation-owned authority member and pins every
+// regular file. Strict: required files and namespaces must exist; symlinks,
+// subdirectories in leaf namespaces, and irregular files are errors.
 func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 	var inventory []InventoryEntry
-	for _, namespace := range generationNamespaces {
-		dir := filepath.Join(gen.Dir(), namespace)
-		info, err := os.Lstat(dir)
-		if os.IsNotExist(err) {
-			continue
-		}
+	for _, relative := range generationAuthorityFiles {
+		entry, err := buildInventoryEntry(gen, relative)
 		if err != nil {
 			return nil, err
+		}
+		inventory = append(inventory, entry)
+	}
+	for _, namespace := range generationLeafNamespaces {
+		dir := filepath.Join(gen.Dir(), namespace)
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return nil, fmt.Errorf("generation namespace %s: %w", namespace, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return nil, fmt.Errorf("generation namespace is not a regular directory: %s", dir)
@@ -151,31 +169,40 @@ func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 			return nil, err
 		}
 		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			data, _, err := fsutil.ReadRegularFile(path)
+			relative := filepath.ToSlash(filepath.Join(namespace, entry.Name()))
+			member, err := buildInventoryEntry(gen, relative)
 			if err != nil {
-				return nil, fmt.Errorf("inventory %s/%s: %w", namespace, entry.Name(), err)
+				return nil, err
 			}
-			sum := sha256.Sum256(data)
-			term, present, err := crypto.InspectTermEnvelope(data)
-			if err != nil {
-				return nil, fmt.Errorf("inventory %s/%s term: %w", namespace, entry.Name(), err)
-			}
-			if !present {
-				term = 0
-			}
-			inventory = append(inventory, InventoryEntry{
-				Path:   namespace + "/" + entry.Name(),
-				SHA256: hex.EncodeToString(sum[:]),
-				Size:   int64(len(data)),
-				Term:   term,
-			})
+			inventory = append(inventory, member)
 		}
 	}
 	slices.SortFunc(inventory, func(a, b InventoryEntry) int {
 		return strings.Compare(a.Path, b.Path)
 	})
 	return inventory, nil
+}
+
+func buildInventoryEntry(gen storepaths.GenPaths, relative string) (InventoryEntry, error) {
+	path := filepath.Join(gen.Dir(), filepath.FromSlash(relative))
+	data, _, err := fsutil.ReadRegularFile(path)
+	if err != nil {
+		return InventoryEntry{}, fmt.Errorf("inventory %s: %w", relative, err)
+	}
+	sum := sha256.Sum256(data)
+	term, present, err := crypto.InspectTermEnvelope(data)
+	if err != nil {
+		return InventoryEntry{}, fmt.Errorf("inventory %s term: %w", relative, err)
+	}
+	if !present {
+		term = 0
+	}
+	return InventoryEntry{
+		Path:   relative,
+		SHA256: hex.EncodeToString(sum[:]),
+		Size:   int64(len(data)),
+		Term:   term,
+	}, nil
 }
 
 // WriteManifest durably writes the generation's manifest. Called once, in
@@ -499,10 +526,7 @@ func validateManifest(manifest *Manifest, generationID string) error {
 func validateInventory(inventory []InventoryEntry) error {
 	seen := make(map[string]struct{}, len(inventory))
 	for _, entry := range inventory {
-		namespace, name, ok := strings.Cut(entry.Path, "/")
-		if !ok || !slices.Contains(generationNamespaces, namespace) ||
-			name == "" || name != filepath.Base(name) ||
-			strings.ContainsAny(name, `/\`+"\x00") {
+		if !validGenerationInventoryPath(entry.Path) {
 			return fmt.Errorf("invalid inventory path %q", entry.Path)
 		}
 		if _, dup := seen[entry.Path]; dup {
@@ -521,6 +545,22 @@ func validateInventory(inventory []InventoryEntry) error {
 		return fmt.Errorf("inventory is not sorted")
 	}
 	return nil
+}
+
+func validGenerationInventoryPath(path string) bool {
+	if slices.Contains(generationAuthorityFiles, path) {
+		return true
+	}
+	for _, namespace := range generationLeafNamespaces {
+		prefix := namespace + "/"
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		name := strings.TrimPrefix(path, prefix)
+		return name != "" && name == filepath.Base(name) &&
+			!strings.ContainsAny(name, `/\`+"\x00")
+	}
+	return false
 }
 
 func writeJSONDurable(path string, value any) error {

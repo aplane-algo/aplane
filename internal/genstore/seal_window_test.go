@@ -150,6 +150,16 @@ func mintSealWindowGeneration(t *testing.T, paths storepaths.Paths, identity str
 	}
 	req.GenerationID = id
 	req.OperationID = req.Operation + "-" + id
+	originalApply := req.Apply
+	req.Apply = func(staged storepaths.GenPaths) error {
+		if err := writeTestGenerationAuthority(staged); err != nil {
+			return err
+		}
+		if originalApply != nil {
+			return originalApply(staged)
+		}
+		return nil
+	}
 	if _, err := Mint(paths, req); err != nil {
 		t.Fatalf("Mint(%s): %v", req.Operation, err)
 	}

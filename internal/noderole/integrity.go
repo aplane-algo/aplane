@@ -76,7 +76,17 @@ func SaveIdentitySidecarWithKeyring(paths storepaths.Paths, roleBytes []byte, kr
 	return SaveIdentitySidecar(paths, roleBytes, kr, signedAt)
 }
 
+// SaveGenerationSidecarWithKeyring authenticates the immutable data-root node
+// role into one already-resolved generation.
+func SaveGenerationSidecarWithKeyring(paths storepaths.Paths, active storepaths.ActivePaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	return saveSidecarAtPath(paths, active.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
+}
+
 func SaveIdentitySidecar(paths storepaths.Paths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	return saveSidecarAtPath(paths, paths.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
+}
+
+func saveSidecarAtPath(paths storepaths.Paths, sidecarPath string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
 	if _, err := ParseDocument(roleBytes); err != nil {
 		return err
 	}
@@ -92,12 +102,11 @@ func SaveIdentitySidecar(paths storepaths.Paths, roleBytes []byte, kr *apcrypto.
 	if err != nil {
 		return err
 	}
-	path := paths.NodeRoleIntegritySidecar()
-	if err := fsutil.MkdirAllPrivate(filepath.Dir(path)); err != nil {
+	if err := fsutil.MkdirAllPrivate(filepath.Dir(sidecarPath)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
-	if err := fsutil.WriteFile(path, sidecarBytes); err != nil {
-		return fmt.Errorf("failed to write node role integrity sidecar %s: %w", path, err)
+	if err := fsutil.WriteFile(sidecarPath, sidecarBytes); err != nil {
+		return fmt.Errorf("failed to write node role integrity sidecar %s: %w", sidecarPath, err)
 	}
 	return nil
 }
@@ -106,12 +115,22 @@ func LoadAndVerifyWithKeyring(paths storepaths.Paths, kr *apcrypto.Keyring) (Doc
 	return LoadAndVerify(paths, kr)
 }
 
+// LoadAndVerifyGenerationWithKeyring verifies the immutable data-root node
+// role against the sidecar in one already-resolved generation.
+func LoadAndVerifyGenerationWithKeyring(paths storepaths.Paths, active storepaths.ActivePaths, kr *apcrypto.Keyring) (Document, error) {
+	return loadAndVerifyAtPath(paths, active.NodeRoleIntegritySidecar(), kr)
+}
+
 func LoadAndVerify(paths storepaths.Paths, kr *apcrypto.Keyring) (Document, error) {
+	return loadAndVerifyAtPath(paths, paths.NodeRoleIntegritySidecar(), kr)
+}
+
+func loadAndVerifyAtPath(paths storepaths.Paths, sidecarPath string, kr *apcrypto.Keyring) (Document, error) {
 	doc, roleBytes, err := Load(paths)
 	if err != nil {
 		return Document{}, err
 	}
-	sidecar, err := LoadSidecar(paths.NodeRoleIntegritySidecar())
+	sidecar, err := LoadSidecar(sidecarPath)
 	if err != nil {
 		return Document{}, err
 	}

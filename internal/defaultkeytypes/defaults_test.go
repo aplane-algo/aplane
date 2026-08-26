@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,7 @@ func mintFirstGenerationForTest(t *testing.T, paths storepaths.Paths) {
 		Operation:       "store-initialize",
 		OperationID:     "init-" + generationID,
 		CreatedAt:       time.Unix(1_785_200_000, 0),
+		Apply:           genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first): %v", err)
 	}

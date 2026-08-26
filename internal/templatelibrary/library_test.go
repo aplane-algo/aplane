@@ -6,6 +6,7 @@ package templatelibrary
 import (
 	"bytes"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
@@ -578,7 +579,11 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	if !removed.Removed {
 		t.Fatal("RemoveInstalledTemplate().Removed = false, want true")
 	}
-	wantArchive := paths.DeletedKeyTypeTemplate(parsed.KeyType)
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	wantArchive := active.DeletedKeyTypeTemplate(parsed.KeyType)
 	if removed.OutputPath != wantArchive {
 		t.Fatalf("RemoveInstalledTemplate().OutputPath = %q, want %q", removed.OutputPath, wantArchive)
 	}
@@ -588,7 +593,7 @@ func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T
 	if _, err := os.Stat(removed.OutputPath); err != nil {
 		t.Fatalf("archived template missing after removal: %v", err)
 	}
-	if _, err := os.Stat(paths.DeletedKeysDir()); err != nil {
+	if _, err := os.Stat(active.DeletedKeysDir()); err != nil {
 		t.Fatalf("deleted keys dir missing after template removal: %v", err)
 	}
 
@@ -609,9 +614,13 @@ func TestRemoveInstalledTemplateRestoresStateWhenArchiveFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallParsed() error = %v", err)
 	}
-	blockingPath := filepath.Join(paths.DeletedDir(), "keytypes")
-	if err := os.MkdirAll(filepath.Dir(blockingPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	blockingPath := active.DeletedKeyTypeRecordsDir()
+	if err := os.RemoveAll(blockingPath); err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
 	}
 	if err := os.WriteFile(blockingPath, []byte("not a directory"), 0o600); err != nil {
 		t.Fatalf("WriteFile(blocking archive dir) error = %v", err)
@@ -1030,7 +1039,11 @@ func assertInstalledTemplateProjection(t *testing.T, paths storepaths.Paths, par
 	if got := templatestore.TemplateExistsForPaths(paths, parsed.KeyType, parsed.TemplateType); got != want.templateExists {
 		t.Fatalf("template exists = %v, want %v", got, want.templateExists)
 	}
-	if _, err := os.Stat(paths.DeletedKeyTypeTemplate(parsed.KeyType)); (err == nil) != want.archiveExists {
+	active, resolveErr := genstore.ResolveActive(paths)
+	if resolveErr != nil {
+		t.Fatalf("ResolveActive() error = %v", resolveErr)
+	}
+	if _, err := os.Stat(active.DeletedKeyTypeTemplate(parsed.KeyType)); (err == nil) != want.archiveExists {
 		t.Fatalf("archive exists = %v, want %v (stat err=%v)", err == nil, want.archiveExists, err)
 	}
 

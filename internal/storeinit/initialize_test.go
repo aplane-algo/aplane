@@ -69,10 +69,10 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	if _, err := policy.LoadVerifiedStoredConfigWithKeyring(dataDir, kr); err != nil {
+	if _, err := policy.LoadVerifiedStoredConfigActive(active, kr); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
-	role, err := noderole.LoadAndVerifyWithKeyring(paths, kr)
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
@@ -115,19 +115,19 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 		t.Fatalf("OpenKeyringStore() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(paths, kr)
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
-	if _, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, kr); err != nil {
+	if _, err := policy.LoadVerifiedSentryConfigActive(active, kr); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
-	}
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
 	}
 	rec, ok, err := keytypestate.GetActive(active, defaultkeytypes.Falcon1024AllowlistKeyType)
 	if err != nil {

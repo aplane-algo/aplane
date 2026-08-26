@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -69,7 +70,11 @@ func (s *Service) RevokeToken() (string, error) {
 
 // DeleteKey moves a key file out of the active key set into the identity archive.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
-	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir())
+	active, err := genstore.ResolveActive(s.keyPaths)
+	if err != nil {
+		return nil, err
+	}
+	return keymgmt.DeleteKey(address, keyFile, active.DeletedKeysDir())
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the

@@ -14,6 +14,13 @@ type ActivePaths interface {
 	KeyTypeRecordsDir() string
 	KeyTypeRecord(keyType string) string
 	KeyTypeTemplate(keyType string) string
+	DeletedDir() string
+	DeletedKeysDir() string
+	DeletedKeyTypeRecordsDir() string
+	DeletedKeyTypeTemplate(keyType string) string
+	PolicyPath() string
+	PolicyIntegritySidecar() string
+	NodeRoleIntegritySidecar() string
 }
 
 var _ ActivePaths = GenPaths{}

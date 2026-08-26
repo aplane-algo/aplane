@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -124,7 +125,8 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	}
 	defer kr.Zero()
 
-	if err := initializeRebuildNodeRole(nodeRole, kr); err != nil {
+	roleBytes, err := initializeRebuildNodeRole(nodeRole)
+	if err != nil {
 		return err
 	}
 	generationID, err := genstore.NewGenerationID(time.Now())
@@ -138,6 +140,34 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		OperationID:     "rebuild-" + generationID,
 		CreatedAt:       time.Now(),
 		Apply: func(staged storepaths.GenPaths) error {
+			if err := noderole.SaveGenerationSidecarWithKeyring(
+				keystorePaths(),
+				staged,
+				roleBytes,
+				kr,
+				time.Now(),
+			); err != nil {
+				return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
+			}
+			var policyErr error
+			if nodeRole == noderole.RoleSentry {
+				policyErr = policy.SaveStoredSentryConfigActiveWithKeyring(
+					staged,
+					&policy.StoredConfig{},
+					kr,
+					time.Now(),
+				)
+			} else {
+				policyErr = policy.SaveStoredConfigActiveWithKeyring(
+					staged,
+					&policy.StoredConfig{},
+					kr,
+					time.Now(),
+				)
+			}
+			if policyErr != nil {
+				return fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
+			}
 			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
 		},
 	}); err != nil {
@@ -187,15 +217,12 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 	return nil
 }
 
-func initializeRebuildNodeRole(role noderole.Role, kr *crypto.Keyring) error {
+func initializeRebuildNodeRole(role noderole.Role) ([]byte, error) {
 	roleBytes, _, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
 	if err != nil {
-		return fmt.Errorf("failed to create node role: %w", err)
+		return nil, fmt.Errorf("failed to create node role: %w", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keystorePaths(), roleBytes, kr, time.Now()); err != nil {
-		return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
-	}
-	return nil
+	return roleBytes, nil
 }
 
 func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, kr *crypto.Keyring, exportPassphrase []byte, staged storepaths.GenPaths) error {

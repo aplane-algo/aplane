@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -44,6 +45,9 @@ func TestRollbackMintReconstructsAnchoredSourceUnderCurrentTerm(t *testing.T) {
 		OperationID:     "init-a",
 		CreatedAt:       time.Unix(1_785_300_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
+			if err := genstoretest.ApplyAuthorityPlaceholders(staged); err != nil {
+				return err
+			}
 			if err := fsutil.WriteFile(
 				filepath.Join(staged.KeysDir(), "ACCOUNT.key"),
 				termOneEnvelope,

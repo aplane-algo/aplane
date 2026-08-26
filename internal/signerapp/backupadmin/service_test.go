@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -187,6 +188,7 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
 		GenerationID: generationID, FirstGeneration: true, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
+		Apply: genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -196,9 +198,11 @@ func convertToGenerationalStore(t *testing.T, paths storepaths.Paths) string {
 func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-		return policy.SaveStoredConfigWithKeyring(
-			paths.Root(), stored, kr, time.Unix(1_700_000_000, 0),
-		)
+		active, err := genstore.ResolveActive(paths)
+		if err != nil {
+			return err
+		}
+		return policy.SaveStoredConfigActiveWithKeyring(active, stored, kr, time.Unix(1_700_000_000, 0))
 	}); err != nil {
 		t.Fatal(err)
 	}

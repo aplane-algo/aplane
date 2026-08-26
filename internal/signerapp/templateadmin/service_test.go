@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -355,7 +356,11 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	} else if ok {
 		t.Fatal("template state restored after reload failure, want removal retained")
 	}
-	if _, err := os.Stat(ir.KeyPaths().DeletedKeyTypeTemplate(keyType)); err != nil {
+	active, err := genstore.ResolveActive(ir.KeyPaths())
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if _, err := os.Stat(active.DeletedKeyTypeTemplate(keyType)); err != nil {
 		t.Fatalf("archived template stat error = %v", err)
 	}
 	assertReloadInsideMutation(t, reloadCount, deps)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -179,10 +180,14 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	}
 	switch s.target() {
 	case TargetSentry:
-		if _, err := policyruntime.SaveStoredSentryConfigWithKeyring(
+		active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+		if err != nil {
+			return err
+		}
+		if _, err := policyruntime.SaveStoredSentryConfigActiveWithKeyring(
 			s.DataDir,
-
 			&serverCfg,
+			active,
 			stored,
 			kr,
 			s.now(),
@@ -190,10 +195,14 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 			return err
 		}
 	default:
-		if _, err := policyruntime.SaveStoredConfigWithKeyring(
+		active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+		if err != nil {
+			return err
+		}
+		if _, err := policyruntime.SaveStoredConfigActiveWithKeyring(
 			s.DataDir,
-
 			&serverCfg,
+			active,
 			stored,
 			kr,
 			s.now(),
@@ -405,19 +414,27 @@ func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.Sto
 }
 
 func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, []byte, error) {
+	active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+	if err != nil {
+		return nil, nil, err
+	}
 	switch s.target() {
 	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigDocument(s.DataDir, kr)
+		return policy.LoadVerifiedSentryConfigDocumentActive(active, kr)
 	default:
-		return policy.LoadVerifiedStoredConfigDocument(s.DataDir, kr)
+		return policy.LoadVerifiedStoredConfigDocumentActive(active, kr)
 	}
 }
 
 func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) error {
+	active, err := genstore.ResolveActive(storepaths.NewPaths(s.DataDir))
+	if err != nil {
+		return err
+	}
 	switch s.target() {
 	case TargetSentry:
-		return policy.SaveSentryBytesWithKeyring(s.DataDir, data, kr, s.now())
+		return policy.SaveSentryBytesActiveWithKeyring(active, data, kr, s.now())
 	default:
-		return policy.SavePolicyBytesWithKeyring(s.DataDir, data, kr, s.now())
+		return policy.SavePolicyBytesActiveWithKeyring(active, data, kr, s.now())
 	}
 }

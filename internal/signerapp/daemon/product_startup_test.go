@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -309,7 +310,11 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 	}},
 	}
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
-	if err := policy.SaveStoredConfigWithKeyring(root, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	active, err := genstore.ResolveActive(server.keyPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -360,7 +365,11 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(policy.PolicyIntegritySidecarPath(policy.PolicyPath(root))); err != nil {
+	active, err := genstore.ResolveActive(server.keyPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(active.PolicyIntegritySidecar()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -443,7 +452,11 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	maxFee := uint64(1234)
 	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
-	if err := policy.SaveStoredConfigWithKeyring(root, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	active, err := genstore.ResolveActive(server.keyPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -462,7 +475,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	if got := ir.Policy().MaxFeeMicroAlgos; got != maxFee {
 		t.Fatalf("MaxFeeMicroAlgos after verified load = %d, want %d", got, maxFee)
 	}
-	if err := os.WriteFile(policy.PolicyPath(root), []byte("max_fee_microalgos: 999999\n"), 0o600); err != nil {
+	if err := os.WriteFile(active.PolicyPath(), []byte("max_fee_microalgos: 999999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
