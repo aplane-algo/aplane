@@ -150,10 +150,8 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 
 	var rotation storepass.RotateResult
 	err = s.Deps.WithStoreMutation(func() error {
-		// A pending root authorizes its retiring term only for the explicit
-		// resume path. Clear the already-published runtime before the root can
-		// enter that window so concurrent signing cannot keep using a cached
-		// settled keyring. A racing explicit Lock must still win.
+		// Withdraw signing authority before freezing the selected generation.
+		// A racing explicit Lock must still win.
 		maintenance := ir.BeginStoreMaintenance()
 		republish := false
 		defer func() {
@@ -178,7 +176,7 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 		if _, reloadErr := ir.ReloadWithPassphrase(req.NewPassphrase); reloadErr != nil {
 			return fmt.Errorf("passphrase changed but runtime reload failed: %w", reloadErr)
 		}
-		// Completion has closed the root and reload has rebuilt every runtime
+		// The root replacement is complete and reload has rebuilt every runtime
 		// index under the new passphrase, so signing authority may be
 		// published again before the mutation lock is released.
 		republish = true
@@ -194,7 +192,6 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 			PriorGenerations:         rotation.PriorGenerations,
 			HelperWarning:            rotation.HelperWarning,
 			RootCommitted:            rotation.RootCommitted,
-			RotationPending:          rotation.RotationPending,
 			Code:                     "passphrase_change_failed",
 			Error:                    err.Error(),
 		}
@@ -209,7 +206,6 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 		PriorGenerations:         rotation.PriorGenerations,
 		HelperWarning:            rotation.HelperWarning,
 		RootCommitted:            rotation.RootCommitted,
-		RotationPending:          rotation.RotationPending,
 	}
 }
 

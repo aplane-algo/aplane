@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strings"
 
@@ -131,6 +132,57 @@ func NewKeyring() (*Keyring, error) {
 		currentTerm:       FirstTerm,
 		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
+}
+
+// NewSuccessorKeyring creates a settled keyring with one fresh current term,
+// all resident historical terms, and the caller-validated exact generation
+// anchors. It does not mutate current. The successor grants ordinary access
+// only to the new term; retained terms remain historical-only.
+func NewSuccessorKeyring(
+	current *Keyring,
+	anchors []HistoricalGenerationAnchor,
+) (*Keyring, error) {
+	if current == nil || len(current.terms) == 0 {
+		return nil, ErrKeyringNotOpen
+	}
+	if current.rotation != nil {
+		return nil, ErrRotationPending
+	}
+	if anchors == nil {
+		return nil, fmt.Errorf("successor keyring historical anchors must be an array")
+	}
+	if current.currentTerm == math.MaxInt64 {
+		return nil, fmt.Errorf("key term is exhausted")
+	}
+	if err := requirePreservedHistoricalAnchors(current.historicalAnchors, anchors); err != nil {
+		return nil, err
+	}
+
+	successor, err := cloneKeyring(current)
+	if err != nil {
+		return nil, err
+	}
+	success := false
+	defer func() {
+		if !success {
+			successor.Zero()
+		}
+	}()
+	term := current.currentTerm + 1
+	key, err := randomBytes(argon2KeyLen)
+	if err != nil {
+		return nil, fmt.Errorf("generate successor term: %w", err)
+	}
+	successor.terms[term] = key
+	successor.currentTerm = term
+	successor.historicalAnchors = slices.Clone(anchors)
+	successor.rotation = nil
+	payload := payloadFromKeyring(successor)
+	if err := validateKeyringPayload(&payload); err != nil {
+		return nil, fmt.Errorf("invalid successor keyring: %w", err)
+	}
+	success = true
+	return successor, nil
 }
 
 // NewKeyringFromKey adopts an existing key as the first term.

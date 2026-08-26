@@ -67,6 +67,15 @@ type MintRequest struct {
 	// Integrity authenticates the outgoing generation seal. It is required
 	// whenever Parent is non-empty and unused for a first generation.
 	Integrity *crypto.Keyring
+	// OutgoingSealAlreadyWritten declares that a maintenance transaction
+	// froze and sealed Parent before staging. Mint validates that exact seal
+	// before copying and never rewrites it.
+	OutgoingSealAlreadyWritten bool
+	// ReplacementKeyring and ReplacementPassphrase request a one-record
+	// key-authority plus generation cutover (changepass). They are valid only
+	// for an atomic successor with a pre-sealed outgoing generation.
+	ReplacementKeyring    *crypto.Keyring
+	ReplacementPassphrase []byte
 	// StartEmpty creates empty generation namespaces instead of copying the
 	// parent. It is used when Apply reconstructs an authenticated historical
 	// source into current-term envelopes; copying the mutable parent first
@@ -121,6 +130,13 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	}
 	if req.AtomicStoreRoot && req.FirstGeneration && len(req.InitialPassphrase) == 0 {
 		return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint requires an initial passphrase")
+	}
+	if req.OutgoingSealAlreadyWritten && req.Parent == "" {
+		return storepaths.GenPaths{}, fmt.Errorf("pre-sealed outgoing generation requires a parent")
+	}
+	replacingRoot := req.ReplacementKeyring != nil || len(req.ReplacementPassphrase) != 0
+	if replacingRoot && (!req.AtomicStoreRoot || req.FirstGeneration || !req.OutgoingSealAlreadyWritten || req.ReplacementKeyring == nil || len(req.ReplacementPassphrase) == 0) {
+		return storepaths.GenPaths{}, fmt.Errorf("replacement root requires an atomic successor, a pre-sealed outgoing generation, a successor keyring, and a passphrase")
 	}
 	// The parent must be exactly the generation CURRENT names: Mint seals
 	// req.Parent as "the outgoing generation", so a stale parent — or an
@@ -192,6 +208,11 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	}
 
 	generationsDir := paths.GenerationsDir()
+	if req.OutgoingSealAlreadyWritten {
+		if err := ValidateSealed(paths.GenerationPaths(req.Parent), req.Integrity); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("validate pre-sealed outgoing generation: %w", err)
+		}
+	}
 	if err := fsutil.MkdirAllPrivate(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -279,13 +300,24 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 
 	// Seal the outgoing generation while it is still current: the last
 	// write it ever receives, and what makes it a valid rollback target.
-	if req.Parent != "" {
+	if req.Parent != "" && !req.OutgoingSealAlreadyWritten {
 		if err := WriteSeal(paths.GenerationPaths(req.Parent), req.CreatedAt.Unix(), req.Integrity); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("seal outgoing generation: %w", err)
 		}
 	}
 
-	if req.AtomicStoreRoot {
+	if replacingRoot {
+		if err := CommitReplacementStoreRoot(
+			paths,
+			req.Integrity,
+			req.Parent,
+			req.ReplacementKeyring,
+			req.ReplacementPassphrase,
+			req.GenerationID,
+		); err != nil {
+			return storepaths.GenPaths{}, err
+		}
+	} else if req.AtomicStoreRoot {
 		if req.FirstGeneration {
 			if err := CommitInitialStoreRoot(
 				paths,

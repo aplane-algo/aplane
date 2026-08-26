@@ -262,7 +262,6 @@ type ChangeStorePassphraseResultMessage struct {
 	PriorGenerations         int    `json:"prior_generations,omitempty"`
 	HelperWarning            string `json:"helper_warning,omitempty"`
 	RootCommitted            bool   `json:"root_committed,omitempty"`
-	RotationPending          bool   `json:"rotation_pending,omitempty"`
 	Code                     string `json:"code,omitempty"`
 	Error                    string `json:"error,omitempty"`
 }

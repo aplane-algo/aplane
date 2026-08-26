@@ -69,6 +69,52 @@ func CommitStoreRoot(
 	return replaceStoreRootClassified(paths, exact, candidate)
 }
 
+// CommitReplacementStoreRoot atomically changes both key authority and
+// generation selection. It authenticates a fresh exact old root read under
+// current, then publishes a newly wrapped successor keyring selecting the
+// already-complete target generation.
+func CommitReplacementStoreRoot(
+	paths storepaths.Paths,
+	current *crypto.Keyring,
+	expectedCurrentGenerationID string,
+	successor *crypto.Keyring,
+	successorPassphrase []byte,
+	newGenerationID string,
+) error {
+	if successor == nil || len(successorPassphrase) == 0 {
+		return fmt.Errorf("replacement store root requires a successor keyring and passphrase")
+	}
+	if err := storepaths.ValidateGenerationID(expectedCurrentGenerationID); err != nil {
+		return err
+	}
+	if err := validateStoreRootCommitTarget(paths, newGenerationID); err != nil {
+		return err
+	}
+	if err := ValidateSealed(paths.GenerationPaths(expectedCurrentGenerationID), current); err != nil {
+		return fmt.Errorf("outgoing generation %s is not durably sealed: %w", expectedCurrentGenerationID, err)
+	}
+	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil {
+		return err
+	}
+	selection, err := crypto.AuthenticateStoreRoot(exact, current)
+	if err != nil {
+		return fmt.Errorf("authenticate current store root: %w", err)
+	}
+	if selection.CurrentGenerationID != expectedCurrentGenerationID {
+		return fmt.Errorf(
+			"store root current generation %s does not match expected outgoing generation %s",
+			selection.CurrentGenerationID,
+			expectedCurrentGenerationID,
+		)
+	}
+	candidate, err := crypto.SealStoreRoot(successor, successorPassphrase, newGenerationID)
+	if err != nil {
+		return fmt.Errorf("build replacement store root: %w", err)
+	}
+	return replaceStoreRootClassified(paths, exact, candidate)
+}
+
 // CommitInitialStoreRoot publishes the first root only after the first
 // generation is complete. It refuses every retired layout artifact; the only
 // accepted retry state is a v6 marker with no visible root.

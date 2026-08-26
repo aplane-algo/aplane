@@ -197,7 +197,6 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.Cha
 		PriorGenerations:         result.PriorGenerations,
 		HelperWarning:            result.HelperWarning,
 		RootCommitted:            result.RootCommitted,
-		RotationPending:          result.RotationPending,
 		Code:                     result.Code,
 		Error:                    result.Error,
 	}

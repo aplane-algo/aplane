@@ -199,7 +199,6 @@ type ChangeStorePassphraseResult struct {
 	PriorGenerations         int
 	HelperWarning            string
 	RootCommitted            bool
-	RotationPending          bool
 	Code                     string
 	Error                    string
 }
