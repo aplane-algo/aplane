@@ -50,9 +50,21 @@ func TestCanonicalProductStorePathMatrix(t *testing.T) {
 		{"node role sidecar", paths.NodeRoleIntegritySidecar(), filepath.Join(identityDir, "node.yaml.hmac")},
 		{"rotation snapshot", paths.RotationSnapshotPath(), filepath.Join(identityDir, "rotation.snapshot.enc")},
 		{"rotation baseline", paths.RotationBaselinePath(), filepath.Join(identityDir, "rotation.baseline.enc")},
+		{"store root", paths.StoreRootPath(), filepath.Join(identityDir, StoreRootName)},
 		{"current", paths.CurrentPointerPath(), filepath.Join(identityDir, CurrentPointerName)},
 		{"generations", paths.GenerationsDir(), filepath.Join(identityDir, GenerationsDirName)},
 		{"generation", paths.GenerationDir(generationID), filepath.Join(identityDir, GenerationsDirName, generationID)},
+		{"quarantine", paths.QuarantineDir(), filepath.Join(identityDir, QuarantineDirName)},
+		{
+			"quarantined generations",
+			paths.QuarantinedGenerationsDir(),
+			filepath.Join(identityDir, QuarantineDirName, QuarantinedGenerationsDirName),
+		},
+		{
+			"quarantined generation",
+			paths.QuarantinedGenerationDir(generationID),
+			filepath.Join(identityDir, QuarantineDirName, QuarantinedGenerationsDirName, generationID),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -60,6 +72,65 @@ func TestCanonicalProductStorePathMatrix(t *testing.T) {
 				t.Fatalf("path = %q, want %q", tt.got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGenerationOwnedPathMatrix(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "srv", "aplane")
+	paths := NewPaths(root)
+	generationID := "gen-1700000000-0123abcd"
+	gen := paths.GenerationPaths(generationID)
+	generationDir := filepath.Join(root, "identities", "default", GenerationsDirName, generationID)
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"keys", gen.KeysDir(), filepath.Join(generationDir, "keys")},
+		{"key types", gen.KeyTypeRecordsDir(), filepath.Join(generationDir, "keytypes")},
+		{
+			"key type record",
+			gen.KeyTypeRecord("aplane.ed25519.v1"),
+			filepath.Join(generationDir, "keytypes", "aplane.ed25519.v1.json"),
+		},
+		{
+			"key type template",
+			gen.KeyTypeTemplate("test.generic-policy.v1"),
+			filepath.Join(generationDir, "keytypes", "test.generic-policy.v1.template"),
+		},
+		{"deleted", gen.DeletedDir(), filepath.Join(generationDir, "deleted")},
+		{"deleted keys", gen.DeletedKeysDir(), filepath.Join(generationDir, "deleted", "keys")},
+		{"deleted key types", gen.DeletedKeyTypeRecordsDir(), filepath.Join(generationDir, "deleted", "keytypes")},
+		{
+			"deleted key type template",
+			gen.DeletedKeyTypeTemplate("test.generic-policy.v1"),
+			filepath.Join(generationDir, "deleted", "keytypes", "test.generic-policy.v1.template"),
+		},
+		{"policy", gen.PolicyPath(), filepath.Join(generationDir, "policy.yaml")},
+		{"policy sidecar", gen.PolicyIntegritySidecar(), filepath.Join(generationDir, "policy.yaml.hmac")},
+		{"node role sidecar", gen.NodeRoleIntegritySidecar(), filepath.Join(generationDir, "node.yaml.hmac")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Fatalf("path = %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQuarantinedGenerationPathRejectsUnsafeID(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	for _, generationID := range []string{"", "../generation", "gen-bad", "gen-1-ABCDEF12"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("QuarantinedGenerationDir(%q) did not panic", generationID)
+				}
+			}()
+			_ = paths.QuarantinedGenerationDir(generationID)
+		}()
 	}
 }
 

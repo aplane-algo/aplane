@@ -14,10 +14,19 @@ import (
 // directories selected by the CURRENT pointer. Everything here is pure path
 // construction; reading and validating CURRENT lives in internal/genstore.
 const (
+	// StoreRootName is the sole generation-selection and key-authority commit
+	// record in the atomic store-root layout.
+	StoreRootName = "store-root.enc"
 	// CurrentPointerName is the file naming the active generation.
 	CurrentPointerName = "CURRENT"
 	// GenerationsDirName holds one directory per generation.
 	GenerationsDirName = "generations"
+	// QuarantineDirName holds non-authoritative state preserved for explicit
+	// operator disposition.
+	QuarantineDirName = "quarantine"
+	// QuarantinedGenerationsDirName holds complete abandoned generation
+	// publications. Ordinary generation resolution never searches it.
+	QuarantinedGenerationsDirName = "generations"
 	// GenerationStagingPrefix marks an unpublished generation being minted.
 	GenerationStagingPrefix = ".staging-"
 	// GenerationManifestName is the immutable at-mint operation record.
@@ -45,6 +54,11 @@ func validateGenerationComponent(id string) string {
 	return id
 }
 
+// StoreRootPath is identities/default/store-root.enc.
+func (p Paths) StoreRootPath() string {
+	return filepath.Join(p.ProductDir(), StoreRootName)
+}
+
 // CurrentPointerPath is identities/default/CURRENT.
 func (p Paths) CurrentPointerPath() string {
 	return filepath.Join(p.ProductDir(), CurrentPointerName)
@@ -58,6 +72,26 @@ func (p Paths) GenerationsDir() string {
 // GenerationDir is identities/default/generations/<generation-id>.
 func (p Paths) GenerationDir(generationID string) string {
 	return filepath.Join(p.GenerationsDir(), validateGenerationComponent(generationID))
+}
+
+// QuarantineDir is identities/default/quarantine. Nothing below this path is
+// generation authority.
+func (p Paths) QuarantineDir() string {
+	return filepath.Join(p.ProductDir(), QuarantineDirName)
+}
+
+// QuarantinedGenerationsDir is the reserved namespace for complete abandoned
+// generation publications.
+func (p Paths) QuarantinedGenerationsDir() string {
+	return filepath.Join(p.QuarantineDir(), QuarantinedGenerationsDirName)
+}
+
+// QuarantinedGenerationDir returns the non-authoritative destination for one
+// complete abandoned generation publication. It deliberately returns only a
+// directory path, not GenPaths, so normal generation consumers cannot receive
+// a quarantined generation handle.
+func (p Paths) QuarantinedGenerationDir(generationID string) string {
+	return filepath.Join(p.QuarantinedGenerationsDir(), validateGenerationComponent(generationID))
 }
 
 // GenerationPaths binds generation-qualified active-store paths. Pure
@@ -109,6 +143,27 @@ func (g GenPaths) KeysDir() string {
 	return filepath.Join(g.root, "keys")
 }
 
+// DeletedDir is the generation-owned deleted credential and template archive.
+func (g GenPaths) DeletedDir() string {
+	return filepath.Join(g.root, "deleted")
+}
+
+// DeletedKeysDir is the generation-owned deleted credential namespace.
+func (g GenPaths) DeletedKeysDir() string {
+	return filepath.Join(g.DeletedDir(), "keys")
+}
+
+// DeletedKeyTypeRecordsDir is the generation-owned deleted template namespace.
+func (g GenPaths) DeletedKeyTypeRecordsDir() string {
+	return filepath.Join(g.DeletedDir(), "keytypes")
+}
+
+// DeletedKeyTypeTemplate is the archived template document for one key type.
+func (g GenPaths) DeletedKeyTypeTemplate(keyType string) string {
+	validateKeyTypeComponent(keyType)
+	return filepath.Join(g.DeletedKeyTypeRecordsDir(), keyType+".template")
+}
+
 // KeyTypeRecordsDir is the generation's key-type state namespace.
 func (g GenPaths) KeyTypeRecordsDir() string {
 	return filepath.Join(g.root, "keytypes")
@@ -124,4 +179,21 @@ func (g GenPaths) KeyTypeRecord(keyType string) string {
 func (g GenPaths) KeyTypeTemplate(keyType string) string {
 	validateKeyTypeComponent(keyType)
 	return filepath.Join(g.KeyTypeRecordsDir(), keyType+".template")
+}
+
+// PolicyPath is the generation-owned signer policy document.
+func (g GenPaths) PolicyPath() string {
+	return filepath.Join(g.root, "policy.yaml")
+}
+
+// PolicyIntegritySidecar is the generation-owned signer policy integrity
+// record.
+func (g GenPaths) PolicyIntegritySidecar() string {
+	return filepath.Join(g.root, "policy.yaml.hmac")
+}
+
+// NodeRoleIntegritySidecar is the generation-owned integrity record for the
+// immutable data-root node role document.
+func (g GenPaths) NodeRoleIntegritySidecar() string {
+	return filepath.Join(g.root, "node.yaml.hmac")
 }
