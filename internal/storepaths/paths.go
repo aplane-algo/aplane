@@ -15,9 +15,32 @@ import (
 )
 
 type Paths struct {
-	root           string
-	productDir     string
-	productBackups string
+	root               string
+	productDir         string
+	productBackups     string
+	activeGenerationID string
+}
+
+// BindActive returns a copy carrying one already-authenticated active
+// generation capability. APIs that still accept Paths resolve this binding
+// without consulting a public pointer. Only a canonical generation owned by
+// this Paths value can be bound; staging and quarantine paths are rejected.
+func (p Paths) BindActive(gen GenPaths) (Paths, error) {
+	if err := ValidateGenerationID(gen.GenerationID()); err != nil {
+		return Paths{}, err
+	}
+	want := filepath.Clean(p.GenerationDir(gen.GenerationID()))
+	if filepath.Clean(gen.Dir()) != want {
+		return Paths{}, fmt.Errorf("generation %s is not owned by product store %s", gen.GenerationID(), p.ProductDir())
+	}
+	p.activeGenerationID = gen.GenerationID()
+	return p, nil
+}
+
+// BoundActiveGeneration reports the authenticated generation capability
+// carried by this Paths copy, if any.
+func (p Paths) BoundActiveGeneration() (string, bool) {
+	return p.activeGenerationID, p.activeGenerationID != ""
 }
 
 var (

@@ -108,7 +108,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	}
 
 	ir := productruntime.New(productruntime.Config{
-		KeyStore:         keystore.NewFileKeyStoreForPaths(opts.KeyPaths),
+		KeyStore:         keystore.NewAtomicFileKeyStoreForPaths(opts.KeyPaths),
 		KeyPaths:         opts.KeyPaths,
 		Authenticator:    auth.NewTokenAuthenticator(token),
 		SessionTimeout:   sessionTimeout,
@@ -165,15 +165,17 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
 func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
+	templateManager := newTemplateManager(ir.KeyPaths())
 	svc := &signertemplates.ReloadService{
 		KeyStore:        ir.KeyStore(),
 		Session:         session,
-		TemplateManager: newTemplateManager(ir.KeyPaths()),
+		TemplateManager: templateManager,
 		BeforeKeyScan: func(kr *crypto.Keyring) error {
-			active, err := genstore.ResolveActive(opts.KeyPaths)
+			active, err := genstore.ResolveStoreRootWithKeyring(opts.KeyPaths, kr)
 			if err != nil {
-				return fmt.Errorf("resolve active product generation: %w", err)
+				return fmt.Errorf("authenticate active product generation: %w", err)
 			}
+			templateManager.ActivePaths = active
 			if verifiedRole, err := noderole.LoadAndVerifyGenerationWithKeyring(opts.KeyPaths, active, kr); err != nil {
 				return fmt.Errorf("node role verification failed for product store: %w", err)
 			} else if verifiedRole.Role != ir.NodeRole() {

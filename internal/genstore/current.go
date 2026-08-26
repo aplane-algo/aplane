@@ -110,6 +110,9 @@ func WriteCurrent(paths storepaths.Paths, generationID string) error {
 // Mutating callers must hold the store mutation lock across Resolve and
 // every use of the result; never re-resolve mid-operation.
 func Resolve(paths storepaths.Paths) (storepaths.GenPaths, error) {
+	if generationID, ok := paths.BoundActiveGeneration(); ok {
+		return paths.GenerationPaths(generationID), nil
+	}
 	generationID, err := ReadCurrent(paths)
 	if err != nil {
 		return storepaths.GenPaths{}, err

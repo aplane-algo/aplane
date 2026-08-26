@@ -89,7 +89,7 @@ func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
 }
 
 func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
-	return crypto.VerifyPassphraseWithKeyring(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	return crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
 }
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {

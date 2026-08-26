@@ -146,8 +146,9 @@ func (r RegistrationReport) Notices() []string {
 
 // Manager owns keystore template registration ordering for signer reloads.
 type Manager struct {
-	Paths      storepaths.Paths
-	Registrars []TemplateRegistrar
+	Paths       storepaths.Paths
+	ActivePaths storepaths.ActivePaths
+	Registrars  []TemplateRegistrar
 }
 
 func NewManager(paths storepaths.Paths) *Manager {
@@ -187,12 +188,16 @@ func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationRep
 	}
 
 	report := RegistrationReport{}
-	// Resolve the active layout once for the whole registration pass; on a
-	// generational store this binds every record and template read to the
-	// generation CURRENT names right now.
-	active, err := genstore.ResolveActive(m.Paths)
-	if err != nil {
-		return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	// Bind every record and template read to one caller-authenticated
+	// generation. The fallback remains for low-level tests until their fixtures
+	// are converted; production assembly always supplies ActivePaths.
+	active := m.ActivePaths
+	if active == nil {
+		var err error
+		active, err = genstore.ResolveActive(m.Paths)
+		if err != nil {
+			return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
+		}
 	}
 	records, err := keytypestate.ListActive(active)
 	if err != nil {

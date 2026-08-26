@@ -139,6 +139,10 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 
 	unlockMutation := s.lockMutation()
 	defer unlockMutation()
+	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
+	if activeErr != nil {
+		return nil, mapGenerateError(activeErr)
+	}
 
 	if provider := lsigprovider.Get(keyType); provider != nil {
 		// Canonicalize at the admin boundary so persisted params and API responses
@@ -150,11 +154,11 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 		params = normalized
 	}
 
-	activated, activationErr := activatedKeyTypes(ir)
+	activated, activationErr := activatedKeyTypes(activeKeyPaths)
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(activeKeyPaths, keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -165,7 +169,7 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}
 	}
 
-	mut := storemut.New(ir.KeyPaths(), nil, nil)
+	mut := storemut.New(activeKeyPaths, nil, nil)
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error

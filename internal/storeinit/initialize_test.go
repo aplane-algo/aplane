@@ -39,14 +39,21 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if result.MetadataDir != paths.KeystoreMetadataDir() {
 		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.KeystoreMetadataDir())
 	}
-	if !crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
-		t.Fatal("keystore metadata missing after initialize")
+	if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+		t.Fatal("store root missing after initialize")
 	}
-	// New stores are generational: active namespaces live in the first
-	// generation behind CURRENT, and the metadata carries the layout gate.
-	active, err := genstore.ResolveActive(paths)
+	// The store root authenticates both key authority and the selected
+	// generation. Retired split-authority artifacts are never created.
+	active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
 	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer kr.Zero()
+	if _, err := os.Stat(paths.CurrentPointerPath()); !os.IsNotExist(err) {
+		t.Fatalf("CURRENT exists on a new store: err = %v", err)
+	}
+	if _, err := os.Stat(crypto.KeyringPath(paths.KeystoreMetadataDir())); !os.IsNotExist(err) {
+		t.Fatalf("keyring.enc exists on a new store: err = %v", err)
 	}
 	if _, err := os.Stat(active.KeysDir()); err != nil {
 		t.Fatalf("generational keys dir stat error = %v", err)
@@ -54,21 +61,12 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(paths.LegacyKeysDir()); !os.IsNotExist(err) {
 		t.Fatalf("legacy keys dir exists on a new store: err = %v", err)
 	}
-	gen, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if err := genstore.ValidateCurrent(gen); err != nil {
+	if err := genstore.ValidateCurrent(active); err != nil {
 		t.Fatalf("initial generation failed validation: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "aplane.token")); err != nil {
 		t.Fatalf("token stat error = %v", err)
 	}
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
-	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
-	}
-	defer kr.Zero()
 	if _, err := policy.LoadVerifiedStoredConfigActive(active, kr); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
@@ -110,15 +108,11 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
-	kr, err := crypto.OpenKeyringStore(paths.KeystoreMetadataDir(), passphrase)
+	active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		t.Fatalf("ResolveActive() error = %v", err)
-	}
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
@@ -159,16 +153,17 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	}
 }
 
-func TestInitializeRejectsExistingKeyring(t *testing.T) {
+func TestInitializeRejectsExistingStoreRoot(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	kr, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), []byte("existing-passphrase"))
-	if err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
+	if _, err := Initialize([]byte("existing-passphrase"), Options{
+		DataDir: dataDir,
+		Paths:   paths,
+	}); err != nil {
+		t.Fatalf("first Initialize() error = %v", err)
 	}
-	kr.Zero()
 
-	_, err = Initialize([]byte("new-passphrase"), Options{
+	_, err := Initialize([]byte("new-passphrase"), Options{
 		DataDir: dataDir,
 		Paths:   paths,
 	})
@@ -204,8 +199,8 @@ func TestHasPartialState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(identityDir, ".keystore"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.keystore) error = %v", err)
 	}
-	if HasPartialState(paths) {
-		t.Fatal("presence of .keystore should not be considered partial initialization")
+	if !HasPartialState(paths) {
+		t.Fatal("marker without a store root should be partial initialization")
 	}
 }
 
@@ -269,8 +264,8 @@ func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
 		t.Fatalf("Initialize() error = %v, want ownership preflight failure", err)
 	}
-	if crypto.KeyringExistsIn(paths.KeystoreMetadataDir()) {
-		t.Fatal("ownership preflight failure left a created keyring")
+	if crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+		t.Fatal("ownership preflight failure left a created store root")
 	}
 }
 

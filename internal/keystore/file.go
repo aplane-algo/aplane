@@ -27,6 +27,11 @@ import (
 // FileKeyStore implements KeyStore using encrypted files on disk
 type FileKeyStore struct {
 	paths storepaths.Paths
+	// atomicStoreRoot selects the new one-record generation/key-authority
+	// layout. The old constructor remains only while in-tree call sites are
+	// converted; production assembly uses the atomic constructor.
+	atomicStoreRoot bool
+	active          *storepaths.GenPaths
 
 	// Cache of address -> KeyScanInfo (populated by Scan)
 	// Contains both file path and key type from single decrypt
@@ -57,6 +62,16 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 	}
 }
 
+// NewAtomicFileKeyStoreForPaths creates a file store whose unlock and reload
+// authenticate generation selection from store-root.enc.
+func NewAtomicFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
+	return &FileKeyStore{
+		paths:           paths,
+		atomicStoreRoot: true,
+		cache:           make(map[string]keys.KeyScanInfo),
+	}
+}
+
 // Unlock opens the store's keyring with the passphrase and holds it for the
 // session.
 //
@@ -64,8 +79,20 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 // verifier to consult. Callers receive no key material: the keyring hands out
 // operations, not bytes.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
-	keystoreRoot := f.paths.KeystoreMetadataDir()
-	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)
+	var (
+		kr     *crypto.Keyring
+		active *storepaths.GenPaths
+		err    error
+	)
+	if f.atomicStoreRoot {
+		var resolved storepaths.GenPaths
+		resolved, kr, err = genstore.ResolveStoreRoot(f.paths, passphrase)
+		if err == nil {
+			active = &resolved
+		}
+	} else {
+		kr, err = crypto.OpenKeyringStore(f.paths.KeystoreMetadataDir(), passphrase)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
@@ -74,6 +101,7 @@ func (f *FileKeyStore) Unlock(passphrase []byte) error {
 		f.keyring.Zero()
 	}
 	f.keyring = kr
+	f.active = active
 	f.cacheLock.Unlock()
 	return nil
 }
@@ -108,11 +136,20 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore key scan blocked: %w", err)
 	}
-	// Resolve the active layout once per scan: on a generational store this
-	// binds the scan (and the absolute KeyFile paths it caches) to the
-	// generation CURRENT names right now, so every reload after a pointer
-	// flip rebuilds the cache against the new generation.
-	active, resolveErr := genstore.ResolveActive(f.paths)
+	// Resolve the active layout once per scan. Atomic stores authenticate a
+	// fresh exact root read while the keyring is held, so every reload after a
+	// root commit rebuilds the cache against the newly selected generation.
+	var active storepaths.ActivePaths
+	var resolvedAtomic storepaths.GenPaths
+	var resolveErr error
+	if f.atomicStoreRoot {
+		resolvedAtomic, resolveErr = genstore.ResolveStoreRootWithKeyring(f.paths, f.keyring)
+		if resolveErr == nil {
+			active = resolvedAtomic
+		}
+	} else {
+		active, resolveErr = genstore.ResolveActive(f.paths)
+	}
 	if resolveErr != nil {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)
@@ -124,6 +161,9 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	}
 
 	f.cacheLock.Lock()
+	if f.atomicStoreRoot {
+		f.active = &resolvedAtomic
+	}
 	f.cache = report.Keys
 	f.scanWarnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
 	f.cacheLock.Unlock()
@@ -154,7 +194,26 @@ func (f *FileKeyStore) ClearKeys() {
 		f.keyring.Zero()
 		f.keyring = nil
 	}
+	f.active = nil
 	f.cacheLock.Unlock()
+}
+
+// ActivePaths returns the generation authenticated by the most recent atomic
+// root unlock or reload. The returned value is a copy and carries no key
+// material.
+func (f *FileKeyStore) ActivePaths() (storepaths.GenPaths, error) {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	if f.keyring == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("store is not unlocked: %w", ErrStoreLocked)
+	}
+	if !f.atomicStoreRoot {
+		return genstore.Resolve(f.paths)
+	}
+	if f.active == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("atomic store root is not unlocked: %w", ErrStoreLocked)
+	}
+	return *f.active, nil
 }
 
 // ClearCache removes scanned key metadata while preserving the unlocked master

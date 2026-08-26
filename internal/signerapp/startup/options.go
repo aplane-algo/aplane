@@ -106,7 +106,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 
 	if testPassphrase != "" {
 		passphrase := []byte(testPassphrase)
-		if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
+		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 			crypto.ZeroBytes(passphrase)
 			return nil, fmt.Errorf("TEST_PASSPHRASE does not match existing keystore")
 		}
@@ -137,7 +137,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 	if err != nil {
 		return nil, err
 	}
-	if err := crypto.VerifyPassphraseWithKeyring(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
+	if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
 		crypto.ZeroBytes(passphrase)
 		return nil, fmt.Errorf("passphrase from passphrase command does not match existing keystore")
 	}

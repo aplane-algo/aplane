@@ -4,14 +4,17 @@
 package startup
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -92,9 +95,7 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 	root := t.TempDir()
 	passphrase := []byte("test-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
+	createAtomicStoreRootForOptionsTest(t, paths, passphrase)
 
 	opts := &Options{
 		DataDir: root,
@@ -124,9 +125,7 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	root := t.TempDir()
 	passphrase := []byte("command-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
+	createAtomicStoreRootForOptionsTest(t, paths, passphrase)
 	helper, marker := writePassphraseHelper(t, root, string(passphrase))
 
 	cfg := serverconfig.DefaultServerConfig()
@@ -162,9 +161,7 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	root := t.TempDir()
 	passphrase := []byte("command-passphrase")
 	paths := storepaths.NewPaths(root)
-	if _, err := crypto.CreateKeyringStore(paths.KeystoreMetadataDir(), passphrase); err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
+	createAtomicStoreRootForOptionsTest(t, paths, passphrase)
 	if err := os.MkdirAll(filepath.Join(root, "identities", "other-identity"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +193,29 @@ func writePassphraseHelper(t *testing.T, root, passphrase string) (string, strin
 		t.Fatalf("write passphrase helper: %v", err)
 	}
 	return helper, marker
+}
+
+func createAtomicStoreRootForOptionsTest(t *testing.T, paths storepaths.Paths, passphrase []byte) {
+	t.Helper()
+	kr, err := crypto.NewKeyring()
+	if err != nil {
+		t.Fatalf("NewKeyring() error = %v", err)
+	}
+	defer kr.Zero()
+	const generationID = "gen-1785200000-00000001"
+	if _, err := genstore.Mint(paths, genstore.MintRequest{
+		GenerationID:      generationID,
+		FirstGeneration:   true,
+		AtomicStoreRoot:   true,
+		InitialPassphrase: passphrase,
+		Operation:         "test-initialize",
+		OperationID:       "test-init-" + generationID,
+		CreatedAt:         time.Unix(1_785_200_000, 0),
+		Integrity:         kr,
+		Apply:             genstoretest.ApplyAuthorityPlaceholders,
+	}); err != nil {
+		t.Fatalf("Mint(atomic test store) error = %v", err)
+	}
 }
 
 func TestLoadOptionsResolvesBootstrapState(t *testing.T) {

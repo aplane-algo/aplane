@@ -38,3 +38,29 @@ func ResolveStoreRoot(
 	success = true
 	return gen, kr, nil
 }
+
+// ResolveStoreRootWithKeyring authenticates a fresh exact root read with an
+// already-open keyring and validates the selected generation. Runtime reload
+// and mutation paths use it so selection is never taken from an unauthenticated
+// public projection or a stale cached generation ID.
+func ResolveStoreRootWithKeyring(
+	paths storepaths.Paths,
+	kr *crypto.Keyring,
+) (storepaths.GenPaths, error) {
+	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil {
+		return storepaths.GenPaths{}, err
+	}
+	selection, err := crypto.AuthenticateStoreRoot(exact, kr)
+	if err != nil {
+		return storepaths.GenPaths{}, fmt.Errorf("authenticate store root: %w", err)
+	}
+	gen := paths.GenerationPaths(selection.CurrentGenerationID)
+	if err := requireRegularDirectory(gen.Dir()); err != nil {
+		return storepaths.GenPaths{}, fmt.Errorf("store root selected generation: %w", err)
+	}
+	if err := ValidateCurrent(gen); err != nil {
+		return storepaths.GenPaths{}, fmt.Errorf("store root selected generation: %w", err)
+	}
+	return gen, nil
+}

@@ -53,8 +53,8 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 
 	metadataDir := opts.Paths.KeystoreMetadataDir()
 	result.MetadataDir = metadataDir
-	if crypto.KeyringExistsIn(metadataDir) {
-		return result, fmt.Errorf("keystore already initialized (control file exists in %s)", metadataDir)
+	if crypto.StoreRootExistsIn(metadataDir) {
+		return result, fmt.Errorf("keystore already initialized (store root exists in %s)", metadataDir)
 	}
 	if HasPartialState(opts.Paths) {
 		return result, fmt.Errorf("keystore appears partially initialized in %s; clean up the existing identity directory before re-running initialize", opts.Paths.ProductDir())
@@ -72,17 +72,25 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to prepare initialized identity ownership: %w", err)
 	}
 
+	// Generate the non-authority API token before publishing the store root.
+	// A token-path failure must not turn an otherwise committed root into an
+	// initialization error that appears safe to retry.
+	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root()); err != nil {
+		return result, fmt.Errorf("failed to generate API token: %w", err)
+	}
+
 	createdNodeRole := false
+	rootCommitted := false
 	success := false
 	defer func() {
-		if !success && createdNodeRole {
+		if !success && createdNodeRole && !rootCommitted {
 			_ = os.Remove(opts.Paths.NodeRolePath())
 		}
 	}()
 
-	keyring, err := crypto.CreateKeyringStore(metadataDir, passphrase)
+	keyring, err := crypto.NewKeyring()
 	if err != nil {
-		return result, fmt.Errorf("failed to create keystore: %w", err)
+		return result, fmt.Errorf("failed to create store keyring: %w", err)
 	}
 	defer keyring.Zero()
 	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
@@ -91,19 +99,22 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 	createdNodeRole = true
 	{
-		// Mint the store's first generation, installing the default key
-		// types into the staged namespaces; the commit flips CURRENT
-		// durably.
+		// Mint the store's first generation, installing the default key types
+		// into the staged namespaces. The sole commit publishes store-root.enc,
+		// which contains both wrapped key authority and generation selection.
 		generationID, err := genstore.NewGenerationID(time.Now())
 		if err != nil {
 			return result, err
 		}
 		if _, err := genstore.Mint(opts.Paths, genstore.MintRequest{
-			GenerationID:    generationID,
-			FirstGeneration: true,
-			Operation:       "store-initialize",
-			OperationID:     "init-" + generationID,
-			CreatedAt:       time.Now(),
+			GenerationID:      generationID,
+			FirstGeneration:   true,
+			AtomicStoreRoot:   true,
+			InitialPassphrase: passphrase,
+			Operation:         "store-initialize",
+			OperationID:       "init-" + generationID,
+			CreatedAt:         time.Now(),
+			Integrity:         keyring,
 			Apply: func(staged storepaths.GenPaths) error {
 				if err := noderole.SaveGenerationSidecarWithKeyring(
 					opts.Paths,
@@ -138,10 +149,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		}); err != nil {
 			return result, fmt.Errorf("failed to mint initial generation: %w", err)
 		}
-	}
-
-	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root()); err != nil {
-		return result, fmt.Errorf("failed to generate API token: %w", err)
+		rootCommitted = true
 	}
 
 	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
@@ -161,9 +169,6 @@ func HasPartialState(paths storepaths.Paths) bool {
 		return true
 	}
 	for _, entry := range entries {
-		if entry.Name() == ".keystore" {
-			return false
-		}
 		if entry.Name() == "aplane.token" {
 			continue
 		}

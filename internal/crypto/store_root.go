@@ -540,6 +540,17 @@ func OpenStoreRootStore(
 	return OpenStoreRoot(encoded, passphrase)
 }
 
+// VerifyPassphraseWithStoreRoot checks a passphrase without retaining either
+// the authenticated selector or the unwrapped keyring.
+func VerifyPassphraseWithStoreRoot(passphrase []byte, keystoreDir string) error {
+	kr, _, err := OpenStoreRootStore(keystoreDir, passphrase)
+	if err != nil {
+		return err
+	}
+	kr.Zero()
+	return nil
+}
+
 func StoreRootExistsIn(keystoreDir string) bool {
 	info, err := os.Lstat(filepath.Join(keystoreDir, storepaths.StoreRootName))
 	return err == nil && info.Mode().IsRegular()
