@@ -59,6 +59,7 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeExportSentryPublic,
 		MsgTypeListGenerations,
 		MsgTypePruneGenerationQuarantine,
+		MsgTypeDiscardAbandonedGenerations,
 		MsgTypeListDeletedArchive,
 		MsgTypePruneDeletedArchive,
 		MsgTypeDisplaceConfirm:
@@ -110,6 +111,7 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeExportSentryPublicResult,
 		MsgTypeGenerationsList,
 		MsgTypePruneGenerationQuarantineResult,
+		MsgTypeDiscardAbandonedGenerationsResult,
 		MsgTypeDeletedArchiveList,
 		MsgTypePruneDeletedArchiveResult:
 		return MessageKindResponse, true

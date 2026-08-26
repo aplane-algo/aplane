@@ -501,6 +501,10 @@ deletion requires `identity.generation.quarantine.prune`, an unlocked or
 recovery-admin runtime, explicit confirmation, and durable audit. Retained
 authoritative generation pruning remains a distinct offline
 `apstore generations prune` recovery/maintenance operation.
+In-place unvalidatable abandoned publications use
+`discard_abandoned_generations` with explicit IDs and confirmation, the
+separate `identity.generation.abandoned.discard` action, and a durable intent
+audit before mutation.
 
 Deleted-archive inspection requires `generations.view`. Live archive pruning
 requires `identity.archive.prune`, an unlocked or recovery-admin runtime,

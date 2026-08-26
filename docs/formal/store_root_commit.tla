@@ -113,14 +113,31 @@ ReconcileOldRoot ==
                   publicationDurable, outgoingSealed, substituted,
                   promotionPinned, candidateBuilt, rootVisible, rootDurable>>
 
+\* An operator can restore an older authentic root file after the successor
+\* was committed. The newer complete directory then has the same shape as a
+\* crashed-mint publication and must be quarantined, never deleted or adopted.
+RestoreAuthenticOldRoot ==
+  /\ <<rootGen, rootEpoch, rootTerm>> = NewRoot
+  /\ rootDurable
+  /\ rootGen' = OldGen
+  /\ rootEpoch' = OldEpoch
+  /\ rootTerm' = OldTerm
+  /\ rootVisible' = FALSE
+  /\ rootDurable' = TRUE
+  /\ quarantined' = FALSE
+  /\ UNCHANGED <<published, publicationDurable, outgoingSealed,
+                  substituted, promotionPinned, candidateBuilt>>
+
 Next == Publish \/ SyncPublication \/ SealOutgoing \/ SubstituteInput \/
         BuildCandidate \/ RenameRoot \/ SyncRoot \/ CrashBeforeRename \/
-        ReconcileOldRoot
+        ReconcileOldRoot \/ RestoreAuthenticOldRoot
 
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
-  /\ <<rootGen, rootEpoch, rootTerm>> \in {OldRoot, NewRoot}
+  /\ rootGen \in {OldGen, NewGen}
+  /\ rootEpoch \in {OldEpoch, NewEpoch}
+  /\ rootTerm \in {OldTerm, NewTerm}
   /\ published \in BOOLEAN
   /\ publicationDurable \in BOOLEAN
   /\ outgoingSealed \in BOOLEAN
@@ -131,10 +148,11 @@ TypeOK ==
   /\ rootDurable \in BOOLEAN
   /\ quarantined \in BOOLEAN
 
-S1_OneSelectedAuthority == <<rootGen, rootEpoch, rootTerm>> \in {OldRoot, NewRoot}
+S1_OneSelectedAuthority ==
+  /\ rootGen = OldGen => <<rootEpoch, rootTerm>> = <<OldEpoch, OldTerm>>
+  /\ rootGen = NewGen => <<rootEpoch, rootTerm>> = <<NewEpoch, NewTerm>>
 S2_AtomicCutover ==
-  <<rootGen, rootEpoch, rootTerm>> = OldRoot \/
-  <<rootGen, rootEpoch, rootTerm>> = NewRoot
+  (rootEpoch = OldEpoch) <=> (rootTerm = OldTerm)
 S3_PublishedCompleteness == rootGen = NewGen => publicationDurable
 S4_NewTermCurrentState == rootGen = NewGen => rootTerm = NewTerm
 S5_NoUnpinnedPromotion == rootGen = NewGen => promotionPinned

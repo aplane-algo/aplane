@@ -139,24 +139,26 @@ const (
 	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
 
 	// Signer-owned sentry reference and generation inventory messages.
-	MsgTypeListSentryReferences            = "list_sentry_references"
-	MsgTypeSentryReferencesList            = "sentry_references_list"
-	MsgTypeGetSentryReference              = "get_sentry_reference"
-	MsgTypeSentryReference                 = "sentry_reference"
-	MsgTypeImportSentryReference           = "import_sentry_reference"
-	MsgTypeImportSentryReferenceResult     = "import_sentry_reference_result"
-	MsgTypeRemoveSentryReference           = "remove_sentry_reference"
-	MsgTypeRemoveSentryReferenceResult     = "remove_sentry_reference_result"
-	MsgTypeExportSentryPublic              = "export_sentry_public"
-	MsgTypeExportSentryPublicResult        = "export_sentry_public_result"
-	MsgTypeListGenerations                 = "list_generations"
-	MsgTypeGenerationsList                 = "generations_list"
-	MsgTypePruneGenerationQuarantine       = "prune_generation_quarantine"
-	MsgTypePruneGenerationQuarantineResult = "prune_generation_quarantine_result"
-	MsgTypeListDeletedArchive              = "list_deleted_archive"
-	MsgTypeDeletedArchiveList              = "deleted_archive_list"
-	MsgTypePruneDeletedArchive             = "prune_deleted_archive"
-	MsgTypePruneDeletedArchiveResult       = "prune_deleted_archive_result"
+	MsgTypeListSentryReferences              = "list_sentry_references"
+	MsgTypeSentryReferencesList              = "sentry_references_list"
+	MsgTypeGetSentryReference                = "get_sentry_reference"
+	MsgTypeSentryReference                   = "sentry_reference"
+	MsgTypeImportSentryReference             = "import_sentry_reference"
+	MsgTypeImportSentryReferenceResult       = "import_sentry_reference_result"
+	MsgTypeRemoveSentryReference             = "remove_sentry_reference"
+	MsgTypeRemoveSentryReferenceResult       = "remove_sentry_reference_result"
+	MsgTypeExportSentryPublic                = "export_sentry_public"
+	MsgTypeExportSentryPublicResult          = "export_sentry_public_result"
+	MsgTypeListGenerations                   = "list_generations"
+	MsgTypeGenerationsList                   = "generations_list"
+	MsgTypePruneGenerationQuarantine         = "prune_generation_quarantine"
+	MsgTypePruneGenerationQuarantineResult   = "prune_generation_quarantine_result"
+	MsgTypeDiscardAbandonedGenerations       = "discard_abandoned_generations"
+	MsgTypeDiscardAbandonedGenerationsResult = "discard_abandoned_generations_result"
+	MsgTypeListDeletedArchive                = "list_deleted_archive"
+	MsgTypeDeletedArchiveList                = "deleted_archive_list"
+	MsgTypePruneDeletedArchive               = "prune_deleted_archive"
+	MsgTypePruneDeletedArchiveResult         = "prune_deleted_archive_result"
 
 	// Client displacement message types (for single-client IPC enforcement)
 	MsgTypeClientExists    = "client_exists"    // Server → new client: another client is connected
@@ -1140,6 +1142,20 @@ type PruneGenerationQuarantineResultMessage struct {
 	Pruned  []PrunedQuarantinedGeneration `json:"pruned"`
 	Code    string                        `json:"code,omitempty"`
 	Error   string                        `json:"error,omitempty"`
+}
+
+type DiscardAbandonedGenerationsMessage struct {
+	BaseMessage
+	GenerationIDs []string `json:"generation_ids"`
+	Confirm       bool     `json:"confirm"`
+}
+
+type DiscardAbandonedGenerationsResultMessage struct {
+	BaseMessage
+	Success   bool                          `json:"success"`
+	Discarded []PrunedQuarantinedGeneration `json:"discarded"`
+	Code      string                        `json:"code,omitempty"`
+	Error     string                        `json:"error,omitempty"`
 }
 
 type ListDeletedArchiveMessage struct{ BaseMessage }

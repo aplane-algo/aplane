@@ -674,6 +674,14 @@ func archiveInstalled(paths storepaths.Paths, keyType string, templateType templ
 	if err := os.Rename(sourcePath, deletedTemplatePath); err != nil {
 		return "", fmt.Errorf("failed to move installed template: %w", err)
 	}
+	if err := fsutil.SyncDir(filepath.Dir(sourcePath)); err != nil {
+		return "", fmt.Errorf("confirm installed template removal: %w", err)
+	}
+	if filepath.Clean(filepath.Dir(sourcePath)) != filepath.Clean(filepath.Dir(deletedTemplatePath)) {
+		if err := fsutil.SyncDir(filepath.Dir(deletedTemplatePath)); err != nil {
+			return "", fmt.Errorf("confirm deleted template archive: %w", err)
+		}
+	}
 	return deletedTemplatePath, nil
 }
 

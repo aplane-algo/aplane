@@ -86,6 +86,28 @@ func (s signerAdminServices) LogGenerationQuarantinePruneContext(
 	}
 }
 
+func (s signerAdminServices) LogGenerationAbandonedDiscardIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing abandoned discard without a durable intent record")
+	}
+	return audit.LogGenerationAbandonedDiscardIntentDurableContext(ctx, operationID, generationIDs)
+}
+
+func (s signerAdminServices) LogGenerationAbandonedDiscardContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogGenerationAbandonedDiscardContext(ctx, operationID, result)
+	}
+}
+
 func (s signerAdminServices) LogDeletedArchivePruneIntentDurableContext(
 	ctx adminserver.SessionContext,
 	operationID string,

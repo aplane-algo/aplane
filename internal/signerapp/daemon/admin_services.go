@@ -510,6 +510,36 @@ func (s signerAdminServices) PruneGenerationQuarantine(
 	return result
 }
 
+func (s signerAdminServices) DiscardAbandonedGenerations(
+	req adminproto.DiscardAbandonedGenerationsRequest,
+) adminproto.DiscardAbandonedGenerationsResult {
+	ir := s.ProductRuntime()
+	var discarded []genstore.QuarantinePruneResult
+	err := s.withStoreMutation(func() error {
+		return ir.WithKeyring(func(kr *crypto.Keyring) error {
+			var err error
+			discarded, err = genstore.DiscardAbandoned(ir.KeyPaths(), req.GenerationIDs, kr)
+			return err
+		})
+	})
+	result := adminproto.DiscardAbandonedGenerationsResult{
+		Discarded: make([]adminproto.PrunedQuarantinedGeneration, 0, len(discarded)),
+	}
+	for _, item := range discarded {
+		result.Discarded = append(result.Discarded, adminproto.PrunedQuarantinedGeneration{
+			GenerationID: item.GenerationID, EncodedBytes: item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeAbandonedDiscardFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
 func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
 	ir := s.ProductRuntime()
 	active, err := ir.ActivePaths()

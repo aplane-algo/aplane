@@ -18,8 +18,7 @@ import (
 // daemon to stop. Live inventory is owned by `apadmin generations list`.
 //
 //	apstore generations prune               keep current + newest sealed prior
-//	apstore generations prune --all-priors  keep only current (required
-//	                                        before passphrase rotation)
+//	apstore generations prune --all-priors  keep only current
 func cmdGenerations(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: apstore generations prune [--all-priors]")
@@ -71,7 +70,7 @@ func cmdGenerations(args []string) error {
 			logInfof("nothing to prune")
 		}
 		if !retainRollbackParent {
-			logInfof("only the current generation remains; passphrase rotation quiescence satisfied")
+			logInfof("only the current generation remains")
 		} else {
 			logInfof("the current generation's parent retained as the rollback target")
 		}

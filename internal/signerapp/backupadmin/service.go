@@ -11,11 +11,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type Deps interface {
+	DataDir() string
+	Config() *serverconfig.ServerConfig
 	KeyPaths() storepaths.Paths
 	GenesisHashMappings() map[string]string
 	RestoreLimiter() RestoreLimiter

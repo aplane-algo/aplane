@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -63,9 +64,6 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0)); err != nil {
-		t.Fatal(err)
-	}
 	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
 	address, payload := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(payload)
@@ -185,6 +183,10 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 		t.Fatal(err)
 	}
 	defer kr.Zero()
+	roleBytes, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
 	generationID, err := genstore.NewGenerationID(time.Unix(1_753_700_000, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +195,19 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 		GenerationID: generationID, FirstGeneration: true,
 		InitialPassphrase: passphrase, Integrity: kr, Operation: "test-init",
 		OperationID: "init-" + generationID, CreatedAt: time.Unix(1_753_700_000, 0),
-		Apply: genstoretest.ApplyAuthorityPlaceholders,
+		Apply: func(staged storepaths.GenPaths) error {
+			if err := genstoretest.ApplyAuthorityPlaceholders(staged); err != nil {
+				return err
+			}
+			if err := noderole.SaveGenerationSidecarWithKeyring(
+				paths, staged, roleBytes, kr, time.Unix(1_700_000_000, 0),
+			); err != nil {
+				return err
+			}
+			return policy.SaveStoredConfigActiveWithKeyring(
+				staged, &policy.StoredConfig{}, kr, time.Unix(1_700_000_000, 0),
+			)
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +243,11 @@ type backupServiceTestDeps struct {
 	limiter RestoreLimiter
 }
 
-func (d backupServiceTestDeps) KeyPaths() storepaths.Paths              { return d.paths }
+func (d backupServiceTestDeps) KeyPaths() storepaths.Paths { return d.paths }
+func (d backupServiceTestDeps) DataDir() string            { return d.paths.Root() }
+func (d backupServiceTestDeps) Config() *serverconfig.ServerConfig {
+	return &serverconfig.ServerConfig{}
+}
 func (d backupServiceTestDeps) GenesisHashMappings() map[string]string  { return nil }
 func (d backupServiceTestDeps) RestoreLimiter() RestoreLimiter          { return d.limiter }
 func (d backupServiceTestDeps) WithStoreMutation(fn func() error) error { return fn() }
@@ -238,6 +256,8 @@ func (d backupServiceTestDeps) Logf(string, ...interface{})             {}
 type failingBackupDeps struct{ paths storepaths.Paths }
 
 func (d failingBackupDeps) KeyPaths() storepaths.Paths             { return d.paths }
+func (d failingBackupDeps) DataDir() string                        { return d.paths.Root() }
+func (d failingBackupDeps) Config() *serverconfig.ServerConfig     { return &serverconfig.ServerConfig{} }
 func (d failingBackupDeps) GenesisHashMappings() map[string]string { return nil }
 func (d failingBackupDeps) RestoreLimiter() RestoreLimiter         { return nil }
 func (d failingBackupDeps) WithStoreMutation(func() error) error {

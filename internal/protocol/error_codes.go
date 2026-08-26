@@ -87,6 +87,8 @@ const (
 	ResultCodeRestoreRollbackDiverged  = "restore_rollback_diverged"
 	ResultCodeRestoreAuditFailed       = "restore_audit_failed"
 	ResultCodeQuarantinePruneFailed    = "quarantine_prune_failed"
+	ResultCodeAbandonedDiscardFailed   = "abandoned_discard_failed"
+	ResultCodeAbandonedAuditFailed     = "abandoned_discard_audit_failed"
 	ResultCodeQuarantineAuditFailed    = "quarantine_audit_failed"
 	ResultCodeArchiveListFailed        = "archive_list_failed"
 	ResultCodeArchivePruneFailed       = "archive_prune_failed"

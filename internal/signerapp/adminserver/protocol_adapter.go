@@ -484,6 +484,23 @@ func ProtocolPruneGenerationQuarantineResultMessage(
 	}
 }
 
+func ProtocolDiscardAbandonedGenerationsResultMessage(
+	id string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) protocol.DiscardAbandonedGenerationsResultMessage {
+	discarded := make([]protocol.PrunedQuarantinedGeneration, 0, len(result.Discarded))
+	for _, item := range result.Discarded {
+		discarded = append(discarded, protocol.PrunedQuarantinedGeneration{
+			GenerationID: item.GenerationID, EncodedBytes: item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.DiscardAbandonedGenerationsResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDiscardAbandonedGenerationsResult, ID: id},
+		Success:     result.Success, Discarded: discarded, Code: result.Code, Error: result.Error,
+	}
+}
+
 func ProtocolDeletedArchiveListMessage(id string, result adminproto.DeletedArchiveInventory) protocol.DeletedArchiveListMessage {
 	entries := make([]protocol.DeletedArchiveEntry, 0, len(result.Entries))
 	for _, item := range result.Entries {

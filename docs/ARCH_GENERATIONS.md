@@ -193,12 +193,20 @@ passphrase change lacks the orphan's newer term.
 A candidate that cannot be safely parsed, enumerated, or bounded remains in
 place. Reconciliation and further mints fail closed until authenticated
 operator remediation. Quarantine capacity overflow behaves the same way.
+Explicit removal of an in-place unvalidatable final directory uses the
+separate `identity.generation.abandoned.discard` action, explicit confirmation,
+and a durable intent audit. It refuses current, rollback-parent, and sealed
+generation state.
 
 Eligible candidates are atomically renamed to
 `quarantine/generations/<gen-id>` and both parent directories are synced.
 Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
 the stable `identity.generation.quarantine.prune` action, explicit
 confirmation, and durable intent audit before deletion.
+
+A crashed changepass before root replacement can leave its complete successor
+in quarantine. That ciphertext is non-authoritative; a later changepass remains
+blocked until an authenticated operator prunes it.
 
 If an orphan crossed a passphrase change, quarantine preserves its ciphertext
 but does not imply it is decryptable with the restored root or passphrase. The
@@ -213,6 +221,11 @@ constants:
 - 256 MiB total encoded bytes;
 - warning thresholds reserve one entry and one maximum standalone-envelope
   allocation for an emergency deletion.
+
+If a release ever lowers these layout constants below an existing store's
+usage, generation minting and changepass refuse until authenticated archive
+prune restores compliance. The health and status surfaces retain a warning
+whenever the emergency reserve is consumed.
 
 Deletes preflight the exact append and fail before active-state mutation if the
 hard bound would be exceeded. Mints check the parent before staging and the

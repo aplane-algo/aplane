@@ -371,7 +371,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			}
 		}
 		decryptCalls := 0
-		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), func(string) ([]byte, error) {
+		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {
 			decryptCalls++
 			return nil, fmt.Errorf("unexpected decrypt")
 		})
@@ -421,7 +421,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".wit.json"), envelopeJSON, 0600); err != nil {
 			t.Fatal(err)
 		}
-		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), func(string) ([]byte, error) {
+		report, err := scanKeysDirectoryInternalReport(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {
 			return nil, fmt.Errorf("unexpected decrypt")
 		})
 		if err != nil {

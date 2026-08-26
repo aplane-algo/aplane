@@ -182,6 +182,19 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 // error return is reserved for manager misconfiguration and unrecoverable work
 // that should stop the caller's reload flow.
 func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
+	return m.processKeystoreTemplates(kr, true)
+}
+
+// ValidateKeystoreTemplates executes the same durable-content gates as
+// RegisterKeystoreTemplates without mutating the process-global provider
+// registry. Generation transactions use it before the store-root commit so a
+// validly encrypted but semantically broken candidate can never become
+// authoritative.
+func (m *Manager) ValidateKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
+	return m.processKeystoreTemplates(kr, false)
+}
+
+func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (RegistrationReport, error) {
 	registrars, err := m.templateRegistrars()
 	if err != nil {
 		return RegistrationReport{}, err
@@ -216,7 +229,7 @@ func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationRep
 		if !ok {
 			continue
 		}
-		outcome := registerTemplateRecord(active, kr, rec, registrar)
+		outcome := processTemplateRecord(active, kr, rec, registrar, register)
 		appendOutcome(&report, registrar.Source, outcome)
 	}
 
@@ -370,6 +383,10 @@ func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, regi
 }
 
 func registerTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
+	return processTemplateRecord(active, kr, rec, registrar, true)
+}
+
+func processTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, register bool) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)
 	if _, err := os.Stat(path); err != nil {
@@ -434,6 +451,10 @@ func registerTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, r
 		} else {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 		}
+		return outcome
+	}
+	if !register {
+		outcome.ActivatedKeyTypes = append(outcome.ActivatedKeyTypes, rec.KeyType)
 		return outcome
 	}
 

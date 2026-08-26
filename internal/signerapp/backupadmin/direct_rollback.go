@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -102,6 +103,12 @@ func (s Service) RollbackRestore(
 				RollbackSourceGenerationID: capability.SourceGenerationID,
 				CreatedAt:                  time.Now(),
 				Integrity:                  masterKey,
+				ValidateCandidate: func(staged storepaths.GenPaths) error {
+					return storevalidate.Candidate(storevalidate.Options{
+						Paths: paths, Candidate: staged, Keyring: masterKey,
+						ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
+					})
+				},
 				Apply: func(staged storepaths.GenPaths) error {
 					return populateRollbackGeneration(source, staged, masterKey)
 				},

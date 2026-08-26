@@ -493,12 +493,20 @@ and irreversibly remove only explicitly selected entries:
 ```bash
 apadmin generations list
 apadmin generations prune --confirm <generation-id> [generation-id...]
+apadmin generations discard --confirm <unvalidatable-generation-id> [generation-id...]
 ```
 
 Quarantine is not a backup or rollback source. The live prune requires an
 unlocked or recovery-admin session, the stable
 `identity.generation.quarantine.prune` authorization action, explicit
 confirmation, and a durable audit intent before any deletion.
+An in-place abandoned directory that cannot be safely quarantined requires the
+distinct `identity.generation.abandoned.discard` authorization. Discard refuses
+the selected generation, its rollback parent, and every sealed prior.
+
+A changepass interrupted before the root replacement may leave its successor
+quarantined. Retry is intentionally blocked until that non-authoritative entry
+is inspected and explicitly pruned.
 
 The selected generation's deleted archive is capacity-bounded. Inspect and
 prune it through the authenticated live admin surface:

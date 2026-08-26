@@ -1389,7 +1389,10 @@ preserves it in place and blocks mints. Known-term verification results are
 recorded as verified/failed, and unknown terms as unavailable; these are
 classification only and do not grant authority or prevent structurally safe
 relocation. Quarantine prune requires explicit confirmation,
-`identity.generation.quarantine.prune`, and durable intent audit.
+`identity.generation.quarantine.prune`, and durable intent audit. Unsafe
+in-place abandoned-publication removal is a separate confirmed operation under
+`identity.generation.abandoned.discard`; it cannot target current, rollback-
+parent, or sealed generation state.
 
 The selected `deleted/` archive is bounded to 4,096 entries and 256 MiB, with
 one-entry plus one-maximum-envelope emergency reserve. Deletes and mints

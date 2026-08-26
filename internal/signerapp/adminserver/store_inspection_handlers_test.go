@@ -58,6 +58,12 @@ func (s *inspectionStub) PruneGenerationQuarantine(
 	s.lastPrune = req
 	return s.pruneResult
 }
+
+func (s *inspectionStub) DiscardAbandonedGenerations(
+	req adminproto.DiscardAbandonedGenerationsRequest,
+) adminproto.DiscardAbandonedGenerationsResult {
+	return adminproto.DiscardAbandonedGenerationsResult{}
+}
 func (s *inspectionStub) ListDeletedArchive() adminproto.DeletedArchiveInventory {
 	s.archiveListCalls++
 	return s.archiveListResult

@@ -52,8 +52,8 @@
   },
   {
     "spec": "store_root_commit",
-    "distinct_states": 12,
-    "depth": 7
+    "distinct_states": 14,
+    "depth": 9
   },
   {
     "spec": "store_root_commit",

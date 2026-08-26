@@ -23,46 +23,48 @@ type AuditEventType string
 const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 
 const (
-	AuditSignRequest                     AuditEventType = "SIGN_REQUEST"
-	AuditSignApproved                    AuditEventType = "SIGN_APPROVED"
-	AuditSignRejected                    AuditEventType = "SIGN_REJECTED"
-	AuditSignFailed                      AuditEventType = "SIGN_FAILED"
-	AuditAuthFailed                      AuditEventType = "AUTH_FAILED"
-	AuditAuthorizationDenied             AuditEventType = "AUTHORIZATION_DENIED"
-	AuditServerStart                     AuditEventType = "SERVER_START"
-	AuditServerStop                      AuditEventType = "SERVER_STOP"
-	AuditServerStopIncomplete            AuditEventType = "SERVER_STOP_INCOMPLETE"
-	AuditKeyReload                       AuditEventType = "KEY_RELOAD"
-	AuditSessionConnected                AuditEventType = "SESSION_CONNECTED"
-	AuditSessionDisconnected             AuditEventType = "SESSION_DISCONNECTED"
-	AuditIdentityLocked                  AuditEventType = "IDENTITY_LOCKED"
-	AuditTokenProvisioned                AuditEventType = "TOKEN_PROVISIONED"
-	AuditKeyGenerated                    AuditEventType = "KEY_GENERATED"
-	AuditKeyDeleted                      AuditEventType = "KEY_DELETED"
-	AuditKeyImported                     AuditEventType = "KEY_IMPORTED"
-	AuditKeyRejected                     AuditEventType = "KEY_REJECTED"
-	AuditBackupCreated                   AuditEventType = "BACKUP_CREATED"
-	AuditBackupFailed                    AuditEventType = "BACKUP_FAILED"
-	AuditBackupRestorePreviewed          AuditEventType = "BACKUP_RESTORE_PREVIEWED"
-	AuditBackupRestorePreviewFailed      AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
-	AuditCredentialRestoreIntent         AuditEventType = "CREDENTIAL_RESTORE_INTENT"
-	AuditCredentialRestoreSuccess        AuditEventType = "CREDENTIAL_RESTORE_SUCCEEDED"
-	AuditCredentialRestoreFailed         AuditEventType = "CREDENTIAL_RESTORE_FAILED"
-	AuditCredentialRestoreUncertain      AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
-	AuditCredentialRestoreRollback       AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
-	AuditStoreInitialized                AuditEventType = "STORE_INITIALIZED"
-	AuditStoreInitializeFailed           AuditEventType = "STORE_INITIALIZE_FAILED"
-	AuditPassphraseChanged               AuditEventType = "PASSPHRASE_CHANGED"
-	AuditPassphraseChangeFailed          AuditEventType = "PASSPHRASE_CHANGE_FAILED"
-	AuditSentryReferenceChanged          AuditEventType = "SENTRY_REFERENCE_CHANGED"
-	AuditBackupImported                  AuditEventType = "BACKUP_IMPORTED"
-	AuditBackupExportStarted             AuditEventType = "BACKUP_EXPORT_STARTED"
-	AuditGenerationQuarantineIntent      AuditEventType = "GENERATION_QUARANTINE_INTENT"
-	AuditGenerationQuarantined           AuditEventType = "GENERATION_QUARANTINED"
-	AuditGenerationQuarantinePruneIntent AuditEventType = "GENERATION_QUARANTINE_PRUNE_INTENT"
-	AuditGenerationQuarantinePruned      AuditEventType = "GENERATION_QUARANTINE_PRUNED"
-	AuditDeletedArchivePruneIntent       AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
-	AuditDeletedArchivePruned            AuditEventType = "DELETED_ARCHIVE_PRUNED"
+	AuditSignRequest                      AuditEventType = "SIGN_REQUEST"
+	AuditSignApproved                     AuditEventType = "SIGN_APPROVED"
+	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
+	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
+	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
+	AuditAuthorizationDenied              AuditEventType = "AUTHORIZATION_DENIED"
+	AuditServerStart                      AuditEventType = "SERVER_START"
+	AuditServerStop                       AuditEventType = "SERVER_STOP"
+	AuditServerStopIncomplete             AuditEventType = "SERVER_STOP_INCOMPLETE"
+	AuditKeyReload                        AuditEventType = "KEY_RELOAD"
+	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
+	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
+	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditTokenProvisioned                 AuditEventType = "TOKEN_PROVISIONED"
+	AuditKeyGenerated                     AuditEventType = "KEY_GENERATED"
+	AuditKeyDeleted                       AuditEventType = "KEY_DELETED"
+	AuditKeyImported                      AuditEventType = "KEY_IMPORTED"
+	AuditKeyRejected                      AuditEventType = "KEY_REJECTED"
+	AuditBackupCreated                    AuditEventType = "BACKUP_CREATED"
+	AuditBackupFailed                     AuditEventType = "BACKUP_FAILED"
+	AuditBackupRestorePreviewed           AuditEventType = "BACKUP_RESTORE_PREVIEWED"
+	AuditBackupRestorePreviewFailed       AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
+	AuditCredentialRestoreIntent          AuditEventType = "CREDENTIAL_RESTORE_INTENT"
+	AuditCredentialRestoreSuccess         AuditEventType = "CREDENTIAL_RESTORE_SUCCEEDED"
+	AuditCredentialRestoreFailed          AuditEventType = "CREDENTIAL_RESTORE_FAILED"
+	AuditCredentialRestoreUncertain       AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
+	AuditCredentialRestoreRollback        AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
+	AuditStoreInitialized                 AuditEventType = "STORE_INITIALIZED"
+	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
+	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
+	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
+	AuditSentryReferenceChanged           AuditEventType = "SENTRY_REFERENCE_CHANGED"
+	AuditBackupImported                   AuditEventType = "BACKUP_IMPORTED"
+	AuditBackupExportStarted              AuditEventType = "BACKUP_EXPORT_STARTED"
+	AuditGenerationQuarantineIntent       AuditEventType = "GENERATION_QUARANTINE_INTENT"
+	AuditGenerationQuarantined            AuditEventType = "GENERATION_QUARANTINED"
+	AuditGenerationQuarantinePruneIntent  AuditEventType = "GENERATION_QUARANTINE_PRUNE_INTENT"
+	AuditGenerationQuarantinePruned       AuditEventType = "GENERATION_QUARANTINE_PRUNED"
+	AuditGenerationAbandonedDiscardIntent AuditEventType = "GENERATION_ABANDONED_DISCARD_INTENT"
+	AuditGenerationAbandonedDiscarded     AuditEventType = "GENERATION_ABANDONED_DISCARDED"
+	AuditDeletedArchivePruneIntent        AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
+	AuditDeletedArchivePruned             AuditEventType = "DELETED_ARCHIVE_PRUNED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -771,6 +773,39 @@ func (a *AuditLogger) LogGenerationQuarantinePruneContext(
 	entry.OperationID = operationID
 	entry.GenerationIDs = make([]string, 0, len(result.Pruned))
 	for _, item := range result.Pruned {
+		entry.GenerationIDs = append(entry.GenerationIDs, item.GenerationID)
+		entry.ByteCount += item.EncodedBytes
+	}
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogGenerationAbandonedDiscardIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationAbandonedDiscardIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.GenerationIDs = append([]string(nil), generationIDs...)
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogGenerationAbandonedDiscardContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationAbandonedDiscarded
+	entry.Outcome = "discarded"
+	entry.OperationID = operationID
+	for _, item := range result.Discarded {
 		entry.GenerationIDs = append(entry.GenerationIDs, item.GenerationID)
 		entry.ByteCount += item.EncodedBytes
 	}

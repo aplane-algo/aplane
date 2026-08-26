@@ -22,39 +22,40 @@ type Action string
 
 // Common actions
 const (
-	ActionIdentityView              Action = "identity.view"
-	ActionIdentityUnlock            Action = "identity.unlock"
-	ActionIdentityBackup            Action = "identity.backup"
-	ActionIdentityRestore           Action = "identity.restore"
-	ActionIdentityLock              Action = "identity.lock"
-	ActionIdentityPassphrase        Action = "identity.passphrase"
-	ActionSignRequest               Action = "sign.request"
-	ActionSignApprove               Action = "sign.approve"
-	ActionSignComponent             Action = "sign.component"
-	ActionSignAssemble              Action = "sign.assemble"
-	ActionKeysView                  Action = "keys.view"
-	ActionKeysGenerate              Action = "keys.generate"
-	ActionKeysImport                Action = "keys.import"
-	ActionKeysExport                Action = "keys.export"
-	ActionKeysDelete                Action = "keys.delete"
-	ActionSentriesView              Action = "sentries.view"
-	ActionSentriesManage            Action = "sentries.manage"
-	ActionGenerationsView           Action = "generations.view"
-	ActionGenerationQuarantinePrune Action = "identity.generation.quarantine.prune"
-	ActionArchivePrune              Action = "identity.archive.prune"
-	ActionKeyTypesView              Action = "keytypes.view"
-	ActionKeyTypesActivate          Action = "keytypes.activate"
-	ActionKeyTypesDeactivate        Action = "keytypes.deactivate"
-	ActionTemplatesView             Action = "templates.view"
-	ActionTemplatesInstall          Action = "templates.install"
-	ActionTemplatesRemove           Action = "templates.remove"
-	ActionPolicyView                Action = "policy.view"
-	ActionPolicyUpdate              Action = "policy.update"
-	ActionSettingsView              Action = "settings.view"
-	ActionSettingsUpdate            Action = "settings.update"
-	ActionTokenProvision            Action = "token.provision"
-	ActionTokenRevoke               Action = "token.revoke"
-	ActionHealthGet                 Action = "health.get"
+	ActionIdentityView               Action = "identity.view"
+	ActionIdentityUnlock             Action = "identity.unlock"
+	ActionIdentityBackup             Action = "identity.backup"
+	ActionIdentityRestore            Action = "identity.restore"
+	ActionIdentityLock               Action = "identity.lock"
+	ActionIdentityPassphrase         Action = "identity.passphrase"
+	ActionSignRequest                Action = "sign.request"
+	ActionSignApprove                Action = "sign.approve"
+	ActionSignComponent              Action = "sign.component"
+	ActionSignAssemble               Action = "sign.assemble"
+	ActionKeysView                   Action = "keys.view"
+	ActionKeysGenerate               Action = "keys.generate"
+	ActionKeysImport                 Action = "keys.import"
+	ActionKeysExport                 Action = "keys.export"
+	ActionKeysDelete                 Action = "keys.delete"
+	ActionSentriesView               Action = "sentries.view"
+	ActionSentriesManage             Action = "sentries.manage"
+	ActionGenerationsView            Action = "generations.view"
+	ActionGenerationQuarantinePrune  Action = "identity.generation.quarantine.prune"
+	ActionGenerationAbandonedDiscard Action = "identity.generation.abandoned.discard"
+	ActionArchivePrune               Action = "identity.archive.prune"
+	ActionKeyTypesView               Action = "keytypes.view"
+	ActionKeyTypesActivate           Action = "keytypes.activate"
+	ActionKeyTypesDeactivate         Action = "keytypes.deactivate"
+	ActionTemplatesView              Action = "templates.view"
+	ActionTemplatesInstall           Action = "templates.install"
+	ActionTemplatesRemove            Action = "templates.remove"
+	ActionPolicyView                 Action = "policy.view"
+	ActionPolicyUpdate               Action = "policy.update"
+	ActionSettingsView               Action = "settings.view"
+	ActionSettingsUpdate             Action = "settings.update"
+	ActionTokenProvision             Action = "token.provision"
+	ActionTokenRevoke                Action = "token.revoke"
+	ActionHealthGet                  Action = "health.get"
 
 	ActionSign      = ActionSignRequest
 	ActionListKeys  = ActionKeysView
@@ -62,39 +63,40 @@ const (
 )
 
 var knownActions = map[Action]struct{}{
-	ActionIdentityView:              {},
-	ActionIdentityUnlock:            {},
-	ActionIdentityBackup:            {},
-	ActionIdentityRestore:           {},
-	ActionIdentityLock:              {},
-	ActionIdentityPassphrase:        {},
-	ActionSignRequest:               {},
-	ActionSignApprove:               {},
-	ActionSignComponent:             {},
-	ActionSignAssemble:              {},
-	ActionKeysView:                  {},
-	ActionKeysGenerate:              {},
-	ActionKeysImport:                {},
-	ActionKeysExport:                {},
-	ActionKeysDelete:                {},
-	ActionSentriesView:              {},
-	ActionSentriesManage:            {},
-	ActionGenerationsView:           {},
-	ActionGenerationQuarantinePrune: {},
-	ActionArchivePrune:              {},
-	ActionKeyTypesView:              {},
-	ActionKeyTypesActivate:          {},
-	ActionKeyTypesDeactivate:        {},
-	ActionTemplatesView:             {},
-	ActionTemplatesInstall:          {},
-	ActionTemplatesRemove:           {},
-	ActionPolicyView:                {},
-	ActionPolicyUpdate:              {},
-	ActionSettingsView:              {},
-	ActionSettingsUpdate:            {},
-	ActionTokenProvision:            {},
-	ActionTokenRevoke:               {},
-	ActionHealthGet:                 {},
+	ActionIdentityView:               {},
+	ActionIdentityUnlock:             {},
+	ActionIdentityBackup:             {},
+	ActionIdentityRestore:            {},
+	ActionIdentityLock:               {},
+	ActionIdentityPassphrase:         {},
+	ActionSignRequest:                {},
+	ActionSignApprove:                {},
+	ActionSignComponent:              {},
+	ActionSignAssemble:               {},
+	ActionKeysView:                   {},
+	ActionKeysGenerate:               {},
+	ActionKeysImport:                 {},
+	ActionKeysExport:                 {},
+	ActionKeysDelete:                 {},
+	ActionSentriesView:               {},
+	ActionSentriesManage:             {},
+	ActionGenerationsView:            {},
+	ActionGenerationQuarantinePrune:  {},
+	ActionGenerationAbandonedDiscard: {},
+	ActionArchivePrune:               {},
+	ActionKeyTypesView:               {},
+	ActionKeyTypesActivate:           {},
+	ActionKeyTypesDeactivate:         {},
+	ActionTemplatesView:              {},
+	ActionTemplatesInstall:           {},
+	ActionTemplatesRemove:            {},
+	ActionPolicyView:                 {},
+	ActionPolicyUpdate:               {},
+	ActionSettingsView:               {},
+	ActionSettingsUpdate:             {},
+	ActionTokenProvision:             {},
+	ActionTokenRevoke:                {},
+	ActionHealthGet:                  {},
 }
 
 // IsKnownAction reports whether action is part of the stable authorization

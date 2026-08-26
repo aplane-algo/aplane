@@ -81,6 +81,13 @@ type MintRequest struct {
 	// of the parent's content, or are empty for a first generation or an
 	// authenticated StartEmpty reconstruction.
 	Apply func(staged storepaths.GenPaths) error
+	// ValidateCandidate runs the caller's complete semantic validation gates
+	// against the staged generation and the authority that will select it.
+	// It runs after Apply and structural validation, but before the manifest is
+	// written or any staged state is published. Generation-owning application
+	// workflows must supply this hook; genstore cannot import signer policy,
+	// template, credential, or node-role semantics without inverting ownership.
+	ValidateCandidate func(staged storepaths.GenPaths) error
 	// AfterPublication runs after the complete successor directory and its
 	// parent-directory entry are durable, but before the store root changes.
 	// It exists for semantic process checkpoints and must not mutate the store.
@@ -181,6 +188,9 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 				selection.CurrentGenerationID,
 			)
 		}
+		if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint preflight: %w", err)
+		}
 	}
 
 	generationsDir := paths.GenerationsDir()
@@ -248,6 +258,11 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	// refers to them.
 	if err := validateStructureAt(stagingDir, req.GenerationID, false); err != nil {
 		return storepaths.GenPaths{}, err
+	}
+	if req.ValidateCandidate != nil {
+		if err := req.ValidateCandidate(staged); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("validate staged generation: %w", err)
+		}
 	}
 	inventory, err := BuildInventory(staged)
 	if err != nil {

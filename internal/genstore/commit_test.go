@@ -4,6 +4,7 @@
 package genstore
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -122,6 +123,31 @@ func TestMintApplyFailureLeavesRootExact(t *testing.T) {
 	}
 	if selectedForTest(t, paths).GenerationID() != first.GenerationID() {
 		t.Fatal("failed mint changed selection")
+	}
+}
+
+func TestMintCandidateValidationFailurePrecedesPublicationAndRootCommit(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	first := mintFirst(t, paths, nil)
+	before, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("semantic candidate rejected")
+	_, err = Mint(paths, MintRequest{
+		GenerationID: testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
+		Operation: "test-validation", OperationID: "op-validation", CreatedAt: time.Unix(1_753_500_100, 0),
+		ValidateCandidate: func(storepaths.GenPaths) error { return injected },
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("Mint() error = %v", err)
+	}
+	after, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("candidate rejection changed store root: %v", err)
+	}
+	if _, err := os.Lstat(paths.GenerationDir(testGenB)); !os.IsNotExist(err) {
+		t.Fatalf("candidate rejection published successor: %v", err)
 	}
 }
 

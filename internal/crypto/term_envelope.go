@@ -4,6 +4,7 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -97,8 +98,7 @@ type encryptedDataTerm struct {
 // envelopeTerm reads the term a term-envelope names, without decrypting.
 func envelopeTerm(encryptedJSON []byte) (int64, error) {
 	var probe struct {
-		EnvelopeVersion int   `json:"envelope_version"`
-		Term            int64 `json:"term"`
+		EnvelopeVersion int `json:"envelope_version"`
 	}
 	if err := json.Unmarshal(encryptedJSON, &probe); err != nil {
 		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
@@ -109,10 +109,11 @@ func envelopeTerm(encryptedJSON []byte) (int64, error) {
 			probe.EnvelopeVersion, TermEnvelopeVersion,
 		)
 	}
-	if probe.Term <= 0 {
-		return 0, fmt.Errorf("term envelope has no term")
+	encrypted, err := parseTermEnvelope(encryptedJSON)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
 	}
-	return probe.Term, nil
+	return encrypted.Term, nil
 }
 
 // EnvelopeTerm reports the term named by a term envelope without returning
@@ -176,9 +177,12 @@ func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte
 }
 
 func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
-	var encrypted encryptedDataTerm
-	if err := json.Unmarshal(encryptedJSON, &encrypted); err != nil {
+	encrypted, err := parseTermEnvelope(encryptedJSON)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
+	if encrypted.Term != term {
+		return nil, fmt.Errorf("term envelope names term %d, expected %d", encrypted.Term, term)
 	}
 	nonce, err := base64.StdEncoding.DecodeString(encrypted.Nonce)
 	if err != nil {
@@ -203,4 +207,28 @@ func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]
 		return nil, fmt.Errorf("failed to decrypt %s: %w", ctx, err)
 	}
 	return plaintext, nil
+}
+
+func parseTermEnvelope(encoded []byte) (encryptedDataTerm, error) {
+	var encrypted encryptedDataTerm
+	if err := decodeJSONStrict(encoded, &encrypted); err != nil {
+		return encryptedDataTerm{}, err
+	}
+	if encrypted.EnvelopeVersion != TermEnvelopeVersion {
+		return encryptedDataTerm{}, fmt.Errorf(
+			"envelope_version %d is not a term envelope (expected %d)",
+			encrypted.EnvelopeVersion, TermEnvelopeVersion,
+		)
+	}
+	if encrypted.Term <= 0 {
+		return encryptedDataTerm{}, fmt.Errorf("term envelope has no term")
+	}
+	canonical, err := json.MarshalIndent(encrypted, "", "  ")
+	if err != nil {
+		return encryptedDataTerm{}, fmt.Errorf("canonicalize term envelope: %w", err)
+	}
+	if !bytes.Equal(encoded, canonical) {
+		return encryptedDataTerm{}, fmt.Errorf("term envelope is not canonical JSON")
+	}
+	return encrypted, nil
 }

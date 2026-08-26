@@ -84,6 +84,7 @@ func TestProductAllowedActionsCoverAuthenticatedHandlerActions(t *testing.T) {
 	}
 	handlerActions := []auth.Action{
 		auth.ActionGenerationQuarantinePrune,
+		auth.ActionGenerationAbandonedDiscard,
 		auth.ActionGenerationsView,
 		auth.ActionIdentityBackup,
 		auth.ActionIdentityLock,

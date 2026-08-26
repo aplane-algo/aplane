@@ -52,6 +52,7 @@ func ProductAllowedActions() []auth.Action {
 		auth.ActionSentriesManage,
 		auth.ActionGenerationsView,
 		auth.ActionGenerationQuarantinePrune,
+		auth.ActionGenerationAbandonedDiscard,
 		auth.ActionArchivePrune,
 		auth.ActionKeyTypesView,
 		auth.ActionKeyTypesActivate,

@@ -597,13 +597,16 @@ func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
 
 func (c Catalog) runGenerations(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin generations <list|prune>")
+		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
 	}
 	if args[0] == "prune" {
 		return c.runGenerationQuarantinePrune(args[1:])
 	}
+	if args[0] == "discard" {
+		return c.runGenerationAbandonedDiscard(args[1:])
+	}
 	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: apadmin generations <list|prune>")
+		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
 	}
 	result, err := requestInspectionWithRetry(c, func() any {
 		return protocol.ListGenerationsMessage{
@@ -639,7 +642,37 @@ func (c Catalog) runGenerations(args []string) error {
 		c.info("sealed prior: %s", prior)
 	}
 	if len(result.SealedPriors) == 0 && result.RetainedUnsealedParent == "" {
-		c.info("no prior generations (rotation quiescence satisfied)")
+		c.info("no prior generations")
+	}
+	return nil
+}
+
+func (c Catalog) runGenerationAbandonedDiscard(args []string) error {
+	fs := flag.NewFlagSet("apadmin generations discard", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirm := fs.Bool("confirm", false, "confirm irreversible abandoned-generation deletion")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return errors.New("usage: apadmin generations discard --confirm <generation-id> [generation-id...]")
+	}
+	var result protocol.DiscardAbandonedGenerationsResultMessage
+	if err := c.Client.Request(protocol.DiscardAbandonedGenerationsMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeDiscardAbandonedGenerations,
+			ID:   c.requestID("generation-abandoned-discard"),
+		},
+		GenerationIDs: append([]string(nil), fs.Args()...), Confirm: *confirm,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("abandoned generation discard failed", result.Code, result.Error)
+	}
+	for _, item := range result.Discarded {
+		if item.AlreadyAbsent {
+			c.info("abandoned generation %s already absent", item.GenerationID)
+		} else {
+			c.info("discarded abandoned generation %s (%d bytes)", item.GenerationID, item.EncodedBytes)
+		}
 	}
 	return nil
 }

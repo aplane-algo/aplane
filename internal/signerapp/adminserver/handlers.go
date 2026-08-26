@@ -256,6 +256,58 @@ func (s *Session) HandlePruneGenerationQuarantine(
 	_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(msg.ID, result))
 }
 
+func (s *Session) HandleDiscardAbandonedGenerations(
+	msg *protocol.DiscardAbandonedGenerationsMessage,
+) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionGenerationAbandonedDiscard, auth.Resource{Type: "generation_abandoned"}) {
+		return
+	}
+	respond := func(result adminproto.DiscardAbandonedGenerationsResult) {
+		_ = s.WriteJSON(ProtocolDiscardAbandonedGenerationsResultMessage(msg.ID, result))
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeConfirmationRequired,
+			Error: "abandoned generation discard requires explicit confirmation",
+		})
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogGenerationAbandonedDiscardIntentDurableContext(SessionContext, string, []string) error
+	})
+	if !ok {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeAbandonedAuditFailed,
+			Error: "abandoned generation discard aborted: durable audit is unavailable",
+		})
+		return
+	}
+	ids := append([]string(nil), msg.GenerationIDs...)
+	if err := audit.LogGenerationAbandonedDiscardIntentDurableContext(s.SessionContext(), msg.ID, ids); err != nil {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeAbandonedAuditFailed,
+			Error: fmt.Sprintf("abandoned generation discard aborted: durable audit failed: %v", err),
+		})
+		return
+	}
+	result := s.inspectionServices.DiscardAbandonedGenerations(
+		adminproto.DiscardAbandonedGenerationsRequest{GenerationIDs: ids},
+	)
+	if audit, ok := s.audit.(interface {
+		LogGenerationAbandonedDiscardContext(SessionContext, string, adminproto.DiscardAbandonedGenerationsResult)
+	}); ok {
+		audit.LogGenerationAbandonedDiscardContext(s.SessionContext(), msg.ID, result)
+	}
+	respond(result)
+}
+
 func (s *Session) HandleListDeletedArchive(requestID string) {
 	if s.requireRecoveryAdminRuntime(requestID) == nil {
 		return

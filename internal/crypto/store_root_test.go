@@ -62,6 +62,63 @@ func TestStoreRootSealOpenRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStoreRootMultiTermAnchoredKeyringRoundTrip(t *testing.T) {
+	base, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Zero()
+	anchors := []HistoricalGenerationAnchor{{
+		GenerationID: testStoreRootGenerationA,
+		SealSize:     123,
+		SealSHA256:   strings.Repeat("a", sha256HexLength),
+	}}
+	successor, err := NewSuccessorKeyring(base, anchors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer successor.Zero()
+	encoded, err := SealStoreRoot(successor, []byte("new passphrase"), testStoreRootGenerationB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, selection, err := OpenStoreRoot(encoded, []byte("new passphrase"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Zero()
+	if selection.SelectionTerm != FirstTerm+1 || len(opened.terms) != 2 {
+		t.Fatalf("opened selection=%+v terms=%d", selection, len(opened.terms))
+	}
+	if got, ok := opened.HistoricalGenerationAnchor(testStoreRootGenerationA); !ok || got != anchors[0] {
+		t.Fatalf("anchor = %+v, %t", got, ok)
+	}
+}
+
+func TestStoreRootRejectsOversizeWrappedKeyring(t *testing.T) {
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	root, err := SealStoreRoot(kr, []byte("passphrase"), testStoreRootGenerationA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file storeRootFile
+	if err := json.Unmarshal(root, &file); err != nil {
+		t.Fatal(err)
+	}
+	file.Keyring = json.RawMessage(`{"schema":"aplane.keyring.v3","padding":"` + strings.Repeat("x", maxKeyringBytes) + `"}`)
+	oversize, err := json.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := OpenStoreRoot(oversize, []byte("passphrase")); err == nil || !strings.Contains(err.Error(), "keyring") {
+		t.Fatalf("OpenStoreRoot(oversize) error = %v", err)
+	}
+}
+
 func TestStoreRootReselectPreservesExactWrappedKeyring(t *testing.T) {
 	passphrase := []byte("passphrase")
 	kr, err := NewKeyring()

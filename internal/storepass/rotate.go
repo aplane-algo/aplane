@@ -26,6 +26,9 @@ type Logger func(format string, args ...any)
 
 type RotateOptions struct {
 	Logf Logger
+	// ValidateCandidate applies signer semantic gates to the fresh-term staged
+	// successor before publication and store-root replacement.
+	ValidateCandidate func(staged storepaths.GenPaths, successor *crypto.Keyring) error
 
 	// AfterRootCommit updates passphrase helpers after the new cryptographic
 	// root becomes authoritative. Its failure is a warning, never a rollback
@@ -143,6 +146,12 @@ func Rotate(
 		OperationID:                "changepass-" + generationID,
 		RollbackCapability:         rollbackCapability,
 		CreatedAt:                  now,
+		ValidateCandidate: func(staged storepaths.GenPaths) error {
+			if opts.ValidateCandidate == nil {
+				return nil
+			}
+			return opts.ValidateCandidate(staged, successorKeyring)
+		},
 		AfterPublication: func() error {
 			return testcheckpoint.Reach("changepass.successor_published")
 		},

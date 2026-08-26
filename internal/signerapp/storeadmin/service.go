@@ -6,12 +6,14 @@ package storeadmin
 import (
 	"bytes"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepass"
@@ -160,6 +162,12 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 		var rotateErr error
 		rotation, rotateErr = storepass.Rotate(s.Deps.KeyPaths(), req.CurrentPassphrase, req.NewPassphrase, storepass.RotateOptions{
 			Logf: s.Deps.Logf,
+			ValidateCandidate: func(staged storepaths.GenPaths, successor *crypto.Keyring) error {
+				return storevalidate.Candidate(storevalidate.Options{
+					Paths: s.Deps.KeyPaths(), Candidate: staged, Keyring: successor,
+					ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
+				})
+			},
 			AfterRootCommit: func() error {
 				if passphraseCmdCfg == nil {
 					return nil
@@ -183,7 +191,14 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 		return nil
 	})
 	if err != nil {
-		s.logPassphraseChangeFailed(err.Error())
+		// The root record is the durable truth. A post-commit reload or
+		// durability-confirmation error is operational failure after a
+		// successful passphrase cutover, not PASSPHRASE_CHANGE_FAILED.
+		if rotation.RootCommitted {
+			s.logPassphraseChanged(rotation.KeysMigrated, rotation.TemplatesMigrated)
+		} else {
+			s.logPassphraseChangeFailed(err.Error())
+		}
 		return adminproto.ChangeStorePassphraseResult{
 			KeysMigrated:             rotation.KeysMigrated,
 			TemplatesMigrated:        rotation.TemplatesMigrated,

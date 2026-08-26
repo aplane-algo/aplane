@@ -176,8 +176,8 @@ type Seal struct {
 }
 
 // CanonicalInventoryDigest returns the domain-separated digest used when a
-// rotation snapshot or baseline names an effective generation inventory
-// authority. It is independent of JSON formatting.
+// a manifest, seal, or rollback capability names an exact generation
+// inventory. It is independent of JSON formatting.
 func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
 	if err := validateInventory(inventory); err != nil {
 		return "", err

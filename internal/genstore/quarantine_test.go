@@ -251,3 +251,13 @@ func TestPruneQuarantinedCannotDeleteActiveGeneration(t *testing.T) {
 		t.Fatalf("active generation was affected by quarantine prune: %v", err)
 	}
 }
+
+func TestQuarantineAggregateByteLimitRefusesOverflow(t *testing.T) {
+	err := checkQuarantineCapacity(0, quarantineMaxBytes-5, QuarantineRecord{
+		GenerationID: testGenD,
+		EncodedBytes: 6,
+	})
+	if err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("checkQuarantineCapacity() error = %v, want byte limit", err)
+	}
+}

@@ -30,6 +30,7 @@ const (
 	KeystoreLayoutStoreRootV1        = "store-root/v1"
 	storeRootKeyringAADDomain        = "aplane.keyring-file.v3"
 	storeRootSelectionMACDomain      = "aplane.store-root-selection.v1"
+	storeRootSelectionMACHKDFInfo    = "aplane.store-root-selection-mac-key.v1"
 	maxStoreRootBytes                = 2 << 20
 	maxStoreRootKeystoreMarkerBytes  = 16 << 10
 	storeRootGCMNonceBytes           = 12
@@ -257,8 +258,17 @@ func verifyStoreRootSelection(file storeRootFile, kr *Keyring) error {
 	if err != nil {
 		return err
 	}
-	wantBytes, _ := hex.DecodeString(want)
-	gotBytes, _ := hex.DecodeString(file.SelectionMAC)
+	wantBytes, err := hex.DecodeString(want)
+	if err != nil {
+		return fmt.Errorf("decode expected store root selection MAC: %w", err)
+	}
+	gotBytes, err := hex.DecodeString(file.SelectionMAC)
+	if err != nil {
+		return fmt.Errorf("decode store root selection MAC: %w", err)
+	}
+	if len(wantBytes) != sha256.Size || len(gotBytes) != sha256.Size {
+		return fmt.Errorf("store root selection MAC has invalid length")
+	}
 	if !hmac.Equal(gotBytes, wantBytes) {
 		return fmt.Errorf("store root selection MAC verification failed")
 	}
@@ -288,7 +298,14 @@ func storeRootSelectionMAC(
 	binary.BigEndian.PutUint64(numeric[:], uint64(selectionTerm))
 	macInput = appendAADField(macInput, numeric[:])
 	macInput = appendAADField(macInput, wrappedDigest[:])
-	mac := hmac.New(sha256.New, key)
+	macKey, err := deriveIntegrityKey(
+		key, []byte(storeRootSelectionMACHKDFInfo), sha256.Size, "store root selection MAC",
+	)
+	if err != nil {
+		return "", err
+	}
+	defer ZeroBytes(macKey)
+	mac := hmac.New(sha256.New, macKey)
 	_, _ = mac.Write(macInput)
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }

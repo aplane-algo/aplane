@@ -408,6 +408,17 @@ type PruneGenerationQuarantineResult struct {
 	Error   string
 }
 
+type DiscardAbandonedGenerationsRequest struct {
+	GenerationIDs []string
+}
+
+type DiscardAbandonedGenerationsResult struct {
+	Success   bool
+	Discarded []PrunedQuarantinedGeneration
+	Code      string
+	Error     string
+}
+
 type DeletedArchiveInventory struct {
 	Entries      []DeletedArchiveEntry
 	EntryCount   int

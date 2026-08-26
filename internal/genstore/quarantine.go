@@ -64,6 +64,80 @@ type QuarantinePruneResult struct {
 	AlreadyAbsent bool   `json:"already_absent,omitempty"`
 }
 
+// DiscardAbandoned irreversibly removes explicitly selected, non-current,
+// unsealed final generation directories that reconciliation could not safely
+// quarantine. The caller must hold the mutation lock and enforce the distinct
+// abandoned-discard authorization, confirmation, and durable-audit contract.
+func DiscardAbandoned(
+	paths storepaths.Paths,
+	generationIDs []string,
+	kr *crypto.Keyring,
+) ([]QuarantinePruneResult, error) {
+	if len(generationIDs) == 0 || len(generationIDs) > quarantineMaxPruneSelection {
+		return nil, fmt.Errorf("abandoned discard requires 1..%d generation IDs", quarantineMaxPruneSelection)
+	}
+	current, err := selectedGenerationFromStoreRoot(paths, kr)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ReadManifest(paths.GenerationPaths(current))
+	if err != nil {
+		return nil, fmt.Errorf("read current generation before abandoned discard: %w", err)
+	}
+	seen := make(map[string]bool, len(generationIDs))
+	results := make([]QuarantinePruneResult, 0, len(generationIDs))
+	for _, generationID := range generationIDs {
+		if err := storepaths.ValidateGenerationID(generationID); err != nil {
+			return results, err
+		}
+		if seen[generationID] {
+			return results, fmt.Errorf("duplicate abandoned generation ID %s", generationID)
+		}
+		seen[generationID] = true
+		if generationID == current || generationID == manifest.ParentID {
+			return results, fmt.Errorf("generation %s is authoritative or retained rollback state", generationID)
+		}
+		path := paths.GenerationDir(generationID)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			results = append(results, QuarantinePruneResult{GenerationID: generationID, AlreadyAbsent: true})
+			continue
+		}
+		if err != nil {
+			return results, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return results, fmt.Errorf("abandoned target is not a regular directory: %s", path)
+		}
+		sealed, err := HasSeal(paths.GenerationPaths(generationID))
+		if err != nil {
+			return results, err
+		}
+		if sealed {
+			return results, fmt.Errorf("generation %s is sealed retained state, refusing abandoned discard", generationID)
+		}
+		size, err := boundedTreeSize(path, quarantineMaxBytes)
+		if err != nil {
+			return results, err
+		}
+		tombstone := filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"discard-"+generationID)
+		if err := os.Rename(path, tombstone); err != nil {
+			return results, fmt.Errorf("publish abandoned discard tombstone %s: %w", generationID, err)
+		}
+		if err := fsutil.SyncDir(paths.GenerationsDir()); err != nil {
+			return results, err
+		}
+		if err := os.RemoveAll(tombstone); err != nil {
+			return results, fmt.Errorf("discard abandoned generation %s: %w", generationID, err)
+		}
+		if err := fsutil.SyncDir(paths.GenerationsDir()); err != nil {
+			return results, err
+		}
+		results = append(results, QuarantinePruneResult{GenerationID: generationID, EncodedBytes: size})
+	}
+	return results, nil
+}
+
 // ListQuarantined returns deterministic non-authoritative metadata for the
 // currently quarantined generation publications. It never returns GenPaths or
 // otherwise makes the namespace addressable by signing and history APIs.
@@ -143,8 +217,24 @@ func PruneQuarantined(
 	for _, generationID := range generationIDs {
 		result := QuarantinePruneResult{GenerationID: generationID}
 		path := paths.QuarantinedGenerationDir(generationID)
+		tombstone := filepath.Join(
+			paths.QuarantineDir(), storepaths.GenerationStagingPrefix+"prune-"+generationID,
+		)
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
+			if tombstoneInfo, tombstoneErr := os.Lstat(tombstone); tombstoneErr == nil {
+				if tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.IsDir() {
+					return results, fmt.Errorf("quarantine prune tombstone is not a regular directory: %s", tombstone)
+				}
+				if err := os.RemoveAll(tombstone); err != nil {
+					return results, fmt.Errorf("finish quarantine prune %s: %w", generationID, err)
+				}
+				if err := fsutil.SyncDir(paths.QuarantineDir()); err != nil {
+					return results, err
+				}
+			} else if !os.IsNotExist(tombstoneErr) {
+				return results, tombstoneErr
+			}
 			result.AlreadyAbsent = true
 			results = append(results, result)
 			continue
@@ -160,10 +250,24 @@ func PruneQuarantined(
 			return results, err
 		}
 		result.EncodedBytes = size
-		if err := os.RemoveAll(path); err != nil {
-			return results, fmt.Errorf("prune quarantined generation %s: %w", generationID, err)
+		if _, err := os.Lstat(tombstone); err == nil {
+			return results, fmt.Errorf("quarantine prune tombstone already exists: %s", tombstone)
+		} else if !os.IsNotExist(err) {
+			return results, err
+		}
+		if err := os.Rename(path, tombstone); err != nil {
+			return results, fmt.Errorf("publish quarantine prune tombstone %s: %w", generationID, err)
 		}
 		if err := fsutil.SyncDir(paths.QuarantinedGenerationsDir()); err != nil {
+			return results, fmt.Errorf("confirm quarantine prune source %s: %w", generationID, err)
+		}
+		if err := fsutil.SyncDir(paths.QuarantineDir()); err != nil {
+			return results, fmt.Errorf("confirm quarantine prune tombstone %s: %w", generationID, err)
+		}
+		if err := os.RemoveAll(tombstone); err != nil {
+			return results, fmt.Errorf("prune quarantined generation %s: %w", generationID, err)
+		}
+		if err := fsutil.SyncDir(paths.QuarantineDir()); err != nil {
 			return results, fmt.Errorf("confirm quarantine prune %s: %w", generationID, err)
 		}
 		results = append(results, result)
@@ -281,6 +385,31 @@ func checkQuarantineCapacity(count int, encodedBytes int64, candidate Quarantine
 			"quarantine byte limit %d reached; candidate %s preserved in place",
 			quarantineMaxBytes,
 			candidate.GenerationID,
+		)
+	}
+	return nil
+}
+
+// requireMintableGenerationStore reserves enough quarantine capacity for the
+// largest publication this mint can leave abandoned and refuses to mint while
+// reconciliation residue is pending. Keeping this in genstore prevents
+// changepass, credential restore, rollback, and future mint callers from
+// drifting on the capacity invariant.
+func requireMintableGenerationStore(paths storepaths.Paths, kr *crypto.Keyring) error {
+	report, err := InspectStoreRoot(paths, kr, nil)
+	if err != nil {
+		return err
+	}
+	if len(report.DiscardedStaging) > 0 || len(report.Quarantined) > 0 || report.RetainedUnsealedParent != "" {
+		return fmt.Errorf("generation store requires reconciliation before another mint")
+	}
+	count, encodedBytes, err := quarantineUsage(paths)
+	if err != nil {
+		return fmt.Errorf("inspect quarantine capacity: %w", err)
+	}
+	if count >= quarantineMaxGenerations || encodedBytes > quarantineMaxBytes-quarantineCandidateMaxBytes {
+		return fmt.Errorf(
+			"generation quarantine lacks the reserved capacity required for a mint; prune quarantine first",
 		)
 	}
 	return nil

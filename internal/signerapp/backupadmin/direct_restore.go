@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
@@ -96,6 +97,22 @@ func (s Service) RestoreBackup(
 				result.KeyCount = ir.KeyCount()
 				return nil
 			}
+			if wasRecovery {
+				repaired := make(map[string]bool, len(classification.Pending))
+				for i := range classification.Pending {
+					repaired[classification.Pending[i].Selector] = true
+				}
+				if validateErr := storevalidate.RecoveryDestination(storevalidate.Options{
+					Paths: s.Deps.KeyPaths(), Candidate: current, Keyring: masterKey,
+					ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
+				}, repaired); validateErr != nil {
+					return restoreFailure(
+						protocol.ResultCodeRecoveryBlocked,
+						"recovery restore refused because destination authority outside the authenticated credential selection is damaged: %v",
+						validateErr,
+					)
+				}
+			}
 
 			parent = current.GenerationID()
 			generationID, generationErr := genstore.NewGenerationID(time.Now())
@@ -118,6 +135,12 @@ func (s Service) RestoreBackup(
 				RollbackCapability: rollbackCapability,
 				CreatedAt:          time.Now(),
 				Integrity:          masterKey,
+				ValidateCandidate: func(staged storepaths.GenPaths) error {
+					return storevalidate.Candidate(storevalidate.Options{
+						Paths: s.Deps.KeyPaths(), Candidate: staged, Keyring: masterKey,
+						ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
+					})
+				},
 				Apply: func(staged storepaths.GenPaths) error {
 					for i := range classification.Pending {
 						entry := classification.Pending[i]
