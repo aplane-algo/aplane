@@ -64,7 +64,7 @@ func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 
 func TestPreviewRestoreReportsCanonicalCredentialWithoutTemplate(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	archive, address := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
 	preview, err := PreviewRestoreWithNodeRole(
 		paths, archive, []byte("export-passphrase"), noderole.RoleSigner,
@@ -79,7 +79,7 @@ func TestPreviewRestoreReportsCanonicalCredentialWithoutTemplate(t *testing.T) {
 
 func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	root := t.TempDir()
 	keysDir := filepath.Join(root, "apb")
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
@@ -160,7 +160,7 @@ func TestCredentialEntryZeroSecrets(t *testing.T) {
 
 func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 
 func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForBackupTest(t, paths)
+	paths = mintFirstGenerationForBackupTest(t, paths)
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		t.Fatal(err)

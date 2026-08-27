@@ -138,7 +138,7 @@ func CanonicalManagedCredentialPath(paths storepaths.Paths, selector, category s
 }
 
 // CanonicalManagedCredentialPathActive is CanonicalManagedCredentialPath
-// against resolved active-store paths (generational or legacy).
+// against an authenticated generation capability.
 func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selector, category string) (string, error) {
 	name, err := CanonicalManagedCredentialFilename(selector, category)
 	if err != nil {
@@ -167,14 +167,14 @@ func SentryCredentialFilePath(paths storepaths.Paths, witnessKeyID string) strin
 
 // mustResolveActive backs the string-returning convenience path builders,
 // which have no production callers (writers use the Active variants); a
-// present-but-invalid CURRENT panics rather than silently resolving legacy
-// paths.
+// present-but-invalid store-root selection panics rather than inventing an
+// active path.
 func mustResolveActive(paths storepaths.Paths) storepaths.ActivePaths {
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		panic(err)
+	generationID, ok := paths.BoundActiveGeneration()
+	if !ok {
+		panic("active generation capability is not bound; authenticate store-root.enc first")
 	}
-	return active
+	return paths.GenerationPaths(generationID)
 }
 
 // SentryCredentialFilePathActive is SentryCredentialFilePath against

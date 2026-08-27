@@ -271,7 +271,7 @@ func TestDecryptWithTermKeyRejectsInvalidNonceLength(t *testing.T) {
 		Nonce:           base64.StdEncoding.EncodeToString([]byte("short")),
 		Ciphertext:      base64.StdEncoding.EncodeToString([]byte("ciphertext")),
 	}
-	data, err := json.Marshal(payload)
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}

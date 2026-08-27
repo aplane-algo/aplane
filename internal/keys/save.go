@@ -23,7 +23,7 @@ func SavePayload(paths storepaths.Paths, payload *Payload, kr *crypto.Keyring) (
 }
 
 // SavePayloadActive is SavePayload against resolved active-store paths
-// (generational or legacy); the caller resolved the layout once for the
+// authenticated generation; the caller resolved the layout once for the
 // whole operation.
 func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *crypto.Keyring) (*ImportKeyResult, error) {
 	if kr == nil {

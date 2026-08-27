@@ -131,16 +131,16 @@ DTOs and contract fixtures.
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Live sentry discovery | Signing operation | authenticated `/keys` responses from configured sentry endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-sentry orchestration | `internal/engine/guarded` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
-| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/default/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
+| Node role | Signer data dir plus selected generation | `APSIGNER_DATA/node.yaml` plus selected generation `node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
 | Signing authority | Product signer | `identities/default/` | one `productruntime.Runtime` | lock, readiness, key, and principal-attributed audit state without a runtime ID | `internal/signerapp/productruntime` |
 | Product runtime config | Product signer | `identities/default/config.yaml` (parsed as `productruntime.StoredConfig`) | `productruntime.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/productruntime`, `internal/signerapp/admin` |
 | Unlock config | Product signer | `identities/default/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig`, `cmd/appass` |
-| Keyring root | Product signer | `identities/default/keyring.enc` (`aplane.keyring.v2`) | term keys after unlock | none | `internal/crypto`, `internal/keystore` |
-| Keystore marker | Product signer | `identities/default/.keystore` | store format gate only | none | `internal/crypto` |
-| Term keys/session | Product runtime | unsealed from `keyring.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
-| Account authority | Product signer | `identities/default/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
-| Sentry witness authority | Product sentry | `identities/default/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
-| Sentry public sidecar | Signer identity | `identities/default/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apadmin sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
+| Atomic store root | Product signer | `identities/default/store-root.enc` (`aplane.store-root.v1`) | authenticated generation selection and term-key session | none | `internal/crypto`, `internal/genstore`, `internal/keystore` |
+| Keystore marker | Product signer | `identities/default/.keystore` | version 6 / `store-root/v1` format gate only | none | `internal/crypto` |
+| Term keys/session | Product runtime | unsealed from `store-root.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
+| Account authority | Selected generation | `generations/<gen-id>/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
+| Sentry witness authority | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
+| Sentry public sidecar | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apadmin sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/default/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `internal/apadminapp` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
@@ -182,8 +182,8 @@ Client data dir
 Signer data dir
   -> process config
   -> product runtime
-      -> keyring.enc -> unsealed term keys -> key session
-      -> key files -> runtime key indexes -> /keys and signing
+      -> store-root.enc -> selected generation + unsealed term keys
+      -> selected generation key files -> runtime key indexes -> /keys and signing
       -> sentries public references -> /keytypes generation options
       -> key type state + installed templates -> /keytypes and generation
       -> policy.yaml + HMAC -> signer approval verdicts or sentry component-sign authorization by node role
@@ -242,7 +242,8 @@ An identity is the root of sensitive signer state:
 
 ```text
 identities/default/
-  CURRENT                  # names the active generation (generation layout)
+  store-root.enc           # one authenticated generation + key-authority root
+  .keystore                # static version 6 / store-root-v1 format gate
   generations/<gen-id>/
     manifest.json          # immutable at-mint operation record
     seal.json              # final content record, written before flip-away
@@ -251,28 +252,24 @@ identities/default/
     keys/*.wit.json        # public sentry metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
-  keyring.enc              # cryptographic root: KDF header plus the sealed
-                           # term set (aplane.keyring.v2)
-  .keystore                # static marker: version 5 + keyring/v2 layout, the
-                           # only supported store format
-  node.yaml.hmac
+    policy.yaml
+    policy.yaml.hmac
+    node.yaml.hmac
+    sentries/*.json
+    deleted/{keys,keytypes}/
+  quarantine/generations/<gen-id>/
   aplane.token
   config.yaml
-  policy.yaml
-  policy.yaml.hmac
   unlock.yaml
   .ssh/authorized_keys
   sentries/*.json
-  keytypes/<key_type>.json
-  keytypes/<key_type>.template
-  deleted/
   passphrase | passphrase.cred   # optional helper artifacts
 ```
 
 Credential restore state is request-scoped and never published beside the
 generation store. After the complete archive has been authenticated and every
 credential validated, restore applies the in-memory set to one staged
-generation and commits it with the normal durable `CURRENT` flip.
+generation and commits it with one durable `store-root.enc` replacement.
 
 `productruntime.Runtime` is the runtime projection. It owns:
 
@@ -290,12 +287,11 @@ generation and commits it with the normal durable `CURRENT` flip.
 The process owns one product runtime over the fixed `identities/default/`
 store. Runtime and storage APIs carry no selectable identity locator.
 
-Active `keys/` and `keytypes/` namespaces exist only inside the generation
-named by `CURRENT`. Normal consumers resolve `storepaths.ActivePaths` once
-through `genstore.ResolveActive`. The explicitly named
-`storepaths.Paths.LegacyKeysDir` and `LegacyKeyType*` helpers address
-pre-generation root-level locations only for recovery probes and tests; those
-locations are not an alternate active layout.
+Active policy, role integrity, deleted archive, `keys/`, and `keytypes/`
+namespaces exist only inside the generation authenticated by
+`store-root.enc`. Normal consumers receive a bound active-generation capability
+from `genstore.ResolveStoreRoot`; there is no public pointer or legacy active
+layout.
 
 ### Key Files
 
@@ -773,9 +769,11 @@ projections of shell application results, not a separate backend model.
 
 ### Unlock And Reload
 
-1. Open `keyring.enc` with the passphrase; the unwrap is the check.
-2. Hold the unsealed term keys for the unlocked session.
-3. Verify root `node.yaml` against the identity's role HMAC sidecar.
+1. Open `store-root.enc` with the passphrase; the unwrap and selection MAC are
+   the checks.
+2. Bind the authenticated selected generation and hold its unsealed term keys
+   for the unlocked session.
+3. Verify root `node.yaml` against the selected generation's role HMAC sidecar.
 4. Verify and load the node-role policy domain from `policy.yaml`.
 5. Apply node role gates.
 6. Register installed templates.
@@ -873,7 +871,7 @@ Live restore is generation-transaction oriented:
 - direct restore validates the complete selected set and classifies
   canonical-plaintext destination conflicts before any write,
 - one generation mint commits credential changes behind a single durable
-  `CURRENT` flip, then reloads,
+  `store-root.enc` replacement, then reloads,
 - an uncommitted attempt leaves the prior generation active; a commit with
   unconfirmed durability blocks signing in recovery mode until
   reconciliation,
@@ -888,7 +886,7 @@ credentials directly because no live signer store is being mutated.
 | Data | Sensitivity | Handling rule |
 |------|-------------|---------------|
 | Passphrase | secret | parsed into mutable buffers where possible; zero promptly |
-| Term keys | secret | unsealed from `keyring.enc` at unlock; cached only while unlocked; zeroed on lock |
+| Term keys | secret | unsealed from `store-root.enc` at unlock; cached only while unlocked; zeroed on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
 | `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |

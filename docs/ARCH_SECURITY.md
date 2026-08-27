@@ -149,7 +149,7 @@ Used by apadmin for interactive key management and signer control over either:
        │────────────────────────────────────────────>│
        │                                             │
        │  4. Bind product runtime (default)          │
-       │     Open product keyring.enc                │
+       │     Open product store-root.enc             │
        │     (Argon2id KEK + AES-256-GCM unwrap)     │
        │                                             │
        │  5. AuthResultMessage { success: true }     │
@@ -173,7 +173,7 @@ Used by apadmin for interactive key management and signer control over either:
 - **Single active admin**: Only one admin client connection is allowed at a time across IPC and SSH admin transport
 
 **Passphrase Verification (Keyring):**
-1. The keyring root (`keyring.enc`) carries the Argon2id parameters and salt in
+1. The store root (`store-root.enc`) carries the Argon2id parameters and salt in
    the clear, and the term keys sealed under a key-encryption key
 2. Server derives the KEK from passphrase + salt using Argon2id (memory-hard)
 3. Attempts the AEAD unwrap of the sealed term set
@@ -704,7 +704,7 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 │  Passphrase ──── Argon2id (memory-hard) ────► KEK                │
 │                       ▲                        │                 │
 │                       │                        ▼                 │
-│              keyring.enc (salt)          Unwrap term keys        │
+│            store-root.enc (salt)         Unwrap term keys        │
 │                                                │                 │
 │                                                ▼                 │
 │                                          Decrypt key files       │
@@ -719,30 +719,38 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 - The KEK never outlives the unwrap, so a memory disclosure yields term keys but
   not the ability to unwrap a future keyring
 
-**Keyring Root (`keyring.enc`), schema `aplane.keyring.v2`:**
+**Store Root (`store-root.enc`), schema `aplane.store-root.v1`:**
 
 ```json
 {
-  "schema": "aplane.keyring.v2",
-  "envelope_version": 2,
-  "kdf_time": 2,
-  "kdf_memory": 65536,
-  "kdf_threads": 4,
-  "salt": "<base64-encoded 32-byte KEK salt>",
-  "nonce": "<base64-encoded 12-byte nonce>",
-  "sealed_keyring": "<base64-encoded AES-GCM sealed term set>"
+  "schema": "aplane.store-root.v1",
+  "format_version": 1,
+  "keyring": {
+    "schema": "aplane.keyring.v3",
+    "envelope_version": 3,
+    "kdf_time": 2,
+    "kdf_memory": 65536,
+    "kdf_threads": 4,
+    "salt": "<base64 KEK salt>",
+    "nonce": "<base64 nonce>",
+    "sealed_keyring": "<base64 sealed term set>"
+  },
+  "current_generation_id": "gen-1700000000-0123abcd",
+  "selection_term": 4,
+  "selection_mac": "<base64 current-term HMAC>"
 }
 ```
 
 The KDF parameters and salt are in the clear because they are inputs to the
-unwrap, not secrets. Everything secret is inside `sealed_keyring`.
+unwrap, not secrets. The selection MAC binds the generation selector to the
+exact wrapped keyring, making authority and content selection one commit.
 
 **Keystore Marker (`.keystore`):**
 
 ```json
 {
-  "version": 5,
-  "layout": "keyring/v2",
+  "version": 6,
+  "layout": "store-root/v1",
   "created": "2026-07-27T07:35:34Z"
 }
 ```
@@ -782,7 +790,7 @@ Set `require_memory_protection: true` in production environments where key secur
 
 Term keys follow a strict lifecycle:
 
-1. **Unwrap** — at unlock the passphrase is fed to Argon2id to produce a KEK, which `crypto.OpenKeyringStore` uses to unwrap the stored term keys.
+1. **Unwrap** — at unlock the passphrase is fed to Argon2id to produce a KEK, which `crypto.OpenStoreRootStore` uses to unwrap the term keys and authenticate generation selection.
 2. **Held in signer memory** — the term keys are stored in `FileKeyStore.keyring` and are protected from swap when process memory locking is enabled successfully.
 3. **Zeroed on lock or shutdown** — `ClearKeys()` overwrites every term key with zeros and drops the keyring.
 
@@ -1081,7 +1089,7 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
-| Policy tampering | `identities/default/policy.yaml.hmac` authenticates the product policy document with a key derived from the product store's current term key; missing or mismatched policy integrity fails closed |
+| Policy tampering | The selected generation's `policy.yaml.hmac` authenticates its product policy document with a key derived from the product store's current term key; missing or mismatched policy integrity fails closed |
 | Plugin filesystem access | External plugins require OS sandboxing and checksum verification |
 | Manual production startup | `.prod` signer data marker blocks startup unless systemd-managed |
 

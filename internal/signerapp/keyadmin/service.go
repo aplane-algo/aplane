@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -153,12 +154,16 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 
 	unlockMutation := s.lockMutation()
 	defer unlockMutation()
+	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
+	if activeErr != nil {
+		return nil, mapGenerateError(activeErr)
+	}
 
-	activated, activationErr := activatedKeyTypes(ir)
+	activated, activationErr := activatedKeyTypes(activeKeyPaths)
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(ir.KeyPaths(), keyType)
+	canGenerate, stateErr := keytypestate.CanGenerate(activeKeyPaths, keyType)
 	if stateErr != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}
@@ -180,7 +185,7 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}, nil
 	}
 
-	mut := storemut.New(ir.KeyPaths(), nil, nil)
+	mut := storemut.New(activeKeyPaths, nil, nil)
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
@@ -250,14 +255,18 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 
 	unlockMutation := s.lockMutation()
 	defer unlockMutation()
+	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
+	if activeErr != nil {
+		return nil, mapGenerateError(activeErr)
+	}
 
 	keyFile, err := ir.FindKeyFile(address)
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-	delResult, err := storemut.New(ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
+	delResult, err := storemut.New(activeKeyPaths, nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}
+		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
 	}
 
 	if reloadErr := reloadKeys(ir); reloadErr != nil {
@@ -271,8 +280,8 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 
-func activatedKeyTypes(ir *productruntime.Runtime) ([]string, *Error) {
-	records, err := keytypestate.List(ir.KeyPaths())
+func activatedKeyTypes(paths storepaths.Paths) ([]string, *Error) {
+	records, err := keytypestate.List(paths)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
 	}

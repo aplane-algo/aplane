@@ -104,7 +104,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	var publishedKeys map[string]string
 	var publishedKeyTypes map[string]string
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "new-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "conflicting-generic", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 	saveTemplateRecord(t, paths, "invalid-composed", templatestore.TemplateTypeComposed, testTemplateMasterKey())
@@ -174,7 +174,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	saveTemplateRecord(t, paths, "hook-order", templatestore.TemplateTypeGeneric, testTemplateMasterKey())
 
 	service := &ReloadService{
@@ -227,7 +227,7 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	}
 	session := &fakeSession{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	var prepared bool
 	var published bool
@@ -269,87 +269,6 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 	}
 }
 
-func TestReloadPendingRotationEntersRecoveryBeforeRuntimePublication(t *testing.T) {
-	passphrase := []byte("pending-rotation-passphrase")
-	keystoreDir := t.TempDir()
-	kr, err := crypto.CreateKeyringStore(keystoreDir, passphrase)
-	if err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
-	t.Cleanup(kr.Zero)
-	if err := crypto.StartRotation(
-		keystoreDir,
-		kr,
-		passphrase,
-		[]crypto.HistoricalGenerationAnchor{},
-		func(target *crypto.Keyring, _, _ int64) (crypto.RotationSnapshotReference, error) {
-			sealed, err := target.Seal([]byte("cutover"), crypto.RotationSnapshotContext())
-			if err != nil {
-				return crypto.RotationSnapshotReference{}, err
-			}
-			return crypto.NewRotationSnapshotReference(sealed)
-		},
-	); err != nil {
-		t.Fatalf("StartRotation() error = %v", err)
-	}
-
-	store := &fakeKeyStore{
-		cache:    map[string]string{},
-		keyTypes: map[string]string{},
-		keyring:  kr,
-	}
-	session := &fakeSession{}
-	var hookCalled bool
-	var prepared bool
-	var published bool
-	service := &ReloadService{
-		KeyStore: store,
-		Session:  session,
-		TemplateManager: &Manager{
-			Paths: mintedPathsForReloadTest(t),
-			Registrars: []TemplateRegistrar{
-				{
-					Name:         "generic",
-					Source:       keytypestate.SourceYAMLGeneric,
-					TemplateType: templatestore.TemplateTypeGeneric,
-					Prepare: func(string, []byte) (templatepolicy.PreparedTemplateRegistration, error) {
-						prepared = true
-						return templatepolicy.PreparedTemplateRegistration{}, nil
-					},
-				},
-			},
-		},
-		BeforeKeyScan: func(*crypto.Keyring) error {
-			hookCalled = true
-			return nil
-		},
-		PublishSnapshot: func(map[string]string, map[string]string) {
-			published = true
-		},
-	}
-
-	report, err := service.Reload(nil)
-	if err == nil || !IsGenerationValidationError(err.Error()) {
-		t.Fatalf("Reload() error = %v, want generation validation failure", err)
-	}
-	if report != nil {
-		t.Fatalf("Reload() report = %+v, want nil", report)
-	}
-	if !store.withMKCalled {
-		t.Fatal("Reload() did not inspect the keyring")
-	}
-	if hookCalled || prepared || store.scanCalled || published || session.initialized {
-		t.Fatalf(
-			"Reload() exposed pending state: hook=%v prepared=%v scan=%v published=%v session=%v",
-			hookCalled,
-			prepared,
-			store.scanCalled,
-			published,
-			session.initialized,
-		)
-	}
-}
-
 func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 	store := &fakeKeyStore{withMKErr: keystore.ErrStoreLocked}
 	service := &ReloadService{
@@ -367,26 +286,6 @@ func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 	}
 	if !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("Reload() error = %v, want errors.Is ErrStoreLocked", err)
-	}
-}
-
-func TestReloadMapsKeyStorePendingGuardToGenerationRecovery(t *testing.T) {
-	store := &fakeKeyStore{withMKErr: crypto.ErrRotationPending}
-	service := &ReloadService{
-		KeyStore: store,
-		Session:  &fakeSession{},
-		TemplateManager: &Manager{
-			Paths: mintedPathsForReloadTest(t),
-		},
-		PublishSnapshot: func(map[string]string, map[string]string) {},
-	}
-
-	report, err := service.Reload(nil)
-	if err == nil || !IsGenerationValidationError(err.Error()) {
-		t.Fatalf("Reload() error = %v, want generation validation failure", err)
-	}
-	if report != nil {
-		t.Fatalf("Reload() report = %+v, want nil", report)
 	}
 }
 
@@ -607,7 +506,7 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	session := &fakeSession{}
 	audit := &fakeAuditLog{}
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	service := &ReloadService{
 		KeyStore:        store,
@@ -652,6 +551,6 @@ func testNoopRegistrar() TemplateRegistrar {
 func mintedPathsForReloadTest(t *testing.T) utilkeys.Paths {
 	t.Helper()
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	return paths
 }

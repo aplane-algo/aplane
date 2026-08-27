@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/rotationinventory"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -89,35 +88,20 @@ func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
 }
 
 func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
-	return crypto.VerifyPassphraseWithKeyring(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	return crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
 }
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
 	ir := s.ProductRuntime()
-	// Generation-based stores reconcile before unlock: CURRENT is the sole
-	// commit record, staging residue and uncommitted attempts are discarded
-	// (never resumed), and the selected generation must validate. Any
-	// failure enters recovery mode with nothing deleted.
-	//
-	// Reconcile runs before the passphrase is verified. That ordering is
-	// deliberate and safe: reconcile only removes state that is provably
-	// uncommitted (no seal, not named by CURRENT) — state no caller,
-	// authenticated or not, could resume — and it is exactly what startup
-	// does unauthenticated. Keep it free of anything auth-gated.
-	if reconcileErr := s.reconcileGenerations(ir); reconcileErr != nil {
+	// Reconciliation authenticates the sole store root before it relocates or
+	// deletes residue. A valid root with damaged selected content still opens
+	// the keyring and enters recovery; no generation is selected heuristically.
+	if reconcileErr := s.reconcileGenerations(ir, passphrase); reconcileErr != nil {
 		success, errMsg := ir.TryRecoveryUnlock(passphrase)
 		if !success {
 			return false, 0, errMsg, unlockFailureCode(errMsg)
 		}
 		logWarnf("identity is recovery-blocked: %v", reconcileErr)
-		return true, 0, "", protocol.ResultCodeRecoveryBlocked
-	}
-	if rotationErr := s.completePendingRotation(ir, passphrase); rotationErr != nil {
-		success, errMsg := ir.TryRecoveryUnlock(passphrase)
-		if !success {
-			return false, 0, errMsg, unlockFailureCode(errMsg)
-		}
-		logWarnf("identity is recovery-blocked by incomplete key rotation: %v", rotationErr)
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
@@ -137,85 +121,70 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	return success, keyCount, errMsg, unlockFailureCode(errMsg)
 }
 
-// completePendingRotation resumes a root-pinned rotation before ordinary
-// reload can publish signing authority. It also removes a snapshot left behind
-// by a crash after the root was durably closed.
-func (s signerAdminServices) completePendingRotation(
-	ir *productruntime.Runtime,
-	passphrase []byte,
-) error {
-	complete := func() error {
-		kr, err := crypto.OpenKeyringStore(
-			ir.KeyPaths().KeystoreMetadataDir(),
-			passphrase,
-		)
+// reconcileGenerations opens the authenticated root under the store mutation
+// lock and validates the selected generation fail-closed.
+func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, passphrase []byte) error {
+	work := func() error {
+		_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
 		if err != nil {
 			return err
 		}
 		defer kr.Zero()
-		report, err := rotationinventory.CompleteRotation(
-			ir.KeyPaths(),
-
-			kr,
-			passphrase,
-		)
-		if errors.Is(err, rotationinventory.ErrNoRotationPending) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if report != nil && report.Resume != nil {
-			logInfof(
-				"completed pending signer-store key rotation (%d rewrapped, %d re-signed)",
-				report.Resume.Rewrapped,
-				report.Resume.Resigned,
-			)
-		}
-		if report != nil && report.PreRootSnapshotDiscarded {
-			logInfof(
-				"discarded unreferenced pre-root signer-store rotation snapshot",
-			)
-		}
-		return nil
+		return s.reconcileGenerationsLocked(ir, kr)
 	}
 	if s.signer == nil {
-		return complete()
+		return work()
 	}
-	return s.signer.withStoreMutation(complete)
-}
-
-// reconcileGenerations enforces CURRENT as the sole commit record at unlock
-// (docs/ARCH_GENERATIONS.md §7) under the store mutation lock, and
-// validates the selected generation fail-closed.
-func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime) error {
-	if s.signer == nil {
-		return s.reconcileGenerationsLocked(ir)
-	}
-	return s.signer.withStoreMutation(func() error {
-		return s.reconcileGenerationsLocked(ir)
-	})
+	return s.signer.withStoreMutation(work)
 }
 
 // reconcileGenerationsLocked performs reconciliation without acquiring the
 // store mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
-func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime) error {
-	report, err := genstore.Reconcile(ir.KeyPaths(), nil)
+func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
+	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
 	if err != nil {
 		return err
 	}
-	for _, discarded := range report.DiscardedAttempts {
-		logInfof("discarded uncommitted generation %s (never committed; restore again if needed)", discarded)
+	if len(preview.Quarantined) > 0 {
+		if s.signer == nil || s.signer.auditLog == nil {
+			return fmt.Errorf("reconcile: durable audit unavailable; refusing generation quarantine")
+		}
+		for _, candidate := range preview.Quarantined {
+			if err := s.signer.auditLog.LogGenerationQuarantineIntentDurable(candidate); err != nil {
+				return fmt.Errorf(
+					"reconcile: record durable quarantine intent for %s: %w",
+					candidate.GenerationID,
+					err,
+				)
+			}
+		}
+	}
+	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr, nil)
+	if s.signer != nil && s.signer.auditLog != nil {
+		for _, quarantined := range report.Quarantined {
+			s.signer.auditLog.LogGenerationQuarantined(quarantined)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	for _, quarantined := range report.Quarantined {
+		logInfof(
+			"quarantined non-authoritative generation %s (at_mint_match=%t bytes=%d term_verified=%d term_unavailable=%d term_failed=%d)",
+			quarantined.GenerationID,
+			quarantined.AtMintInventoryMatch,
+			quarantined.EncodedBytes,
+			quarantined.TermValidation.Verified,
+			quarantined.TermValidation.TermUnavailable,
+			quarantined.TermValidation.Failed,
+		)
 	}
 	for _, staging := range report.DiscardedStaging {
 		logInfof("discarded generation staging residue %s", staging)
 	}
-	gen, err := genstore.Resolve(ir.KeyPaths())
-	if err != nil {
-		return err
-	}
-	return genstore.ValidateCurrent(gen)
+	_, err = genstore.ResolveStoreRootWithKeyring(ir.KeyPaths(), kr)
+	return err
 }
 
 func unlockFailureCode(errMsg string) string {
@@ -282,7 +251,7 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	ir := s.Runtime
 	result := adminproto.ReconcileStoreResult{}
 	// Re-arm on every exit. A recovery session may have inherited a watcher
-	// bound before an uncertain CURRENT flip, including when this attempt
+	// bound before an uncertain store-root replacement, including when this attempt
 	// fails before promotion.
 	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	report, err := s.daemon.reconcileReloadAndPromote(ir)
@@ -293,8 +262,8 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 		result.State = ir.GetState().String()
 		return result
 	}
-	if current, err := genstore.ReadCurrent(ir.KeyPaths()); err == nil {
-		result.GenerationID = current
+	if active, err := ir.ActivePaths(); err == nil {
+		result.GenerationID = active.GenerationID()
 	}
 	if report != nil {
 		result.KeyCount = report.KeyCount
@@ -311,7 +280,9 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
 	work := func() error {
-		if err := s.reconcileGenerationsLocked(ir); err != nil {
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			return s.reconcileGenerationsLocked(ir, kr)
+		}); err != nil {
 			return err
 		}
 		var err error
@@ -482,25 +453,152 @@ func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPubli
 func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 	ir := s.ProductRuntime()
 	var report genstore.ReconcileReport
+	var quarantined []genstore.QuarantineRecord
 	err := s.withStoreInspection(func() error {
-		generational, err := genstore.IsGenerational(ir.KeyPaths())
-		if err != nil {
+		return ir.WithKeyring(func(kr *crypto.Keyring) error {
+			var err error
+			report, err = genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
+			if err != nil {
+				return err
+			}
+			quarantined, err = genstore.ListQuarantinedWithKeyring(ir.KeyPaths(), kr)
 			return err
-		}
-		if !generational {
-			return fmt.Errorf("store does not use generation-based storage")
-		}
-		report, err = genstore.Inspect(ir.KeyPaths(), nil)
-		return err
+		})
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "inspect_failed")
 		return adminproto.GenerationInventory{Code: code, Error: message}
 	}
+	quarantined = append(quarantined, report.Quarantined...)
+	quarantineInfo := make([]adminproto.QuarantinedGenerationInfo, 0, len(quarantined))
+	for _, record := range quarantined {
+		quarantineInfo = append(quarantineInfo, adminQuarantinedGeneration(record))
+	}
 	return adminproto.GenerationInventory{
 		Current: report.Current, SealedPriors: report.SealedPriors,
-		PendingAttempts: report.DiscardedAttempts, PendingStaging: report.DiscardedStaging,
+		Quarantined: quarantineInfo, PendingStaging: report.DiscardedStaging,
 		RetainedUnsealedParent: report.RetainedUnsealedParent,
+	}
+}
+
+func (s signerAdminServices) PruneGenerationQuarantine(
+	req adminproto.PruneGenerationQuarantineRequest,
+) adminproto.PruneGenerationQuarantineResult {
+	ir := s.ProductRuntime()
+	var pruned []genstore.QuarantinePruneResult
+	err := s.withStoreMutation(func() error {
+		var err error
+		pruned, err = genstore.PruneQuarantined(ir.KeyPaths(), req.GenerationIDs)
+		return err
+	})
+	result := adminproto.PruneGenerationQuarantineResult{
+		Pruned: make([]adminproto.PrunedQuarantinedGeneration, 0, len(pruned)),
+	}
+	for _, item := range pruned {
+		result.Pruned = append(result.Pruned, adminproto.PrunedQuarantinedGeneration{
+			GenerationID:  item.GenerationID,
+			EncodedBytes:  item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeQuarantinePruneFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
+func (s signerAdminServices) DiscardAbandonedGenerations(
+	req adminproto.DiscardAbandonedGenerationsRequest,
+) adminproto.DiscardAbandonedGenerationsResult {
+	ir := s.ProductRuntime()
+	var discarded []genstore.QuarantinePruneResult
+	err := s.withStoreMutation(func() error {
+		return ir.WithKeyring(func(kr *crypto.Keyring) error {
+			var err error
+			discarded, err = genstore.DiscardAbandoned(ir.KeyPaths(), req.GenerationIDs, kr)
+			return err
+		})
+	})
+	result := adminproto.DiscardAbandonedGenerationsResult{
+		Discarded: make([]adminproto.PrunedQuarantinedGeneration, 0, len(discarded)),
+	}
+	for _, item := range discarded {
+		result.Discarded = append(result.Discarded, adminproto.PrunedQuarantinedGeneration{
+			GenerationID: item.GenerationID, EncodedBytes: item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeAbandonedDiscardFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
+func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
+	ir := s.ProductRuntime()
+	active, err := ir.ActivePaths()
+	if err != nil {
+		return adminproto.DeletedArchiveInventory{Code: protocol.ResultCodeArchiveListFailed, Error: err.Error()}
+	}
+	entries, usage, err := genstore.ListDeletedArchive(active)
+	result := adminproto.DeletedArchiveInventory{
+		Entries:    make([]adminproto.DeletedArchiveEntry, 0, len(entries)),
+		EntryCount: usage.Entries, EncodedBytes: usage.EncodedBytes, Warning: usage.Warning(),
+	}
+	for _, entry := range entries {
+		result.Entries = append(result.Entries, adminproto.DeletedArchiveEntry{Path: entry.Path, EncodedBytes: entry.EncodedBytes})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeArchiveListFailed
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func (s signerAdminServices) PruneDeletedArchive(req adminproto.PruneDeletedArchiveRequest) adminproto.PruneDeletedArchiveResult {
+	ir := s.ProductRuntime()
+	var pruned []genstore.DeletedArchivePruneResult
+	err := s.withStoreMutation(func() error {
+		active, err := ir.ActivePaths()
+		if err != nil {
+			return err
+		}
+		pruned, err = genstore.PruneDeletedArchive(active, req.Entries)
+		return err
+	})
+	result := adminproto.PruneDeletedArchiveResult{Pruned: make([]adminproto.PrunedDeletedArchiveEntry, 0, len(pruned))}
+	for _, item := range pruned {
+		result.Pruned = append(result.Pruned, adminproto.PrunedDeletedArchiveEntry{
+			Path: item.Path, EncodedBytes: item.EncodedBytes, AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	if err != nil {
+		result.Code = protocol.ResultCodeArchivePruneFailed
+		result.Error = err.Error()
+		return result
+	}
+	result.Success = true
+	return result
+}
+
+func adminQuarantinedGeneration(record genstore.QuarantineRecord) adminproto.QuarantinedGenerationInfo {
+	return adminproto.QuarantinedGenerationInfo{
+		GenerationID:         record.GenerationID,
+		ParentID:             record.ParentID,
+		ManifestSHA256:       record.ManifestSHA256,
+		LiveInventorySHA256:  record.LiveInventorySHA256,
+		AtMintInventoryMatch: record.AtMintInventoryMatch,
+		EntryCount:           record.EntryCount,
+		EncodedBytes:         record.EncodedBytes,
+		TermVerified:         record.TermValidation.Verified,
+		TermUnavailable:      record.TermValidation.TermUnavailable,
+		TermFailed:           record.TermValidation.Failed,
 	}
 }
 
@@ -638,6 +736,9 @@ func (d signerAdminAppDeps) Config() *serverconfig.ServerConfig {
 }
 
 func (d signerAdminAppDeps) KeyPaths() storepaths.Paths {
+	if bound, err := d.signer.productRuntime().ActiveKeyPaths(); err == nil {
+		return bound
+	}
 	return d.signer.keyPaths
 }
 

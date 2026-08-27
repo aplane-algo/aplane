@@ -15,7 +15,7 @@ editing workflow, top-level fields, and key override overview, start with
 Routing is configured in the product policy file:
 
 ```text
-identities/default/policy.yaml
+identities/default/generations/<selected-generation>/policy.yaml
 ```
 
 Use `apadmin` for online guided routing edits while `apsigner` is running: open

@@ -144,12 +144,6 @@ func derivePolicyIntegrityKey(masterKey []byte) ([]byte, error) {
 	return deriveIntegrityKey(masterKey, []byte(policyIntegrityHKDFInfo), PolicyIntegrityKeyLength, "policy")
 }
 
-// deriveNodeRoleIntegrityKey derives the node-role HMAC key from a term key.
-// It remains confined to this package.
-func deriveNodeRoleIntegrityKey(masterKey []byte) ([]byte, error) {
-	return deriveIntegrityKey(masterKey, []byte(nodeRoleIntegrityHKDFInfo), NodeRoleIntegrityKeyLength, "node role")
-}
-
 func deriveIntegrityKey(masterKey []byte, info []byte, length int, label string) ([]byte, error) {
 	if len(masterKey) == 0 {
 		return nil, fmt.Errorf("a term key is required")

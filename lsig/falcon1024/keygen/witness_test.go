@@ -5,10 +5,10 @@ package keygen
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"testing"
 
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -20,16 +20,10 @@ import (
 func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
 	passphrase := []byte("component-generator-test-passphrase")
-	if _, err := securecrypto.CreateKeyringStore(paths.ProductDir(), passphrase); err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
-	kr, err := securecrypto.OpenKeyringStore(paths.ProductDir(), passphrase)
-	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
-	}
+	kr, active := genstoretest.MintFirstAtomic(t, paths, passphrase)
 	defer kr.Zero()
+	paths = genstoretest.BindActive(t, paths, active)
 
 	g := &WitnessFalcon1024Generator{}
 	result, err := g.GenerateRandom(context.Background(), paths, kr, witness.Falcon1024V1, nil)
@@ -70,7 +64,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
 	}
 
-	store := keystore.NewFileKeyStoreForPaths(paths)
+	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
 	if err := store.Unlock(passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}

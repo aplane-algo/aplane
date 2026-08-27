@@ -4,14 +4,15 @@
 package main
 
 import (
+	"bufio"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -25,7 +26,7 @@ func TestCmdPolicyCheckAcceptsInitializedBaseline(t *testing.T) {
 }
 
 func TestCmdPolicyCheckAcceptsValidTransferRoutingPolicy(t *testing.T) {
-	withPolicyCommandStore(t, func(root string, _ []byte) {
+	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		addr := types.Address{1}.String()
 		raw := []byte(`
 transfer_policy:
@@ -39,7 +40,7 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["` + addr + `"]
 `)
-		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
+		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		if err := cmdPolicy([]string{"check"}); err != nil {
@@ -50,7 +51,7 @@ transfer_policy:
 
 func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
-		policyPath := policy.PolicyPath(root)
+		policyPath := activePolicyPathForTest(t, root, passphrase)
 		policyBytes := []byte("# direct policy edit\nreject_foreign_rekey: false\n")
 		if err := os.WriteFile(policyPath, policyBytes, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
@@ -87,8 +88,8 @@ func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 }
 
 func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
-	withPolicyCommandStore(t, func(root string, _ []byte) {
-		if err := os.WriteFile(policy.PolicyPath(root), []byte("reject_foreign_rekey: [\n"), 0o600); err != nil {
+	withPolicyCommandStore(t, func(root string, passphrase []byte) {
+		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), []byte("reject_foreign_rekey: [\n"), 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
@@ -99,7 +100,7 @@ func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 }
 
 func TestCmdPolicyCheckRejectsInvalidTransferRoutingPolicy(t *testing.T) {
-	withPolicyCommandStore(t, func(root string, _ []byte) {
+	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		raw := []byte(`
 transfer_policy:
   schema_version: 1
@@ -112,7 +113,7 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["*"]
 `)
-		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
+		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
@@ -123,9 +124,9 @@ transfer_policy:
 }
 
 func TestCmdPolicyCheckRejectsInvalidSentryReviewPolicy(t *testing.T) {
-	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, _ []byte) {
+	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, passphrase []byte) {
 		raw := []byte("always_review_warnings: true\n")
-		if err := os.WriteFile(policy.PolicyPath(root), raw, 0o600); err != nil {
+		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
@@ -138,6 +139,16 @@ func TestCmdPolicyCheckRejectsInvalidSentryReviewPolicy(t *testing.T) {
 func withPolicyCommandStore(t *testing.T, fn func(root string, passphrase []byte)) {
 	t.Helper()
 	withPolicyCommandStoreWithRole(t, noderole.RoleSigner, fn)
+}
+
+func activePolicyPathForTest(t *testing.T, root string, passphrase []byte) string {
+	t.Helper()
+	active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), passphrase)
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	kr.Zero()
+	return active.PolicyPath()
 }
 
 func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(root string, passphrase []byte)) {
@@ -165,5 +176,6 @@ func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(ro
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
+	stdinReader = bufio.NewReader(strings.NewReader(string(passphrase) + "\n"))
 	fn(root, passphrase)
 }

@@ -6,10 +6,9 @@ package defaultkeytypes
 import (
 	"bytes"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -23,7 +22,7 @@ func TestInstallForNewStoreInstallsDefaultAllowlistTemplatesForSigner(t *testing
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForTest(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := bytes.Repeat([]byte{1}, 32)
 
 	if err := InstallForNewStore(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
@@ -69,7 +68,7 @@ func TestInstallForNewStoreInstallsDefaultAllowlistTemplatesForSigner(t *testing
 
 func TestInstallForNewStoreSkipsSentryRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForTest(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := bytes.Repeat([]byte{2}, 32)
 
 	if err := InstallForNewStore(paths, noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
@@ -86,7 +85,7 @@ func TestInstallForNewStoreIsIdempotent(t *testing.T) {
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
-	mintFirstGenerationForTest(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := bytes.Repeat([]byte{3}, 32)
 
 	if err := InstallForNewStore(paths, noderole.RoleSigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
@@ -101,22 +100,5 @@ func TestInstallForNewStoreIsIdempotent(t *testing.T) {
 	}
 	if !ok || strings.TrimSpace(rec.ActivatedAt) == "" {
 		t.Fatalf("default state after idempotent install = %+v, present %v", rec, ok)
-	}
-}
-
-func mintFirstGenerationForTest(t *testing.T, paths storepaths.Paths) {
-	t.Helper()
-	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
-	if err != nil {
-		t.Fatalf("NewGenerationID: %v", err)
-	}
-	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:    generationID,
-		FirstGeneration: true,
-		Operation:       "store-initialize",
-		OperationID:     "init-" + generationID,
-		CreatedAt:       time.Unix(1_785_200_000, 0),
-	}); err != nil {
-		t.Fatalf("Mint(first): %v", err)
 	}
 }

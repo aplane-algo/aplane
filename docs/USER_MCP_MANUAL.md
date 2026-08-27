@@ -375,7 +375,8 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 
-The product policy document is at `identities/default/policy.yaml`
+The product policy document is in the selected generation at
+`identities/default/generations/<selected-generation>/policy.yaml`
 (with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
 settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`) live
 in `identities/default/config.yaml`.

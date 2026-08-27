@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -59,37 +60,42 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 
 	tmpDir := t.TempDir()
 
-	// Create product-store keys directory
-	keysDir := filepath.Join(tmpDir, "identities", "default", "keys")
-	if err := os.MkdirAll(keysDir, 0750); err != nil {
-		t.Fatalf("Failed to create keys dir: %v", err)
-	}
-
 	keyPaths := utilkeys.NewPaths(tmpDir)
-
-	// Create keystore metadata (.keystore file in identity directory)
-	userDir := filepath.Join(tmpDir, "identities", "default")
-	masterKeyRing, err := crypto.CreateKeyringStore(userDir, testPassphrase)
+	masterKeyRing, err := crypto.NewKeyring()
 	if err != nil {
-		t.Fatalf("Failed to create keystore metadata: %v", err)
-	}
-	if err := policy.SaveStoredConfigWithKeyring(tmpDir, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
-		t.Fatalf("Failed to create policy baseline: %v", err)
+		t.Fatalf("Failed to create keyring: %v", err)
 	}
 	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
 	if err != nil {
 		t.Fatalf("Failed to create node role: %v", err)
 	}
-	if err := noderole.SaveIdentitySidecarWithKeyring(keyPaths, roleBytes, masterKeyRing, time.Now()); err != nil {
-		t.Fatalf("Failed to create node role sidecar: %v", err)
+	generationID, err := genstore.NewGenerationID(time.Unix(1_753_800_000, 0))
+	if err != nil {
+		t.Fatal(err)
 	}
-	initialPolicy, err := policyruntime.LoadVerified(tmpDir, serverConfigForTest(), masterKeyRing)
+	active, err := genstore.Mint(keyPaths, genstore.MintRequest{
+		GenerationID: generationID, FirstGeneration: true,
+		InitialPassphrase: testPassphrase, Integrity: masterKeyRing,
+		Operation: "test-init", OperationID: "init-" + generationID,
+		CreatedAt: time.Unix(1_753_800_000, 0),
+		Apply: func(staged utilkeys.GenPaths) error {
+			if err := policy.SaveStoredConfigActiveWithKeyring(staged, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
+				return err
+			}
+			return noderole.SaveGenerationSidecarWithKeyring(keyPaths, staged, roleBytes, masterKeyRing, time.Now())
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize atomic store: %v", err)
+	}
+	_, initialPolicy, err := policyruntime.LoadVerifiedWithStoredActive(tmpDir, serverConfigForTest(), active, masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}
+	masterKeyRing.Zero()
 
 	// Initialize FileKeyStore and derive master key
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	err = ks.Unlock(testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)
@@ -119,9 +125,6 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	})
 	server.runtime = ir
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
-	// All stores are generational in this release: mint the first
-	// generation the way initialize does before any test writes keys.
-	convertTestSignerToGenerational(t, server)
 	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.productBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.productBuildHooks())
 	ir.SetPolicy(initialPolicy)

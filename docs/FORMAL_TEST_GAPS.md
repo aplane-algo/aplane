@@ -67,10 +67,10 @@ The same lock state machine has since grown from a boolean to three states
 (`SignerStateLocked`, `SignerStateUnlocked`, `SignerStateRecovery`) plus a
 maintenance fence (`activeMaintenanceID` paired with the lock generation) in
 `internal/signerapp/runtime/runtime.go`. Recovery is entered by
-`TryRecoveryUnlock` when generation reconciliation, a pending rotation, or
-generation validation fails during unlock: the keyring opens but signing stays
+`TryRecoveryUnlock` when generation reconciliation or generation validation
+fails during unlock: the store root opens but signing stays
 blocked, and `PromoteRecoveryToUnlocked` is the only upward exit.
-`BeginMaintenance`/`FinishMaintenance` bracket a store-wide passphrase rotation,
+`BeginMaintenance`/`FinishMaintenance` bracket a store-wide passphrase change,
 clearing published runtime state without emitting a user-visible lock decision
 and refusing to republish if a `Lock()` raced the window.
 

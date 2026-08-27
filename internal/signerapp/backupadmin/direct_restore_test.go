@@ -39,17 +39,15 @@ func TestDirectRestoreCommitsCredentialsAndIsPlaintextIdempotent(t *testing.T) {
 	if !first.Success || len(first.Restored) != 1 || first.Restored[0].Selector != selector {
 		t.Fatalf("RestoreBackup(first) = %+v", first)
 	}
-	current, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
+	current := resolveAtomicTestGeneration(t, paths)
 	manifest, err := genstore.ReadManifest(current)
 	if err != nil {
 		t.Fatalf("ReadManifest() error = %v", err)
 	}
 	if manifest.Operation != genstore.OperationCredentialRestore ||
-		manifest.RestoreArchiveSHA256 != first.ArchiveSHA256 ||
-		!manifest.RestoreRollbackEligible {
+		manifest.RollbackCapability == nil ||
+		manifest.RollbackCapability.ArchiveSHA256 != first.ArchiveSHA256 ||
+		manifest.RollbackCapability.SourceGenerationID != manifest.ParentID {
 		t.Fatalf("restore manifest = %+v", manifest)
 	}
 	if _, err := os.Stat(filepath.Join(current.KeysDir(), selector+".key")); err != nil {
@@ -120,10 +118,7 @@ func TestDirectRestoreTreatsUnreadableDestinationAsReplaceableConflict(t *testin
 	if !first.Success {
 		t.Fatalf("initial restore = %+v", first)
 	}
-	current, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	current := resolveAtomicTestGeneration(t, paths)
 	if err := os.WriteFile(filepath.Join(current.KeysDir(), selector+".key"), []byte("damaged"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -207,9 +202,9 @@ func TestDirectRestoreReportsVisibleDurabilityUnknownAsUncertain(t *testing.T) {
 	if !ir.IsRecovery() {
 		t.Fatal("durability-unknown restore did not enter recovery")
 	}
-	current, err := genstore.ReadCurrent(paths)
-	if err != nil || current != result.GenerationID {
-		t.Fatalf("visible current = %q, %v; want uncertain generation %q", current, err, result.GenerationID)
+	current := selectedAtomicTestGenerationID(t, paths)
+	if current != result.GenerationID {
+		t.Fatalf("visible current = %q, want uncertain generation %q", current, result.GenerationID)
 	}
 }
 
@@ -248,9 +243,9 @@ func TestDirectRollbackReportsVisibleDurabilityUnknownAndEntersRecovery(t *testi
 	if !ir.IsRecovery() {
 		t.Fatal("durability-unknown rollback did not enter recovery")
 	}
-	current, err := genstore.ReadCurrent(paths)
-	if err != nil || current != result.GenerationID {
-		t.Fatalf("visible current = %q, %v; want uncertain rollback generation %q", current, err, result.GenerationID)
+	current := selectedAtomicTestGenerationID(t, paths)
+	if current != result.GenerationID {
+		t.Fatalf("visible current = %q, want uncertain rollback generation %q", current, result.GenerationID)
 	}
 }
 
@@ -259,10 +254,7 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
-	before, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := resolveAtomicTestGeneration(t, paths)
 	if err := os.RemoveAll(before.KeyTypeRecordsDir()); err != nil {
 		t.Fatal(err)
 	}
@@ -276,12 +268,12 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	if result.Success || result.Code != protocol.ResultCodeRestoreFailed {
 		t.Fatalf("RestoreBackup(invalid recovery parent) = %+v", result)
 	}
-	if !strings.Contains(result.Error, "validate recovery-mode current generation") {
+	if !strings.Contains(result.Error, "store root selected generation") {
 		t.Fatalf("restore error = %q, want recovery parent validation context", result.Error)
 	}
-	after, err := genstore.ReadCurrent(paths)
-	if err != nil || after != before.GenerationID() {
-		t.Fatalf("CURRENT after rejected recovery restore = %q, %v; want %q", after, err, before.GenerationID())
+	after := selectedAtomicTestGenerationID(t, paths)
+	if after != before.GenerationID() {
+		t.Fatalf("store root after rejected recovery restore = %q, want %q", after, before.GenerationID())
 	}
 }
 
@@ -299,10 +291,7 @@ func TestDirectRollbackRefusesDivergedRestoreGeneration(t *testing.T) {
 	if !restored.Success {
 		t.Fatalf("RestoreBackup() = %+v", restored)
 	}
-	current, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	current := resolveAtomicTestGeneration(t, paths)
 	if err := fsutil.WriteFileDurable(filepath.Join(current.KeyTypeRecordsDir(), "post-restore.json"), []byte(`{"enabled":true}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +300,7 @@ func TestDirectRollbackRefusesDivergedRestoreGeneration(t *testing.T) {
 	if result.Success || result.Code != protocol.ResultCodeRestoreRollbackDiverged {
 		t.Fatalf("RollbackRestore(diverged) = %+v", result)
 	}
-	if !strings.Contains(result.Error, "changed after credential restore") {
+	if !strings.Contains(result.Error, "changed after its clean restore authority") {
 		t.Fatalf("rollback error = %q, want divergence context", result.Error)
 	}
 }
@@ -347,10 +336,7 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, validSelector := writeMixedValidityManagedArchive(t, paths)
-	before, err := genstore.ReadCurrent(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := selectedAtomicTestGenerationID(t, paths)
 	result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-one-bad",
 		ArchivePath:      archivePath,
@@ -359,14 +345,11 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 	if result.Success || !strings.Contains(result.Error, "validate backup credential") {
 		t.Fatalf("RestoreBackup(one bad) = %+v", result)
 	}
-	after, err := genstore.ReadCurrent(paths)
-	if err != nil || after != before {
-		t.Fatalf("CURRENT after failed whole-archive validation = %q, %v; want %q", after, err, before)
+	after := selectedAtomicTestGenerationID(t, paths)
+	if after != before {
+		t.Fatalf("store root after failed whole-archive validation = %q, want %q", after, before)
 	}
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	active := resolveAtomicTestGeneration(t, paths)
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), validSelector+".key")); !os.IsNotExist(err) {
 		t.Fatalf("valid credential was partially restored: %v", err)
 	}
@@ -377,6 +360,26 @@ func directRestoreTestService(paths storepaths.Paths, ir *productruntime.Runtime
 		paths:   paths,
 		limiter: NewRestoreAttemptLimiter(func() time.Time { return time.Unix(100, 0) }),
 	}, Runtime: ir}
+}
+
+func resolveAtomicTestGeneration(t *testing.T, paths storepaths.Paths) storepaths.GenPaths {
+	t.Helper()
+	active, kr, err := genstore.ResolveStoreRoot(paths, backupAdminTestPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr.Zero()
+	return active
+}
+
+func selectedAtomicTestGenerationID(t *testing.T, paths storepaths.Paths) string {
+	t.Helper()
+	selection, kr, err := genstore.OpenStoreRootSelection(paths, backupAdminTestPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr.Zero()
+	return selection.GenerationID()
 }
 
 func writeCredentialOnlyManagedArchive(t *testing.T, paths storepaths.Paths) (string, string) {

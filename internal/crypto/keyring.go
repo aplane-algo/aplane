@@ -11,49 +11,26 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// The keyring is the store's single cryptographic root
-// (docs/PROPOSAL_KEYTERM_ROTATION.md). It is self-contained: it carries its
-// own KDF parameters and salt in the clear and an AEAD-sealed set of key
-// terms. Successful unwrap is the passphrase check, so no separate verifier
-// exists and a passphrase change is one atomic file write.
-//
-// Phase 3 accepts multi-term roots only with exact current-state authority:
-// current while settled, current plus from_term while pending. Transition
-// start is guarded and durable; rewrap/resume and completion remain separate
-// lifecycle work.
 const (
-	// KeyringSchema identifies the sealed keyring payload.
-	KeyringSchema = "aplane.keyring.v2"
-	// KeyringFileVersion is the on-disk envelope version for keyring.enc.
-	KeyringFileVersion = 2
-
-	// keyringAADDomain separates the root file's header binding from the term
-	// envelope's, so neither construction's bytes can be replayed as the
-	// other's.
-	keyringAADDomain = "aplane.keyring-file.v2"
-
-	// FirstTerm is the term every store is initialized with.
-	FirstTerm = 1
-
+	FirstTerm       = 1
 	maxKeyringBytes = 1 << 20
-
-	// MaxRotationSnapshotBytes bounds the exact encrypted snapshot file
-	// referenced by a pending keyring root. It is deliberately independent
-	// of the much smaller keyring.enc cap.
-	MaxRotationSnapshotBytes = 16 << 20
+	sha256HexLength = 64
 )
 
-// keyringFile is the on-disk shape of keyring.enc. The KDF parameters and
-// salt are plaintext because they are needed to derive the KEK that opens
-// the ciphertext; everything secret lives inside the sealed payload.
+var ErrKeyringNotOpen = errors.New("keyring is not open")
+
+// keyringFile is the wrapped subobject embedded in store-root.enc. It is not
+// independently addressable or accepted as a standalone file.
 type keyringFile struct {
 	Schema        string `json:"schema"`
 	EnvelopeVer   int    `json:"envelope_version"`
@@ -65,91 +42,87 @@ type keyringFile struct {
 	SealedKeyring string `json:"sealed_keyring"`
 }
 
-// keyringPayload is the sealed plaintext.
-type keyringPayload struct {
-	Schema            string                       `json:"schema"`
-	CurrentTerm       int64                        `json:"current_term"`
-	Terms             []sealedTerm                 `json:"terms"`
-	HistoricalAnchors []HistoricalGenerationAnchor `json:"historical_anchors"`
-	Rotation          *rotationDescriptor          `json:"rotation,omitempty"`
-}
-
 type sealedTerm struct {
 	Term int64  `json:"term"`
 	Key  []byte `json:"key"`
 }
 
-// HistoricalGenerationAnchor is the root's exact reference to one retained
-// generation's complete seal.json bytes.
+// HistoricalGenerationAnchor pins one retained generation's exact seal.
 type HistoricalGenerationAnchor struct {
 	GenerationID string `json:"generation_id"`
 	SealSize     int64  `json:"seal_size"`
 	SealSHA256   string `json:"seal_sha256"`
 }
 
-type rotationDescriptor struct {
-	FromTerm       int64  `json:"from_term"`
-	SnapshotSHA256 string `json:"snapshot_sha256"`
-	SnapshotSize   int64  `json:"snapshot_size"`
-}
-
-// RotationSnapshotReference is the exact encrypted-file reference carried
-// by a pending keyring root. It contains no inventory or key material.
-type RotationSnapshotReference struct {
-	SHA256 string
-	Size   int64
-}
-
-// Key is []byte rather than a base64 string so the decoder writes term key
-// material into a slice that can be zeroed. A string would be immutable and
-// would survive Zero until the collector ran.
-//
-// The residual is the encoder's own scratch buffers on the seal path, which
-// json.Marshal owns and does not expose. Removing that too means a
-// hand-rolled binary payload, which is worth doing when the payload grows
-// past one term.
-
-// Keyring holds the store's term keys for the duration of an unlocked
-// session. It deliberately exposes operations rather than key material:
-// callers seal and open, and never hold a key they could use with the wrong
-// term or forget to zero.
+// Keyring holds term keys only for an unlocked session. Live state is
+// authorized exclusively by currentTerm; older terms require an exact
+// historical-generation anchor before they can be used.
 type Keyring struct {
 	terms             map[int64][]byte
 	currentTerm       int64
 	historicalAnchors []HistoricalGenerationAnchor
-	rotation          *rotationDescriptor
 }
 
-// NewKeyring creates a keyring holding one freshly generated term.
 func NewKeyring() (*Keyring, error) {
 	key, err := randomBytes(argon2KeyLen)
 	if err != nil {
 		return nil, fmt.Errorf("generate term key: %w", err)
 	}
 	return &Keyring{
-		terms:             map[int64][]byte{FirstTerm: key},
-		currentTerm:       FirstTerm,
+		terms: map[int64][]byte{FirstTerm: key}, currentTerm: FirstTerm,
 		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
 }
 
-// NewKeyringFromKey adopts an existing key as the first term.
-//
-// It exists for test fixtures that hold a known key. Production code opens a
-// keyring rather than constructing one, and an architecture test enforces
-// that: this is the one remaining way to place arbitrary bytes behind the
-// keyring API, so using it in production would undo the confinement that keeps
-// passphrase derivation inside this package.
+// NewSuccessorKeyring adds exactly one fresh term and replaces the complete
+// historical-anchor set without mutating current.
+func NewSuccessorKeyring(current *Keyring, anchors []HistoricalGenerationAnchor) (*Keyring, error) {
+	if current == nil || len(current.terms) == 0 {
+		return nil, ErrKeyringNotOpen
+	}
+	if anchors == nil {
+		return nil, fmt.Errorf("successor keyring historical anchors must be an array")
+	}
+	if current.currentTerm == math.MaxInt64 {
+		return nil, fmt.Errorf("key term is exhausted")
+	}
+	if err := requirePreservedHistoricalAnchors(current.historicalAnchors, anchors); err != nil {
+		return nil, err
+	}
+	successor, err := cloneKeyring(current)
+	if err != nil {
+		return nil, err
+	}
+	success := false
+	defer func() {
+		if !success {
+			successor.Zero()
+		}
+	}()
+	term := current.currentTerm + 1
+	key, err := randomBytes(argon2KeyLen)
+	if err != nil {
+		return nil, fmt.Errorf("generate successor term: %w", err)
+	}
+	successor.terms[term] = key
+	successor.currentTerm = term
+	successor.historicalAnchors = slices.Clone(anchors)
+	payload := storeRootKeyringPayload{
+		Schema: StoreRootKeyringSchema, CurrentTerm: term,
+		Terms: sealedTermsFromKeyring(successor), HistoricalAnchors: slices.Clone(anchors),
+	}
+	if err := validateStoreRootKeyringPayload(&payload); err != nil {
+		return nil, fmt.Errorf("invalid successor keyring: %w", err)
+	}
+	success = true
+	return successor, nil
+}
+
+// The following constructors exist only for confined tests.
 func NewKeyringFromKey(key []byte) (*Keyring, error) {
 	return NewKeyringFromTermKey(FirstTerm, key)
 }
 
-// NewKeyringFromTermKey adopts an existing key as one specified term.
-//
-// Like NewKeyringFromKey, this exists for test fixtures. Production opens a
-// durable keyring. The architecture test forbids production callers outside
-// internal/crypto/cryptotest; accepting an arbitrary term here lets snapshot
-// tests exercise target-term sealing without enabling multi-term roots.
 func NewKeyringFromTermKey(term int64, key []byte) (*Keyring, error) {
 	if term < FirstTerm {
 		return nil, fmt.Errorf("term must be at least %d, got %d", FirstTerm, term)
@@ -158,15 +131,11 @@ func NewKeyringFromTermKey(term int64, key []byte) (*Keyring, error) {
 		return nil, fmt.Errorf("term key must be %d bytes, got %d", argon2KeyLen, len(key))
 	}
 	return &Keyring{
-		terms:             map[int64][]byte{term: slices.Clone(key)},
-		currentTerm:       term,
+		terms: map[int64][]byte{term: slices.Clone(key)}, currentTerm: term,
 		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
 }
 
-// NewKeyringFromTermKeys adopts known keys for test fixtures that exercise
-// mixed-term or historical behavior before durable multi-term roots are
-// enabled. Production use is forbidden by the architecture test.
 func NewKeyringFromTermKeys(currentTerm int64, terms map[int64][]byte) (*Keyring, error) {
 	if len(terms) == 0 {
 		return nil, fmt.Errorf("keyring terms must not be empty")
@@ -174,77 +143,25 @@ func NewKeyringFromTermKeys(currentTerm int64, terms map[int64][]byte) (*Keyring
 	greatest := int64(0)
 	adopted := make(map[int64][]byte, len(terms))
 	for term, key := range terms {
-		if term < FirstTerm {
+		if term < FirstTerm || len(key) != argon2KeyLen {
 			zeroTermMap(adopted)
-			return nil, fmt.Errorf("term must be at least %d, got %d", FirstTerm, term)
-		}
-		if len(key) != argon2KeyLen {
-			zeroTermMap(adopted)
-			return nil, fmt.Errorf("term %d key must be %d bytes, got %d", term, argon2KeyLen, len(key))
+			return nil, fmt.Errorf("invalid term %d key", term)
 		}
 		adopted[term] = slices.Clone(key)
-		if term > greatest {
-			greatest = term
-		}
+		greatest = max(greatest, term)
 	}
 	if currentTerm != greatest {
 		zeroTermMap(adopted)
 		return nil, fmt.Errorf("current term %d is not greatest resident term %d", currentTerm, greatest)
 	}
 	return &Keyring{
-		terms:             adopted,
-		currentTerm:       currentTerm,
+		terms: adopted, currentTerm: currentTerm,
 		historicalAnchors: []HistoricalGenerationAnchor{},
 	}, nil
 }
 
-// CurrentTerm returns the term new writes use.
 func (kr *Keyring) CurrentTerm() int64 { return kr.currentTerm }
 
-// RotationState is the durable pending transition projected without exposing
-// key material or the private payload representation.
-type RotationState struct {
-	FromTerm int64
-	ToTerm   int64
-	Snapshot RotationSnapshotReference
-}
-
-// PendingRotation reports the one transition carried by the cryptographic
-// root.
-func (kr *Keyring) PendingRotation() (RotationState, bool) {
-	if kr == nil || kr.rotation == nil {
-		return RotationState{}, false
-	}
-	return RotationState{
-		FromTerm: kr.rotation.FromTerm,
-		ToTerm:   kr.currentTerm,
-		Snapshot: RotationSnapshotReference{
-			SHA256: kr.rotation.SnapshotSHA256,
-			Size:   kr.rotation.SnapshotSize,
-		},
-	}, true
-}
-
-// RequireSettled rejects ordinary signing and mutation while the durable
-// root carries a pending transition. Resume uses its own explicit path.
-func (kr *Keyring) RequireSettled() error {
-	if kr == nil {
-		return ErrKeyringNotOpen
-	}
-	state, pending := kr.PendingRotation()
-	if !pending {
-		return nil
-	}
-	return fmt.Errorf(
-		"%w: rotation %d -> %d requires resume",
-		ErrRotationPending,
-		state.FromTerm,
-		state.ToTerm,
-	)
-}
-
-// HistoricalGenerationAnchors returns a defensive copy of the exact
-// generation-seal references carried by the root.
 func (kr *Keyring) HistoricalGenerationAnchors() []HistoricalGenerationAnchor {
 	if kr == nil {
 		return nil
@@ -252,45 +169,32 @@ func (kr *Keyring) HistoricalGenerationAnchors() []HistoricalGenerationAnchor {
 	return slices.Clone(kr.historicalAnchors)
 }
 
-// HistoricalGenerationAnchor returns the root anchor for generationID.
-func (kr *Keyring) HistoricalGenerationAnchor(
-	generationID string,
-) (HistoricalGenerationAnchor, bool) {
+func (kr *Keyring) HistoricalGenerationAnchor(generationID string) (HistoricalGenerationAnchor, bool) {
 	if kr == nil {
 		return HistoricalGenerationAnchor{}, false
 	}
-	index, found := slices.BinarySearchFunc(
-		kr.historicalAnchors,
-		generationID,
+	index, found := slices.BinarySearchFunc(kr.historicalAnchors, generationID,
 		func(anchor HistoricalGenerationAnchor, target string) int {
 			return strings.Compare(anchor.GenerationID, target)
-		},
-	)
+		})
 	if !found {
 		return HistoricalGenerationAnchor{}, false
 	}
 	return kr.historicalAnchors[index], true
 }
 
-// Zero clears every term key. Callers must call it when locking.
 func (kr *Keyring) Zero() {
 	if kr == nil {
 		return
 	}
-	for term, key := range kr.terms {
-		ZeroBytes(key)
-		delete(kr.terms, term)
-	}
+	zeroTermMap(kr.terms)
 	kr.currentTerm = 0
 	kr.historicalAnchors = nil
-	kr.rotation = nil
 }
 
-// Seal encrypts plaintext under the current term, binding the object's
-// logical identity into the envelope's authenticated data.
 func (kr *Keyring) Seal(plaintext []byte, ctx ObjectContext) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
+		return nil, ErrKeyringNotOpen
 	}
 	if err := ctx.validate(); err != nil {
 		return nil, err
@@ -302,14 +206,9 @@ func (kr *Keyring) Seal(plaintext []byte, ctx ObjectContext) ([]byte, error) {
 	return sealUnderTerm(plaintext, key, kr.currentTerm, ctx)
 }
 
-// Open decrypts an envelope, selecting the term the envelope names and
-// verifying the object context it was sealed with.
-//
-// Settled roots authorize the current term. A pending transition additionally
-// authorizes its retiring term only for explicit resume and recovery paths.
 func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
+		return nil, ErrKeyringNotOpen
 	}
 	if err := ctx.validate(); err != nil {
 		return nil, err
@@ -318,54 +217,29 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !kr.authorizesCurrentStateTerm(term) {
+	if term != kr.currentTerm {
 		return nil, fmt.Errorf("term %d is not authorized for current state", term)
 	}
-	key, ok := kr.terms[term]
-	if !ok {
-		return nil, fmt.Errorf("keyring has no key for term %d", term)
-	}
-	return openUnderTerm(sealed, key, term, ctx)
+	return openUnderTerm(sealed, kr.terms[term], term, ctx)
 }
 
 func (kr *Keyring) authorizesCurrentStateTerm(term int64) bool {
-	if kr == nil {
-		return false
-	}
-	if term == kr.currentTerm {
-		return true
-	}
-	return kr.rotation != nil && term == kr.rotation.FromTerm
+	return kr != nil && term == kr.currentTerm
 }
 
-// OpenHistoricalGenerationEnvelope opens a resident term only for an exact
-// generation member whose root anchor and seal entry were already verified.
-// It is deliberately separate from Open: retired terms must never regain
-// current-state authority merely because their keys remain resident.
-func (kr *Keyring) OpenHistoricalGenerationEnvelope(
-	sealed []byte,
-	ctx ObjectContext,
-	expectedTerm int64,
-) ([]byte, error) {
+func (kr *Keyring) OpenHistoricalGenerationEnvelope(sealed []byte, ctx ObjectContext, expectedTerm int64) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
+		return nil, ErrKeyringNotOpen
 	}
 	if err := ctx.validate(); err != nil {
 		return nil, err
-	}
-	if expectedTerm < FirstTerm {
-		return nil, fmt.Errorf("historical generation envelope requires a positive term")
 	}
 	term, err := envelopeTerm(sealed)
 	if err != nil {
 		return nil, err
 	}
-	if term != expectedTerm {
-		return nil, fmt.Errorf(
-			"historical generation envelope term %d does not match sealed entry term %d",
-			term,
-			expectedTerm,
-		)
+	if expectedTerm < FirstTerm || term != expectedTerm {
+		return nil, fmt.Errorf("historical generation envelope term %d does not match sealed entry term %d", term, expectedTerm)
 	}
 	key, ok := kr.terms[term]
 	if !ok {
@@ -374,188 +248,36 @@ func (kr *Keyring) OpenHistoricalGenerationEnvelope(
 	return openUnderTerm(sealed, key, term, ctx)
 }
 
-// ----------------------------------------------------------------------------
-// keyring.enc
-
-// SealKeyring wraps the keyring under a KEK derived from passphrase and
-// returns the complete keyring.enc bytes. The salt is fresh on every call,
-// so a passphrase change rewrites exactly this one file.
-func SealKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
+// VerifyKnownTermEnvelope authenticates one exact envelope buffer under its
+// logical context without releasing plaintext. It is confined to
+// non-authoritative quarantine classification: absence of a resident term is
+// reported separately from cryptographic failure so an older restored root
+// can preserve an orphaned post-changepass publication.
+func (kr *Keyring) VerifyKnownTermEnvelope(sealed []byte, ctx ObjectContext) (term int64, available bool, err error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return nil, fmt.Errorf("keyring is not open")
+		return 0, false, ErrKeyringNotOpen
 	}
-	if len(passphrase) == 0 {
-		return nil, fmt.Errorf("sealing the keyring requires a passphrase")
+	if err := ctx.validate(); err != nil {
+		return 0, false, err
 	}
-	salt, err := randomBytes(masterSaltLen)
+	term, err = envelopeTerm(sealed)
 	if err != nil {
-		return nil, fmt.Errorf("generate keyring salt: %w", err)
+		return 0, false, err
 	}
-
-	payload := payloadFromKeyring(kr)
-	if err := validateKeyringPayload(&payload); err != nil {
-		return nil, fmt.Errorf("invalid keyring state: %w", err)
+	key, ok := kr.terms[term]
+	if !ok {
+		return term, false, nil
 	}
-	plaintext, err := json.Marshal(payload)
+	plaintext, err := openUnderTerm(sealed, key, term, ctx)
+	if plaintext != nil {
+		ZeroBytes(plaintext)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("marshal keyring: %w", err)
+		return term, true, err
 	}
-	defer ZeroBytes(plaintext)
-
-	kek := deriveMasterKeyParams(passphrase, salt, argon2Time, argon2Memory, argon2Threads)
-	defer ZeroBytes(kek)
-	gcm, err := newGCM(kek)
-	if err != nil {
-		return nil, err
-	}
-	nonce, err := randomBytes(gcm.NonceSize())
-	if err != nil {
-		return nil, fmt.Errorf("generate keyring nonce: %w", err)
-	}
-	ciphertext := gcm.Seal(nil, nonce, plaintext, keyringHeaderAAD(
-		KeyringSchema, KeyringFileVersion,
-		argon2Time, argon2Memory, argon2Threads, salt, nonce,
-	))
-
-	encoded, err := json.MarshalIndent(keyringFile{
-		Schema:        KeyringSchema,
-		EnvelopeVer:   KeyringFileVersion,
-		KDFTime:       argon2Time,
-		KDFMemory:     argon2Memory,
-		KDFThreads:    argon2Threads,
-		Salt:          base64.StdEncoding.EncodeToString(salt),
-		Nonce:         base64.StdEncoding.EncodeToString(nonce),
-		SealedKeyring: base64.StdEncoding.EncodeToString(ciphertext),
-	}, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal keyring file: %w", err)
-	}
-	return encoded, nil
+	return term, true, nil
 }
 
-// OpenKeyring unwraps keyring.enc with passphrase. A successful unwrap IS
-// the passphrase check: there is no separate verifier to disagree with, and
-// nothing else needs to be consulted to know the passphrase was right.
-func OpenKeyring(encoded, passphrase []byte) (*Keyring, error) {
-	if len(passphrase) == 0 {
-		return nil, fmt.Errorf("opening the keyring requires a passphrase")
-	}
-	if len(encoded) > maxKeyringBytes {
-		return nil, fmt.Errorf("keyring exceeds size limit %d", maxKeyringBytes)
-	}
-	var file keyringFile
-	if err := decodeJSONStrict(encoded, &file); err != nil {
-		return nil, fmt.Errorf("parse keyring: %w", err)
-	}
-	if file.Schema != KeyringSchema {
-		return nil, fmt.Errorf("unsupported keyring schema %q", file.Schema)
-	}
-	if file.EnvelopeVer != KeyringFileVersion {
-		return nil, fmt.Errorf("unsupported keyring envelope version %d", file.EnvelopeVer)
-	}
-	if err := checkKDFParams(file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
-		return nil, err
-	}
-	salt, err := decodeCanonicalBase64("keyring salt", file.Salt)
-	if err != nil {
-		return nil, err
-	}
-	if len(salt) != masterSaltLen {
-		return nil, fmt.Errorf("keyring salt has length %d, want %d", len(salt), masterSaltLen)
-	}
-	nonce, err := decodeCanonicalBase64("keyring nonce", file.Nonce)
-	if err != nil {
-		return nil, err
-	}
-	ciphertext, err := decodeCanonicalBase64("sealed keyring", file.SealedKeyring)
-	if err != nil {
-		return nil, err
-	}
-
-	kek := deriveMasterKeyParams(passphrase, salt, file.KDFTime, file.KDFMemory, file.KDFThreads)
-	defer ZeroBytes(kek)
-	gcm, err := newGCM(kek)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateGCMNonce(nonce, gcm); err != nil {
-		return nil, err
-	}
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, keyringHeaderAAD(
-		file.Schema, file.EnvelopeVer,
-		file.KDFTime, file.KDFMemory, file.KDFThreads, salt, nonce,
-	))
-	if err != nil {
-		// A wrong passphrase and an edited header are indistinguishable by
-		// construction, which is intended: the unwrap is the check.
-		return nil, fmt.Errorf("failed to open keyring: %w", err)
-	}
-	defer ZeroBytes(plaintext)
-
-	// Registered before the decode, not after the validation below: an
-	// authenticated payload this release refuses — a multi-term root from a
-	// later one — has already had its term keys written into these slices,
-	// and a partial decode of malformed JSON can populate them too. Every
-	// exit from here on zeroes them.
-	var payload keyringPayload
-	defer func() {
-		for i := range payload.Terms {
-			ZeroBytes(payload.Terms[i].Key)
-		}
-	}()
-	if err := decodeJSONStrict(plaintext, &payload); err != nil {
-		return nil, fmt.Errorf("parse sealed keyring: %w", err)
-	}
-	if keyringDecodeHook != nil {
-		keyringDecodeHook(payload.Terms)
-	}
-	if err := validateKeyringPayload(&payload); err != nil {
-		return nil, err
-	}
-	kr := &Keyring{
-		terms:             make(map[int64][]byte, len(payload.Terms)),
-		currentTerm:       payload.CurrentTerm,
-		historicalAnchors: slices.Clone(payload.HistoricalAnchors),
-		rotation:          cloneRotationDescriptor(payload.Rotation),
-	}
-	for i := range payload.Terms {
-		t := &payload.Terms[i]
-		kr.terms[t.Term] = append([]byte(nil), t.Key...)
-	}
-	return kr, nil
-}
-
-// keyringDecodeHook is a test seam. When set it receives the decoded terms
-// immediately after unmarshal and before any validation, so a test can hold
-// the exact slices the decoder wrote and check they were zeroed on every exit
-// path. Production leaves it nil.
-var keyringDecodeHook func([]sealedTerm)
-
-// checkKDFParams requires the exact tuple this release writes, before any of
-// it reaches Argon2.
-//
-// These values are read before anything authenticates them — the KEK has to
-// exist before the AEAD can verify the header — so whatever this accepts is
-// work an edited root can compel. Ceilings would still leave a budget an
-// attacker could spend, and there is nothing to spend it on: a store is
-// readable only by the release that initialized it, so any tuple other than
-// this one is corruption or tampering, never a store written elsewhere.
-//
-// Changing argon2Time, argon2Memory, or argon2Threads therefore means bumping
-// KeyringFileVersion and the keystore marker version with them. Without that,
-// every store the previous build wrote stops opening.
-func checkKDFParams(kdfTime, kdfMemory uint32, kdfThreads uint8) error {
-	if kdfTime != argon2Time || kdfMemory != argon2Memory || kdfThreads != argon2Threads {
-		return fmt.Errorf(
-			"keyring KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
-			kdfTime, kdfMemory, kdfThreads, argon2Time, argon2Memory, argon2Threads,
-		)
-	}
-	return nil
-}
-
-// sortedTerms returns the keyring's term numbers in ascending order, so the
-// sealed payload is byte-stable for a given key set.
 func (kr *Keyring) sortedTerms() []int64 {
 	terms := make([]int64, 0, len(kr.terms))
 	for term := range kr.terms {
@@ -565,33 +287,83 @@ func (kr *Keyring) sortedTerms() []int64 {
 	return terms
 }
 
-func payloadFromKeyring(kr *Keyring) keyringPayload {
+func sealedTermsFromKeyring(kr *Keyring) []sealedTerm {
 	terms := make([]sealedTerm, 0, len(kr.terms))
 	for _, term := range kr.sortedTerms() {
 		terms = append(terms, sealedTerm{Term: term, Key: kr.terms[term]})
 	}
-	anchors := slices.Clone(kr.historicalAnchors)
-	if anchors == nil {
-		anchors = []HistoricalGenerationAnchor{}
-	}
-	return keyringPayload{
-		Schema:            KeyringSchema,
-		CurrentTerm:       kr.currentTerm,
-		Terms:             terms,
-		HistoricalAnchors: anchors,
-		Rotation:          cloneRotationDescriptor(kr.rotation),
-	}
+	return terms
 }
 
-func cloneRotationDescriptor(rotation *rotationDescriptor) *rotationDescriptor {
-	if rotation == nil {
-		return nil
+func cloneKeyring(kr *Keyring) (*Keyring, error) {
+	if kr == nil || len(kr.terms) == 0 {
+		return nil, ErrKeyringNotOpen
 	}
-	cloned := *rotation
-	return &cloned
+	cloned := &Keyring{
+		terms: make(map[int64][]byte, len(kr.terms)), currentTerm: kr.currentTerm,
+		historicalAnchors: slices.Clone(kr.historicalAnchors),
+	}
+	for term, key := range kr.terms {
+		cloned.terms[term] = slices.Clone(key)
+	}
+	return cloned, nil
 }
 
-// randomBytes returns n cryptographically random bytes.
+func requirePreservedHistoricalAnchors(existing, replacement []HistoricalGenerationAnchor) error {
+	for _, anchor := range existing {
+		index, found := slices.BinarySearchFunc(replacement, anchor.GenerationID,
+			func(candidate HistoricalGenerationAnchor, generationID string) int {
+				return strings.Compare(candidate.GenerationID, generationID)
+			})
+		if !found || replacement[index] != anchor {
+			return fmt.Errorf("historical anchor for generation %s would be dropped or changed", anchor.GenerationID)
+		}
+	}
+	return nil
+}
+
+func NewHistoricalGenerationAnchor(generationID string, exactSeal []byte) (HistoricalGenerationAnchor, error) {
+	sum := sha256.Sum256(exactSeal)
+	anchor := HistoricalGenerationAnchor{
+		GenerationID: generationID, SealSize: int64(len(exactSeal)),
+		SealSHA256: hex.EncodeToString(sum[:]),
+	}
+	if err := anchor.Validate(); err != nil {
+		return HistoricalGenerationAnchor{}, err
+	}
+	return anchor, nil
+}
+
+func (anchor HistoricalGenerationAnchor) Validate() error {
+	if err := storepaths.ValidateGenerationID(anchor.GenerationID); err != nil {
+		return err
+	}
+	if anchor.SealSize <= 0 {
+		return fmt.Errorf("historical anchor %s has invalid seal_size %d", anchor.GenerationID, anchor.SealSize)
+	}
+	if err := validateCanonicalSHA256(anchor.SealSHA256); err != nil {
+		return fmt.Errorf("historical anchor %s seal_sha256: %w", anchor.GenerationID, err)
+	}
+	return nil
+}
+
+func (anchor HistoricalGenerationAnchor) VerifyExact(generationID string, data []byte) error {
+	if err := anchor.Validate(); err != nil {
+		return err
+	}
+	if anchor.GenerationID != generationID {
+		return fmt.Errorf("historical anchor names generation %s, want %s", anchor.GenerationID, generationID)
+	}
+	if int64(len(data)) != anchor.SealSize {
+		return fmt.Errorf("generation %s seal size %d does not match anchor size %d", generationID, len(data), anchor.SealSize)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != anchor.SealSHA256 {
+		return fmt.Errorf("generation %s seal digest does not match historical anchor", generationID)
+	}
+	return nil
+}
+
 func randomBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -600,197 +372,24 @@ func randomBytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-// aadFor builds the authenticated additional data binding an envelope to its
-// term and to the object's logical identity.
-//
-// Every field is length-prefixed so no combination of class and selector can
-// be reinterpreted as a different pair. The identity is logical, never a
-// path: ciphertext moves between generations, into staging directories, and
-// into deleted/ without re-encryption, and binding a path would make every
-// one of those moves produce undecryptable data.
 func aadFor(term int64, ctx ObjectContext) []byte {
-	var out []byte
-	out = appendAADField(out, []byte(aadDomain))
-	var termBytes [8]byte
-	binary.BigEndian.PutUint64(termBytes[:], uint64(term))
-	out = appendAADField(out, termBytes[:])
+	var numeric [8]byte
+	out := appendAADField(nil, []byte(aadDomain))
+	binary.BigEndian.PutUint64(numeric[:], uint64(term))
+	out = appendAADField(out, numeric[:])
 	out = appendAADField(out, []byte(ctx.Class))
-	out = appendAADField(out, []byte(ctx.Selector))
-	return out
+	return appendAADField(out, []byte(ctx.Selector))
 }
 
-func validateKeyringPayload(payload *keyringPayload) error {
-	if payload.Schema != KeyringSchema {
-		return fmt.Errorf("unsupported sealed keyring schema %q", payload.Schema)
-	}
-	if len(payload.Terms) == 0 {
-		return fmt.Errorf("keyring terms must be a non-empty array")
-	}
-	if payload.HistoricalAnchors == nil {
-		return fmt.Errorf("keyring historical_anchors must be an array")
-	}
-
-	var previous int64
-	for i := range payload.Terms {
-		term := &payload.Terms[i]
-		if term.Term < FirstTerm {
-			return fmt.Errorf("invalid term ID %d", term.Term)
-		}
-		if i > 0 && term.Term <= previous {
-			return fmt.Errorf("keyring terms are not strictly increasing")
-		}
-		if len(term.Key) != argon2KeyLen {
-			return fmt.Errorf("term %d key has wrong length %d", term.Term, len(term.Key))
-		}
-		previous = term.Term
-	}
-	if payload.CurrentTerm != payload.Terms[len(payload.Terms)-1].Term {
-		return fmt.Errorf(
-			"current term %d is not the greatest resident term %d",
-			payload.CurrentTerm, payload.Terms[len(payload.Terms)-1].Term,
-		)
-	}
-
-	previousGeneration := ""
-	for i, anchor := range payload.HistoricalAnchors {
-		if err := anchor.Validate(); err != nil {
-			return fmt.Errorf("historical anchor: %w", err)
-		}
-		if i > 0 && anchor.GenerationID <= previousGeneration {
-			return fmt.Errorf("historical anchors are not strictly increasing by generation_id")
-		}
-		previousGeneration = anchor.GenerationID
-	}
-
-	if rotation := payload.Rotation; rotation != nil {
-		if len(payload.Terms) < 2 {
-			return fmt.Errorf("rotation requires current and retiring terms")
-		}
-		from := payload.Terms[len(payload.Terms)-2].Term
-		if rotation.FromTerm != from || payload.CurrentTerm != from+1 {
-			return fmt.Errorf(
-				"rotation from_term %d is not immediately before current term %d",
-				rotation.FromTerm, payload.CurrentTerm,
-			)
-		}
-		if err := (RotationSnapshotReference{
-			SHA256: rotation.SnapshotSHA256,
-			Size:   rotation.SnapshotSize,
-		}).Validate(); err != nil {
-			return fmt.Errorf("rotation snapshot reference: %w", err)
-		}
+func checkKDFParams(kdfTime, kdfMemory uint32, kdfThreads uint8) error {
+	if kdfTime != argon2Time || kdfMemory != argon2Memory || kdfThreads != argon2Threads {
+		return fmt.Errorf("keyring KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
+			kdfTime, kdfMemory, kdfThreads, argon2Time, argon2Memory, argon2Threads)
 	}
 	return nil
 }
 
-// NewRotationSnapshotReference pins the exact encrypted snapshot bytes for a
-// pending root.
-func NewRotationSnapshotReference(exact []byte) (RotationSnapshotReference, error) {
-	ref := RotationSnapshotReference{Size: int64(len(exact))}
-	sum := sha256.Sum256(exact)
-	ref.SHA256 = hex.EncodeToString(sum[:])
-	if err := ref.Validate(); err != nil {
-		return RotationSnapshotReference{}, err
-	}
-	return ref, nil
-}
-
-// Validate enforces the canonical root-reference contract.
-func (ref RotationSnapshotReference) Validate() error {
-	if err := validateCanonicalSHA256(ref.SHA256); err != nil {
-		return fmt.Errorf("snapshot_sha256: %w", err)
-	}
-	if ref.Size <= 0 || ref.Size > MaxRotationSnapshotBytes {
-		return fmt.Errorf(
-			"snapshot_size %d is outside [1, %d]",
-			ref.Size, MaxRotationSnapshotBytes,
-		)
-	}
-	return nil
-}
-
-// VerifyExact proves data is the exact encrypted snapshot file pinned by the
-// root. Callers verify before decrypting or parsing the same buffer.
-func (ref RotationSnapshotReference) VerifyExact(data []byte) error {
-	if err := ref.Validate(); err != nil {
-		return err
-	}
-	if int64(len(data)) != ref.Size {
-		return fmt.Errorf("snapshot size %d does not match referenced size %d", len(data), ref.Size)
-	}
-	sum := sha256.Sum256(data)
-	if digest := hex.EncodeToString(sum[:]); digest != ref.SHA256 {
-		return fmt.Errorf("snapshot digest does not match root reference")
-	}
-	return nil
-}
-
-// NewHistoricalGenerationAnchor pins the exact complete seal bytes for one
-// retained generation.
-func NewHistoricalGenerationAnchor(
-	generationID string,
-	exactSeal []byte,
-) (HistoricalGenerationAnchor, error) {
-	sum := sha256.Sum256(exactSeal)
-	anchor := HistoricalGenerationAnchor{
-		GenerationID: generationID,
-		SealSize:     int64(len(exactSeal)),
-		SealSHA256:   hex.EncodeToString(sum[:]),
-	}
-	if err := anchor.Validate(); err != nil {
-		return HistoricalGenerationAnchor{}, err
-	}
-	return anchor, nil
-}
-
-// Validate enforces the canonical historical-anchor record shape.
-func (anchor HistoricalGenerationAnchor) Validate() error {
-	if err := storepaths.ValidateGenerationID(anchor.GenerationID); err != nil {
-		return err
-	}
-	if anchor.SealSize <= 0 {
-		return fmt.Errorf(
-			"historical anchor %s has invalid seal_size %d",
-			anchor.GenerationID,
-			anchor.SealSize,
-		)
-	}
-	if err := validateCanonicalSHA256(anchor.SealSHA256); err != nil {
-		return fmt.Errorf(
-			"historical anchor %s seal_sha256: %w",
-			anchor.GenerationID,
-			err,
-		)
-	}
-	return nil
-}
-
-// VerifyExact proves data is the exact complete seal file pinned by the root.
-func (anchor HistoricalGenerationAnchor) VerifyExact(generationID string, data []byte) error {
-	if err := anchor.Validate(); err != nil {
-		return err
-	}
-	if anchor.GenerationID != generationID {
-		return fmt.Errorf(
-			"historical anchor names generation %s, want %s",
-			anchor.GenerationID,
-			generationID,
-		)
-	}
-	if int64(len(data)) != anchor.SealSize {
-		return fmt.Errorf(
-			"generation %s seal size %d does not match anchor size %d",
-			generationID,
-			len(data),
-			anchor.SealSize,
-		)
-	}
-	sum := sha256.Sum256(data)
-	if digest := hex.EncodeToString(sum[:]); digest != anchor.SealSHA256 {
-		return fmt.Errorf("generation %s seal digest does not match historical anchor", generationID)
-	}
-	return nil
-}
+var keyringDecodeHook func([]sealedTerm)
 
 func zeroTermMap(terms map[int64][]byte) {
 	for term, key := range terms {
@@ -809,8 +408,6 @@ func validateCanonicalSHA256(value string) error {
 	}
 	return nil
 }
-
-const sha256HexLength = 64
 
 func decodeCanonicalBase64(label, value string) ([]byte, error) {
 	decoded, err := base64.StdEncoding.DecodeString(value)
@@ -841,37 +438,9 @@ func decodeJSONStrict(data []byte, out any) error {
 	}
 }
 
-// appendAADField appends one length-prefixed field. The prefix is what stops
-// two different field splits from producing the same byte string.
 func appendAADField(out, field []byte) []byte {
 	var n [4]byte
 	binary.BigEndian.PutUint32(n[:], uint32(len(field)))
 	out = append(out, n[:]...)
 	return append(out, field...)
-}
-
-// keyringHeaderAAD binds the root file's plaintext header to its sealed body.
-//
-// Editing the salt, the KDF parameters, or the nonce already fails closed by
-// producing the wrong key or the wrong keystream, but the schema and version
-// fields have no such effect: without this, they are checked only by the
-// explicit comparisons in OpenKeyring, which is validation rather than
-// authentication. Binding the whole header makes it cryptographic, for the
-// same reason the term envelope binds its own header.
-func keyringHeaderAAD(schema string, version int, kdfTime, kdfMemory uint32, kdfThreads uint8, salt, nonce []byte) []byte {
-	var out []byte
-	out = appendAADField(out, []byte(keyringAADDomain))
-	out = appendAADField(out, []byte(schema))
-	var numeric [8]byte
-	binary.BigEndian.PutUint64(numeric[:], uint64(version))
-	out = appendAADField(out, numeric[:])
-	binary.BigEndian.PutUint64(numeric[:], uint64(kdfTime))
-	out = appendAADField(out, numeric[:])
-	binary.BigEndian.PutUint64(numeric[:], uint64(kdfMemory))
-	out = appendAADField(out, numeric[:])
-	binary.BigEndian.PutUint64(numeric[:], uint64(kdfThreads))
-	out = appendAADField(out, numeric[:])
-	out = appendAADField(out, salt)
-	out = appendAADField(out, nonce)
-	return out
 }

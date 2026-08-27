@@ -639,10 +639,7 @@ func (s Store) ChangePassphrase(current, next []byte) error {
 			s.warn("%s", result.HelperWarning)
 		}
 		if result.RootCommitted {
-			s.warn("the new passphrase is authoritative despite the incomplete operation")
-			if result.RotationPending {
-				s.warn("unlock with the new passphrase to resume the pending rotation")
-			}
+			s.warn("the new passphrase and generation are authoritative; reconcile the store before signing")
 		}
 		return resultError("passphrase change failed", result.Code, result.Error)
 	}

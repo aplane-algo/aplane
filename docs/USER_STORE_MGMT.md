@@ -178,7 +178,7 @@ an otherwise successful verification.
 `apadmin` reports the archive checksum and size after creation.
 
 It does **not** include:
-- the store's `keyring.enc` root and `.keystore` marker
+- the store's `store-root.enc` root and `.keystore` marker
 - the live signer token
 - any unlocked runtime state
 - policy, approval defaults, network/genesis mappings, templates, or key-type state
@@ -224,9 +224,10 @@ Before using apsigner for the first time, you must initialize the keystore:
 ./apstore initialize --role sentry
 ```
 
-This creates the product `keyring.enc` root under `identities/default/`, containing:
+This creates the product `store-root.enc` under `identities/default/`, containing:
 - Explicit Argon2id KDF parameters and the salt, in the clear
 - The store's key material, sealed under the passphrase-derived key
+- The selected first generation and its current-term selection MAC
 
 Opening the root is itself the passphrase check, so there is no separate
 verifier. It also writes the `.keystore` format marker, which records only the
@@ -236,9 +237,10 @@ It also creates the product `aplane.token` under `identities/default/` if one do
 exist. Normal clients should use the operator-approved `request-token`
 flow to receive a client-side copy of that token.
 
-`apstore initialize` also creates the initial signed policy baseline:
-`identities/default/policy.yaml`,
-`identities/default/policy.yaml.hmac`.
+`apstore initialize` also creates the initial signed policy baseline inside
+the first selected generation:
+`identities/default/generations/<generation-id>/policy.yaml` and its
+`policy.yaml.hmac` sidecar.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role sentry` creates a dedicated
@@ -247,7 +249,7 @@ sentry nodes use separate top-level signer data directories.
 
 `apstore initialize` is a local bootstrap command and does not require
 `apsigner` to be running. It is accepted only before the product has a
-`keyring.enc` file; if a partial or existing `identities/default/` directory is
+`store-root.enc` file; if a partial or existing `identities/default/` directory is
 present, move it aside explicitly before trying to initialize again.
 
 For non-interactive or scripted use (e.g., CI, automated provisioning), set `APSIGNER_PASSPHRASE` to skip the interactive prompt:
@@ -326,18 +328,17 @@ daemon-backed and does not require root merely to traverse the signer store.
 so repair or replacement of that root-owned helper remains an explicit
 privileged operation. `appass-systemd-creds` files remain root-owned.
 
-A passphrase change appends a fresh numbered key term and atomically commits
-the new root under the new passphrase. It then re-encrypts live keys,
-templates, deleted managed objects, and rotation records and re-signs policy
-and node-role integrity sidecars from an authenticated cutover snapshot. Retained
-generations stay byte-for-byte unchanged and readable through their historical
-term anchors.
+A passphrase change creates a fresh numbered key term, stages a complete
+successor generation, re-encrypts live keys, templates, and deleted managed
+objects, and re-signs policy and node-role integrity sidecars from the exact
+outgoing generation seal. One `store-root.enc` rename commits both the newly
+wrapped keyring and successor selection. Retained generations stay
+byte-for-byte unchanged and remain anchor-gated historical state.
 
-The root commit is the point of no return. If the process stops later, do not
-rerun `changepass`: unlock with the new passphrase. Interactive and automatic
-startup unlock resume the exact pending transition before enabling signing. If
-resume cannot authenticate or complete the snapshot, the signer enters
-recovery mode instead of publishing a partially rotated product store.
+The root replacement is the point of no return. Before it, the old passphrase
+and generation remain authoritative; after it, the new passphrase and complete
+successor are authoritative. There is no pending transition or unlock-time
+resume pass.
 
 When prior generations are retained, `changepass` warns that they remain
 readable under pre-change terms. Run
@@ -439,7 +440,8 @@ the product enters recovery mode and signing remains blocked. Recovery tools:
 ./apadmin restore apply <backup-id|name> --replace-existing
 ```
 
-`restore reconcile` validates and promotes the visible clean generation.
+`restore reconcile` validates the authenticated visible root and generation;
+it never guesses or promotes the newest-looking directory.
 `restore rollback` is available only while the current generation is the
 latest clean rollback-eligible credential restore. Any later mutation causes a
 safe refusal, and a rollback generation cannot itself be rolled back. A restore
@@ -451,11 +453,12 @@ it does not restore directly from extracted directories. The export passphrase
 may differ from the destination store passphrase.
 ### Generation-Based Storage and Migration
 
-New and rebuilt stores keep their active credentials in generation-based
-storage: `identities/default/CURRENT` names the active generation under
-`generations/`, and every credential restore commits as a complete new
-generation with one durable pointer flip. Restore cannot be left half-applied:
-a failure before the flip publishes nothing, and `restore rollback`
+New and rebuilt stores keep active credentials under `generations/`.
+`identities/default/store-root.enc` authenticates both the active generation
+and its current key authority. Every credential restore commits as a complete
+new generation with one durable root replacement. Restore cannot be left
+half-applied: a failure before replacement leaves old authority selected, and
+`restore rollback`
 reconstructs the sealed parent by minting a fresh generation.
 Encrypted members stay on the current key term; the command does not make an
 older generation current again.
@@ -466,6 +469,14 @@ but incompatibility is not a permanent every-release policy; each pre-1.0
 release will state its compatibility and migration requirements explicitly.
 See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
+Filesystem snapshots are a different recovery mechanism from credential
+archives. Restore `identities/default/` only while the signer is stopped and
+restore the entire directory from one coherent snapshot. Never restore
+`store-root.enc` alone or mix it with independently captured generation
+directories. Such a mix may select older valid authority; quarantine preserves
+ambiguous newer ciphertext but cannot make the mixed snapshot valid or
+decryptable.
+
 Inspect generations through the running daemon; stop the daemon only for
 destructive pruning:
 
@@ -474,6 +485,41 @@ destructive pruning:
 ./apstore generations prune               # keep current + its parent
 ./apstore generations prune --all-priors  # keep only current
 ```
+
+Complete generation publications that were never committed are preserved in a
+bounded, non-authoritative quarantine. Inspect them through the running signer
+and irreversibly remove only explicitly selected entries:
+
+```bash
+apadmin generations list
+apadmin generations prune --confirm <generation-id> [generation-id...]
+apadmin generations discard --confirm <unvalidatable-generation-id> [generation-id...]
+```
+
+Quarantine is not a backup or rollback source. The live prune requires an
+unlocked or recovery-admin session, the stable
+`identity.generation.quarantine.prune` authorization action, explicit
+confirmation, and a durable audit intent before any deletion.
+An in-place abandoned directory that cannot be safely quarantined requires the
+distinct `identity.generation.abandoned.discard` authorization. Discard refuses
+the selected generation, its rollback parent, and every sealed prior.
+
+A changepass interrupted before the root replacement may leave its successor
+quarantined. Retry is intentionally blocked until that non-authoritative entry
+is inspected and explicitly pruned.
+
+The selected generation's deleted archive is capacity-bounded. Inspect and
+prune it through the authenticated live admin surface:
+
+```bash
+apadmin archive list
+apadmin archive prune --confirm deleted/keys/<selector>.key
+```
+
+The limit is 4,096 entries and 256 MiB, with emergency-deletion reserve below
+the hard bound. A delete that would exceed the limit fails before changing the
+active credential. Archive prune accepts only canonical deleted credential or
+template paths, requires `identity.archive.prune`, and durably audits intent.
 
 Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
@@ -529,7 +575,7 @@ filesystem operation and only runs when the destination product directory
 ```
 
 If an existing keystore or `identities/default/` directory is present, move it aside
-explicitly before rebuilding. `rebuild` creates a fresh `keyring.enc` root,
+explicitly before rebuilding. `rebuild` creates a fresh `store-root.enc`,
 restores credentials from the backup archive, and writes a new store encrypted under
 the new store passphrase you enter. Rebuild uses `manifest.sealed`
 `source_node_role` metadata as the default destination role. Pass `--role signer` or
@@ -680,6 +726,10 @@ From the key details view:
 
 # Change keystore passphrase
 ./apadmin changepass
+
+# Inspect/prune the selected generation's deleted archive
+./apadmin archive list
+./apadmin archive prune --confirm <deleted/path> [deleted/path...]
 
 # Audit private permissions for a local same-UID store
 ./apstore permissions audit

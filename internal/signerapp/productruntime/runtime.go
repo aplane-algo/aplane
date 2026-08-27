@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -754,6 +753,26 @@ func (ir *Runtime) KeyPaths() storepaths.Paths {
 	return ir.keyPaths
 }
 
+// ActivePaths returns the generation authenticated by the runtime's most
+// recent successful root unlock or reload.
+func (ir *Runtime) ActivePaths() (storepaths.GenPaths, error) {
+	if ir.keyStore == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("product key store is not configured: %w", keystore.ErrStoreLocked)
+	}
+	return ir.keyStore.ActivePaths()
+}
+
+// ActiveKeyPaths returns a path configuration bound to the runtime's
+// authenticated active generation. Routine mutation helpers may pass this
+// capability through existing Paths-based APIs without consulting a public pointer.
+func (ir *Runtime) ActiveKeyPaths() (storepaths.Paths, error) {
+	active, err := ir.ActivePaths()
+	if err != nil {
+		return storepaths.Paths{}, err
+	}
+	return ir.keyPaths.BindActive(active)
+}
+
 // WithKeyring runs fn with the identity's open keyring.
 func (ir *Runtime) WithKeyring(fn func(*crypto.Keyring) error) error {
 	return ir.keyStore.WithKeyring(fn)
@@ -825,24 +844,13 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 		return
 	}
 
-	// Watch keys dir and key type state/template records, resolved through
-	// the active layout: on a generational store the namespaces live inside
-	// the generation CURRENT names. The identity dir catches creation of
-	// intermediate directories and CURRENT pointer replacement (a reload
-	// candidate); a pointer flip re-arms the watcher on the new generation's
-	// directories via StopKeyWatcher + EnsureKeyWatcher in the flipping
-	// operation, since fsnotify watches bind to inodes.
+	// Watch keys and key-type records through the authenticated generation
+	// capability. The identity directory observes store-root replacement; a
+	// root commit re-arms the watcher on the newly selected generation because
+	// fsnotify watches bind to inodes.
 	dirs := []string{ir.keyPaths.ProductDir()}
-	if active, err := genstore.ResolveActive(ir.keyPaths); err == nil {
+	if active, err := ir.ActivePaths(); err == nil {
 		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
-	} else {
-		// An unresolvable layout still gets the identity-dir watch so a
-		// repaired CURRENT triggers a reload; reload itself fails closed.
-		dirs = append(
-			dirs,
-			ir.keyPaths.LegacyKeysDir(),
-			ir.keyPaths.LegacyKeyTypeRecordsDir(),
-		)
 	}
 
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)
@@ -967,7 +975,7 @@ func (ir *Runtime) notifyLocked() {
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
-		if err := crypto.VerifyPassphraseWithKeyring(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
+		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir()); err != nil {
 			return 0, fmt.Errorf("invalid passphrase")
 		}
 

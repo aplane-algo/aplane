@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -43,7 +44,12 @@ func cmdPolicy(args []string) error {
 }
 
 func cmdPolicyCheck() error {
-	docs, err := policyCommandDocuments()
+	active, kr, err := readStore()
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
 	if err != nil {
 		return err
 	}
@@ -68,15 +74,15 @@ func cmdPolicyCheck() error {
 }
 
 func cmdPolicyVerify() error {
-	docs, err := policyCommandDocuments()
-	if err != nil {
-		return err
-	}
-	kr, err := readPolicyKeyring()
+	active, kr, err := readStore()
 	if err != nil {
 		return err
 	}
 	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
+	if err != nil {
+		return err
+	}
 
 	for _, doc := range docs {
 		stored, err := doc.verify(kr)
@@ -92,7 +98,12 @@ func cmdPolicyVerify() error {
 }
 
 func cmdPolicySign() error {
-	docs, err := policyCommandDocuments()
+	active, kr, err := readStore()
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
+	docs, err := policyCommandDocuments(active)
 	if err != nil {
 		return err
 	}
@@ -101,15 +112,6 @@ func cmdPolicySign() error {
 			return err
 		}
 	}
-	kr, err := readPolicyKeyring()
-	if err != nil {
-		return err
-	}
-	defer kr.Zero()
-	if err := kr.RequireSettled(); err != nil {
-		return fmt.Errorf("policy signing blocked: %w", err)
-	}
-
 	now := time.Now()
 	for _, doc := range docs {
 		if err := doc.sign(kr, now); err != nil {
@@ -123,9 +125,10 @@ func cmdPolicySign() error {
 	return nil
 }
 
-func policyCommandDocuments() ([]policyCommandDocument, error) {
-	policyPath := policy.PolicyPath(dataDirectory)
-	nodeDoc, _, err := noderole.Load(storepaths.NewPaths(dataDirectory))
+func policyCommandDocuments(active storepaths.ActivePaths) ([]policyCommandDocument, error) {
+	paths := storepaths.NewPaths(dataDirectory)
+	policyPath := active.PolicyPath()
+	nodeDoc, _, err := noderole.Load(paths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load node role: %w", err)
 	}
@@ -142,13 +145,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedSentryConfigWithKeyring(dataDirectory, kr)
+			return policy.LoadVerifiedSentryConfigActive(active, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignSentryFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
+			return policy.SignSentryFileIntegrityActiveWithKeyring(active, kr, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
@@ -157,13 +160,13 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedStoredConfigWithKeyring(dataDirectory, kr)
+			return policy.LoadVerifiedStoredConfigActive(active, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
 			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignPolicyFileIntegrityWithKeyring(dataDirectory, kr, signedAt)
+			return policy.SignPolicyFileIntegrityActiveWithKeyring(active, kr, signedAt)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
@@ -189,22 +192,18 @@ func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.
 	return stored, nil
 }
 
-func readPolicyKeyring() (*crypto.Keyring, error) {
-	return readStoreKeyring()
-}
-
-func readStoreKeyring() (*crypto.Keyring, error) {
+func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {
 	fmt.Fprint(os.Stderr, "Enter store passphrase: ")
 	passphrase, err := readPassword()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		return storepaths.GenPaths{}, nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
 	defer crypto.ZeroBytes(passphrase)
 	fmt.Fprintln(os.Stderr)
 
-	kr, err := crypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), passphrase)
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), passphrase)
 	if err != nil {
-		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
+		return storepaths.GenPaths{}, nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("store root verification failed: %v", err)}
 	}
-	return kr, nil
+	return active, kr, nil
 }

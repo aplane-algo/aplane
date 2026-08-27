@@ -1,389 +1,284 @@
-# Architecture Decision: Generation-Based Active Storage (v1)
+# Atomic Store Root and Generational Storage
 
-**Status:** Implemented. Generation-based active storage is the supported
-store layout, and Phase 3 key-term rotation is implemented on top of it.
+This document is the storage contract for the signer product store. The only
+supported layout uses one authenticated commit record for both cryptographic
+authority and active-generation selection. There is no compatibility path for
+the retired `CURRENT` plus `keyring.enc` layout.
 
-This document describes the current storage contract. It originated as the
-Jul 27 2026 architecture decision for generation storage; references to the
-superseded Tier-1 activation machinery explain the constraints that shaped the
-current design, not unfinished rollout work.
+## Layout
 
-**Goal:** replace the Tier-1 activation journal/snapshot machinery with one
-commit primitive — stage a complete generation, seal the outgoing one, flip a
-pointer — so multi-file active-store transactions are atomic by construction
-rather than guarded reconstructions. The former rollback snapshot,
-`restoreActivationDirectory`, ownership sets, and resume/rollback journal
-semantics are retired.
-
----
-
-## 1. Layout and the generational boundary
-
+```text
+<data-root>/
+  config.yaml
+  node.yaml
+  audit.log
+  backups/default/
+  library/templates/
+  identities/default/
+    .keystore
+    store-root.enc
+    config.yaml
+    unlock.yaml
+    aplane.token
+    passphrase | passphrase.cred
+    sentries/<name>.json
+    quarantine/generations/<gen-id>/
+    generations/<gen-id>/
+      manifest.json
+      seal.json
+      keys/*.key|*.sen|*.wit.json
+      keytypes/*.json|*.template
+      deleted/keys/*.key|*.sen
+      deleted/keytypes/*.template
+      policy.yaml
+      policy.yaml.hmac
+      node.yaml.hmac
 ```
-identities/default/
-  keyring.enc                  # cryptographic root (aplane.keyring.v2)
-  .keystore                    # static marker: version 5 + keyring/v2
-  CURRENT                      # one line: the active generation ID
-  generations/
-    <generation-id>/
-      manifest.json            # immutable at-mint operation record (§5)
-      seal.json                # final content record, written before flip-away (§5)
-      keys/                    # *.key *.sen *.wit.json
-      keytypes/                # *.json records, *.template
-  deleted/  sentries/  .ssh/  files/
-  policy.yaml  policy.yaml.hmac  node.yaml.hmac  config.yaml
-  unlock.yaml  aplane.token  passphrase  passphrase.cred
-```
 
-**Generational (exactly two namespaces):** `keys/` and `keytypes/` — i.e.
-`storepaths.KeysDir`, `KeyTypeRecordsDir`, `KeyTypeRecord`, `KeyTypeTemplate`,
-and the `internal/keys` file constructors rooted at them
-(`CanonicalManagedCredentialPath`, `AccountKeyFilePath`,
-`SentryCredentialFilePath`, `WitnessPublicMetadataPath`).
+The generation boundary includes all mutable state whose confidentiality or
+integrity depends on a keyring term. Process and product configuration, tokens,
+unlock helpers, SSH state, sentry references, backups, the plaintext template
+library, and the root node-role document are not generational.
 
-**Non-generational (everything else), decided per the verified inventory:**
+`quarantine/` is non-authoritative. Normal resolution, signing, historical
+reads, successor construction, and rollback never search it.
 
-| Paths | Why they stay outside |
-|---|---|
-| `deleted/keys/`, `deleted/keytypes/` | tombstone namespace, not active state; a deleted key is *supposed* to reappear on generation rollback — the prior generation's copy is the rollback semantic, the tombstone is just an archive |
-| `keyring.enc` and `.keystore` | the product store's cryptographic root and format marker are not generation-scoped |
-| `policy.yaml(+.hmac)`, `node.yaml.hmac`, `config.yaml`, `unlock.yaml`, `aplane.token`, `.ssh/`, `sentries/`, `files/`, `passphrase*` | not part of any activation transaction |
-| `<root>/backups`, `<root>/library`, `<root>/node.yaml` | not identity-active state |
+## Store root
 
-**Generation ID:** `gen-<unix-seconds>-<8 hex random>` — sortable, no
-collision coordination needed. `storepaths` validates this shape with
-`^gen-[0-9]+-[0-9a-f]{8}$`; invalid generation IDs are rejected before they
-can be used to construct store paths.
-`CURRENT` contains exactly the ID and a trailing newline; anything else is
-malformed.
+`store-root.enc` has strict schema `aplane.store-root.v1`. It contains:
 
-## 2. Atomic commit unit
+- the passphrase-wrapped `aplane.keyring.v3` subobject;
+- `current_generation_id`;
+- the current selection term;
+- a domain-separated HMAC over the selector and exact wrapped-keyring digest.
 
-**The commit unit is one complete generation plus one `CURRENT` rename.**
-Nothing else. No directory exchange, no partial-namespace commits, no
-cross-file ordering inside the store beyond this protocol:
+The wrapped keyring is AEAD-authenticated under the Argon2id-derived KEK. After
+unwrap, the selection term must equal the keyring's current term and the
+selection MAC must verify. Unknown fields, trailing content, noncanonical
+encoding, unsafe KDF parameters, and oversized input fail closed.
 
-1. Create staging dir `generations/.staging-<gen-id>` (same filesystem by
-   construction — it is inside `generations/`).
-2. Copy every unchanged current file into staging as an **independent regular
-   file** (never `os.Link`; `fsutil.WriteFile`'s foreign-uid in-place fallback
-   must never be able to reach an inode shared with a prior generation).
-3. Apply the transaction's changes in staging.
-4. Validate the complete staged namespaces with the strict validator (§6).
-5. Write `manifest.json` (completion state included) in staging.
-6. fsync every staged file; fsync nested dirs bottom-up.
-7. Rename staging → `generations/<gen-id>`; **fsync `generations/`**
-   (mandatory — journaling filesystems do not order cross-directory renames;
-   skipping this recreates P1c inside its own fix).
-8. **Seal the outgoing current generation**: write its `seal.json` via
-   `fsutil.WriteFileDurable`. Sealing happens while it is still current, so
-   post-flip immutability is never violated.
-9. Write `CURRENT.tmp` (new ID only), fsync, rename over `CURRENT`, fsync the
-   identity dir.
-10. Resolve, reload, validate.
+The selector is outside the KEK-sealed payload so an unlocked runtime can mint
+an ordinary successor without retaining the passphrase. Such commits reread
+the exact root under the mutation lock, authenticate it, preserve the wrapped
+keyring subobject byte-for-byte, and change only the selector and selection
+MAC. Passphrase change replaces the wrapped keyring and selector together.
 
-Crash before step 9's rename: old generation is authoritative and the attempt
-is discarded (§7). Crash after: new generation is authoritative. There is no
-in-between by construction of `rename(2)` on a single filesystem.
+The store root authenticates state but is not an external freshness oracle.
+An adversary able to restore an older authentic root can roll authority back.
+Detecting such replay needs a monotonic hardware or remote authority outside
+this store.
 
-Generations are minted for multi-file transactions, including restore
-activation and rollback reconstruction. Single-file operations mutate the
-current generation in place (§4).
+## Active-path capability
 
-## 3. Path-resolution lifetime
+Passphrase unlock authenticates `store-root.enc`, validates the selected
+generation, and binds its ID into a `storepaths.Paths` capability or returns a
+`storepaths.GenPaths`. Lower-level packages cannot derive active selection from
+public filesystem state. `genstore.Resolve` accepts only an already-bound
+capability; an unbound path fails.
 
-`internal/storepaths` is two-phase:
+Root-changing operations repeat a fresh exact root read under the store
+mutation lock. A cached runtime generation or serialized root is never commit
+authority.
 
-- `Paths` keeps every non-generational method unchanged.
-- `genstore.Resolve` / `ResolveActive` read and
-  validates `CURRENT` once and returns a `GenPaths` carrying the resolved
-  generation-qualified `KeysDir`/`KeyTypeRecordsDir`/`KeyTypeRecord`/
-  `KeyTypeTemplate`. Legacy active-namespace path methods are not used for
-  generation-qualified consumers, preventing stale-path resolution.
+## Generation manifest and seal
 
-**Lifetime rule: resolve once per operation, under the product store mutation
-lock, and pass `GenPaths` down. Never re-resolve mid-operation.** The lock
-table is defined in ARCH_SPEC: `Signer.storeMutationLock` guards
-resolution+mutation; `genstore.Resolve` without the lock is permitted only
-for read-only display surfaces that tolerate staleness (key list rendering),
-never for anything that writes or that feeds a write.
+Every generation has a strict, complete `manifest.json` recording its ID,
+parent, operation identity, creation time, at-mint inventory, and optional
+restore rollback capability. Self-parent lineage and incomplete manifests are
+invalid.
 
-Generation-qualified consumers include `internal/keys`
-scan/save/witness-sidecars, `internal/keystore`
-(plus: `FileKeyStore` caches **absolute** `KeyFile` paths in its scan cache —
-the cache must be invalidated on every pointer change; the reload that
-follows each flip already rebuilds it, and the dead `keysDir` field gets
-deleted), `internal/keytypestate`, `internal/templatestore`,
-`internal/templatelibrary`, `internal/defaultkeytypes`,
-`internal/backup` (export src dirs, restorer destinations),
-`internal/keymgmt`, `internal/signerapp/{storemut,keyadmin,templateadmin,templates}`,
-`internal/storepass.scanTargets`, `cmd/apstore` offline commands
-(`keys list`, `rebuild`, `changepass`, `sentry export`).
+The selected generation is mutable through ordinary durable key, template,
+policy, and sidecar operations. A `seal.json` beside it is stale precommit
+residue and has no authority.
 
-## 4. Current-generation mutability
+Immediately before selection moves, the outgoing generation receives an
+authenticated seal. The seal binds the exact manifest bytes and complete final
+inventory:
 
-The current generation is **mutable through durable single-file operations**
-(temp-write → fsync → rename → dir-sync): key generate/import, key delete
-(the existing `os.Rename` into `deleted/keys/` plus a source-dir sync — the
-cross-directory rename stays same-filesystem because both live under the
-identity dir), keytype record Put/SetState/Delete, template install/remove.
-These do not mint generations; kilobyte-sized full copies are cheap but a
-generation per keystroke-level admin action is noise.
+- active credentials and installed templates;
+- deleted credentials and templates;
+- policy document and integrity sidecar;
+- node-role integrity sidecar;
+- term numbers, sizes, and exact digests.
 
-After a pointer flip, the prior generation is immutable; its `seal.json`
-(written pre-flip) is the last write it ever receives. **No in-place
-fallback for generational files**: writers use `fsutil.WriteFileDurable` or
-fail; `fsutil.WriteFile`'s foreign-uid unsynced fallback is prohibited on
-generational paths (it is unsynced, non-atomic, and with copies its blast
-radius is confined to the current generation — but a torn current credential
-is still a defect).
+A retained generation must have a valid seal. Old-term retained generations
+also require an exact historical seal anchor in the active keyring. A term key
+alone never grants historical authority.
 
-The repo-wide `TestNoHardlinksInStoreCode` architecture guard AST-scans store
-code and rejects `os.Link` calls, with only narrowly named non-store exceptions.
+Generations are copied as independent files, never hardlinks. Once non-current,
+they are immutable except for explicit generation pruning.
 
-## 5. Manifest and seal
+## Ordinary generation commit
 
-`manifest.json` — immutable at-mint operation record:
-`schema "aplane.generation-manifest.v1"`, schema_version, generation ID, parent
-generation ID, created_at, operation type + stable operation ID, source
-archive SHA-256 when applicable, rollback source generation
-when a mint reconstructs older content, at-mint inventory and digests,
-completion state (written before publication). It describes **the
-minting transaction, not the live directory** — single-file mutations after
-mint do not falsify it. `CURRENT` answers *which state committed*; the
-manifest answers *which operation produced it* (post-crash idempotency and
-audit correlation — the operation ID is what unlock-time reconciliation logs).
+Credential restore, restore rollback reconstruction, initialization, rebuild,
+and passphrase change mint generations. Ordinary key or policy mutations do
+not.
 
-`seal.json` — final content authority, schema
-`aplane.generation-seal.v2`: generation ID, sealed_at, SHA-256 of the exact
-immutable `manifest.json` bytes, explicit integrity term, full inventory with
-digests and member terms, and a domain-separated HMAC over a canonical
-length-prefixed encoding of every security-bearing seal field except the MAC
-itself. An inventory entry's `term` is zero for plaintext and the positive
-term-envelope term otherwise. Written durably **before every pointer flip**
-(commit step 8; rollback does the same for its outgoing generation).
-Prior-generation and rollback-target validation require the identity keyring
-and use the authenticated seal, never the at-mint manifest inventory — a
-legitimately mutated generation would fail an at-mint check the moment it
-becomes prior. An unanchored seal is current authority only: its seal term and
-all term-bearing entries must equal the current keyring term. A non-current
-generation **without** a seal is, by construction, an uncommitted attempt
-(§7).
+The commit order is:
 
-Historical consumers operate on one read of each file:
-`ParseManifestBytes` validates the exact manifest buffer,
-`ParseSealBytes` binds that exact manifest buffer to the exact seal buffer,
-and `VerifyBytesAgainstSeal` checks the exact namespace-member buffer before
-it is consumed. Validating a path and then reading it again is not a historical
-integrity boundary.
+1. acquire the store mutation lock and any maintenance fence;
+2. freshly authenticate the root and selected generation;
+3. create a private `.staging-<gen-id>` directory;
+4. independently copy the parent, or construct an authorized empty successor;
+5. apply the transaction and validate the complete namespace;
+6. write the complete manifest and sync the staging tree bottom-up;
+7. rename staging to `generations/<gen-id>` and sync `generations/`;
+8. write and sync the outgoing generation seal;
+9. durably replace `store-root.enc` once;
+10. reload and validate the selected generation.
 
-Before a seal term retires, `BuildHistoricalAnchor` performs ordinary
-current-authority validation and pins the exact seal byte size and SHA-256.
-Later historical access is deliberately two-level: anchored seal validation
-first checks that exact root anchor and then verifies the seal MAC using the
-retained term; `ReadAnchoredBytes` checks one exact member buffer against its
-authenticated size, digest, and term before `OpenAnchoredEnvelope` may decrypt
-it through the specialized historical path. Inventory scans use
-`OpenAnchoredEnvelopeBytes` to apply the same anchor/seal/member checks to the
-exact member buffer they already hashed. A retained term key alone does not
-authorize a historical generation, and an anchor alone cannot replace the key.
+A failure before root replacement leaves the old root authoritative. A visible
+candidate after a replacement or directory-sync error is commit-uncertain and
+enters recovery; callers do not blindly retry. Once the one root rename is
+visible and directory-durable, there is no second witness or publication step.
 
-`CanonicalInventoryDigest` supplies the Phase 3 rollback-authority digest. It
-hashes a domain string and a length-prefixed encoding of the sorted inventory
-entries `(path, decoded SHA-256, size, term)` rather than JSON bytes, so
-manifest and rotation-baseline authorities use one formatting-independent
-definition.
+## Passphrase and term rotation
 
-`rotation.baseline.enc` is the optional post-rewrap authority for the one
-rollback-eligible current generation. `internal/rotationinventory` strictly
-parses the bounded `aplane.rotation-baseline.v1` plaintext, requires its
-envelope to use the current term and fixed `rotation-baseline:current`
-context, and compares its entry count and canonical inventory digest. A
-matching authenticated baseline supersedes the at-mint manifest only for the
-clean/diverged comparison; a missing, malformed, wrong-term, or
-wrong-generation baseline cannot assert cleanness. Rotation preflight keeps a
-valid matching baseline, durably removes a valid stale one, and preserves
-invalid evidence while blocking. Rotation completion now writes a required
-clean baseline before closing the pending root and never writes one for a
-cutover already recorded as diverged. Restore rollback consumes only a
-matching authenticated baseline; missing, invalid, unauthorized, or stale
-records cannot assert cleanness.
+Changing the passphrase also replaces the current data-encryption term:
 
-## 6. Strict generation validator
+1. authenticate and seal the outgoing generation;
+2. retain its exact seal and manifest buffers;
+3. create a fresh random term and successor keyring;
+4. preserve historical keys and exact anchors, adding the outgoing anchor;
+5. stage an empty successor;
+6. read every source member once and verify it against the retained seal;
+7. re-encrypt term envelopes and re-sign integrity sidecars under the new term;
+8. validate and publish the complete successor;
+9. replace `store-root.enc` with the new wrapped keyring and selector in one
+   durable operation;
+10. update the configured passphrase helper and reload.
 
-Fail-closed and explicitly **not** the tolerant runtime reload
-(`FileKeyStore.Scan` records warnings and succeeds; reload audits rejected
-keys — those semantics cannot back "selected generation fails validation →
-recovery"). The structural validator rejects: malformed/missing `CURRENT`
-values, traversal or symlinks or non-directories anywhere in the resolved
-path, missing namespace directories, incomplete manifests, unexpected
-entries at the generation root, and (for sealed generations) any
-seal/inventory mismatch. Orphaned durable-write temp files
-(`seal.json.tmp-*`) are tolerated — the committing rename is atomic, so
-residue never carries state — and reconciliation garbage-collects them.
-Content-level defects (undecryptable or malformed keys, template and
-key-type record defects, unexpected or noncanonical namespace filenames)
-are enforced by the fail-closed reload gate with the term key.
+Helper update failure is a post-commit warning. It never rolls the store back.
+There is no pending rotation, resumable rewrap, rotation snapshot, rotation
+baseline, or unlock-time completion pass.
 
-- **Current generation at startup:** manifest schema + completion state, then
-  a strict scan of live files. No at-mint digest equality (mutable current);
-  any stale seal is ignored.
-- **Prior generations / rollback targets:** full seal-inventory and digest
-  equality.
-- Any validation failure of the *selected* generation → recovery mode. Never
-  silently select a different generation.
+Retained generations are not rewritten during rotation. Exact historical
+anchors and anchor-gated reads preserve historical least authority.
 
-## 7. Post-crash reconciliation — discard, don't resume
+## Restore rollback
 
-`CURRENT` is the sole commit record. At startup/unlock, under the store and
-store mutation locks, before any new operation:
+Credential restore may add a strict `rollback_capability` to its manifest. The
+capability binds the originating operation, archive digest, authenticated
+source generation, clean-cutover decision, and exact inventory authority.
 
-- `CURRENT` names the new generation → committed; keep, validate, finish
-  runtime/audit reconciliation via the manifest's operation ID.
-- `CURRENT` names the old generation → the attempt never committed; delete it
-  and require a fresh restore request. Nothing irreplaceable is lost because
-  the authenticated source archive remains independent of the attempt;
-  auto-flipping would commit an unrequested mutation.
-- `CURRENT` missing/invalid → recovery mode; delete nothing.
+Passphrase change carries it only when the outgoing live inventory still
+matches its effective authenticated authority. Routine mutations cause that
+comparison to fail. Rollback reconstructs authorized source content into a new
+current-term successor; it never repoints the root at historical ciphertext.
 
-Discard eligibility is structural and reachability-based: not current, not in
-the retained rollback set, not referenced by incomplete-operation or audit
-recovery metadata, and unsealed (every committed-then-superseded generation
-has a seal). `.staging-*` directories are unconditionally garbage. fsync
-`generations/` after removals; audit the abort with the manifest's operation
-ID. This pre-unlock classification checks seal presence only; it never grants
-rollback authority from an unauthenticated seal. Published-but-uncommitted
-generations are **never resumed**.
+## Reconciliation and quarantine
 
-## 8. Pre-1.0 release compatibility (no migration)
+Reconciliation first authenticates the root and validates its selected
+generation. Until that succeeds, it deletes nothing.
 
-Before 1.0, store and backup compatibility may be broken deliberately and is
-documented per release. This first supported release provides no migration
-from earlier internal tags. A store is readable only when its marker matches
-the running release's supported format:
-`.keystore` carries exactly one supported metadata version
-(`checkKeyringMarker` rejects everything else with a restore-from-backup
-remediation), and no layout-migration or downgrade machinery exists. The
-pre-generation flat layout, the Tier-1 activation protocol, and the
-`migrate-layout` transaction are unsupported. There is no permanent policy
-that every post-1.0 release must be incompatible; the 1.0 compatibility
-commitment will be defined before 1.0.
-## 9. Rollback and GC
+- Incomplete `.staging-*` directories and durable-write temporary files have
+  never carried authority and are removed.
+- Sealed, referenced, and declared-parent generations are retained.
+- A complete, non-current, unsealed, unreferenced final directory is ambiguous:
+  it may be crashed-mint residue or newer state orphaned by restoration of an
+  older authentic root. It is classified and quarantined, never adopted or
+  deleted.
 
-Restore rollback = compare the mutable current generation with its effective
-manifest/baseline authority → validate the target against its authenticated
-seal or exact historical anchor → reconstruct only seal-pinned target members
-into an empty staging generation, re-encrypting every envelope under the
-current term → commit the fresh generation through the ordinary mint protocol
-→ remove the superseded baseline after the `CURRENT` flip → reload. The new
-manifest keeps the outgoing current generation as `parent_id` and separately
-records `rollback_source_generation_id`; rollback never makes historical
-ciphertext current again. Rollback and retained-parent pruning require an open
-identity keyring. Retention: current + the previous valid generation +
-anything referenced by incomplete-operation or audit recovery metadata. GC resolves
-references under the mutation lock, never runs during
-activation/rotation/reload/migration, fsyncs `generations/` after removals,
-and starts at exactly current+previous — no age/operator policies until
-reference safety has soaked.
+Quarantine eligibility requires a valid ID, strict complete manifest, closed
+regular-file-only layout, bounded enumeration, and live inventory digests.
+At-mint mismatch is recorded but is not a veto because a formerly selected
+generation may have legitimate post-mint mutations.
 
-## 10. Concurrency and watchers
+Available term validation is classification, not authority. Known-term checks
+are recorded as `verified` or `failed`; a member whose term is absent from the
+current keyring is `term_unavailable`. All remain relocatable when structural
+and bounded checks pass. This is essential when an old root restored across a
+passphrase change lacks the orphan's newer term.
 
-- All resolution+mutation under `Signer.storeMutationLock` (documented in
-  ARCH_SPEC).
-- `productruntime.Runtime.EnsureKeyWatcher` watches the identity directory for a
-  `CURRENT` replacement and binds `keys/`/`keytypes/` watches to the resolved
-  current generation. Pointer changes trigger a coordinated reload under the
-  mutation lock and re-arm the watches on the new generation's directories,
-  because fsnotify watches inodes rather than names. `.staging-*` and
-  non-current generation events are ignored by path prefix.
-- `FileKeyStore` invalidates its cache on every pointer flip (§3).
-- The rescue surface stays admin-protocol-owned; offline `apstore` commands
-  take the store lock exactly as today.
+A candidate that cannot be safely parsed, enumerated, or bounded remains in
+place. Reconciliation and further mints fail closed until authenticated
+operator remediation. Quarantine capacity overflow behaves the same way.
+Explicit removal of an in-place unvalidatable final directory uses the
+separate `identity.generation.abandoned.discard` action, explicit confirmation,
+and a durable intent audit. It refuses current, rollback-parent, and sealed
+generation state.
 
-## 11. Rotation boundary
+Eligible candidates are atomically renamed to
+`quarantine/generations/<gen-id>` and both parent directories are synced.
+Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
+the stable `identity.generation.quarantine.prune` action, explicit
+confirmation, and durable intent audit before deletion.
 
-The accepted Phase 3 design replaces bulk passphrase rotation with numbered
-key terms. Guarded transition start inventories both current and retained
-generation namespaces, authenticates retained members through their exact
-root-pinned historical seals, and durably writes a target-term cutover
-snapshot before atomically publishing the pending root. Retained generations
-therefore do not require prune-all-priors quiescence and are not silently
-stranded on an unauthorized term.
+A crashed changepass before root replacement can leave its complete successor
+in quarantine. That ciphertext is non-authoritative; a later changepass remains
+blocked until an authenticated operator prunes it.
 
-Generation mutation and transition start still require the same identity
-mutation lock so the snapshot is taken against a cooperating-mutation-stable
-view. Direct filesystem changes are handled by exact input digests and the
-required final path/target-authority comparison, not by the lock. While the
-root is pending, normal signer reload and key scans fail closed until the
-snapshot-pinned lifecycle completes. The internal resume pass now preserves
-root-anchored prior generations byte-for-byte while rewrapping only exact
-pinned mutable current-generation envelopes; target outputs are authenticated
-and accepted idempotently after a crash. The completion pass performs
-pre/post-baseline final scans, writes a clean cutover's post-rewrap baseline
-before atomically closing the root, and only then removes the snapshot.
-Rollback consumption and operator wiring are implemented: `changepass` appends
-and synchronously completes a durable term rotation under the store mutation
-lock, and interactive and headless unlock resume a pending transition before
-publishing runtime state. Term GC remains deferred out of this implementation.
-See [PHASE3_ONBOARDING.md](PHASE3_ONBOARDING.md).
+If an orphan crossed a passphrase change, quarantine preserves its ciphertext
+but does not imply it is decryptable with the restored root or passphrase. The
+newer overwritten root must also be recovered from a coherent snapshot.
 
-## 12. Filesystems, crash ordering, ownership
+## Deleted archive capacity
 
-- Supported: Linux and Darwin on a **single filesystem per product store**
-  (already required by cross-directory publish/archive renames). This is a
-  documented store requirement, not probed at runtime: a store that violates
-  it fails its first commit's publish rename with `EXDEV` before anything
-  durable refers to the staged generation.
-- Durability primitives: `fsutil.WriteFileDurable`/`SyncDir`/`RemoveDurable`
-  exclusively for commit-path writes; `fsutil.TestHook` is the crash-matrix
-  injection seam.
-- Ownership: generation directories are service-private `0700`; copied files
-  clamp legacy source modes to the `0600` ceiling. Offline root mutations run
-  the descriptor-based private-store reconciler, which covers
-  `generations/**` and rejects symlinks and hardlinks before repair.
-- The `.key`/`.sen` literal ownership arch test constrains new code to route
-  filenames through `internal/keys` (verified constraint, kept).
+The selected generation's deleted archive is bounded by release-contract
+constants:
 
-## 13. Verification (crash matrix and tests)
+- 4,096 entries;
+- 256 MiB total encoded bytes;
+- warning thresholds reserve one entry and one maximum standalone-envelope
+  allocation for an emergency deletion.
 
-The commit protocol is machine-checked by `docs/formal/generation_commit.tla`
-(run by `make formal-test`). It models the mint sequence against a crash at
-every step and a filesystem that may lose any write whose fsync has not
-completed, and checks that CURRENT never names an unpublished generation
-(G1), the parent is sealed before the child becomes current (G2),
-reconciliation discards uncommitted attempts on an undamaged store (G3), a commit with unconfirmed
-durability blocks signing (G4), and reconciliation restores a durable
-pointer (G5). The model is the exhaustive companion to the fault-injection
-tests below, which check chosen interruption points; it does not model
-content validity, which is a reload-gate concern.
+If a release ever lowers these layout constants below an existing store's
+usage, generation minting and changepass refuse until authenticated archive
+prune restores compliance. The health and status surfaces retain a warning
+whenever the emergency reserve is consumed.
 
-Fault injection through `fsutil.TestHook` covers the commit and seal windows:
-after every simulated interruption, startup selects the complete old or
-complete new state — never a mixture or a missing state. The suite also covers
-inode independence, the no-`os.Link` architectural rule, current-pointer
-validation, manifest and seal corruption, unsealed-attempt reconciliation,
-watcher re-arming, cache invalidation, offline active-namespace resolution,
-ownership preservation, and key-term rotation crash recovery.
+Deletes preflight the exact append and fail before active-state mutation if the
+hard bound would be exceeded. Mints check the parent before staging and the
+successor after apply. An over-limit selected generation blocks ordinary
+validation, mint, and passphrase change until pruned.
 
-## 14. Implementation status
+`apadmin archive list` reports exact usage and the reserve warning.
+`apadmin archive prune --confirm <deleted/path>...` accepts only canonical
+`deleted/keys/*.key|*.sen` and `deleted/keytypes/*.template` selections. It
+requires `identity.archive.prune`, a recovery-capable authenticated runtime,
+and durable intent audit before mutation. It changes only the selected
+generation; retained copies disappear only with retained-generation pruning.
 
-The generation resolver and strict validator, new-store initialization,
-generation-qualified consumers, credential restore, and rollback
-reconstruction are implemented. The former Tier-1 activation journal and
-snapshot machinery are retired. Key-term rotation is the implemented Phase 3
-transition described in §11; it does not require a separate follow-on phase.
+## Recovery and restoration
 
-This release intentionally provides no in-place migration from prior layouts:
-it is the first supported release, and stores or backups from earlier internal
-tags are not supported inputs (§8).
+Keyring unwrap remains independent of selected-generation health. A valid root
+and passphrase with damaged selected state enters authenticated recovery with
+signing blocked. Invalid or absent root authority requires `apstore rebuild`;
+the implementation never chooses the newest-looking generation.
 
-## 15. Explicitly rejected alternatives
+Credential recovery restore can repair only explicitly selected credential
+damage when all destination authority outside those credentials validates.
+Damage to policy, node-role integrity, key types/templates, deleted archives,
+unselected credentials, or the selected directory itself is not repaired by
+inventing authority; restore refuses and directs the operator to rebuild.
 
-Hardlinked generations (in-place fallback would mutate shared inodes);
-directory-exchange/renameat2 intermediate (two platform-conditional swaps vs
-one portable commit point, and two migrations); generation-per-mutation
-(manifest immutability is achieved by the seal split instead); resuming
-uncommitted generations (auto-commits a destructive activation without
-review); a separate layout-version marker file (the `.keystore` version gate
-already exists, is enforced by every binary, and avoids a second commit
-record).
+Filesystem restoration of `identities/default/` is stopped-signer and
+all-or-nothing. Restoring only `store-root.enc`, only generation directories,
+or files from independently captured snapshots is unsupported. Quarantine
+prevents destructive cleanup after such a mistake but does not make a mixed
+restore valid.
+
+## Security invariants
+
+- One root selects exactly one published generation and one current term.
+- The durable root is wholly old or wholly new after a crash.
+- A root never selects an unpublished or unsynced generation.
+- Every changepass successor term consumer uses the new current term.
+- Every old-term input promoted during changepass matches the exact outgoing
+  seal buffer and inventory entry.
+- Historical terms require exact active-root anchors.
+- Non-current generations are immutable.
+- Invalid selection authority never triggers automatic adoption or signing.
+- Wrapped key authority and generation selection change in one rename.
+- Restore rollback eligibility is carried only after an authenticated clean
+  decision.
+- Credential recovery never fabricates destination authority.
+- Deleted-archive count and bytes remain within closed release bounds.
+- Ambiguous complete publications are quarantined or preserved, never
+  automatically adopted or destroyed.
+- Quarantine cannot influence signing, history, rollback, or selection.
+
+The commit and substitution properties are modeled in
+[`formal/store_root_commit.tla`](formal/store_root_commit.tla). The normal
+configuration checks the invariants; `store_root_commit_negative.cfg` is an
+expected-failure control that removes exact outgoing-seal verification.

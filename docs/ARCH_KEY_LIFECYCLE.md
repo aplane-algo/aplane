@@ -58,19 +58,19 @@ This separation is deliberate:
 
 | Object | Durable location | Authority |
 |---|---|---|
-| Native key file | `identities/default/keys/<address>.key` | Native signing authority. |
-| LogicSig key file | `identities/default/keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
-| Sentry witness credential | `identities/default/keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
-| Witness public sidecar | `identities/default/keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
+| Native key file | selected generation `keys/<address>.key` | Native signing authority. |
+| LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
+| Sentry witness credential | selected generation `keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
+| Witness public sidecar | selected generation `keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
 | External contract-admin witness | Operator-controlled `<witness_key_id>.wit`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
-| Node role integrity sidecar | `identities/default/node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
+| Node role integrity sidecar | selected generation `node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
 | Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
-| Key type state record | `identities/default/keytypes/<key_type>.json` | Product-store discovery/generation state. |
-| Installed YAML template | `identities/default/keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
-| Deleted key archive | `identities/default/deleted/keys/` | Removed key files; outside active scans. |
-| Deleted template archive | `identities/default/deleted/keytypes/` | Removed template files; outside active scans. |
+| Key type state record | selected generation `keytypes/<key_type>.json` | Product-store discovery/generation state. |
+| Installed YAML template | selected generation `keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
+| Deleted key archive | selected generation `deleted/keys/` | Removed key files; outside active scans. |
+| Deleted template archive | selected generation `deleted/keytypes/` | Removed template files; outside active scans. |
 | Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer-role stores install the bundled Falcon allowlist v1 source during initialization; other entries require product-store import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; product-store visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
@@ -217,7 +217,7 @@ There are two supported mutation contexts:
   `internal/signerapp/templates` runtime owner to reload;
 - initial default installation is owned by `internal/defaultkeytypes`, which
   calls `templatelibrary` while constructing an unpublished generation and
-  makes it visible through the generation `CURRENT` publication. No live
+  makes it visible through initial `store-root.enc` publication. No live
   identity or reload exists in that context.
 
 Reload failure does not imply one uniform rollback rule. Install, import, and
@@ -244,7 +244,7 @@ key is rejected during reload rather than published as a signable key.
 |---|---|---|---|
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
-| Store recovery-blocked | `CURRENT` or the selected generation failed reconciliation or validation at unlock, or a commit's durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | The operator can reconcile, roll back an eligible restore, or directly restore a validated credential archive to repair damage. |
+| Store recovery-blocked | `store-root.enc` or its selected generation failed reconciliation or validation at unlock, or root durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | The operator can reconcile, roll back an eligible restore, or directly restore a validated credential archive when destination authority remains valid. |
 | Present but signer locked | Encrypted `.key` or `.sen` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.sen` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
 | Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.sen`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
@@ -272,9 +272,9 @@ key is rejected during reload rather than published as a signable key.
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
-| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, commit it with a single durable `CURRENT` flip, then reload. | All selected credentials become active together; an uncommitted attempt leaves the parent active, and ordinary reload failure rolls back to it. If rollback, durability confirmation, or reconciliation cannot complete, signing enters recovery mode. |
+| Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
 | Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credential state without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
-| Unlock/reload | The keyring is open. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
+| Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
 ## Backup And Restore Matrix
@@ -347,11 +347,11 @@ is not published as valid runtime inventory.
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
-| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind the `CURRENT` flip. | Destination policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
+| Restore apply | None. | Validates every selected complete credential, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
 | Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
 | Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
 | Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new product store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
-| Store passphrase change | Mints a fresh term key, re-encrypts installed templates and keys under it, rewrites role HMAC sidecars, and replaces `keyring.enc`. | Re-encrypts keys. | Authority and state are unchanged. |
+| Store passphrase change | Mints a fresh term and generation, re-encrypts every term-encrypted generation member, renews integrity sidecars, and atomically replaces `store-root.enc`. | Re-encrypts keys. | Logical authority and state are unchanged; the old passphrase and term no longer authorize the current generation. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
 

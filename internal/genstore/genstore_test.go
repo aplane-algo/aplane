@@ -6,7 +6,6 @@ package genstore
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,15 +29,31 @@ func testKeyring(t *testing.T) *crypto.Keyring {
 	return cryptotest.Keyring(t, bytes.Repeat([]byte{0x5a}, 32))
 }
 
+func writeTestGenerationAuthority(staged storepaths.GenPaths) error {
+	for _, path := range []string{
+		staged.PolicyPath(),
+		staged.PolicyIntegritySidecar(),
+		staged.NodeRoleIntegritySidecar(),
+	} {
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // mintTestGeneration lays down a structurally valid generation with a
 // complete manifest and the given namespace files.
 func mintTestGeneration(t *testing.T, paths storepaths.Paths, generationID string, files map[string]string) storepaths.GenPaths {
 	t.Helper()
 	gen := paths.GenerationPaths(generationID)
-	for _, namespace := range []string{"keys", "keytypes"} {
+	for _, namespace := range []string{"keys", "keytypes", "deleted/keys", "deleted/keytypes"} {
 		if err := os.MkdirAll(filepath.Join(gen.Dir(), namespace), 0o770); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", namespace, err)
 		}
+	}
+	if err := writeTestGenerationAuthority(gen); err != nil {
+		t.Fatalf("write authority files: %v", err)
 	}
 	for relative, content := range files {
 		if err := os.WriteFile(filepath.Join(gen.Dir(), filepath.FromSlash(relative)), []byte(content), 0o660); err != nil {
@@ -60,78 +75,6 @@ func mintTestGeneration(t *testing.T, paths storepaths.Paths, generationID strin
 		t.Fatalf("WriteManifest() error = %v", err)
 	}
 	return gen
-}
-
-func TestCurrentPointerRoundTripAndResolve(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
-
-	if err := WriteCurrent(paths, testGenA); err != nil {
-		t.Fatalf("WriteCurrent() error = %v", err)
-	}
-	gen, err := Resolve(paths)
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if gen.GenerationID() != testGenA {
-		t.Fatalf("resolved generation = %s, want %s", gen.GenerationID(), testGenA)
-	}
-	if !strings.HasSuffix(gen.KeysDir(), filepath.Join("generations", testGenA, "keys")) {
-		t.Fatalf("KeysDir = %s, not generation-qualified", gen.KeysDir())
-	}
-	if err := ValidateCurrent(gen); err != nil {
-		t.Fatalf("ValidateCurrent() error = %v", err)
-	}
-}
-
-func TestWriteCurrentRefusesMissingGeneration(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := WriteCurrent(paths, testGenA); err == nil {
-		t.Fatal("WriteCurrent pointed CURRENT at a generation that does not exist")
-	}
-}
-
-func TestReadCurrentFailsClosedOnMalformedPointer(t *testing.T) {
-	cases := map[string]string{
-		"empty":              "",
-		"garbage":            "not-a-generation\n",
-		"traversal":          "../escape\n",
-		"multiline":          testGenA + "\n" + testGenB + "\n",
-		"embedded-nul":       testGenA + "\x00",
-		"missing-generation": testGenA + "\n", // valid shape, no directory
-	}
-	for name, content := range cases {
-		t.Run(name, func(t *testing.T) {
-			paths := storepaths.NewPaths(t.TempDir())
-			if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
-				t.Fatalf("MkdirAll: %v", err)
-			}
-			if err := os.WriteFile(paths.CurrentPointerPath(), []byte(content), 0o660); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
-			if _, err := ReadCurrent(paths); err == nil {
-				t.Fatalf("ReadCurrent accepted malformed pointer %q", content)
-			}
-		})
-	}
-}
-
-func TestReadCurrentRejectsSymlinkPointer(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintTestGeneration(t, paths, testGenA, nil)
-	target := filepath.Join(paths.ProductDir(), "pointer-target")
-	if err := os.WriteFile(target, []byte(testGenA+"\n"), 0o660); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if err := os.Symlink(target, paths.CurrentPointerPath()); err != nil {
-		t.Fatalf("Symlink: %v", err)
-	}
-	if _, err := ReadCurrent(paths); err == nil {
-		t.Fatal("ReadCurrent followed a symlinked CURRENT pointer")
-	}
 }
 
 func TestSealRoundTripAndTamperDetection(t *testing.T) {
@@ -423,6 +366,39 @@ func TestCanonicalInventoryDigestIsStableAndDomainSeparated(t *testing.T) {
 	}
 }
 
+func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
+	inventory := []InventoryEntry{{
+		Path: "policy.yaml", SHA256: strings.Repeat("a", 64), Size: 12,
+	}}
+	digest, err := CanonicalInventoryDigest(inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := &Manifest{RollbackCapability: &RollbackCapability{
+		OriginOperationID:  "restore-op",
+		ArchiveSHA256:      strings.Repeat("b", 64),
+		SourceGenerationID: testGenA,
+		CleanAtCutover:     true,
+		EntryCount:         1,
+		InventorySHA256:    digest,
+	}}
+
+	seed, clean, err := CarryRollbackCapability(manifest, slices.Clone(inventory))
+	if err != nil || !clean || seed == nil {
+		t.Fatalf("CarryRollbackCapability(clean) = (%+v, %v, %v)", seed, clean, err)
+	}
+	if seed.EntryCount != 0 || seed.InventorySHA256 != "" || seed.SourceGenerationID != testGenA {
+		t.Fatalf("carried seed = %+v", seed)
+	}
+
+	diverged := slices.Clone(inventory)
+	diverged[0].Size++
+	seed, clean, err = CarryRollbackCapability(manifest, diverged)
+	if err != nil || clean || seed != nil {
+		t.Fatalf("CarryRollbackCapability(diverged) = (%+v, %v, %v)", seed, clean, err)
+	}
+}
+
 func inventoryEntry(t *testing.T, inventory []InventoryEntry, path string) InventoryEntry {
 	t.Helper()
 	index := slices.IndexFunc(inventory, func(entry InventoryEntry) bool {
@@ -577,25 +553,6 @@ func TestManifestIncompleteFailsValidation(t *testing.T) {
 	}
 }
 
-func TestIsGenerational(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.ProductDir(), 0o770); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	generational, err := IsGenerational(paths)
-	if err != nil || generational {
-		t.Fatalf("IsGenerational(legacy) = (%v, %v), want (false, nil)", generational, err)
-	}
-	mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testGenA); err != nil {
-		t.Fatalf("WriteCurrent() error = %v", err)
-	}
-	generational, err = IsGenerational(paths)
-	if err != nil || !generational {
-		t.Fatalf("IsGenerational(migrated) = (%v, %v), want (true, nil)", generational, err)
-	}
-}
-
 func TestGenerationIDValidation(t *testing.T) {
 	valid := []string{testGenA, "gen-1-00000000"}
 	for _, id := range valid {
@@ -614,59 +571,21 @@ func TestGenerationIDValidation(t *testing.T) {
 func TestResolveActiveResolvesGeneration(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
-	// An uninitialized store (no CURRENT) is an error, never a fallback.
+	// An unbound path cannot choose authority from public filesystem state.
 	if _, err := ResolveActive(paths); err == nil {
-		t.Fatal("ResolveActive resolved a store with no CURRENT pointer")
+		t.Fatal("ResolveActive accepted an unbound capability")
 	}
 
 	gen := mintTestGeneration(t, paths, testGenA, nil)
-	if err := WriteCurrent(paths, testGenA); err != nil {
-		t.Fatalf("WriteCurrent: %v", err)
+	bound, err := paths.BindActive(gen)
+	if err != nil {
+		t.Fatal(err)
 	}
-	active, err := ResolveActive(paths)
+	active, err := ResolveActive(bound)
 	if err != nil {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
 	if active.KeysDir() != gen.KeysDir() {
 		t.Fatalf("KeysDir = %s, want %s", active.KeysDir(), gen.KeysDir())
-	}
-
-	// A present-but-invalid CURRENT is an error.
-	if err := os.WriteFile(paths.CurrentPointerPath(), []byte("garbage"+"\n"), 0o660); err != nil {
-		t.Fatalf("corrupt CURRENT: %v", err)
-	}
-	if _, err := ResolveActive(paths); err == nil {
-		t.Fatal("ResolveActive accepted an invalid CURRENT pointer")
-	}
-}
-
-// TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted proves the
-// classification rule: only a successful read of the old pointer proves the
-// rename never landed; an unreadable pointer is unknown commit state.
-func TestWriteCurrentUnreadablePointerIsUnknownNotUncommitted(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	mintTestGeneration(t, paths, testGenA, nil)
-
-	// A pointer that ReadCurrent rejects (symlink) plus an injected write
-	// failure: the write path cannot prove non-commit by reading back.
-	target := filepath.Join(paths.ProductDir(), "pointer-target")
-	if err := os.WriteFile(target, []byte("x\n"), 0o660); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if err := os.Symlink(target, paths.CurrentPointerPath()); err != nil {
-		t.Fatalf("Symlink: %v", err)
-	}
-	injected := errors.New("injected file-sync failure")
-	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-		if op == fsutil.OpFileSync && filepath.Base(path) == storepaths.CurrentPointerName {
-			return injected
-		}
-		return nil
-	}
-	defer func() { fsutil.TestHook = nil }()
-
-	err := WriteCurrent(paths, testGenA)
-	if !errors.Is(err, ErrCommitDurabilityUnknown) {
-		t.Fatalf("WriteCurrent error = %v, want ErrCommitDurabilityUnknown (unreadable pointer proves nothing)", err)
 	}
 }

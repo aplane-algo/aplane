@@ -93,7 +93,11 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		if err := guard.Normalize(); err != nil {
 			return fmt.Errorf("policy saved, but managed store ownership normalization failed: %w", err)
 		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(command.DataDir))
+		path, err := store.ResolvedPath(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve saved policy path: %w", err)
+		}
+		_, _ = fmt.Fprintf(streams.Stdout, "%s saved: %s\n", target.StatusNoun(), path)
 		return nil
 	}
 
@@ -118,7 +122,10 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		store.SetPassphrase(passphrase)
 		crypto.ZeroBytes(passphrase)
 	}
-	path := target.Path(command.DataDir)
+	path, err := store.ResolvedPath(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve policy path: %w", err)
+	}
 	err = (loadedDocument{
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: target,

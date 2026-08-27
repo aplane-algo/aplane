@@ -5,9 +5,7 @@ package templateadmin
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -67,15 +66,10 @@ func setupServiceWithReload(
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
-	if err := os.MkdirAll(keyPaths.LegacyKeysDir(), 0o750); err != nil {
-		t.Fatalf("MkdirAll(keysDir): %v", err)
-	}
-	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
-		t.Fatalf("CreateKeystoreMetadata: %v", err)
-	}
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
+	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, testPassphrase)
+	keyring.Zero()
+	keyPaths = genstoretest.BindActive(t, keyPaths, active)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}
@@ -355,7 +349,11 @@ func TestRemoveInstalledTemplateReloadFailureLeavesArchivedState(t *testing.T) {
 	} else if ok {
 		t.Fatal("template state restored after reload failure, want removal retained")
 	}
-	if _, err := os.Stat(ir.KeyPaths().DeletedKeyTypeTemplate(keyType)); err != nil {
+	active, err := genstore.ResolveActive(ir.KeyPaths())
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if _, err := os.Stat(active.DeletedKeyTypeTemplate(keyType)); err != nil {
 		t.Fatalf("archived template stat error = %v", err)
 	}
 	assertReloadInsideMutation(t, reloadCount, deps)

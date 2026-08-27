@@ -24,7 +24,7 @@ import (
 // recovery". Content-level (decryption) validation happens at reload with
 // the keyring; everything structural and digest-shaped is enforced here.
 
-// ValidateCurrent structurally validates the generation CURRENT selects:
+// ValidateCurrent structurally validates the generation selected by the store root:
 // manifest present, schema-valid, and complete; only permitted entries in
 // the generation directory; namespaces are regular directories holding only
 // regular files. At-mint inventory equality is deliberately NOT required —
@@ -32,6 +32,9 @@ import (
 // — and any stale seal is ignored for the same reason.
 func ValidateCurrent(gen storepaths.GenPaths) error {
 	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
 		return err
 	}
 	manifest, err := ReadManifest(gen)
@@ -52,6 +55,9 @@ func ValidateCurrent(gen storepaths.GenPaths) error {
 // generation with no seal fails here — the seal precedes every flip.
 func ValidateSealed(gen storepaths.GenPaths, kr *crypto.Keyring) error {
 	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
 		return err
 	}
 	manifest, err := ReadManifest(gen)
@@ -85,6 +91,9 @@ func ValidateAnchoredSealed(
 	kr *crypto.Keyring,
 ) error {
 	if err := validateStructure(gen); err != nil {
+		return err
+	}
+	if _, err := InspectDeletedArchive(gen); err != nil {
 		return err
 	}
 	seal, err := ReadAnchoredSeal(gen, anchor, kr)
@@ -256,21 +265,16 @@ func OpenAnchoredEnvelopeBytes(
 	return plaintext, nil
 }
 
-// validateStructure enforces the generation directory's shape: a regular
-// directory containing only manifest.json, seal.json, and the namespace
-// directories; both namespaces present (Mint creates them unconditionally,
-// so absence is damage — a missing keys/ would otherwise validate, be
-// recreated empty by the scanner, and let a prune delete the generations
-// that still hold the keys); namespaces contain only regular files; no
-// symlinks anywhere.
+// validateStructure enforces the complete generation authority shape. Every
+// leaf namespace and root authority file is mandatory; deleted/ is a closed
+// container; leaf namespaces contain only regular files; and no symlink is
+// accepted anywhere.
 func validateStructure(gen storepaths.GenPaths) error {
 	if err := requireRegularDirectory(gen.Dir()); err != nil {
 		return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 	}
-	for _, namespace := range generationNamespaces {
-		if err := validateNamespaceDir(filepath.Join(gen.Dir(), namespace)); err != nil {
-			return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
-		}
+	if err := validateGenerationAuthorityShape(gen); err != nil {
+		return err
 	}
 	entries, err := os.ReadDir(gen.Dir())
 	if err != nil {
@@ -283,7 +287,9 @@ func validateStructure(gen storepaths.GenPaths) error {
 			if _, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), name)); err != nil {
 				return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 			}
-		case slices.Contains(generationNamespaces, name):
+		case slices.Contains(generationAuthorityFiles, name):
+			// Validated unconditionally above.
+		case name == "keys" || name == "keytypes" || name == "deleted":
 			// Validated unconditionally above.
 		case isDurableWriteResidue(name):
 			// Crash residue of WriteFileDurable's temp file (a power loss
@@ -293,6 +299,33 @@ func validateStructure(gen storepaths.GenPaths) error {
 			// would send a survivable crash into recovery.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", gen.GenerationID(), name)
+		}
+	}
+	return nil
+}
+
+func validateGenerationAuthorityShape(gen storepaths.GenPaths) error {
+	for _, namespace := range generationLeafNamespaces {
+		if err := validateNamespaceDir(filepath.Join(gen.Dir(), namespace)); err != nil {
+			return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
+		}
+	}
+	for _, relative := range generationAuthorityFiles {
+		if _, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), relative)); err != nil {
+			return fmt.Errorf("generation %s authority file %s: %w", gen.GenerationID(), relative, err)
+		}
+	}
+	entries, err := os.ReadDir(gen.DeletedDir())
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != "keys" && entry.Name() != "keytypes" {
+			return fmt.Errorf(
+				"generation %s deleted archive contains unsupported entry %q",
+				gen.GenerationID(),
+				entry.Name(),
+			)
 		}
 	}
 	return nil
@@ -315,11 +348,18 @@ func validateNamespaceDir(dir string) error {
 }
 
 // isDurableWriteResidue reports whether name is an orphaned temp file from a
-// crashed WriteFileDurable of a generation record (seal.json.tmp-*,
-// manifest.json.tmp-*).
+// crashed durable write of a generation-root record.
 func isDurableWriteResidue(name string) bool {
-	return strings.HasPrefix(name, storepaths.GenerationSealName+".tmp-") ||
-		strings.HasPrefix(name, storepaths.GenerationManifestName+".tmp-")
+	if strings.HasPrefix(name, storepaths.GenerationSealName+".tmp-") ||
+		strings.HasPrefix(name, storepaths.GenerationManifestName+".tmp-") {
+		return true
+	}
+	for _, authority := range generationAuthorityFiles {
+		if strings.HasPrefix(name, authority+".tmp-") {
+			return true
+		}
+	}
+	return false
 }
 
 // hasDurableWriteTempSuffix reports whether name ends in the exact temp-file

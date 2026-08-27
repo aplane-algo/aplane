@@ -37,28 +37,40 @@ type MintRequest struct {
 	// generation (migration or initialization).
 	Parent string
 	// FirstGeneration explicitly authorizes a parentless mint on a store
-	// with no CURRENT pointer. Pointer absence alone proves nothing — an
-	// established store can lose its pointer, and that condition requires
-	// recovery, never a new lineage (docs/ARCH_GENERATIONS.md §recovery).
+	// with no store root. Root absence alone proves nothing — an established
+	// store can lose its root, and that condition requires recovery, never a
+	// new lineage (docs/ARCH_GENERATIONS.md §recovery).
 	// Mint still verifies the store shows no evidence of generational
 	// history before honoring this.
 	FirstGeneration bool
+	// InitialPassphrase is required only for a first mint. It
+	// seals the first wrapped keyring into store-root.enc and is never retained.
+	InitialPassphrase []byte
 	// Operation and OperationID become the manifest's durable operation
 	// identity.
 	Operation   string
 	OperationID string
-	// RestoreArchiveSHA256 and RestoreRollbackEligible are direct-restore
-	// provenance. Recovery-mode repairs are never rollback-eligible.
-	RestoreArchiveSHA256    string
-	RestoreRollbackEligible bool
+	// RollbackCapability carries authenticated restore provenance. Mint binds
+	// it to the successor's exact at-mint inventory. Recovery-mode repairs and
+	// rollback reconstructions leave it nil.
+	RollbackCapability *RollbackCapability
 	// RollbackSourceGenerationID records a sealed generation whose content
 	// is reconstructed into the new generation. It is distinct from Parent,
-	// which must still be the outgoing CURRENT generation.
+	// which must still be the outgoing store-root selection.
 	RollbackSourceGenerationID string
 	CreatedAt                  time.Time
 	// Integrity authenticates the outgoing generation seal. It is required
 	// whenever Parent is non-empty and unused for a first generation.
 	Integrity *crypto.Keyring
+	// OutgoingSealAlreadyWritten declares that a maintenance transaction
+	// froze and sealed Parent before staging. Mint validates that exact seal
+	// before copying and never rewrites it.
+	OutgoingSealAlreadyWritten bool
+	// ReplacementKeyring and ReplacementPassphrase request a one-record
+	// key-authority plus generation cutover (changepass). They are valid only
+	// for an atomic successor with a pre-sealed outgoing generation.
+	ReplacementKeyring    *crypto.Keyring
+	ReplacementPassphrase []byte
 	// StartEmpty creates empty generation namespaces instead of copying the
 	// parent. It is used when Apply reconstructs an authenticated historical
 	// source into current-term envelopes; copying the mutable parent first
@@ -69,18 +81,33 @@ type MintRequest struct {
 	// of the parent's content, or are empty for a first generation or an
 	// authenticated StartEmpty reconstruction.
 	Apply func(staged storepaths.GenPaths) error
+	// ValidateCandidate runs the caller's complete semantic validation gates
+	// against the staged generation and the authority that will select it.
+	// It runs after Apply and structural validation, but before the manifest is
+	// written or any staged state is published. Generation-owning application
+	// workflows must supply this hook; genstore cannot import signer policy,
+	// template, credential, or node-role semantics without inverting ownership.
+	ValidateCandidate func(staged storepaths.GenPaths) error
+	// AfterPublication runs after the complete successor directory and its
+	// parent-directory entry are durable, but before the store root changes.
+	// It exists for semantic process checkpoints and must not mutate the store.
+	AfterPublication func() error
+	// AfterRootCommit runs after store-root.enc has selected the successor.
+	// It exists for semantic process checkpoints and must not mutate the store.
+	AfterRootCommit func() error
 }
 
 // Mint stages, applies, validates, and publishes a complete generation, then
-// commits it with a durable CURRENT flip. The caller holds the identity
-// mutation lock for the whole call. On any error the staging directory is
-// removed and CURRENT is untouched: the old generation remains
-// authoritative, and a crash at any point leaves either the complete old
-// state or the complete new state selected — never a mixture.
+// commits it with a durable store-root replacement. The caller holds the
+// identity mutation lock for the whole call. Before publication, errors remove
+// staging. After publication but before root replacement, errors can leave a
+// complete non-authoritative successor for reconciliation to quarantine. A
+// crash at any point leaves either the complete old state or the complete new
+// state selected — never a mixture.
 //
 // Commit order (docs/ARCH_GENERATIONS.md §2):
 // stage → copy parent → apply → validate → manifest → fsync all →
-// publish rename → fsync generations/ → seal outgoing → flip CURRENT.
+// publish rename → fsync generations/ → seal outgoing → replace store root.
 func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
 	if err := storepaths.ValidateGenerationID(req.GenerationID); err != nil {
 		return storepaths.GenPaths{}, err
@@ -89,15 +116,14 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
 	}
 	if req.StartEmpty {
-		if req.Parent == "" || req.RollbackSourceGenerationID == "" || req.Apply == nil {
+		if req.Parent == "" || req.Apply == nil {
 			return storepaths.GenPaths{}, fmt.Errorf(
-				"empty reconstruction requires a parent, rollback source, and apply function",
+				"empty reconstruction requires a parent and apply function",
 			)
 		}
-	} else if req.RollbackSourceGenerationID != "" {
-		return storepaths.GenPaths{}, fmt.Errorf(
-			"rollback source requires an empty authenticated reconstruction",
-		)
+	}
+	if req.RollbackSourceGenerationID != "" && (req.Parent == "" || req.Apply == nil) {
+		return storepaths.GenPaths{}, fmt.Errorf("rollback source requires a parent and apply function")
 	}
 	if req.RollbackSourceGenerationID == req.Parent &&
 		req.RollbackSourceGenerationID != "" {
@@ -108,43 +134,76 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	if req.Parent != "" && req.Integrity == nil {
 		return storepaths.GenPaths{}, fmt.Errorf("mint with a parent requires an integrity keyring")
 	}
-	// The parent must be exactly the generation CURRENT names: Mint seals
+	if req.Integrity == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("store-root mint requires an integrity keyring")
+	}
+	if req.FirstGeneration && len(req.InitialPassphrase) == 0 {
+		return storepaths.GenPaths{}, fmt.Errorf("store-root first mint requires an initial passphrase")
+	}
+	if req.OutgoingSealAlreadyWritten && req.Parent == "" {
+		return storepaths.GenPaths{}, fmt.Errorf("pre-sealed outgoing generation requires a parent")
+	}
+	replacingRoot := req.ReplacementKeyring != nil || len(req.ReplacementPassphrase) != 0
+	if replacingRoot && (req.FirstGeneration || !req.OutgoingSealAlreadyWritten || req.ReplacementKeyring == nil || len(req.ReplacementPassphrase) == 0) {
+		return storepaths.GenPaths{}, fmt.Errorf("replacement root requires a successor, a pre-sealed outgoing generation, a successor keyring, and a passphrase")
+	}
+	// The parent must be exactly the generation store-root.enc names: Mint seals
 	// req.Parent as "the outgoing generation", so a stale parent — or an
-	// empty parent on a store that already has a CURRENT — would seal the
+	// empty parent on a store that already has a root — would seal the
 	// wrong generation and leave the real outgoing one unsealed, which
 	// reconciliation would then classify as an uncommitted attempt and
-	// delete. A parentless mint is valid only on a store with no CURRENT
-	// (initialize, rebuild, first migration). This also subsumes the
-	// self-parent and parent-must-exist checks: CURRENT's generation
-	// directory is verified by ReadCurrent, and a self-parent request
+	// quarantine. A parentless mint is valid only on a store with no root
+	// (initialize or rebuild). This also subsumes the
+	// self-parent and parent-must-exist checks: the store root's generation
+	// directory is verified by the authenticated selection, and a self-parent request
 	// would collide with the existing current directory below.
-	if _, err := os.Lstat(paths.CurrentPointerPath()); err != nil {
-		if !os.IsNotExist(err) {
-			return storepaths.GenPaths{}, err
-		}
-		if !req.FirstGeneration {
-			return storepaths.GenPaths{}, fmt.Errorf("mint: store has no CURRENT pointer; a lost pointer on an established store requires recovery, and a first mint must be explicitly authorized")
-		}
+	if req.FirstGeneration {
 		if req.Parent != "" {
-			return storepaths.GenPaths{}, fmt.Errorf("mint parent %s: store has no current generation; the first mint must be parentless", req.Parent)
+			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root first mint must be parentless")
+		}
+		if _, err := os.Lstat(paths.StoreRootPath()); err == nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint: store root already exists")
+		} else if !os.IsNotExist(err) {
+			return storepaths.GenPaths{}, err
 		}
 		if err := verifyFirstMintPreconditions(paths); err != nil {
 			return storepaths.GenPaths{}, err
 		}
 	} else {
-		if req.FirstGeneration {
-			return storepaths.GenPaths{}, fmt.Errorf("mint: store already has a current generation; a first mint is not applicable")
+		if req.Parent == "" {
+			return storepaths.GenPaths{}, fmt.Errorf("atomic store-root successor mint requires a parent")
 		}
-		current, err := ReadCurrent(paths)
+		exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
 		if err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("mint: %w", err)
 		}
-		if req.Parent != current {
-			return storepaths.GenPaths{}, fmt.Errorf("mint parent %q is not the current generation %s", req.Parent, current)
+		selection, err := crypto.AuthenticateStoreRoot(exact, req.Integrity)
+		if err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint: authenticate store root: %w", err)
+		}
+		if selection.CurrentGenerationID != req.Parent {
+			return storepaths.GenPaths{}, fmt.Errorf(
+				"mint parent %q is not the store-root current generation %s",
+				req.Parent,
+				selection.CurrentGenerationID,
+			)
+		}
+		if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint preflight: %w", err)
 		}
 	}
 
 	generationsDir := paths.GenerationsDir()
+	if req.OutgoingSealAlreadyWritten {
+		if err := ValidateSealed(paths.GenerationPaths(req.Parent), req.Integrity); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("validate pre-sealed outgoing generation: %w", err)
+		}
+	}
+	if req.Parent != "" {
+		if _, err := InspectDeletedArchive(paths.GenerationPaths(req.Parent)); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("mint preflight: %w", err)
+		}
+	}
 	if err := fsutil.MkdirAllPrivate(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -181,10 +240,8 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 			return storepaths.GenPaths{}, fmt.Errorf("copy parent generation: %w", err)
 		}
 	} else {
-		for _, namespace := range generationNamespaces {
-			if err := makeNamespaceDir(filepath.Join(stagingDir, namespace)); err != nil {
-				return storepaths.GenPaths{}, err
-			}
+		if err := makeGenerationDirectories(staged); err != nil {
+			return storepaths.GenPaths{}, err
 		}
 	}
 
@@ -193,27 +250,37 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 			return storepaths.GenPaths{}, err
 		}
 	}
+	if _, err := InspectDeletedArchive(staged); err != nil {
+		return storepaths.GenPaths{}, fmt.Errorf("staged generation deleted archive: %w", err)
+	}
 
 	// Validate the complete staged namespaces before anything durable
 	// refers to them.
 	if err := validateStructureAt(stagingDir, req.GenerationID, false); err != nil {
 		return storepaths.GenPaths{}, err
 	}
+	if req.ValidateCandidate != nil {
+		if err := req.ValidateCandidate(staged); err != nil {
+			return storepaths.GenPaths{}, fmt.Errorf("validate staged generation: %w", err)
+		}
+	}
 	inventory, err := BuildInventory(staged)
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}
+	rollbackCapability, err := bindRollbackCapability(req.RollbackCapability, inventory)
+	if err != nil {
+		return storepaths.GenPaths{}, err
+	}
 	if err := WriteManifest(staged, Manifest{
-		GenerationID:               req.GenerationID,
-		ParentID:                   req.Parent,
-		CreatedAtUnix:              req.CreatedAt.Unix(),
-		Operation:                  req.Operation,
-		OperationID:                req.OperationID,
-		RestoreArchiveSHA256:       req.RestoreArchiveSHA256,
-		RestoreRollbackEligible:    req.RestoreRollbackEligible,
-		RollbackSourceGenerationID: req.RollbackSourceGenerationID,
-		Inventory:                  inventory,
-		Complete:                   true,
+		GenerationID:       req.GenerationID,
+		ParentID:           req.Parent,
+		CreatedAtUnix:      req.CreatedAt.Unix(),
+		Operation:          req.Operation,
+		OperationID:        req.OperationID,
+		RollbackCapability: rollbackCapability,
+		Inventory:          inventory,
+		Complete:           true,
 	}); err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -226,49 +293,81 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		return storepaths.GenPaths{}, fmt.Errorf("publish generation: %w", err)
 	}
 	cleanup = false
-	// Mandatory: without this a crash can persist the CURRENT flip while
+	// Mandatory: without this a crash can persist the store-root replacement while
 	// losing the generation's directory entry.
 	if err := fsutil.SyncDir(generationsDir); err != nil {
 		return storepaths.GenPaths{}, err
 	}
+	if req.AfterPublication != nil {
+		if err := req.AfterPublication(); err != nil {
+			return storepaths.GenPaths{}, err
+		}
+	}
 
 	// Seal the outgoing generation while it is still current: the last
 	// write it ever receives, and what makes it a valid rollback target.
-	if req.Parent != "" {
+	if req.Parent != "" && !req.OutgoingSealAlreadyWritten {
 		if err := WriteSeal(paths.GenerationPaths(req.Parent), req.CreatedAt.Unix(), req.Integrity); err != nil {
 			return storepaths.GenPaths{}, fmt.Errorf("seal outgoing generation: %w", err)
 		}
 	}
 
-	if err := WriteCurrent(paths, req.GenerationID); err != nil {
-		return storepaths.GenPaths{}, err
+	var commitErr error
+	if replacingRoot {
+		commitErr = CommitReplacementStoreRoot(
+			paths,
+			req.Integrity,
+			req.Parent,
+			req.ReplacementKeyring,
+			req.ReplacementPassphrase,
+			req.GenerationID,
+		)
+	} else {
+		if req.FirstGeneration {
+			commitErr = CommitInitialStoreRoot(
+				paths,
+				req.Integrity,
+				req.InitialPassphrase,
+				req.GenerationID,
+			)
+		} else {
+			commitErr = CommitStoreRoot(
+				paths,
+				req.Integrity,
+				req.Parent,
+				req.GenerationID,
+			)
+		}
+	}
+	if commitErr != nil {
+		return storepaths.GenPaths{}, commitErr
+	}
+	if req.AfterRootCommit != nil {
+		if err := req.AfterRootCommit(); err != nil {
+			return storepaths.GenPaths{}, err
+		}
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
 }
 
-// RollbackTo repoints CURRENT at a previous sealed generation after
-// validating it, sealing the outgoing generation first: a rollback is a
-// pointer flip like any other. The caller holds the store mutation lock.
-func RollbackTo(paths storepaths.Paths, targetID string, now time.Time, kr *crypto.Keyring) error {
-	current, err := ReadCurrent(paths)
+func bindRollbackCapability(seed *RollbackCapability, inventory []InventoryEntry) (*RollbackCapability, error) {
+	if seed == nil {
+		return nil, nil
+	}
+	if seed.OriginOperationID == "" || seed.ArchiveSHA256 == "" || seed.SourceGenerationID == "" || !seed.CleanAtCutover {
+		return nil, fmt.Errorf("rollback capability provenance is incomplete")
+	}
+	digest, err := CanonicalInventoryDigest(inventory)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if current == targetID {
-		// Succeeding here would report a rollback that never moved CURRENT.
-		// No legitimate caller asks to roll back to the generation that is
-		// already current; a self-parent manifest could (and is rejected by
-		// manifest validation for the same reason).
-		return fmt.Errorf("rollback target %s is already the current generation", targetID)
+	bound := *seed
+	bound.EntryCount = int64(len(inventory))
+	bound.InventorySHA256 = digest
+	if err := validateRollbackCapability(&bound); err != nil {
+		return nil, err
 	}
-	target := paths.GenerationPaths(targetID)
-	if err := ValidateSealed(target, kr); err != nil {
-		return fmt.Errorf("rollback target: %w", err)
-	}
-	if err := WriteSeal(paths.GenerationPaths(current), now.Unix(), kr); err != nil {
-		return fmt.Errorf("seal outgoing generation: %w", err)
-	}
-	return WriteCurrent(paths, targetID)
+	return &bound, nil
 }
 
 // verifyFirstMintPreconditions rejects an authorized first mint on any store
@@ -302,12 +401,12 @@ func stagedGenPaths(paths storepaths.Paths, generationID, stagingDir string) sto
 }
 
 func copyNamespaces(from, to storepaths.GenPaths) error {
-	for _, namespace := range generationNamespaces {
+	if err := makeGenerationDirectories(to); err != nil {
+		return err
+	}
+	for _, namespace := range generationLeafNamespaces {
 		srcDir := filepath.Join(from.Dir(), namespace)
 		dstDir := filepath.Join(to.Dir(), namespace)
-		if err := makeNamespaceDir(dstDir); err != nil {
-			return err
-		}
 		info, err := os.Lstat(srcDir)
 		if err != nil {
 			// A parent namespace that is missing is damage, never a valid
@@ -338,6 +437,35 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 			if err := os.Chmod(dst, targetMode); err != nil {
 				return err
 			}
+		}
+	}
+	for _, relative := range generationAuthorityFiles {
+		data, mode, err := fsutil.ReadRegularFile(filepath.Join(from.Dir(), relative))
+		if err != nil {
+			return fmt.Errorf("copy generation authority file %s: %w", relative, err)
+		}
+		targetMode := mode.Perm() & fsutil.StoreFilePerm
+		dst := filepath.Join(to.Dir(), relative)
+		if err := os.WriteFile(dst, data, targetMode); err != nil {
+			return err
+		}
+		if err := os.Chmod(dst, targetMode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func makeGenerationDirectories(gen storepaths.GenPaths) error {
+	for _, dir := range []string{
+		gen.KeysDir(),
+		gen.KeyTypeRecordsDir(),
+		gen.DeletedDir(),
+		gen.DeletedKeysDir(),
+		gen.DeletedKeyTypeRecordsDir(),
+	} {
+		if err := makeNamespaceDir(dir); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -394,6 +522,10 @@ func syncTreeBottomUp(root string) error {
 // validateStructureAt runs the structural validator against an unpublished
 // root (staging) or a published generation directory.
 func validateStructureAt(dir, generationID string, requireManifest bool) error {
+	gen := storepaths.StagedGenerationPaths(generationID, dir)
+	if err := validateGenerationAuthorityShape(gen); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -410,10 +542,10 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 				// before the generation ever became current. Never accept.
 				return fmt.Errorf("staged generation %s carries a seal", generationID)
 			}
-		case "keys", "keytypes":
-			if err := validateNamespaceDir(filepath.Join(dir, name)); err != nil {
-				return fmt.Errorf("generation %s: %w", generationID, err)
-			}
+		case "keys", "keytypes", "deleted":
+			// Validated unconditionally above.
+		case "policy.yaml", "policy.yaml.hmac", "node.yaml.hmac":
+			// Validated unconditionally above.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", generationID, name)
 		}

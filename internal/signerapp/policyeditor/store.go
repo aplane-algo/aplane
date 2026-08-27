@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -70,6 +71,24 @@ type OfflineStore struct {
 // integrity sidecar.
 func (s *OfflineStore) Persistence() Persistence {
 	return Persistence{Kind: PersistenceProduction}
+}
+
+// ResolvedPath returns the policy path selected by an authenticated fresh
+// store-root read. It never derives authority from directory enumeration.
+func (s OfflineStore) ResolvedPath(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	kr, clear, err := s.unlock(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer clear()
+	active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
+	if err != nil {
+		return "", err
+	}
+	return active.PolicyPath(), nil
 }
 
 // UseExclusiveMutationLock supplies an already-held lock for Save and
@@ -166,10 +185,6 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 		return err
 	}
 	defer clear()
-	if err := kr.RequireSettled(); err != nil {
-		return fmt.Errorf("%s save blocked: %w", s.target().StatusNoun(), err)
-	}
-
 	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)
 	}
@@ -179,10 +194,14 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 	}
 	switch s.target() {
 	case TargetSentry:
-		if _, err := policyruntime.SaveStoredSentryConfigWithKeyring(
+		active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
+		if err != nil {
+			return err
+		}
+		if _, err := policyruntime.SaveStoredSentryConfigActiveWithKeyring(
 			s.DataDir,
-
 			&serverCfg,
+			active,
 			stored,
 			kr,
 			s.now(),
@@ -190,10 +209,14 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 			return err
 		}
 	default:
-		if _, err := policyruntime.SaveStoredConfigWithKeyring(
+		active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
+		if err != nil {
+			return err
+		}
+		if _, err := policyruntime.SaveStoredConfigActiveWithKeyring(
 			s.DataDir,
-
 			&serverCfg,
+			active,
 			stored,
 			kr,
 			s.now(),
@@ -232,10 +255,6 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 		return err
 	}
 	defer clear()
-	if err := kr.RequireSettled(); err != nil {
-		return fmt.Errorf("%s save blocked: %w", s.target().StatusNoun(), err)
-	}
-
 	if _, err := s.loadVerifiedWithKeyring(kr); err != nil {
 		return fmt.Errorf("refusing to overwrite unverified %s: %w", s.target().StatusNoun(), err)
 	}
@@ -390,8 +409,8 @@ func (s OfflineStore) unlock(ctx context.Context) (*apcrypto.Keyring, func(), er
 		return nil, func() {}, fmt.Errorf("passphrase is required")
 	}
 
-	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir()
-	kr, err := apcrypto.OpenKeyringStore(metadataDir, passphrase)
+	paths := storepaths.NewPaths(s.DataDir)
+	_, kr, err := genstore.OpenStoreRootSelection(paths, passphrase)
 	clearPassphrase()
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to unlock keystore: %w", err)
@@ -405,19 +424,27 @@ func (s OfflineStore) loadVerifiedWithKeyring(kr *apcrypto.Keyring) (*policy.Sto
 }
 
 func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy.StoredConfig, []byte, error) {
+	active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
+	if err != nil {
+		return nil, nil, err
+	}
 	switch s.target() {
 	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigDocument(s.DataDir, kr)
+		return policy.LoadVerifiedSentryConfigDocumentActive(active, kr)
 	default:
-		return policy.LoadVerifiedStoredConfigDocument(s.DataDir, kr)
+		return policy.LoadVerifiedStoredConfigDocumentActive(active, kr)
 	}
 }
 
 func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) error {
+	active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
+	if err != nil {
+		return err
+	}
 	switch s.target() {
 	case TargetSentry:
-		return policy.SaveSentryBytesWithKeyring(s.DataDir, data, kr, s.now())
+		return policy.SaveSentryBytesActiveWithKeyring(active, data, kr, s.now())
 	default:
-		return policy.SavePolicyBytesWithKeyring(s.DataDir, data, kr, s.now())
+		return policy.SavePolicyBytesActiveWithKeyring(active, data, kr, s.now())
 	}
 }

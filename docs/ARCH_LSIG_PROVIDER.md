@@ -52,7 +52,7 @@ runtime-added `.template` files belong to the one durable `default` activation s
 
 - default-enabled built-in key types are available wherever their providers are registered
 - library-visible built-in key types require an enabled product-store state record before generation surfaces expose them
-- runtime-added `.template` files live under `identities/default/keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
+- runtime-added `.template` files live in the selected generation's `keytypes/` with adjacent state records and affect the product runtime when enabled; disabled installed templates remain stored but are skipped during reload
 
 **Schema invariant:** source-tree `.yaml` templates and runtime `.template`
 files use the same logical template schema. The difference is representation,

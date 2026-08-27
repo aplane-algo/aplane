@@ -158,6 +158,30 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		if len(args) == 1 && args[0] == "list" {
 			return AuthReadOnly, nil
 		}
+		if len(args) > 0 && args[0] == "prune" {
+			fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			_ = fs.Bool("confirm", false, "")
+			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
+				return AuthUnlock, errors.New(
+					"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
+				)
+			}
+			return AuthUnlock, nil
+		}
+	case "archive":
+		if len(args) == 1 && args[0] == "list" {
+			return AuthReadOnly, nil
+		}
+		if len(args) > 0 && args[0] == "prune" {
+			fs := flag.NewFlagSet("apadmin archive prune", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			_ = fs.Bool("confirm", false, "")
+			if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
+				return AuthUnlock, errors.New("usage: apadmin archive prune --confirm <deleted/path> [deleted/path...]")
+			}
+			return AuthUnlock, nil
+		}
 	}
 	return AuthUnlock, fmt.Errorf("unknown or malformed apadmin command: %s", strings.TrimSpace(command+" "+strings.Join(args, " ")))
 }
@@ -180,6 +204,8 @@ func (c Catalog) Run(command string, args []string) error {
 		return c.runEndpoint(args)
 	case "generations":
 		return c.runGenerations(args)
+	case "archive":
+		return c.runArchive(args)
 	default:
 		return fmt.Errorf("unknown apadmin command %q", command)
 	}
@@ -570,8 +596,17 @@ func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
 }
 
 func (c Catalog) runGenerations(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
+	}
+	if args[0] == "prune" {
+		return c.runGenerationQuarantinePrune(args[1:])
+	}
+	if args[0] == "discard" {
+		return c.runGenerationAbandonedDiscard(args[1:])
+	}
 	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: apadmin generations list")
+		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
 	}
 	result, err := requestInspectionWithRetry(c, func() any {
 		return protocol.ListGenerationsMessage{
@@ -584,8 +619,17 @@ func (c Catalog) runGenerations(args []string) error {
 	if result.Error != "" {
 		return resultError("generation list failed", result.Code, result.Error)
 	}
-	for _, attempt := range result.PendingAttempts {
-		c.info("uncommitted generation %s (discarded at next unlock or prune)", attempt)
+	for _, item := range result.Quarantined {
+		c.info(
+			"quarantined generation %s (bytes=%d entries=%d at_mint_match=%t term_verified=%d term_unavailable=%d term_failed=%d)",
+			item.GenerationID,
+			item.EncodedBytes,
+			item.EntryCount,
+			item.AtMintInventoryMatch,
+			item.TermVerified,
+			item.TermUnavailable,
+			item.TermFailed,
+		)
 	}
 	for _, staging := range result.PendingStaging {
 		c.info("staging residue %s (discarded at next unlock or prune)", staging)
@@ -598,7 +642,119 @@ func (c Catalog) runGenerations(args []string) error {
 		c.info("sealed prior: %s", prior)
 	}
 	if len(result.SealedPriors) == 0 && result.RetainedUnsealedParent == "" {
-		c.info("no prior generations (rotation quiescence satisfied)")
+		c.info("no prior generations")
+	}
+	return nil
+}
+
+func (c Catalog) runGenerationAbandonedDiscard(args []string) error {
+	fs := flag.NewFlagSet("apadmin generations discard", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirm := fs.Bool("confirm", false, "confirm irreversible abandoned-generation deletion")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return errors.New("usage: apadmin generations discard --confirm <generation-id> [generation-id...]")
+	}
+	var result protocol.DiscardAbandonedGenerationsResultMessage
+	if err := c.Client.Request(protocol.DiscardAbandonedGenerationsMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeDiscardAbandonedGenerations,
+			ID:   c.requestID("generation-abandoned-discard"),
+		},
+		GenerationIDs: append([]string(nil), fs.Args()...), Confirm: *confirm,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("abandoned generation discard failed", result.Code, result.Error)
+	}
+	for _, item := range result.Discarded {
+		if item.AlreadyAbsent {
+			c.info("abandoned generation %s already absent", item.GenerationID)
+		} else {
+			c.info("discarded abandoned generation %s (%d bytes)", item.GenerationID, item.EncodedBytes)
+		}
+	}
+	return nil
+}
+
+func (c Catalog) runGenerationQuarantinePrune(args []string) error {
+	fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirm := fs.Bool("confirm", false, "confirm irreversible quarantine deletion")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return errors.New(
+			"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
+		)
+	}
+	var result protocol.PruneGenerationQuarantineResultMessage
+	if err := c.Client.Request(protocol.PruneGenerationQuarantineMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePruneGenerationQuarantine,
+			ID:   c.requestID("generation-quarantine-prune"),
+		},
+		GenerationIDs: append([]string(nil), fs.Args()...),
+		Confirm:       *confirm,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("generation quarantine prune failed", result.Code, result.Error)
+	}
+	for _, item := range result.Pruned {
+		if item.AlreadyAbsent {
+			c.info("quarantined generation %s already absent", item.GenerationID)
+			continue
+		}
+		c.info("pruned quarantined generation %s (%d bytes)", item.GenerationID, item.EncodedBytes)
+	}
+	return nil
+}
+
+func (c Catalog) runArchive(args []string) error {
+	if len(args) == 1 && args[0] == "list" {
+		var result protocol.DeletedArchiveListMessage
+		if err := c.Client.Request(protocol.ListDeletedArchiveMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListDeletedArchive, ID: c.requestID("archive-list")},
+		}, &result); err != nil {
+			return err
+		}
+		if result.Error != "" {
+			return resultError("archive list failed", result.Code, result.Error)
+		}
+		for _, item := range result.Entries {
+			c.info("archived %s (%d bytes)", item.Path, item.EncodedBytes)
+		}
+		c.info("deleted archive: %d entries, %d encoded bytes", result.EntryCount, result.EncodedBytes)
+		if result.Warning {
+			c.warn("deleted archive emergency-deletion reserve is consumed; prune before the next incident-response deletion")
+		}
+		return nil
+	}
+	if len(args) == 0 || args[0] != "prune" {
+		return errors.New("usage: apadmin archive <list|prune>")
+	}
+	fs := flag.NewFlagSet("apadmin archive prune", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirm := fs.Bool("confirm", false, "confirm irreversible archive deletion")
+	if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
+		return errors.New("usage: apadmin archive prune --confirm <deleted/path> [deleted/path...]")
+	}
+	var result protocol.PruneDeletedArchiveResultMessage
+	if err := c.Client.Request(protocol.PruneDeletedArchiveMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchive, ID: c.requestID("archive-prune")},
+		Entries:     append([]string(nil), fs.Args()...), Confirm: *confirm,
+	}, &result); err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("archive prune failed", result.Code, result.Error)
+	}
+	for _, item := range result.Pruned {
+		if item.AlreadyAbsent {
+			c.info("archive entry %s already absent", item.Path)
+		} else {
+			c.info("pruned archive entry %s (%d bytes)", item.Path, item.EncodedBytes)
+		}
 	}
 	return nil
 }

@@ -501,7 +501,7 @@ cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
 
 `apsigner` supports `-version`, `-print-manifest`, and `-d <data-dir>`.
 
-**Note:** Run `apstore initialize` locally to create the store's cryptographic root (`keyring.enc`) and its format marker (`.keystore`). `apsigner` can start without it — it enters a forced-locked state until the keystore is initialized — but no signing operations work until it exists.
+**Note:** Run `apstore initialize` locally to create the store's atomic cryptographic root (`store-root.enc`), initial generation, and format marker (`.keystore`). `apsigner` can start without them — it enters a forced-locked state until the keystore is initialized — but no signing operations work until they exist.
 
 ### Example (Interactive Mode with SSH)
 
@@ -570,7 +570,7 @@ For the full current policy model and phase ordering, see
 Signer safety policy is product-local and stored at:
 
 ```text
-$APSIGNER_DATA/identities/default/policy.yaml
+$APSIGNER_DATA/identities/default/generations/<selected-generation>/policy.yaml
 ```
 
 The file has a sibling `.hmac` sidecar that authenticates the exact YAML bytes.

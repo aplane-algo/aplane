@@ -63,7 +63,7 @@ func TestSSHAdminSessionRejectsMissingKindDuringAuth(t *testing.T) {
 		t.Fatalf("first message kind = %q, want %q", authRequired.Kind, protocol.MessageKindNotification)
 	}
 
-	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n")); err != nil {
+	if _, err := stream.Write([]byte(`{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":6,"minor":0}}` + "\n")); err != nil {
 		t.Fatalf("stream.Write() error = %v", err)
 	}
 

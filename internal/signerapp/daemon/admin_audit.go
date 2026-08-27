@@ -64,6 +64,72 @@ func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionCon
 	}
 }
 
+func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing quarantine prune without a durable intent record")
+	}
+	return audit.LogGenerationQuarantinePruneIntentDurableContext(ctx, operationID, generationIDs)
+}
+
+func (s signerAdminServices) LogGenerationQuarantinePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneGenerationQuarantineResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogGenerationQuarantinePruneContext(ctx, operationID, result)
+	}
+}
+
+func (s signerAdminServices) LogGenerationAbandonedDiscardIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing abandoned discard without a durable intent record")
+	}
+	return audit.LogGenerationAbandonedDiscardIntentDurableContext(ctx, operationID, generationIDs)
+}
+
+func (s signerAdminServices) LogGenerationAbandonedDiscardContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogGenerationAbandonedDiscardContext(ctx, operationID, result)
+	}
+}
+
+func (s signerAdminServices) LogDeletedArchivePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	entries []string,
+) error {
+	audit := s.auditLogger()
+	if audit == nil {
+		return fmt.Errorf("audit log unavailable; refusing archive prune without a durable intent record")
+	}
+	return audit.LogDeletedArchivePruneIntentDurableContext(ctx, operationID, entries)
+}
+
+func (s signerAdminServices) LogDeletedArchivePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneDeletedArchiveResult,
+) {
+	if audit := s.auditLogger(); audit != nil {
+		audit.LogDeletedArchivePruneContext(ctx, operationID, result)
+	}
+}
+
 func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
 	if audit := s.auditLogger(); audit != nil {
 		audit.LogBackupCreatedContext(ctx, archivePath)

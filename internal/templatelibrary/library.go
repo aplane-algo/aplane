@@ -269,7 +269,7 @@ func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyri
 }
 
 // InstallParsedActive is InstallParsed against resolved active-store paths
-// (generational or legacy); the caller resolved the layout once for the
+// authenticated generation; the caller resolved the layout once for the
 // whole operation.
 func InstallParsedActive(active storepaths.ActivePaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
@@ -651,12 +651,20 @@ func rollbackInstalledTemplateFileActive(active storepaths.ActivePaths, keyType 
 }
 
 func archiveInstalled(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) (string, error) {
-	sourcePath, err := templatestore.GetTemplateFilePathForPaths(paths, keyType, templateType)
+	active, err := genstore.ResolveActive(paths)
 	if err != nil {
 		return "", err
 	}
-	deletedKeysDir := paths.DeletedKeysDir()
-	deletedTemplatePath := paths.DeletedKeyTypeTemplate(keyType)
+	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType, templateType)
+	gen, ok := active.(storepaths.GenPaths)
+	if !ok {
+		return "", fmt.Errorf("template archival requires generation-qualified active paths")
+	}
+	if _, err := genstore.PreflightDeletedArchiveAppend(gen, sourcePath); err != nil {
+		return "", err
+	}
+	deletedKeysDir := active.DeletedKeysDir()
+	deletedTemplatePath := active.DeletedKeyTypeTemplate(keyType)
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return "", fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}
@@ -665,6 +673,14 @@ func archiveInstalled(paths storepaths.Paths, keyType string, templateType templ
 	}
 	if err := os.Rename(sourcePath, deletedTemplatePath); err != nil {
 		return "", fmt.Errorf("failed to move installed template: %w", err)
+	}
+	if err := fsutil.SyncDir(filepath.Dir(sourcePath)); err != nil {
+		return "", fmt.Errorf("confirm installed template removal: %w", err)
+	}
+	if filepath.Clean(filepath.Dir(sourcePath)) != filepath.Clean(filepath.Dir(deletedTemplatePath)) {
+		if err := fsutil.SyncDir(filepath.Dir(deletedTemplatePath)); err != nil {
+			return "", fmt.Errorf("confirm deleted template archive: %w", err)
+		}
 	}
 	return deletedTemplatePath, nil
 }

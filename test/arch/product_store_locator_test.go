@@ -29,7 +29,6 @@ var productStoreLocatorRoots = []string{
 	"internal/keytypestate",
 	"internal/noderole",
 	"internal/policy",
-	"internal/rotationinventory",
 	"internal/sentry/sentryrefs",
 	"internal/signerapp",
 	"internal/storeinit",

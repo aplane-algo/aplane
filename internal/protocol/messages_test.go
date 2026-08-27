@@ -107,6 +107,8 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeExportSentryPublicResult,
 		MsgTypeListGenerations,
 		MsgTypeGenerationsList,
+		MsgTypePruneGenerationQuarantine,
+		MsgTypePruneGenerationQuarantineResult,
 		MsgTypeClientExists,
 		MsgTypeDisplaceConfirm,
 		MsgTypeDisplaced,
@@ -121,9 +123,63 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-func TestCurrentAdminProtocolVersionIsSingleIdentityV5(t *testing.T) {
-	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 5, Minor: 0}) {
-		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 5.0", got)
+func TestCurrentAdminProtocolVersionIsAtomicStoreV6(t *testing.T) {
+	if got := CurrentAdminProtocolVersion(); got != (ProtocolVersion{Major: 6, Minor: 0}) {
+		t.Fatalf("CurrentAdminProtocolVersion() = %+v, want 6.0", got)
+	}
+}
+
+func TestGenerationQuarantineJSONShapes(t *testing.T) {
+	request := PruneGenerationQuarantineMessage{
+		BaseMessage: BaseMessage{
+			Kind: MessageKindRequest,
+			Type: MsgTypePruneGenerationQuarantine,
+			ID:   "prune-1",
+		},
+		GenerationIDs: []string{"gen-1700000000-0123abcd"},
+		Confirm:       true,
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requestShape map[string]any
+	if err := json.Unmarshal(data, &requestShape); err != nil {
+		t.Fatal(err)
+	}
+	if requestShape["confirm"] != true || !reflect.DeepEqual(
+		requestShape["generation_ids"],
+		[]any{"gen-1700000000-0123abcd"},
+	) {
+		t.Fatalf("prune request shape = %#v", requestShape)
+	}
+
+	list := GenerationsListMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeGenerationsList, ID: "list-1"},
+		Quarantined: []QuarantinedGenerationInfo{{
+			GenerationID:         "gen-1700000000-0123abcd",
+			ManifestSHA256:       "manifest",
+			LiveInventorySHA256:  "live",
+			AtMintInventoryMatch: false,
+			EntryCount:           3,
+			EncodedBytes:         42,
+		}},
+		SealedPriors:   []string{},
+		PendingStaging: []string{},
+	}
+	data, err = json.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listShape map[string]any
+	if err := json.Unmarshal(data, &listShape); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := listShape["pending_attempts"]; ok {
+		t.Fatalf("generations list retained removed pending_attempts field: %#v", listShape)
+	}
+	if _, ok := listShape["quarantined"]; !ok {
+		t.Fatalf("generations list missing quarantined field: %#v", listShape)
 	}
 }
 
@@ -357,7 +413,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				PriorGenerations:  1,
 				HelperWarning:     "helper update failed",
 				RootCommitted:     true,
-				RotationPending:   true,
 			},
 			wantMap: map[string]any{
 				"type":               MsgTypeChangeStorePassResult,
@@ -368,7 +423,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"prior_generations":  float64(1),
 				"helper_warning":     "helper update failed",
 				"root_committed":     true,
-				"rotation_pending":   true,
 			},
 		},
 		{
@@ -1012,7 +1066,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":{"major":5,"minor":0}}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":{"major":6,"minor":0}}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

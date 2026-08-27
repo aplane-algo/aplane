@@ -628,7 +628,11 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	}
 
 	// Move to snapshot B: remove the key file from disk and reload the index.
-	keyPath := keys.AccountKeyFilePath(server.keyPaths, genResp.Address)
+	active, err := server.productRuntime().ActivePaths()
+	if err != nil {
+		t.Fatalf("ActivePaths() error = %v", err)
+	}
+	keyPath := keys.AccountKeyFilePathActive(active, genResp.Address)
 	if err := os.Remove(keyPath); err != nil {
 		t.Fatalf("os.Remove(%q) error = %v", keyPath, err)
 	}

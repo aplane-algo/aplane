@@ -18,7 +18,8 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	sharedClient := filepath.Join(sharedRoot, "apclient")
 
 	sharedPaths := storepaths.NewPaths(sharedSigner)
-	genstoretest.MintFirst(t, sharedPaths)
+	kr, _ := genstoretest.MintFirstAtomic(t, sharedPaths, []byte("test-passphrase"))
+	kr.Zero()
 	mustMkdirAll(t, filepath.Join(sharedSigner, ".ssh"))
 	mustMkdirAll(t, filepath.Join(sharedClient, ".ssh"))
 
@@ -33,18 +34,24 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	t.Setenv("APLANE_SHARED_APCLIENT_DATA", sharedClient)
 
 	first := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	firstActive, err := genstore.ResolveActive(storepaths.NewPaths(first.SignerDataDir))
+	firstActive, firstKeyring, err := genstore.ResolveStoreRoot(
+		storepaths.NewPaths(first.SignerDataDir), []byte("test-passphrase"),
+	)
 	if err != nil {
-		t.Fatalf("ResolveActive(first clone): %v", err)
+		t.Fatalf("ResolveStoreRoot(first clone): %v", err)
 	}
+	firstKeyring.Zero()
 	templatePath := firstActive.KeyTypeTemplate("aplane.custom.v1")
 	mustWriteFile(t, templatePath, []byte("custom template"), 0o600)
 
 	second := CloneSharedTestEnv(t, TestEnvCloneOptions{})
-	secondActive, err := genstore.ResolveActive(storepaths.NewPaths(second.SignerDataDir))
+	secondActive, secondKeyring, err := genstore.ResolveStoreRoot(
+		storepaths.NewPaths(second.SignerDataDir), []byte("test-passphrase"),
+	)
 	if err != nil {
-		t.Fatalf("ResolveActive(second clone): %v", err)
+		t.Fatalf("ResolveStoreRoot(second clone): %v", err)
 	}
+	secondKeyring.Zero()
 	if _, err := os.Stat(secondActive.KeyTypeTemplate("aplane.custom.v1")); !os.IsNotExist(err) {
 		t.Fatalf("second clone unexpectedly copied template from first clone, stat err=%v", err)
 	}

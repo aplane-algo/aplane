@@ -69,7 +69,7 @@ moved behind an existing owner.
 | `internal/signerapp/productruntime`, `storemut`, `keyadmin`, `templateadmin`, `templates` | Product settings, store mutation locking, keys and templates |
 | `internal/signerapp/backupadmin` and `internal/backup` when invoked by it | Managed backup, restore, rollback, reconciliation |
 | `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
-| `internal/genstore`, `internal/rotationinventory`, `internal/storepass` | Generation publication, reconciliation, and key-term rotation |
+| `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
 | `internal/policy`, `internal/noderole` when invoked by the daemon | Authenticated policy and node-role state |
 | `internal/sentry/sentryrefs` when invoked by the daemon | Public sentry-reference inventory |
 | `internal/tokenfile` when invoked by signer administration | Product bearer-token state |
@@ -89,7 +89,7 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
 | `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
-| `apstore generations prune` | Offline mutation pending a separately authorized live-prune design |
+| `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |

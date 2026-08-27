@@ -15,9 +15,32 @@ import (
 )
 
 type Paths struct {
-	root           string
-	productDir     string
-	productBackups string
+	root               string
+	productDir         string
+	productBackups     string
+	activeGenerationID string
+}
+
+// BindActive returns a copy carrying one already-authenticated active
+// generation capability. APIs that still accept Paths resolve this binding
+// without consulting a public pointer. Only a canonical generation owned by
+// this Paths value can be bound; staging and quarantine paths are rejected.
+func (p Paths) BindActive(gen GenPaths) (Paths, error) {
+	if err := ValidateGenerationID(gen.GenerationID()); err != nil {
+		return Paths{}, err
+	}
+	want := filepath.Clean(p.GenerationDir(gen.GenerationID()))
+	if filepath.Clean(gen.Dir()) != want {
+		return Paths{}, fmt.Errorf("generation %s is not owned by product store %s", gen.GenerationID(), p.ProductDir())
+	}
+	p.activeGenerationID = gen.GenerationID()
+	return p, nil
+}
+
+// BoundActiveGeneration reports the authenticated generation capability
+// carried by this Paths copy, if any.
+func (p Paths) BoundActiveGeneration() (string, bool) {
+	return p.activeGenerationID, p.activeGenerationID != ""
 }
 
 var (
@@ -54,22 +77,6 @@ func (p Paths) NodeRolePath() string {
 	return filepath.Join(p.root, "node.yaml")
 }
 
-func (p Paths) NodeRoleIntegritySidecar() string {
-	return filepath.Join(p.ProductDir(), "node.yaml.hmac")
-}
-
-// RotationSnapshotPath is the target-term-sealed cutover inventory pinned by
-// a pending keyring descriptor.
-func (p Paths) RotationSnapshotPath() string {
-	return filepath.Join(p.ProductDir(), "rotation.snapshot.enc")
-}
-
-// RotationBaselinePath is the current-term-sealed post-rewrap inventory
-// baseline used by generation rollback validation.
-func (p Paths) RotationBaselinePath() string {
-	return filepath.Join(p.ProductDir(), "rotation.baseline.enc")
-}
-
 func validatePathComponent(label, s string) {
 	if err := validatePathComponentValue(label, s); err != nil {
 		panic(err.Error())
@@ -101,30 +108,8 @@ func validateKeyTypeComponent(keyType string) {
 	}
 }
 
-// LegacyKeysDir returns the pre-generation key namespace. It is not an active
-// store path; normal consumers must resolve storepaths.ActivePaths through
-// genstore.ResolveActive. This path remains available only for recovery probes
-// and tests that verify legacy state is not treated as active.
-func (p Paths) LegacyKeysDir() string {
-	return filepath.Join(p.ProductDir(), "keys")
-}
-
-func (p Paths) DeletedDir() string {
-	return filepath.Join(p.ProductDir(), "deleted")
-}
-
-func (p Paths) DeletedKeysDir() string {
-	return filepath.Join(p.DeletedDir(), "keys")
-}
-
 func (p Paths) BackupsRootDir() string {
 	return filepath.Join(p.root, "backups")
-}
-
-// LegacyKeyTypeRecordsDir returns the pre-generation key-type namespace. It is
-// not an active store path; see LegacyKeysDir.
-func (p Paths) LegacyKeyTypeRecordsDir() string {
-	return filepath.Join(p.ProductDir(), "keytypes")
 }
 
 func (p Paths) SentryRefsDir() string {
@@ -134,21 +119,6 @@ func (p Paths) SentryRefsDir() string {
 func (p Paths) SentryRefPath(name string) string {
 	validatePathComponent("sentry reference name", name)
 	return filepath.Join(p.SentryRefsDir(), name+".json")
-}
-
-func (p Paths) LegacyKeyTypeRecord(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".json")
-}
-
-func (p Paths) LegacyKeyTypeTemplate(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.LegacyKeyTypeRecordsDir(), keyType+".template")
-}
-
-func (p Paths) DeletedKeyTypeTemplate(keyType string) string {
-	validateKeyTypeComponent(keyType)
-	return filepath.Join(p.DeletedDir(), "keytypes", keyType+".template")
 }
 
 func (p Paths) KeystoreMetadataDir() string {

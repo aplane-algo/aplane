@@ -278,7 +278,7 @@ func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (m
 }
 
 // ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
-// against resolved active-store paths (generational or legacy).
+// against an authenticated generation capability.
 func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
 	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
 	if err != nil {
@@ -300,7 +300,22 @@ func ScanKeysDirectoryWithKeyringReport(paths storepaths.Paths, kr *crypto.Keyri
 // ScanKeysDirectoryWithKeyringReportActive is
 // ScanKeysDirectoryWithKeyringReport against resolved active-store paths.
 func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*KeyScanReport, error) {
-	return scanKeysDirectoryInternalReport(active, func(keyFile string) ([]byte, error) {
+	return scanKeysDirectoryInternalReport(active, nil, func(keyFile string) ([]byte, error) {
+		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
+	})
+}
+
+// ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive validates every
+// keys-namespace entry except managed credential files whose selectors are in
+// excluded. Recovery restore uses this to prove that all authority outside the
+// authenticated credential selection is healthy before replacing that exact
+// selection. Unexpected entries and public metadata are never excluded.
+func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
+	active storepaths.ActivePaths,
+	kr *crypto.Keyring,
+	excluded map[string]bool,
+) (*KeyScanReport, error) {
+	return scanKeysDirectoryInternalReport(active, excluded, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
 	})
 }
@@ -308,7 +323,7 @@ func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr 
 // scanKeysDirectoryInternalReport is the shared implementation for scanning
 // keys. The decryptFunc parameter lets the caller supply either passphrase or
 // keyring decryption.
-func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -343,6 +358,9 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, decryptFunc 
 	// managed credential classes ever reaches decryptFunc.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
+		if ok && !entry.IsDir() && excludedSelectors[filenameSelector] {
+			continue
+		}
 		if entry.IsDir() || !ok {
 			entryPath := filepath.Join(keysDir, entry.Name())
 			switch {

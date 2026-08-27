@@ -65,7 +65,7 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	path, err := CanonicalManagedCredentialPath(paths, witnessID, CategoryWitness)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestScanManagedCredentialFiles(t *testing.T) {
 
 func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	account := types.Address{4}.String()
 	if err := os.MkdirAll(activeKeysDirForTest(t, paths), 0o700); err != nil {
 		t.Fatal(err)

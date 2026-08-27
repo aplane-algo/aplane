@@ -99,7 +99,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   │   └── templates/     # Template YAML files for defaults and apstore imports
 │   ├── .ssh/              # SSH host key and process-global authorized_keys
 │   └── identities/default/ # Keystore (created during install)
-│       ├── keyring.enc
+│       ├── store-root.enc
 │       ├── .keystore
 │       └── .ssh/          # Product-local authorized_keys after token enrollment
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
@@ -952,34 +952,40 @@ additional runtime files:
 
 ```
 $APSIGNER_DATA/identities/default/
-├── keyring.enc       # Cryptographic root (KDF header + sealed term set)
+├── store-root.enc    # Sole cryptographic-root and generation-selection record
 ├── .keystore         # Store format marker (version and layout only)
 ├── config.yaml       # Product-local runtime setting overrides
-├── policy.yaml       # Product-local node-role policy
-├── policy.yaml.hmac  # Integrity sidecar for policy.yaml
 ├── unlock.yaml       # Product-local passphrase helper settings
 ├── .ssh/
 │   └── authorized_keys  # Product-local enrolled client public keys
-├── keytypes/
-│   ├── *.json        # Plaintext key type state records
-│   └── *.template    # Encrypted installed template YAML
-├── keys/             # Encrypted managed credentials and public witness metadata
-│   ├── *.key         # Algorand account authority
-│   ├── *.sen         # Sentry witness authority
-│   └── *.wit.json    # Public witness references
-├── deleted/          # Product-local deletion archive
-│   ├── keys/
-│   └── keytypes/
+├── sentries/         # Product-local public sentry references
+├── generations/<gen-id>/
+│   ├── manifest.json
+│   ├── seal.json
+│   ├── policy.yaml
+│   ├── policy.yaml.hmac
+│   ├── node.yaml.hmac
+│   ├── keytypes/     # State records and encrypted installed templates
+│   ├── keys/         # Encrypted credentials and public witness metadata
+│   └── deleted/      # Bounded deleted credential/template archive
+├── quarantine/generations/<gen-id>/ # Non-authoritative abandoned publications
 ├── aplane.token      # Product API token created by apstore initialize
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
-`policy.yaml` and `policy.yaml.hmac` are created by `apstore initialize`.
+The selected generation's `policy.yaml` and `policy.yaml.hmac` are created by
+`apstore initialize`.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. The signer-side `aplane.token` is created during initialization;
 client-side token files are written when a client is enrolled via
 `request-token`. `passphrase.cred` exists only when `appass` configures
 auto-unlock with `systemd-creds`.
+
+Treat `identities/default/` as one filesystem restore unit. Restoring
+`store-root.enc` without the generation and quarantine directories it governed,
+or restoring those directories without the matching root, is undefined and may
+leave the signer recovery-blocked. Use managed credential backups for portable
+restore instead of copying selected files from the identity directory.
 
 At the production store root, `install/service-principal.json` is the
 root-controlled numeric UID/GID authority used by permission audit, migration,
@@ -1156,15 +1162,16 @@ state unless you manually run the printed destructive cleanup commands.
 The "Left behind" output at the end of `uninstall.sh --systemd` enumerates
 every retained path with a one-line label. Security-relevant entries:
 
-- **`identities/default/keys/`** -- encrypted private keys. Treat as sensitive at
+- **`identities/default/generations/`** -- encrypted private keys, templates,
+  policy authority, and retained history. Treat as sensitive at
   rest; back up before disposing of the host.
 - **`identities/default/passphrase.cred`** -- the keystore passphrase encrypted
   to this host's TPM2 and/or host key by `systemd-creds`. **Bound to this
   physical machine.** It is unreadable on a different host, and unreadable on
   this host if the TPM is reset, the disk is moved, or the host key changes.
   See "Migrating to a New Machine" for the safe relocation path.
-- **`identities/default/keyring.enc`** -- the store's cryptographic root; without
-  it no key file can be decrypted.
+- **`identities/default/store-root.enc`** -- the store's cryptographic root and
+  active-generation selector; without it no generation has current authority.
 - **`identities/default/.keystore`** -- store format marker.
 - **`identities/default/aplane.token`** -- HTTP API token; treat as a credential.
 - **`audit.log`** -- the signer's audit trail. Retain for compliance and
@@ -1172,7 +1179,7 @@ every retained path with a one-line label. Security-relevant entries:
 - **`backups/`** -- encrypted backup tarballs (same protections as keys).
 - **`config.yaml`** -- operator-edited process configuration (algod endpoints
   and ports). Preserved so uninstall does not silently discard operator state;
-  product policy remains under `identities/default/policy.yaml`.
+  product policy remains in the selected generation.
 
 What `uninstall.sh` *removes*: the `apsigner` systemd unit, the
 `/etc/sudoers.d/99-apsigner-systemctl` rule, the installed APlane binaries

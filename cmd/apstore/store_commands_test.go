@@ -37,8 +37,8 @@ func TestHasPartialKeystoreState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(identityDir, ".keystore"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.keystore) error = %v", err)
 	}
-	if storeinit.HasPartialState(paths) {
-		t.Fatal("presence of .keystore should not be considered partial initialization")
+	if !storeinit.HasPartialState(paths) {
+		t.Fatal("marker without store-root.enc should be partial initialization")
 	}
 }
 

@@ -4,6 +4,7 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -36,12 +37,6 @@ const (
 	// ClassKeyTypeTemplate is an installed key-type template, selected by
 	// key type.
 	ClassKeyTypeTemplate ObjectClass = "keytype-template"
-	// ClassRotationSnapshot is the root-pinned cutover inventory for a
-	// pending term transition.
-	ClassRotationSnapshot ObjectClass = "rotation-snapshot"
-	// ClassRotationBaseline is the post-rewrap inventory baseline for the
-	// rollback-eligible current generation.
-	ClassRotationBaseline ObjectClass = "rotation-baseline"
 )
 
 // ObjectContext is an object's logical identity: stable across every move
@@ -68,20 +63,9 @@ func KeyTypeTemplateContext(keyType string) ObjectContext {
 	return ObjectContext{Class: ClassKeyTypeTemplate, Selector: keyType}
 }
 
-// RotationSnapshotContext identifies the single pending cutover snapshot.
-func RotationSnapshotContext() ObjectContext {
-	return ObjectContext{Class: ClassRotationSnapshot, Selector: "pending"}
-}
-
-// RotationBaselineContext identifies the current post-rewrap baseline.
-func RotationBaselineContext() ObjectContext {
-	return ObjectContext{Class: ClassRotationBaseline, Selector: "current"}
-}
-
 func (c ObjectContext) validate() error {
 	switch c.Class {
-	case ClassAccountKey, ClassSentryCredential, ClassKeyTypeTemplate,
-		ClassRotationSnapshot, ClassRotationBaseline:
+	case ClassAccountKey, ClassSentryCredential, ClassKeyTypeTemplate:
 	case "":
 		return fmt.Errorf("object context requires a class")
 	default:
@@ -92,16 +76,6 @@ func (c ObjectContext) validate() error {
 	}
 	if strings.ContainsRune(c.Selector, 0) {
 		return fmt.Errorf("object selector must not contain NUL")
-	}
-	switch c.Class {
-	case ClassRotationSnapshot:
-		if c.Selector != "pending" {
-			return fmt.Errorf("rotation snapshot selector must be %q", "pending")
-		}
-	case ClassRotationBaseline:
-		if c.Selector != "current" {
-			return fmt.Errorf("rotation baseline selector must be %q", "current")
-		}
 	}
 	return nil
 }
@@ -124,8 +98,7 @@ type encryptedDataTerm struct {
 // envelopeTerm reads the term a term-envelope names, without decrypting.
 func envelopeTerm(encryptedJSON []byte) (int64, error) {
 	var probe struct {
-		EnvelopeVersion int   `json:"envelope_version"`
-		Term            int64 `json:"term"`
+		EnvelopeVersion int `json:"envelope_version"`
 	}
 	if err := json.Unmarshal(encryptedJSON, &probe); err != nil {
 		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
@@ -136,10 +109,11 @@ func envelopeTerm(encryptedJSON []byte) (int64, error) {
 			probe.EnvelopeVersion, TermEnvelopeVersion,
 		)
 	}
-	if probe.Term <= 0 {
-		return 0, fmt.Errorf("term envelope has no term")
+	encrypted, err := parseTermEnvelope(encryptedJSON)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
 	}
-	return probe.Term, nil
+	return encrypted.Term, nil
 }
 
 // EnvelopeTerm reports the term named by a term envelope without returning
@@ -203,9 +177,12 @@ func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte
 }
 
 func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
-	var encrypted encryptedDataTerm
-	if err := json.Unmarshal(encryptedJSON, &encrypted); err != nil {
+	encrypted, err := parseTermEnvelope(encryptedJSON)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
+	if encrypted.Term != term {
+		return nil, fmt.Errorf("term envelope names term %d, expected %d", encrypted.Term, term)
 	}
 	nonce, err := base64.StdEncoding.DecodeString(encrypted.Nonce)
 	if err != nil {
@@ -230,4 +207,28 @@ func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]
 		return nil, fmt.Errorf("failed to decrypt %s: %w", ctx, err)
 	}
 	return plaintext, nil
+}
+
+func parseTermEnvelope(encoded []byte) (encryptedDataTerm, error) {
+	var encrypted encryptedDataTerm
+	if err := decodeJSONStrict(encoded, &encrypted); err != nil {
+		return encryptedDataTerm{}, err
+	}
+	if encrypted.EnvelopeVersion != TermEnvelopeVersion {
+		return encryptedDataTerm{}, fmt.Errorf(
+			"envelope_version %d is not a term envelope (expected %d)",
+			encrypted.EnvelopeVersion, TermEnvelopeVersion,
+		)
+	}
+	if encrypted.Term <= 0 {
+		return encryptedDataTerm{}, fmt.Errorf("term envelope has no term")
+	}
+	canonical, err := json.MarshalIndent(encrypted, "", "  ")
+	if err != nil {
+		return encryptedDataTerm{}, fmt.Errorf("canonicalize term envelope: %w", err)
+	}
+	if !bytes.Equal(encoded, canonical) {
+		return encryptedDataTerm{}, fmt.Errorf("term envelope is not canonical JSON")
+	}
+	return encrypted, nil
 }

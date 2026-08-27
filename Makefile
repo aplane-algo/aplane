@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-capacity-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -651,9 +651,16 @@ store-lifecycle-test:
 	@echo "Running blank-store lifecycle tests..."
 	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestFreshStoreBackupRestoreAndSign|TestStorePassphraseRotationPreservesSigningAndPriorGeneration)$$'
 
+# Opt-in release-layout capacity gate. It processes the full deleted-archive
+# warning threshold and records copy, re-encryption, seal, and retained-disk
+# measurements, so it is intentionally excluded from ordinary unit tests.
+store-capacity-test:
+	@echo "Running deleted-archive release capacity test..."
+	@APLANE_STORE_CAPACITY_TEST=1 go test -count=1 -timeout 20m -v ./internal/storepass -run '^TestDeletedArchiveReleaseCapacity$$'
+
 store-crash-test:
 	@echo "Running deterministic store crash and recovery tests..."
-	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestInterruptedRotationResumesOnUnlock|TestInterruptedRotationBeforeRootCommitKeepsOldAuthority|TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes|TestReconcileCommandPromotesVisibleUncertainRestore|TestInterruptedRestoreAfterCurrentFlipLoadsCommittedGeneration|TestRestoreReloadFailureRollsBackAutomatically|TestRestoreRepairsDamagedCredentialFromRecoveryMode|TestMalformedCurrentCredentialRemainsRecoveryBlocked)$$'
+	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestInterruptedChangePassBeforeRootReplacementKeepsOldAuthority|TestInterruptedChangePassAfterRootReplacementUsesNewAuthority|TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes|TestReconcileCommandPromotesVisibleUncertainRestore|TestInterruptedRestoreAfterStoreRootReplacementLoadsCommittedGeneration|TestRestoreReloadFailureEntersRecoveryUntilExplicitRollback|TestRestoreRepairsDamagedCredentialFromRecoveryMode|TestMalformedCurrentCredentialRemainsRecoveryBlocked)$$'
 
 # Exercise the exact production apsigner/apstore/apadmin binaries staged for a
 # release. Build them first with `make bin-amd64`, or point this at downloaded
@@ -972,6 +979,7 @@ help:
 	@echo "  make unit-test       - Run unit tests only (excludes integration tests)"
 	@echo "  make contract-test   - Run signer API golden fixture tests"
 	@echo "  make store-lifecycle-test - Run network-independent blank-store lifecycle tests"
+	@echo "  make store-capacity-test - Measure the deleted-archive release capacity contract"
 	@echo "  make store-crash-test - Run deterministic store crash/recovery tests"
 	@echo "  make store-release-drill - Exercise staged amd64 release binaries against a blank store"
 	@echo "  APLANE_INTEGRATION_NETWORK=testnet make integration-test - Regenerate fixture and run integration tests"

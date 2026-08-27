@@ -10,11 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -23,7 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -52,7 +51,6 @@ import (
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/productmode"
 )
 
 var restTestPassphrase = []byte("test-passphrase-for-unit-tests!")
@@ -140,19 +138,11 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths)
-	genstoretest.MintFirst(t, keyPaths)
-	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
-	keysDir := keyPaths.LegacyKeysDir()
-	if err := os.MkdirAll(keysDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(keysDir): %v", err)
-	}
-	if _, err := crypto.CreateKeyringStore(userDir, restTestPassphrase); err != nil {
-		t.Fatalf("CreateKeyringStore(): %v", err)
-	}
+	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, restTestPassphrase)
+	keyring.Zero()
+	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
@@ -1130,7 +1120,8 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
+			paths = genstoretest.BindActive(t, paths, genstoretest.Active(t, paths))
 			ir := tt.setup(t, paths)
 
 			resp, svcErr := Service{}.KeyTypes(ir)

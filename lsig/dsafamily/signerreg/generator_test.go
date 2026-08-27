@@ -202,7 +202,7 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
 	paths := utilkeys.NewPaths(".")
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}
@@ -585,11 +585,12 @@ func TestPublicKeyFormat(t *testing.T) {
 
 // TestKeysDirectoryCreation verifies automatic identities/default/keys/ directory creation
 func TestKeysDirectoryCreation(t *testing.T) {
-	paths, cleanup := setupTestKeystore(t)
+	_, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
 	// Ensure identities directory doesn't exist
 	_ = os.RemoveAll("identities")
+	paths := utilkeys.NewPaths(".")
 
 	generator := newTestGenerator()
 	seed := make([]byte, 64)

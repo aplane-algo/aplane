@@ -21,7 +21,7 @@ import (
 func TestSavePayloadEncrypted(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -73,7 +73,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
 	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	componentKey, err := payload.Selector()
@@ -137,7 +137,7 @@ func TestSavePayloadRejectsEmptyMasterKey(t *testing.T) {
 func TestSavePayloadDirectoryCreation(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -327,7 +328,24 @@ func isKeyTypeInList(keyType string, validTypes []string) bool {
 	return false
 }
 
-// DeleteKey moves a key file to the product-store deleted/keys directory.
+// DeleteKeyActive preflights the selected generation's closed deleted-archive
+// limits before moving a credential. The active credential remains untouched
+// when capacity is unavailable.
+func DeleteKeyActive(active storepaths.ActivePaths, address, keyFile string) (*DeleteResult, error) {
+	gen, ok := active.(storepaths.GenPaths)
+	if !ok {
+		return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
+	}
+	if _, err := genstore.PreflightDeletedArchiveAppend(gen, keyFile); err != nil {
+		return nil, err
+	}
+	return DeleteKey(address, keyFile, active.DeletedKeysDir())
+}
+
+// DeleteKey moves a key file to a caller-selected deleted/keys directory.
+// Production generation stores use DeleteKeyActive so capacity is checked
+// before mutation; this lower-level primitive remains useful for isolated
+// filesystem behavior tests.
 func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 	if err := fsutil.MkdirAllPrivate(deletedKeysDir); err != nil {
 		return nil, fmt.Errorf("failed to create deleted keys directory: %w", err)

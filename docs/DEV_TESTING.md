@@ -312,12 +312,13 @@ This creates `/tmp/aplane-test-env/` containing:
 │   └── identities/default/
 │       ├── .ssh/
 │       │   └── authorized_keys        # Product-store SSH client key authorization
-│       ├── keyring.enc            # Cryptographic root
+│       ├── store-root.enc         # Cryptographic root and active-generation selection
 │       ├── .keystore              # Store format marker
 │       ├── aplane.token           # Generated API token
-│       ├── policy.yaml            # Permissive integration-test node-role policy
-│       ├── policy.yaml.hmac       # Integrity sidecar for policy.yaml
-│       └── keys/                  # Empty key directory (tests generate keys)
+│       └── generations/<gen-id>/  # Active generation selected by store-root.enc
+│           ├── policy.yaml        # Permissive integration-test node-role policy
+│           ├── policy.yaml.hmac   # Integrity sidecar for policy.yaml
+│           └── keys/              # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
     ├── config.yaml                # Client config (network and algod settings)
@@ -871,6 +872,9 @@ APLANE_INTEGRATION_NETWORK=localnet make integration-test
 make store-lifecycle-test
 make store-crash-test
 
+# Full deleted-archive release capacity measurement (writes about 512 MiB retained)
+make store-capacity-test
+
 # Signer API contract tests
 make contract-test
 
@@ -939,6 +943,13 @@ uses semantic durability checkpoints rather than timing sleeps. Production
 builds use a no-op checkpoint implementation. The exact checkpoint contracts,
 release-binary drill, and covered failure states are documented in
 [`test/storeintegration/README.md`](../test/storeintegration/README.md).
+
+`make store-capacity-test` is a separate opt-in release gate. It fills the
+deleted archive to the exact operational warning threshold, proves the
+maximum-sized emergency-deletion reserve, performs a complete changepass, and
+logs copy time, re-encryption time, seal size, and retained disk cost. It is
+excluded from ordinary unit tests because it processes roughly 256 MiB per
+generation.
 
 LocalNet remains a thin network acceptance layer: the restored-key and
 post-rotation paths sign, submit, and confirm real transactions under
@@ -1240,6 +1251,7 @@ Day-to-day shortcuts:
 | Race detector pass | `make race-test` |
 | Blank-store lifecycle | `make store-lifecycle-test` |
 | Store crash/recovery | `make store-crash-test` |
+| Deleted-archive release capacity | `make store-capacity-test` |
 | Staged release binaries | `make store-release-drill STORE_RELEASE_BIN_DIR=/path/to/bin` |
 | Integration on testnet | `APLANE_INTEGRATION_NETWORK=testnet TEST_FUNDING_MNEMONIC=... make integration-test` |
 | Integration on LocalNet | `APLANE_INTEGRATION_NETWORK=localnet make integration-test` |

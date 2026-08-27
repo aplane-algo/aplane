@@ -52,7 +52,6 @@ func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *tes
 			PriorGenerations: 2,
 			HelperWarning:    "helper still has old passphrase",
 			RootCommitted:    true,
-			RotationPending:  true,
 			Code:             "passphrase_change_failed",
 			Error:            "injected completion failure",
 		},
@@ -61,7 +60,6 @@ func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *tes
 		msg.PriorGenerations != 2 ||
 		msg.HelperWarning == "" ||
 		!msg.RootCommitted ||
-		!msg.RotationPending ||
 		msg.Code != "passphrase_change_failed" {
 		t.Fatalf("failure recovery state was not preserved: %#v", msg)
 	}

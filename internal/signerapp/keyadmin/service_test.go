@@ -12,12 +12,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
-	"github.com/aplane-algo/aplane/internal/productmode"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -125,13 +123,11 @@ func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productrunti
 
 	tmpDir := t.TempDir()
 	keyPaths := storepaths.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, keyPaths)
-	userDir := filepath.Join(tmpDir, "identities", productmode.IdentityID)
-	if _, err := crypto.CreateKeyringStore(userDir, testPassphrase); err != nil {
-		t.Fatalf("CreateKeyringStore(): %v", err)
-	}
+	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, testPassphrase)
+	keyring.Zero()
+	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
-	ks := keystore.NewFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	if err := ks.Unlock(testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}

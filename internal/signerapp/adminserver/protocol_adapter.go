@@ -197,7 +197,6 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.Cha
 		PriorGenerations:         result.PriorGenerations,
 		HelperWarning:            result.HelperWarning,
 		RootCommitted:            result.RootCommitted,
-		RotationPending:          result.RotationPending,
 		Code:                     result.Code,
 		Error:                    result.Error,
 	}
@@ -442,11 +441,88 @@ func ProtocolExportSentryPublicResultMessage(id string, result adminproto.Export
 }
 
 func ProtocolGenerationsListMessage(id string, result adminproto.GenerationInventory) protocol.GenerationsListMessage {
+	quarantined := make([]protocol.QuarantinedGenerationInfo, 0, len(result.Quarantined))
+	for _, item := range result.Quarantined {
+		quarantined = append(quarantined, protocol.QuarantinedGenerationInfo{
+			GenerationID: item.GenerationID, ParentID: item.ParentID,
+			ManifestSHA256: item.ManifestSHA256, LiveInventorySHA256: item.LiveInventorySHA256,
+			AtMintInventoryMatch: item.AtMintInventoryMatch,
+			EntryCount:           item.EntryCount, EncodedBytes: item.EncodedBytes,
+			TermVerified: item.TermVerified, TermUnavailable: item.TermUnavailable,
+			TermFailed: item.TermFailed,
+		})
+	}
 	return protocol.GenerationsListMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGenerationsList, ID: id},
 		Current:     result.Current, SealedPriors: result.SealedPriors,
-		PendingAttempts: result.PendingAttempts, PendingStaging: result.PendingStaging,
+		Quarantined: quarantined, PendingStaging: result.PendingStaging,
 		RetainedUnsealedParent: result.RetainedUnsealedParent, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolPruneGenerationQuarantineResultMessage(
+	id string,
+	result adminproto.PruneGenerationQuarantineResult,
+) protocol.PruneGenerationQuarantineResultMessage {
+	pruned := make([]protocol.PrunedQuarantinedGeneration, 0, len(result.Pruned))
+	for _, item := range result.Pruned {
+		pruned = append(pruned, protocol.PrunedQuarantinedGeneration{
+			GenerationID:  item.GenerationID,
+			EncodedBytes:  item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.PruneGenerationQuarantineResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePruneGenerationQuarantineResult,
+			ID:   id,
+		},
+		Success: result.Success,
+		Pruned:  pruned,
+		Code:    result.Code,
+		Error:   result.Error,
+	}
+}
+
+func ProtocolDiscardAbandonedGenerationsResultMessage(
+	id string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) protocol.DiscardAbandonedGenerationsResultMessage {
+	discarded := make([]protocol.PrunedQuarantinedGeneration, 0, len(result.Discarded))
+	for _, item := range result.Discarded {
+		discarded = append(discarded, protocol.PrunedQuarantinedGeneration{
+			GenerationID: item.GenerationID, EncodedBytes: item.EncodedBytes,
+			AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.DiscardAbandonedGenerationsResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDiscardAbandonedGenerationsResult, ID: id},
+		Success:     result.Success, Discarded: discarded, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolDeletedArchiveListMessage(id string, result adminproto.DeletedArchiveInventory) protocol.DeletedArchiveListMessage {
+	entries := make([]protocol.DeletedArchiveEntry, 0, len(result.Entries))
+	for _, item := range result.Entries {
+		entries = append(entries, protocol.DeletedArchiveEntry{Path: item.Path, EncodedBytes: item.EncodedBytes})
+	}
+	return protocol.DeletedArchiveListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDeletedArchiveList, ID: id},
+		Entries:     entries, EntryCount: result.EntryCount, EncodedBytes: result.EncodedBytes,
+		Warning: result.Warning, Code: result.Code, Error: result.Error,
+	}
+}
+
+func ProtocolPruneDeletedArchiveResultMessage(id string, result adminproto.PruneDeletedArchiveResult) protocol.PruneDeletedArchiveResultMessage {
+	pruned := make([]protocol.PrunedDeletedArchiveEntry, 0, len(result.Pruned))
+	for _, item := range result.Pruned {
+		pruned = append(pruned, protocol.PrunedDeletedArchiveEntry{
+			Path: item.Path, EncodedBytes: item.EncodedBytes, AlreadyAbsent: item.AlreadyAbsent,
+		})
+	}
+	return protocol.PruneDeletedArchiveResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchiveResult, ID: id},
+		Success:     result.Success, Pruned: pruned, Code: result.Code, Error: result.Error,
 	}
 }
 

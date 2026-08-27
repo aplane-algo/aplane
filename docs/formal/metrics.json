@@ -51,20 +51,15 @@
     "depth": 10
   },
   {
-    "spec": "generation_commit",
-    "distinct_states": 41,
-    "depth": 10
-  },
-  {
-    "spec": "rotation_transition",
-    "distinct_states": 52,
+    "spec": "store_root_commit",
+    "distinct_states": 14,
     "depth": 9
   },
   {
-    "spec": "rotation_transition",
-    "cfg": "rotation_transition_negative",
-    "expected_invariant_violation": "R5_NoSecondAppend",
-    "distinct_states": 21,
-    "depth": 4
+    "spec": "store_root_commit",
+    "cfg": "store_root_commit_negative",
+    "expected_invariant_violation": "S5_NoUnpinnedPromotion",
+    "distinct_states": 13,
+    "depth": 7
   }
 ]

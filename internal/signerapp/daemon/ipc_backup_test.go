@@ -126,7 +126,11 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	}) {
 		t.Fatalf("restore response = %#v", restoreMessages)
 	}
-	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, generated.Address)); err != nil {
+	active, err := ir.ActivePaths()
+	if err != nil {
+		t.Fatalf("ActivePaths() error = %v", err)
+	}
+	if _, err := os.Stat(keys.AccountKeyFilePathActive(active, generated.Address)); err != nil {
 		t.Fatalf("restored key stat error = %v", err)
 	}
 	if ir.KeyCount() != 1 {

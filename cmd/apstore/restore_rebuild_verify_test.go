@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -89,18 +90,18 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if !apcrypto.KeyringExistsIn(keystorePaths().KeystoreMetadataDir()) {
-		t.Fatal("keystore metadata missing after rebuild")
+	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
+		t.Fatal("store root missing after rebuild")
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), address)); err != nil {
-		t.Fatalf("rebuilt key file missing: %v", err)
-	}
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
+	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(active, address)); err != nil {
+		t.Fatalf("rebuilt key file missing: %v", err)
+	}
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
@@ -142,22 +143,22 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
 
-	kr, err := apcrypto.OpenKeyringStore(keystorePaths().KeystoreMetadataDir(), []byte("new-store-passphrase"))
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))
 	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	role, err := noderole.LoadAndVerifyWithKeyring(keystorePaths(), kr)
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("rebuilt node role = %q, want sentry", role.Role)
 	}
-	if _, err := os.Stat(apkeys.SentryCredentialFilePath(keystorePaths(), componentKey)); err != nil {
+	if _, err := os.Stat(apkeys.SentryCredentialFilePathActive(active, componentKey)); err != nil {
 		t.Fatalf("rebuilt sentry key file missing: %v", err)
 	}
-	env, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), componentKey)
+	env, ok, err := apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
 	if err != nil {
 		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}
@@ -351,7 +352,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	if firstType != "ed25519" || secondType != "ed25519" {
 		t.Fatalf("restoreKey() key types = %q, %q, want ed25519 both times", firstType, secondType)
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); err != nil {
 		t.Fatalf("restored key file missing after repeated restore: %v", err)
 	}
 }
@@ -392,7 +393,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	dataDirectory = t.TempDir()
 	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
-	paths := keystorePaths()
+	paths := boundKeystorePaths(t)
 	masterKey := bytes32(0x8b)
 	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
@@ -419,7 +420,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); err != nil {
 		t.Fatalf("restored key file missing: %v", err)
 	}
 }
@@ -448,7 +449,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if !strings.Contains(err.Error(), "signing_metadata_version") {
 		t.Fatalf("restoreKey() error = %v, want signing metadata context", err)
 	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), address)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no key file written after missing signing metadata, got stat err=%v", statErr)
 	}
 }
@@ -485,7 +486,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected standalone key restore not to materialize shipped library generic template")
 	}
 }
@@ -524,7 +525,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(keystorePaths(), keyType, templatestore.TemplateTypeComposed) {
+	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatestore.TemplateTypeComposed) {
 		t.Fatal("expected standalone key restore not to materialize shipped library composed template")
 	}
 }
@@ -533,7 +534,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	dataDirectory = t.TempDir()
 	genstoretest.MintFirst(t, keystorePaths())
 	backupDir := t.TempDir()
-	paths := keystorePaths()
+	paths := boundKeystorePaths(t)
 	masterKey := bytes32(0x8f)
 	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
@@ -562,17 +563,24 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 }
 
 func keyTypeEnabled(paths storepaths.Paths, keyType string) bool {
+	if bound, err := genstoretest.BindDefault(paths); err == nil {
+		paths = bound
+	}
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
 func keyTypeDisabled(paths storepaths.Paths, keyType string) bool {
+	if bound, err := genstoretest.BindDefault(paths); err == nil {
+		paths = bound
+	}
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 
 func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
 	t.Helper()
+	paths = genstoretest.BindActive(t, paths, genstoretest.Active(t, paths))
 	var source keytypestate.Source
 	switch templateType {
 	case templatestore.TemplateTypeGeneric:
@@ -589,6 +597,15 @@ func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, keyT
 	}); err != nil {
 		t.Fatalf("keytypestate.Put() error = %v", err)
 	}
+}
+
+func boundKeystorePaths(t *testing.T) storepaths.Paths {
+	t.Helper()
+	paths, err := genstoretest.BindDefault(keystorePaths())
+	if err != nil {
+		t.Fatalf("bind test store: %v", err)
+	}
+	return paths
 }
 
 func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {

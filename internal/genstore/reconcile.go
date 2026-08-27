@@ -15,13 +15,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// ReconcileReport records what startup reconciliation found and removed.
+// ReconcileReport records what startup reconciliation found and changed.
 type ReconcileReport struct {
 	Current string
-	// DiscardedAttempts are published-but-uncommitted generations that were
-	// deleted (non-current, unsealed, unreferenced). Each is an activation
-	// or migration that never committed; the operator reviews again.
-	DiscardedAttempts []string
+	// Quarantined are safely relocatable, published-but-uncommitted
+	// generations (non-current, unsealed, unreferenced). Inspect reports what
+	// Reconcile would quarantine; Reconcile moves them without granting them
+	// selection, rollback, or historical authority.
+	Quarantined []QuarantineRecord
 	// DiscardedStaging are .staging-* directories that never published,
 	// plus orphaned durable-write temp files (seal.json.tmp-*) inside the
 	// current generation — both crash residue that never carried state.
@@ -36,40 +37,40 @@ type ReconcileReport struct {
 	RetainedUnsealedParent string
 }
 
-// Inspect classifies the generations directory without deleting anything:
-// the same validation and classification Reconcile applies, with
-// DiscardedStaging and DiscardedAttempts reporting what reconciliation
-// WOULD remove. Read-only callers (apadmin generations list) use this;
-// everything else goes through Reconcile.
-func Inspect(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
-	return reconcile(paths, referenced, false)
-}
-
-// Reconcile enforces CURRENT as the sole commit record. Run at
-// startup/unlock under the store and store mutation locks, before any
-// new operation:
-//
-//   - CURRENT names a valid generation → it is authoritative; every
-//     published-but-uncommitted attempt (non-current, unsealed, not in
-//     referenced) is discarded, never resumed. Staging directories are
-//     unconditionally garbage.
-//   - CURRENT missing or invalid → error; the caller enters recovery mode
-//     and nothing is deleted.
-//
-// referenced names generation IDs that incomplete-operation or audit
-// recovery metadata still points at; those survive regardless of seal
-// state. Eligibility is reachability-based, not parentage-based: a stale
-// attempt whose parent has since been superseded is still collected.
-func Reconcile(paths storepaths.Paths, referenced map[string]bool) (ReconcileReport, error) {
-	return reconcile(paths, referenced, true)
-}
-
-func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) (ReconcileReport, error) {
-	report := ReconcileReport{}
-	current, err := ReadCurrent(paths)
+// InspectStoreRoot authenticates a fresh root read and classifies generation
+// residue without changing it.
+func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map[string]bool) (ReconcileReport, error) {
+	current, err := selectedGenerationFromStoreRoot(paths, kr)
 	if err != nil {
-		return report, fmt.Errorf("reconcile: %w", err)
+		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
 	}
+	return reconcileSelected(paths, current, kr, referenced, false)
+}
+
+// ReconcileStoreRoot authenticates the sole commit record before relocating or
+// deleting any residue. The caller holds the mutation lock and an open keyring.
+func ReconcileStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map[string]bool) (ReconcileReport, error) {
+	current, err := selectedGenerationFromStoreRoot(paths, kr)
+	if err != nil {
+		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
+	}
+	return reconcileSelected(paths, current, kr, referenced, true)
+}
+
+func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (string, error) {
+	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	if err != nil {
+		return "", err
+	}
+	selection, err := crypto.AuthenticateStoreRoot(exact, kr)
+	if err != nil {
+		return "", fmt.Errorf("authenticate store root: %w", err)
+	}
+	return selection.CurrentGenerationID, nil
+}
+
+func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) {
+	report := ReconcileReport{}
 	report.Current = current
 
 	// Everything below deletes state, so the committed generation must be
@@ -89,15 +90,15 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	retainedParent := manifest.ParentID
 
 	if remove {
-		// Re-confirm the CURRENT flip's durability. A commit that ended in
-		// ErrCommitDurabilityUnknown left the pointer visible but its
+		// Re-confirm the commit record's directory durability. A commit that
+		// ended with an uncertainty error may have left the root visible but its
 		// directory fsync unproven; nothing else ever re-syncs it, so the
 		// next unlock would resume signing on a flip a later power loss
 		// could silently revert. Reconciliation is the designated healing
 		// point: fsync the identity directory so the pointer read above is
 		// durably the pointer.
 		if err := fsutil.SyncDir(paths.ProductDir()); err != nil {
-			return report, fmt.Errorf("reconcile: confirm CURRENT durability: %w", err)
+			return report, fmt.Errorf("reconcile: confirm store root durability: %w", err)
 		}
 	}
 
@@ -108,7 +109,7 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	// they are removed.
 	currentDir := paths.GenerationPaths(current).Dir()
 	residueDirs := []string{currentDir}
-	for _, namespace := range generationNamespaces {
+	for _, namespace := range generationLeafNamespaces {
 		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
 	}
 	for _, dir := range residueDirs {
@@ -141,6 +142,10 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	entries, err := os.ReadDir(generationsDir)
 	if err != nil {
 		return report, err
+	}
+	quarantineCount, quarantineBytes, err := quarantineUsage(paths)
+	if err != nil {
+		return report, fmt.Errorf("inspect generation quarantine: %w", err)
 	}
 	removedAny := false
 	for _, entry := range entries {
@@ -175,15 +180,29 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 				}
 				continue
 			}
-			// Non-current and unsealed: by construction an uncommitted
-			// attempt (the seal precedes every flip). Discard.
-			if remove {
-				if err := os.RemoveAll(gen.Dir()); err != nil {
-					return report, fmt.Errorf("discard uncommitted generation %s: %w", name, err)
-				}
-				removedAny = true
+			// Non-current and unsealed is ambiguous: normally it is an
+			// uncommitted attempt, but restoring an older authentic store root
+			// can give the real newer state the same shape. Classify it only for
+			// safe bounded relocation; quarantine never grants authority.
+			candidate, err := classifyQuarantineCandidate(gen, kr)
+			if err != nil {
+				return report, fmt.Errorf(
+					"generation %s cannot be safely quarantined and was preserved in place: %w",
+					name,
+					err,
+				)
 			}
-			report.DiscardedAttempts = append(report.DiscardedAttempts, name)
+			if err := checkQuarantineCapacity(quarantineCount, quarantineBytes, candidate); err != nil {
+				return report, err
+			}
+			if remove {
+				if err := quarantinePublication(paths, candidate); err != nil {
+					return report, err
+				}
+			}
+			report.Quarantined = append(report.Quarantined, candidate)
+			quarantineCount++
+			quarantineBytes += candidate.EncodedBytes
 		}
 	}
 	if removedAny {
@@ -200,21 +219,17 @@ func reconcile(paths storepaths.Paths, referenced map[string]bool, remove bool) 
 	return report, nil
 }
 
-// CollectGarbage removes sealed prior generations beyond the retention set:
-// the current generation, its manifest's ParentID (the true rollback target,
-// unless retainRollbackParent is false — the pre-rotation quiescence prune),
-// and anything in referenced. Retention is manifest-driven, never
-// ID-ordering-driven: same-second mints tie-break on a random suffix, and
-// after a rollback the "newest" prior is the rolled-away child rather than
-// an ancestor. Never call during activation, rotation, reload, or
-// migration; the caller holds the mutation locks. Reconcile runs first
-// (staging and unsealed attempts are discarded, an invalid CURRENT aborts
-// with nothing deleted).
-func CollectGarbage(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
-	report, err := Reconcile(paths, referenced)
+// CollectGarbageStoreRoot prunes retained generations only after the sole
+// store root and its selection have been authenticated under kr.
+func CollectGarbageStoreRoot(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
+	report, err := ReconcileStoreRoot(paths, kr, referenced)
 	if err != nil {
 		return nil, err
 	}
+	return collectGarbageFromReport(paths, referenced, retainRollbackParent, kr, report)
+}
+
+func collectGarbageFromReport(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring, report ReconcileReport) ([]string, error) {
 	// Reconcile has already validated the current generation (structure and
 	// manifest completeness) before its own deletions; nothing here runs
 	// against an unvalidated current.

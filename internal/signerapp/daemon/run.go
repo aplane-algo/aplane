@@ -222,11 +222,11 @@ func Run(dataDir string) int {
 	if startLocked {
 		logInfof("signer runtime initialized (waiting for apadmin connection)")
 	} else {
-		// Generation-based stores reconcile before startup unlock: CURRENT
-		// is the sole commit record; uncommitted attempts are discarded and
-		// the selected generation must validate, else recovery mode.
+		// Authenticate the sole store root and reconcile residue before
+		// publishing any signing state. Selected-generation damage enters
+		// recovery with the root keyring available.
 		adminServices := server.adminServices()
-		generationErr := adminServices.reconcileGenerations(ir)
+		generationErr := adminServices.reconcileGenerations(ir, startPassphrase)
 		if generationErr != nil {
 			success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
 			crypto.ZeroBytes(startPassphrase)
@@ -236,19 +236,6 @@ func Run(dataDir string) int {
 			}
 			logWarnf("identity is recovery-blocked: %v", generationErr)
 			startPassphrase = nil
-		}
-		if generationErr == nil {
-			rotationErr := adminServices.completePendingRotation(ir, startPassphrase)
-			if rotationErr != nil {
-				success, errMsg := ir.TryRecoveryUnlock(startPassphrase)
-				crypto.ZeroBytes(startPassphrase)
-				if !success {
-					logErrorf("error unlocking rotation-blocked store: %s", errMsg)
-					return 1
-				}
-				logWarnf("identity is recovery-blocked by incomplete key rotation: %v", rotationErr)
-				startPassphrase = nil
-			}
 		}
 		if generationErr == nil && startPassphrase != nil {
 			// Headless mode: load keys using passphrase, then zero it immediately.

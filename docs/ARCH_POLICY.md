@@ -42,13 +42,13 @@ Policy is product-scoped and stored in one role-dependent document under the
 retained product namespace:
 
 ```text
-identities/default/policy.yaml
+identities/default/generations/<selected-generation>/policy.yaml
 ```
 
 The signer keeps a sibling integrity sidecar:
 
 ```text
-identities/default/policy.yaml.hmac
+identities/default/generations/<selected-generation>/policy.yaml.hmac
 ```
 
 The HMAC covers the exact YAML bytes for the document and uses a key derived
@@ -78,8 +78,8 @@ Signing and sentry component policy use the same filename, selected by the
 root `node.yaml` role:
 
 ```text
-identities/default/policy.yaml
-identities/default/policy.yaml.hmac
+identities/default/generations/<selected-generation>/policy.yaml
+identities/default/generations/<selected-generation>/policy.yaml.hmac
 ```
 
 The sidecar uses the policy integrity key derived from the product store's current

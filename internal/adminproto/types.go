@@ -199,7 +199,6 @@ type ChangeStorePassphraseResult struct {
 	PriorGenerations         int
 	HelperWarning            string
 	RootCommitted            bool
-	RotationPending          bool
 	Code                     string
 	Error                    string
 }
@@ -265,7 +264,7 @@ type RestoreBackupResult struct {
 	ArchiveSHA256 string
 	GenerationID  string
 	// CommitUncertain is process-local audit metadata. It is set when the
-	// CURRENT flip is visible but its durability could not be confirmed and
+	// store-root replacement is visible but its durability could not be confirmed and
 	// is deliberately not projected onto the admin protocol.
 	CommitUncertain bool
 	Restored        []RestoreCredential
@@ -372,11 +371,83 @@ type ExportSentryPublicResult struct {
 type GenerationInventory struct {
 	Current                string
 	SealedPriors           []string
-	PendingAttempts        []string
+	Quarantined            []QuarantinedGenerationInfo
 	PendingStaging         []string
 	RetainedUnsealedParent string
 	Code                   string
 	Error                  string
+}
+
+type QuarantinedGenerationInfo struct {
+	GenerationID         string
+	ParentID             string
+	ManifestSHA256       string
+	LiveInventorySHA256  string
+	AtMintInventoryMatch bool
+	EntryCount           int
+	EncodedBytes         int64
+	TermVerified         int
+	TermUnavailable      int
+	TermFailed           int
+}
+
+type PruneGenerationQuarantineRequest struct {
+	GenerationIDs []string
+}
+
+type PrunedQuarantinedGeneration struct {
+	GenerationID  string
+	EncodedBytes  int64
+	AlreadyAbsent bool
+}
+
+type PruneGenerationQuarantineResult struct {
+	Success bool
+	Pruned  []PrunedQuarantinedGeneration
+	Code    string
+	Error   string
+}
+
+type DiscardAbandonedGenerationsRequest struct {
+	GenerationIDs []string
+}
+
+type DiscardAbandonedGenerationsResult struct {
+	Success   bool
+	Discarded []PrunedQuarantinedGeneration
+	Code      string
+	Error     string
+}
+
+type DeletedArchiveInventory struct {
+	Entries      []DeletedArchiveEntry
+	EntryCount   int
+	EncodedBytes int64
+	Warning      bool
+	Code         string
+	Error        string
+}
+
+type DeletedArchiveEntry struct {
+	Path         string
+	EncodedBytes int64
+}
+
+type PruneDeletedArchiveRequest struct {
+	Entries []string
+}
+
+type PrunedDeletedArchiveEntry struct {
+	Path          string
+	EncodedBytes  int64
+	AlreadyAbsent bool
+}
+
+type PruneDeletedArchiveResult struct {
+	Success bool
+	Pruned  []PrunedDeletedArchiveEntry
+	Code    string
+	Error   string
 }
 
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.

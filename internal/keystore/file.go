@@ -26,7 +26,8 @@ import (
 
 // FileKeyStore implements KeyStore using encrypted files on disk
 type FileKeyStore struct {
-	paths storepaths.Paths
+	paths  storepaths.Paths
+	active *storepaths.GenPaths
 
 	// Cache of address -> KeyScanInfo (populated by Scan)
 	// Contains both file path and key type from single decrypt
@@ -49,8 +50,9 @@ type SigningSummary struct {
 	LogicSigResources      *lsigresource.Profile
 }
 
-// NewFileKeyStoreForPaths creates a new file-based key store rooted at the provided keystore paths.
-func NewFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
+// NewAtomicFileKeyStoreForPaths creates a file store whose unlock and reload
+// authenticate generation selection from store-root.enc.
+func NewAtomicFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 	return &FileKeyStore{
 		paths: paths,
 		cache: make(map[string]keys.KeyScanInfo),
@@ -64,8 +66,7 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 // verifier to consult. Callers receive no key material: the keyring hands out
 // operations, not bytes.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
-	keystoreRoot := f.paths.KeystoreMetadataDir()
-	kr, err := crypto.OpenKeyringStore(keystoreRoot, passphrase)
+	resolved, kr, err := genstore.OpenStoreRootSelection(f.paths, passphrase)
 	if err != nil {
 		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
@@ -74,6 +75,7 @@ func (f *FileKeyStore) Unlock(passphrase []byte) error {
 		f.keyring.Zero()
 	}
 	f.keyring = kr
+	f.active = &resolved
 	f.cacheLock.Unlock()
 	return nil
 }
@@ -104,26 +106,22 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked after unlock")
 	}
-	if err := f.keyring.RequireSettled(); err != nil {
-		f.cacheLock.RUnlock()
-		return fmt.Errorf("keystore key scan blocked: %w", err)
-	}
-	// Resolve the active layout once per scan: on a generational store this
-	// binds the scan (and the absolute KeyFile paths it caches) to the
-	// generation CURRENT names right now, so every reload after a pointer
-	// flip rebuilds the cache against the new generation.
-	active, resolveErr := genstore.ResolveActive(f.paths)
+	// Resolve the active layout once per scan. Atomic stores authenticate a
+	// fresh exact root read while the keyring is held, so every reload after a
+	// root commit rebuilds the cache against the newly selected generation.
+	resolvedAtomic, resolveErr := genstore.ResolveStoreRootWithKeyring(f.paths, f.keyring)
 	if resolveErr != nil {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)
 	}
-	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(active, f.keyring)
+	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(resolvedAtomic, f.keyring)
 	f.cacheLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to scan keys directory: %w", err)
 	}
 
 	f.cacheLock.Lock()
+	f.active = &resolvedAtomic
 	f.cache = report.Keys
 	f.scanWarnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
 	f.cacheLock.Unlock()
@@ -140,9 +138,6 @@ func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	if f.keyring == nil {
 		return fmt.Errorf("keystore not unlocked (keyring not available): %w", ErrStoreLocked)
 	}
-	if err := f.keyring.RequireSettled(); err != nil {
-		return err
-	}
 	return fn(f.keyring)
 }
 
@@ -154,7 +149,23 @@ func (f *FileKeyStore) ClearKeys() {
 		f.keyring.Zero()
 		f.keyring = nil
 	}
+	f.active = nil
 	f.cacheLock.Unlock()
+}
+
+// ActivePaths returns the generation authenticated by the most recent atomic
+// root unlock or reload. The returned value is a copy and carries no key
+// material.
+func (f *FileKeyStore) ActivePaths() (storepaths.GenPaths, error) {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	if f.keyring == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("store is not unlocked: %w", ErrStoreLocked)
+	}
+	if f.active == nil {
+		return storepaths.GenPaths{}, fmt.Errorf("atomic store root is not unlocked: %w", ErrStoreLocked)
+	}
+	return *f.active, nil
 }
 
 // ClearCache removes scanned key metadata while preserving the unlocked master
@@ -213,10 +224,6 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	if f.keyring == nil {
 		f.cacheLock.RUnlock()
 		return nil, fmt.Errorf("keystore not unlocked: %w", ErrStoreLocked)
-	}
-	if err := f.keyring.RequireSettled(); err != nil {
-		f.cacheLock.RUnlock()
-		return nil, fmt.Errorf("keystore signing blocked: %w", err)
 	}
 	// Decrypt under the read lock, straight from the keyring: no term key
 	// copy is made, so none can outlive the lock or survive ClearKeys.
@@ -378,10 +385,6 @@ func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
 	if f.keyring == nil {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore mutation blocked: %w", ErrStoreLocked)
-	}
-	if err := f.keyring.RequireSettled(); err != nil {
-		f.cacheLock.RUnlock()
-		return fmt.Errorf("keystore mutation blocked: %w", err)
 	}
 	info, exists := f.cache[address]
 	f.cacheLock.RUnlock()

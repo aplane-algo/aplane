@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
@@ -22,66 +23,86 @@ type AuditEventType string
 const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 
 const (
-	AuditSignRequest                AuditEventType = "SIGN_REQUEST"
-	AuditSignApproved               AuditEventType = "SIGN_APPROVED"
-	AuditSignRejected               AuditEventType = "SIGN_REJECTED"
-	AuditSignFailed                 AuditEventType = "SIGN_FAILED"
-	AuditAuthFailed                 AuditEventType = "AUTH_FAILED"
-	AuditAuthorizationDenied        AuditEventType = "AUTHORIZATION_DENIED"
-	AuditServerStart                AuditEventType = "SERVER_START"
-	AuditServerStop                 AuditEventType = "SERVER_STOP"
-	AuditServerStopIncomplete       AuditEventType = "SERVER_STOP_INCOMPLETE"
-	AuditKeyReload                  AuditEventType = "KEY_RELOAD"
-	AuditSessionConnected           AuditEventType = "SESSION_CONNECTED"
-	AuditSessionDisconnected        AuditEventType = "SESSION_DISCONNECTED"
-	AuditIdentityLocked             AuditEventType = "IDENTITY_LOCKED"
-	AuditTokenProvisioned           AuditEventType = "TOKEN_PROVISIONED"
-	AuditKeyGenerated               AuditEventType = "KEY_GENERATED"
-	AuditKeyDeleted                 AuditEventType = "KEY_DELETED"
-	AuditKeyImported                AuditEventType = "KEY_IMPORTED"
-	AuditKeyRejected                AuditEventType = "KEY_REJECTED"
-	AuditBackupCreated              AuditEventType = "BACKUP_CREATED"
-	AuditBackupFailed               AuditEventType = "BACKUP_FAILED"
-	AuditBackupRestorePreviewed     AuditEventType = "BACKUP_RESTORE_PREVIEWED"
-	AuditBackupRestorePreviewFailed AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
-	AuditCredentialRestoreIntent    AuditEventType = "CREDENTIAL_RESTORE_INTENT"
-	AuditCredentialRestoreSuccess   AuditEventType = "CREDENTIAL_RESTORE_SUCCEEDED"
-	AuditCredentialRestoreFailed    AuditEventType = "CREDENTIAL_RESTORE_FAILED"
-	AuditCredentialRestoreUncertain AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
-	AuditCredentialRestoreRollback  AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
-	AuditStoreInitialized           AuditEventType = "STORE_INITIALIZED"
-	AuditStoreInitializeFailed      AuditEventType = "STORE_INITIALIZE_FAILED"
-	AuditPassphraseChanged          AuditEventType = "PASSPHRASE_CHANGED"
-	AuditPassphraseChangeFailed     AuditEventType = "PASSPHRASE_CHANGE_FAILED"
-	AuditSentryReferenceChanged     AuditEventType = "SENTRY_REFERENCE_CHANGED"
-	AuditBackupImported             AuditEventType = "BACKUP_IMPORTED"
-	AuditBackupExportStarted        AuditEventType = "BACKUP_EXPORT_STARTED"
+	AuditSignRequest                      AuditEventType = "SIGN_REQUEST"
+	AuditSignApproved                     AuditEventType = "SIGN_APPROVED"
+	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
+	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
+	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
+	AuditAuthorizationDenied              AuditEventType = "AUTHORIZATION_DENIED"
+	AuditServerStart                      AuditEventType = "SERVER_START"
+	AuditServerStop                       AuditEventType = "SERVER_STOP"
+	AuditServerStopIncomplete             AuditEventType = "SERVER_STOP_INCOMPLETE"
+	AuditKeyReload                        AuditEventType = "KEY_RELOAD"
+	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
+	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
+	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditTokenProvisioned                 AuditEventType = "TOKEN_PROVISIONED"
+	AuditKeyGenerated                     AuditEventType = "KEY_GENERATED"
+	AuditKeyDeleted                       AuditEventType = "KEY_DELETED"
+	AuditKeyImported                      AuditEventType = "KEY_IMPORTED"
+	AuditKeyRejected                      AuditEventType = "KEY_REJECTED"
+	AuditBackupCreated                    AuditEventType = "BACKUP_CREATED"
+	AuditBackupFailed                     AuditEventType = "BACKUP_FAILED"
+	AuditBackupRestorePreviewed           AuditEventType = "BACKUP_RESTORE_PREVIEWED"
+	AuditBackupRestorePreviewFailed       AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
+	AuditCredentialRestoreIntent          AuditEventType = "CREDENTIAL_RESTORE_INTENT"
+	AuditCredentialRestoreSuccess         AuditEventType = "CREDENTIAL_RESTORE_SUCCEEDED"
+	AuditCredentialRestoreFailed          AuditEventType = "CREDENTIAL_RESTORE_FAILED"
+	AuditCredentialRestoreUncertain       AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
+	AuditCredentialRestoreRollback        AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
+	AuditStoreInitialized                 AuditEventType = "STORE_INITIALIZED"
+	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
+	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
+	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
+	AuditSentryReferenceChanged           AuditEventType = "SENTRY_REFERENCE_CHANGED"
+	AuditBackupImported                   AuditEventType = "BACKUP_IMPORTED"
+	AuditBackupExportStarted              AuditEventType = "BACKUP_EXPORT_STARTED"
+	AuditGenerationQuarantineIntent       AuditEventType = "GENERATION_QUARANTINE_INTENT"
+	AuditGenerationQuarantined            AuditEventType = "GENERATION_QUARANTINED"
+	AuditGenerationQuarantinePruneIntent  AuditEventType = "GENERATION_QUARANTINE_PRUNE_INTENT"
+	AuditGenerationQuarantinePruned       AuditEventType = "GENERATION_QUARANTINE_PRUNED"
+	AuditGenerationAbandonedDiscardIntent AuditEventType = "GENERATION_ABANDONED_DISCARD_INTENT"
+	AuditGenerationAbandonedDiscarded     AuditEventType = "GENERATION_ABANDONED_DISCARDED"
+	AuditDeletedArchivePruneIntent        AuditEventType = "DELETED_ARCHIVE_PRUNE_INTENT"
+	AuditDeletedArchivePruned             AuditEventType = "DELETED_ARCHIVE_PRUNED"
 )
 
 // AuditEntry represents a single audit log entry
 type AuditEntry struct {
-	Timestamp          time.Time      `json:"timestamp"`
-	Event              AuditEventType `json:"event"`
-	Principal          string         `json:"principal,omitempty"`           // General principal attribution
-	RequesterPrincipal string         `json:"requester_principal,omitempty"` // Principal requesting the action
-	ApproverPrincipal  string         `json:"approver_principal,omitempty"`  // Principal approving or rejecting the action
-	AdminSessionID     string         `json:"admin_session_id,omitempty"`    // Admin protocol session ID
-	Transport          string         `json:"transport,omitempty"`           // ipc, ssh, http, or empty for process-level events
-	Outcome            string         `json:"outcome,omitempty"`             // requested, approved, rejected, failed, etc.
-	TxnAuth            string         `json:"txn_auth,omitempty"`            // Signing key address (auth addr)
-	TxnSender          string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
-	TxnType            string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
-	TxnDetails         string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
-	TxID               string         `json:"txid,omitempty"`                // Transaction ID (after signing)
-	RemoteAddr         string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
-	Reason             string         `json:"reason,omitempty"`              // Rejection/failure reason
-	PolicyRuleID       string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
-	WitnessKeyID       string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
-	MigrationOrigin    string         `json:"migration_origin,omitempty"`    // Closed historical origin for migrated sentry references
-	KeyCount           int            `json:"key_count,omitempty"`           // For key reload events
-	ArchiveSHA256      string         `json:"archive_sha256,omitempty"`
-	ReplaceExisting    bool           `json:"replace_existing,omitempty"`
-	OperationID        string         `json:"operation_id,omitempty"`
+	Timestamp            time.Time      `json:"timestamp"`
+	Event                AuditEventType `json:"event"`
+	Principal            string         `json:"principal,omitempty"`           // General principal attribution
+	RequesterPrincipal   string         `json:"requester_principal,omitempty"` // Principal requesting the action
+	ApproverPrincipal    string         `json:"approver_principal,omitempty"`  // Principal approving or rejecting the action
+	AdminSessionID       string         `json:"admin_session_id,omitempty"`    // Admin protocol session ID
+	Transport            string         `json:"transport,omitempty"`           // ipc, ssh, http, or empty for process-level events
+	Outcome              string         `json:"outcome,omitempty"`             // requested, approved, rejected, failed, etc.
+	TxnAuth              string         `json:"txn_auth,omitempty"`            // Signing key address (auth addr)
+	TxnSender            string         `json:"txn_sender,omitempty"`          // Transaction sender (if different)
+	TxnType              string         `json:"txn_type,omitempty"`            // Transaction type (pay, axfer, etc)
+	TxnDetails           string         `json:"txn_details,omitempty"`         // Human-readable transaction summary
+	TxID                 string         `json:"txid,omitempty"`                // Transaction ID (after signing)
+	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
+	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
+	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
+	WitnessKeyID         string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
+	MigrationOrigin      string         `json:"migration_origin,omitempty"`    // Closed historical origin for migrated sentry references
+	KeyCount             int            `json:"key_count,omitempty"`           // For key reload events
+	ArchiveSHA256        string         `json:"archive_sha256,omitempty"`
+	ReplaceExisting      bool           `json:"replace_existing,omitempty"`
+	OperationID          string         `json:"operation_id,omitempty"`
+	GenerationIDs        []string       `json:"generation_ids,omitempty"`
+	ByteCount            int64          `json:"byte_count,omitempty"`
+	GenerationID         string         `json:"generation_id,omitempty"`
+	ParentGenerationID   string         `json:"parent_generation_id,omitempty"`
+	ManifestSHA256       string         `json:"manifest_sha256,omitempty"`
+	LiveInventorySHA256  string         `json:"live_inventory_sha256,omitempty"`
+	AtMintInventoryMatch *bool          `json:"at_mint_inventory_match,omitempty"`
+	QuarantineEntryCount int            `json:"quarantine_entry_count,omitempty"`
+	TermVerified         int            `json:"term_verified,omitempty"`
+	TermUnavailable      int            `json:"term_unavailable,omitempty"`
+	TermFailed           int            `json:"term_failed,omitempty"`
+	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -689,6 +710,138 @@ func (a *AuditLogger) LogCredentialRestoreRollbackContext(
 	entry.Outcome = "rolled_back"
 	entry.OperationID = result.OperationID
 	entry.KeyCount = result.KeyCount
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogGenerationQuarantineIntentDurable(
+	record genstore.QuarantineRecord,
+) error {
+	entry := quarantineAuditEntry(record)
+	entry.Event = AuditGenerationQuarantineIntent
+	entry.Outcome = "requested"
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogGenerationQuarantined(record genstore.QuarantineRecord) {
+	entry := quarantineAuditEntry(record)
+	entry.Event = AuditGenerationQuarantined
+	entry.Outcome = "quarantined"
+	a.Log(entry)
+}
+
+func quarantineAuditEntry(record genstore.QuarantineRecord) AuditEntry {
+	entry := productPrincipalAuditFields()
+	entry.GenerationID = record.GenerationID
+	entry.ParentGenerationID = record.ParentID
+	entry.ManifestSHA256 = record.ManifestSHA256
+	entry.LiveInventorySHA256 = record.LiveInventorySHA256
+	atMintMatch := record.AtMintInventoryMatch
+	entry.AtMintInventoryMatch = &atMintMatch
+	entry.QuarantineEntryCount = record.EntryCount
+	entry.ByteCount = record.EncodedBytes
+	entry.TermVerified = record.TermValidation.Verified
+	entry.TermUnavailable = record.TermValidation.TermUnavailable
+	entry.TermFailed = record.TermValidation.Failed
+	return entry
+}
+
+func (a *AuditLogger) LogGenerationQuarantinePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationQuarantinePruneIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.GenerationIDs = append([]string(nil), generationIDs...)
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogGenerationQuarantinePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneGenerationQuarantineResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationQuarantinePruned
+	entry.Outcome = "pruned"
+	entry.OperationID = operationID
+	entry.GenerationIDs = make([]string, 0, len(result.Pruned))
+	for _, item := range result.Pruned {
+		entry.GenerationIDs = append(entry.GenerationIDs, item.GenerationID)
+		entry.ByteCount += item.EncodedBytes
+	}
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogGenerationAbandonedDiscardIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	generationIDs []string,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationAbandonedDiscardIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.GenerationIDs = append([]string(nil), generationIDs...)
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogGenerationAbandonedDiscardContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.DiscardAbandonedGenerationsResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditGenerationAbandonedDiscarded
+	entry.Outcome = "discarded"
+	entry.OperationID = operationID
+	for _, item := range result.Discarded {
+		entry.GenerationIDs = append(entry.GenerationIDs, item.GenerationID)
+		entry.ByteCount += item.EncodedBytes
+	}
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.Reason = result.Error
+	}
+	a.Log(entry)
+}
+
+func (a *AuditLogger) LogDeletedArchivePruneIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	entries []string,
+) error {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditDeletedArchivePruneIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.ArchiveEntries = append([]string(nil), entries...)
+	return a.logDurable(entry)
+}
+
+func (a *AuditLogger) LogDeletedArchivePruneContext(
+	ctx adminserver.SessionContext,
+	operationID string,
+	result adminproto.PruneDeletedArchiveResult,
+) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditDeletedArchivePruned
+	entry.Outcome = "pruned"
+	entry.OperationID = operationID
+	for _, item := range result.Pruned {
+		entry.ArchiveEntries = append(entry.ArchiveEntries, item.Path)
+		entry.ByteCount += item.EncodedBytes
+	}
 	if !result.Success {
 		entry.Outcome = "failed"
 		entry.Reason = result.Error

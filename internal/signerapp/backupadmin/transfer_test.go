@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -388,7 +389,11 @@ type lockingBackupTransferDeps struct {
 	mu    sync.Mutex
 }
 
-func (d *lockingBackupTransferDeps) KeyPaths() storepaths.Paths             { return d.paths }
+func (d *lockingBackupTransferDeps) KeyPaths() storepaths.Paths { return d.paths }
+func (d *lockingBackupTransferDeps) DataDir() string            { return d.paths.Root() }
+func (d *lockingBackupTransferDeps) Config() *serverconfig.ServerConfig {
+	return &serverconfig.ServerConfig{}
+}
 func (d *lockingBackupTransferDeps) GenesisHashMappings() map[string]string { return nil }
 func (d *lockingBackupTransferDeps) RestoreLimiter() RestoreLimiter         { return nil }
 func (d *lockingBackupTransferDeps) WithStoreMutation(fn func() error) error {

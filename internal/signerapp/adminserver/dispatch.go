@@ -65,6 +65,18 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeListGenerations: typed("list generations", func(s *Session, m *protocol.ListGenerationsMessage) {
 		s.HandleListGenerations(m.ID)
 	}),
+	protocol.MsgTypePruneGenerationQuarantine: typed(
+		"prune generation quarantine",
+		(*Session).HandlePruneGenerationQuarantine,
+	),
+	protocol.MsgTypeDiscardAbandonedGenerations: typed(
+		"discard abandoned generations",
+		(*Session).HandleDiscardAbandonedGenerations,
+	),
+	protocol.MsgTypeListDeletedArchive: typed("list deleted archive", func(s *Session, m *protocol.ListDeletedArchiveMessage) {
+		s.HandleListDeletedArchive(m.ID)
+	}),
+	protocol.MsgTypePruneDeletedArchive: typed("prune deleted archive", (*Session).HandlePruneDeletedArchive),
 
 	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
 	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),

@@ -273,9 +273,9 @@ endpoint-routed client model.
 apsigner also reads product-store configuration:
 - `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
 - `identities/default/unlock.yaml` — product passphrase helper configuration
-- `identities/default/policy.yaml` — product node-role policy
-- `identities/default/keytypes/<key_type>.json` — product state records for optional key types
-- `identities/default/keytypes/<key_type>.template` — encrypted installed YAML templates
+- selected generation `policy.yaml` — product node-role policy
+- selected generation `keytypes/<key_type>.json` — product state records for optional key types
+- selected generation `keytypes/<key_type>.template` — encrypted installed YAML templates
 
 The signer data root may also contain `library/templates/*.yaml`, a plaintext
 KeyType Library source copied from release or installer artifacts. Files there
@@ -335,7 +335,7 @@ apsigner supports four startup modes that share a unified initialization path:
 | **Headless** | `passphrase_command_argv` config | Unlocked | Automation, CI/CD, systemd services |
 | **Locked** | apadmin IPC connection | Locked | Interactive operation, manual approval |
 | **Test** | `TEST_PASSPHRASE` env | Unlocked | Test harness / integration environments |
-| **Forced locked** | No `keyring.enc` present | Locked | Uninitialized signer state |
+| **Forced locked** | No `store-root.enc` present | Locked | Uninitialized signer state |
 
 Before these modes are selected, a signer data directory containing `.prod` is
 treated as systemd-managed. Manual `apsigner` startup is refused unless the

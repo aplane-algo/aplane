@@ -18,7 +18,7 @@ import (
 // once unlocked. The keyring is zeroed when the test finishes.
 //
 // Use it where a test already holds the key bytes it wrote a fixture with.
-// Prefer crypto.OpenKeyringStore where the test has a real store on disk.
+// Prefer genstore.OpenStoreRootSelection where the test has a real store.
 func Keyring(t *testing.T, masterKey []byte) *crypto.Keyring {
 	t.Helper()
 	kr, err := crypto.NewKeyringFromKey(masterKey)

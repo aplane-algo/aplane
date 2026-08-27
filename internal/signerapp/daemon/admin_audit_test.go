@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
@@ -37,6 +38,20 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 	}); !ok {
 		t.Fatal("production audit does not satisfy credential-restore outcome probes")
 	}
+	if _, ok := audit.(interface {
+		LogGenerationQuarantinePruneIntentDurableContext(
+			adminserver.SessionContext,
+			string,
+			[]string,
+		) error
+		LogGenerationQuarantinePruneContext(
+			adminserver.SessionContext,
+			string,
+			adminproto.PruneGenerationQuarantineResult,
+		)
+	}); !ok {
+		t.Fatal("production audit does not satisfy quarantine-prune handler probes")
+	}
 }
 
 func TestDurableCredentialRestoreIntentGate(t *testing.T) {
@@ -63,5 +78,75 @@ func TestDurableCredentialRestoreIntentGate(t *testing.T) {
 		adminserver.SessionContext{}, "restore-2", "backup.tar.gz", false,
 	); err == nil {
 		t.Fatal("missing audit logger did not fail closed")
+	}
+}
+
+func TestDurableGenerationQuarantinePruneIntentGate(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	auditLog, err := NewAuditLogger(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = auditLog.Close() }()
+	svc := (&Signer{auditLog: auditLog}).adminServices()
+	if err := svc.LogGenerationQuarantinePruneIntentDurableContext(
+		adminserver.SessionContext{},
+		"prune-1",
+		[]string{"gen-1700000000-0123abcd"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "GENERATION_QUARANTINE_PRUNE_INTENT") ||
+		!strings.Contains(string(data), "gen-1700000000-0123abcd") {
+		t.Fatalf("audit log missing durable quarantine-prune intent: %q", data)
+	}
+	if err := (&Signer{}).adminServices().LogGenerationQuarantinePruneIntentDurableContext(
+		adminserver.SessionContext{},
+		"prune-2",
+		[]string{"gen-1700000000-0123abcd"},
+	); err == nil {
+		t.Fatal("missing audit logger did not fail closed")
+	}
+}
+
+func TestDurableGenerationQuarantineIntentRecordsClassification(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	auditLog, err := NewAuditLogger(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = auditLog.Close() }()
+	record := genstore.QuarantineRecord{
+		GenerationID:         "gen-1700000000-0123abcd",
+		ParentID:             "gen-1699999999-4567abcd",
+		ManifestSHA256:       "manifest-digest",
+		LiveInventorySHA256:  "live-digest",
+		AtMintInventoryMatch: false,
+		EntryCount:           4,
+		EncodedBytes:         1024,
+	}
+	if err := auditLog.LogGenerationQuarantineIntentDurable(record); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"GENERATION_QUARANTINE_INTENT",
+		`"generation_id":"gen-1700000000-0123abcd"`,
+		`"manifest_sha256":"manifest-digest"`,
+		`"live_inventory_sha256":"live-digest"`,
+		`"at_mint_inventory_match":false`,
+		`"quarantine_entry_count":4`,
+		`"byte_count":1024`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("audit log missing %q: %s", want, data)
+		}
 	}
 }

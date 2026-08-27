@@ -50,17 +50,8 @@ func setupKeystore(t *testing.T) (utilkeys.Paths, *crypto.Keyring, func()) {
 
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
-
-	userDir := paths.ProductDir()
-	if _, err := crypto.CreateKeyringStore(userDir, []byte("test-passphrase-for-storemut")); err != nil {
-		t.Fatalf("CreateKeyringStore() error = %v", err)
-	}
-
-	kr, err := crypto.OpenKeyringStore(userDir, []byte("test-passphrase-for-storemut"))
-	if err != nil {
-		t.Fatalf("OpenKeyringStore() error = %v", err)
-	}
+	kr, active := genstoretest.MintFirstAtomic(t, paths, []byte("test-passphrase-for-storemut"))
+	paths = genstoretest.BindActive(t, paths, active)
 	cleanup := kr.Zero
 	return paths, kr, cleanup
 }
@@ -68,7 +59,7 @@ func setupKeystore(t *testing.T) (utilkeys.Paths, *crypto.Keyring, func()) {
 func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	httpUpdater := &recordingUpdater{}
 	sshUpdater := &recordingUpdater{}
@@ -97,7 +88,7 @@ func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
 func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	keyPath := keys.AccountKeyFilePath(paths, "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
@@ -119,7 +110,11 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	if _, err := os.Stat(result.DeletedPath); err != nil {
 		t.Fatalf("expected deleted key at %s: %v", result.DeletedPath, err)
 	}
-	if wantDir := paths.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	if wantDir := active.DeletedKeysDir(); filepath.Dir(result.DeletedPath) != wantDir {
 		t.Fatalf("deleted path dir = %s, want %s", filepath.Dir(result.DeletedPath), wantDir)
 	}
 }

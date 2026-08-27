@@ -184,6 +184,187 @@ func (s *Session) HandleListGenerations(requestID string) {
 	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations()))
 }
 
+func (s *Session) HandlePruneGenerationQuarantine(
+	msg *protocol.PruneGenerationQuarantineMessage,
+) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	resource := auth.Resource{Type: "generation_quarantine"}
+	if !s.authorize(msg.ID, auth.ActionGenerationQuarantinePrune, resource) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code:  protocol.ResultCodeConfirmationRequired,
+				Error: "quarantine prune requires explicit confirmation",
+			},
+		))
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogGenerationQuarantinePruneIntentDurableContext(
+			SessionContext,
+			string,
+			[]string,
+		) error
+	})
+	if !ok {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code:  protocol.ResultCodeQuarantineAuditFailed,
+				Error: "quarantine prune aborted: durable audit is unavailable",
+			},
+		))
+		return
+	}
+	generationIDs := append([]string(nil), msg.GenerationIDs...)
+	if err := audit.LogGenerationQuarantinePruneIntentDurableContext(
+		s.SessionContext(), msg.ID, generationIDs,
+	); err != nil {
+		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
+			msg.ID,
+			adminproto.PruneGenerationQuarantineResult{
+				Code: protocol.ResultCodeQuarantineAuditFailed,
+				Error: fmt.Sprintf(
+					"quarantine prune aborted: durable audit failed: %v",
+					err,
+				),
+			},
+		))
+		return
+	}
+	result := s.inspectionServices.PruneGenerationQuarantine(
+		adminproto.PruneGenerationQuarantineRequest{GenerationIDs: generationIDs},
+	)
+	if audit, ok := s.audit.(interface {
+		LogGenerationQuarantinePruneContext(
+			SessionContext,
+			string,
+			adminproto.PruneGenerationQuarantineResult,
+		)
+	}); ok {
+		audit.LogGenerationQuarantinePruneContext(s.SessionContext(), msg.ID, result)
+	}
+	_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleDiscardAbandonedGenerations(
+	msg *protocol.DiscardAbandonedGenerationsMessage,
+) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionGenerationAbandonedDiscard, auth.Resource{Type: "generation_abandoned"}) {
+		return
+	}
+	respond := func(result adminproto.DiscardAbandonedGenerationsResult) {
+		_ = s.WriteJSON(ProtocolDiscardAbandonedGenerationsResultMessage(msg.ID, result))
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeConfirmationRequired,
+			Error: "abandoned generation discard requires explicit confirmation",
+		})
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogGenerationAbandonedDiscardIntentDurableContext(SessionContext, string, []string) error
+	})
+	if !ok {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeAbandonedAuditFailed,
+			Error: "abandoned generation discard aborted: durable audit is unavailable",
+		})
+		return
+	}
+	ids := append([]string(nil), msg.GenerationIDs...)
+	if err := audit.LogGenerationAbandonedDiscardIntentDurableContext(s.SessionContext(), msg.ID, ids); err != nil {
+		respond(adminproto.DiscardAbandonedGenerationsResult{
+			Code:  protocol.ResultCodeAbandonedAuditFailed,
+			Error: fmt.Sprintf("abandoned generation discard aborted: durable audit failed: %v", err),
+		})
+		return
+	}
+	result := s.inspectionServices.DiscardAbandonedGenerations(
+		adminproto.DiscardAbandonedGenerationsRequest{GenerationIDs: ids},
+	)
+	if audit, ok := s.audit.(interface {
+		LogGenerationAbandonedDiscardContext(SessionContext, string, adminproto.DiscardAbandonedGenerationsResult)
+	}); ok {
+		audit.LogGenerationAbandonedDiscardContext(s.SessionContext(), msg.ID, result)
+	}
+	respond(result)
+}
+
+func (s *Session) HandleListDeletedArchive(requestID string) {
+	if s.requireRecoveryAdminRuntime(requestID) == nil {
+		return
+	}
+	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "deleted_archive"}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(requestID, protocol.ErrCodeInternal, "archive service unavailable")
+		return
+	}
+	_ = s.WriteJSON(ProtocolDeletedArchiveListMessage(requestID, s.inspectionServices.ListDeletedArchive()))
+}
+
+func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMessage) {
+	if s.requireRecoveryAdminRuntime(msg.ID) == nil {
+		return
+	}
+	if !s.authorize(msg.ID, auth.ActionArchivePrune, auth.Resource{Type: "deleted_archive"}) {
+		return
+	}
+	if s.inspectionServices == nil {
+		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "archive service unavailable")
+		return
+	}
+	if !msg.Confirm {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code: protocol.ResultCodeConfirmationRequired, Error: "archive prune requires explicit confirmation",
+		}))
+		return
+	}
+	audit, ok := s.audit.(interface {
+		LogDeletedArchivePruneIntentDurableContext(SessionContext, string, []string) error
+	})
+	if !ok {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code: protocol.ResultCodeArchiveAuditFailed, Error: "archive prune aborted: durable audit is unavailable",
+		}))
+		return
+	}
+	entries := append([]string(nil), msg.Entries...)
+	if err := audit.LogDeletedArchivePruneIntentDurableContext(s.SessionContext(), msg.ID, entries); err != nil {
+		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
+			Code:  protocol.ResultCodeArchiveAuditFailed,
+			Error: fmt.Sprintf("archive prune aborted: durable audit failed: %v", err),
+		}))
+		return
+	}
+	result := s.inspectionServices.PruneDeletedArchive(adminproto.PruneDeletedArchiveRequest{Entries: entries})
+	if audit, ok := s.audit.(interface {
+		LogDeletedArchivePruneContext(SessionContext, string, adminproto.PruneDeletedArchiveResult)
+	}); ok {
+		audit.LogDeletedArchivePruneContext(s.SessionContext(), msg.ID, result)
+	}
+	_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, result))
+}
+
 func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
 	s.handleRevokeToken(msg)
 }

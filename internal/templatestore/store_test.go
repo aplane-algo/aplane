@@ -93,7 +93,7 @@ func TestSaveAndLoadTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	yamlData := []byte(`
 schema_version: 1
@@ -146,7 +146,7 @@ func TestSaveAndLoadComposedTemplate(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	yamlData := []byte(`
 schema_version: 1
@@ -240,7 +240,7 @@ func TestTemplateExists(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	keyType := "test.exists-test.v1"
 
@@ -274,7 +274,7 @@ func TestTemplateExists(t *testing.T) {
 
 func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
 	paths := utilkeys.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	keyType := "test.unknown-template-type.v1"
 	unknownType := TemplateType("compiled_provider")
 
@@ -307,7 +307,7 @@ func TestLoadAllTemplates(t *testing.T) {
 
 	// Set keystore path
 	paths := utilkeys.NewPaths(tmpDir)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	// Save multiple templates
 	templates := map[string][]byte{

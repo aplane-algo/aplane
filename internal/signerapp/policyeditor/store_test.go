@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -108,7 +109,7 @@ func TestOfflineStoreRejectsPolicyTargetForWrongNodeRole(t *testing.T) {
 
 func TestOfflineStoreLoadRejectsTamperedPolicy(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir)
+	path := activePolicyPath(t, dataDir, passphrase)
 	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -192,7 +193,7 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	if err := store.SaveYAML(context.Background(), policyBytes); err != nil {
 		t.Fatalf("SaveYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir))
+	gotBytes, err := os.ReadFile(activePolicyPath(t, dataDir, passphrase))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -230,7 +231,7 @@ transfer_policy:
 	if err := store.SaveSentryYAML(context.Background(), sentryBytes); err != nil {
 		t.Fatalf("SaveSentryYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir))
+	gotBytes, err := os.ReadFile(activePolicyPath(t, dataDir, passphrase))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
@@ -242,7 +243,12 @@ transfer_policy:
 		t.Fatalf("unlock() error = %v", err)
 	}
 	defer clear()
-	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, masterKey)
+	active, keyring, err := genstore.ResolveStoreRoot(storepaths.NewPaths(dataDir), passphrase)
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer keyring.Zero()
+	stored, err := policy.LoadVerifiedSentryConfigActive(active, masterKey)
 	if err != nil {
 		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() after SaveSentryYAML() error = %v", err)
 	}
@@ -253,7 +259,7 @@ transfer_policy:
 
 func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
-	path := policy.PolicyPath(dataDir)
+	path := activePolicyPath(t, dataDir, passphrase)
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -311,6 +317,16 @@ func TestOfflineStoreSaveLockedStoreErrorHasOperatorHint(t *testing.T) {
 func initializedPolicyStore(t *testing.T) (string, []byte) {
 	t.Helper()
 	return initializedPolicyStoreWithRole(t, noderole.RoleSigner)
+}
+
+func activePolicyPath(t *testing.T, dataDir string, passphrase []byte) string {
+	t.Helper()
+	active, keyring, err := genstore.ResolveStoreRoot(storepaths.NewPaths(dataDir), passphrase)
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer keyring.Zero()
+	return active.PolicyPath()
 }
 
 func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, []byte) {

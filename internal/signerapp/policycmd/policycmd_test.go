@@ -511,7 +511,10 @@ func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := policy.PolicyPath(root)
+	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -556,7 +559,10 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = shared.Close() }()
-	path := policy.PolicyPath(root)
+	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

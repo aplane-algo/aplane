@@ -215,10 +215,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 		t.Fatalf("Failed to create keys dir: %v", err)
 	}
 
-	// Create keystore metadata for master key encryption (v2) in identity directory
-	passphrase := []byte("integration-test-pass")
-	userDir := filepath.Join(keystoreRoot, "identities", "default")
-	masterKeyRing, err := crypto.CreateKeyringStore(userDir, passphrase)
+	masterKeyRing, err := crypto.NewKeyring()
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}
@@ -253,7 +250,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	}
 
 	// Create FileKeyStore and set up cache and master key
-	fileStore := NewFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot))
+	fileStore := NewAtomicFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot))
 	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519", Category: keys.CategoryEd25519}
 	fileStore.setKeyringDirectlyForTest(masterKeyRing)
 

@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -35,19 +35,7 @@ func setupTestKeystore(t *testing.T) (utilpaths.Paths, func()) {
 	oldDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
 	paths := utilpaths.NewPaths(".")
-	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
-	if err != nil {
-		t.Fatalf("NewGenerationID: %v", err)
-	}
-	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:    generationID,
-		FirstGeneration: true,
-		Operation:       "store-initialize",
-		OperationID:     "init-" + generationID,
-		CreatedAt:       time.Unix(1_785_200_000, 0),
-	}); err != nil {
-		t.Fatalf("Mint(first): %v", err)
-	}
+	paths = genstoretest.MintFirst(t, paths)
 	return paths, func() {
 		_ = os.Chdir(oldDir)
 	}
@@ -444,7 +432,7 @@ func TestKeyFilePermissions(t *testing.T) {
 
 // TestKeysDirectoryCreation verifies keys directory is created if missing
 func TestKeysDirectoryCreation(t *testing.T) {
-	paths, cleanup := setupTestKeystore(t)
+	_, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
 	gen := &Ed25519Generator{}
@@ -452,6 +440,7 @@ func TestKeysDirectoryCreation(t *testing.T) {
 	// An uninitialized store (no generation) refuses key generation; keys
 	// only ever land inside the committed generation.
 	_ = os.RemoveAll("identities")
+	paths := utilpaths.NewPaths(".")
 	if _, err := gen.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "ed25519", nil); err == nil {
 		t.Fatal("GenerateRandom succeeded on an uninitialized store")
 	}

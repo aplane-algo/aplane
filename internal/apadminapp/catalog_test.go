@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,7 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 		{"sentry", "show", "lab"},
 		{"endpoint", "export", "--host", "127.0.0.1"},
 		{"generations", "list"},
+		{"archive", "list"},
 	}
 	for _, command := range readOnly {
 		mode, err := CatalogAuthMode(command[0], command[1:])
@@ -66,6 +68,8 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 		{"keytype", "enable", "aplane.ed25519.v1"},
 		{"sentry", "import", "sentry.json", "lab"},
 		{"sentry", "remove", "lab"},
+		{"generations", "prune", "--confirm", "gen-1700000000-0123abcd"},
+		{"archive", "prune", "--confirm", "deleted/keys/A.key"},
 	}
 	for _, command := range mutating {
 		mode, err := CatalogAuthMode(command[0], command[1:])
@@ -85,6 +89,7 @@ func TestCatalogAuthModeRejectsMalformedBeforeConnection(t *testing.T) {
 		{"sentry", "import", "only.json"},
 		{"endpoint", "export", "--bogus"},
 		{"generations", "prune"},
+		{"archive", "prune"},
 	} {
 		if _, err := CatalogAuthMode(command[0], command[1:]); err == nil {
 			t.Fatalf("CatalogAuthMode(%v) error = nil", command)
@@ -152,6 +157,81 @@ func TestCatalogGenerationListRetriesIdentityBusy(t *testing.T) {
 	}
 	if attempt != 2 || !bytes.Contains(stderr.Bytes(), []byte("current: gen-2")) {
 		t.Fatalf("attempts=%d stderr=%q", attempt, stderr.String())
+	}
+}
+
+func TestCatalogGenerationQuarantinePruneSendsExplicitSelection(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.PruneGenerationQuarantineMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		if !request.Confirm {
+			return fmt.Errorf("confirmation = false")
+		}
+		want := []string{"gen-1700000000-0123abcd", "gen-1700000001-4567abcd"}
+		if !reflect.DeepEqual(request.GenerationIDs, want) {
+			return fmt.Errorf("generation IDs = %v, want %v", request.GenerationIDs, want)
+		}
+		out := result.(*protocol.PruneGenerationQuarantineResultMessage)
+		*out = protocol.PruneGenerationQuarantineResultMessage{
+			Success: true,
+			Pruned: []protocol.PrunedQuarantinedGeneration{
+				{GenerationID: want[0], EncodedBytes: 42},
+				{GenerationID: want[1], AlreadyAbsent: true},
+			},
+		}
+		return nil
+	}}
+	var stderr bytes.Buffer
+	err := (Catalog{Client: requester, Streams: Streams{Stderr: &stderr}}).Run(
+		"generations",
+		[]string{
+			"prune", "--confirm",
+			"gen-1700000000-0123abcd",
+			"gen-1700000001-4567abcd",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "pruned quarantined generation gen-1700000000-0123abcd (42 bytes)") ||
+		!strings.Contains(stderr.String(), "gen-1700000001-4567abcd already absent") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestCatalogArchivePruneSendsExplicitSelection(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.PruneDeletedArchiveMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		want := []string{"deleted/keys/A.key", "deleted/keytypes/example.template"}
+		if !request.Confirm || !reflect.DeepEqual(request.Entries, want) {
+			return fmt.Errorf("request = %#v, want confirmed %v", request, want)
+		}
+		out := result.(*protocol.PruneDeletedArchiveResultMessage)
+		*out = protocol.PruneDeletedArchiveResultMessage{
+			Success: true,
+			Pruned: []protocol.PrunedDeletedArchiveEntry{
+				{Path: want[0], EncodedBytes: 42},
+				{Path: want[1], AlreadyAbsent: true},
+			},
+		}
+		return nil
+	}}
+	var stderr bytes.Buffer
+	err := (Catalog{Client: requester, Streams: Streams{Stderr: &stderr}}).Run(
+		"archive",
+		[]string{"prune", "--confirm", "deleted/keys/A.key", "deleted/keytypes/example.template"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "pruned archive entry deleted/keys/A.key (42 bytes)") ||
+		!strings.Contains(stderr.String(), "deleted/keytypes/example.template already absent") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 

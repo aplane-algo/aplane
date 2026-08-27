@@ -95,10 +95,6 @@ func (t Target) StatusNoun() string {
 	}
 }
 
-func (t Target) Path(dataDir string) string {
-	return policy.PolicyPath(dataDir)
-}
-
 func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {
 	switch t {
 	case TargetSentry:

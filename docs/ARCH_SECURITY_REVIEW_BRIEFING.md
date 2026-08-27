@@ -154,12 +154,12 @@ Apply authenticates and validates the whole selected set before any write;
 replacement of a different or unreadable destination credential is a separate
 explicit option.
 
-The server commits restore by minting a complete new generation and
-flipping the `CURRENT` pointer in one durable rename; the outgoing generation
-is sealed first and remains the exact rollback target. Reload failure rolls
-the pointer back to it; an interrupted attempt leaves no committed state, and
-a commit with unconfirmed durability blocks signing in recovery mode until
-reconciliation.
+The server commits restore by minting a complete new generation and replacing
+`store-root.enc` in one durable rename; the outgoing generation is sealed
+first. The store root simultaneously selects the generation and authenticates
+its term authority. An interrupted pre-rename attempt leaves the old root
+authoritative; a visible but durability-unconfirmed replacement blocks signing
+in recovery mode until reconciliation.
 
 ### Security significance
 

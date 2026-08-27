@@ -180,11 +180,19 @@ func copyDir(src, dst string) error {
 
 func clearClonedSignerKeys(dataDir string) error {
 	// Resolve through the active layout: generational clones keep their
-	// keys under generations/<id>/keys behind the CURRENT pointer.
-	active, err := genstore.ResolveActive(storepaths.NewPaths(dataDir))
+	// keys under generations/<id>/keys selected by store-root.enc.
+	passphrase, err := os.ReadFile(filepath.Join(dataDir, "passphrase"))
 	if err != nil {
 		return err
 	}
+	active, kr, err := genstore.ResolveStoreRoot(
+		storepaths.NewPaths(dataDir),
+		[]byte(strings.TrimSpace(string(passphrase))),
+	)
+	if err != nil {
+		return err
+	}
+	defer kr.Zero()
 	keysDir := active.KeysDir()
 	entries, err := os.ReadDir(keysDir)
 	if err != nil {

@@ -68,7 +68,7 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 
 func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	generated, err := GenerateKey(paths, witness.Falcon1024V1, cryptotest.Keyring(t, masterKey), nil)
@@ -90,8 +90,8 @@ func init() {
 
 func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	_, err := GenerateKey(paths, "", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "key type must be specified") {
@@ -106,8 +106,8 @@ func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {
 
 func TestImportKeyRejectsInvalidType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	_, err := ImportKey(paths, "not-a-real-key-type", "mnemonic words here", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid key type") {
@@ -140,8 +140,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 
 	keyType := falcon1024guarded.KeyTypeV1
 	_, err := ImportKeyWithActivatedContext(context.Background(), paths, keyType, "mnemonic words here", nil, nil, []string{keyType})
@@ -152,8 +152,8 @@ func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 
 func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	first, err := GenerateKey(paths, "ed25519", cryptotest.Keyring(t, masterKey), nil)
@@ -271,8 +271,8 @@ func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 
 func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	for _, keyType := range []string{
@@ -304,8 +304,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKeyWithActivatedContext(
@@ -378,8 +378,8 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
-			genstoretest.MintFirst(t, paths)
-			genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
+			paths = genstoretest.MintFirst(t, paths)
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 			result, err := GenerateKey(paths, keyType, cryptotest.Keyring(t, masterKey), nil)
@@ -542,8 +542,8 @@ func TestDeleteKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	result, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
+	deletedKeysDir := filepath.Join(tmpDir, "deleted", "keys")
+	result, err := DeleteKey("TESTADDR", keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
@@ -559,7 +559,7 @@ func TestDeleteKey(t *testing.T) {
 	}
 
 	// Verify deleted path structure.
-	expectedDir := paths.DeletedKeysDir()
+	expectedDir := deletedKeysDir
 	if filepath.Dir(result.DeletedPath) != expectedDir {
 		t.Errorf("deleted dir = %q, want %q", filepath.Dir(result.DeletedPath), expectedDir)
 	}
@@ -567,7 +567,7 @@ func TestDeleteKey(t *testing.T) {
 
 func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	genstoretest.MintFirst(t, paths)
+	paths = genstoretest.MintFirst(t, paths)
 	selector := "WITNESSID"
 	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), selector+keys.SentryCredentialExtension)
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
@@ -577,11 +577,12 @@ func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := DeleteKey(selector, keyFile, paths.DeletedKeysDir())
+	deletedKeysDir := filepath.Join(filepath.Dir(activeKeysDirForKeymgmtTest(t, paths)), "deleted", "keys")
+	result, err := DeleteKey(selector, keyFile, deletedKeysDir)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	want := filepath.Join(paths.DeletedKeysDir(), selector+keys.SentryCredentialExtension)
+	want := filepath.Join(deletedKeysDir, selector+keys.SentryCredentialExtension)
 	if result.DeletedPath != want {
 		t.Fatalf("DeletedPath = %q, want %q", result.DeletedPath, want)
 	}
@@ -597,8 +598,7 @@ func TestDeleteKey_MissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), paths.DeletedKeysDir())
+	_, err := DeleteKey("NOADDR", filepath.Join(keysDir, "NOADDR.key"), filepath.Join(tmpDir, "deleted", "keys"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -617,8 +617,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := storepaths.NewPaths(tmpDir)
-	deletedDir := paths.DeletedKeysDir()
+	deletedDir := filepath.Join(tmpDir, "deleted", "keys")
 	if err := os.MkdirAll(deletedDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +626,7 @@ func TestDeleteKey_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := DeleteKey("TESTADDR", keyFile, paths.DeletedKeysDir())
+	_, err := DeleteKey("TESTADDR", keyFile, deletedDir)
 	if err == nil || !strings.Contains(err.Error(), "failed to move key file") {
 		t.Fatalf("DeleteKey(rename failure) error = %v, want move failure", err)
 	}

@@ -57,10 +57,7 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 	root := filepath.Join("..", "..")
 	retired := regexp.MustCompile(`\bapstore(?:\s+-d\s+(?:"[^"]*"|'[^']*'|\S+))?\s+(?:(?:backup|restore|changepass|template|keytype|sentry|endpoint)\b|generations\s+list\b)`)
-	historical := map[string]bool{
-		filepath.Join("docs", "PHASE3_ONBOARDING.md"):         true,
-		filepath.Join("docs", "PROPOSAL_KEYTERM_ROTATION.md"): true,
-	}
+	historical := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

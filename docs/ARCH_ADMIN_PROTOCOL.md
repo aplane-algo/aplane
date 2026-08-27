@@ -46,11 +46,12 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 5.0; `auth_required` carries it as
+- the current admin protocol version is 6.0; `auth_required` carries it as
   `protocol_version:{major,minor}`; clients must send their version in
   `auth.protocol_version`; major-version mismatches
   are rejected during authentication, and minor-version mismatches are logged
-  but accepted,
+  but accepted; v6 intentionally removes the retired `pending_attempts`
+  generation-inventory field and does not provide a v5 compatibility shim,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -223,6 +224,32 @@ Server to Client:
 - `policy_snapshot`
 - `validate_policy_result`
 - `replace_policy_result`
+
+### Sentry References And Store Inventory
+
+Client to Server:
+
+- `list_sentry_references`
+- `get_sentry_reference`
+- `import_sentry_reference`
+- `remove_sentry_reference`
+- `export_sentry_public`
+- `list_generations`
+- `prune_generation_quarantine`
+- `list_deleted_archive`
+- `prune_deleted_archive`
+
+Server to Client:
+
+- `sentry_references_list`
+- `sentry_reference`
+- `import_sentry_reference_result`
+- `remove_sentry_reference_result`
+- `export_sentry_public_result`
+- `generations_list`
+- `prune_generation_quarantine_result`
+- `deleted_archive_list`
+- `prune_deleted_archive_result`
 
 ## Key Payload Shapes
 
@@ -439,7 +466,27 @@ canonical YAML document.
 - `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
 - `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
 - `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
-- `list_generations` -> `generations_list`: current generation, sealed priors, pending attempts/staging, retained unsealed parent, `code`, `error`; this is read-only inspection and never reconciles or prunes. If a store mutation is active, it returns retryable `store_busy` rather than waiting for the ordinary IPC timeout.
+- `list_generations` -> `generations_list`: current generation, sealed priors,
+  bounded non-authoritative `quarantined[]` metadata, pending staging, retained
+  unsealed parent, `code`, `error`; this is read-only inspection and never
+  reconciles or prunes. Each quarantine record includes the generation and
+  parent IDs, manifest and live-inventory digests, at-mint inventory-match
+  classification, entry count, and encoded byte count. If a store mutation is
+  active, the request returns retryable `store_busy` rather than waiting for
+  the ordinary IPC timeout.
+- `prune_generation_quarantine`: `generation_ids[]`, `confirm` ->
+  `prune_generation_quarantine_result`: `success`, `pruned[]`, optional `code`,
+  `error`; deletion is restricted to explicitly selected quarantine IDs,
+  requires `confirm:true`, and records a durable audit intent before mutation.
+  An already-absent selected ID is successful and reported as such, making an
+  interrupted multi-ID request safely retryable.
+- `list_deleted_archive` -> `deleted_archive_list`: canonical `entries[]` with
+  `path` and `encoded_bytes`, aggregate `entry_count`, `encoded_bytes`, and a
+  `warning` when release headroom has been consumed; optional `code`, `error`.
+- `prune_deleted_archive`: canonical `entries[]`, `confirm` ->
+  `prune_deleted_archive_result`: `success`, `pruned[]`, optional `code`,
+  `error`. Each result carries `path`, `encoded_bytes`, and optional
+  `already_absent`, so interrupted explicit selections are safely retryable.
 
 Sentry-reference reads/exports require `sentries.view`; imports/removals require
 `sentries.manage`, an unlocked signer store, and emit mutation audit events. A
@@ -449,9 +496,21 @@ security-neutral. Import is idempotent for an identical reference and rejects
 a name already bound to a different Witness Key ID; replacement requires an
 explicit remove followed by import. Import and removal audit events include
 the affected Witness Key ID, and the store mutation lock serializes
-publication. Generation inventory requires `generations.view`. `apstore
-generations prune` deliberately remains an offline recovery/maintenance
-operation.
+publication. Generation inventory requires `generations.view`. Live quarantine
+deletion requires `identity.generation.quarantine.prune`, an unlocked or
+recovery-admin runtime, explicit confirmation, and durable audit. Retained
+authoritative generation pruning remains a distinct offline
+`apstore generations prune` recovery/maintenance operation.
+In-place unvalidatable abandoned publications use
+`discard_abandoned_generations` with explicit IDs and confirmation, the
+separate `identity.generation.abandoned.discard` action, and a durable intent
+audit before mutation.
+
+Deleted-archive inspection requires `generations.view`. Live archive pruning
+requires `identity.archive.prune`, an unlocked or recovery-admin runtime,
+explicit confirmation, and a durable audit intent written before any removal.
+Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
+are accepted; arbitrary filesystem paths are not an admin-protocol surface.
 
 Key-type override semantics:
 

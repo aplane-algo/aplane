@@ -22,12 +22,12 @@ import (
 
 const (
 	// ManifestSchema identifies the immutable at-mint operation record.
-	ManifestSchema = "aplane.generation-manifest.v1"
+	ManifestSchema = "aplane.generation-manifest.v2"
 	// SealSchema identifies the final content record written before a
 	// generation stops being current.
 	SealSchema = "aplane.generation-seal.v2"
 
-	manifestSchemaVersion = 1
+	manifestSchemaVersion = 2
 	sealSchemaVersion     = 2
 
 	generationSealMACDomain = "aplane.generation-seal-mac.v1"
@@ -41,9 +41,23 @@ const (
 	OperationCredentialRestoreRollback = "credential-restore-rollback"
 )
 
-// generationNamespaces are the directories a generation carries. Order is
-// load-bearing for inventory comparison.
-var generationNamespaces = []string{"keys", "keytypes"}
+// generationLeafNamespaces are the flat file namespaces carried by every
+// generation. Order is load-bearing for inventory comparison. The deleted/
+// directory itself is only a closed container for its two leaf namespaces.
+var generationLeafNamespaces = []string{
+	"keys",
+	"keytypes",
+	"deleted/keys",
+	"deleted/keytypes",
+}
+
+// generationAuthorityFiles are generation-root files whose exact bytes are
+// part of the selected authority state.
+var generationAuthorityFiles = []string{
+	"policy.yaml",
+	"policy.yaml.hmac",
+	"node.yaml.hmac",
+}
 
 // InventoryEntry pins one regular file by namespace-relative path.
 type InventoryEntry struct {
@@ -55,9 +69,23 @@ type InventoryEntry struct {
 	Term int64 `json:"term,omitempty"`
 }
 
+// RollbackCapability is the complete authority required to decide whether an
+// explicit credential-restore rollback is still safe. Maintenance may carry
+// it forward only after proving that the outgoing live inventory exactly
+// matches InventorySHA256 and EntryCount. The successor mint then replaces
+// those two fields with its own at-mint inventory authority.
+type RollbackCapability struct {
+	OriginOperationID  string `json:"origin_operation_id"`
+	ArchiveSHA256      string `json:"archive_sha256"`
+	SourceGenerationID string `json:"source_generation_id"`
+	CleanAtCutover     bool   `json:"clean_at_cutover"`
+	EntryCount         int64  `json:"entry_count"`
+	InventorySHA256    string `json:"inventory_sha256"`
+}
+
 // Manifest is the immutable at-mint operation record. It describes the
 // minting transaction, not the live directory: single-file mutations to the
-// current generation do not falsify it. CURRENT answers which state
+// current generation do not falsify it. The authenticated store root answers which state
 // committed; the manifest answers which operation produced it.
 type Manifest struct {
 	Schema        string `json:"schema"`
@@ -71,22 +99,64 @@ type Manifest struct {
 	// post-crash idempotency and audit correlation.
 	Operation   string `json:"operation"`
 	OperationID string `json:"operation_id"`
-	// RestoreArchiveSHA256 authenticates the portable archive that supplied
-	// a direct credential restore. RestoreRollbackEligible is false for a
-	// repair begun from recovery mode, whose damaged parent must not later be
-	// promoted back into service by an explicit rollback.
-	RestoreArchiveSHA256    string `json:"restore_archive_sha256,omitempty"`
-	RestoreRollbackEligible bool   `json:"restore_rollback_eligible,omitempty"`
-	// RollbackSourceGenerationID names the sealed generation whose content
-	// was reconstructed into this mint. ParentID remains the outgoing
-	// current generation, preserving commit lineage; the rollback source is
-	// separate because rollback mints content instead of rewinding CURRENT.
-	RollbackSourceGenerationID string `json:"rollback_source_generation_id,omitempty"`
+	// RollbackCapability is present only while an explicit rollback of an
+	// authenticated credential restore remains safe. Recovery-mode restores
+	// and rollback mints do not create one.
+	RollbackCapability *RollbackCapability `json:"rollback_capability,omitempty"`
 	// Inventory is the at-mint content record.
 	Inventory []InventoryEntry `json:"inventory"`
 	// Complete is written true before publication; a manifest without it is
 	// an aborted mint.
 	Complete bool `json:"complete"`
+}
+
+// NewRollbackCapabilitySeed creates the provenance portion of a rollback
+// capability. Mint binds it to the successor's exact at-mint inventory.
+func NewRollbackCapabilitySeed(operationID, archiveSHA256, sourceGenerationID string) *RollbackCapability {
+	return &RollbackCapability{
+		OriginOperationID:  operationID,
+		ArchiveSHA256:      archiveSHA256,
+		SourceGenerationID: sourceGenerationID,
+		CleanAtCutover:     true,
+	}
+}
+
+// CarryRollbackCapability returns a provenance-only copy when live still
+// matches the manifest's authenticated rollback authority. A mismatch is a
+// normal divergence decision, not a parse error.
+func CarryRollbackCapability(manifest *Manifest, live []InventoryEntry) (*RollbackCapability, bool, error) {
+	if manifest == nil || manifest.RollbackCapability == nil {
+		return nil, false, nil
+	}
+	capability := manifest.RollbackCapability
+	if err := validateRollbackCapability(capability); err != nil {
+		return nil, false, err
+	}
+	digest, err := CanonicalInventoryDigest(live)
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(live)) != capability.EntryCount || digest != capability.InventorySHA256 {
+		return nil, false, nil
+	}
+	return NewRollbackCapabilitySeed(
+		capability.OriginOperationID,
+		capability.ArchiveSHA256,
+		capability.SourceGenerationID,
+	), true, nil
+}
+
+// RollbackCapabilityMatches reports whether live still equals the authority
+// recorded at the latest clean mint or changepass cutover.
+func RollbackCapabilityMatches(capability *RollbackCapability, live []InventoryEntry) (bool, error) {
+	if err := validateRollbackCapability(capability); err != nil {
+		return false, err
+	}
+	digest, err := CanonicalInventoryDigest(live)
+	if err != nil {
+		return false, err
+	}
+	return int64(len(live)) == capability.EntryCount && digest == capability.InventorySHA256, nil
 }
 
 // Seal is the final content record of a generation, written durably while
@@ -106,8 +176,8 @@ type Seal struct {
 }
 
 // CanonicalInventoryDigest returns the domain-separated digest used when a
-// rotation snapshot or baseline names an effective generation inventory
-// authority. It is independent of JSON formatting.
+// a manifest, seal, or rollback capability names an exact generation
+// inventory. It is independent of JSON formatting.
 func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
 	if err := validateInventory(inventory); err != nil {
 		return "", err
@@ -129,19 +199,23 @@ func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// BuildInventory walks the generation's namespaces and pins every regular
-// file. Strict: symlinks, subdirectories, and irregular files are errors,
-// never skipped. A missing namespace directory contributes no entries.
+// BuildInventory walks every generation-owned authority member and pins every
+// regular file. Strict: required files and namespaces must exist; symlinks,
+// subdirectories in leaf namespaces, and irregular files are errors.
 func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 	var inventory []InventoryEntry
-	for _, namespace := range generationNamespaces {
-		dir := filepath.Join(gen.Dir(), namespace)
-		info, err := os.Lstat(dir)
-		if os.IsNotExist(err) {
-			continue
-		}
+	for _, relative := range generationAuthorityFiles {
+		entry, err := buildInventoryEntry(gen, relative)
 		if err != nil {
 			return nil, err
+		}
+		inventory = append(inventory, entry)
+	}
+	for _, namespace := range generationLeafNamespaces {
+		dir := filepath.Join(gen.Dir(), namespace)
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return nil, fmt.Errorf("generation namespace %s: %w", namespace, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return nil, fmt.Errorf("generation namespace is not a regular directory: %s", dir)
@@ -151,31 +225,40 @@ func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 			return nil, err
 		}
 		for _, entry := range entries {
-			path := filepath.Join(dir, entry.Name())
-			data, _, err := fsutil.ReadRegularFile(path)
+			relative := filepath.ToSlash(filepath.Join(namespace, entry.Name()))
+			member, err := buildInventoryEntry(gen, relative)
 			if err != nil {
-				return nil, fmt.Errorf("inventory %s/%s: %w", namespace, entry.Name(), err)
+				return nil, err
 			}
-			sum := sha256.Sum256(data)
-			term, present, err := crypto.InspectTermEnvelope(data)
-			if err != nil {
-				return nil, fmt.Errorf("inventory %s/%s term: %w", namespace, entry.Name(), err)
-			}
-			if !present {
-				term = 0
-			}
-			inventory = append(inventory, InventoryEntry{
-				Path:   namespace + "/" + entry.Name(),
-				SHA256: hex.EncodeToString(sum[:]),
-				Size:   int64(len(data)),
-				Term:   term,
-			})
+			inventory = append(inventory, member)
 		}
 	}
 	slices.SortFunc(inventory, func(a, b InventoryEntry) int {
 		return strings.Compare(a.Path, b.Path)
 	})
 	return inventory, nil
+}
+
+func buildInventoryEntry(gen storepaths.GenPaths, relative string) (InventoryEntry, error) {
+	path := filepath.Join(gen.Dir(), filepath.FromSlash(relative))
+	data, _, err := fsutil.ReadRegularFile(path)
+	if err != nil {
+		return InventoryEntry{}, fmt.Errorf("inventory %s: %w", relative, err)
+	}
+	sum := sha256.Sum256(data)
+	term, present, err := crypto.InspectTermEnvelope(data)
+	if err != nil {
+		return InventoryEntry{}, fmt.Errorf("inventory %s term: %w", relative, err)
+	}
+	if !present {
+		term = 0
+	}
+	return InventoryEntry{
+		Path:   relative,
+		SHA256: hex.EncodeToString(sum[:]),
+		Size:   int64(len(data)),
+		Term:   term,
+	}, nil
 }
 
 // WriteManifest durably writes the generation's manifest. Called once, in
@@ -463,46 +546,56 @@ func validateManifest(manifest *Manifest, generationID string) error {
 		if manifest.ParentID == manifest.GenerationID {
 			// A self-parent manifest would make rollback resolve to the
 			// current generation itself — reporting a rollback that never
-			// moved CURRENT.
+			// replaced the store-root selection.
 			return fmt.Errorf("generation manifest names itself as its parent")
-		}
-	}
-	if manifest.RollbackSourceGenerationID != "" {
-		if manifest.ParentID == "" {
-			return fmt.Errorf("generation manifest rollback source requires a parent")
-		}
-		if err := storepaths.ValidateGenerationID(manifest.RollbackSourceGenerationID); err != nil {
-			return fmt.Errorf("generation manifest rollback source: %w", err)
-		}
-		if manifest.RollbackSourceGenerationID == manifest.GenerationID {
-			return fmt.Errorf("generation manifest names itself as its rollback source")
-		}
-		if manifest.RollbackSourceGenerationID == manifest.ParentID {
-			return fmt.Errorf("generation manifest rollback source is its outgoing parent")
 		}
 	}
 	if manifest.CreatedAtUnix <= 0 || manifest.Operation == "" || manifest.OperationID == "" {
 		return fmt.Errorf("generation manifest metadata is incomplete")
 	}
-	if manifest.RestoreArchiveSHA256 != "" {
-		if err := validateCanonicalSHA256(manifest.RestoreArchiveSHA256); err != nil {
-			return fmt.Errorf("generation manifest restore_archive_sha256: %w", err)
+	if manifest.RollbackCapability != nil {
+		if manifest.ParentID == "" {
+			return fmt.Errorf("generation manifest rollback capability requires a parent")
+		}
+		if err := validateRollbackCapability(manifest.RollbackCapability); err != nil {
+			return fmt.Errorf("generation manifest rollback capability: %w", err)
+		}
+		if manifest.RollbackCapability.SourceGenerationID == manifest.GenerationID {
+			return fmt.Errorf("generation manifest names itself as its rollback source")
 		}
 	}
-	if manifest.RestoreRollbackEligible &&
-		(manifest.Operation != OperationCredentialRestore || manifest.ParentID == "" || manifest.RestoreArchiveSHA256 == "") {
-		return fmt.Errorf("generation manifest has invalid restore rollback eligibility")
-	}
 	return validateInventory(manifest.Inventory)
+}
+
+func validateRollbackCapability(capability *RollbackCapability) error {
+	if capability == nil {
+		return fmt.Errorf("missing rollback capability")
+	}
+	if capability.OriginOperationID == "" {
+		return fmt.Errorf("origin_operation_id is required")
+	}
+	if err := validateCanonicalSHA256(capability.ArchiveSHA256); err != nil {
+		return fmt.Errorf("archive_sha256: %w", err)
+	}
+	if err := storepaths.ValidateGenerationID(capability.SourceGenerationID); err != nil {
+		return fmt.Errorf("source_generation_id: %w", err)
+	}
+	if !capability.CleanAtCutover {
+		return fmt.Errorf("clean_at_cutover must be true")
+	}
+	if capability.EntryCount < 0 {
+		return fmt.Errorf("entry_count must be non-negative")
+	}
+	if err := validateCanonicalSHA256(capability.InventorySHA256); err != nil {
+		return fmt.Errorf("inventory_sha256: %w", err)
+	}
+	return nil
 }
 
 func validateInventory(inventory []InventoryEntry) error {
 	seen := make(map[string]struct{}, len(inventory))
 	for _, entry := range inventory {
-		namespace, name, ok := strings.Cut(entry.Path, "/")
-		if !ok || !slices.Contains(generationNamespaces, namespace) ||
-			name == "" || name != filepath.Base(name) ||
-			strings.ContainsAny(name, `/\`+"\x00") {
+		if !validGenerationInventoryPath(entry.Path) {
 			return fmt.Errorf("invalid inventory path %q", entry.Path)
 		}
 		if _, dup := seen[entry.Path]; dup {
@@ -521,6 +614,22 @@ func validateInventory(inventory []InventoryEntry) error {
 		return fmt.Errorf("inventory is not sorted")
 	}
 	return nil
+}
+
+func validGenerationInventoryPath(path string) bool {
+	if slices.Contains(generationAuthorityFiles, path) {
+		return true
+	}
+	for _, namespace := range generationLeafNamespaces {
+		prefix := namespace + "/"
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		name := strings.TrimPrefix(path, prefix)
+		return name != "" && name == filepath.Base(name) &&
+			!strings.ContainsAny(name, `/\`+"\x00")
+	}
+	return false
 }
 
 func writeJSONDurable(path string, value any) error {

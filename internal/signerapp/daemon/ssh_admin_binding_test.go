@@ -16,7 +16,7 @@ func TestSSHAdminSessionBindsProductRuntimeInDaemon(t *testing.T) {
 	defer cleanup()
 
 	productRuntime := server.productRuntime()
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":6,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
@@ -58,7 +58,7 @@ func TestSSHAdminSessionRejectsUnknownAuthFieldInDaemon(t *testing.T) {
 
 	productRuntime := server.productRuntime()
 	productRuntime.Lock()
-	authLine := `{"kind":"request","type":"auth","unexpected_selector":"other","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":5,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","unexpected_selector":"other","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":6,"minor":0}}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")

@@ -6,7 +6,7 @@ package keystore
 import "github.com/aplane-algo/aplane/internal/crypto"
 
 // setKeyringForTest installs a single-term keyring holding key, standing in
-// for the unlock a real store performs against keyring.enc. It exists so tests
+// for the unlock a real store performs against store-root.enc. It exists so tests
 // can reach the locked state without a passphrase or an on-disk root.
 func (f *FileKeyStore) setKeyringForTest(key []byte) error {
 	kr, err := crypto.NewKeyringFromKey(key)

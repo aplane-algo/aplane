@@ -29,7 +29,6 @@ var storeOwningPackages = []string{
 	"internal/templatelibrary",
 	"internal/defaultkeytypes",
 	"internal/backup",
-	"internal/rotationinventory",
 	"internal/storepass",
 	"internal/signerapp/backupadmin",
 	"internal/signerapp/productruntime",
@@ -125,25 +124,92 @@ func permittedNonStoreHardlink(path, root string, file *ast.File, pos token.Pos)
 	return false
 }
 
-// TestLegacyRootStorePathsStayRecoveryOnly prevents the pre-generation
-// identity-root keys/ and keytypes/ namespaces from becoming an alternate
-// active store again. Production reads and writes must resolve ActivePaths
-// through genstore.ResolveActive. The identity watcher is the sole exception:
-// it probes legacy paths only when CURRENT cannot be resolved so a repair can
-// trigger a fail-closed reload.
-func TestLegacyRootStorePathsStayRecoveryOnly(t *testing.T) {
+// TestRetiredRootStorePathAPIsStayDeleted prevents pre-generation root-level
+// key and key-type helpers from returning as a compatibility shim.
+func TestRetiredRootStorePathAPIsStayDeleted(t *testing.T) {
 	root := filepath.Join("..", "..")
-	allowed := map[string]struct{}{
-		filepath.ToSlash("internal/signerapp/productruntime/runtime.go"): {},
-		filepath.ToSlash("internal/storepaths/paths.go"):                 {},
-	}
-	legacySelectors := map[string]struct{}{
+	retired := map[string]struct{}{
 		"LegacyKeysDir":           {},
 		"LegacyKeyTypeRecordsDir": {},
 		"LegacyKeyTypeRecord":     {},
 		"LegacyKeyTypeTemplate":   {},
 	}
+	path := filepath.Join(root, "internal", "storepaths", "paths.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if _, found := retired[function.Name.Name]; found {
+			t.Errorf("%s: retired root store path API %s returned", fset.Position(function.Pos()), function.Name.Name)
+		}
+	}
+}
 
+// TestRetiredStoreCommitArtifactsStayDeleted prevents either half of the old
+// two-record commit protocol from returning to production code.
+func TestRetiredStoreCommitArtifactsStayDeleted(t *testing.T) {
+	root := filepath.Join("..", "..")
+	allowed := filepath.ToSlash("internal/genstore/root_commit.go") // explicit initialization rejection
+	for _, retired := range []string{"CURRENT", "keyring.enc", "rotation.snapshot.enc", "rotation.baseline.enc"} {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				switch entry.Name() {
+				case ".git", "temp", "vendor", "node_modules", "docs":
+					if path != root {
+						return filepath.SkipDir
+					}
+				}
+				return nil
+			}
+			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				return relErr
+			}
+			if filepath.ToSlash(rel) == allowed {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			if strings.Contains(string(data), `"`+retired+`"`) {
+				t.Errorf("%s contains retired store artifact %q", path, retired)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestDirectGenerationWritersStayConfined prevents a caller from resolving an
+// arbitrary generation ID directly into a filesystem mutation. The two
+// confined exceptions are genstore's current-generation seal at commit and
+// authenticated historical pruning/reconciliation.
+func TestDirectGenerationWritersStayConfined(t *testing.T) {
+	root := filepath.Join("..", "..")
+	allowed := map[string]bool{
+		"internal/genstore/commit.go":     true,
+		"internal/genstore/reconcile.go":  true,
+		"internal/genstore/quarantine.go": true,
+	}
+	mutationCalls := map[string]bool{
+		"WriteFile": true, "WriteFileDurable": true, "RemoveDurable": true,
+		"RemoveAll": true, "Rename": true, "WriteSeal": true,
+	}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -160,36 +226,47 @@ func TestLegacyRootStorePathsStayRecoveryOnly(t *testing.T) {
 		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
+		rel, err := filepath.Rel(root, path)
+		if err != nil || allowed[filepath.ToSlash(rel)] {
+			return err
 		}
-		if _, ok := allowed[filepath.ToSlash(rel)]; ok {
-			return nil
-		}
-
 		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			return parseErr
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
-			selector, ok := node.(*ast.SelectorExpr)
+			call, ok := node.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			if _, legacy := legacySelectors[selector.Sel.Name]; legacy {
-				t.Errorf(
-					"%s: legacy root store path %s is recovery-only; resolve storepaths.ActivePaths",
-					fset.Position(selector.Pos()),
-					selector.Sel.Name,
-				)
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !mutationCalls[selector.Sel.Name] || !containsGenerationPathsCall(call) {
+				return true
 			}
+			t.Errorf("%s: direct GenerationPaths capability flows into mutation %s; use current/staged authority or confined pruning", fset.Position(call.Pos()), selector.Sel.Name)
 			return true
 		})
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk error = %v", err)
+		t.Fatal(err)
 	}
+}
+
+func containsGenerationPathsCall(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(child ast.Node) bool {
+		call, ok := child.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "GenerationPaths" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }

@@ -69,7 +69,7 @@ Sentry keys are raw witness keys held by sentry nodes. They are not
 Algorand accounts and cannot spend funds directly.
 
 Their canonical private record is
-`identities/default/keys/<WitnessKeyID>.sen`. The `.sen` container uses the
+the selected generation's `keys/<WitnessKeyID>.sen`. The `.sen` container uses the
 product store's current term key, bound to the credential's Witness Key ID, and a
 canonical `category: witness` payload. It is
 distinct from the independently encrypted external `.wit` artifact opened only

@@ -7,8 +7,8 @@ approved, or left to the operator default.
 Policy is stored beside the product keys in the product store:
 
 ```text
-identities/default/policy.yaml
-identities/default/policy.yaml.hmac
+identities/default/generations/<selected-generation>/policy.yaml
+identities/default/generations/<selected-generation>/policy.yaml.hmac
 ```
 
 `policy.yaml` controls account signing on signer nodes and sentry component
