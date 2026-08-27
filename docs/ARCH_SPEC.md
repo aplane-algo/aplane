@@ -660,6 +660,10 @@ Operationally:
   signer operations only through authenticated transports. See
   [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
 - active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by authenticated `store-root.enc`; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
+- store initialization stages the first generation with its node-role sidecar,
+  role-appropriate empty policy baseline and HMAC, and default key types before
+  publishing `store-root.enc`; installers must not create or sign a root-level
+  `identities/default/policy.yaml`,
 - systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
 - the effective product layout is fixed; `default` is a literal namespace and
   compatibility value, not a caller-supplied locator.
@@ -705,9 +709,9 @@ Important secret-handling contracts:
 - apadmin's configured local idle disconnect timeout.
 
 Admin protocol sessions carry `adminserver.SessionContext`: session ID,
-admin principal, target identity, auth method, transport, remote address, and
-requester/approver attribution fields. This context is internal to the admin
-transport and audit plumbing; it is not a new public product surface.
+admin principal, auth method, transport, remote address, and requester/approver
+attribution fields. This context is internal to the admin transport and audit
+plumbing; it is not a new public product surface.
 Admin authorization denials are audited with the session context, action,
 resource, and denial reason before returning `authorization_denied` to the
 admin client.
@@ -926,11 +930,13 @@ them underneath a live handler.
 
 The server-side plan/sign boundary is split as follows:
 
-- startup option resolution, validation, identity assembly, and lifecycle entrypoint in `internal/signerapp/startup`,
+- startup option resolution, validation, product-runtime assembly, and lifecycle entrypoint in `internal/signerapp/startup`,
 - transport adapters/builders for HTTP, IPC, and SSH in `internal/signerapp/daemon`,
 - transport-neutral admin request/result types and framed connections in `internal/adminproto`,
 - server-side admin protocol/session state machine in `internal/signerapp/adminserver`,
-- process-root identity-targeted admin facade for server-originated admin traffic in `internal/signerapp/adminserver.AdminHub` and `internal/signerapp/daemon/admin_hub.go`,
+- process-root admin facade for server-originated admin traffic and process-wide
+  session presence checks in `internal/signerapp/adminserver.AdminHub` and
+  `internal/signerapp/daemon/admin_hub.go`,
 - signer-backed admin protocol services in `internal/signerapp/daemon/admin_services.go`,
 - admin settings and policy service composition in `internal/signerapp/admin`,
 - admin key-mutation HTTP/IPC transport mapping in `internal/signerapp/daemon/http_handlers_admin.go` and `internal/signerapp/daemon/admin_services.go`, with reusable key operations in `internal/signerapp/keyadmin`,
@@ -1688,8 +1694,10 @@ The repo uses:
   `keytype_inventory_test.go` pins the bundled key-type inventory;
   `managed_credential_files_test.go` pins managed credential extension
   ownership; `witness_boundary_test.go` pins witness custody and signing
-  boundaries; `generation_storage_test.go` pins the no-hardlink rule and
-  store-owning package inventory from ARCH_GENERATIONS;
+  boundaries; `generation_storage_test.go` pins the no-hardlink rule,
+  store-owning package inventory, removal of retired root store paths and commit
+  artifacts, confinement of direct generation writers, and the prohibition on
+  installer-owned root-level policy setup from ARCH_GENERATIONS;
   `store_permissions_test.go` pins the audited shared-mode allowlist and keeps
   legacy group-bearing modes out of signer-store writers;
   `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,

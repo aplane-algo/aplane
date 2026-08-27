@@ -789,8 +789,8 @@ Validation:
 - at startup validation, headless mode rejects `lock_on_disconnect:true`
 - at startup validation, headless mode requires `passphrase_timeout:"0"`
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
-  30 minutes. The default is `60s`. Product runtime config may override the process
-  default for that identity.
+  30 minutes. The default is `60s`. The product runtime configuration may
+  override the process default.
 - initialized signer data roots must contain root `node.yaml` with role
   `signer` or `sentry`. New initialization defaults to `signer` unless an
   sentry node is explicitly requested. Product runtime config `mode` is an
@@ -802,7 +802,8 @@ Validation:
 - node role parsing and `node.yaml` integrity sidecars are owned by
   `internal/noderole`; role-versus-key-type allowance decisions are owned by
   `internal/keyclass`.
-- each identity's `node.yaml.hmac` is strict sidecar version 2 with algorithm
+- the selected generation's `node.yaml.hmac` is strict sidecar version 2 with
+  algorithm
   `hmac-sha256`, key ID `keystore-master-hkdf-node-role-v1`, an explicit
   positive `integrity_term`, and a canonical lowercase HMAC-SHA256 over the
   exact root `node.yaml` bytes. Only the current term is authorized while the
@@ -1311,6 +1312,13 @@ layout is readable, translated, or migrated in place. Initialization refuses
 retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
 from credential backup into a fresh store.
 
+Store initialization stages the first generation with its generation-scoped
+node-role sidecar, role-appropriate empty `policy.yaml` and `policy.yaml.hmac`,
+and default key types before the sole commit publishes `store-root.enc`.
+Installers and smoke-test setup must not create or sign a root-level
+`identities/default/policy.yaml`; later policy changes target the authenticated
+active generation through the stopped-store or live-admin policy surfaces.
+
 ### Term Envelope Object Context
 
 Every object encrypted under a keyring term records the term in the clear and
@@ -1323,8 +1331,6 @@ selector:
 | `account-key` | Algorand address |
 | `sentry-credential` | Witness Key ID |
 | `keytype-template` | key type |
-| `rotation-snapshot` | fixed selector `pending` |
-| `rotation-baseline` | fixed selector `current` |
 
 Behavior:
 
@@ -2299,10 +2305,10 @@ by `startup.WireReloadFunc` to `templates.ReloadService.Reload`. Its order is:
 7. activate the key session
 8. emit audit and IPC notifications
 
-Template installation and identity key-type state are resolved from key type
-state records before key scan so generation/discovery state is current. The key scan
-classifies generic LogicSig keys and exposes signing args directly from the
-v1 signing-metadata key payload. LogicSig key files whose derivation metadata
+Template installation and product-store key-type state are resolved from key
+type state records before key scan so generation/discovery state is current. The
+key scan classifies generic LogicSig keys and exposes signing args directly from
+the v1 signing-metadata key payload. LogicSig key files whose derivation metadata
 does not match their bytecode, or whose bytecode derives an on-curve address,
 are rejected during scan. LogicSig
 key files missing `signing_metadata_version` are rejected when signing or
@@ -2713,7 +2719,7 @@ process exit.
 
 ### Live direct restore
 
-Admin protocol v4 exposes a direct credential restore:
+The current admin protocol exposes a direct credential restore:
 
 - `restore_backup`: archive path, optional selectors, export passphrase, and
   optional `replace_existing`
