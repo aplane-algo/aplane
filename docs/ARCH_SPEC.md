@@ -407,12 +407,17 @@ they sign already-shaped AlgoKit transaction indexes through raw `/sign` and do
 not perform APlane typed prep themselves.
 For ordinary APlane-managed signing, final group IDs, fee pooling, dummy
 insertion, policy, approval, and signing remain apsigner authority. Guarded
-prepared signing is the deliberate exception at the client-prep boundary:
-because component signatures require frozen canonical bytes, SDKs follow the
-same guarded client flow as apshell by classifying guarded targets, preparing
-guarded dummy/passthrough context locally when required, then using
-`/sign/component` and `/sign/assemble` for signer-owned component signing and
-final assembly.
+prepared signing preserves that planning boundary. An SDK classifies guarded
+targets, constructs the intended original transactions, and sends those
+transactions plus signer-advertised structured resource hints to `/plan`.
+Resource hints are planning inputs, not client-created dummy transactions. The
+SDK validates the returned canonical group and mutation report, derives the
+target/context/dummy position partition, and locally signs only the canonical
+dummy suffix returned by `/plan`. It then obtains the required user, sentry, or
+bounded-base components, calls ordinary `/sign` for any non-guarded original
+positions, and sends the frozen group plus signed passthrough positions to
+`/sign/assemble` for signer-owned final assembly. Submission or simulation uses
+the exact assembled group.
 SDK-facing HTTP behavior includes not only JSON payload shape, but also
 contractual client expectations such as `/status` discovery and
 approval-wait-aware `/sign` deadlines and explicit `/sign/cancel` request
@@ -1155,7 +1160,11 @@ The system separates:
 - cryptographic authorization,
 - submission.
 
-The signer server canonicalizes group shape, fee pooling, dummy requirements, and group IDs; then it signs or assembles each entry according to key type.
+The signer server canonicalizes group shape, fee pooling, dummy requirements,
+and group IDs; then it signs or assembles each entry according to key type. In
+component choreography, canonicalization occurs only in the preceding `/plan`
+call. `/sign/component` and `/sign/assemble` consume and validate the frozen
+group without adding or repairing transactions.
 
 Three authorization classes:
 

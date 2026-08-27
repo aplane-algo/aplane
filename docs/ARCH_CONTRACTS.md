@@ -2859,17 +2859,21 @@ Cross-SDK compatibility-bearing behavior:
   as incomplete and not submission-ready. Applications that implement
   completion must conform to the frozen bounded protocol and independent
   validation rules; ordinary SDK signing helpers reject admin-key operations.
-- Guarded prepared signing is a special client-prep path because component
-  signatures require canonical bytes before user and sentry signatures are
-  requested. SDKs may mirror apshell's guarded client flow by classifying
-  guarded targets, sending signer-advertised structured LogicSig resources to
-  `/plan`, accepting the signer's canonical dummies, fees, and group ID, signing
-  dummy/passthrough slots locally, and then using `/sign/component` plus
-  `/sign/assemble`. Final guarded assembly remains signer-owned. User-role
-  `/sign/component` requests run the signer-domain approval gates and can
-  block on operator approval, so SDK deadlines for them follow the same
-  approval-aware rule as `/sign`, not the short sentry-role component
-  deadline.
+- Guarded prepared signing requires frozen canonical bytes before component
+  signatures are requested. The normative SDK sequence is: classify guarded
+  targets; construct intended original transactions; send those originals plus
+  signer-advertised structured LogicSig resource hints to `/plan`; validate the
+  returned canonical group and mutation report; derive the
+  target/context/dummy position partition; locally sign only the canonical
+  dummy suffix returned by `/plan`; obtain the required user, sentry, or
+  bounded-base components; call ordinary `/sign` for any non-guarded original
+  positions; and call `/sign/assemble` with the frozen group and signed
+  passthrough positions. Resource hints are planning inputs, not locally
+  inserted transactions. Final guarded assembly remains signer-owned, and
+  submission or simulation uses the exact assembled group. User-role
+  `/sign/component` requests run the signer-domain approval gates and can block
+  on operator approval, so SDK deadlines for them follow the same
+  approval-aware rule as `/sign`, not the short sentry-role component deadline.
 - Guarded simulation uses the same component and assembly flow as submission.
   The client obtains ordinary user and sentry component signatures, signs local
   non-guarded legs through `/sign`, assembles through `/sign/assemble`, verifies
