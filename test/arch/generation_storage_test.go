@@ -195,6 +195,35 @@ func TestRetiredStoreCommitArtifactsStayDeleted(t *testing.T) {
 	}
 }
 
+func TestInstallerAndDockerSmokeDoNotWriteRootLevelPolicy(t *testing.T) {
+	root := filepath.Join("..", "..")
+	installer, err := os.ReadFile(filepath.Join(root, "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{
+		`identities/default/policy.yaml`,
+		`Sign policy.yaml now?`,
+		`ensure_policy_integrity_sidecar`,
+	} {
+		if strings.Contains(string(installer), retired) {
+			t.Errorf("install.sh retains retired root-level policy workflow %q", retired)
+		}
+	}
+
+	smokePath := filepath.Join(root, "scripts", "docker-local-four-node-smoke.sh")
+	smoke, err := os.ReadFile(smokePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(smoke), `identities/default/policy.yaml`) {
+		t.Error("docker-local-four-node-smoke.sh writes the retired root-level policy path")
+	}
+	if !strings.Contains(string(smoke), `policy rescue apply -`) {
+		t.Error("docker-local-four-node-smoke.sh does not apply sentry policy through authenticated rescue")
+	}
+}
+
 // TestDirectGenerationWritersStayConfined prevents a caller from resolving an
 // arbitrary generation ID directly into a filesystem mutation. The two
 // confined exceptions are genstore's current-generation seal at commit and

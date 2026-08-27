@@ -628,8 +628,9 @@ YAML
 }
 
 configure_sentry_policy() {
-    local policy_path="/home/$TEST_USER/aplane/apsigner/identities/default/policy.yaml"
-    docker_exec_as_tester "$SENTRY_CONTAINER" "cat > '$policy_path' <<'YAML'
+    docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
+        apadmin -d /home/$TEST_USER/aplane/apsigner policy rescue apply - <<'YAML'
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -641,9 +642,7 @@ transfer_policy:
       assets: [\"*\"]
       destinations: [\"*\"]
 YAML
-        chmod 600 '$policy_path' && \
-        . /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apstore policy sign"
+    "
 }
 
 verify_localnet_reachable_from_nodes() {

@@ -431,8 +431,11 @@ func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPubli
 	var envelope witness.PublicReference
 	var found bool
 	err = s.withStoreInspection(func() error {
-		var err error
-		envelope, found, err = apkeys.ReadWitnessPublicMetadata(ir.KeyPaths(), componentKey)
+		active, err := ir.ActivePaths()
+		if err != nil {
+			return err
+		}
+		envelope, found, err = apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
 		return err
 	})
 	if err != nil {

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -119,7 +118,7 @@ reject_clawback: false
 func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness, signerDataDir, passphrase, policyYAML string) {
 	t.Helper()
 
-	path := policy.PolicyPath(signerDataDir)
+	path := mustActiveStorePaths(t, signerDataDir).PolicyPath()
 	if err := os.WriteFile(path, []byte(policyYAML), 0o600); err != nil {
 		t.Fatalf("failed to write policy file %s: %v", path, err)
 	}

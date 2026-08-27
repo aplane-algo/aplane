@@ -270,20 +270,18 @@ mkdir -p "$SIGNER_DATA/identities/default/.ssh"
 cp "$CLIENT_DATA/.ssh/id_ed25519.pub" "$SIGNER_DATA/identities/default/.ssh/authorized_keys"
 echo "  Authorized client key for default identity"
 
-# Write permissive test policy for the default identity.
+# Apply a permissive test policy to the authenticated active generation.
 # Production defaults reject rekey/close/clawback, but integration tests need
 # these operations to succeed for cleanup and workflow verification.
 # Tests that specifically verify policy rejection create their own fixtures.
-cat > "$SIGNER_DATA/identities/default/policy.yaml" << YAML
+APSIGNER_PASSPHRASE="$TEST_PASSPHRASE" \
+    go run "$PROJECT_ROOT/cmd/apadmin" -d "$SIGNER_DATA" policy rescue apply - << YAML
 reject_foreign_rekey: false
 reject_close_remainder: false
 reject_asset_close: false
 reject_clawback: false
 YAML
-echo "  Wrote permissive test policy for default identity"
-printf '%s\n' "$TEST_PASSPHRASE" | APSIGNER_DATA="$SIGNER_DATA" \
-    go run "$PROJECT_ROOT/cmd/apstore" policy sign
-echo "  Signed permissive test policy"
+echo "  Applied permissive test policy for default identity"
 
 # Populate the plaintext template library used by apadmin's template browser.
 mkdir -p "$SIGNER_DATA/library/templates"

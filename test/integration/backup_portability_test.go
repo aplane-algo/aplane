@@ -18,6 +18,7 @@ import (
 
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -325,8 +326,7 @@ teal: |
 			t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
 			mustRestoreArchive(t, destApadmin, archivePath, exportPassphrase, address)
 
-			destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); err != nil {
+			if _, err := os.Stat(mustActiveAccountKeyPath(t, destClone.SignerDataDir, address)); err != nil {
 				t.Fatalf("restored key file missing for %s: %v", address, err)
 			}
 
@@ -439,8 +439,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 		t.Fatalf("expected restore through running signer to succeed, got %v\noutput:\n%s", err, output)
 	}
 
-	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); err != nil {
+	if _, err := os.Stat(mustActiveAccountKeyPath(t, destClone.SignerDataDir, address)); err != nil {
 		t.Fatalf("expected restored key file after IPC restore, got stat err=%v", err)
 	}
 	destToken := readSignerToken(t, destSigner)
@@ -494,10 +493,11 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
-	if pathErr != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
-	}
+	installedTemplatePath := templatestore.GetTemplateFilePathActive(
+		mustActiveStorePaths(t, destClone.SignerDataDir),
+		"aplane.htlc.v1",
+		templatestore.TemplateTypeGeneric,
+	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
@@ -569,10 +569,11 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err := os.Remove(libraryPath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination aplane.htlc.v1 library template: %v", err)
 	}
-	installedTemplatePath, pathErr := templatestore.GetTemplateFilePathForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric)
-	if pathErr != nil {
-		t.Fatalf("GetTemplateFilePathForPaths() error = %v", pathErr)
-	}
+	installedTemplatePath := templatestore.GetTemplateFilePathActive(
+		mustActiveStorePaths(t, destClone.SignerDataDir),
+		"aplane.htlc.v1",
+		templatestore.TemplateTypeGeneric,
+	)
 	if err := os.Remove(installedTemplatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("failed to remove destination installed aplane.htlc.v1 template: %v", err)
 	}
@@ -583,10 +584,14 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err != nil {
 		t.Fatalf("expected standalone key restore without local template or bundled definition, got %v\noutput:\n%s", err, output)
 	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, address)); statErr != nil {
+	if _, statErr := os.Stat(mustActiveAccountKeyPath(t, destClone.SignerDataDir, address)); statErr != nil {
 		t.Fatalf("expected restored key file without local template, got stat err=%v", statErr)
 	}
-	if templatestore.TemplateExistsForPaths(destPaths, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsActive(
+		mustActiveStorePaths(t, destClone.SignerDataDir),
+		"aplane.htlc.v1",
+		templatestore.TemplateTypeGeneric,
+	) {
 		t.Fatal("expected standalone restore not to materialize missing aplane.htlc.v1 template")
 	}
 }
@@ -621,7 +626,7 @@ func TestBackupAllArchiveContainsOnlyActiveKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate second key: %v", err)
 	}
-	deletedKeyPath := apkeys.AccountKeyFilePath(paths, deletedAddress)
+	deletedKeyPath := mustActiveAccountKeyPath(t, sourceClone.SignerDataDir, deletedAddress)
 	deletedKeyData, err := os.ReadFile(deletedKeyPath)
 	if err != nil {
 		t.Fatalf("failed to read second key file: %v", err)
@@ -673,6 +678,27 @@ func mustReadPassphrase(t *testing.T, signerDataDir string) string {
 		t.Fatalf("failed to read signer passphrase: %v", err)
 	}
 	return strings.TrimSpace(string(data))
+}
+
+func mustActiveAccountKeyPath(t *testing.T, signerDataDir, address string) string {
+	t.Helper()
+	return apkeys.AccountKeyFilePathActive(mustActiveStorePaths(t, signerDataDir), address)
+}
+
+func mustActiveStorePaths(t *testing.T, signerDataDir string) utilkeys.ActivePaths {
+	t.Helper()
+
+	paths := utilkeys.NewPaths(signerDataDir)
+	passphrase := []byte(mustReadPassphrase(t, signerDataDir))
+	defer apcrypto.ZeroBytes(passphrase)
+
+	active, keyring, err := genstore.ResolveStoreRoot(paths, passphrase)
+	if err != nil {
+		t.Fatalf("failed to authenticate active generation: %v", err)
+	}
+	defer keyring.Zero()
+
+	return active
 }
 
 func mustCreateBackupArchive(t *testing.T, apadmin *harness.ApAdminHarness, what, exportPassphrase string) string {

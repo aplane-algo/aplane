@@ -1639,78 +1639,6 @@ ensure_prod_backup_permissions() {
     chmod 700 "$backup_dir"
 }
 
-ensure_policy_integrity_sidecar() {
-    local data_dir="$1"
-    local apstore_bin="$2"
-    local identity_dir="$data_dir/identities/default"
-    local keystore_file="$identity_dir/.keystore"
-    local policy_file="$identity_dir/policy.yaml"
-    local sidecar_file="$policy_file.hmac"
-    local answer
-    local policy_missing=0
-
-    [ -f "$keystore_file" ] || return 0
-
-    echo ""
-    echo "=== Policy integrity ==="
-    echo ""
-
-    if [ -f "$sidecar_file" ]; then
-        echo "Policy integrity sidecar present; skipping."
-        return 0
-    fi
-
-    if [ -e "$sidecar_file" ]; then
-        echo "Error: policy integrity sidecar exists but is not a regular file: $sidecar_file" >&2
-        exit 1
-    fi
-
-    echo "Policy integrity sidecar missing:"
-    echo "  $sidecar_file"
-    echo ""
-    echo "APlane now requires policy.yaml to be signed before the signer can unlock or reload."
-    echo "The installer can sign the current policy file using your store passphrase."
-    echo ""
-
-    if [ ! -r /dev/tty ]; then
-        echo "Error: cannot sign policy without a TTY." >&2
-        echo "Run this manually before starting apsigner:" >&2
-        if [ ! -f "$policy_file" ]; then
-            echo "  printf '\\n' > $(shell_quote "$policy_file")" >&2
-        fi
-        echo "  $(shell_quote "$apstore_bin") -d $(shell_quote "$data_dir") policy sign" >&2
-        exit 1
-    fi
-
-    if [ ! -f "$policy_file" ]; then
-        if [ -e "$policy_file" ]; then
-            echo "Error: policy path exists but is not a regular file: $policy_file" >&2
-            exit 1
-        fi
-        echo "No policy.yaml found; an empty policy baseline will be created before signing."
-        policy_missing=1
-    else
-        "$apstore_bin" -d "$data_dir" policy check
-    fi
-
-    read -rp "Sign policy.yaml now? [Y/n] " answer </dev/tty
-    if [ -n "$answer" ] && [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
-        echo "Policy was not signed. Run this before starting apsigner:" >&2
-        echo "  $(shell_quote "$apstore_bin") -d $(shell_quote "$data_dir") policy sign" >&2
-        exit 1
-    fi
-
-    if [ "$policy_missing" = "1" ]; then
-        echo "Creating empty policy baseline."
-        mkdir -p "$identity_dir"
-        : > "$policy_file"
-        chmod 600 "$policy_file"
-        "$apstore_bin" -d "$data_dir" policy check
-    fi
-
-    "$apstore_bin" -d "$data_dir" policy sign </dev/tty
-}
-
 install_prod_uninstaller() {
     local data_dir="$1"
     local install_dir="$data_dir/install"
@@ -2278,8 +2206,6 @@ STARTEOF
     else
         "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
     fi
-    ensure_policy_integrity_sidecar "$DATA_DIR" "$SIGNER_BINDIR/apstore"
-
     # Configure apshell
     echo ""
     echo "=== apshell configuration ==="
@@ -2564,8 +2490,6 @@ if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
 else
     "$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
 fi
-ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
-
 echo ""
 echo "Migrating signer store to service-user-only permissions..."
 "$BINDIR/apstore" -d "$DATA_DIR" permissions migrate

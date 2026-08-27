@@ -5,10 +5,12 @@ package daemon
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -52,6 +54,47 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 	removed := svc.RemoveSentryReference(adminproto.RemoveSentryReferenceRequest{Name: "lab"})
 	if !removed.Success || !removed.Removed || removed.ComponentKey != witnessKeyID {
 		t.Fatalf("RemoveSentryReference() = %#v", removed)
+	}
+}
+
+func TestSignerAdminServicesExportsSentryPublicFromAuthenticatedGeneration(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	publicBytes := make([]byte, witnessPublicKeySizeForTest(t))
+	for i := range publicBytes {
+		publicBytes[i] = 0xab
+	}
+	witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, strings.Repeat("ab", len(publicBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := server.productRuntime().ActivePaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(apkeys.WitnessPublicMetadataPathActive(active, witnessKeyID), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := server.adminServices().ExportSentryPublic(adminproto.ExportSentryPublicRequest{WitnessKeyID: witnessKeyID})
+	if !result.Success || result.WitnessKeyID != witnessKeyID {
+		t.Fatalf("ExportSentryPublic() = %#v", result)
+	}
+	var got witness.PublicReference
+	if err := json.Unmarshal([]byte(result.EnvelopeJSON), &got); err != nil {
+		t.Fatalf("ExportSentryPublic() returned invalid JSON: %v", err)
+	}
+	if got != *envelope {
+		t.Fatalf("ExportSentryPublic() envelope = %#v, want %#v", got, *envelope)
 	}
 }
 
