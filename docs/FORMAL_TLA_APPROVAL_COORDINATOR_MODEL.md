@@ -1,5 +1,11 @@
 # TLA+ Approval Coordinator Model
 
+> Status: TLC checked across four recorded configurations: `Safety` at 112
+> distinct states (depth 10) normal and 294 (depth 13) deep, and `Progress`
+> liveness at 490 distinct states (depth 10) normal and 3,773 (depth 13) deep,
+> with no counterexamples. `docs/formal/metrics.json` and
+> `docs/formal/metrics_deep.json` remain the authoritative run inventory.
+
 The executable model is
 [`formal/approval_coordinator.tla`](formal/approval_coordinator.tla); the design
 and code anchors are in

@@ -1,8 +1,9 @@
 # Bounded Sentry Machine-Checkable Model
 
 > Status: TLC checked over every abstract input combination; the recorded run
-> generated 99,584 distinct reachable states at depth 4 and found no
-> counterexamples for `Safety`.
+> generated 199,168 distinct reachable states at depth 4 and found no
+> counterexamples for `Safety`. The normal configuration exhausts the model's
+> full finite state space, so no deep configuration exists for this module.
 
 This model checks the first-party client's stage order and the security-bearing
 final acceptance boundary of the `bounded-sentry1` choreography. It
@@ -27,7 +28,7 @@ The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 |---|---|---|
 | BS1 | In the modeled first-party flow, user policy, approval, and base release precede the sentry request | `BS1_UserFirst` |
 | BS2 | External-admin completion never requests or consumes a sentry | `BS2_AdminBypassesSentry` |
-| BS3 | Spend output requires valid base and sentry authorities | `BS3_SpendAuthoritiesVerified` |
+| BS3 | Spend output requires a valid assembly receipt plus valid base and sentry authorities | `BS3_SpendAuthoritiesVerified` |
 | BS4 | Exact target coverage and path-valid argument sources gate output | `BS4_DeclaredArgumentsOnly` |
 | BS5 | Passthrough and canonical transaction bytes remain bound | `BS5_CanonicalGroupBound` |
 | BS6 | Invalid or signer-gate-rejected paths cannot output | `BS6_InvalidNeverOutputs` |
@@ -37,7 +38,8 @@ The spec lives at [formal/bounded_sentry.tla](formal/bounded_sentry.tla).
 
 `Init` enumerates every combination of path (`spend`, `admin`, or invalid),
 finalized-plan and classification outcomes, signer policy and approval
-decisions, signature validity, metadata stability, exact target coverage,
+decisions, assembly-receipt validity, signature validity, metadata stability,
+exact target coverage,
 argument-source/path-mask validity, derived-argument success, passthrough
 validity, and canonical-byte binding.
 
@@ -67,8 +69,8 @@ or generated TEAL.
 - Allowing `SentryStep` from `planned` violates `BS1_UserFirst`.
 - Routing `admin_partial` through `SentryStep` violates
   `BS2_AdminBypassesSentry`.
-- Removing either signature conjunct from `AssembleStep` violates
-  `BS3_SpendAuthoritiesVerified`.
+- Removing the receipt conjunct or either signature conjunct from
+  `AssembleStep` violates `BS3_SpendAuthoritiesVerified`.
 - Removing source-layout, coverage, or byte-binding conjuncts violates BS4 or
   BS5.
 - Setting output on a failed branch violates BS6 or BS7.
@@ -85,12 +87,13 @@ The checked model passes its standard exhaustive run.
 - `sourceLayout` abstracts the complete bounded slot contract: base,
   derived/runtime, sentry, and admin sources plus their path masks. The Go
   implementation and compiler tests verify the concrete order and slot sizes.
-- The bounded assembly receipt is not modeled. The code mints a Falcon-signed
-  assembly receipt (`bounded_sentry.go` spend signing) and verifies it during
-  assembly before accepting the base or sentry component;
-  `BS3_SpendAuthoritiesVerified` covers only the base signature, sentry
-  signature, and sentry policy. Receipt coverage is a flagged model-extension
-  candidate (see the roadmap drift reviews).
+- The bounded assembly receipt is an abstract boolean. The code mints a
+  Falcon-signed receipt during spend signing and verifies it against the
+  bounded spending public key during assembly, before accepting the base or
+  sentry component; `receipt` abstracts that whole verification, including
+  the metadata-hash and runtime-argument binding checked concretely by
+  `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`. The admin path has no
+  receipt by contract.
 - The admin branch represents `/sign/bounded-admin` plus external completion.
   It requires base and admin signatures but intentionally ignores sentry policy,
   sentry signatures, and spend-only derived arguments.

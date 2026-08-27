@@ -9,7 +9,8 @@ The model checks the security-bearing order and final acceptance boundary:
   BS1 : a sentry request can occur only after finalized classification,
         signer policy, operator approval, and base-component release.
   BS2 : the external-admin path never requests or consumes a sentry.
-  BS3 : spend output requires valid base and sentry signatures.
+  BS3 : spend output requires a valid assembly receipt plus valid base and
+        sentry signatures.
   BS4 : output requires exact target coverage and a path-valid argument-source
         layout; spend additionally requires successful derived arguments.
   BS5 : output preserves passthrough entries and exact canonical bytes.
@@ -42,6 +43,7 @@ Input == [
     metadata     : BOOLEAN,
     userPolicy   : BOOLEAN,
     approval     : BOOLEAN,
+    receipt      : BOOLEAN,
     baseSig      : BOOLEAN,
     sentryPolicy : BOOLEAN,
     sentrySig    : BOOLEAN,
@@ -113,14 +115,17 @@ SentryStep ==
     /\ stage' = IF input.sentryPolicy THEN "sentry_released" ELSE "rejected"
     /\ UNCHANGED <<input, baseReleased, output>>
 
-(* POST /sign/assemble revalidates metadata, exact target coverage,
-   both signatures, source/path masks, derived arguments, passthrough binding,
+(* POST /sign/assemble revalidates metadata, verifies the Falcon-signed
+   assembly receipt against the bounded spending public key before accepting
+   the base or sentry component, then checks exact target coverage, both
+   signatures, source/path masks, derived arguments, passthrough binding,
    and canonical transaction bytes before returning one atomic group. *)
 AssembleStep ==
     /\ stage = "sentry_released"
     /\ LET success ==
             /\ input.path = "spend"
             /\ input.metadata
+            /\ input.receipt
             /\ input.baseSig
             /\ input.sentrySig
             /\ input.coverage
@@ -182,6 +187,7 @@ BS3_SpendAuthoritiesVerified ==
         /\ baseReleased
         /\ sentryRequested
         /\ sentryReleased
+        /\ input.receipt
         /\ input.baseSig
         /\ input.sentrySig
         /\ input.sentryPolicy

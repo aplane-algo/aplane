@@ -28,7 +28,9 @@ tests.
 Every model change must update, in the same commit:
 
 - its prose companion and `FORMAL_TRACEABILITY.md` anchors;
-- normal and deep configurations;
+- normal and deep configurations where the model has scalable bounds; a model
+  whose normal configuration already exhausts its full finite state space
+  needs no deep configuration and records that fact in its prose companion;
 - `formal/metrics.json` and `formal/metrics_deep.json` state counts;
 - copied-operator drift checks when operators are duplicated; and
 - mutation rationale for history flags or other load-bearing guards.
@@ -120,3 +122,17 @@ rules; (3) `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` lacks the status-header
 convention the other TLA docs use. Behavioral wart noted (sound under SO1/SO2):
 displacement is offered before auth reveals a newcomer is `auth_only`, so an
 owner can confirm displacement and never be displaced.
+
+Follow-up (2026-08-27, same day): flagged items (1)-(3) addressed. The
+bounded assembly receipt is now modeled in `bounded_sentry.tla` as an
+abstract `receipt` input consumed by `AssembleStep` and required by
+`BS3_SpendAuthoritiesVerified` (199,168 distinct states at depth 4, metrics
+updated; removing the receipt check from assembly now violates BS3).
+`store_root_commit.tla` gained header code anchors and its prose companion
+`FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md`. The working rules now state that a
+model whose normal configuration exhausts its full finite state space needs
+no deep configuration and records that in its prose companion, which
+resolves the deep-config gap for `store_root_commit` and `bounded_sentry`
+truthfully rather than with duplicate runs.
+`FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` gained the standard status
+header quoting its four recorded runs.

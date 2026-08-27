@@ -41,7 +41,7 @@
   },
   {
     "spec": "bounded_sentry",
-    "distinct_states": 99584,
+    "distinct_states": 199168,
     "depth": 4
   },
   {

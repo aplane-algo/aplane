@@ -6,6 +6,24 @@ Atomic store-root model. One durable record carries generation selection,
 keyring epoch, and current term. VerifyPins=FALSE is the deliberate negative
 control: substitution after the outgoing seal can then reach the new root
 without exact input authorization and violates NoUnpinnedPromotion.
+
+Code anchors:
+  - Publish/SyncPublication/SealOutgoing transcribe the staged mint in
+    internal/genstore/commit.go (ValidateCandidate, syncTreeBottomUp, the
+    generations-dir rename plus SyncDir, and the outgoing seal).
+  - SubstituteInput/BuildCandidate/RenameRoot/SyncRoot transcribe
+    internal/genstore/root_commit.go: ValidateSealed before the fresh exact
+    reread, AuthenticateStoreRoot, the outgoing-generation equality check,
+    and the single fsutil.WriteFileDurable root replacement. The exact-input
+    MAC binding lives in internal/crypto/store_root.go.
+  - CrashBeforeRename/ReconcileOldRoot/RestoreAuthenticOldRoot transcribe
+    internal/genstore/reconcile.go and internal/genstore/quarantine.go:
+    a pre-root crash leaves the old root authoritative, and a complete
+    non-current publication is quarantined intact, never deleted or adopted.
+  - The instantiated cutover is the changepass shape from
+    internal/storepass/rotate.go, where generation, epoch, and term all move.
+
+See FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md for the prose companion.
 ***************************************************************************)
 
 CONSTANTS OldGen, NewGen, OldEpoch, NewEpoch, OldTerm, NewTerm, VerifyPins
