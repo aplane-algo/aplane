@@ -585,12 +585,12 @@ func TestPublicKeyFormat(t *testing.T) {
 
 // TestKeysDirectoryCreation verifies automatic identities/default/keys/ directory creation
 func TestKeysDirectoryCreation(t *testing.T) {
-	paths, cleanup := setupTestKeystore(t)
+	_, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
 	// Ensure identities directory doesn't exist
 	_ = os.RemoveAll("identities")
-	paths = utilkeys.NewPaths(".")
+	paths := utilkeys.NewPaths(".")
 
 	generator := newTestGenerator()
 	seed := make([]byte, 64)

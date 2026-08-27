@@ -432,7 +432,7 @@ func TestKeyFilePermissions(t *testing.T) {
 
 // TestKeysDirectoryCreation verifies keys directory is created if missing
 func TestKeysDirectoryCreation(t *testing.T) {
-	paths, cleanup := setupTestKeystore(t)
+	_, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
 	gen := &Ed25519Generator{}
@@ -440,7 +440,7 @@ func TestKeysDirectoryCreation(t *testing.T) {
 	// An uninitialized store (no generation) refuses key generation; keys
 	// only ever land inside the committed generation.
 	_ = os.RemoveAll("identities")
-	paths = utilpaths.NewPaths(".")
+	paths := utilpaths.NewPaths(".")
 	if _, err := gen.GenerateRandom(context.Background(), paths, cryptotest.Keyring(t, testMasterKey), "ed25519", nil); err == nil {
 		t.Fatal("GenerateRandom succeeded on an uninitialized store")
 	}

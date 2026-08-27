@@ -382,10 +382,6 @@ func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, regi
 	return nil
 }
 
-func registerTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar) templatepolicy.RegistrationOutcome {
-	return processTemplateRecord(active, kr, rec, registrar, true)
-}
-
 func processTemplateRecord(active storepaths.ActivePaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, register bool) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType, registrar.TemplateType)

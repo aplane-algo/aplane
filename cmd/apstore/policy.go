@@ -192,11 +192,6 @@ func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.
 	return stored, nil
 }
 
-func readStoreKeyring() (*crypto.Keyring, error) {
-	_, kr, err := readStore()
-	return kr, err
-}
-
 func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {
 	fmt.Fprint(os.Stderr, "Enter store passphrase: ")
 	passphrase, err := readPassword()
