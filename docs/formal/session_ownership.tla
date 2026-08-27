@@ -24,7 +24,8 @@ The code's mechanism, modeled here exactly:
 
   - Auth unlocks and marks the session authenticated
     (adminserver/session.go AuthenticateOutcome; ipc.go sets
-    authenticated = true immediately on AuthOutcomeAuthenticated).
+    cleanupRuntime on AuthOutcomeAuthenticated -- auth_only observer
+    sessions never set it and are outside this model).
   - PromoteToActive is an atomic swap under the SessionManager mutex:
     the replacement becomes active in the same step the old owner is
     removed (manager.go PromoteToActive). Only after that is the old

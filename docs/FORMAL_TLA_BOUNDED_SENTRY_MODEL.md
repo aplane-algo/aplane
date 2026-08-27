@@ -85,6 +85,12 @@ The checked model passes its standard exhaustive run.
 - `sourceLayout` abstracts the complete bounded slot contract: base,
   derived/runtime, sentry, and admin sources plus their path masks. The Go
   implementation and compiler tests verify the concrete order and slot sizes.
+- The bounded assembly receipt is not modeled. The code mints a Falcon-signed
+  assembly receipt (`bounded_sentry.go` spend signing) and verifies it during
+  assembly before accepting the base or sentry component;
+  `BS3_SpendAuthoritiesVerified` covers only the base signature, sentry
+  signature, and sentry policy. Receipt coverage is a flagged model-extension
+  candidate (see the roadmap drift reviews).
 - The admin branch represents `/sign/bounded-admin` plus external completion.
   It requires base and admin signatures but intentionally ignores sentry policy,
   sentry signatures, and spend-only derived arguments.

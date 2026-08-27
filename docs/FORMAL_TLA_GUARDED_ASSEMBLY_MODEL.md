@@ -21,7 +21,7 @@ The spec lives at [formal/guarded_assembly.tla](formal/guarded_assembly.tla).
 | A7: sentry signature verified against embedded sentry key | FORMAL_GUARDED_SIGNING_MODEL.md | `A7_SentrySignatureVerified` |
 | A8: passthrough transaction-ID binding | FORMAL_GUARDED_SIGNING_MODEL.md | `A8_PassthroughTxidBound` |
 | A14: assembled txn preserves canonical txid + sender/AuthAddr binding | FORMAL_GUARDED_SIGNING_MODEL.md | `A14_AssembledTxnBound` |
-| abort-on-first-failure | `assembleDecodedGuarded` | `NoPartialOutput` |
+| abort-on-first-failure | `assembleDecoded` | `NoPartialOutput` |
 
 These five were chosen because they are the finite, combinatorial core of
 the guarded trust story (signature/role/txid binding checks over a small

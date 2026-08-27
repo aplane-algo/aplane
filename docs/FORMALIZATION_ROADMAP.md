@@ -83,3 +83,40 @@ fail-all-before-displacement, PS3 fail-closed AutoConfirm review, guarded
 assembly abort-on-first-failure. Bookkeeping consistent: `metrics.json` state
 counts match the model-doc status headers and traceability prose. No new
 unmodeled surface found in the range.
+
+Drift review (2026-08-27, HEAD `92940382`): range `ea4f0347..92940382` (~40
+commits: single-tenant/fixed-runtime cleanup, atomic store root #50, FNet
+removal). `make formal-test` (12 runs) and `make formal-test-deep` (7 runs)
+passed with all metrics matched; the run count moved 13→12 with the
+lifecycle-model retirement and `store_root_commit` addition. Every modeled
+guard verified against current code and HOLDS: approval fail-all triggers
+(disconnect/displacement/lock; no shutdown or decommission caller remains),
+delivery-turn release and post-turn rechecks, ApprovalWait defaulting (three
+independent floors), SO2 disconnect-cleanup condition, PromoteToActive atomic
+swap, displacement-after-promotion ordering, guarded assembly check order and
+abort-on-first-failure, bounded-sentry gate order, sign-boundary mode
+trichotomy and foreign/passthrough output rules, policy verdict precedence
+ladder, plugin digest recomputation / fail-closed pregrouped review / plan
+preservation / mode-dispatch totality, and the full `store_root_commit`
+protocol transcription against `genstore` (stage→validate→sync→publish→seal→
+single root rename; recovery-block on unconfirmed replacement; quarantine of
+complete ambiguous publications). The in-range identity-locator removal was
+parameter-threading only; no modeled guard changed. New-surface scan clean
+(`auth_only`, the maintenance fence, and `recovery_blocked` all predate the
+range; the only wire change is `StatusResponse.IdentityID` removal plus
+optional `warnings`). Fixed in this commit: traceability anchors
+A1/A4/BS4/BS5/BS7 (component/assembly symbols unexported or unified into
+`AssembleWithContext`/`assembleBoundedTarget`), AP6 stale "and shutdown",
+PS6/I8/S2 line numbers, store-root positive state count (12@d7 → 14@d9),
+`assembleDecodedGuarded` → `assembleDecoded` in `guarded_assembly.tla` and
+its model doc, the `session_ownership.tla` `cleanupRuntime` comment, and the
+plugin model's `external_plugins_test.go` test anchor. Flagged, not fixed
+(model-extension / bookkeeping candidates, out of scope here): (1) the
+bounded assembly receipt is a real acceptance guard in code but unmodeled in
+`bounded_sentry.tla` — a limits note was added to its model doc; (2)
+`store_root_commit` is missing its prose companion doc, header code anchors,
+and a deep configuration/`metrics_deep.json` entry required by the working
+rules; (3) `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` lacks the status-header
+convention the other TLA docs use. Behavioral wart noted (sound under SO1/SO2):
+displacement is offered before auth reveals a newcomer is `auth_only`, so an
+owner can confirm displacement and never be displaced.

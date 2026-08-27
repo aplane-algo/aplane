@@ -170,7 +170,7 @@ rejected at `apshellapp/submission.go`), so there is no third path.
 - Pregrouped validation/rendering/fail-closed:
   `internal/engine/plugin_pregrouped_test.go`,
   `internal/apshellcli/plugin_pregrouped_review_test.go` and
-  `external_plugins_test.go` (mandatory review, AutoConfirm rejection).
+  `plugin_approval_test.go` (mandatory review, AutoConfirm rejection).
 - Presign preservation/byte-match/index discipline:
   `internal/engine/plugin_presign_test.go`.
 - Mixed passthrough display and auto-approval disable:

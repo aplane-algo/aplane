@@ -2,7 +2,7 @@
 (*
 Ninth machine-checkable model in the APlane formalization roadmap (M4).
 It machine-checks the assembly-verification core of
-FORMAL_GUARDED_SIGNING_MODEL.md — the checks assembleDecodedGuarded
+FORMAL_GUARDED_SIGNING_MODEL.md — the checks assembleDecoded
 (internal/signerapp/signing/component_assemble.go) runs before a guarded
 group becomes signed output:
 
@@ -151,7 +151,7 @@ VARIABLES
 vars == <<group, output>>
 
 \* Assembly aborts on the first failing entry and returns no partial
-\* signed group (component_assemble.go assembleDecodedGuarded).
+\* signed group (component_assemble.go assembleDecoded).
 GroupAccepted(g) == \A i \in 1..Len(g) : EntryAccepted(g[i])
 
 \* Output tokens record what each accepted slot contains: an assembled
