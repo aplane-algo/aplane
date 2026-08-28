@@ -12,8 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -23,13 +22,14 @@ jobs:
     name: Build Linux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.25'
           cache: true
@@ -38,7 +38,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-dev musl-tools
 
       - name: Install zig
-        uses: goto-bus-stop/setup-zig@v2
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
           version: 0.13.0
 
@@ -52,7 +52,7 @@ jobs:
         run: make bundled-plugins-linux
 
       - name: Upload Linux binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-binaries
           path: |
@@ -61,7 +61,7 @@ jobs:
             bin/windows-amd64/
 
       - name: Upload Linux bundled plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-plugin-binaries
           path: dist/bundled-plugins/
@@ -70,13 +70,14 @@ jobs:
     name: Build macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.25'
           cache: true
@@ -91,7 +92,7 @@ jobs:
         run: make bundled-plugins-darwin
 
       - name: Upload macOS binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-binaries
           path: |
@@ -99,7 +100,7 @@ jobs:
             bin/darwin-arm64/
 
       - name: Upload macOS bundled plugins
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-plugin-binaries
           path: dist/bundled-plugins/
@@ -108,38 +109,41 @@ jobs:
     name: Release
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.25'
           cache: true
 
       - name: Download Linux binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux-binaries
           path: bin/
 
       - name: Download macOS binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-binaries
           path: bin/
 
       - name: Download Linux bundled plugins
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux-plugin-binaries
           path: dist/bundled-plugins/
 
       - name: Download macOS bundled plugins
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-plugin-binaries
           path: dist/bundled-plugins/
@@ -318,13 +322,16 @@ jobs:
           cat dist/checksums.txt
 
       - name: Install minisign
-        run: go install aead.dev/minisign/cmd/minisign@latest
+        run: go install aead.dev/minisign/cmd/minisign@v0.3.0
 
       - name: Sign checksums
         run: |
-          printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
-          minisign -S -W -s /tmp/minisign.key -m dist/checksums.txt
-          rm -f /tmp/minisign.key
+          umask 077
+          key_file="$(mktemp "${RUNNER_TEMP}/minisign.XXXXXX")"
+          trap 'rm -f -- "$key_file"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key_file"
+          unset MINISIGN_SECRET_KEY
+          minisign -S -W -s "$key_file" -m dist/checksums.txt
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_KEY }}
 
@@ -342,7 +349,7 @@ jobs:
       - name: Delete existing release if present
         run: gh release delete "${RELEASE_TAG}" --yes 2>/dev/null || true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Create release
         run: |
@@ -354,4 +361,4 @@ jobs:
             dist/checksums.txt \
             dist/checksums.txt.minisig
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
