@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -200,7 +201,7 @@ func (m Model) beginGenerateWithSentryReference(keyTypeIndex int, reference Sent
 	m = m.initGenericLSigParamsForKeyType(keyType)
 	paramIndex := -1
 	for index, name := range m.forms.genericLSigParamOrder {
-		if name == "sentry" {
+		if name == sentryrefs.ParamSentryName {
 			paramIndex = index
 			break
 		}
@@ -210,7 +211,7 @@ func (m Model) beginGenerateWithSentryReference(keyTypeIndex int, reference Sent
 		m.viewState = ViewSentryReferenceDetails
 		return m, nil
 	}
-	m.forms.genericLSigParams["sentry"] = reference.ComponentKey
+	m.forms.genericLSigParams[sentryrefs.ParamSentryName] = reference.ComponentKey
 	m.forms.generateFocus = paramIndex
 	m.sentry.generateFromManager = true
 	m.sentry.importError = ""

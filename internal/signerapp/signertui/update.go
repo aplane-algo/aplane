@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -719,7 +720,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				for _, param := range info.CreationParams {
-					if param.Name == "sentry" {
+					if param.Name == sentryrefs.ParamSentryName {
 						resumeEnrollment = true
 						break
 					}
@@ -734,10 +735,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.forms.genericLSigParams[name] = value
 					}
 				}
-				if _, ok := m.forms.genericLSigParams["sentry"]; ok {
-					m.forms.genericLSigParams["sentry"] = m.sentry.pendingWitnessID
+				if _, ok := m.forms.genericLSigParams[sentryrefs.ParamSentryName]; ok {
+					m.forms.genericLSigParams[sentryrefs.ParamSentryName] = m.sentry.pendingWitnessID
 					for index, name := range m.forms.genericLSigParamOrder {
-						if name == "sentry" {
+						if name == sentryrefs.ParamSentryName {
 							m.forms.generateFocus = index
 							break
 						}

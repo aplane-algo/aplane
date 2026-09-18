@@ -68,12 +68,17 @@ func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigres
 // auth cache, algod client, sentry endpoints, and signer key cache. Construct
 // one per operation; it holds no independent state.
 func (e *Engine) guardedSigner() *guarded.Signer {
+	return e.guardedSignerWithHostKeyApproval(nil)
+}
+
+func (e *Engine) guardedSignerWithHostKeyApproval(approve sshtunnel.HostKeyApprovalHandler) *guarded.Signer {
 	return guarded.New(guarded.Deps{
 		Conn:             e.Connection,
 		Algod:            e.AlgodClient,
 		AuthCache:        &e.AuthCache,
 		EndpointRegistry: e.EndpointRegistry,
 		Cache:            guardedSignerCacheView{e.Core},
+		HostKeyApproval:  approve,
 	})
 }
 
@@ -87,10 +92,5 @@ func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint confi
 // probe that may confirm an unknown SSH host. Normal background discovery does
 // not install this callback and remains noninteractive.
 func (e *Engine) DiscoverSentryComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredSentryComponentKey, error) {
-	signer := guarded.New(guarded.Deps{
-		Conn: e.Connection, Algod: e.AlgodClient, AuthCache: &e.AuthCache,
-		EndpointRegistry: e.EndpointRegistry, Cache: guardedSignerCacheView{e.Core},
-		HostKeyApproval: approve,
-	})
-	return signer.DiscoverSentryComponentKeys(ctx, endpoint)
+	return e.guardedSignerWithHostKeyApproval(approve).DiscoverSentryComponentKeys(ctx, endpoint)
 }

@@ -43,7 +43,7 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 		return nil, err
 	}
 	if options.path == "" {
-		if r.AutoConfirm || (r.LineReader == nil && r.LineReaderContext == nil) {
+		if r.AutoConfirm || !r.hasInteractiveLineReader() {
 			return nil, fmt.Errorf("interactive sentry JSON paste is unavailable; provide a file: %s", sentrySetupUsage)
 		}
 		options.request.Document, err = r.readSentrySetupPaste()
@@ -65,7 +65,7 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 		}
 	}
 	plan, err := r.app().PrepareSentrySetup(options.request)
-	if err != nil && strings.Contains(err.Error(), "endpoint URL is required") && !r.AutoConfirm {
+	if err != nil && errors.Is(err, apshellapp.ErrSentryEndpointURLRequired) && !r.AutoConfirm {
 		options.request.URL, err = r.readRequiredSetupValue("Sentry endpoint (ssh://, https://, or loopback http://): ")
 		if err != nil {
 			return nil, err
@@ -310,7 +310,7 @@ func (b *jsonDocumentBoundary) feed(line string) {
 func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {
 	restorePrompt := r.setTemporaryPrompt(prompt)
 	defer restorePrompt()
-	if r.LineReader == nil && r.LineReaderContext == nil {
+	if !r.hasInteractiveLineReader() {
 		r.print("\n" + prompt)
 	}
 	value, err := r.readInteractiveLine()

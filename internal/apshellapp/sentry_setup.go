@@ -19,6 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
+// ErrSentryEndpointURLRequired marks setup documents that need a client-local
+// route supplied by the caller.
+var ErrSentryEndpointURLRequired = errors.New("sentry endpoint URL is required")
+
 // SentrySetupRequest describes the public handoff and client-local route
 // choices used to prepare a guided sentry setup.
 type SentrySetupRequest struct {
@@ -87,7 +91,7 @@ func (a *App) PrepareSentrySetup(req SentrySetupRequest) (SentrySetupPlan, error
 		candidate.URL = artifact.Endpoint.URL
 	}
 	if candidate.URL == "" {
-		return SentrySetupPlan{}, fmt.Errorf("sentry endpoint URL is required; pass --endpoint <url>")
+		return SentrySetupPlan{}, fmt.Errorf("%w; pass --endpoint <url>", ErrSentryEndpointURLRequired)
 	}
 	if candidate.URL == "self" {
 		return SentrySetupPlan{}, fmt.Errorf("sentry setup cannot use endpoint %q; provide a client-reachable URL", candidate.URL)

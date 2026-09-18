@@ -102,7 +102,12 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	endpoint := config.ClientEndpointConfig{
 		Role: req.Role, URL: env.URL, SignerPort: env.SignerPort, LocalPort: env.LocalPort,
 	}
-	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	var endpointPlan config.StoredClientEndpointUpsertPlan
+	if req.DryRun {
+		endpointPlan, err = config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	} else {
+		endpointPlan, err = lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +126,6 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	if !req.DryRun {
-		if err := lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true); err != nil {
-			return nil, err
-		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
 			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
@@ -151,7 +153,15 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 		URL:        req.URL,
 		SignerPort: req.SentryPort,
 	}
-	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	var (
+		endpointPlan config.StoredClientEndpointUpsertPlan
+		err          error
+	)
+	if req.DryRun {
+		endpointPlan, err = config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	} else {
+		endpointPlan, err = lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -168,9 +178,6 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 	}
 
 	if !req.DryRun {
-		if err := lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true); err != nil {
-			return nil, err
-		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
 			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
@@ -300,14 +307,20 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	}, nil
 }
 
-func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) error {
-	return clientdata.WithExclusiveLock(dataDir, func() error {
+func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) (config.StoredClientEndpointUpsertPlan, error) {
+	var applied config.StoredClientEndpointUpsertPlan
+	err := clientdata.WithExclusiveLock(dataDir, func() error {
 		plan, err := config.PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
 		if err != nil {
 			return err
 		}
-		return config.ApplyStoredClientEndpointUpsert(dataDir, plan)
+		if err := config.ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+			return err
+		}
+		applied = plan
+		return nil
 	})
+	return applied, err
 }
 
 func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, error) {

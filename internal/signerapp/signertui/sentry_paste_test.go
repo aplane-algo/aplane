@@ -82,3 +82,25 @@ func TestSentryPasteRejectsInvalidAndOversizedInput(t *testing.T) {
 		}
 	}
 }
+
+func TestSentryPasteRoutesBracketedPasteToNameField(t *testing.T) {
+	m := Model{}.beginManagerSentryImport()
+	m.sentry.importPaste = true
+	m.sentry.importFocus = 1
+	m.sentry.importName = "ops-"
+	m.sentry.importError = "old error"
+
+	next, cmd := m.handleSentryImportFormKeys(tea.KeyMsg{
+		Type: tea.KeyRunes, Runes: []rune("sentry-1"), Paste: true,
+	})
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	m = next.(Model)
+	if m.sentry.importName != "ops-sentry-1" {
+		t.Fatalf("importName = %q, want pasted name", m.sentry.importName)
+	}
+	if m.sentry.importError != "" {
+		t.Fatalf("importError = %q, want cleared", m.sentry.importError)
+	}
+}

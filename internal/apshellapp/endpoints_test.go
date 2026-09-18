@@ -245,6 +245,55 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 	}
 }
 
+func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
+	const workers = 32
+	dataDir := t.TempDir()
+	apps := make([]*App, workers)
+	for i := range apps {
+		apps[i] = newEndpointTestApp(t, dataDir)
+	}
+
+	start := make(chan struct{})
+	results := make(chan *EndpointCreateSentryResult, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for _, app := range apps {
+		wg.Add(1)
+		go func(app *App) {
+			defer wg.Done()
+			<-start
+			result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
+				Alias: "shared", URL: "ssh://sentry.example:2223", SentryPort: 11270,
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- result
+		}(app)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	created := 0
+	for result := range results {
+		if result.Created {
+			created++
+		}
+		if result.Updated {
+			t.Fatalf("identical concurrent upsert reported update: %#v", result)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created results = %d, want exactly one applied creation", created)
+	}
+}
+
 func newEndpointTestApp(t *testing.T, dataDir string) *App {
 	t.Helper()
 	eng, err := engine.NewEngine("testnet")

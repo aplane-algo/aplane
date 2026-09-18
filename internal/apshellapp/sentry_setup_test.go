@@ -5,6 +5,7 @@ package apshellapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -163,6 +164,17 @@ func TestPrepareSentrySetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T) {
 				t.Fatalf("PrepareSentrySetup() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestPrepareSentrySetupClassifiesMissingEndpointURL(t *testing.T) {
+	document, _ := testSentryEnrollmentDocument(t, nil)
+	_, err := newEndpointTestApp(t, t.TempDir()).PrepareSentrySetup(SentrySetupRequest{
+		Document: document,
+		Alias:    "field",
+	})
+	if !errors.Is(err, ErrSentryEndpointURLRequired) {
+		t.Fatalf("PrepareSentrySetup() error = %v, want ErrSentryEndpointURLRequired", err)
 	}
 }
 

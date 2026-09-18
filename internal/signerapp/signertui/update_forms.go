@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -827,7 +828,7 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 }
 
 func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
-	if paramDef.Name == "sentry" && len(paramDef.Options) > 1 {
+	if paramDef.Name == sentryrefs.ParamSentryName && len(paramDef.Options) > 1 {
 		return ""
 	}
 	if paramDef.Default != "" {

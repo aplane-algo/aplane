@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,7 +23,7 @@ func (m Model) isSentrySelectorParam(keyType string, param lsigprovider.Paramete
 	if !ok || info.SentryComponentKeyType == "" {
 		return false
 	}
-	return param.Name == "sentry" || param.Name == "sentry_public_key"
+	return param.Name == sentryrefs.ParamSentryName || param.Name == keytypes.ParameterSentryPublicKey
 }
 
 func (m Model) compatibleSentryChoices(componentKeyType string) []sentryChoice {
@@ -218,7 +219,8 @@ func (m Model) prepareSentryImportReview() Model {
 func (m Model) handleSentryImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Treat bracketed paste as data before interpreting any navigation keys.
 	if m.sentry.importPaste && msg.Paste {
-		if m.sentry.importFocus == 0 {
+		switch m.sentry.importFocus {
+		case 0:
 			value := string(msg.Runes)
 			if len(value) > enrollment.MaxEnvelopeBytes {
 				m.sentry.importJSON = ""
@@ -226,6 +228,9 @@ func (m Model) handleSentryImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.sentry.importJSON = value
+			m.sentry.importError = ""
+		case 1:
+			m.sentry.importName += string(msg.Runes)
 			m.sentry.importError = ""
 		}
 		return m, nil
