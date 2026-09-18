@@ -3,6 +3,10 @@
 # Default target when running just "make"
 .DEFAULT_GOAL := all
 
+# Do not let GNU Make synthesize extensionless executables from shell scripts.
+# Without this cancellation, `make install` copies install.sh to ./install.
+%: %.sh
+
 # Version information (injected into binaries at build time)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
