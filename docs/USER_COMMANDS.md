@@ -688,7 +688,8 @@ sentry add <public-json> --alias <alias> [--endpoint <url>]
 
 The document may be a standalone `aplane.witness-key-public.v1` reference or a
 combined `aplane.sentry-enrollment.v1` handoff. The combined form can supply the
-endpoint URL and remote REST port. Any bundled local tunnel port is ignored.
+endpoint URL and remote REST port. A bundled local tunnel port is rejected
+because sentry SSH connections do not use local listeners.
 Explicit command options override bundled values. With
 no file, apshell enters a bounded multiline paste prompt; it stops as soon as
 one complete JSON document has been received.

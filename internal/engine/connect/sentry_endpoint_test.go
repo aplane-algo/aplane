@@ -22,6 +22,28 @@ func (f sentrySSHDialerFunc) DialSignerAPI(ctx context.Context) (net.Conn, error
 	return f(ctx)
 }
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestSentrySSHHTTPTransportDoesNotDependOnDefaultTransportType(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("unexpected default transport use")
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+
+	transport := newSentrySSHHTTPTransport(sentrySSHDialerFunc(func(context.Context) (net.Conn, error) {
+		return nil, errors.New("unused")
+	}))
+	defer transport.CloseIdleConnections()
+	if transport.Proxy != nil {
+		t.Fatal("sentry SSH HTTP transport inherited a proxy")
+	}
+}
+
 func TestSentrySSHHTTPTransportUsesDirectSSHChannel(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()

@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/config"
 )
 
 type aliasProjection struct {
@@ -158,9 +159,13 @@ type endpointProjection struct {
 }
 
 func projectEndpointEntry(endpoint apshellapp.EndpointEntry) endpointProjection {
+	localPort := 0
+	if endpoint.Role == config.ClientEndpointRoleSigner {
+		localPort = endpoint.LocalPort
+	}
 	return endpointProjection{
 		Alias: endpoint.Alias, Role: endpoint.Role, URL: endpoint.URL,
-		SignerPort: endpoint.SignerPort, LocalPort: endpoint.LocalPort,
+		SignerPort: endpoint.SignerPort, LocalPort: localPort,
 		TokenPresent: endpoint.TokenPresent, TokenStatus: tokenStatusLabel(endpoint),
 		Default: endpoint.IsDefault,
 	}

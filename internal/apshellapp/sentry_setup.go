@@ -97,7 +97,9 @@ func (a *App) PrepareSentrySetup(req SentrySetupRequest) (SentrySetupPlan, error
 	} else if artifact.Endpoint != nil && artifact.Endpoint.SignerPort != 0 {
 		candidate.SignerPort = artifact.Endpoint.SignerPort
 	}
-	candidate.LocalPort = 0
+	if artifact.Endpoint != nil {
+		candidate.LocalPort = artifact.Endpoint.LocalPort
+	}
 
 	preview, err := config.PlanStoredClientEndpointUpsert(a.DataDir, alias, candidate, true)
 	if err != nil {

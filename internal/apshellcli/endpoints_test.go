@@ -34,6 +34,20 @@ func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
 	}
 }
 
+func TestEndpointMachineProjectionOmitsLocalPortForSentryRole(t *testing.T) {
+	projection := projectEndpointEntry(apshellapp.EndpointEntry{
+		Alias: "sentry", Role: config.ClientEndpointRoleSentry,
+		URL: "ssh://sentry.example:22", LocalPort: 12271,
+	})
+	data, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("local_port")) {
+		t.Fatalf("machine sentry endpoint projection contains local_port: %s", data)
+	}
+}
+
 func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()

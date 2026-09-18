@@ -93,16 +93,15 @@ func ConnectSentryWithSSH(ctx context.Context, cfg SentrySSHConfig) (*signerclie
 }
 
 func newSentrySSHHTTPTransport(dialer sentrySSHDialer) *http.Transport {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	transport.ForceAttemptHTTP2 = false
-	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if network != "tcp" || addr != sentrySSHHTTPAuthority {
-			return nil, fmt.Errorf("unexpected sentry HTTP dial target %s %s", network, addr)
-		}
-		return dialer.DialSignerAPI(ctx)
+	return &http.Transport{
+		ForceAttemptHTTP2: false,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if network != "tcp" || addr != sentrySSHHTTPAuthority {
+				return nil, fmt.Errorf("unexpected sentry HTTP dial target %s %s", network, addr)
+			}
+			return dialer.DialSignerAPI(ctx)
+		},
 	}
-	return transport
 }
 
 func newSentrySSHLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
