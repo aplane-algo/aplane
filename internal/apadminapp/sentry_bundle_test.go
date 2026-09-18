@@ -41,6 +41,16 @@ func TestCatalogAuthModeClassifiesSentryEnrollmentCommands(t *testing.T) {
 	}
 }
 
+func TestSentryEnrollmentExportRejectsLocalPort(t *testing.T) {
+	reference := testEnrollmentReference(t)
+	_, err := parseSentryEnrollmentExportOptions([]string{
+		reference.WitnessKeyID, "--local-port", "12271", "--out", "sentry.json",
+	})
+	if err == nil {
+		t.Fatal("parseSentryEnrollmentExportOptions() accepted retired --local-port")
+	}
+}
+
 func TestSentryEnrollmentImportResultContractFixtureIsCanonical(t *testing.T) {
 	result := SentryEnrollmentImportResult{
 		Schema:       SentryEnrollmentImportResultSchema,
@@ -106,7 +116,7 @@ func TestCatalogSentryEnrollmentExportComposesEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Witness != reference || bundle.Endpoint == nil || bundle.Endpoint.URL != "ssh://sentry.example:2223" || bundle.Endpoint.SignerPort != 11270 {
+	if bundle.Witness != reference || bundle.Endpoint == nil || bundle.Endpoint.URL != "ssh://sentry.example:2223" || bundle.Endpoint.SignerPort != 11270 || bundle.Endpoint.LocalPort != 0 {
 		t.Fatalf("bundle = %#v", bundle)
 	}
 }

@@ -269,10 +269,9 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 			signerPort = config.DefaultRESTPort
 		}
 		progressOut := s.signerProgressWriter()
-		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
+		client, cleanup, err := connect.ConnectSentryWithSSH(ctx, connect.SentrySSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
-			LocalPort:       endpoint.LocalPort,
 			SignerPort:      signerPort,
 			Token:           token,
 			IdentityFile:    endpoint.IdentityFile,

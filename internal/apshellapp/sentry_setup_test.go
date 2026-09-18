@@ -39,8 +39,8 @@ func TestPrepareSentrySetupUsesCombinedEndpointAndOverrides(t *testing.T) {
 	if plan.Witness != reference {
 		t.Fatalf("witness = %#v, want %#v", plan.Witness, reference)
 	}
-	if plan.Endpoint.URL != "ssh://override.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 12271 {
-		t.Fatalf("endpoint = %#v, want explicit URL/port and bundled local port", plan.Endpoint)
+	if plan.Endpoint.URL != "ssh://override.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 0 {
+		t.Fatalf("endpoint = %#v, want explicit URL/port without bundled local port", plan.Endpoint)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestPrepareSentrySetupReusesUnchangedCustomEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	want := config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example:2223",
-		SignerPort: 12270, LocalPort: 12271, IdentityFile: "/custom/id",
+		SignerPort: 12270, IdentityFile: "/custom/id",
 		KnownHostsPath: "/custom/known_hosts", TokenFile: "/custom/token",
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {

@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const sentrySetupUsage = "sentry add [public-json] [--alias <alias>] [--endpoint <url>] [--sentry-port <port>] [--local-port <port>] [--replace] [--dry-run]"
+const sentrySetupUsage = "sentry add [public-json] [--alias <alias>] [--endpoint <url>] [--sentry-port <port>] [--replace] [--dry-run]"
 
 type sentrySetupCLIOptions struct {
 	request apshellapp.SentrySetupRequest
@@ -163,21 +163,11 @@ func parseSentrySetupArgs(args []string) (sentrySetupCLIOptions, error) {
 			if i >= len(args) {
 				return out, errors.New("usage: " + sentrySetupUsage)
 			}
-			port, err := parseSetupPort(args[i], false)
+			port, err := parseSetupPort(args[i])
 			if err != nil {
 				return out, err
 			}
 			out.request.SignerPort = port
-		case "--local-port":
-			i++
-			if i >= len(args) {
-				return out, errors.New("usage: " + sentrySetupUsage)
-			}
-			port, err := parseSetupPort(args[i], true)
-			if err != nil {
-				return out, err
-			}
-			out.request.LocalPort = &port
 		default:
 			if strings.HasPrefix(args[i], "-") || out.path != "" {
 				return out, errors.New("usage: " + sentrySetupUsage)
@@ -188,9 +178,9 @@ func parseSentrySetupArgs(args []string) (sentrySetupCLIOptions, error) {
 	return out, nil
 }
 
-func parseSetupPort(value string, allowZero bool) (int, error) {
+func parseSetupPort(value string) (int, error) {
 	port, err := strconv.Atoi(value)
-	if err != nil || port < 0 || port > 65535 || (!allowZero && port == 0) {
+	if err != nil || port <= 0 || port > 65535 {
 		return 0, fmt.Errorf("invalid port %q", value)
 	}
 	return port, nil
@@ -334,7 +324,6 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 			signerPort = config.DefaultRESTPort
 		}
 		r.printf("  signer REST port through SSH: %d\n", signerPort)
-		r.printf("  local tunnel port: %d (0 selects an available port)\n", plan.Endpoint.LocalPort)
 	}
 	r.printf("  Witness Key ID: %s\n", witness.GroupedID(plan.Witness.WitnessKeyID))
 	if plan.Created {
@@ -349,7 +338,6 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 					previousPort = config.DefaultRESTPort
 				}
 				r.printf("  previous signer REST port: %d\n", previousPort)
-				r.printf("  previous local tunnel port: %d\n", plan.ExistingEndpoint.LocalPort)
 			}
 		}
 	} else {

@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -703,6 +704,28 @@ func (c *Client) CheckConnection() error {
 	}
 
 	return nil
+}
+
+// DialSignerAPI opens one context-bounded SSH channel to the loopback signer
+// REST port configured for this client. Callers cannot select another remote
+// destination through this method.
+func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
+	c.mu.Lock()
+	sshClient := c.sshClient
+	connected := c.connected
+	remotePort := c.remotePort
+	c.mu.Unlock()
+
+	if !connected || sshClient == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	if remotePort <= 0 || remotePort > 65535 {
+		return nil, fmt.Errorf("invalid signer API port %d", remotePort)
+	}
+	return sshClient.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(remotePort)))
 }
 
 // OpenSubsystem opens a session channel and starts the named subsystem.

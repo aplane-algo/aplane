@@ -165,7 +165,7 @@ func printClientEndpointReference() {
 	fmt.Println("| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |")
 	fmt.Println("| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, or `https://...` |")
 	fmt.Println("| `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |")
-	fmt.Println("| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |")
+	fmt.Println("| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for signer-role `ssh://` endpoints; `0` chooses automatically; unsupported for sentry endpoints |")
 	fmt.Println("| `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |")
 	fmt.Println("| `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |")
 	fmt.Println("| `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |")

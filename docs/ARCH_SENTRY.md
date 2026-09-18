@@ -260,9 +260,11 @@ portable route suggestion. Under the shared client-data lock it revalidates and
 writes only the chosen endpoint alias, then releases the lock before any SSH
 trust, token enrollment, or network operation. Token enrollment uses a
 standalone SSH connection and does not disturb the primary signer tunnel.
-Verification queries only the chosen endpoint and requires its validated,
-deduplicated `/keys` inventory to contain the exact key type, public key, and
-derived Witness Key ID from the document.
+Sentry HTTP requests use restricted direct channels on that authenticated SSH
+connection instead of a transient local forwarding listener. Verification
+queries only the chosen endpoint and requires its validated, deduplicated
+`/keys` inventory to contain the exact key type, public key, and derived
+Witness Key ID from the document.
 
 Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
@@ -291,7 +293,8 @@ $APCLIENT_DATA/endpoints.yaml
 ```
 
 The registry may contain one signer endpoint and at most 12 sentry endpoints.
-Sentry endpoint records carry connection metadata only.
+Sentry endpoint records carry connection metadata only and do not accept a
+`local_port` setting.
 
 Runtime guarded-send routing works like this:
 

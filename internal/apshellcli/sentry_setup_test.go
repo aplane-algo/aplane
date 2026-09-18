@@ -22,15 +22,24 @@ import (
 func TestParseSentrySetupArgs(t *testing.T) {
 	options, err := parseSentrySetupArgs([]string{
 		"add", "handoff.json", "--alias", "Field", "--endpoint", "ssh://Sentry.example:2223/path",
-		"--sentry-port", "12270", "--local-port", "12271", "--replace", "--dry-run",
+		"--sentry-port", "12270", "--replace", "--dry-run",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if options.path != "handoff.json" || options.request.Alias != "Field" ||
 		options.request.URL != "ssh://Sentry.example:2223/path" || options.request.SignerPort != 12270 ||
-		options.request.LocalPort == nil || *options.request.LocalPort != 12271 || !options.replace || !options.request.DryRun {
+		!options.replace || !options.request.DryRun {
 		t.Fatalf("options = %#v", options)
+	}
+}
+
+func TestParseSentrySetupArgsRejectsLocalPort(t *testing.T) {
+	_, err := parseSentrySetupArgs([]string{
+		"add", "handoff.json", "--alias", "field", "--local-port", "12271",
+	})
+	if err == nil || !strings.Contains(err.Error(), sentrySetupUsage) {
+		t.Fatalf("parseSentrySetupArgs() error = %v, want usage error", err)
 	}
 }
 

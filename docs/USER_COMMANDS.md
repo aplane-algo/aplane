@@ -683,12 +683,13 @@ token when needed, and verify the exact witness advertised by that endpoint.
 ```text
 sentry add
 sentry add <public-json> --alias <alias> [--endpoint <url>]
-  [--sentry-port <port>] [--local-port <port>] [--replace] [--dry-run]
+  [--sentry-port <port>] [--replace] [--dry-run]
 ```
 
 The document may be a standalone `aplane.witness-key-public.v1` reference or a
 combined `aplane.sentry-enrollment.v1` handoff. The combined form can supply the
-endpoint URL and ports. Explicit command options override bundled values. With
+endpoint URL and remote REST port. Any bundled local tunnel port is ignored.
+Explicit command options override bundled values. With
 no file, apshell enters a bounded multiline paste prompt; it stops as soon as
 one complete JSON document has been received.
 
@@ -699,11 +700,14 @@ requests endpoint access if no token has been configured, and queries
 that endpoint for the exact witness. Approve a new access request in apadmin on
 the sentry node. This setup does not disconnect the primary signer connection.
 
-An existing unchanged sentry alias reuses its custom ports and credential paths.
+An existing unchanged sentry alias reuses its custom REST port and credential paths.
 Changing the route requires interactive replacement consent and obtains new SSH
 access rather than silently using the previous destination's token. Direct
 HTTPS and loopback HTTP endpoints work when their endpoint token file already
 contains a valid token; automatic token enrollment requires SSH.
+
+SSH sentry requests open HTTP connections directly as channels on the
+authenticated SSH session. They do not bind a transient local forwarding port.
 
 `--dry-run` validates the public JSON and reports the proposed route without
 writing files, changing host trust, requesting a token, or contacting the
@@ -794,7 +798,7 @@ apadmin sentry import <public-json|-> <name>
 apadmin sentry list
 apadmin sentry show <name>
 apadmin sentry remove <name>
-apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] --out <file>
+apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
 apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]
 ```
 

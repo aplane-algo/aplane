@@ -30,7 +30,6 @@ type SentrySetupRequest struct {
 	Alias      string
 	URL        string
 	SignerPort int
-	LocalPort  *int
 	DryRun     bool
 }
 
@@ -98,11 +97,7 @@ func (a *App) PrepareSentrySetup(req SentrySetupRequest) (SentrySetupPlan, error
 	} else if artifact.Endpoint != nil && artifact.Endpoint.SignerPort != 0 {
 		candidate.SignerPort = artifact.Endpoint.SignerPort
 	}
-	if req.LocalPort != nil {
-		candidate.LocalPort = *req.LocalPort
-	} else if artifact.Endpoint != nil && artifact.Endpoint.LocalPort != 0 {
-		candidate.LocalPort = artifact.Endpoint.LocalPort
-	}
+	candidate.LocalPort = 0
 
 	preview, err := config.PlanStoredClientEndpointUpsert(a.DataDir, alias, candidate, true)
 	if err != nil {

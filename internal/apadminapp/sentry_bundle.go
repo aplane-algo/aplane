@@ -20,7 +20,7 @@ import (
 const (
 	SentryEnrollmentImportResultSchema = "aplane.sentry-enrollment-import-result.v1"
 
-	sentryEnrollmentExportUsage = "usage: apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] --out <file>"
+	sentryEnrollmentExportUsage = "usage: apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>"
 	sentryEnrollmentImportUsage = "usage: apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]"
 )
 
@@ -30,7 +30,6 @@ type sentryEnrollmentExportOptions struct {
 	Host            string
 	URL             string
 	SignerPort      int
-	LocalPort       int
 	OutPath         string
 }
 
@@ -113,7 +112,6 @@ func parseSentryEnrollmentExportOptions(args []string) (sentryEnrollmentExportOp
 	fs.StringVar(&options.Host, "host", "", "client-reachable SSH host or IP")
 	fs.StringVar(&options.URL, "url", "", "endpoint URL")
 	fs.IntVar(&options.SignerPort, "signer-port", 0, "remote apsigner REST port")
-	fs.IntVar(&options.LocalPort, "local-port", 0, "local tunnel port")
 	fs.StringVar(&options.OutPath, "out", "", "output JSON path")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 || strings.TrimSpace(options.OutPath) == "" {
 		return sentryEnrollmentExportOptions{}, errors.New(sentryEnrollmentExportUsage)
@@ -170,10 +168,10 @@ func (c Catalog) exportSentryEnrollment(options sentryEnrollmentExportOptions) e
 		return err
 	}
 	bundle := enrollment.Envelope{Schema: enrollment.Schema, Witness: reference}
-	includeEndpoint := options.IncludeEndpoint || options.Host != "" || options.URL != "" || options.SignerPort != 0 || options.LocalPort != 0
+	includeEndpoint := options.IncludeEndpoint || options.Host != "" || options.URL != "" || options.SignerPort != 0
 	if includeEndpoint {
 		endpoint, err := buildEndpointExportEnvelope(
-			options.Host, options.URL, options.SignerPort, options.LocalPort, settings,
+			options.Host, options.URL, options.SignerPort, 0, settings,
 		)
 		if err != nil {
 			return err

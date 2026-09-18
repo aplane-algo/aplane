@@ -99,8 +99,12 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
+	localPort := env.LocalPort
+	if req.Role == config.ClientEndpointRoleSentry {
+		localPort = 0
+	}
 	endpoint := config.ClientEndpointConfig{
-		Role: req.Role, URL: env.URL, SignerPort: env.SignerPort, LocalPort: env.LocalPort,
+		Role: req.Role, URL: env.URL, SignerPort: env.SignerPort, LocalPort: localPort,
 	}
 	var endpointPlan config.StoredClientEndpointUpsertPlan
 	if req.DryRun {

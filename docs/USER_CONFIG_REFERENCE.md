@@ -33,7 +33,7 @@ Signer and sentry endpoint routing lives here, not in `config.yaml`.
 | `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, or `https://...` |
 | `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |
-| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |
+| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for signer-role `ssh://` endpoints; `0` chooses automatically; unsupported for sentry endpoints |
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |

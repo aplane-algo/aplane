@@ -531,10 +531,11 @@ Current client config includes:
 Signer and sentry routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
-identity file, `known_hosts`, and token file. Live sentry-key discovery is
-operation-scoped and is not stored in the registry. `internal/endpointrefs`
-owns the public `aplane.endpoint.v1` JSON
+or more `sentry` endpoints. Endpoint records carry URL, remote REST port,
+identity file, `known_hosts`, and token file. Signer-role SSH endpoints may
+also select a local forwarding port; sentry-role SSH endpoints use direct
+channels and reject `local_port`. Live sentry-key discovery is operation-scoped
+and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
 

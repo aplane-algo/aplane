@@ -43,7 +43,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	_, err := app.EndpointImport(t.Context(), EndpointImportRequest{
+	result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
 		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
 		Path: writeEndpointEnvelope(t, dataDir),
 	})
@@ -56,6 +56,9 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_sentries") {
 		t.Fatalf("endpoints.yaml = %q, want v2 connection profile only", data)
+	}
+	if result.LocalPort != 0 || strings.Contains(string(data), "local_port") {
+		t.Fatalf("import retained sentry local port: result = %#v, endpoints.yaml = %q", result, data)
 	}
 	if _, ok := app.eng.EndpointRegistry.Endpoint("sentry-local"); !ok {
 		t.Fatal("live engine endpoint registry was not refreshed")
@@ -305,7 +308,9 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 
 func writeEndpointEnvelope(t *testing.T, dir string) string {
 	t.Helper()
-	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270})
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270, LocalPort: 12271,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

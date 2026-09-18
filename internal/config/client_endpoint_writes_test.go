@@ -41,6 +41,22 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	}
 }
 
+func TestStoredClientEndpointLocalPortIsSignerOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	_, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleSentry, URL: "ssh://sentry.example", LocalPort: 12271,
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
+		t.Fatalf("UpsertStoredClientEndpoint(sentry local_port) error = %v, want role error", err)
+	}
+
+	if _, err := UpsertStoredClientEndpoint(dataDir, "primary", ClientEndpointConfig{
+		Role: ClientEndpointRoleSigner, URL: "ssh://signer.example", LocalPort: 12272,
+	}, false); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(signer local_port) error = %v", err)
+	}
+}
+
 func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
