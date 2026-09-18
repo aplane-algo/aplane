@@ -1825,8 +1825,8 @@ composition bundle even when an advertise URL exists.
 Sentry-side TUI export offers the configured portable advertise URL as an
 explicit, default-on choice. The operator process composes it with the
 daemon-verified witness envelope and writes the result locally; opting out or
-lacking a valid advertised endpoint writes the compatible standalone witness
-envelope instead.
+lacking a valid advertised endpoint omits the endpoint member while retaining
+the composition schema.
 
 The outer envelope adds no authority claim. In particular it contains no
 reference alias, endpoint alias or role, token, SSH identity, `known_hosts`
@@ -1847,8 +1847,10 @@ tokens, and SSH host trust separately in apshell.
 #### Sentry Public Key Reference Library
 
 `apadmin sentry import <public-json|-> <name>` imports an
-`aplane.witness-key-public.v1` envelope into the product store's public
-sentry reference library:
+standalone `aplane.witness-key-public.v1` or combined
+`aplane.sentry-enrollment.v1` document into the product store's public
+sentry reference library. The operator-side adapter validates the complete
+document and sends only the canonical witness reference through IPC:
 
 ```text
 identities/default/sentries/<name>.json

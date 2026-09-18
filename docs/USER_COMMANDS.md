@@ -807,6 +807,10 @@ Run `export` against the sentry node. It asks the daemon to verify and return
 the canonical `aplane.witness-key-public.v1` envelope. With an output path,
 the `apadmin` process writes the public file on the machine where it runs. Without a path, the JSON is written to stdout.
 
+Interactive export always uses the combined sentry key document, with optional
+endpoint information. Both import command forms accept standalone and combined
+documents.
+
 Run `import` against the primary signer and choose a local alias such as
 `lab-sentry`. The signer validates the key type, public key, and derived
 Witness Key ID before storing the public reference. Compare the complete

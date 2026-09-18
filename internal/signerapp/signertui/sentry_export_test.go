@@ -136,7 +136,7 @@ func TestSentryExportOffersConfiguredAdvertisedEndpoint(t *testing.T) {
 	}
 }
 
-func TestComposeSentryExportArtifactBuildsCombinedBundleOnlyWhenSelected(t *testing.T) {
+func TestComposeSentryExportArtifactAlwaysBuildsCombinedBundle(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
 	witnessJSON, err := enrollment.MarshalWitness(reference)
 	if err != nil {
@@ -162,8 +162,12 @@ func TestComposeSentryExportArtifactBuildsCombinedBundleOnlyWhenSelected(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if witnessOnly != string(witnessJSON) {
-		t.Fatal("endpoint opt-out changed the canonical witness envelope")
+	parsed, err := enrollment.Parse([]byte(witnessOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Endpoint != nil || parsed.Witness != reference {
+		t.Fatal("endpoint opt-out lost witness or retained endpoint")
 	}
 }
 

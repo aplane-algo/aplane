@@ -160,11 +160,8 @@ func composeSentryExportArtifact(
 	endpoint *endpointrefs.Envelope,
 	includeEndpoint bool,
 ) (string, error) {
-	if endpoint == nil || !includeEndpoint {
-		if _, err := witness.ParsePublicReference([]byte(witnessJSON)); err != nil {
-			return "", err
-		}
-		return witnessJSON, nil
+	if !includeEndpoint {
+		endpoint = nil
 	}
 	reference, err := witness.ParsePublicReference([]byte(witnessJSON))
 	if err != nil {
