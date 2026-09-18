@@ -270,14 +270,15 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 		}
 		progressOut := s.signerProgressWriter()
 		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
-			Host:           parsed.Hostname(),
-			SSHPort:        sshPort,
-			LocalPort:      endpoint.LocalPort,
-			SignerPort:     signerPort,
-			Token:          token,
-			IdentityFile:   endpoint.IdentityFile,
-			KnownHostsPath: endpoint.KnownHostsPath,
-			ProgressOut:    progressOut,
+			Host:            parsed.Hostname(),
+			SSHPort:         sshPort,
+			LocalPort:       endpoint.LocalPort,
+			SignerPort:      signerPort,
+			Token:           token,
+			IdentityFile:    endpoint.IdentityFile,
+			KnownHostsPath:  endpoint.KnownHostsPath,
+			ProgressOut:     progressOut,
+			HostKeyApproval: s.hostKeyApproval,
 		})
 		if err != nil {
 			return nil, nil, "", err

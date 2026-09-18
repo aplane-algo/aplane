@@ -59,6 +59,7 @@ type Deps struct {
 	AuthCache        *cache.AuthAddressCache
 	EndpointRegistry config.ClientEndpointRegistry
 	Cache            SignerCacheView
+	HostKeyApproval  connect.HostKeyApproval
 }
 
 // Signer orchestrates the client side of guarded signing. Construct one per
@@ -70,6 +71,7 @@ type Signer struct {
 	endpointRegistry config.ClientEndpointRegistry
 	cache            SignerCacheView
 	probeEndpoint    sentryEndpointProbe
+	hostKeyApproval  connect.HostKeyApproval
 }
 
 // New builds a Signer from the given dependencies.
@@ -80,5 +82,6 @@ func New(d Deps) *Signer {
 		authCache:        d.AuthCache,
 		endpointRegistry: d.EndpointRegistry.Clone(),
 		cache:            d.Cache,
+		hostKeyApproval:  d.HostKeyApproval,
 	}
 }

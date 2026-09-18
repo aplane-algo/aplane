@@ -254,6 +254,16 @@ witness reference through authorized local IPC. Endpoint metadata is
 informational; apshell owns endpoint configuration, token enrollment, host
 trust, and live discovery. apadmin does not access client state.
 
+The client-side `sentry add` workflow accepts either public document. It treats
+the witness reference as the expected authority and any combined endpoint as a
+portable route suggestion. Under the shared client-data lock it revalidates and
+writes only the chosen endpoint alias, then releases the lock before any SSH
+trust, token enrollment, or network operation. Token enrollment uses a
+standalone SSH connection and does not disturb the primary signer tunnel.
+Verification queries only the chosen endpoint and requires its validated,
+deduplicated `/keys` inventory to contain the exact key type, public key, and
+derived Witness Key ID from the document.
+
 Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
 guarded account. Manual import and removal therefore require an unlocked
@@ -304,7 +314,8 @@ verification fails unless that endpoint controls the embedded sentry private
 key. Deleting an advertised sentry key causes guarded signing to fail before
 submission with a missing-advertised-key error.
 
-Use `apshell endpoints discover-sentries` to inspect live client routes.
+Use `apshell sentry add` for guided setup of one public handoff. Use
+`apshell endpoints discover-sentries` to inspect all live client routes.
 Signer-side apadmin displays public reference metadata only; it does not
 probe endpoints or persist route associations.
 

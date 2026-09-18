@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -98,12 +99,10 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
-	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
-		Role:       req.Role,
-		URL:        env.URL,
-		SignerPort: env.SignerPort,
-		LocalPort:  env.LocalPort,
-	}, true)
+	endpoint := config.ClientEndpointConfig{
+		Role: req.Role, URL: env.URL, SignerPort: env.SignerPort, LocalPort: env.LocalPort,
+	}
+	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +121,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	if !req.DryRun {
-		if err := config.ApplyStoredClientEndpointUpsert(a.DataDir, endpointPlan); err != nil {
+		if err := lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true); err != nil {
 			return nil, err
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -147,11 +146,12 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 		return nil, fmt.Errorf("sentry port must be 1-65535")
 	}
 
-	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
+	endpoint := config.ClientEndpointConfig{
 		Role:       config.ClientEndpointRoleSentry,
 		URL:        req.URL,
 		SignerPort: req.SentryPort,
-	}, true)
+	}
+	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 	}
 
 	if !req.DryRun {
-		if err := config.ApplyStoredClientEndpointUpsert(a.DataDir, endpointPlan); err != nil {
+		if err := lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true); err != nil {
 			return nil, err
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -262,7 +262,10 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
 	}
 	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
-	if _, err := config.SetStoredClientEndpointDefault(a.DataDir, alias); err != nil {
+	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
+		_, err := config.SetStoredClientEndpointDefault(a.DataDir, alias)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -281,7 +284,10 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
-	if _, err := config.DeleteStoredClientEndpoint(a.DataDir, alias); err != nil {
+	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
+		_, err := config.DeleteStoredClientEndpoint(a.DataDir, alias)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -292,6 +298,16 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 		Alias:       alias,
 		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},
 	}, nil
+}
+
+func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) error {
+	return clientdata.WithExclusiveLock(dataDir, func() error {
+		plan, err := config.PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+		if err != nil {
+			return err
+		}
+		return config.ApplyStoredClientEndpointUpsert(dataDir, plan)
+	})
 }
 
 func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, error) {

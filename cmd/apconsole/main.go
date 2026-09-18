@@ -4,9 +4,9 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/theme"
@@ -264,18 +265,30 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	// goroutine running the shell command blocks on the response channel while
 	// bubbletea renders the prompt in the shell pane and waits for y/N.
 	if shellSession != nil {
-		shellSession.SetHostKeyApproval(func(host, fingerprint string) (bool, error) {
+		shellSession.SetHostKeyApprovalContext(func(ctx context.Context, host, fingerprint string) (bool, error) {
 			resp := make(chan bool, 1)
 			p.Send(shellHostKeyApprovalMsg{host: host, fingerprint: fingerprint, response: resp})
-			return <-resp, nil
+			select {
+			case approved := <-resp:
+				return approved, nil
+			case <-ctx.Done():
+				p.Send(shellPromptCanceledMsg{hostResponse: resp})
+				return false, ctx.Err()
+			}
 		})
 		shellSession.SetProgressLine(func(line string) {
 			p.Send(shellProgressLineMsg{text: line})
 		})
-		shellSession.SetInteractiveLinePrompt(func(prompt string) (string, error) {
+		shellSession.SetInteractiveLinePromptContext(func(ctx context.Context, prompt string) (string, error) {
 			resp := make(chan string, 1)
 			p.Send(shellLinePromptMsg{prompt: prompt, response: resp})
-			return <-resp, nil
+			select {
+			case line := <-resp:
+				return line, nil
+			case <-ctx.Done():
+				p.Send(shellPromptCanceledMsg{lineResponse: resp})
+				return "", ctx.Err()
+			}
 		})
 	}
 	defer func() {

@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
+	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -379,16 +380,7 @@ func (m Model) completeSentryImport(
 }
 
 func groupedWitnessKeyID(id string) string {
-	if id == "" {
-		return ""
-	}
-	groups := make([]string, 0, (len(id)+3)/4)
-	for len(id) > 4 {
-		groups = append(groups, id[:4])
-		id = id[4:]
-	}
-	groups = append(groups, id)
-	return strings.Join(groups, " ")
+	return witness.GroupedID(id)
 }
 
 func (m Model) handleSentryPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

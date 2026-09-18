@@ -162,10 +162,12 @@ primary signer's apadmin, press `e` for **Sentries**, then `i` to import the fil
 or `p` to paste JSON. Compare the full Witness Key ID before accepting the
 reference, then select **Generate account**.
 
-Configure a sentry endpoint separately in apshell and run
-`request-token --endpoint <alias>`. Approve the request in apadmin on the sentry.
-Use apshell's `endpoints discover-sentries` to inspect the live route before
-funding or rekeying to the guarded account.
+In apshell, run `sentry add <enrollment-json> --alias <alias>`. Supply
+`--endpoint <url>` when the exported document has no address. Review the full
+Witness Key ID, then approve any access request in apadmin on the sentry. The
+command configures the client route, obtains access, and verifies the expected
+witness. `endpoints discover-sentries` remains available as a broader live-route
+diagnostic before funding or rekeying to the guarded account.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 

@@ -217,6 +217,15 @@ func (s *Session) SetHostKeyApproval(fn func(host, fingerprint string) (bool, er
 	s.state.HostKeyApproval = fn
 }
 
+// SetHostKeyApprovalContext installs a host-key prompt that is dismissed when
+// the active command context is canceled.
+func (s *Session) SetHostKeyApprovalContext(fn func(context.Context, string, string) (bool, error)) {
+	if s == nil || s.state == nil {
+		return
+	}
+	s.state.HostKeyApprovalContext = fn
+}
+
 // SetProgressLine installs a callback that receives live status lines emitted
 // during blocking commands (e.g. "Waiting for operator approval"). TUI hosts
 // use this to surface progress in a pane because the session's normal
@@ -246,6 +255,27 @@ func (s *Session) SetInteractiveLinePrompt(fn func(prompt string) (string, error
 		p := prompt
 		mu.Unlock()
 		return fn(p)
+	}
+}
+
+// SetInteractiveLinePromptContext is the cancellation-aware prompt adapter
+// for embedded hosts that own terminal input.
+func (s *Session) SetInteractiveLinePromptContext(fn func(context.Context, string) (string, error)) {
+	if s == nil || s.state == nil || fn == nil {
+		return
+	}
+	var mu sync.Mutex
+	prompt := ""
+	s.state.SetPrompt = func(p string) {
+		mu.Lock()
+		prompt = p
+		mu.Unlock()
+	}
+	s.state.LineReaderContext = func(ctx context.Context) (string, error) {
+		mu.Lock()
+		p := prompt
+		mu.Unlock()
+		return fn(ctx, p)
 	}
 }
 

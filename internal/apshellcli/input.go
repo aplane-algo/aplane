@@ -30,6 +30,9 @@ func (r *REPLState) setTemporaryPrompt(prompt string) func() {
 }
 
 func (r *REPLState) readInteractiveLine() (string, error) {
+	if r.LineReaderContext != nil {
+		return r.LineReaderContext(r.commandContext())
+	}
 	if r.LineReader != nil {
 		return r.LineReader()
 	}

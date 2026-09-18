@@ -38,7 +38,7 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 		"config", "connect", "delete", "disconnect", "endpoints", "generate",
 		"help", "holders", "info", "js", "jslist", "jssave", "keyreg", "keys",
 		"keytypes", "network", "optin", "optout", "participation", "plugins",
-		"quit", "rekey", "request-token", "script", "send", "sets", "sign",
+		"quit", "rekey", "request-token", "script", "send", "sentry", "sets", "sign",
 		"simulate", "status", "sweep", "unrekey", "validate", "verbose", "write",
 	}
 	wantAliases := map[string]string{
@@ -62,7 +62,7 @@ func TestBuiltInAutomationDispositionInventory(t *testing.T) {
 	registry := state.initCommandRegistry()
 	blocked := map[string]bool{
 		"help": true, "config": true, "script": true, "js": true,
-		"jssave": true, "jslist": true, "request-token": true,
+		"jssave": true, "jslist": true, "request-token": true, "sentry": true,
 		"clear": true, "quit": true,
 	}
 	for _, cmd := range registry.All() {

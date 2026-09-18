@@ -41,6 +41,9 @@ type REPLState struct {
 
 	// LineReader for multi-line input in REPL (set by repl.go after readline init)
 	LineReader func() (string, error)
+	// LineReaderContext is used by embedded hosts so a pending prompt can end
+	// when the active command is canceled.
+	LineReaderContext func(context.Context) (string, error)
 
 	// SetPrompt changes the readline prompt (set by repl.go after readline init)
 	SetPrompt func(string)
@@ -51,6 +54,9 @@ type REPLState struct {
 	// HostKeyApproval overrides the default stdin-based TOFU prompt. Set by
 	// TUI hosts that own stdin and need to route approval through their UI.
 	HostKeyApproval func(host, fingerprint string) (bool, error)
+	// HostKeyApprovalContext is the cancellation-aware form used by embedded
+	// hosts. Standalone readline sessions continue to use HostKeyApproval.
+	HostKeyApprovalContext func(context.Context, string, string) (bool, error)
 
 	// ProgressLine, when non-nil, receives status lines emitted during
 	// long-running commands (e.g. "Waiting for operator approval"). TUI hosts

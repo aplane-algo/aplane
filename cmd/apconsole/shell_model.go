@@ -67,14 +67,22 @@ type shellExecMsg struct {
 type shellHostKeyApprovalMsg struct {
 	host        string
 	fingerprint string
-	response    chan<- bool
+	response    chan bool
 }
 
 type shellLinePromptMsg struct {
 	prompt   string
 	input    string
 	cursor   int
-	response chan<- string
+	response chan string
+}
+
+// shellPromptCanceledMsg dismisses a prompt whose command context ended. The
+// response channel identifies the exact prompt so a late cancellation cannot
+// dismiss a newer one.
+type shellPromptCanceledMsg struct {
+	hostResponse chan bool
+	lineResponse chan string
 }
 
 // shellStartupConnectMsg delivers the result of the deferred startup connect
@@ -153,6 +161,14 @@ func (m shellModel) Update(msg tea.Msg) (shellModel, tea.Cmd) {
 		m.clearCompletions()
 		m.pendingLinePrompt = &msg
 		return m, nil
+	case shellPromptCanceledMsg:
+		if m.pendingHostKey != nil && m.pendingHostKey.response == msg.hostResponse {
+			m.pendingHostKey = nil
+		}
+		if m.pendingLinePrompt != nil && m.pendingLinePrompt.response == msg.lineResponse {
+			m.pendingLinePrompt = nil
+		}
+		return m, nil
 	case shellStartupConnectMsg:
 		m.clearCompletions()
 		m.startupRunning = false
@@ -181,6 +197,11 @@ func (m shellModel) updateKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 	if m.pendingHostKey != nil {
 		ch := m.pendingHostKey.response
 		m.pendingHostKey = nil
+		if msg.Type == tea.KeyCtrlC && m.executor != nil && m.executor.Cancel() {
+			m.cancelRequested = true
+			m.appendLines("cancel requested")
+			return m, nil
+		}
 		approved := msg.String() == "y" || msg.String() == "Y"
 		if approved {
 			m.appendLines("y")
@@ -315,10 +336,12 @@ func (m shellModel) updateLinePromptKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 		m.pendingLinePrompt = nil
 	case tea.KeyCtrlC:
 		m.appendLines(pending.prompt)
-		pending.response <- ""
 		m.pendingLinePrompt = nil
-		if m.executor != nil {
-			_ = m.executor.Cancel()
+		if m.executor != nil && m.executor.Cancel() {
+			m.cancelRequested = true
+			m.appendLines("cancel requested")
+		} else {
+			pending.response <- ""
 		}
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		if pending.cursor > 0 {

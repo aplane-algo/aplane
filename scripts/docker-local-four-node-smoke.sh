@@ -1266,8 +1266,10 @@ enroll_sentry_reference_to_signer() {
     fi
     docker cp "$SENTRY_CONTAINER:/tmp/sentry-public.json" "$public_file"
     docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/sentry-public.json"
+    docker cp "$public_file" "$CLIENT_CONTAINER:/tmp/sentry-public.json"
     rm -f "$public_file"
     docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry import /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry show '$SENTRY_REFERENCE_NAME' 2>&1")"; then
@@ -1277,6 +1279,29 @@ enroll_sentry_reference_to_signer() {
     printf '%s\n' "$out"
     grep -Fq "$SENTRY_COMPONENT_KEY" <<<"$out" \
         || die "persisted sentry reference does not contain the expected Witness Key ID"
+}
+
+verify_guided_sentry_setup() {
+    local sentry_ssh_port sentry_port out
+    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
+    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
+    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-sentry\n' > /tmp/delete-sentry-endpoint.script && \
+        . /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/delete-sentry-endpoint.script >/tmp/delete-sentry-endpoint.log 2>&1 && \
+        rm -f /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token && \
+        printf 'sentry add /tmp/sentry-public.json --alias local-sentry --endpoint ssh://sentry:%s --sentry-port %s\n' '$sentry_ssh_port' '$sentry_port' > /tmp/add-sentry.script"
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/add-sentry.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "guided sentry setup failed"
+    fi
+    printf '%s\n' "$out"
+    grep -Fq 'Connected; expected witness found' <<<"$out" \
+        || die "guided sentry setup did not report exact witness verification"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token" \
+        || die "guided sentry setup did not save the sentry token"
 }
 
 enable_guarded_keytype() {
@@ -1751,6 +1776,9 @@ main() {
     log "Re-establishing signer and sentry approval sessions after public-reference import"
     start_signer_apapprover
     start_sentry_apapprover
+
+    log "Reconfiguring and verifying sentry through guided apshell setup"
+    verify_guided_sentry_setup
 
     if [ "$RELEASE_INSTALL" = "1" ]; then
         if [ -n "$SDK_VERSION" ]; then

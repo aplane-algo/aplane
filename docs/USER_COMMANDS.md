@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `sentry add`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -675,6 +675,56 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ---
 
+### sentry add
+
+Configure client access to a sentry from its public enrollment JSON, obtain a
+token when needed, and verify the exact witness advertised by that endpoint.
+
+```text
+sentry add
+sentry add <public-json> --alias <alias> [--endpoint <url>]
+  [--sentry-port <port>] [--local-port <port>] [--replace] [--dry-run]
+```
+
+The document may be a standalone `aplane.witness-key-public.v1` reference or a
+combined `aplane.sentry-enrollment.v1` handoff. The combined form can supply the
+endpoint URL and ports. Explicit command options override bundled values. With
+no file, apshell enters a bounded multiline paste prompt; it stops as soon as
+one complete JSON document has been received.
+
+The interactive review shows the client-local alias, effective endpoint, any
+route change, and the complete grouped Witness Key ID. After confirmation,
+apshell writes a `role: sentry` endpoint, confirms first-use SSH host trust,
+requests endpoint access if no token has been configured, and queries
+that endpoint for the exact witness. Approve a new access request in apadmin on
+the sentry node. This setup does not disconnect the primary signer connection.
+
+An existing unchanged sentry alias reuses its custom ports and credential paths.
+Changing the route requires interactive replacement consent and obtains new SSH
+access rather than silently using the previous destination's token. Direct
+HTTPS and loopback HTTP endpoints work when their endpoint token file already
+contains a valid token; automatic token enrollment requires SSH.
+
+`--dry-run` validates the public JSON and reports the proposed route without
+writing files, changing host trust, requesting a token, or contacting the
+sentry. File-based script use requires all values and an already trusted SSH
+host; it may wait for normal sentry-side token approval. Paste, first-use trust,
+and conflicting replacements require an interactive shell. `sentry add` is not
+available through MCP.
+
+This command configures only the transaction client. Import the same public
+reference in signer-side apadmin before generating a guarded account.
+
+**Examples:**
+
+```text
+sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
+sentry add witness.json --alias sentry-lab --endpoint ssh://sentry.example:1127 --sentry-port 11270
+sentry add lab-sentry.aplane-sentry.json --alias sentry-lab --dry-run
+```
+
+---
+
 ### endpoints
 
 Manage client-local signer and sentry endpoint profiles.
@@ -776,7 +826,8 @@ compatible guarded or bounded-sentry account without exposing a raw Falcon
 public-key input. On a sentry node, `Export enrollment` offers the configured
 advertised endpoint as an explicit public-metadata option. A combined bundle
 review on the signer imports only the public reference. Any endpoint metadata
-is informational; configure routing separately in apshell.
+is ignored by apadmin; use `sentry add` in apshell to consume it as
+client-owned routing metadata.
 
 On a sentry node, open a witness key and choose `e: Export enrollment`, then
 select **SHOW JSON** for full JSON in the terminal: the console temporarily
@@ -812,17 +863,18 @@ apadmin -d "$SIGNER_DATA" sentry enrollment import lab-sentry.aplane-sentry.json
   --name lab-sentry
 ```
 
-Then configure the transaction client in apshell (use the sentry's actual SSH
-and REST ports):
+Then configure and verify the transaction client in apshell:
 
 ```text
-endpoints create --alias sentry-lab --endpoint ssh://sentry.example:1127 --sentryport 11270
-request-token --endpoint sentry-lab
+sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
 ```
 
-Approve the Client Enrollment Request in apadmin on the sentry node. In apshell,
-run `endpoints discover-sentries` to inspect the live route before funding or
-rekeying to the guarded account. apadmin does not configure or verify client routes.
+If the exported document omitted an endpoint, add
+`--endpoint ssh://sentry.example:1127 --sentry-port 11270`. Approve any Client
+Enrollment Request in apadmin on the sentry node. The command verifies the
+expected witness before it succeeds. `endpoints discover-sentries` remains
+available as a read-only diagnostic across every configured sentry route.
+apadmin does not configure or verify client routes.
 
 ---
 

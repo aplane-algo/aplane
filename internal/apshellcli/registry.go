@@ -60,6 +60,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"connect":       command.StructuredAutomation,
 	"disconnect":    command.StructuredAutomation,
 	"endpoints":     command.StructuredAutomation,
+	"sentry":        command.BlockedAutomation("sentry setup is unavailable through MCP; use an interactive or trusted-host script session"),
 	"help":          command.BlockedAutomation("use the mcp_reference MCP tool instead"),
 	"config":        command.BlockedAutomation("use the safe status command instead"),
 	"script":        command.BlockedAutomation("issue commands individually or use the js MCP tool"),
@@ -410,6 +411,14 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 		Description: "Manage client-local signer and sentry endpoint profiles",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdEndpoints),
+	})
+
+	mustRegister(registry, &command.Command{
+		Name:        "sentry",
+		Usage:       sentrySetupUsage,
+		Description: "Configure sentry access from public enrollment JSON and verify its witness",
+		Category:    command.CategoryRemote,
+		Handler:     command.NewInternalHandler(r.cmdSentry),
 	})
 
 	// Terminal

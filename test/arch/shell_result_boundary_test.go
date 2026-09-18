@@ -226,8 +226,8 @@ func registeredShellHandlers(t *testing.T, root string, functions map[string]*sh
 		return true
 	})
 	sort.Strings(handlers)
-	if len(handlers) != 41 {
-		t.Fatalf("registered handler roots = %d, want 41", len(handlers))
+	if len(handlers) != 42 {
+		t.Fatalf("registered handler roots = %d, want 42", len(handlers))
 	}
 	return handlers
 }
