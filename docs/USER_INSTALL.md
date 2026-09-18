@@ -190,11 +190,9 @@ Approve the request in the signer pane; that first enrollment writes
 to connect.
 
 For local sentry nodes, `apconsole` shows the sentry admin pane and daemon pane
-only. Unlock the sentry in that console, then open another terminal, source the
-install's `apenv.sh`, start `apshell`, and run
-`request-token --endpoint local-sentry`. Approve the request in the sentry admin
-pane; enrollment writes `tokens/local-sentry.token` under the client data
-directory.
+only. Unlock the sentry in that console, then follow
+[Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts)
+to export its public key and configure access from your transaction client.
 
 Or start components individually:
 
@@ -219,9 +217,8 @@ For a sentry node:
 
 1. Run `./start.sh` from the install root
 2. Unlock the sentry admin pane with the keystore passphrase
-3. In another terminal, source the install's `apenv.sh`
-4. Run `apshell`, then `request-token --endpoint local-sentry`
-5. Approve the request in the sentry admin pane
+3. Follow [Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts)
+   below to export the key and add the connection in apshell.
 
 `request-token` creates the client SSH key if it is missing, then waits for an
 operator to approve client access in `apadmin` or `apapprover`.
@@ -238,19 +235,35 @@ separate. Complete them in this order:
    **Export Sentry Key** from its success or key-details screen. Include the
    advertised endpoint when one is available.
 2. On the primary signer, press `e` in `apadmin`, choose **Import Sentry Key**,
-   import the public file under a reference name, and compare every group of the full Witness Key
-   ID with the value shown on the sentry.
+   import the public file, review or edit its proposed reference name, and
+   compare the complete Witness Key ID with the value shown on the sentry.
 3. In `apshell`, run `sentry add <sentry-key-json> --alias <alias>`. Review the
    endpoint and complete Witness Key ID.
-4. Approve the **Client Access Request** in `apadmin` on the sentry node. Apshell
-   saves the token and verifies that the endpoint advertises the expected key.
-5. Generate the compatible guarded account. Do not fund it or rekey another
-   account to it until the full-ID comparison and client verification succeed.
+4. Compare the full client SSH key fingerprint shown by apshell and the
+   **Client Access Request** in sentry-side apadmin, then approve the request.
+   Apshell saves the token and verifies the expected witness.
+5. Generate the compatible guarded account on the primary signer. Connect
+   apshell to that signer and run `sentry status` to inspect the account's route
+   before funding or rekeying. This is a point-in-time connection check, not
+   confirmation of transaction policy or on-chain validity.
 
 The sentry key file contains the public key and may contain public endpoint
 metadata. It never contains the private sentry key, an access token, or SSH host
 trust. Signer import and client setup are independent and may safely reuse the
 same file.
+
+### Advanced: provision an existing local sentry endpoint
+
+For an already configured `local-sentry` endpoint, you can provision its access
+token separately. In another terminal, source the install's `apenv.sh`, start
+apshell, and run `request-token --endpoint local-sentry`. Approve the request
+in the sentry admin pane after comparing the complete client SSH fingerprint.
+The client saves `tokens/local-sentry.token`. This manual access step does not
+import a public sentry key into the primary signer.
+
+For new guarded-account setup, use the guided flow above. See
+[advanced endpoint commands](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery)
+for manual routing and discovery.
 
 ### Multiple local instances
 
@@ -452,9 +465,8 @@ This installs:
 
 The normal `request-token` flow handles the client's SSH-key and API-token
 enrollment together. It does not enroll a sentry witness as a guarded-account
-co-authority. For guarded accounts, separately export the sentry's public
-witness envelope with `apadmin sentry export` and import it on the primary
-signer with `apadmin sentry import`, or use the signer-side **Sentries** TUI.
+co-authority. For guarded accounts, follow
+[Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts).
 After approval, interactive `apshell` saves the token and immediately attempts
 to connect to the signer.
 

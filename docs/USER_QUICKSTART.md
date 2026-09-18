@@ -164,10 +164,13 @@ reference, then select **Generate account**.
 
 In apshell, run `sentry add <sentry-key-json> --alias <alias>`. Supply
 `--endpoint <url>` when the exported document has no address. Review the full
-Witness Key ID, then approve any access request in apadmin on the sentry. The
-command configures the client route, obtains access, and verifies the expected
-witness. `endpoints discover-sentries` remains available as a broader live-route
-diagnostic before funding or rekeying to the guarded account.
+Witness Key ID, then compare the full client SSH key fingerprint displayed in
+apshell and the **Client Access Request** in sentry-side apadmin before approving.
+The command configures the client route, obtains access, and verifies the
+expected witness. With apshell connected to the primary signer, run
+`sentry status` to inspect the guarded account's current sentry route before
+funding or rekeying. Route availability does not establish transaction-policy
+or on-chain validity.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 

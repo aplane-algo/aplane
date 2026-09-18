@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `sentry add`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `sentry add`, `sentry status`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -650,13 +650,13 @@ destination.
 ```
 request-token
 request-token --endpoint main
-request-token --endpoint local-sentry
 ```
 
 **Note:** An operator using local `apadmin` must approve the request on the server.
 After approval, `apshell` saves the new token. It immediately attempts to
 connect only when the selected endpoint is the default signer; sentry
-enrollment leaves the primary signer connection unchanged.
+access provisioning leaves the primary signer connection unchanged. For normal
+sentry setup, use [sentry add](#sentry-add), which obtains access as part of setup.
 
 The positional one-off host form is no longer supported. Import or configure
 the endpoint first, then request its token:
@@ -675,24 +675,28 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ---
 
-### sentry status
+### Guided sentry setup
 
-Run `sentry status` in apshell to inspect current sentry connections and the
-primary signer's guarded-account requirements. It queries configured endpoints
-without changing client configuration, credentials, SSH trust, or cached keys.
-Unknown SSH hosts require separate interactive setup with `sentry add`.
+Use the same public sentry key file in two places:
 
-Connections show authenticated reachability, advertised Witness Key IDs, and
-individual errors. Account requirements show available, missing, or duplicate
-routes. If the primary signer is disconnected, locked, or inaccessible, its
-account requirements are explicitly unavailable; endpoint observations still
-appear. An incomplete sweep or host-key mismatch prevents a positive route
-conclusion. Duplicate advertisements are also shown without a connected signer.
+1. **On the sentry:** generate a sentry key and choose **Export Sentry Key**.
+   Include the advertised endpoint when available. Use **SHOW JSON** to copy
+   the complete document instead of saving a file.
+2. **On the primary signer:** open **Sentries** in apadmin and **Import Sentry
+   Key**, using the file or pasted JSON. Review the proposed reference name and
+   compare the complete Witness Key ID with the sentry.
+3. **In apshell:** run `sentry add <file> --alias <connection-name>`, or
+   `sentry add` to paste JSON. Review the endpoint and Witness Key ID.
+4. **On the sentry:** approve the **Client Access Request** in apadmin after
+   comparing the full client SSH key fingerprint with apshell.
+5. **On the primary signer:** select the imported key and **Generate account**.
+   In apshell, connect to the primary signer and run `sentry status` to inspect
+   the resulting account's sentry route.
 
-This is a point-in-time route check. It does not confirm transaction policy,
-operator approval, private-key possession, or on-chain validity. It does not
-perform signing. The command uses the normal structured command-result output;
-like `sentry add`, it is not exposed through MCP.
+The signer reference name and client connection name are independent. apadmin
+stores the public key; apshell configures and checks the connection. A route
+check reports current availability, not a transaction's policy or on-chain
+validity.
 
 ---
 
@@ -751,9 +755,33 @@ sentry add lab-sentry.aplane-sentry.json --alias sentry-lab --dry-run
 
 ---
 
+### sentry status
+
+Run `sentry status` in apshell to inspect current sentry connections and the
+primary signer's guarded-account requirements. It queries configured endpoints
+without changing client configuration, credentials, SSH trust, or cached keys.
+Unknown SSH hosts require separate interactive setup with `sentry add`.
+
+Connections show authenticated reachability, advertised Witness Key IDs, and
+individual errors. Account requirements show available, missing, or duplicate
+routes. If the primary signer is disconnected, locked, or inaccessible, its
+account requirements are explicitly unavailable; endpoint observations still
+appear. An incomplete sweep or host-key mismatch prevents a positive route
+conclusion. Duplicate advertisements are also shown without a connected signer.
+
+This is a point-in-time route check. It does not confirm transaction policy,
+operator approval, private-key possession, or on-chain validity. It does not
+perform signing. The command uses the normal structured command-result output;
+like `sentry add`, it is not exposed through MCP.
+
+---
+
 ### endpoints
 
-Manage client-local signer and sentry endpoint profiles.
+Manage client-local signer and sentry endpoint profiles. For guided sentry
+setup and route checks, use `sentry add` and `sentry status`.
+
+#### Advanced: manual endpoint configuration and discovery
 
 ```
 endpoints list
@@ -820,8 +848,6 @@ apadmin sentry import <public-json|-> <name>
 apadmin sentry list
 apadmin sentry show <name>
 apadmin sentry remove <name>
-apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
-apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]
 ```
 
 Run `export` against the sentry node. It asks the daemon to verify and return
@@ -867,12 +893,26 @@ scrollback, then press Enter to return to the export screen.
 File export and batch stdout also preserve the original JSON bytes.
 
 To import copied JSON, press `p: Paste JSON` in the Sentry References manager.
-Use your terminal's paste shortcut in the JSON field, then Tab to review or edit the
-reference name suggested from the file or Witness Key ID. Continue to review. The field accepts a complete multiline
-public witness document or combined enrollment bundle, up to 64 KiB. Pasting
+Use your terminal's paste shortcut in the JSON field, then Tab to review or
+edit the reference name suggested from the file or Witness Key ID. Continue
+to review. The field accepts a complete multiline public witness document or
+combined sentry key document, up to 64 KiB. Pasting
 again replaces the document; Backspace/Delete clears it. Compare the full
 Witness Key ID on the shared import review screen before importing. A bundled
 endpoint is informational and does not change client configuration.
+
+#### Advanced: batch export with endpoint metadata
+
+These commands remain available for automation and compatibility:
+
+```text
+apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
+apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]
+```
+
+The simple `apadmin sentry export` emits standalone public-key JSON; both
+`apadmin sentry import` and `apadmin sentry enrollment import` accept standalone
+and combined documents.
 
 The `sentry enrollment` commands use the combined
 `aplane.sentry-enrollment.v1` handoff. Export always includes the verified
