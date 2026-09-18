@@ -93,10 +93,6 @@ func (a *App) PrepareSentrySetup(req SentrySetupRequest) (SentrySetupPlan, error
 	if candidate.URL == "" {
 		return SentrySetupPlan{}, fmt.Errorf("%w; pass --endpoint <url>", ErrSentryEndpointURLRequired)
 	}
-	if candidate.URL == "self" {
-		return SentrySetupPlan{}, fmt.Errorf("sentry setup cannot use endpoint %q; provide a client-reachable URL", candidate.URL)
-	}
-
 	if req.SignerPort != 0 {
 		candidate.SignerPort = req.SignerPort
 	} else if artifact.Endpoint != nil && artifact.Endpoint.SignerPort != 0 {

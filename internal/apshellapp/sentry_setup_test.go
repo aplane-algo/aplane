@@ -142,13 +142,13 @@ func TestPrepareSentrySetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T) {
 			prepare: func(t *testing.T) (*App, SentrySetupRequest) {
 				return newEndpointTestApp(t, t.TempDir()), SentrySetupRequest{Document: document, Alias: "field", URL: "self"}
 			},
-			want: "cannot use endpoint",
+			want: `url "self" is not supported`,
 		},
 		{
 			name: "signer alias",
 			prepare: func(t *testing.T) (*App, SentrySetupRequest) {
 				dataDir := t.TempDir()
-				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {
+				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 					t.Fatal(err)
 				}
 				return newEndpointTestApp(t, dataDir), SentrySetupRequest{Document: document, Alias: "primary", URL: "ssh://sentry.example"}

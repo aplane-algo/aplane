@@ -182,10 +182,10 @@ func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *te
 
 func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "self"}, true); err != nil {
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example"}, true); err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)

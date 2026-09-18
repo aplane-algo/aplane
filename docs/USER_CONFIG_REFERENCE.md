@@ -31,7 +31,7 @@ Signer and sentry endpoint routing lives here, not in `config.yaml`.
 | `schema_version` | int | `2` | Endpoint registry schema version |
 | `default` | string | `(operator-chosen)` | Default signer endpoint alias |
 | `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |
-| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |
+| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, or `https://...` |
 | `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |
 | `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |

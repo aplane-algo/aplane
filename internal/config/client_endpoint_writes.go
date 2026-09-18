@@ -244,7 +244,7 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	if endpoint.TokenFile == "" && endpoint.URL != "self" {
+	if endpoint.TokenFile == "" {
 		if alias == DefaultClientEndpointName {
 			endpoint.TokenFile = "aplane.token"
 		} else {

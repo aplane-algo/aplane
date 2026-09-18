@@ -1491,8 +1491,9 @@ Runtime guarded and bounded-sentry routing performs the same live discovery at
 the start of each signing operation and keeps an operation-scoped route
 snapshot. It probes the deterministic configured endpoint order with bounded
 parallelism and stops only after every required embedded public key has one
-unambiguous route. `url: self` is an explicit co-location profile; there is no
-implicit fallback to the primary signer.
+unambiguous route. Same-host deployments use an explicit loopback or SSH
+endpoint for the separate sentry process; the primary signer connection is
+never reused as a sentry route.
 
 The signer reference catalog is a generation trust-input inventory, while
 live endpoint discovery is routing only. Neither proves endpoint ownership;

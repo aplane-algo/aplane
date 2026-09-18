@@ -136,7 +136,7 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 		return nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
 	}
 	if len(aliases) == 0 {
-		return nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint (use url: self for a co-located sentry)", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
+		return nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint for the sentry process", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
 	}
 
 	discoveryCtx, cancel := context.WithTimeout(ctx, sentryDiscoveryTotalTimeout)
@@ -290,16 +290,11 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 }
 
 func (s *Signer) probeConfiguredSentryEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-	var resolved *resolvedSentryEndpoint
-	if endpoint.URL == "self" {
-		resolved = &resolvedSentryEndpoint{client: s.conn, source: alias + " (self)"}
-	} else {
-		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
-		if err != nil {
-			return nil, nil, classifySentryDiscoveryConnectError(err)
-		}
-		resolved = &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
+	client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
+	if err != nil {
+		return nil, nil, classifySentryDiscoveryConnectError(err)
 	}
+	resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
 	keys, err := resolved.client.GetKeysWithContext(ctx)
 	if err != nil {
 		resolved.close()
@@ -429,7 +424,7 @@ func unresolvedSentryDiscoveryError(required []sentryRequestKey, selected map[se
 			summary = append(summary, alias+": no matching key")
 		}
 	}
-	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint that advertises the required Witness Key ID (use url: self for a co-located sentry)", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
+	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint for the sentry process that advertises the required Witness Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
 	if len(causes) > 0 {
 		return fmt.Errorf("%s: %w", message, errors.Join(causes...))
 	}

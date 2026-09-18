@@ -258,7 +258,7 @@ network: testnet
 sentry_endpoints:
   ? %q
   :
-    url: self
+    url: ssh://sentry.example
 `, sentryEndpointTestHex("d6"))), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -269,6 +269,22 @@ sentry_endpoints:
 	}
 	if !strings.Contains(err.Error(), "field sentry_endpoints not found") {
 		t.Fatalf("LoadConfigFromPath error = %q, want sentry_endpoints unknown field", err)
+	}
+}
+
+func TestLoadClientEndpointRegistryRejectsSelfForEveryRole(t *testing.T) {
+	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleSentry} {
+		t.Run(role, func(t *testing.T) {
+			dataDir := t.TempDir()
+			contents := fmt.Sprintf("schema_version: 2\nendpoints:\n  local:\n    role: %s\n    url: self\n", role)
+			if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(contents), 0o600); err != nil {
+				t.Fatalf("write endpoints: %v", err)
+			}
+			_, err := LoadClientEndpointRegistry(dataDir)
+			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
+				t.Fatalf("LoadClientEndpointRegistry() error = %v, want unsupported self URL", err)
+			}
+		})
 	}
 }
 

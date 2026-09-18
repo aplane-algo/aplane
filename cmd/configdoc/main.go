@@ -163,7 +163,7 @@ func printClientEndpointReference() {
 	fmt.Println("| `schema_version` | int | `2` | Endpoint registry schema version |")
 	fmt.Println("| `default` | string | `(operator-chosen)` | Default signer endpoint alias |")
 	fmt.Println("| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |")
-	fmt.Println("| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |")
+	fmt.Println("| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, or `https://...` |")
 	fmt.Println("| `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |")
 	fmt.Println("| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |")
 	fmt.Println("| `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |")
