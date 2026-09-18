@@ -266,3 +266,27 @@ func testCLIWitnessDocument(t *testing.T) []byte {
 	}
 	return document
 }
+
+func TestSentryStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := newIsolatedTestEngine(t, "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, Config: cfg, AutoConfirm: true}
+	result, err := state.cmdSentry([]string{"status"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := result.RenderText(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "No sentry connections") || !strings.Contains(out.String(), "Unavailable:") {
+		t.Fatalf("status=%s", out.String())
+	}
+	if _, err := state.cmdSentry([]string{"status", "extra"}, nil); err == nil {
+		t.Fatal("accepted extra argument")
+	}
+}

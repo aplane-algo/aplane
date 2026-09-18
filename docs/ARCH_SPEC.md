@@ -1539,7 +1539,9 @@ Primary implementation ownership:
   wires it and re-exports the discovery types). Its exported surface is only
   the sanctioned entry points (`New`/`Deps`/`Signer`/`SignerCacheView`,
   `HasGuardedEffectiveSigner`, `SignAndSubmitGroup`,
-  `DiscoverSentryComponentKeys`, `DiscoveredSentryComponentKey`, and the
+  `DiscoverSentryComponentKeys`, `DiscoveredSentryComponentKey`,
+  read-only `InspectRoutes` with `RouteStatus`, `ConnectionObservation`, and
+  `AccountRouteObservation` (closed probe connections, no signing), and the
   `ErrSentryDiscovery*` sentinels); the choreography internals are unexported
   and tested in-package. Import isolation is pinned by
   `test/arch/client_layering_test.go`.

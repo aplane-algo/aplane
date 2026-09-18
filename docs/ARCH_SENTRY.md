@@ -318,7 +318,13 @@ key. Deleting an advertised sentry key causes guarded signing to fail before
 submission with a missing-advertised-key error.
 
 Use `apshell sentry add` for guided setup of one public handoff. Use
-`apshell endpoints discover-sentries` to inspect all live client routes.
+`apshell sentry status` for point-in-time endpoint observations and account
+requirements, including unmatched witnesses. It shares the signing resolver's
+bounded sweep and uniqueness rules, closes all probe connections, and does not
+persist inventories or routes. Missing primary-signer inventory is explicitly
+unavailable, not an empty list of guarded accounts. Route availability is not
+a policy verdict or proof of private-key possession.
+`apshell endpoints discover-sentries` remains the advanced inventory diagnostic.
 Signer-side apadmin displays public reference metadata only; it does not
 probe endpoints or persist route associations.
 

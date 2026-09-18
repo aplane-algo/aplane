@@ -675,6 +675,27 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ---
 
+### sentry status
+
+Run `sentry status` in apshell to inspect current sentry connections and the
+primary signer's guarded-account requirements. It queries configured endpoints
+without changing client configuration, credentials, SSH trust, or cached keys.
+Unknown SSH hosts require separate interactive setup with `sentry add`.
+
+Connections show authenticated reachability, advertised Witness Key IDs, and
+individual errors. Account requirements show available, missing, or duplicate
+routes. If the primary signer is disconnected, locked, or inaccessible, its
+account requirements are explicitly unavailable; endpoint observations still
+appear. An incomplete sweep or host-key mismatch prevents a positive route
+conclusion. Duplicate advertisements are also shown without a connected signer.
+
+This is a point-in-time route check. It does not confirm transaction policy,
+operator approval, private-key possession, or on-chain validity. It does not
+perform signing. The command uses the normal structured command-result output;
+like `sentry add`, it is not exposed through MCP.
+
+---
+
 ### sentry add
 
 Configure client access to a sentry from its public sentry key JSON, obtain a

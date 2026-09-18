@@ -125,6 +125,39 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	aliases, states, err := s.probeSentryEndpoints(ctx)
+	if err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
+	}
+	selected, resolvedAll, err := uniqueSentrySelections(required, states)
+	if err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
+	}
+	if !resolvedAll {
+		closeProbeResults(states, nil)
+		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, ctx.Err())
+	}
+
+	keep := map[*resolvedSentryEndpoint]bool{}
+	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
+	for key, index := range selected {
+		endpoint := states[index].endpoint
+		snapshot.routes[key] = endpoint
+		if !keep[endpoint] {
+			keep[endpoint] = true
+			snapshot.endpoints = append(snapshot.endpoints, endpoint)
+		}
+	}
+	closeProbeResults(states, keep)
+	s.warnSkippedSentryEndpoints(states)
+	return snapshot, nil
+}
+
+// probeSentryEndpoints owns the bounded sweep shared by signing and diagnostics.
+// Callers own every returned connection, including when the sweep fails.
+func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryEndpointProbeResult, error) {
 	aliases := make([]string, 0, len(s.endpointRegistry.Endpoints))
 	for alias, endpoint := range s.endpointRegistry.Endpoints {
 		if endpoint.Role == config.ClientEndpointRoleSentry {
@@ -133,12 +166,15 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	}
 	sort.Strings(aliases)
 	if len(aliases) > maxSentryDiscoveryEndpoints {
-		return nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
+		return aliases, nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
 	}
 	if len(aliases) == 0 {
-		return nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint for the sentry process", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
+		return aliases, nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint for the sentry process", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return aliases, nil, err
+	}
 	discoveryCtx, cancel := context.WithTimeout(ctx, sentryDiscoveryTotalTimeout)
 	defer cancel()
 	jobs := make(chan int)
@@ -190,36 +226,12 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	}
 
 	if hostKeyMismatch != nil {
-		closeProbeResults(states, nil)
-		return nil, hostKeyMismatch
+		return aliases, states, hostKeyMismatch
 	}
 	if err := incompleteSentryDiscoveryError(aliases, states, discoveryCtx.Err()); err != nil {
-		closeProbeResults(states, nil)
-		return nil, err
+		return aliases, states, err
 	}
-	selected, resolvedAll, err := uniqueSentrySelections(required, states)
-	if err != nil {
-		closeProbeResults(states, nil)
-		return nil, err
-	}
-	if !resolvedAll {
-		closeProbeResults(states, nil)
-		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, discoveryCtx.Err())
-	}
-
-	keep := map[*resolvedSentryEndpoint]bool{}
-	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
-	for key, index := range selected {
-		endpoint := states[index].endpoint
-		snapshot.routes[key] = endpoint
-		if !keep[endpoint] {
-			keep[endpoint] = true
-			snapshot.endpoints = append(snapshot.endpoints, endpoint)
-		}
-	}
-	closeProbeResults(states, keep)
-	s.warnSkippedSentryEndpoints(states)
-	return snapshot, nil
+	return aliases, states, discoveryCtx.Err()
 }
 
 func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointProbeResult, cause error) error {

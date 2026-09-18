@@ -18,6 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
+const sentryUsage = "sentry status | " + sentrySetupUsage
+
 const sentrySetupUsage = "sentry add [public-json] [--alias <alias>] [--endpoint <url>] [--sentry-port <port>] [--replace] [--dry-run]"
 
 type sentrySetupCLIOptions struct {
@@ -38,6 +40,23 @@ type sentrySetupProjection struct {
 }
 
 func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, error) {
+	if len(args) > 0 && args[0] == "status" {
+		if len(args) != 1 {
+			return nil, errors.New("usage: sentry status")
+		}
+		result, err := r.app().SentryStatus(r.commandContext(), apshellapp.SentryStatusRequest{})
+		if err != nil {
+			return nil, err
+		}
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() {
+				for _, line := range result.RenderLines {
+					r.println(line)
+				}
+			})
+		}, result.SentryStatusResult)
+	}
+
 	options, err := parseSentrySetupArgs(args)
 	if err != nil {
 		return nil, err
