@@ -229,6 +229,31 @@ After approval, the shell saves the token for the selected endpoint and
 immediately attempts to connect only when that endpoint is the default signer.
 Sentry enrollment leaves the primary signer connection unchanged.
 
+### Enroll a sentry for guarded accounts
+
+Witness trust, endpoint routing, and transport credentials are deliberately
+separate. Complete them in this order:
+
+1. On the sentry node, generate an `aplane.witness-falcon1024.v1` key and use
+   `Export enrollment` from its success or key-details screen. Include the
+   advertised endpoint when one is available.
+2. On the primary signer, press `e` in `apadmin`, import the public enrollment
+   file under a friendly alias, and compare every group of the full Witness Key
+   ID with the value shown on the sentry.
+3. If the file contains an endpoint, optionally stage it under an editable
+   client-local alias in the same review. This does not install a token or trust
+   an SSH host key.
+4. In `apshell`, run `request-token --endpoint <alias>` and approve the Client
+   Enrollment Request in `apadmin` on the sentry node.
+5. In primary-signer `apadmin`, open the enrolled reference and press `v`.
+   Continue only when the read-only check reports one unique live route.
+6. Generate the compatible guarded account. Do not fund it or rekey another
+   account to it until the full-ID comparison and live-route check succeed.
+
+The enrollment artifact is public JSON, not a key or credential. If endpoint
+staging fails after reference import, fix the client-data problem and import
+the same file again; the reference import is idempotent and is not rolled back.
+
 ### Multiple local instances
 
 Simply install to different paths:
@@ -362,6 +387,17 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 ## Upgrade Compatibility
 
+Direct installs from a Git checkout record release metadata from the built
+`apsigner` and `apshell` binaries (`apshell` alone for `--client`). Build them
+with `make` first; missing build stamps or mismatched signer/client versions
+stop installation before the target is changed. Release archives must include
+their supplied `release.json`. Every successful install writes
+`install/release.json` for subsequent upgrade checks.
+
+An existing checkout install that lacks this file still requires a one-time
+`./install.sh --force <install-root>` after verifying its compatibility. That
+installation writes the metadata so later upgrades can use the normal check.
+
 This release supports in-place upgrades only when the existing install meets
 the installer's minimum supported version. If the existing install is below the floor, or
 if the installer cannot read `install/release.json`, install into a fresh root
@@ -416,7 +452,11 @@ This installs:
 3. Run `apshell`, then use `request-token` to generate or reuse your SSH key and request an API token
 4. Ask the signer operator to approve the token enrollment in `apadmin` or `apapprover`
 
-Manual public-key exchange is only needed for custom provisioning workflows. The normal `request-token` flow handles key enrollment and token delivery together.
+The normal `request-token` flow handles the client's SSH-key and API-token
+enrollment together. It does not enroll a sentry witness as a guarded-account
+co-authority. For guarded accounts, separately export the sentry's public
+witness envelope with `apadmin sentry export` and import it on the primary
+signer with `apadmin sentry import`, or use the signer-side **Sentries** TUI.
 After approval, interactive `apshell` saves the token and immediately attempts
 to connect to the signer.
 
@@ -686,7 +726,7 @@ This produces statically linked binaries in `bin/`:
 | `apsigner` | Signing server |
 | `appass-systemd-creds` | Passphrase encryption helper (TPM2/host key) |
 | `apstore` | Offline keystore bootstrap, verification, and rescue |
-| `apadmin` | Live administration over IPC or SSH, in the TUI or batch mode |
+| `apadmin` | Live administration over local IPC, in the TUI or batch mode |
 | `apconsole` | Unified secure-machine console for shell, signer TUI, and daemon status |
 | `apapprover` | Signing and token provisioning approval interface |
 | `appass` | Offline passphrase auto-unlock configuration TUI |

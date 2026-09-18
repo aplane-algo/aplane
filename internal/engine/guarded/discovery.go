@@ -52,6 +52,11 @@ var (
 	// incompatible with sentry discovery.
 	ErrSentryDiscoveryConfig = errors.New("sentry endpoint configuration invalid")
 
+	// errSentryDiscoveryDuplicateRoute marks a required witness key advertised
+	// by more than one live sentry endpoint. Guarded routing requires one
+	// unambiguous live endpoint per witness.
+	errSentryDiscoveryDuplicateRoute = errors.New("duplicate live sentry route")
+
 	// errSentryDiscoveryHostKeyMismatch marks an SSH endpoint whose host key
 	// differs from the client's existing pin. Discovery aborts globally when
 	// this error is observed.
@@ -117,6 +122,9 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	if len(required) == 0 {
 		return &sentryEndpointSnapshot{routes: map[sentryRequestKey]*resolvedSentryEndpoint{}}, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	aliases := make([]string, 0, len(s.endpointRegistry.Endpoints))
 	for alias, endpoint := range s.endpointRegistry.Endpoints {
 		if endpoint.Role == config.ClientEndpointRoleSentry {
@@ -171,8 +179,6 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	}()
 
 	states := make([]*sentryEndpointProbeResult, len(aliases))
-	selected := map[sentryRequestKey]int{}
-	resolvedAll := false
 	var hostKeyMismatch error
 	for result := range results {
 		result := result
@@ -181,17 +187,20 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 			hostKeyMismatch = fmt.Errorf("%w at endpoint %q", errSentryDiscoveryHostKeyMismatch, result.alias)
 			cancel()
 		}
-		if hostKeyMismatch == nil && !resolvedAll {
-			selected, resolvedAll = deterministicSentrySelections(required, states)
-			if resolvedAll {
-				cancel()
-			}
-		}
 	}
 
 	if hostKeyMismatch != nil {
 		closeProbeResults(states, nil)
 		return nil, hostKeyMismatch
+	}
+	if err := incompleteSentryDiscoveryError(aliases, states, discoveryCtx.Err()); err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
+	}
+	selected, resolvedAll, err := uniqueSentrySelections(required, states)
+	if err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
 	}
 	if !resolvedAll {
 		closeProbeResults(states, nil)
@@ -200,7 +209,6 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 
 	keep := map[*resolvedSentryEndpoint]bool{}
 	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
-	maxSelected := -1
 	for key, index := range selected {
 		endpoint := states[index].endpoint
 		snapshot.routes[key] = endpoint
@@ -208,13 +216,30 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 			keep[endpoint] = true
 			snapshot.endpoints = append(snapshot.endpoints, endpoint)
 		}
-		if index > maxSelected {
-			maxSelected = index
-		}
 	}
 	closeProbeResults(states, keep)
-	s.warnSkippedSentryEndpoints(states, maxSelected)
+	s.warnSkippedSentryEndpoints(states)
 	return snapshot, nil
+}
+
+func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointProbeResult, cause error) error {
+	unprobed := make([]string, 0)
+	for index, state := range states {
+		if state == nil {
+			unprobed = append(unprobed, aliases[index])
+		}
+	}
+	if len(unprobed) == 0 {
+		return nil
+	}
+	if cause == nil {
+		cause = ErrSentryDiscoveryUnavailable
+	}
+	return fmt.Errorf(
+		"sentry discovery ended before every configured endpoint could be checked (not probed: %s): %w",
+		strings.Join(unprobed, ", "),
+		cause,
+	)
 }
 
 func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
@@ -245,14 +270,15 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 		}
 		progressOut := s.signerProgressWriter()
 		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
-			Host:           parsed.Hostname(),
-			SSHPort:        sshPort,
-			LocalPort:      endpoint.LocalPort,
-			SignerPort:     signerPort,
-			Token:          token,
-			IdentityFile:   endpoint.IdentityFile,
-			KnownHostsPath: endpoint.KnownHostsPath,
-			ProgressOut:    progressOut,
+			Host:            parsed.Hostname(),
+			SSHPort:         sshPort,
+			LocalPort:       endpoint.LocalPort,
+			SignerPort:      signerPort,
+			Token:           token,
+			IdentityFile:    endpoint.IdentityFile,
+			KnownHostsPath:  endpoint.KnownHostsPath,
+			ProgressOut:     progressOut,
+			HostKeyApproval: s.hostKeyApproval,
 		})
 		if err != nil {
 			return nil, nil, "", err
@@ -319,25 +345,39 @@ func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryReques
 	return out
 }
 
-func deterministicSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool) {
+func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool, error) {
 	selected := make(map[sentryRequestKey]int, len(required))
 	for _, key := range required {
-		found := false
+		matches := make([]int, 0, 1)
 		for index, state := range states {
-			if state == nil {
-				break
-			}
-			if state.err == nil && discoveredSentryKeysContain(state.keys, key) {
-				selected[key] = index
-				found = true
-				break
+			if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, key) {
+				matches = append(matches, index)
 			}
 		}
-		if !found {
-			return selected, false
+		switch len(matches) {
+		case 0:
+			continue
+		case 1:
+			selected[key] = matches[0]
+		default:
+			aliases := make([]string, 0, len(matches))
+			for _, index := range matches {
+				aliases = append(aliases, states[index].alias)
+			}
+			selector, err := sentryComponentSelector(key.ComponentKeyType, key.PublicKey)
+			if err != nil {
+				selector = "invalid"
+			}
+			return selected, false, fmt.Errorf(
+				"%w: Witness Key ID %s (%s) is advertised by endpoints %s; remove duplicate endpoint profiles so each witness has exactly one live route",
+				errSentryDiscoveryDuplicateRoute,
+				selector,
+				key.ComponentKeyType,
+				`"`+strings.Join(aliases, `", "`)+`"`,
+			)
 		}
 	}
-	return selected, true
+	return selected, len(selected) == len(required), nil
 }
 
 func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required sentryRequestKey) bool {
@@ -421,13 +461,13 @@ func sentryDiscoveryFailureLabel(err error) string {
 	}
 }
 
-func (s *Signer) warnSkippedSentryEndpoints(states []*sentryEndpointProbeResult, maxSelected int) {
+func (s *Signer) warnSkippedSentryEndpoints(states []*sentryEndpointProbeResult) {
 	w := s.signerProgressWriter()
 	if w == nil {
 		return
 	}
-	for index, state := range states {
-		if index > maxSelected || state == nil || state.err == nil || errors.Is(state.err, context.Canceled) {
+	for _, state := range states {
+		if state == nil || state.err == nil || errors.Is(state.err, context.Canceled) {
 			continue
 		}
 		_, _ = fmt.Fprintf(w, "[sentry discovery] skipped endpoint %s: %s\n", state.alias, sentryDiscoveryFailureLabel(state.err))

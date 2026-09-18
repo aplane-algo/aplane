@@ -17,7 +17,7 @@ func TestSaveTEALToFileRequiresCanonicalAddressFilename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("saveTEALToFile() error = %v", err)
 	}
-	want := filepath.Join(dataDir, "files", address+".teal")
+	want := filepath.Join(dataDir, address+".teal")
 	if path != want {
 		t.Fatalf("saveTEALToFile() path = %q, want %q", path, want)
 	}

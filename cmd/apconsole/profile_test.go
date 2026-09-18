@@ -35,22 +35,12 @@ signer_data: ./apsigner
 	}
 }
 
-func TestLoadConsoleProfileRemoteAllowsNoSignerData(t *testing.T) {
+func TestLoadConsoleProfileRejectsRemote(t *testing.T) {
 	root := t.TempDir()
-	writeConsoleProfile(t, root, `
-mode: remote
-client_data: ./apclient
-`)
-
-	profile, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
-	if err != nil {
-		t.Fatalf("loadConsoleProfile failed: %v", err)
-	}
-	if profile.Mode != consoleModeRemote {
-		t.Fatalf("Mode = %q, want remote", profile.Mode)
-	}
-	if profile.SignerData != "" {
-		t.Fatalf("SignerData = %q, want empty", profile.SignerData)
+	writeConsoleProfile(t, root, "mode: remote\nclient_data: ./apclient\n")
+	_, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
+	if err == nil || !strings.Contains(err.Error(), "IPC-only") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -103,35 +93,19 @@ signer_data: ./apsigner
 	}
 }
 
-func TestResolveConsoleStartupRemoteProfile(t *testing.T) {
-	root := t.TempDir()
-	writeConsoleProfile(t, root, `
-mode: remote
-client_data: ./apclient
-`)
-
-	cfg, err := resolveConsoleStartup(consoleStartupFlags{
-		ConfigPath: filepath.Join(root, consoleProfileName),
-	})
-	if err != nil {
-		t.Fatalf("resolveConsoleStartup failed: %v", err)
-	}
-	if cfg.Mode != consoleModeRemote {
-		t.Fatalf("Mode = %q, want remote", cfg.Mode)
-	}
-	if cfg.ClientData != filepath.Join(root, "apclient") {
-		t.Fatalf("ClientData = %q", cfg.ClientData)
-	}
-	if cfg.SignerData != "" {
-		t.Fatalf("SignerData = %q, want empty", cfg.SignerData)
+func TestResolveConsoleStartupRejectsRemoteFlag(t *testing.T) {
+	_, err := resolveConsoleStartup(consoleStartupFlags{RemoteSet: true, Remote: true})
+	if err == nil || !strings.Contains(err.Error(), "IPC-only") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestResolveConsoleStartupRejectsConflictingExplicitProfileAndFlags(t *testing.T) {
 	root := t.TempDir()
 	writeConsoleProfile(t, root, `
-mode: remote
+mode: local
 client_data: ./apclient
+signer_data: ./apsigner
 `)
 
 	_, err := resolveConsoleStartup(consoleStartupFlags{
@@ -146,7 +120,7 @@ client_data: ./apclient
 	if err == nil {
 		t.Fatal("err = nil, want explicit conflict error")
 	}
-	if !strings.Contains(err.Error(), "conflicting mode values") {
+	if !strings.Contains(err.Error(), "conflicting client_data values") {
 		t.Fatalf("err = %v", err)
 	}
 }

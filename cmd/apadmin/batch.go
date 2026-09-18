@@ -204,26 +204,11 @@ func (c *testModeClient) DeleteKey(address string) error {
 
 // runTestMode runs apadmin in test mode against the local IPC socket.
 func runTestMode(config serverconfig.ServerConfig, args []string) {
-	runTestSession(transport.NewIPC(config.IPCPath), false, args)
+	runTestSession(transport.NewIPC(config.IPCPath), args)
 }
 
-// runRemoteTestMode runs apadmin test mode over the endpoint's SSH admin transport.
-func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
-	conn := transport.NewSSHAdmin(
-		remoteCfg.ssh.Host,
-		remoteCfg.ssh.Port,
-		remoteCfg.token,
-		remoteCfg.ssh.IdentityFile,
-		remoteCfg.ssh.KnownHostsPath,
-	)
-	runTestSession(conn, true, args)
-}
-
-// runTestSession is the shared test-mode flow: connect, authenticate, wait
-// for status, unlock if needed, then execute the command. remote selects the
-// SSH-specific connect error formatting and the requirement that an unlock
-// passphrase be provided explicitly.
-func runTestSession(conn transport.Transport, remote bool, args []string) {
+// runTestSession runs apadmin test mode over the local IPC transport.
+func runTestSession(conn transport.Transport, args []string) {
 	if len(args) == 0 {
 		printTestUsage()
 		os.Exit(1)
@@ -237,11 +222,7 @@ func runTestSession(conn transport.Transport, remote bool, args []string) {
 
 	client := newTestModeClient()
 	if err := client.Connect(conn); err != nil {
-		if remote {
-			logErrorf("%v", formatRemoteConnectError(err))
-		} else {
-			logErrorf("%v", err)
-		}
+		logErrorf("%v", err)
 		os.Exit(1)
 	}
 	defer client.Close()
@@ -259,10 +240,6 @@ func runTestSession(conn transport.Transport, remote bool, args []string) {
 
 	// If signer is locked, try to unlock with TEST_PASSPHRASE
 	if status.State == "locked" {
-		if remote && passphrase == "" {
-			logErrorf("signer is locked; set TEST_PASSPHRASE for test remote mode")
-			os.Exit(1)
-		}
 		if err := client.Unlock(passphrase); err != nil {
 			logErrorf("signer is locked and could not unlock: %v", err)
 			os.Exit(1)
@@ -412,7 +389,7 @@ func runTestUnlock(client *testModeClient) {
 }
 
 func printTestUsage() {
-	logErrorf(`Usage: apadmin --test [--remote --client-data <dir>] <command> [args...]
+	logErrorf(`Usage: apadmin --test <command> [args...]
 
 Commands:
   list                              List all keys
@@ -427,7 +404,6 @@ Environment variables:
 
 Examples:
   apadmin --test list
-  apadmin --test --remote --client-data ~/aplane/apclient list
   apadmin --test generate aplane.falcon1024.v1
   apadmin --test generate falcon1024
   apadmin --test import ed25519 word1 word2 ... word25

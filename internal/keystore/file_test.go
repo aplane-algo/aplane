@@ -124,6 +124,7 @@ func TestFileKeyStore_NewFileKeyStore_DefaultPath(t *testing.T) {
 	store := NewAtomicFileKeyStoreForPaths(paths)
 	if store == nil {
 		t.Fatal("NewAtomicFileKeyStoreForPaths returned nil")
+		return
 	}
 	if store.paths.ProductDir() != paths.ProductDir() {
 		t.Errorf("product dir = %s, want %s", store.paths.ProductDir(), paths.ProductDir())

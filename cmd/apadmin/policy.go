@@ -19,18 +19,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
-	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/transport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type policyGlobalOptions struct {
-	dataDir          string
-	clientDataDir    string
-	ipcPath          string
-	remote           bool
-	clientDataPassed bool
-	ipcPathPassed    bool
+	dataDir       string
+	ipcPath       string
+	ipcPathPassed bool
 }
 
 type policyStreams struct {
@@ -38,8 +34,6 @@ type policyStreams struct {
 	stdout io.Writer
 	stderr io.Writer
 }
-
-var setPolicySSHStatusWriter = sshtunnel.SetStatusWriter
 
 func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOptions, streams policyStreams) int {
 	command, rescue, err := parsePolicyCommand(args, streams.stderr)
@@ -54,14 +48,13 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 		writePolicyError(streams.stderr, err)
 		return 2
 	}
-	command.Remote = globals.remote
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 	editor := launchPolicyEditor
 
 	if rescue {
-		if globals.remote || globals.clientDataPassed || globals.ipcPathPassed {
-			writePolicyError(streams.stderr, fmt.Errorf("policy rescue cannot use --remote, --client-data, or --ipc-path"))
+		if globals.ipcPathPassed {
+			writePolicyError(streams.stderr, fmt.Errorf("policy rescue cannot use --ipc-path"))
 			return 2
 		}
 		if needsPolicyDataDir(command) {
@@ -79,40 +72,16 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 		return 0
 	}
 
-	var session policycmd.OnlineSession
-	if globals.remote {
-		// The SSH client emits lifecycle and identity-key status outside the
-		// admin protocol. Keep machine-readable policy stdout and the editor's
-		// alternate screen isolated for the complete remote command lifetime.
-		setPolicySSHStatusWriter(io.Discard)
-		defer setPolicySSHStatusWriter(nil)
-		remoteCfg, err := loadRemoteAdminConfig(globals.clientDataDir)
-		if err != nil {
-			writePolicyError(streams.stderr, err)
-			return 1
-		}
-		session = transport.NewSSHAdmin(
-			remoteCfg.ssh.Host,
-			remoteCfg.ssh.Port,
-			remoteCfg.token,
-			remoteCfg.ssh.IdentityFile,
-			remoteCfg.ssh.KnownHostsPath,
-		)
-	} else {
-		dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
-		ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-			DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
-		})
-		if err != nil {
-			writePolicyError(streams.stderr, err)
-			return 1
-		}
-		session = transport.NewIPC(ipcPath)
+	dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
+	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
+	})
+	if err != nil {
+		writePolicyError(streams.stderr, err)
+		return 1
 	}
+	session := transport.NewIPC(ipcPath)
 	if err := (policycmd.OnlineRunner{Session: session, Editor: editor}).Run(ctx, command, ioStreams); err != nil {
-		if globals.remote {
-			err = formatRemoteConnectError(err)
-		}
 		writePolicyError(streams.stderr, err)
 		return 1
 	}
@@ -158,11 +127,12 @@ Verbs:
   to-sentry [FILE]  convert signer policy to sentry policy
 
 Online commands authenticate and unlock before policy access; local IPC may use
-APSIGNER_PASSPHRASE. Local and remote commands may read one passphrase line from
-stdin when stdin is not policy YAML. Remote apply - requires a controlling
-terminal; for headless remote use, apply a named file and pipe the passphrase.
+APSIGNER_PASSPHRASE. IPC commands may read one passphrase line from stdin.
+When applying policy from stdin, use APSIGNER_PASSPHRASE or a controlling terminal
+so the policy document and passphrase stay separate.
 Policy rescue commands access the store directly, require a stopped daemon for
-production edits, and reject --remote, --client-data, and --ipc-path.
+production edits, and reject --ipc-path.
+
 `, mode)
 	}
 	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or sentry")

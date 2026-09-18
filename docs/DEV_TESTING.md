@@ -793,9 +793,9 @@ make docker-systemd-test
 starts signer, sentry, client/admin, and AlgoKit-style LocalNet algod/KMD
 containers on one Docker network. It verifies local install layouts, shared
 LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
-sentry enrollment and discovery, guarded signing, Corridor allowlist and
-external-admin behavior, and guarded preparation/signing through a local Python
-SDK checkout.
+local IPC `apadmin` public-reference export and import, guarded signing, Corridor allowlist
+and external-admin behavior, and guarded preparation/signing through a local
+Python SDK checkout.
 
 `make docker-local-release-test` runs the same topology and product assertions,
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript

@@ -64,6 +64,14 @@ const (
 	MsgTypeDeactivateKeyTypeResult      = protocol.MsgTypeDeactivateKeyTypeResult
 	MsgTypeListKeyTypes                 = protocol.MsgTypeListKeyTypes
 	MsgTypeKeyTypes                     = protocol.MsgTypeKeyTypes
+	MsgTypeListSentryReferences         = protocol.MsgTypeListSentryReferences
+	MsgTypeSentryReferencesList         = protocol.MsgTypeSentryReferencesList
+	MsgTypeImportSentryReference        = protocol.MsgTypeImportSentryReference
+	MsgTypeImportSentryReferenceResult  = protocol.MsgTypeImportSentryReferenceResult
+	MsgTypeRemoveSentryReference        = protocol.MsgTypeRemoveSentryReference
+	MsgTypeRemoveSentryReferenceResult  = protocol.MsgTypeRemoveSentryReferenceResult
+	MsgTypeExportSentryPublic           = protocol.MsgTypeExportSentryPublic
+	MsgTypeExportSentryPublicResult     = protocol.MsgTypeExportSentryPublicResult
 
 	// Server-initiated notification message types
 	MsgTypeSignRequestCanceled = protocol.MsgTypeSignRequestCanceled
@@ -144,6 +152,15 @@ type (
 	DeactivateKeyTypeResultMessage      = protocol.DeactivateKeyTypeResultMessage
 	ListKeyTypesMessage                 = protocol.ListKeyTypesMessage
 	KeyTypesMessage                     = protocol.KeyTypesMessage
+	ListSentryReferencesMessage         = protocol.ListSentryReferencesMessage
+	SentryReferencesListMessage         = protocol.SentryReferencesListMessage
+	SentryReferenceInfo                 = protocol.SentryReferenceInfo
+	ImportSentryReferenceMessage        = protocol.ImportSentryReferenceMessage
+	ImportSentryReferenceResultMessage  = protocol.ImportSentryReferenceResultMessage
+	RemoveSentryReferenceMessage        = protocol.RemoveSentryReferenceMessage
+	RemoveSentryReferenceResultMessage  = protocol.RemoveSentryReferenceResultMessage
+	ExportSentryPublicMessage           = protocol.ExportSentryPublicMessage
+	ExportSentryPublicResultMessage     = protocol.ExportSentryPublicResultMessage
 	LibraryTemplateInfo                 = protocol.LibraryTemplateInfo
 	KeyTypeInfo                         = protocol.KeyTypeInfo
 	KeysChangedMessage                  = protocol.KeysChangedMessage

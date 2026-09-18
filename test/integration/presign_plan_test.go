@@ -141,6 +141,7 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("plugin slot not present in the canonical group")
+		return
 	}
 
 	// Only group id and fee may change; compare everything else byte-for-byte.

@@ -30,6 +30,9 @@ func (r *REPLState) setTemporaryPrompt(prompt string) func() {
 }
 
 func (r *REPLState) readInteractiveLine() (string, error) {
+	if r.LineReaderContext != nil {
+		return r.LineReaderContext(r.commandContext())
+	}
 	if r.LineReader != nil {
 		return r.LineReader()
 	}
@@ -44,6 +47,10 @@ func (r *REPLState) readInteractiveLine() (string, error) {
 	return scanner.Text(), nil
 }
 
+func (r *REPLState) hasInteractiveLineReader() bool {
+	return r.LineReaderContext != nil || r.LineReader != nil
+}
+
 func (r *REPLState) readApprovalResponse() (string, error) {
 	return r.readPromptResponse("Proceed with signing and submission? [y/N]: ")
 }
@@ -56,7 +63,7 @@ func (r *REPLState) readPromptResponse(prompt string) (string, error) {
 	restorePrompt := r.setTemporaryPrompt(prompt)
 	defer restorePrompt()
 
-	if r.LineReader == nil {
+	if !r.hasInteractiveLineReader() {
 		r.print("\n" + prompt)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,14 +20,20 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
+	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -93,9 +100,93 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	var sentryDiscoveryCalls atomic.Int32
 	sentry := startMockSentryEndpoint(t, sentryPub, sentryPriv, sentryToken, &sentryDiscoveryCalls)
 	t.Cleanup(sentry.Close)
-	sentryTokenFile := writeGuardedSentryTokenFile(t, sentryToken)
+	sentryID, err := witness.ID(witness.Falcon1024V1, sentryPub)
+	if err != nil {
+		t.Fatalf("Failed to derive sentry Witness Key ID: %v", err)
+	}
+	reference, err := witness.NewPublicReference(witness.Falcon1024V1, sentryID, sentryPubHex)
+	if err != nil {
+		t.Fatalf("Failed to build sentry public reference: %v", err)
+	}
+	bundle, err := enrollment.Marshal(enrollment.Envelope{
+		Schema:  enrollment.Schema,
+		Witness: reference,
+		Endpoint: &endpointrefs.Envelope{
+			Schema: endpointrefs.Schema,
+			URL:    sentry.URL,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to compose sentry enrollment bundle: %v", err)
+	}
+	bundlePath := filepath.Join(t.TempDir(), "integration-sentry.aplane-sentry.json")
+	if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
+		t.Fatalf("Failed to write sentry enrollment bundle: %v", err)
+	}
+	clientDataDir := t.TempDir()
+	const sentryReferenceName = "integration-sentry"
+	const sentryEndpointAlias = "integration-sentry-route"
+	passphrase := os.Getenv("TEST_PASSPHRASE")
+	if passphrase == "" {
+		t.Fatal("TEST_PASSPHRASE is required for sentry enrollment import")
+	}
+	importOutput, err := apadmin.RunWithInput(
+		passphrase+"\n",
+		"sentry", "enrollment", "import", bundlePath,
+		"--name", sentryReferenceName,
+	)
+	if err != nil {
+		t.Fatalf("Failed to import sentry enrollment bundle: %v", err)
+	}
+	var importResult apadminapp.SentryEnrollmentImportResult
+	if err := json.NewDecoder(strings.NewReader(importOutput)).Decode(&importResult); err != nil {
+		t.Fatalf("Failed to decode sentry enrollment import result: %v\nOutput: %s", err, importOutput)
+	}
+	if importResult.ReferenceImport.Status != "imported" || importResult.EndpointImport.Status != "not_requested" {
+		t.Fatalf("Unexpected sentry enrollment import result: %+v", importResult)
+	}
+	if _, err := os.Stat(config.GetClientEndpointsPath(clientDataDir)); !os.IsNotExist(err) {
+		t.Fatalf("apadmin changed client routing: %v", err)
+	}
+	clientEngine, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientApp := apshellapp.New(clientEngine, config.DefaultConfig(), clientDataDir)
+	if _, err := clientApp.EndpointCreateSentry(context.Background(), apshellapp.EndpointCreateSentryRequest{
+		Alias: sentryEndpointAlias, URL: sentry.URL, SentryPort: 11270,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	endpointRegistry, err := config.LoadClientEndpointRegistry(clientDataDir)
+	if err != nil {
+		t.Fatalf("Failed to load imported sentry endpoint: %v", err)
+	}
+	importedEndpoint, ok := endpointRegistry.Endpoints[sentryEndpointAlias]
+	if !ok {
+		t.Fatalf("Imported sentry endpoint %q is missing", sentryEndpointAlias)
+	}
+	if err := os.MkdirAll(filepath.Dir(importedEndpoint.TokenFile), 0o700); err != nil {
+		t.Fatalf("Failed to create sentry token directory: %v", err)
+	}
+	if err := tokenfile.WriteToken(importedEndpoint.TokenFile, sentryToken); err != nil {
+		t.Fatalf("Failed to enroll sentry endpoint token: %v", err)
+	}
+	discovered, err := clientApp.EndpointDiscoverSentries(context.Background(), apshellapp.EndpointDiscoverSentriesRequest{})
+	if err != nil {
+		t.Fatalf("Client sentry discovery: %v", err)
+	}
+	if discovered.PublicKeyCount != 1 || len(discovered.Endpoints) != 1 || len(discovered.Endpoints[0].Keys) != 1 {
+		t.Fatalf("Unexpected client discovery: %+v", discovered)
+	}
+	discoveredKey := discovered.Endpoints[0].Keys[0]
+	if discoveredKey.ComponentKey != sentryID || discoveredKey.PublicKey != reference.PublicKeyHex || discoveredKey.KeyType != reference.KeyType {
+		t.Fatalf("Client discovery differs from enrolled reference: %+v", discoveredKey)
+	}
+	discoveryCallsAfterVerification := sentryDiscoveryCalls.Load()
 
-	// Generate the guarded account (embeds the sentry public key) and a plain
+	// Generate the guarded account through the imported friendly selector (the
+	// signer resolves it to the exact sentry public key) and a plain
 	// non-guarded falcon account on the real signer. Guarded account key types
 	// are library-gated (AvailabilityLibrary), so activate it for this identity
 	// before generation; the non-guarded falcon type is default-enabled.
@@ -105,7 +196,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	guardedAddr, err := apadmin.GenerateKeyWithTypeAndParams(
 		keytypes.GuardedFalcon1024Sentry1024V1,
-		map[string]string{keytypes.ParameterSentryPublicKey: sentryPubHex},
+		map[string]string{sentryrefs.ParamSentryName: sentryReferenceName},
 	)
 	if err != nil {
 		t.Fatalf("Failed to generate guarded account: %v", err)
@@ -123,6 +214,31 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if !waitForKey(t, signerd.GetURL(), token, falconAddr, 10*time.Second) {
 		t.Fatalf("Signer did not reload falcon key %s", falconAddr)
 	}
+	signerHTTP := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	keysResult, err := signerHTTP.GetKeysWithContext(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to inspect generated guarded key: %v", err)
+	}
+	guardedMetadataFound := false
+	for _, key := range keysResult.Keys {
+		if key.Address != guardedAddr {
+			continue
+		}
+		guardedMetadataFound = true
+		if key.SentryComponentKeyType != reference.KeyType {
+			t.Fatalf("Guarded key sentry component type = %q, want %q", key.SentryComponentKeyType, reference.KeyType)
+		}
+		if key.Parameters[keytypes.ParameterSentryPublicKey] != reference.PublicKeyHex {
+			t.Fatalf("Guarded key did not persist the exact enrolled sentry verifier")
+		}
+		if _, hasAlias := key.Parameters[sentryrefs.ParamSentryName]; hasAlias {
+			t.Fatalf("Guarded key durably retained sentry alias instead of resolved verifier: %+v", key.Parameters)
+		}
+		break
+	}
+	if !guardedMetadataFound {
+		t.Fatalf("Generated guarded key %s was absent from signer inventory", guardedAddr)
+	}
 
 	// In-process engine wired to the real signer (user component sign,
 	// non-guarded /sign, assemble), the mock sentry (sentry component sign), and
@@ -136,12 +252,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
-	eng.EndpointRegistry = config.ClientEndpointRegistry{
-		SchemaVersion: config.ClientEndpointSchemaVersion,
-		Endpoints: map[string]config.ClientEndpointConfig{
-			"integration-sentry": {Role: config.ClientEndpointRoleSentry, URL: sentry.URL, TokenFile: sentryTokenFile},
-		},
-	}
+	eng.EndpointRegistry = endpointRegistry
 	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		t.Fatalf("Failed to populate signer cache from signer /keys: %v", err)
 	}
@@ -193,8 +304,8 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if !result.Confirmed {
 		t.Fatalf("Mixed guarded group was not confirmed: %s", result.Output)
 	}
-	if calls := sentryDiscoveryCalls.Load(); calls == 0 {
-		t.Fatal("guarded routing did not discover the sentry key from the configured endpoint")
+	if calls := sentryDiscoveryCalls.Load(); calls <= discoveryCallsAfterVerification {
+		t.Fatalf("guarded routing did not perform a fresh sentry discovery after verification (calls before=%d after=%d)", discoveryCallsAfterVerification, calls)
 	}
 	if _, err := testnet.WaitForConfirmation(result.TxIDs[0], 10); err != nil {
 		t.Fatalf("Mixed guarded group failed to confirm on-chain: %v", err)
@@ -314,13 +425,4 @@ func startMockSentryEndpoint(
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 	return httptest.NewServer(mux)
-}
-
-func writeGuardedSentryTokenFile(t *testing.T, token string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "sentry.token")
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		t.Fatalf("Failed to write sentry token file: %v", err)
-	}
-	return path
 }

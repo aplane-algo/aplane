@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/guarded"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 // DiscoveredSentryComponentKey is public sentry-key metadata advertised by a
@@ -67,12 +68,17 @@ func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigres
 // auth cache, algod client, sentry endpoints, and signer key cache. Construct
 // one per operation; it holds no independent state.
 func (e *Engine) guardedSigner() *guarded.Signer {
+	return e.guardedSignerWithHostKeyApproval(nil)
+}
+
+func (e *Engine) guardedSignerWithHostKeyApproval(approve sshtunnel.HostKeyApprovalHandler) *guarded.Signer {
 	return guarded.New(guarded.Deps{
 		Conn:             e.Connection,
 		Algod:            e.AlgodClient,
 		AuthCache:        &e.AuthCache,
 		EndpointRegistry: e.EndpointRegistry,
 		Cache:            guardedSignerCacheView{e.Core},
+		HostKeyApproval:  approve,
 	})
 }
 
@@ -80,4 +86,11 @@ func (e *Engine) guardedSigner() *guarded.Signer {
 // public keys that can be mapped for guarded signing.
 func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
 	return e.guardedSigner().DiscoverSentryComponentKeys(ctx, endpoint)
+}
+
+// DiscoverSentryComponentKeysWithHostKeyApproval performs one explicit setup
+// probe that may confirm an unknown SSH host. Normal background discovery does
+// not install this callback and remains noninteractive.
+func (e *Engine) DiscoverSentryComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredSentryComponentKey, error) {
+	return e.guardedSignerWithHostKeyApproval(approve).DiscoverSentryComponentKeys(ctx, endpoint)
 }

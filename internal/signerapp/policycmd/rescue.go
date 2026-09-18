@@ -20,9 +20,6 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if command.Remote {
-		return fmt.Errorf("policy rescue is offline-only and cannot use --remote")
-	}
 	if err := RejectRetiredEnvironment(); err != nil {
 		return err
 	}
@@ -160,7 +157,7 @@ type passphraseCache struct {
 
 func (p *passphraseCache) Get(context.Context) ([]byte, error) {
 	if len(p.passphrase) == 0 {
-		passphrase, err := ReadPassphrase(p.stdin, p.stderr, false, p.stdinReserved)
+		passphrase, err := ReadPassphrase(p.stdin, p.stderr, p.stdinReserved)
 		if err != nil {
 			return nil, err
 		}

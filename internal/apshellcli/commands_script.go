@@ -50,7 +50,7 @@ func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
 		r.println("Enter JavaScript code (blank line to execute, Ctrl+C to cancel):")
 
 		var lines []string
-		if r.LineReader != nil {
+		if r.hasInteractiveLineReader() {
 			r.clearInputPrompt()
 			for {
 				line, err := r.readInteractiveLine()
@@ -95,7 +95,7 @@ func (r *REPLState) runJS(args []string, ctxRaw interface{}) error {
 		} else {
 			// Read more lines until we find closing brace
 			lines := []string{inner}
-			if r.LineReader != nil {
+			if r.hasInteractiveLineReader() {
 				r.clearInputPrompt()
 				for {
 					line, err := r.readInteractiveLine()

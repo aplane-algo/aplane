@@ -29,10 +29,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	maxSentryPublicEnvelopeBytes = 64 * 1024
-	inspectionRetryInterval      = 100 * time.Millisecond
-)
+const inspectionRetryInterval = 100 * time.Millisecond
 
 // Requester is the correlated request seam used by live-admin workflows.
 type Requester interface {
@@ -42,6 +39,7 @@ type Requester interface {
 
 // Streams separates machine output from prompts and status.
 type Streams struct {
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -52,6 +50,9 @@ func (s Streams) normalized() Streams {
 	}
 	if s.Stderr == nil {
 		s.Stderr = io.Discard
+	}
+	if s.Stdin == nil {
+		s.Stdin = strings.NewReader("")
 	}
 	return s
 }
@@ -111,9 +112,11 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		}
 	case "sentry":
 		if len(args) == 0 {
-			return AuthUnlock, fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove>")
+			return AuthUnlock, fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
 		}
 		switch args[0] {
+		case "enrollment":
+			return sentryEnrollmentAuthMode(args[1:])
 		case "export":
 			if len(args) < 2 || len(args) > 3 {
 				return AuthReadOnly, fmt.Errorf("usage: apadmin sentry export <sentry-key-id> [output-json]")
@@ -131,7 +134,7 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 			return AuthReadOnly, nil
 		case "import":
 			if len(args) != 3 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin sentry import <export-json> <name>")
+				return AuthUnlock, fmt.Errorf("usage: apadmin sentry import <public-json|-> <name>")
 			}
 			return AuthUnlock, nil
 		case "remove":
@@ -379,9 +382,11 @@ func (c Catalog) runKeyType(args []string) error {
 
 func (c Catalog) runSentry(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove>")
+		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
 	}
 	switch args[0] {
+	case "enrollment":
+		return c.runSentryEnrollment(args[1:])
 	case "export":
 		if len(args) < 2 || len(args) > 3 {
 			return fmt.Errorf("usage: apadmin sentry export <sentry-key-id> [output-json]")
@@ -389,7 +394,7 @@ func (c Catalog) runSentry(args []string) error {
 		return c.exportSentry(args[1:])
 	case "import":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: apadmin sentry import <export-json> <name>")
+			return fmt.Errorf("usage: apadmin sentry import <public-json|-> <name>")
 		}
 		return c.importSentry(args[1], args[2])
 	case "list":
@@ -408,7 +413,7 @@ func (c Catalog) runSentry(args []string) error {
 		}
 		return c.removeSentry(args[1])
 	default:
-		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove>")
+		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
 	}
 }
 
@@ -434,20 +439,17 @@ func (c Catalog) exportSentry(args []string) error {
 		_, err := c.Streams.Stdout.Write(data)
 		return err
 	}
-	if args[1] == "" {
-		return fmt.Errorf("output path is required")
-	}
-	if err := fsutil.WriteFileDurableWithProfile(args[1], data, fsutil.PrivateStoreFileProfile); err != nil {
-		return fmt.Errorf("failed to write public key envelope: %w", err)
+	if err := WriteSentryPublicEnvelope(args[1], data); err != nil {
+		return err
 	}
 	c.info("sentry public key envelope written: %s", args[1])
 	return nil
 }
 
 func (c Catalog) importSentry(path, name string) error {
-	data, _, err := fsutil.ReadRegularFileLimited(path, maxSentryPublicEnvelopeBytes)
+	data, err := ReadSentryPublicEnvelope(path, c.Streams.Stdin)
 	if err != nil {
-		return fmt.Errorf("failed to read sentry public key export: %w", err)
+		return err
 	}
 	var result protocol.ImportSentryReferenceResultMessage
 	if err := c.Client.Request(protocol.ImportSentryReferenceMessage{
@@ -485,7 +487,7 @@ func (c Catalog) listSentries() error {
 		if record.Name != "" {
 			label = record.Name
 		}
-		_, _ = fmt.Fprintf(c.Streams.Stdout, "  %s  (%s, name: %s)\n", record.ComponentKey, record.KeyType, label)
+		_, _ = fmt.Fprintf(c.Streams.Stdout, "  %s  %s  (%s)\n", label, CompactWitnessKeyID(record.ComponentKey), record.KeyType)
 	}
 	return nil
 }
@@ -556,17 +558,7 @@ func (c Catalog) runEndpoint(args []string) error {
 	if err != nil {
 		return err
 	}
-	urlValue, err := endpointExportURL(*host, *endpointURL, settings.AdvertiseURL, endpointExportSSHPort(settings))
-	if err != nil {
-		return err
-	}
-	signerPortValue := *signerPort
-	if signerPortValue == 0 && endpointExportUsesSSH(urlValue) {
-		signerPortValue = endpointExportSignerPort(settings)
-	}
-	envelope, err := endpointrefs.Normalize(endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: urlValue, SignerPort: signerPortValue, LocalPort: *localPort,
-	})
+	envelope, err := buildEndpointExportEnvelope(*host, *endpointURL, *signerPort, *localPort, settings)
 	if err != nil {
 		return err
 	}

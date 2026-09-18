@@ -23,17 +23,23 @@ var (
 	ErrSSHKnownHostsFile  = sshtunnel.ErrKnownHostsFile
 )
 
+// HostKeyApproval is the interactive trust callback accepted by explicit SSH
+// setup operations. The alias keeps higher client layers on the connect
+// boundary rather than the SSH implementation package.
+type HostKeyApproval = sshtunnel.HostKeyApprovalHandler
+
 // SentryTunnelConfig describes a one-shot SSH tunnel used for sentry
 // component signing. It does not mutate the primary signer connection.
 type SentryTunnelConfig struct {
-	Host           string
-	SSHPort        int
-	LocalPort      int
-	SignerPort     int
-	Token          string
-	IdentityFile   string
-	KnownHostsPath string
-	ProgressOut    io.Writer
+	Host            string
+	SSHPort         int
+	LocalPort       int
+	SignerPort      int
+	Token           string
+	IdentityFile    string
+	KnownHostsPath  string
+	ProgressOut     io.Writer
+	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 }
 
 // FindAvailableLocalPort returns an unused loopback TCP port for a transient
@@ -72,6 +78,9 @@ func ConnectSentryWithTunnel(ctx context.Context, cfg SentryTunnelConfig) (*sign
 	// fail on an already-canceled connection.
 	tunnelCtx, cancelTunnel, detachSetup := newSentryTunnelLifetime(ctx)
 	tunnel := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.LocalPort, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
+	if cfg.HostKeyApproval != nil {
+		tunnel.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
+	}
 	tunnel.SetAPIToken(cfg.Token)
 	if err := tunnel.ConnectWithKey(tunnelCtx); err != nil {
 		_ = detachSetup()

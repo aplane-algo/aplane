@@ -1182,6 +1182,49 @@ func TestRootRoutesPendingLinePromptRegardlessOfFocus(t *testing.T) {
 	}
 }
 
+func TestShellPromptCancellationDismissesOnlyMatchingPrompt(t *testing.T) {
+	hostResponse := make(chan bool, 1)
+	lineResponse := make(chan string, 1)
+	m := newShellModel(nil, nil)
+	m.pendingHostKey = &shellHostKeyApprovalMsg{response: hostResponse}
+	m.pendingLinePrompt = &shellLinePromptMsg{response: lineResponse}
+
+	next, cmd := m.Update(shellPromptCanceledMsg{lineResponse: make(chan string, 1)})
+	if cmd != nil {
+		t.Fatalf("unmatched cancellation cmd = %v, want nil", cmd)
+	}
+	if next.pendingHostKey == nil || next.pendingLinePrompt == nil {
+		t.Fatal("unmatched cancellation dismissed a prompt")
+	}
+
+	next, _ = next.Update(shellPromptCanceledMsg{lineResponse: lineResponse})
+	if next.pendingLinePrompt != nil || next.pendingHostKey == nil {
+		t.Fatal("line cancellation did not dismiss exactly the line prompt")
+	}
+	next, _ = next.Update(shellPromptCanceledMsg{hostResponse: hostResponse})
+	if next.pendingHostKey != nil {
+		t.Fatal("host cancellation did not dismiss the host prompt")
+	}
+}
+
+func TestCtrlCCancelsPendingEmbeddedPromptWithoutLateResponse(t *testing.T) {
+	response := make(chan string, 1)
+	exec := &fakeShellExecutor{}
+	m := newShellModel(exec, nil)
+	m.running = true
+	m.pendingLinePrompt = &shellLinePromptMsg{prompt: "Endpoint: ", response: response}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !exec.cancelled || next.pendingLinePrompt != nil || !next.cancelRequested {
+		t.Fatalf("cancellation state = executor:%v prompt:%v requested:%v", exec.cancelled, next.pendingLinePrompt, next.cancelRequested)
+	}
+	select {
+	case got := <-response:
+		t.Fatalf("canceled prompt sent a late response %q", got)
+	default:
+	}
+}
+
 func TestViewRendersHostKeyOverlayWhenPending(t *testing.T) {
 	m := model{
 		focus:  paneSigner,

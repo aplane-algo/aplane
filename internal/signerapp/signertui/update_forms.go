@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -88,6 +89,8 @@ func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleGenerateDisplayKeys handles keyboard input on generate display screen
 func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "e":
+		return m.openGeneratedSentryExport()
 	case "q", "esc", "enter", " ":
 		m.selectKeyByAddress(m.forms.generatedAddress)
 		m.forms.generatedAddress = ""
@@ -365,6 +368,12 @@ func (m Model) findLibraryTemplateForKeyType(keyType string) (LibraryTemplateInf
 
 // handleGenerateParamsKeys handles keyboard input on parameter input modal for generate.
 func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" && m.sentry.generateFromManager {
+		m.sentry.generateFromManager = false
+		m.forms.generateError = ""
+		m.viewState = ViewSentryReferenceDetails
+		return m, nil
+	}
 	submitFn := func(keyType string, params map[string]string) tea.Cmd {
 		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params), m.waitForMessageCmd())
 	}
@@ -397,6 +406,22 @@ func (m Model) handleParamModalKeys(
 	maxFocus := len(params)
 	if m.forms.genericLSigPasteParam != "" {
 		return m.handlePasteOnlyParamInput(msg, params)
+	}
+	if m.forms.generateFocus >= 0 && m.forms.generateFocus < len(params) {
+		param := params[m.forms.generateFocus]
+		if m.isSentrySelectorParam(keyType, param) {
+			switch msg.String() {
+			case "enter", " ":
+				next, errText := m.openSentryPicker(keyType, param.Name)
+				return next, nil, errText
+			case "left", "right", "<", ">", "backspace", "delete", "insert":
+				return m, nil, ""
+			default:
+				if msg.Type == tea.KeyRunes {
+					return m, nil, ""
+				}
+			}
+		}
 	}
 
 	switch msg.String() {
@@ -507,6 +532,11 @@ func (m Model) handleParamModalKeys(
 			return m, nil, ""
 		}
 		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
+			for _, param := range params {
+				if m.isSentrySelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
+					return m, nil, "Choose a sentry before continuing"
+				}
+			}
 			transformedParams, err := m.applyInputModeTransforms(params)
 			if err != nil {
 				return m, nil, err.Error()
@@ -798,6 +828,9 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 }
 
 func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
+	if paramDef.Name == sentryrefs.ParamSentryName && len(paramDef.Options) > 1 {
+		return ""
+	}
 	if paramDef.Default != "" {
 		return paramDef.Default
 	}
@@ -1066,7 +1099,7 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 		}
 		if paramDef.Type == "address[]" {
 			var err error
-			value, err = resolveAddressListValue(m.dataDir, value)
+			value, err = resolveAddressListValue(value)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", paramDef.Name, err)
 			}

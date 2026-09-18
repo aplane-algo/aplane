@@ -25,7 +25,7 @@ func (r *REPLState) keyRegPasteMode() error {
 	var lines []string
 	emptyLineCount := 0
 
-	if r.LineReader != nil {
+	if r.hasInteractiveLineReader() {
 		// Use readline-based input (handles Ctrl+C gracefully)
 		r.clearInputPrompt()
 		for {

@@ -695,6 +695,7 @@ func TestPlanGroupRejectsBoundedFeeCeilingAfterDummyPooling(t *testing.T) {
 	_, planErr := planner.PlanGroup(makeRequest(1000))
 	if planErr == nil {
 		t.Fatal("PlanGroup() error = nil, want bounded fee-capacity rejection")
+		return
 	}
 	if !strings.Contains(planErr.Message, "exceeds signer-controlled bounded fee capacity") {
 		t.Fatalf("PlanGroup() error = %q, want bounded fee-capacity rejection", planErr.Message)

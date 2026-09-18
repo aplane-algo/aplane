@@ -835,6 +835,7 @@ func matrixExpectedResourceDummies(
 		}
 		if selected == nil {
 			t.Fatalf("generated LogicSig key %s (%s) has no positive-path resource usage", account.address, account.keyType)
+			continue
 		}
 		usages = append(usages, lsigresource.Usage{
 			ProgramBytes:  selected.ProgramBytes,

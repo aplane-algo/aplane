@@ -730,13 +730,14 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: KeyTypesMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeKeyTypes, ID: "keytypes-1"},
 				KeyTypes: []KeyTypeInfo{{
-					KeyType:           "test.timed-policy.v1",
-					Family:            "timed-allowlist",
-					DisplayName:       "Timed Allowlist",
-					Description:       "Lock until a round",
-					AuthorizationKind: "logic_sig",
-					RequiresLogicSig:  true,
-					MnemonicWordCount: 0,
+					KeyType:                "test.timed-policy.v1",
+					Family:                 "timed-allowlist",
+					DisplayName:            "Timed Allowlist",
+					Description:            "Lock until a round",
+					AuthorizationKind:      "logic_sig",
+					RequiresLogicSig:       true,
+					MnemonicWordCount:      0,
+					SentryComponentKeyType: "aplane.witness-falcon1024.v1",
 					CreationParams: []TemplateParamInfo{{
 						Name:      "unlock_round",
 						Label:     "Unlock Round",
@@ -752,15 +753,16 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":   "keytypes-1",
 				"key_types": []any{
 					map[string]any{
-						"key_type":            "test.timed-policy.v1",
-						"family":              "timed-allowlist",
-						"display_name":        "Timed Allowlist",
-						"description":         "Lock until a round",
-						"authorization_kind":  "logic_sig",
-						"requires_logicsig":   true,
-						"mnemonic_word_count": float64(0),
-						"mnemonic_import":     false,
-						"mnemonic_scheme":     "",
+						"key_type":                  "test.timed-policy.v1",
+						"family":                    "timed-allowlist",
+						"display_name":              "Timed Allowlist",
+						"description":               "Lock until a round",
+						"authorization_kind":        "logic_sig",
+						"requires_logicsig":         true,
+						"mnemonic_word_count":       float64(0),
+						"mnemonic_import":           false,
+						"mnemonic_scheme":           "",
+						"sentry_component_key_type": "aplane.witness-falcon1024.v1",
 						"creation_params": []any{
 							map[string]any{
 								"name":       "unlock_round",

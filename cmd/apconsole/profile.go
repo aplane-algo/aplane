@@ -62,6 +62,9 @@ type consoleValueSource struct {
 }
 
 func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, error) {
+	if flags.RemoteSet && flags.Remote {
+		return consoleStartupConfig{}, fmt.Errorf("apconsole administration is IPC-only; SSH into the signer machine and run apconsole there")
+	}
 	profile, profilePath, profileSource, err := loadDiscoveredConsoleProfile(flags)
 	if err != nil {
 		return consoleStartupConfig{}, err
@@ -232,8 +235,9 @@ func loadConsoleProfile(path string) (*consoleProfile, error) {
 			return nil, fmt.Errorf("invalid apconsole profile %s: signer_data is required for local mode", path)
 		}
 	case consoleModeRemote:
+		return nil, fmt.Errorf("apconsole administration is IPC-only; change profile %s to local mode and run it on the signer machine", path)
 	default:
-		return nil, fmt.Errorf("invalid apconsole profile %s: mode must be local or remote", path)
+		return nil, fmt.Errorf("invalid apconsole profile %s: mode must be local", path)
 	}
 	if profile.ClientData == "" {
 		return nil, fmt.Errorf("invalid apconsole profile %s: client_data is required", path)

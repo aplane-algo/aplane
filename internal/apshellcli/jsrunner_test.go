@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,6 +98,24 @@ func TestCmdJSBraceAndMultilineModes(t *testing.T) {
 		}
 		if got := out.String(); !strings.Contains(got, "42") {
 			t.Fatalf("multiline output = %q, want 42", got)
+		}
+	})
+
+	t.Run("context multiline", func(t *testing.T) {
+		repl := testREPLForJS(t)
+		out := repl.Out.(*bytes.Buffer)
+		lines := []string{"20 +", "22", ""}
+		repl.LineReaderContext = func(context.Context) (string, error) {
+			line := lines[0]
+			lines = lines[1:]
+			return line, nil
+		}
+
+		if err := repl.runJS(nil, nil); err != nil {
+			t.Fatalf("cmdJS(context multiline) error = %v", err)
+		}
+		if got := out.String(); !strings.Contains(got, "42") {
+			t.Fatalf("context multiline output = %q, want 42", got)
 		}
 	})
 }

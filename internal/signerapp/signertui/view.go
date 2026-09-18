@@ -401,6 +401,32 @@ func (m Model) renderViewContent() string {
 		content = m.renderGenerateForm()
 	case ViewGenerateParams:
 		content = m.renderGenerateParams()
+	case ViewSentryPicker:
+		content = m.renderSentryPicker()
+	case ViewSentryImportForm:
+		content = m.renderSentryImportForm()
+	case ViewSentryImportReview:
+		content = m.renderSentryImportReview()
+	case ViewSentryImporting:
+		content = m.renderSentryImporting()
+	case ViewSentryReferences:
+		content = m.renderSentryReferences()
+	case ViewSentryReferenceDetails:
+		content = m.renderSentryReferenceDetails()
+	case ViewSentryRemoveConfirm:
+		content = m.renderSentryRemoveConfirm()
+	case ViewSentryRemoving:
+		content = m.renderSentryRemoving()
+	case ViewSentryGenerateType:
+		content = m.renderSentryGenerateType()
+	case ViewSentryExportPath:
+		content = m.renderSentryExportPath()
+	case ViewSentryExporting:
+		content = m.renderSentryExporting()
+	case ViewSentryExportResult:
+		content = m.renderSentryExportResult()
+	case ViewSentryExportJSON:
+		content = "Displaying JSON in the terminal..."
 	case ViewGenerating:
 		content = m.renderGenerating()
 	case ViewGenerateDisplay:

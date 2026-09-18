@@ -7,9 +7,9 @@ package main
 
 import "testing"
 
-func TestFormatBatchKeyTypeProjectsTemplateProvenanceNote(t *testing.T) {
+func TestFormatBatchKeyTypeProjectsTemplateMismatchNote(t *testing.T) {
 	got := formatBatchKeyType("test.timed-policy.v1", "unavailable")
-	want := "test.timed-policy.v1 [template provenance]"
+	want := "test.timed-policy.v1 [template mismatch]"
 	if got != want {
 		t.Fatalf("formatBatchKeyType() = %q, want %q", got, want)
 	}

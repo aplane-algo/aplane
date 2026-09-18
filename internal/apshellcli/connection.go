@@ -145,6 +145,9 @@ func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
 		if r.AutoConfirm {
 			return false, fmt.Errorf("unknown SSH host key (fingerprint: %s). Connect via interactive apshell first to verify and trust this host", fingerprint)
 		}
+		if r.HostKeyApprovalContext != nil {
+			return r.HostKeyApprovalContext(r.commandContext(), host, fingerprint)
+		}
 		if r.HostKeyApproval != nil {
 			return r.HostKeyApproval(host, fingerprint)
 		}

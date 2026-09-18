@@ -4,6 +4,7 @@
 package apshellapp
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -195,6 +197,100 @@ func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	}
 	if _, ok := app.eng.EndpointRegistry.Endpoint("secondary"); ok {
 		t.Fatal("deleted endpoint remained in live registry")
+	}
+}
+
+func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
+	dataDir := t.TempDir()
+	appA := newEndpointTestApp(t, dataDir)
+	appB := newEndpointTestApp(t, dataDir)
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, item := range []struct {
+		app   *App
+		alias string
+		url   string
+	}{{appA, "sentry-a", "ssh://a.example"}, {appB, "sentry-b", "ssh://b.example"}} {
+		wg.Add(1)
+		go func(item struct {
+			app   *App
+			alias string
+			url   string
+		}) {
+			defer wg.Done()
+			<-start
+			_, err := item.app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
+				Alias: item.alias, URL: item.url, SentryPort: 11270,
+			})
+			errs <- err
+		}(item)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, alias := range []string{"sentry-a", "sentry-b"} {
+		if _, ok := registry.Endpoint(alias); !ok {
+			t.Fatalf("concurrent endpoint %q was lost: %#v", alias, registry.Endpoints)
+		}
+	}
+}
+
+func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
+	const workers = 32
+	dataDir := t.TempDir()
+	apps := make([]*App, workers)
+	for i := range apps {
+		apps[i] = newEndpointTestApp(t, dataDir)
+	}
+
+	start := make(chan struct{})
+	results := make(chan *EndpointCreateSentryResult, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for _, app := range apps {
+		wg.Add(1)
+		go func(app *App) {
+			defer wg.Done()
+			<-start
+			result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
+				Alias: "shared", URL: "ssh://sentry.example:2223", SentryPort: 11270,
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- result
+		}(app)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	created := 0
+	for result := range results {
+		if result.Created {
+			created++
+		}
+		if result.Updated {
+			t.Fatalf("identical concurrent upsert reported update: %#v", result)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created results = %d, want exactly one applied creation", created)
 	}
 }
 

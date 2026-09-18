@@ -102,7 +102,7 @@ Mnemonic export is disabled. Use encrypted backup archives for recovery.
 Use `apadmin` in batch mode to back up encrypted key files. Managed backup,
 restore, template, key type, passphrase, sentry-reference, endpoint-export,
 and generation-inventory operations use the authenticated admin protocol to
-the running signer daemon over local IPC or `--remote` SSH. They never mutate
+the running signer daemon over local IPC. They never mutate
 the keystore behind the daemon's back. `apstore` is limited to offline
 bootstrap and rescue; its mutating commands take the store lock. External
 archive verification and policy check/display operations are read-only.
@@ -693,7 +693,7 @@ From the key details view:
 |-----|--------|
 | `d` | Delete the selected key |
 | `t` | Open full TEAL display (LogicSig keys) |
-| `s` | Save TEAL to the operator client data `files/` directory when TEAL is available |
+| `s` | Save TEAL to apadmin's working directory when TEAL is available |
 | `↑/↓` (or `k/j`) | Scroll key details |
 | `esc`, `enter`, `q` | Return to key list |
 

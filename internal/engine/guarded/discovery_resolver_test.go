@@ -46,47 +46,58 @@ func TestLiveSentryResolverReusesOneProbeForSeveralKeys(t *testing.T) {
 	}
 }
 
-func TestLiveSentryResolverUsesDeterministicAliasPrefix(t *testing.T) {
+func TestLiveSentryResolverRejectsDuplicateAdvertisers(t *testing.T) {
 	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
-	releaseFirst := make(chan struct{})
-	laterDone := make(chan struct{})
+	var closes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("z-later", "a-first"),
 		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-			if alias == "a-first" {
-				<-releaseFirst
-			} else {
-				close(laterDone)
-			}
-			return resolverTestEndpoint(alias), []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
+			return &resolvedSentryEndpoint{
+				source:  alias,
+				cleanup: func() { closes.Add(1) },
+			}, []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	type outcome struct {
-		snapshot *sentryEndpointSnapshot
-		err      error
+	snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key})
+	if snapshot != nil {
+		snapshot.close()
 	}
-	result := make(chan outcome, 1)
-	go func() {
-		snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key})
-		result <- outcome{snapshot: snapshot, err: err}
-	}()
-	<-laterDone
-	select {
-	case got := <-result:
-		if got.snapshot != nil {
-			got.snapshot.close()
-		}
-		t.Fatalf("resolver selected a later response before the earlier alias terminated: %v", got.err)
-	default:
+	if !errors.Is(err, errSentryDiscoveryDuplicateRoute) {
+		t.Fatalf("resolveSentryEndpoints() error = %v, want duplicate-route failure", err)
 	}
-	close(releaseFirst)
-	got := <-result
-	if got.err != nil {
-		t.Fatalf("resolveSentryEndpoints() error = %v", got.err)
+	if got := err.Error(); !strings.Contains(got, `endpoints "a-first", "z-later"`) {
+		t.Fatalf("resolveSentryEndpoints() error = %v, want sorted duplicate aliases", err)
 	}
-	defer got.snapshot.close()
-	if source := got.snapshot.routes[key].source; source != "a-first" {
-		t.Fatalf("selected endpoint = %q, want a-first", source)
+	if got := closes.Load(); got != 2 {
+		t.Fatalf("closed endpoint connections = %d, want 2", got)
+	}
+}
+
+func TestLiveSentryResolverDoesNotAcceptRouteAfterDiscoveryCancellation(t *testing.T) {
+	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var probes atomic.Int32
+	s := &Signer{
+		endpointRegistry: resolverTestRegistry("a", "b"),
+		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+			probes.Add(1)
+			return resolverTestEndpoint("unexpected"), []DiscoveredSentryComponentKey{{
+				PublicKey: key.PublicKey, KeyType: key.ComponentKeyType,
+			}}, nil
+		},
+	}
+
+	snapshot, err := s.resolveSentryEndpoints(ctx, []sentryRequestKey{key})
+	if snapshot != nil {
+		snapshot.close()
+		t.Fatal("resolveSentryEndpoints() returned a snapshot after cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("resolveSentryEndpoints() error = %v, want context cancellation", err)
+	}
+	if got := probes.Load(); got != 0 {
+		t.Fatalf("endpoint probes = %d, want 0 for pre-canceled discovery", got)
 	}
 }
 

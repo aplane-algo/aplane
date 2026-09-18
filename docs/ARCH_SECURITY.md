@@ -23,7 +23,6 @@ allowlist. See
 |---------|------|-----------|-------------|------------------|
 | SSH Tunnel + HTTP | apshell | Agents or users | Public key + token (2FA) | Persistent (transport) |
 | Admin protocol over IPC | apadmin / apapprover | Human operator | Passphrase | Persistent (session) |
-| Admin protocol over SSH subsystem | apadmin (remote) | Human operator | SSH key + token + passphrase | Persistent (session) |
 
 ## Authentication Channels
 

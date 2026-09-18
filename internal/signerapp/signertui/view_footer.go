@@ -3,7 +3,11 @@
 
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/witness"
+)
 
 func (m Model) viewFooterText() string {
 	switch m.viewState {
@@ -16,6 +20,9 @@ func (m Model) viewFooterText() string {
 		return m.keyListFooterText()
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
+		if m.isSentryNode() && witness.IsKeyType(m.details.keyType) {
+			parts = append(parts, "e=export enrollment")
+		}
 		if m.details.teal != "" {
 			parts = append(parts, "t=TEAL", "s=save")
 		}
@@ -31,7 +38,12 @@ func (m Model) viewFooterText() string {
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
 	case ViewBackupConfirm:
 		return "Tab: Next | Enter: Create backup | Esc: Back"
-	case ViewBackupDisplay, ViewGenerateDisplay, ViewImportDisplay:
+	case ViewGenerateDisplay:
+		if m.isSentryNode() && witness.IsKeyType(m.forms.generatedKeyType) {
+			return "e: Export enrollment | Enter/Esc: Back"
+		}
+		return "Enter/Esc: Back"
+	case ViewBackupDisplay, ViewImportDisplay:
 		return "Enter/Esc: Back"
 	case ViewRestoreList:
 		return "Enter: Preview | r: Refresh | Esc: Back"
@@ -53,11 +65,34 @@ func (m Model) viewFooterText() string {
 		return "up/down: Select | enter: Generate | t: Template | esc: Back"
 	case ViewGenerateParams:
 		return m.parameterModalFooterText(getKeyTypeByIndex(m.forms.generateKeyType), "Generate")
+	case ViewSentryPicker:
+		return "up/down: Select | enter: Choose | esc: Back"
+	case ViewSentryImportForm:
+		if m.sentry.importPaste {
+			return "Paste: Replace JSON | Tab: Next | Enter: Continue | Esc: Back"
+		}
+		return "Tab: Next | Enter: Review | Esc: Back"
+	case ViewSentryImportReview:
+		return "Enter/y: Enroll | n/Esc: Back"
+	case ViewSentryReferences:
+		return "up/down: Select | enter: Details | i: Import file | p: Paste JSON | r: Refresh | esc/q: Back"
+	case ViewSentryReferenceDetails:
+		return "g: Generate account | d: Remove alias | esc/q: Back"
+	case ViewSentryRemoveConfirm:
+		return "left/right/tab: Focus | enter/space: Select | y: Remove | n/esc: Cancel"
+	case ViewSentryGenerateType:
+		return "up/down: Select | enter: Continue | esc/q: Back"
+	case ViewSentryExportPath:
+		return "Tab: Next | Enter: Select | Esc: Back"
+	case ViewSentryExportResult:
+		return "Enter/Esc: Back"
+	case ViewSentryExportJSON:
+		return "Enter: Return to export"
 	case ViewImportForm:
 		return "up/down: Select key type | tab: Next | enter: Import | esc: Back"
 	case ViewImportParams:
 		return m.parameterModalFooterText(getImportKeyTypeByIndex(m.forms.importKeyType), "Import")
-	case ViewGenerating, ViewImporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
+	case ViewGenerating, ViewImporting, ViewSentryImporting, ViewSentryRemoving, ViewSentryExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
 		return "q: Quit"
 	case ViewDeleteConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"

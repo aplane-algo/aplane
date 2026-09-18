@@ -129,6 +129,7 @@ JSON is rejected.
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
 | `request-token` | Token request requires interactive approval |
+| `sentry` | Guided sentry setup requires interactive trust/replacement decisions or a trusted-host script session |
 | `clear` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |
 | `keyreg` (no args) | Paste mode requires interactive input |

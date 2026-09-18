@@ -444,11 +444,7 @@ TUI; background refreshes do not keep the admin session connected.
 
 ### Admin Interface
 
-The admin protocol supports two transports:
-- local Unix socket IPC at `ipc_path`
-- remote SSH subsystem `aplane-admin` for `apadmin --remote`
-
-Local IPC remains the default admin transport:
+apadmin uses local Unix socket IPC at `ipc_path`:
 - systemd installs use `/run/apsigner/aplane.sock`: runtime directory `0750`,
   socket `0660`, and no operator-group access to persistent signer state
 - same-UID local mode defaults to `$APSIGNER_DATA/aplane.sock`
@@ -463,19 +459,11 @@ Local IPC remains the default admin transport:
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 
-Remote `apadmin` over SSH uses:
-- the default signer endpoint from the client data directory (`APCLIENT_DATA` or `--client-data`)
-- that endpoint's token file for the SSH mutual proof
-- the same passphrase-based admin auth after the SSH stream is established
-- an already trusted signer host in the client `known_hosts` file
-
-Remote `apadmin` is not an enrollment surface. If the token or trusted host is
-missing, run standalone `apshell request-token` or `apshell connect` first.
-
-Example:
+`apadmin` does not read `APCLIENT_DATA`, endpoint registries, or client tokens.
+For remote administration, SSH into the signer machine and run it there:
 
 ```bash
-apadmin --remote --client-data ~/aplane/apclient
+ssh -t user@signer 'apadmin -d /path/to/signer-data'
 ```
 
 **Default IPC path**: `/run/apsigner/aplane.sock` for systemd;
@@ -1053,7 +1041,7 @@ Signer uses one product token for authenticating API requests from apshell and t
 4. **Request authentication**: Clients send the token via `Authorization: aplane <token>` HTTP header
 5. **Validation**: apsigner validates using constant-time comparison (prevents timing attacks)
 
-Remote `apadmin --remote` also uses this same product token at the SSH layer. Revoking the token disconnects remote admin SSH sessions in addition to invalidating client API access.
+apadmin authenticates over local IPC independently of client API tokens.
 
 ### Token File
 

@@ -16,16 +16,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"golang.org/x/term"
 )
 
 type adminBatchGlobalOptions struct {
-	dataDir       string
-	clientDataDir string
-	ipcPath       string
-	remote        bool
+	dataDir string
+	ipcPath string
 }
 
 type adminBatchStreams struct {
@@ -40,12 +37,16 @@ type adminBatchPrompt struct {
 	stderr io.Writer
 }
 
+var openControllingTerminal = func() (*os.File, error) {
+	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
+}
+
 func newAdminBatchPrompt(stdin io.Reader, stderr io.Writer) *adminBatchPrompt {
 	return &adminBatchPrompt{stdin: stdin, reader: bufio.NewReader(stdin), stderr: stderr}
 }
 
-func (p *adminBatchPrompt) passphrase(remote bool) ([]byte, error) {
-	return p.secret("Enter store passphrase: ", !remote)
+func (p *adminBatchPrompt) passphrase() ([]byte, error) {
+	return p.secret("Enter store passphrase: ", true)
 }
 
 func (p *adminBatchPrompt) secret(message string, allowEnvironment bool) ([]byte, error) {
@@ -109,17 +110,16 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	}
 
 	prompt := newAdminBatchPrompt(streams.stdin, streams.stderr)
-	passphrase, err := prompt.passphrase(globals.remote)
+	passphrase, closePassphraseInput, err := catalogPassphrase(command, args, prompt, streams.stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
 		return 1
 	}
+	if closePassphraseInput != nil {
+		defer func() { _ = closePassphraseInput.Close() }()
+	}
 	defer crypto.ZeroBytes(passphrase)
 
-	if globals.remote {
-		sshtunnel.SetStatusWriter(io.Discard)
-		defer sshtunnel.SetStatusWriter(nil)
-	}
 	session, err := selectAdminTransport(globals)
 	if err != nil {
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
@@ -127,9 +127,6 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	}
 	client, err := apadminapp.Open(session, passphrase, mode)
 	if err != nil {
-		if globals.remote {
-			err = formatRemoteConnectError(err)
-		}
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
 		return 1
 	}
@@ -137,7 +134,7 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 
 	err = (apadminapp.Catalog{
 		Client:  client,
-		Streams: apadminapp.Streams{Stdout: streams.stdout, Stderr: streams.stderr},
+		Streams: apadminapp.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr},
 		Confirm: prompt.confirm,
 	}).Run(command, args)
 	if err != nil {
@@ -145,6 +142,41 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 		return adminBatchExitCode(err)
 	}
 	return 0
+}
+
+func catalogPassphrase(
+	command string,
+	args []string,
+	prompt *adminBatchPrompt,
+	stderr io.Writer,
+) ([]byte, io.Closer, error) {
+	stdinReserved := command == "sentry" && sentryImportUsesStdin(args)
+	if !stdinReserved {
+		passphrase, err := prompt.passphrase()
+		return passphrase, nil, err
+	}
+	if value := os.Getenv("APSIGNER_PASSPHRASE"); value != "" {
+		return []byte(value), nil, nil
+	}
+
+	tty, err := openControllingTerminal()
+	if err != nil {
+		return nil, nil, fmt.Errorf("sentry import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", err)
+	}
+	ttyPrompt := newAdminBatchPrompt(tty, stderr)
+	passphrase, err := ttyPrompt.secret("Enter store passphrase: ", false)
+	if err != nil {
+		_ = tty.Close()
+		return nil, nil, err
+	}
+	return passphrase, tty, nil
+}
+
+func sentryImportUsesStdin(args []string) bool {
+	if len(args) >= 2 && args[0] == "import" && args[1] == "-" {
+		return true
+	}
+	return len(args) >= 3 && args[0] == "enrollment" && args[1] == "import" && args[2] == "-"
 }
 
 func runStoreCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
@@ -171,7 +203,7 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 			return 0
 		}
 	} else {
-		current, err = prompt.passphrase(globals.remote)
+		current, err = prompt.passphrase()
 	}
 	if err != nil {
 		crypto.ZeroBytes(current)
@@ -182,10 +214,6 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 	defer crypto.ZeroBytes(current)
 	defer crypto.ZeroBytes(next)
 
-	if globals.remote {
-		sshtunnel.SetStatusWriter(io.Discard)
-		defer sshtunnel.SetStatusWriter(nil)
-	}
 	session, err := selectAdminTransport(globals)
 	if err != nil {
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
@@ -193,9 +221,6 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 	}
 	client, err := apadminapp.Open(session, current, mode)
 	if err != nil {
-		if globals.remote {
-			err = formatRemoteConnectError(err)
-		}
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
 		return 1
 	}
@@ -258,15 +283,6 @@ func adminBatchExitCode(err error) int {
 }
 
 func selectAdminTransport(globals adminBatchGlobalOptions) (transport.Transport, error) {
-	if globals.remote {
-		cfg, err := loadRemoteAdminConfig(globals.clientDataDir)
-		if err != nil {
-			return nil, err
-		}
-		return transport.NewSSHAdmin(
-			cfg.ssh.Host, cfg.ssh.Port, cfg.token, cfg.ssh.IdentityFile, cfg.ssh.KnownHostsPath,
-		), nil
-	}
 	dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
 	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
 		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",

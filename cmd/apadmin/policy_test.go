@@ -81,7 +81,7 @@ func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("runPolicyCommand() code = %d", code)
 	}
-	for _, want := range []string{"Online commands authenticate and unlock", "APSIGNER_PASSPHRASE", "Local and remote commands may read", "Remote apply - requires a controlling", "headless remote use", "rescue commands"} {
+	for _, want := range []string{"Online commands authenticate and unlock", "APSIGNER_PASSPHRASE", "IPC commands may read", "rescue commands"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("help missing %q:\n%s", want, stderr.String())
 		}
@@ -92,7 +92,7 @@ func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	var stderr bytes.Buffer
 	code := runPolicyCommand(context.Background(), []string{"rescue", "check", "draft.yaml"}, policyGlobalOptions{
-		remote: true,
+		ipcPathPassed: true,
 	}, policyStreams{stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr})
 	if code != 2 || !strings.Contains(stderr.String(), "rescue cannot use") {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
@@ -119,30 +119,5 @@ func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
 	})
 	if code != 2 || !strings.Contains(stderr.String(), "APPOLICY_PASSPHRASE is retired") {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
-	}
-}
-
-func TestRemotePolicyCommandSuppressesSSHStatusForWholeSession(t *testing.T) {
-	t.Setenv("APPOLICY_PASSPHRASE", "")
-	original := setPolicySSHStatusWriter
-	t.Cleanup(func() { setPolicySSHStatusWriter = original })
-	var writers []io.Writer
-	setPolicySSHStatusWriter = func(writer io.Writer) {
-		writers = append(writers, writer)
-	}
-
-	var stdout, stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"export"}, policyGlobalOptions{
-		remote:        true,
-		clientDataDir: t.TempDir(),
-	}, policyStreams{stdin: strings.NewReader("secret\n"), stdout: &stdout, stderr: &stderr})
-	if code != 1 {
-		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
-	}
-	if len(writers) != 2 || writers[0] != io.Discard || writers[1] != nil {
-		t.Fatalf("SSH status writer sequence = %#v, want [io.Discard nil]", writers)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("failed remote export contaminated stdout: %q", stdout.String())
 	}
 }

@@ -5,6 +5,7 @@ package apshellcli
 
 import (
 	"bytes"
+	"context"
 	"testing"
 )
 
@@ -39,5 +40,33 @@ func TestReadPromptResponseUsesInteractiveLineReader(t *testing.T) {
 	}
 	if prompts[1] != "" {
 		t.Fatalf("restored prompt = %q, want empty prompt for test fixture", prompts[1])
+	}
+}
+
+func TestReadPromptResponseUsesContextInteractiveLineReader(t *testing.T) {
+	var out bytes.Buffer
+	var prompts []string
+	state := &REPLState{
+		Out: &out,
+		SetPrompt: func(p string) {
+			prompts = append(prompts, p)
+		},
+		LineReaderContext: func(context.Context) (string, error) {
+			return " yes ", nil
+		},
+	}
+
+	got, err := state.readPromptResponse("Proceed? [y/N]: ")
+	if err != nil {
+		t.Fatalf("readPromptResponse() error = %v", err)
+	}
+	if got != "yes" {
+		t.Fatalf("readPromptResponse() = %q, want yes", got)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("output = %q, context prompt should be routed through SetPrompt", out.String())
+	}
+	if len(prompts) != 2 || prompts[0] != "Proceed? [y/N]: " || prompts[1] != "" {
+		t.Fatalf("prompts = %#v, want temporary prompt and restore", prompts)
 	}
 }

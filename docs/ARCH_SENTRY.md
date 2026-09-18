@@ -247,6 +247,23 @@ The signer-side sentry reference catalog is populated by explicit operator
 handoff: `apadmin sentry export` on the sentry node followed by `apadmin sentry
 import` on the signer node.
 
+The additive `aplane.sentry-enrollment.v1` public handoff may compose that
+same canonical witness-public reference with an optional portable endpoint
+envelope. apadmin validates the complete bundle and imports only its public
+witness reference through authorized local IPC. Endpoint metadata is
+informational; apshell owns endpoint configuration, token enrollment, host
+trust, and live discovery. apadmin does not access client state.
+
+The client-side `sentry add` workflow accepts either public document. It treats
+the witness reference as the expected authority and any combined endpoint as a
+portable route suggestion. Under the shared client-data lock it revalidates and
+writes only the chosen endpoint alias, then releases the lock before any SSH
+trust, token enrollment, or network operation. Token enrollment uses a
+standalone SSH connection and does not disturb the primary signer tunnel.
+Verification queries only the chosen endpoint and requires its validated,
+deduplicated `/keys` inventory to contain the exact key type, public key, and
+derived Witness Key ID from the document.
+
 Reference aliases are security-bearing generation inputs: resolving
 `sentry=<name>` selects the witness public key embedded into a newly generated
 guarded account. Manual import and removal therefore require an unlocked
@@ -296,6 +313,11 @@ ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
 verification fails unless that endpoint controls the embedded sentry private
 key. Deleting an advertised sentry key causes guarded signing to fail before
 submission with a missing-advertised-key error.
+
+Use `apshell sentry add` for guided setup of one public handoff. Use
+`apshell endpoints discover-sentries` to inspect all live client routes.
+Signer-side apadmin displays public reference metadata only; it does not
+probe endpoints or persist route associations.
 
 ## Guarded Transaction Flow
 
@@ -506,6 +528,15 @@ Unavailable or locked endpoints may be skipped only when the remaining live
 results resolve every required key. Authentication failures, malformed
 records, duplicate public keys, configuration errors, and SSH host-key
 mismatches fail closed.
+
+Runtime routing performs a bounded probe of every configured sentry endpoint
+before selecting an operation-scoped route. It cannot stop at the first match,
+because later live endpoints might advertise the same witness and make the
+route ambiguous. The sweep uses the configured concurrency and per-endpoint
+limits under a 30-second total deadline, so guarded-signing discovery latency
+can include the slowest probe needed to complete that sweep. Non-fatal endpoint
+failures are reported after the sweep even when the remaining live inventory
+uniquely resolves every required witness.
 
 ## Audit
 

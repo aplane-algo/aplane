@@ -113,7 +113,7 @@ func TestApplyInputModeTransforms_AppliesSHA512_256InputModeTransform(t *testing
 	}
 }
 
-func TestApplyInputModeTransforms_ResolvesAddressListAliasesAndSets(t *testing.T) {
+func TestApplyInputModeTransforms_RejectsClientAliasesAndSets(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := cache.NewStore(tmpDir)
 
@@ -143,16 +143,8 @@ func TestApplyInputModeTransforms_ResolvesAddressListAliasesAndSets(t *testing.T
 		{Name: "recipients", Type: "address[]"},
 	}
 
-	got, err := m.applyInputModeTransforms(params)
-	if err != nil {
-		t.Fatalf("applyInputModeTransforms returned error: %v", err)
-	}
-
-	wantRecipients := []string{addr1, addr2, addr3}
-	sort.Strings(wantRecipients)
-	want := map[string]string{"recipients": strings.Join(wantRecipients, ",")}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("transformed params = %v, want %v", got, want)
+	if _, err := m.applyInputModeTransforms(params); err == nil {
+		t.Fatal("client aliases and sets must not resolve in admin")
 	}
 }
 
@@ -183,14 +175,14 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 	}
 }
 
-func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
+func TestGenericSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:     "aplane.falcon1024-sentry1024.v1",
 		DisplayName: "Falcon-1024 / Ed25519 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:    "sentry",
-			Label:   "Sentry",
+			Name:    "environment",
+			Label:   "Environment",
 			Type:    "select",
 			Options: []string{"lab-sentry", "backup-sentry"},
 			Default: "lab-sentry",
@@ -199,8 +191,8 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 
 	m := Model{forms: formsState{generateKeyType: 0}}
 	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry1024.v1")
-	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
-		t.Fatalf("default sentry = %q, want lab-sentry", got)
+	if got := m.forms.genericLSigParams["environment"]; got != "lab-sentry" {
+		t.Fatalf("default environment = %q, want lab-sentry", got)
 	}
 
 	m.forms.generateFocus = 0
@@ -209,14 +201,14 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 		t.Fatalf("cycle command = %v, want nil", cmd)
 	}
 	m = next.(Model)
-	if got := m.forms.genericLSigParams["sentry"]; got != "backup-sentry" {
-		t.Fatalf("cycled sentry = %q, want backup-sentry", got)
+	if got := m.forms.genericLSigParams["environment"]; got != "backup-sentry" {
+		t.Fatalf("cycled environment = %q, want backup-sentry", got)
 	}
 
 	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(Model)
-	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
-		t.Fatalf("left-cycled sentry = %q, want lab-sentry", got)
+	if got := m.forms.genericLSigParams["environment"]; got != "lab-sentry" {
+		t.Fatalf("left-cycled environment = %q, want lab-sentry", got)
 	}
 }
 

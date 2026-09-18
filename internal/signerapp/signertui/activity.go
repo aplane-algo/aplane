@@ -60,6 +60,7 @@ func (m *Model) applySignerLockedState() {
 	m.manualLock.pending = false
 	m.manualLock.focus = 0
 	m.manualLock.returnView = ViewKeyList
+	m.clearSentryWorkflowState()
 	m.signerState = signerRuntimeLocked
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock

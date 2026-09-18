@@ -33,7 +33,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
 - `cmd/aprekey/`: External witness generation and bounded contract-admin rekey/unrekey ceremonies
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
-- `cmd/apadmin/`: TUI and batch admin client over IPC or SSH; owns all general
+- `cmd/apadmin/`: TUI and batch admin client over local IPC; owns all general
   live administration plus explicit offline policy rescue workflows
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
