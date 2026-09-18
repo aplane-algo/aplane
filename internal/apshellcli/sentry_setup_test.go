@@ -196,6 +196,37 @@ func TestSentrySetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	}
 }
 
+func TestSentrySetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	documentPath := filepath.Join(dataDir, "handoff.json")
+	if err := os.WriteFile(documentPath, testCLIWitnessDocument(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := newIsolatedTestEngine(t, "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	state := &REPLState{
+		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
+		Config: cfg, AutoConfirm: true, currentCommandCtx: context.Background(),
+	}
+
+	_, err = state.cmdSentry([]string{
+		"add", documentPath, "--alias", "field", "--endpoint", "http://127.0.0.1:1",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
+		t.Fatalf("cmdSentry() error = %v, want missing direct-endpoint token error", err)
+	}
+	endpoint, ok := state.Config.Endpoints.Endpoint("field")
+	if !ok || endpoint.URL != "http://127.0.0.1:1" {
+		t.Fatalf("REPL endpoint after partial setup = %#v/%v, want persisted field endpoint", endpoint, ok)
+	}
+	if appEndpoint, appOK := state.App.Config.Endpoints.Endpoint("field"); !appOK || appEndpoint != endpoint {
+		t.Fatalf("REPL and application config diverged: repl=%#v app=%#v/%v", endpoint, appEndpoint, appOK)
+	}
+}
+
 func TestContextAwarePromptAdaptersReturnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

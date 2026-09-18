@@ -107,6 +107,9 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 	if err != nil {
 		return nil, err
 	}
+	if !plan.DryRun {
+		r.Config = r.app().Config
+	}
 	result, err := r.app().CompleteSentrySetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printSentryProvisioningWait)
 	if err != nil {
 		completed := "endpoint configuration retained"
@@ -119,12 +122,6 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 			completed += " and access token saved"
 		}
 		return nil, fmt.Errorf("%s; live witness verification did not complete: %w", completed, err)
-	}
-	if !result.DryRun {
-		if cfg, loadErr := config.LoadConfig(r.DataDir); loadErr == nil {
-			r.Config = cfg
-			r.app().Config = cfg
-		}
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() { r.renderSentrySetupResult(result) })
