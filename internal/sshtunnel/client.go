@@ -963,18 +963,8 @@ func (c *Client) handleDisconnect() {
 // dialAndIntercept connects to the SSH server and intercepts global requests
 // from the server (e.g. token-revoked@aplane) before forwarding them to ssh.NewClient.
 func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	d := net.Dialer{Timeout: config.Timeout}
-	dialNetwork, dialAddr := sshDialTarget(network, addr)
-	conn, err := d.DialContext(ctx, dialNetwork, dialAddr)
+	sshConn, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
 	if err != nil {
-		return nil, err
-	}
-
-	ctxConn := &contextConn{Conn: conn, ctx: ctx}
-
-	sshConn, chans, reqs, err := ssh.NewClientConn(ctxConn, addr, config)
-	if err != nil {
-		_ = conn.Close()
 		return nil, err
 	}
 
@@ -1021,26 +1011,42 @@ func forwardInterceptedGlobalRequest(ctx context.Context, filteredReqs chan<- *s
 
 // dialWithContext connects to SSH server with context support
 func dialWithContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	d := net.Dialer{Timeout: config.Timeout}
+	c, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+// dialSSHHandshake bounds TCP dialing and authentication together. Cancellation
+// closes the socket, including when a read is already blocked. Successful
+// connections detach from this setup lifetime before being returned.
+func dialSSHHandshake(ctx context.Context, network, addr string, config *ssh.ClientConfig) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	timeout := config.Timeout
+	if timeout <= 0 {
+		timeout = sshHandshakeTimeout
+	}
+	setupCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	dialNetwork, dialAddr := sshDialTarget(network, addr)
-	conn, err := d.DialContext(ctx, dialNetwork, dialAddr)
+	conn, err := (&net.Dialer{}).DialContext(setupCtx, dialNetwork, dialAddr)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-
-	// Wrap in a context-cancellable connection
-	ctxConn := &contextConn{Conn: conn, ctx: ctx}
-
-	c, chans, reqs, err := ssh.NewClientConn(ctxConn, addr, config)
-	if err != nil {
-		if closeErr := conn.Close(); closeErr != nil {
-			return nil, fmt.Errorf("failed to establish SSH connection: %w (and failed to close connection: %v)", err, closeErr)
+	stop := context.AfterFunc(setupCtx, func() { _ = conn.Close() })
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	detached := stop()
+	if err != nil || !detached || setupCtx.Err() != nil {
+		_ = conn.Close()
+		if setupCtx.Err() != nil {
+			err = setupCtx.Err()
 		}
-		return nil, err
+		if err == nil {
+			err = context.Canceled
+		}
+		return nil, nil, nil, err
 	}
-
-	client := ssh.NewClient(c, chans, reqs)
-	return client, nil
+	return sshConn, chans, reqs, nil
 }
 
 func sshDialTarget(network, addr string) (string, string) {
@@ -1055,28 +1061,4 @@ func sshDialTarget(network, addr string) (string, string) {
 		return "tcp4", net.JoinHostPort("127.0.0.1", port)
 	}
 	return network, addr
-}
-
-// contextConn wraps net.Conn to support context cancellation
-type contextConn struct {
-	net.Conn
-	ctx context.Context
-}
-
-func (c *contextConn) Read(b []byte) (n int, err error) {
-	select {
-	case <-c.ctx.Done():
-		return 0, c.ctx.Err()
-	default:
-		return c.Conn.Read(b)
-	}
-}
-
-func (c *contextConn) Write(b []byte) (n int, err error) {
-	select {
-	case <-c.ctx.Done():
-		return 0, c.ctx.Err()
-	default:
-		return c.Conn.Write(b)
-	}
 }

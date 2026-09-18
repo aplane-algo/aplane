@@ -101,6 +101,8 @@ const (
 	initialAcceptErrorBackoff = 25 * time.Millisecond
 	maxAcceptErrorBackoff     = time.Second
 	invalidTokenProofDelay    = 5 * time.Second
+	sshHandshakeTimeout       = 30 * time.Second
+	maxPendingSSHHandshakes   = 64
 )
 
 // Server represents an SSH server with mutual token proof and public-key auth.
@@ -142,10 +144,13 @@ type Server struct {
 	// Connection tracking for graceful shutdown
 	activeConns              sync.WaitGroup                  // Tracks active connection handlers
 	sshConns                 map[*ssh.ServerConn]sshConnInfo // Active SSH connections for explicit close
-	minimumTokenGeneration   uint64                          // Minimum accepted product token generation
-	sshConnsMu               sync.Mutex                      // Protects sshConns and minimumTokenGeneration
-	testAfterAuthBeforeTrack func()                          // Test hook for auth/revocation race coverage
-	invalidTokenDelay        time.Duration                   // Tests may set this to zero to avoid the production rejection delay
+	rawConns                 map[net.Conn]struct{}           // Includes unauthenticated sockets; protected by sshConnsMu.
+	pendingHandshakes        int
+	handshakeTimeout         time.Duration
+	minimumTokenGeneration   uint64        // Minimum accepted product token generation
+	sshConnsMu               sync.Mutex    // Protects connection maps, pendingHandshakes, and minimumTokenGeneration
+	testAfterAuthBeforeTrack func()        // Test hook for auth/revocation race coverage
+	invalidTokenDelay        time.Duration // Tests may set this to zero to avoid the production rejection delay
 }
 
 type sshConnInfo struct {
@@ -308,6 +313,8 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 		closeChan:          make(chan struct{}),
 		sshConns:           make(map[*ssh.ServerConn]sshConnInfo),
 		invalidTokenDelay:  invalidTokenProofDelay,
+		rawConns:           make(map[net.Conn]struct{}),
+		handshakeTimeout:   sshHandshakeTimeout,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
@@ -598,7 +605,10 @@ func (s *Server) computeTokenMACs(serverInput, clientInput []byte) (serverMAC, c
 func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason string) (*ssh.Permissions, error) {
 	fmt.Printf("[SSH] Token proof rejected from %s (key: %s)\n", conn.RemoteAddr(), keyFingerprint)
 	if s.invalidTokenDelay > 0 {
-		time.Sleep(s.invalidTokenDelay)
+		select {
+		case <-time.After(s.invalidTokenDelay):
+		case <-s.closeChan:
+		}
 	}
 	return nil, fmt.Errorf("token proof authentication failed: %s", reason)
 }
@@ -778,7 +788,12 @@ func (s *Server) acceptConnections(ctx context.Context, listener net.Listener) {
 		}
 		backoff = initialAcceptErrorBackoff
 
-		// Handle connection in goroutine
+		// Admit before spawning a handler so stalled peers cannot create
+		// an unbounded number of authentication goroutines.
+		if !s.admitConnection(conn) {
+			_ = conn.Close()
+			continue
+		}
 		s.activeConns.Add(1)
 		go s.handleConnection(conn)
 	}
@@ -795,6 +810,23 @@ func nextAcceptErrorBackoff(current time.Duration) time.Duration {
 	return next
 }
 
+// admitConnection also serializes admission with shutdown's socket snapshot.
+func (s *Server) admitConnection(conn net.Conn) bool {
+	s.sshConnsMu.Lock()
+	defer s.sshConnsMu.Unlock()
+	select {
+	case <-s.closeChan:
+		return false
+	default:
+	}
+	if s.pendingHandshakes >= maxPendingSSHHandshakes {
+		return false
+	}
+	s.rawConns[conn] = struct{}{}
+	s.pendingHandshakes++
+	return true
+}
+
 // handleConnection processes a single SSH connection
 func (s *Server) handleConnection(netConn net.Conn) {
 	defer s.activeConns.Done() // Signal handler completion (runs last due to LIFO)
@@ -805,11 +837,36 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		}
 	}()
 
-	// Perform SSH handshake
+	// Some internal callers invoke the handler directly.
+	s.sshConnsMu.Lock()
+	_, admitted := s.rawConns[netConn]
+	s.sshConnsMu.Unlock()
+	if !admitted && !s.admitConnection(netConn) {
+		return
+	}
+	pending := true
+	defer func() {
+		s.sshConnsMu.Lock()
+		delete(s.rawConns, netConn)
+		if pending {
+			s.pendingHandshakes--
+		}
+		s.sshConnsMu.Unlock()
+	}()
+	if err := netConn.SetDeadline(time.Now().Add(s.handshakeTimeout)); err != nil {
+		return
+	}
 	sshConn, chans, reqs, err := ssh.NewServerConn(netConn, s.sshConfig)
 	if err != nil {
 		return
 	}
+	if err := netConn.SetDeadline(time.Time{}); err != nil {
+		return
+	}
+	s.sshConnsMu.Lock()
+	s.pendingHandshakes--
+	pending = false
+	s.sshConnsMu.Unlock()
 	if s.testAfterAuthBeforeTrack != nil {
 		s.testAfterAuthBeforeTrack()
 	}
@@ -1329,6 +1386,17 @@ func (s *Server) StopContext(ctx context.Context) error {
 		if err := listener.Close(); err != nil && !isClosedConnError(err) {
 			listenerErr = fmt.Errorf("failed to close listener: %w", err)
 		}
+	}
+
+	// Include sockets still in authentication.
+	s.sshConnsMu.Lock()
+	rawConns := make([]net.Conn, 0, len(s.rawConns))
+	for conn := range s.rawConns {
+		rawConns = append(rawConns, conn)
+	}
+	s.sshConnsMu.Unlock()
+	for _, conn := range rawConns {
+		_ = conn.Close()
 	}
 
 	// Copy active connections (avoid holding lock during close)

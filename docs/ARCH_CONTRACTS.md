@@ -2175,7 +2175,18 @@ client retains its separate bearer-token state for subsequent HTTP requests.
 authorization and enrollment are sourced from
 `identities/default/.ssh/authorized_keys`.
 
-Unavailable or invalid client token proofs incur a 5-second delay.
+Unavailable or invalid client token proofs incur a 5-second delay, interrupted
+by server shutdown. The SSH server allows at most 64 concurrent pending
+handshakes and closes excess arrivals. Authentication has a 30-second socket
+deadline, cleared after successful authentication. Accepted sockets are tracked
+before authentication so shutdown also closes stalled handshakes. The limit
+applies to pending authentication, not established sessions or subsequent
+operator approval for token provisioning.
+
+Client TCP dialing and SSH authentication share one setup timeout (30 seconds
+by default). Setup cancellation closes the socket to interrupt blocked I/O.
+Successful connections detach from that setup timeout; their established
+connection lifecycle and provisioning approval waits remain separately owned.
 
 Token provisioning flow:
 
