@@ -199,7 +199,7 @@ func (m Model) renderSentryExportPath() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Export Sentry Key"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("The public envelope is written by apadmin on this operator machine."))
+	body.WriteString(subtitleStyle.Render("Save the public sentry key on this machine. No private key or access token is included."))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.sentry.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
@@ -254,7 +254,7 @@ func (m Model) renderSentryExporting() string {
 func (m Model) renderSentryExportResult() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Sentry Key Exported"))
-	body.WriteString("\n\nPublic envelope written locally to:\n")
+	body.WriteString("\n\nPublic sentry key saved to:\n")
 	body.WriteString(m.sentry.exportWrittenPath)
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.sentry.exportWitnessID), m.popupBodyWidth(90)))
@@ -264,6 +264,7 @@ func (m Model) renderSentryExportResult() string {
 		body.WriteString("\n\nEndpoint: not included")
 	}
 	body.WriteString("\n")
+	body.WriteString("\nNext: import this file in primary-signer apadmin, then use sentry add in apshell.\n")
 	return m.renderPopup(90, body.String())
 }
 

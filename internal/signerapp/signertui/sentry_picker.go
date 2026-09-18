@@ -80,6 +80,7 @@ func (m Model) openSentryPicker(keyType, paramName string) (Model, string) {
 		m.clearSentryImportTransient()
 		m.sentry.importPath = ""
 		m.sentry.importName = ""
+		m.sentry.importNameDefault = ""
 		m.sentry.importFocus = 0
 		m.sentry.importError = ""
 		m.sentry.paramName = paramName
@@ -119,6 +120,7 @@ func (m *Model) clearSentryImportTransient() {
 	m.sentry.importJSON = ""
 	m.sentry.importPath = ""
 	m.sentry.importName = ""
+	m.sentry.importNameDefault = ""
 	m.sentry.importError = ""
 	m.sentry.requiredKeyType = ""
 }
@@ -161,26 +163,16 @@ func (m Model) cancelSentryImport() Model {
 
 func (m Model) prepareSentryImportReview() Model {
 	path := strings.TrimSpace(m.sentry.importPath)
-	name := strings.TrimSpace(m.sentry.importName)
 	if !m.sentry.importPaste && path == "" {
-		m.sentry.importError = "Public envelope path is required"
+		m.sentry.importError = "Sentry key file is required"
 		return m
 	}
 	if !m.sentry.importPaste && path == "-" {
 		m.sentry.importError = "The interactive TUI requires a file path; use batch apadmin sentry import - <name> for stdin"
 		return m
 	}
-	if name == "" {
-		m.sentry.importError = "Suggested name is required"
-		return m
-	}
-	name, err := sentryrefs.NormalizeName(name)
-	if err != nil {
-		m.sentry.importError = err.Error()
-		return m
-	}
-	m.sentry.importName = name
 	data := []byte(m.sentry.importJSON)
+	var err error
 	if !m.sentry.importPaste {
 		data, err = apadminapp.ReadSentryPublicEnvelope(path, nil)
 		if err != nil {
@@ -194,6 +186,25 @@ func (m Model) prepareSentryImportReview() Model {
 		return m
 	}
 	reference := artifact.Witness
+	name := strings.TrimSpace(m.sentry.importName)
+	if name == m.sentry.importNameDefault {
+		name = ""
+	}
+	if name == "" && !m.sentry.importPaste {
+		name = sentryImportNameFromPath(path)
+	}
+	if name == "" {
+		name = suggestedSentryReferenceName(reference.WitnessKeyID)
+	}
+	if !m.hasCustomSentryImportName() {
+		m.sentry.importNameDefault = name
+	}
+	name, err = sentryrefs.NormalizeName(name)
+	if err != nil {
+		m.sentry.importError = err.Error()
+		return m
+	}
+	m.sentry.importName = name
 	if m.sentry.requiredKeyType != "" && reference.KeyType != m.sentry.requiredKeyType {
 		m.sentry.importError = fmt.Sprintf(
 			"public witness key type %s is incompatible; this account requires %s",
@@ -224,10 +235,11 @@ func (m Model) handleSentryImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			value := string(msg.Runes)
 			if len(value) > enrollment.MaxEnvelopeBytes {
 				m.sentry.importJSON = ""
-				m.sentry.importError = "JSON exceeds the 64 KiB limit; paste a smaller enrollment document"
+				m.sentry.importError = "JSON exceeds the 64 KiB limit; paste a smaller sentry key document"
 				return m, nil
 			}
 			m.sentry.importJSON = value
+			m = m.suggestSentryImportNameFromDocument([]byte(value))
 			m.sentry.importError = ""
 		case 1:
 			m.sentry.importName += string(msg.Runes)
@@ -282,10 +294,16 @@ func (m Model) handleSentryImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) suggestSentryImportNameFromPath() Model {
-	if m.sentry.importPaste || m.sentry.importFocus != 0 || strings.TrimSpace(m.sentry.importName) != "" {
+	if m.sentry.importPaste || m.sentry.importFocus != 0 || m.hasCustomSentryImportName() {
 		return m
 	}
-	path := strings.TrimSpace(m.sentry.importPath)
+	m.sentry.importName = sentryImportNameFromPath(m.sentry.importPath)
+	m.sentry.importNameDefault = m.sentry.importName
+	return m
+}
+
+func sentryImportNameFromPath(path string) string {
+	path = strings.TrimSpace(path)
 	base := filepath.Base(path)
 	if strings.HasSuffix(strings.ToLower(base), sentryEnrollmentFileSuffix) {
 		base = base[:len(base)-len(sentryEnrollmentFileSuffix)]
@@ -293,9 +311,38 @@ func (m Model) suggestSentryImportNameFromPath() Model {
 		base = strings.TrimSuffix(base, filepath.Ext(base))
 	}
 	if name := sanitizeSentryReferenceNameSuggestion(base); name != "" {
-		m.sentry.importName = name
+		return name
+	}
+	return ""
+}
+
+func (m Model) suggestSentryImportNameFromDocument(data []byte) Model {
+	if m.hasCustomSentryImportName() {
+		return m
+	}
+	m.sentry.importName = ""
+	m.sentry.importNameDefault = ""
+	artifact, err := enrollment.ParseArtifact(data)
+	if err == nil {
+		m.sentry.importName = suggestedSentryReferenceName(artifact.Witness.WitnessKeyID)
+		m.sentry.importNameDefault = m.sentry.importName
 	}
 	return m
+}
+
+func (m Model) hasCustomSentryImportName() bool {
+	return strings.TrimSpace(m.sentry.importName) != "" && m.sentry.importName != m.sentry.importNameDefault
+}
+
+func suggestedSentryReferenceName(witnessKeyID string) string {
+	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))
+	if len(compact) > 10 {
+		compact = compact[:10]
+	}
+	if compact == "" {
+		return "sentry"
+	}
+	return "sentry-" + compact
 }
 
 func sanitizeSentryReferenceNameSuggestion(value string) string {
@@ -344,7 +391,7 @@ func (m Model) handleSentryImportReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 
 func (m Model) submitSentryImportReview() (tea.Model, tea.Cmd) {
 	if m.sentry.envelopeJSON == "" {
-		m.sentry.importError = "Public envelope is no longer available; choose it again"
+		m.sentry.importError = "Sentry key JSON is no longer available; choose it again"
 		m.viewState = ViewSentryImportForm
 		return m, nil
 	}
@@ -365,7 +412,7 @@ func (m Model) completeSentryImport(
 	m.clearSentryImportEnvelope()
 	m.sentry.importError = ""
 	if managerImport {
-		m.sentry.managerStatus = "Imported " + reference.Name
+		m.sentry.managerStatus = "Imported " + reference.Name + ". Next: Generate account; configure its sentry connection in apshell with sentry add."
 		m.sentry.returnView = ViewKeyList
 		m.viewState = ViewSentryReferences
 		return m, tea.Batch(
@@ -481,7 +528,7 @@ func (m Model) renderSentryImportForm() string {
 	if m.sentry.importPaste {
 		body.WriteString(subtitleStyle.Render("Paste the public JSON exported by the sentry node (up to 64 KiB)."))
 	} else {
-		body.WriteString(subtitleStyle.Render("Choose the public envelope exported by the sentry node."))
+		body.WriteString(subtitleStyle.Render("Choose the sentry key file exported by the sentry node."))
 	}
 	body.WriteString("\n\n")
 
@@ -502,11 +549,12 @@ func (m Model) renderSentryImportForm() string {
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(preview))
 		body.WriteString("\n" + helpStyle.Render("Use your terminal paste shortcut. Backspace/Delete clears the JSON."))
 	} else {
-		body.WriteString("Public envelope path:\n")
+		body.WriteString("Sentry key file:\n")
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.sentry.importPath))
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.sentry.importName))
+	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Sentry Key ID; edit if needed."))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("REVIEW SENTRY KEY")
 	if m.sentry.importFocus == 2 {

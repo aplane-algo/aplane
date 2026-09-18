@@ -842,11 +842,11 @@ scrollback, then press Enter to return to the export screen.
 File export and batch stdout also preserve the original JSON bytes.
 
 To import copied JSON, press `p: Paste JSON` in the Sentry References manager.
-Use your terminal's paste shortcut in the JSON field, then Tab to enter a
-reference name and continue to review. The field accepts a complete multiline
+Use your terminal's paste shortcut in the JSON field, then Tab to review or edit the
+reference name suggested from the file or Witness Key ID. Continue to review. The field accepts a complete multiline
 public witness document or combined enrollment bundle, up to 64 KiB. Pasting
 again replaces the document; Backspace/Delete clears it. Compare the full
-Witness Key ID on the shared import review screen before enrolling. A bundled
+Witness Key ID on the shared import review screen before importing. A bundled
 endpoint is informational and does not change client configuration.
 
 The `sentry enrollment` commands use the combined

@@ -321,6 +321,27 @@ func TestPrepareSentryImportReviewSeparatesCombinedBundleEffects(t *testing.T) {
 	}
 }
 
+func TestPrepareSentryImportReviewDefaultsNameFromWitnessID(t *testing.T) {
+	reference := testTUIEnrollmentReference(t)
+	data, err := enrollment.MarshalWitness(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "---.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := Model{sentry: sentryState{importPath: path}}
+	m = m.prepareSentryImportReview()
+	if m.viewState != ViewSentryImportReview {
+		t.Fatalf("view state = %v, error = %q", m.viewState, m.sentry.importError)
+	}
+	if want := suggestedSentryReferenceName(reference.WitnessKeyID); m.sentry.importName != want {
+		t.Fatalf("default import name = %q, want %q", m.sentry.importName, want)
+	}
+}
+
 func testTUIEnrollmentReference(t *testing.T) witness.PublicReference {
 	t.Helper()
 	publicKey := bytes.Repeat([]byte{0x36}, witness.Falcon1024PublicKeySize)

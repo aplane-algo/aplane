@@ -320,7 +320,7 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 		if signerPort == 0 {
 			signerPort = config.DefaultRESTPort
 		}
-		r.printf("  signer REST port through SSH: %d\n", signerPort)
+		r.printf("  Sentry API port through SSH: %d\n", signerPort)
 	}
 	r.printf("  Witness Key ID: %s\n", witness.GroupedID(plan.Witness.WitnessKeyID))
 	if plan.Created {
@@ -334,7 +334,7 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 				if previousPort == 0 {
 					previousPort = config.DefaultRESTPort
 				}
-				r.printf("  previous signer REST port: %d\n", previousPort)
+				r.printf("  previous Sentry API port: %d\n", previousPort)
 			}
 		}
 	} else {

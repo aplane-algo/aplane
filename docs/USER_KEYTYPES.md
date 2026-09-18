@@ -180,7 +180,7 @@ apadmin -d "$SIGNER_DATA" sentry enrollment import lab-sentry.aplane-sentry.json
 ```
 
 The Sentries manager also offers `p: Paste JSON`: paste either public document
-using your terminal's paste shortcut, enter a reference name, and review the
+using your terminal's paste shortcut, review or edit the proposed reference name, and compare the
 full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
 validation and signer-reference import as file import.
 
