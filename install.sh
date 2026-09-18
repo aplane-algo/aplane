@@ -1006,6 +1006,55 @@ if [ ! -d "$BIN_SRC" ]; then
     exit 1
 fi
 
+prepare_release_metadata() {
+    local binary output version commit built_at metadata_version
+    RELEASE_METADATA_JSON=""
+    if [ -f "$RELEASE_METADATA_SRC" ]; then
+        metadata_version="$(release_metadata_version "$RELEASE_METADATA_SRC")"
+        if ! normalize_release_version "$metadata_version" >/dev/null; then
+            echo "Error: invalid release version in $RELEASE_METADATA_SRC." >&2
+            return 1
+        fi
+        RELEASE_METADATA_JSON="$(cat "$RELEASE_METADATA_SRC")"
+        return 0
+    fi
+
+    if [ ! -e "$SCRIPT_DIR/.git" ]; then
+        echo "Error: release.json is missing from this release bundle; use a complete release archive." >&2
+        return 1
+    fi
+
+    # Read the binaries being installed, not HEAD: a checkout may have changed
+    # since its binaries were built. Client-only installs need only apshell.
+    local binaries="apshell" expected_version="" expected_commit=""
+    if [ "$CLIENT_MODE" != "1" ]; then
+        binaries="apsigner apshell"
+    fi
+    local pattern='^[a-z]+ (v?[0-9]+\.[0-9]+\.[0-9]+[-+a-zA-Z0-9.]*) \(commit: ([0-9a-f]+), built: ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z), [a-z0-9]+/[a-z0-9]+\)$'
+    for binary in $binaries; do
+        if ! output="$("$BIN_SRC/$binary" -version)" || [[ ! "$output" =~ $pattern ]]; then
+            echo "Error: cannot read release metadata from $BIN_SRC/$binary; rebuild with make before installing." >&2
+            return 1
+        fi
+        version="${BASH_REMATCH[1]}"
+        commit="${BASH_REMATCH[2]}"
+        built_at="${BASH_REMATCH[3]}"
+        if [ -n "$expected_version" ]; then
+            if [ "$version" != "$expected_version" ] || [ "$commit" != "$expected_commit" ]; then
+                echo "Error: apsigner and apshell have different builds; rebuild both before installing." >&2
+                return 1
+            fi
+        else
+            expected_version="$version"
+            expected_commit="$commit"
+            RELEASE_METADATA_JSON="$(printf '{\n  "schema_version": 1,\n  "version": "%s",\n  "commit": "%s",\n  "built_at": "%s"\n}\n' "$version" "$commit" "$built_at")"
+        fi
+    done
+}
+
+# Fail before prompting or modifying an installation, including with --force.
+prepare_release_metadata
+
 install_release_metadata() {
     local install_dir="$1"
     local owner="${2:-}"
@@ -1014,10 +1063,13 @@ install_release_metadata() {
     local file_mode="${5:-644}"
     local dest="$install_dir/release.json"
 
-    [ -f "$RELEASE_METADATA_SRC" ] || return 0
+    if [ -z "${RELEASE_METADATA_JSON:-}" ]; then
+        echo "Error: release metadata was not prepared." >&2
+        return 1
+    fi
 
     mkdir -p "$install_dir"
-    cp "$RELEASE_METADATA_SRC" "$dest"
+    printf '%s\n' "$RELEASE_METADATA_JSON" > "$dest"
     chmod "$dir_mode" "$install_dir"
     chmod "$file_mode" "$dest"
     if [ -n "$owner" ] && [ -n "$group" ]; then

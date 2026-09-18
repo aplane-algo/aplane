@@ -362,6 +362,17 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 ## Upgrade Compatibility
 
+Direct installs from a Git checkout record release metadata from the built
+`apsigner` and `apshell` binaries (`apshell` alone for `--client`). Build them
+with `make` first; missing build stamps or mismatched signer/client versions
+stop installation before the target is changed. Release archives must include
+their supplied `release.json`. Every successful install writes
+`install/release.json` for subsequent upgrade checks.
+
+An existing checkout install that lacks this file still requires a one-time
+`./install.sh --force <install-root>` after verifying its compatibility. That
+installation writes the metadata so later upgrades can use the normal check.
+
 This release supports in-place upgrades only when the existing install meets
 the installer's minimum supported version. If the existing install is below the floor, or
 if the installer cannot read `install/release.json`, install into a fresh root
