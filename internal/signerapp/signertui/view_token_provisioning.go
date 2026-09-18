@@ -19,7 +19,7 @@ func (m Model) renderTokenProvisioningPopup() string {
 	}
 
 	rows := []string{
-		"Client Enrollment Request",
+		"Client Access Request",
 		fmt.Sprintf("SSH Key:     %s", m.tokenApproval.request.SSHFingerprint),
 		fmt.Sprintf("Remote Addr: %s", m.tokenApproval.request.RemoteAddr),
 	}

@@ -416,7 +416,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	mustRegister(registry, &command.Command{
 		Name:        "sentry",
 		Usage:       sentrySetupUsage,
-		Description: "Configure sentry access from public enrollment JSON and verify its witness",
+		Description: "Configure sentry access from public sentry key JSON and verify its witness",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdSentry),
 	})

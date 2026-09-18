@@ -29,7 +29,7 @@ func TestSentryJSONTerminalDisplayPreservesEntireDocument(t *testing.T) {
 	if err := display.Run(); err != nil {
 		t.Fatal(err)
 	}
-	prefix := "\nSentry enrollment JSON — select the document below to copy:\n\n"
+	prefix := "\nSentry key JSON — select the document below to copy:\n\n"
 	suffix := "\n\nPress Enter to return to the export screen.\n"
 	copied := strings.TrimSuffix(strings.TrimPrefix(output.String(), prefix), suffix)
 	if copied != string(document) {

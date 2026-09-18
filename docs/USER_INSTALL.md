@@ -224,35 +224,33 @@ For a sentry node:
 5. Approve the request in the sentry admin pane
 
 `request-token` creates the client SSH key if it is missing, then waits for an
-operator to approve enrollment in `apadmin` or `apapprover`.
+operator to approve client access in `apadmin` or `apapprover`.
 After approval, the shell saves the token for the selected endpoint and
 immediately attempts to connect only when that endpoint is the default signer.
-Sentry enrollment leaves the primary signer connection unchanged.
+Sentry access provisioning leaves the primary signer connection unchanged.
 
-### Enroll a sentry for guarded accounts
+### Configure a sentry for guarded accounts
 
 Witness trust, endpoint routing, and transport credentials are deliberately
 separate. Complete them in this order:
 
-1. On the sentry node, generate an `aplane.witness-falcon1024.v1` key and use
-   `Export enrollment` from its success or key-details screen. Include the
+1. On the sentry node, generate an `aplane.witness-falcon1024.v1` key and choose
+   **Export Sentry Key** from its success or key-details screen. Include the
    advertised endpoint when one is available.
-2. On the primary signer, press `e` in `apadmin`, import the public enrollment
-   file under a friendly alias, and compare every group of the full Witness Key
+2. On the primary signer, press `e` in `apadmin`, choose **Import Sentry Key**,
+   import the public file under a reference name, and compare every group of the full Witness Key
    ID with the value shown on the sentry.
-3. If the file contains an endpoint, optionally stage it under an editable
-   client-local alias in the same review. This does not install a token or trust
-   an SSH host key.
-4. In `apshell`, run `request-token --endpoint <alias>` and approve the Client
-   Enrollment Request in `apadmin` on the sentry node.
-5. In primary-signer `apadmin`, open the enrolled reference and press `v`.
-   Continue only when the read-only check reports one unique live route.
-6. Generate the compatible guarded account. Do not fund it or rekey another
-   account to it until the full-ID comparison and live-route check succeed.
+3. In `apshell`, run `sentry add <sentry-key-json> --alias <alias>`. Review the
+   endpoint and complete Witness Key ID.
+4. Approve the **Client Access Request** in `apadmin` on the sentry node. Apshell
+   saves the token and verifies that the endpoint advertises the expected key.
+5. Generate the compatible guarded account. Do not fund it or rekey another
+   account to it until the full-ID comparison and client verification succeed.
 
-The enrollment artifact is public JSON, not a key or credential. If endpoint
-staging fails after reference import, fix the client-data problem and import
-the same file again; the reference import is idempotent and is not rolled back.
+The sentry key file contains the public key and may contain public endpoint
+metadata. It never contains the private sentry key, an access token, or SSH host
+trust. Signer import and client setup are independent and may safely reuse the
+same file.
 
 ### Multiple local instances
 

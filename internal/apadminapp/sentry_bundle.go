@@ -153,7 +153,7 @@ func (c Catalog) exportSentryEnrollment(options sentryEnrollmentExportOptions) e
 		return err
 	}
 	if !result.Success {
-		return resultError("sentry enrollment export failed", result.Code, result.Error)
+		return resultError("sentry key export failed", result.Code, result.Error)
 	}
 	reference, err := witness.ParsePublicReference([]byte(result.EnvelopeJSON))
 	if err != nil {
@@ -186,7 +186,7 @@ func (c Catalog) exportSentryEnrollment(options sentryEnrollmentExportOptions) e
 	if err := WriteSentryPublicEnvelope(options.OutPath, data); err != nil {
 		return err
 	}
-	c.info("sentry enrollment envelope written: %s", options.OutPath)
+	c.info("sentry key written: %s", options.OutPath)
 	return nil
 }
 
@@ -226,7 +226,7 @@ func (c Catalog) importSentryEnrollment(options sentryEnrollmentImportOptions) e
 		return err
 	}
 	if !importResult.Success {
-		return resultError("sentry enrollment reference import failed", importResult.Code, importResult.Error)
+		return resultError("sentry key import failed", importResult.Code, importResult.Error)
 	}
 	result.ReferenceImport.Status = "imported"
 	if importResult.Reference.Name != "" {

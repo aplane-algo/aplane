@@ -194,13 +194,13 @@ func readBoundedSentrySetupFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read sentry JSON %s: %w", path, err)
 	}
 	if len(data) > enrollment.MaxEnvelopeBytes {
-		return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+		return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 	}
 	return data, nil
 }
 
 func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
-	r.println("Paste sentry enrollment JSON. The command continues when one complete document is received; Ctrl+C cancels.")
+	r.println("Paste sentry key JSON. The command continues when one complete document is received; Ctrl+C cancels.")
 	var document strings.Builder
 	var boundary jsonDocumentBoundary
 	blankLines := 0
@@ -221,11 +221,11 @@ func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
 		}
 		if boundary.complete {
 			if tooLarge {
-				return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+				return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 			}
 			data := []byte(document.String())
 			if _, parseErr := enrollment.ParseArtifact(data); parseErr != nil {
-				return nil, fmt.Errorf("invalid sentry enrollment JSON: %w", parseErr)
+				return nil, fmt.Errorf("invalid sentry key JSON: %w", parseErr)
 			}
 			return data, nil
 		}
@@ -236,9 +236,9 @@ func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
 		}
 		if blankLines >= 2 {
 			if tooLarge {
-				return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+				return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 			}
-			return nil, fmt.Errorf("invalid sentry enrollment JSON")
+			return nil, fmt.Errorf("invalid sentry key JSON")
 		}
 	}
 }

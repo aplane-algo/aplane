@@ -309,7 +309,7 @@ func TestPrepareSentryImportReviewSeparatesCombinedBundleEffects(t *testing.T) {
 	}
 	rendered := stripANSI(m.renderSentryImportReview())
 	for _, expected := range []string{
-		"Signer effect: enroll verifier as lab",
+		"Store this public sentry key as lab",
 		"Configure the transaction client separately in apshell.",
 	} {
 		if !strings.Contains(rendered, expected) {

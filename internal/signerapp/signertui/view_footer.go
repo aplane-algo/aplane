@@ -21,7 +21,7 @@ func (m Model) viewFooterText() string {
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
 		if m.isSentryNode() && witness.IsKeyType(m.details.keyType) {
-			parts = append(parts, "e=export enrollment")
+			parts = append(parts, "e=export sentry key")
 		}
 		if m.details.teal != "" {
 			parts = append(parts, "t=TEAL", "s=save")
@@ -40,7 +40,7 @@ func (m Model) viewFooterText() string {
 		return "Tab: Next | Enter: Create backup | Esc: Back"
 	case ViewGenerateDisplay:
 		if m.isSentryNode() && witness.IsKeyType(m.forms.generatedKeyType) {
-			return "e: Export enrollment | Enter/Esc: Back"
+			return "e: Export sentry key | Enter/Esc: Back"
 		}
 		return "Enter/Esc: Back"
 	case ViewBackupDisplay, ViewImportDisplay:

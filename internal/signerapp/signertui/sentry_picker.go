@@ -190,7 +190,7 @@ func (m Model) prepareSentryImportReview() Model {
 	}
 	artifact, err := enrollment.ParseArtifact(data)
 	if err != nil {
-		m.sentry.importError = fmt.Sprintf("invalid sentry enrollment artifact: %v", err)
+		m.sentry.importError = fmt.Sprintf("invalid sentry key file: %v", err)
 		return m
 	}
 	reference := artifact.Witness
@@ -476,7 +476,7 @@ func (m Model) renderSentryPicker() string {
 
 func (m Model) renderSentryImportForm() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Enroll Sentry"))
+	body.WriteString(titleStyle.Render("Import Sentry Key"))
 	body.WriteString("\n\n")
 	if m.sentry.importPaste {
 		body.WriteString(subtitleStyle.Render("Paste the public JSON exported by the sentry node (up to 64 KiB)."))
@@ -494,7 +494,7 @@ func (m Model) renderSentryImportForm() string {
 		nameStyle = inputActiveStyle
 	}
 	if m.sentry.importPaste {
-		body.WriteString("Public enrollment JSON:\n")
+		body.WriteString("Sentry key JSON:\n")
 		preview := "Paste JSON here"
 		if m.sentry.importJSON != "" {
 			preview = fmt.Sprintf("%d bytes captured; paste again to replace", len(m.sentry.importJSON))
@@ -505,12 +505,12 @@ func (m Model) renderSentryImportForm() string {
 		body.WriteString("Public envelope path:\n")
 		body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.sentry.importPath))
 	}
-	body.WriteString("\n\nSuggested name:\n")
+	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.sentry.importName))
 	body.WriteString("\n\n")
-	button := buttonInactiveStyle.Render("REVIEW ENROLLMENT")
+	button := buttonInactiveStyle.Render("REVIEW SENTRY KEY")
 	if m.sentry.importFocus == 2 {
-		button = buttonActiveStyle.Render("REVIEW ENROLLMENT")
+		button = buttonActiveStyle.Render("REVIEW SENTRY KEY")
 	}
 	body.WriteString(button)
 	body.WriteString("\n")
@@ -524,9 +524,9 @@ func (m Model) renderSentryImportForm() string {
 
 func (m Model) renderSentryImportReview() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Review Sentry Enrollment"))
+	body.WriteString(titleStyle.Render("Review Sentry Key"))
 	body.WriteString("\n\n")
-	body.WriteString("Signer effect: enroll verifier as " + m.sentry.importName + "\n")
+	body.WriteString("Store this public sentry key as " + m.sentry.importName + "\n")
 	body.WriteString("Key type: " + m.sentry.previewKeyType + "\n\n")
 	body.WriteString("Witness Key ID (compare the complete value):\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.sentry.previewWitnessID), m.popupBodyWidth(90)))
@@ -535,10 +535,10 @@ func (m Model) renderSentryImportReview() string {
 		body.WriteString("Bundle contains endpoint metadata. Configure the transaction client separately in apshell.\n")
 	}
 	body.WriteString("\n")
-	button := buttonActiveStyle.Render("ENROLL")
+	button := buttonActiveStyle.Render("IMPORT")
 	body.WriteString(button)
 	body.WriteString("\n")
-	body.WriteString(warningStyle.Render("Compare the complete Witness Key ID before enrolling."))
+	body.WriteString(warningStyle.Render("Compare the complete Witness Key ID before importing."))
 	if m.sentry.importError != "" {
 		body.WriteString("\n\n")
 		body.WriteString(errorStyle.Render(m.sentry.importError))
@@ -548,5 +548,5 @@ func (m Model) renderSentryImportReview() string {
 }
 
 func (m Model) renderSentryImporting() string {
-	return m.renderPopup(60, titleStyle.Render("Enrolling Sentry")+"\n\n"+subtitleStyle.Render("Please wait...")+"\n")
+	return m.renderPopup(60, titleStyle.Render("Importing Sentry Key")+"\n\n"+subtitleStyle.Render("Please wait...")+"\n")
 }

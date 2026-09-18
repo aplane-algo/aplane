@@ -677,7 +677,7 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ### sentry add
 
-Configure client access to a sentry from its public enrollment JSON, obtain a
+Configure client access to a sentry from its public sentry key JSON, obtain a
 token when needed, and verify the exact witness advertised by that endpoint.
 
 ```text
@@ -828,13 +828,13 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Sentries`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible guarded or bounded-sentry account without exposing a raw Falcon
-public-key input. On a sentry node, `Export enrollment` offers the configured
+public-key input. On a sentry node, **Export Sentry Key** offers the configured
 advertised endpoint as an explicit public-metadata option. A combined bundle
 review on the signer imports only the public reference. Any endpoint metadata
 is ignored by apadmin; use `sentry add` in apshell to consume it as
 client-owned routing metadata.
 
-On a sentry node, open a witness key and choose `e: Export enrollment`, then
+On a sentry node, open a witness key and choose `e: Export sentry key`, then
 select **SHOW JSON** for full JSON in the terminal: the console temporarily
 suspends and prints the complete document without inserting line breaks into
 long values. Select the JSON using the terminal's normal copy controls and
@@ -856,7 +856,7 @@ public witness reference. An explicit URL/host includes a portable endpoint;
 includes a token, host trust, client-local alias, policy, or private witness
 material.
 
-Import accepts either a combined enrollment file or the standalone public
+Import accepts either a combined sentry key file or the standalone public
 witness file. `--name` chooses the signer-local reference alias. `--dry-run`
 validates the complete document and previews the reference import without
 changing the signer.
@@ -875,8 +875,8 @@ sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
 ```
 
 If the exported document omitted an endpoint, add
-`--endpoint ssh://sentry.example:1127 --sentry-port 11270`. Approve any Client
-Enrollment Request in apadmin on the sentry node. The command verifies the
+`--endpoint ssh://sentry.example:1127 --sentry-port 11270`. Approve any **Client
+Access Request** in apadmin on the sentry node. The command verifies the
 expected witness before it succeeds. `endpoints discover-sentries` remains
 available as a read-only diagnostic across every configured sentry route.
 apadmin does not configure or verify client routes.

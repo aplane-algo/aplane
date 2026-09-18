@@ -154,10 +154,10 @@ library instead:
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
 ```
 
-Before generating a guarded or bounded-sentry account, export the public
-witness envelope from the sentry and enroll it under an alias on the primary
-signer. In signer-side `apadmin`, press `e` for **Sentries**, import the public
-envelope, and compare the complete Witness Key ID. `Generate account` then
+Before generating a guarded or bounded-sentry account, choose **Export Sentry
+Key** on the sentry and **Import Sentry Key** on the primary signer. In
+signer-side `apadmin`, press `e` for **Sentries**, import the public file, and
+compare the complete Witness Key ID. `Generate account` then
 shows only enabled account key types compatible with that witness type. The UI
 submits the stable Witness Key ID and the signer resolves it to the full public
 key; the normal workflow does not ask the operator to paste Falcon hex.
@@ -184,8 +184,8 @@ using your terminal's paste shortcut, enter a reference name, and review the
 full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
 validation and signer-reference import as file import.
 
-The bundle is a public JSON file, not a key or credential. Its endpoint is
-client routing metadata only; token enrollment and SSH host trust remain
+The sentry key file contains public information only. Its endpoint is client
+routing metadata; client access provisioning and SSH host trust remain
 separate explicit steps in apshell. apadmin imports only the public reference.
 Use `--dry-run` to validate and preview the import without changing the signer.
 
@@ -195,8 +195,8 @@ a file. Press Enter to return to the export screen. This uses terminal
 scrollback and natural wrapping without inserting newlines into JSON values.
 File export and the batch stdout command also preserve the original JSON bytes.
 
-This public-reference enrollment is separate from client endpoint and token
-enrollment. Configure a `role: sentry` endpoint in `apshell`, run
+Importing a sentry key into the signer is separate from configuring client
+access. Configure a `role: sentry` endpoint in `apshell`, run
 `request-token --endpoint <alias>`, and approve that client request on the
 sentry before attempting guarded signing. In apshell, use
 `endpoints discover-sentries` to inspect live routes. apadmin uses local IPC

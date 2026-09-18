@@ -769,7 +769,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.clearSentryImportEnvelope()
 			m.sentry.importError = msg.Error
 			if m.sentry.importError == "" {
-				m.sentry.importError = "Sentry enrollment failed"
+				m.sentry.importError = "Sentry key import failed"
 			}
 			m.viewState = ViewSentryImportForm
 			return m, m.waitForMessageCmd()
@@ -802,13 +802,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.Success {
 			m.sentry.exportError = msg.Error
 			if m.sentry.exportError == "" {
-				m.sentry.exportError = "Sentry enrollment export failed"
+				m.sentry.exportError = "Sentry key export failed"
 			}
 			m.viewState = ViewSentryExportPath
 			return m, m.waitForMessageCmd()
 		}
 		if msg.WitnessKeyID != m.sentry.exportWitnessID || msg.EnvelopeJSON == "" {
-			m.sentry.exportError = "Signer returned inconsistent sentry enrollment metadata"
+			m.sentry.exportError = "Signer returned inconsistent sentry key metadata"
 			m.viewState = ViewSentryExportPath
 			return m, m.waitForMessageCmd()
 		}
@@ -818,7 +818,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sentry.exportIncludeEndpoint,
 		)
 		if err != nil {
-			m.sentry.exportError = "Cannot compose sentry enrollment JSON: " + err.Error()
+			m.sentry.exportError = "Cannot compose sentry key JSON: " + err.Error()
 			m.viewState = ViewSentryExportPath
 			return m, m.waitForMessageCmd()
 		}
