@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -25,7 +26,20 @@ const (
 	ViewSigningPopup
 	ViewTokenProvisioningPopup // Token provisioning approval popup
 	ViewGenerateForm
-	ViewGenerateParams  // Parameter input modal for generic LogicSigs
+	ViewGenerateParams // Parameter input modal for generic LogicSigs
+	ViewSentryPicker   // Select an enrolled sentry reference for guarded generation
+	ViewSentryImportForm
+	ViewSentryImportReview
+	ViewSentryImporting
+	ViewSentryReferences
+	ViewSentryReferenceDetails
+	ViewSentryRemoveConfirm
+	ViewSentryRemoving
+	ViewSentryGenerateType
+	ViewSentryExportPath
+	ViewSentryExporting
+	ViewSentryExportResult
+	ViewSentryExportJSON
 	ViewGenerating      // Loading state while generating
 	ViewGenerateDisplay // Shows generated key confirmation
 	ViewImportForm
@@ -237,6 +251,56 @@ type formsState struct {
 	genericLSigPasteParam  string
 }
 
+type sentryChoice struct {
+	WitnessKeyID string
+	KeyType      string
+	PrimaryAlias string
+	Aliases      []string
+}
+
+type sentryState struct {
+	references []SentryReferenceInfo
+	loaded     bool
+	choices    []sentryChoice
+	selected   int
+	paramName  string
+	returnView ViewState
+
+	importPath       string
+	importPaste      bool
+	importJSON       string
+	importName       string
+	importFocus      int
+	importError      string
+	envelopeJSON     string
+	previewWitnessID string
+	previewKeyType   string
+	previewEndpoint  *endpointrefs.Envelope
+	requiredKeyType  string
+	pendingKeyType   string
+	pendingWitnessID string
+
+	managerSelected int
+	managerScroll   int
+	managerStatus   string
+	removeFocus     int
+
+	generateTypeIndices  []int
+	generateTypeSelected int
+	generateFromManager  bool
+
+	exportWitnessID       string
+	exportPath            string
+	exportError           string
+	exportEndpoint        *endpointrefs.Envelope
+	exportIncludeEndpoint bool
+	exportEndpointError   string
+	exportWrittenPath     string
+	exportReturnView      ViewState
+	exportFocus           int
+	exportShowJSON        bool
+}
+
 // deleteConfirmState is the key-deletion confirmation dialog.
 type deleteConfirmState struct {
 	address string
@@ -323,7 +387,7 @@ type Model struct {
 	connector       AdminConnector
 	adminClient     *IPCClient
 	transportLabel  string
-	dataDir         string // operator-owned APCLIENT_DATA directory; never APSIGNER_DATA in multi-UID mode
+	dataDir         string // operator-selected export directory; empty uses the working directory
 
 	// Signer state
 	signerState       signerRuntimeState
@@ -340,6 +404,7 @@ type Model struct {
 	backup        backupState
 	restore       restoreState
 	forms         formsState
+	sentry        sentryState
 	del           deleteConfirmState
 	admin         adminPanelState
 	manualLock    manualLockState
@@ -688,4 +753,34 @@ type DeactivateKeyTypeResultMsg struct {
 type KeyTypesMsg struct {
 	KeyTypes []protocol.KeyTypeInfo
 	Error    string
+}
+
+type SentryReferencesMsg struct {
+	References []SentryReferenceInfo
+	Error      string
+}
+
+type SentryImportResultMsg struct {
+	Success   bool
+	Reference SentryReferenceInfo
+	Error     string
+}
+
+type SentryRemoveResultMsg struct {
+	Success bool
+	Name    string
+	Removed bool
+	Error   string
+}
+
+type SentryExportResultMsg struct {
+	Success      bool
+	WitnessKeyID string
+	EnvelopeJSON string
+	Error        string
+}
+
+type SentryExportWrittenMsg struct {
+	Path  string
+	Error error
 }

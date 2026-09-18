@@ -30,14 +30,11 @@ func RejectRetiredEnvironment() error {
 }
 
 // ReadPassphrase reads the policy command's authentication secret. The
-// APSIGNER_PASSPHRASE automation source is deliberately local-only. An
-// explicit stdin line is accepted locally or remotely when stdin is not the
-// policy document stream.
-func ReadPassphrase(stdin io.Reader, stderr io.Writer, remote, stdinReserved bool) ([]byte, error) {
-	if !remote {
-		if value := os.Getenv(passphraseEnv); value != "" {
-			return []byte(value), nil
-		}
+// APSIGNER_PASSPHRASE automation source takes precedence. An explicit stdin
+// line is accepted when stdin is not the policy document stream.
+func ReadPassphrase(stdin io.Reader, stderr io.Writer, stdinReserved bool) ([]byte, error) {
+	if value := os.Getenv(passphraseEnv); value != "" {
+		return []byte(value), nil
 	}
 
 	if file, ok := stdin.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
@@ -61,9 +58,6 @@ func ReadPassphrase(stdin io.Reader, stderr io.Writer, remote, stdinReserved boo
 		return readTerminalPassphrase(tty, tty)
 	}
 
-	if remote {
-		return nil, fmt.Errorf("remote policy authentication requires a controlling terminal when policy YAML is read from stdin; %s is intentionally local-only; for scripted remote use, pass the policy as a file argument and pipe the passphrase on stdin", passphraseEnv)
-	}
 	return nil, fmt.Errorf("passphrase must come from %s or a controlling terminal when policy YAML is read from stdin", passphraseEnv)
 }
 

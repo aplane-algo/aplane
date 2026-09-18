@@ -5,7 +5,7 @@ This project builds several first-party commands and developer helpers:
 1. **apshell** - client shell, JavaScript runner, MCP server, and plugin host
 2. **aprekey** - external Falcon contract-admin artifact and bounded ceremony client
 3. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
-4. **apadmin** - TUI and batch admin client over local IPC or SSH, owning all general live administration plus policy rescue
+4. **apadmin** - TUI and batch admin client over local IPC, owning all general live administration plus policy rescue
 5. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
 6. **apapprover** - minimal approval-only CLI over local IPC
 7. **apstore** - stopped-daemon keystore bootstrap, verification, and rescue client
@@ -290,8 +290,8 @@ bin/apadmin
 # Or with explicit data directory
 bin/apadmin -d ~/aplane/apsigner
 
-# Remote SSH admin mode uses APCLIENT_DATA/client config and token
-bin/apadmin --remote --client-data ~/aplane/apclient
+# For remote administration, log in to the signer machine
+ssh -t user@signer 'apadmin -d /path/to/signer-data'
 ```
 
 ### apconsole (Unified Secure-Machine Console)
@@ -311,8 +311,8 @@ bin/apconsole -d ~/aplane/apsigner -client-data ~/aplane/apclient
 # Or with an install-root profile
 bin/apconsole -config ~/aplane/apconsole.yaml
 
-# Remote admin mode uses the SSH admin subsystem for the signer pane.
-bin/apconsole -remote -client-data ~/aplane/apclient
+# Run the console on the signer machine; its admin pane uses local IPC.
+ssh -t user@signer 'apconsole -d /path/to/signer-data -client-data /path/to/apclient'
 ```
 
 ### apapprover (Signing Approval)
@@ -480,7 +480,7 @@ policy-editing, or liveness-probe workflows and do not need this capability.
 
 - **apshell** does not hold signer-managed private keys; signing is delegated to `apsigner`
 - **apsigner** stores all private keys encrypted at rest
-- **apadmin** provides TUI and batch administration over IPC or SSH, including
+- **apadmin** provides TUI and batch administration over local IPC, including
   backup/restore, passphrase rotation, catalogs, online policy, and explicit
   offline policy rescue
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine

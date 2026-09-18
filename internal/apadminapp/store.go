@@ -25,7 +25,7 @@ const (
 )
 
 // Store runs daemon-owned backup, restore, and passphrase workflows. Secret
-// collection belongs to the command adapter so terminal and remote rules are
+// collection belongs to the command adapter so terminal input rules are
 // shared across command families.
 type Store struct {
 	Client        Requester

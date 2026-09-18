@@ -95,6 +95,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
 		m.clearRestorePassphrase()
+		m.clearSentryWorkflowState()
 		m.resetActivityState()
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
@@ -126,6 +127,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DisconnectedMsg:
 		m.clearRestorePassphrase()
+		m.clearSentryWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
 		m.connectionState = ConnectionDisconnected
@@ -136,6 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case localIdleDisconnectedMsg:
 		m.clearRestorePassphrase()
+		m.clearSentryWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
 		m.connectionState = ConnectionConnecting
@@ -154,7 +157,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// If signer is already unlocked, request key list
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListSentryReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		case signerRuntimeRecovery:
 			// Signing is blocked by store damage or an unresolved generation
 			// transition; open the general recovery screen.
@@ -183,7 +186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListSentryReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		} else {
 			m.auth.passphraseError = msg.Error
 			if isSeriousUnlockError(msg.Code, msg.Error) {
@@ -253,6 +256,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ErrorMsg:
+		if m.viewState == ViewSentryImporting {
+			m.sentry.importError = msg.Error.Error()
+			m.viewState = ViewSentryImportReview
+			return m, m.waitForMessageCmd()
+		}
+		if m.viewState == ViewSentryRemoving {
+			m.sentry.importError = msg.Error.Error()
+			m.viewState = ViewSentryRemoveConfirm
+			return m, m.waitForMessageCmd()
+		}
+		if m.viewState == ViewSentryExporting {
+			m.sentry.exportError = msg.Error.Error()
+			m.viewState = ViewSentryExportPath
+			return m, m.waitForMessageCmd()
+		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
 			m.restore.previewing = false
@@ -281,6 +299,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ReconnectingMsg:
 		m.clearRestorePassphrase()
+		m.clearSentryWorkflowState()
 		m.resetActivityState()
 		m.connectionState = ConnectionConnecting
 		// Continue listening for messages
@@ -289,6 +308,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case GenerateResultMsg:
 		if msg.Success {
 			m.lastError = ""
+			m.sentry.generateFromManager = false
 			m.forms.generatedAddress = msg.Address
 			m.forms.generatedKeyType = msg.KeyType
 			m.viewState = ViewGenerateDisplay
@@ -693,8 +713,148 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.forms.importKeyType < 0 {
 				m.forms.importKeyType = 0
 			}
+			resumeEnrollment := false
+			for _, info := range msg.KeyTypes {
+				if info.KeyType != m.sentry.pendingKeyType {
+					continue
+				}
+				for _, param := range info.CreationParams {
+					if param.Name == "sentry" {
+						resumeEnrollment = true
+						break
+					}
+				}
+				break
+			}
+			if m.sentry.pendingWitnessID != "" && m.sentry.pendingKeyType != "" && resumeEnrollment {
+				oldParams := m.forms.genericLSigParams
+				m = m.initGenericLSigParamsForKeyType(m.sentry.pendingKeyType)
+				for name, value := range oldParams {
+					if _, ok := m.forms.genericLSigParams[name]; ok {
+						m.forms.genericLSigParams[name] = value
+					}
+				}
+				if _, ok := m.forms.genericLSigParams["sentry"]; ok {
+					m.forms.genericLSigParams["sentry"] = m.sentry.pendingWitnessID
+					for index, name := range m.forms.genericLSigParamOrder {
+						if name == "sentry" {
+							m.forms.generateFocus = index
+							break
+						}
+					}
+				}
+				m.sentry.pendingKeyType = ""
+				m.sentry.pendingWitnessID = ""
+				m.sentry.requiredKeyType = ""
+			}
 		}
 		return m, m.waitForMessageCmd()
+
+	case SentryReferencesMsg:
+		m.sentry.loaded = true
+		if msg.Error != "" {
+			m.lastError = msg.Error
+		} else {
+			m.sentry.references = append([]SentryReferenceInfo(nil), msg.References...)
+			m.clampSentryManagerScroll(len(msg.References))
+			if m.viewState == ViewSentryReferences && m.sentry.managerStatus == "Refreshing..." {
+				m.sentry.managerStatus = ""
+			}
+		}
+		return m, m.waitForMessageCmd()
+
+	case SentryImportResultMsg:
+		if !msg.Success {
+			m.clearSentryImportEnvelope()
+			m.sentry.importError = msg.Error
+			if m.sentry.importError == "" {
+				m.sentry.importError = "Sentry enrollment failed"
+			}
+			m.viewState = ViewSentryImportForm
+			return m, m.waitForMessageCmd()
+		}
+		return m.completeSentryImport(msg.Reference)
+
+	case SentryRemoveResultMsg:
+		if !msg.Success {
+			m.sentry.importError = msg.Error
+			if m.sentry.importError == "" {
+				m.sentry.importError = "Sentry reference removal failed"
+			}
+			m.viewState = ViewSentryRemoveConfirm
+			return m, m.waitForMessageCmd()
+		}
+		m.sentry.importError = ""
+		if msg.Removed {
+			m.sentry.managerStatus = "Removed " + msg.Name
+		} else {
+			m.sentry.managerStatus = msg.Name + " was already absent"
+		}
+		m.viewState = ViewSentryReferences
+		return m, tea.Batch(
+			m.waitForMessageCmd(),
+			m.sendListSentryReferencesCmd(),
+			m.sendListKeyTypesCmd(),
+		)
+
+	case SentryExportResultMsg:
+		if !msg.Success {
+			m.sentry.exportError = msg.Error
+			if m.sentry.exportError == "" {
+				m.sentry.exportError = "Sentry enrollment export failed"
+			}
+			m.viewState = ViewSentryExportPath
+			return m, m.waitForMessageCmd()
+		}
+		if msg.WitnessKeyID != m.sentry.exportWitnessID || msg.EnvelopeJSON == "" {
+			m.sentry.exportError = "Signer returned inconsistent sentry enrollment metadata"
+			m.viewState = ViewSentryExportPath
+			return m, m.waitForMessageCmd()
+		}
+		artifactJSON, err := composeSentryExportArtifact(
+			msg.EnvelopeJSON,
+			m.sentry.exportEndpoint,
+			m.sentry.exportIncludeEndpoint,
+		)
+		if err != nil {
+			m.sentry.exportError = "Cannot compose sentry enrollment JSON: " + err.Error()
+			m.viewState = ViewSentryExportPath
+			return m, m.waitForMessageCmd()
+		}
+		if m.sentry.exportShowJSON {
+			m.sentry.exportError = ""
+			m.viewState = ViewSentryExportJSON
+			return m, tea.Exec(&sentryJSONTerminalDisplay{document: artifactJSON}, func(err error) tea.Msg {
+				return sentryJSONTerminalClosedMsg{err: err}
+			})
+		}
+		return m, tea.Batch(
+			m.waitForMessageCmd(),
+			writeSentryPublicEnvelopeCmd(m.sentry.exportPath, artifactJSON),
+		)
+
+	case sentryJSONTerminalClosedMsg:
+		if m.viewState != ViewSentryExportJSON {
+			return m, nil
+		}
+		m.sentry.exportShowJSON = false
+		m.viewState = ViewSentryExportPath
+		if msg.err != nil {
+			m.sentry.exportError = fmt.Sprintf("Cannot display JSON in terminal: %v", msg.err)
+		}
+		return m, m.waitForMessageCmd()
+
+	case SentryExportWrittenMsg:
+		if msg.Error != nil {
+			m.sentry.exportError = msg.Error.Error()
+			m.viewState = ViewSentryExportPath
+			return m, nil
+		}
+		m.sentry.exportError = ""
+		m.sentry.exportWrittenPath = msg.Path
+		m.viewState = ViewSentryExportResult
+		return m, nil
+
 	}
 
 	if m.viewState == ViewPolicyEditor && m.policyEd.editor != nil {
@@ -706,7 +866,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input based on current view
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
+	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewSentryImporting || m.viewState == ViewSentryRemoving || m.viewState == ViewSentryExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
 		return m, tea.Quit
 	}
 	if m.usesSharedPopupViewport() {
@@ -774,6 +934,24 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleGenerateFormKeys(msg)
 	case ViewGenerateParams:
 		return m.handleGenerateParamsKeys(msg)
+	case ViewSentryPicker:
+		return m.handleSentryPickerKeys(msg)
+	case ViewSentryImportForm:
+		return m.handleSentryImportFormKeys(msg)
+	case ViewSentryImportReview:
+		return m.handleSentryImportReviewKeys(msg)
+	case ViewSentryReferences:
+		return m.handleSentryReferencesKeys(msg)
+	case ViewSentryReferenceDetails:
+		return m.handleSentryReferenceDetailsKeys(msg)
+	case ViewSentryRemoveConfirm:
+		return m.handleSentryRemoveConfirmKeys(msg)
+	case ViewSentryGenerateType:
+		return m.handleSentryGenerateTypeKeys(msg)
+	case ViewSentryExportPath:
+		return m.handleSentryExportPathKeys(msg)
+	case ViewSentryExportResult:
+		return m.handleSentryExportResultKeys(msg)
 	case ViewImportParams:
 		return m.handleImportParamsKeys(msg)
 	case ViewDeleteConfirm:
@@ -798,7 +976,7 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTemplateInstallConfirmKeys(msg)
 	case ViewLibraryTemplateDetails:
 		return m.handleLibraryTemplateDetailsKeys(msg)
-	case ViewGenerating, ViewImporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
+	case ViewGenerating, ViewImporting, ViewSentryImporting, ViewSentryRemoving, ViewSentryExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
 		if msg.String() == "esc" {
 			m.lastError = "Operation in progress; wait for completion or press q to quit"
 		}
@@ -815,6 +993,17 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewTokenProvisioningPopup,
 		ViewGenerateForm,
 		ViewGenerateParams,
+		ViewSentryPicker,
+		ViewSentryImportForm,
+		ViewSentryImportReview,
+		ViewSentryImporting,
+		ViewSentryReferenceDetails,
+		ViewSentryRemoveConfirm,
+		ViewSentryRemoving,
+		ViewSentryGenerateType,
+		ViewSentryExportPath,
+		ViewSentryExporting,
+		ViewSentryExportResult,
 		ViewGenerating,
 		ViewGenerateDisplay,
 		ViewImportForm,

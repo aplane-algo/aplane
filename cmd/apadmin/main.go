@@ -7,7 +7,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -16,24 +15,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
-	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	tea "github.com/charmbracelet/bubbletea"
-)
-
-// Command line flags (defined after config load in main)
-var (
-	remoteMode *bool
 )
 
 func main() {
@@ -61,10 +53,8 @@ func main() {
 
 	// Define flags
 	dataDir := flag.String("d", "", "Signer data directory for same-UID mode (or set APSIGNER_DATA)")
-	clientDataDir := flag.String("client-data", "", "Client data directory for remote SSH mode (or set APCLIENT_DATA)")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	initTestFlag()
-	remoteMode = flag.Bool("remote", false, "Connect to apsigner over SSH instead of local IPC")
 	flag.Parse()
 
 	positional := flag.Args()
@@ -74,29 +64,22 @@ func main() {
 		passed := make(map[string]bool)
 		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
 		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
-			dataDir:          *dataDir,
-			clientDataDir:    *clientDataDir,
-			ipcPath:          *ipcPathFlag,
-			remote:           *remoteMode,
-			clientDataPassed: passed["client-data"],
-			ipcPathPassed:    passed["ipc-path"],
+			dataDir:       *dataDir,
+			ipcPath:       *ipcPathFlag,
+			ipcPathPassed: passed["ipc-path"],
 		}, policyStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionCatalog:
-		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{
-			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
-		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionStore:
-		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{
-			dataDir: *dataDir, clientDataDir: *clientDataDir, ipcPath: *ipcPathFlag, remote: *remoteMode,
-		}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
 		if code != 0 {
 			os.Exit(code)
 		}
@@ -106,11 +89,6 @@ func main() {
 			logErrorf("unsupported production command kind %d", kind)
 			os.Exit(2)
 		}
-	}
-
-	if *remoteMode {
-		runRemoteMode(*clientDataDir)
-		return
 	}
 
 	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
@@ -174,7 +152,7 @@ func main() {
 		return
 	}
 
-	startTUI(tui.LocalIPCConnector{Path: ipcPath}, apconfig.GetClientDataDir(*clientDataDir))
+	startTUI(tui.LocalIPCConnector{Path: ipcPath})
 }
 
 func validateFlagSpelling(args []string) error {
@@ -200,17 +178,11 @@ func validateFlagSpelling(args []string) error {
 }
 
 // startTUI launches the Bubble Tea TUI application
-func startTUI(connector tui.AdminConnector, clientDataDir string) {
+func startTUI(connector tui.AdminConnector) {
 	logInfof("starting apadmin TUI")
 
-	// SSH admin connections can emit status lines from background goroutines.
-	// A Bubble Tea host owns the terminal, so suppress those raw writes while
-	// the TUI is running.
-	sshtunnel.SetStatusWriter(io.Discard)
-	defer sshtunnel.SetStatusWriter(nil)
-
 	// Create and run the TUI
-	model := tui.NewModel(connector, clientDataDir).WithStandalone()
+	model := tui.NewModel(connector, "").WithStandalone()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
@@ -219,23 +191,7 @@ func startTUI(connector tui.AdminConnector, clientDataDir string) {
 	}
 }
 
-func runRemoteMode(clientDataDirFlag string) {
-	remoteCfg, err := loadRemoteAdminConfig(clientDataDirFlag)
-	if err != nil {
-		logErrorf("%v", err)
-		os.Exit(1)
-	}
-
-	logInfof("connecting to signer via SSH admin subsystem (%s:%d)", remoteCfg.ssh.Host, remoteCfg.ssh.Port)
-	if isTestMode() {
-		runRemoteTestMode(remoteCfg, flag.Args())
-		return
-	}
-	startTUI(remoteCfg.connector, remoteCfg.dataDir)
-}
-
 // ensureProviders validates that required providers are registered.
-// Uses dynamic registry queries instead of hard-coded provider lists.
 func ensureProviders() error {
 	if len(keygen.GetRegisteredFamilies()) == 0 {
 		return fmt.Errorf("no key generators registered - check providers.go imports")

@@ -315,7 +315,7 @@ func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
 	}
 }
 
-func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
+func TestHandleKeyListKeysDoesNotDeleteFromMainScreen(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
 		keylist: keyListState{keys: []KeyInfo{{
@@ -324,14 +324,8 @@ func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
 		}}},
 	}
 
-	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	next := nextModel.(Model)
-	if next.viewState != ViewKeyList {
-		t.Fatalf("viewState = %v, want %v", next.viewState, ViewKeyList)
-	}
-
-	nextModel, _ = m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	next = nextModel.(Model)
 	if next.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewKeyList)
 	}
@@ -383,7 +377,7 @@ func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 	}
 }
 
-func TestHandleKeyDetailsSaveExplainsMissingClientData(t *testing.T) {
+func TestHandleKeyDetailsSaveValidatesAddress(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyDetails,
 		details:   keyDetailsState{address: "ADDR", keyType: "generic", teal: "int 1"},
@@ -394,9 +388,8 @@ func TestHandleKeyDetailsSaveExplainsMissingClientData(t *testing.T) {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
 	next := nextModel.(Model)
-	if !strings.Contains(next.details.saveStatus, "--client-data") ||
-		!strings.Contains(next.details.saveStatus, "APCLIENT_DATA") {
-		t.Fatalf("saveStatus = %q, want client data configuration guidance", next.details.saveStatus)
+	if !strings.Contains(next.details.saveStatus, "invalid account address") {
+		t.Fatalf("saveStatus = %q, want invalid address error", next.details.saveStatus)
 	}
 }
 

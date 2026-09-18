@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -282,6 +284,60 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
 	}
 	assertActivityStateCleared(t, got)
+}
+
+func TestConnectionBoundariesClearSentryWorkflowState(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{name: "disconnect", msg: DisconnectedMsg{}},
+		{name: "local idle disconnect", msg: localIdleDisconnectedMsg{Reason: localIdleDisconnectReason}},
+		{name: "reconnecting", msg: ReconnectingMsg{Delay: time.Second}},
+		{name: "authentication required", msg: AuthRequiredMsg{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m := activityReadyModel()
+			m.sentry = sentryState{
+				references:            []SentryReferenceInfo{{Name: "old"}},
+				loaded:                true,
+				choices:               []sentryChoice{{WitnessKeyID: "old"}},
+				paramName:             "sentry",
+				returnView:            ViewGenerateParams,
+				envelopeJSON:          "public-envelope",
+				previewEndpoint:       &endpointrefs.Envelope{URL: "ssh://sentry.example"},
+				pendingKeyType:        "guarded.v1",
+				pendingWitnessID:      "old-id",
+				managerStatus:         "old status",
+				generateTypeIndices:   []int{1},
+				generateFromManager:   true,
+				exportWitnessID:       "old-id",
+				exportPath:            "old.json",
+				exportEndpoint:        &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://old.example"},
+				exportIncludeEndpoint: true,
+				exportEndpointError:   "old endpoint error",
+				exportWrittenPath:     "old.json",
+				exportReturnView:      ViewGenerateDisplay,
+				exportShowJSON:        true,
+			}
+
+			got, _ := updateForTest(t, m, test.msg)
+			if got.sentry.loaded || len(got.sentry.references) != 0 || len(got.sentry.choices) != 0 ||
+				got.sentry.paramName != "" || got.sentry.envelopeJSON != "" ||
+				got.sentry.previewEndpoint != nil ||
+				got.sentry.pendingKeyType != "" || got.sentry.pendingWitnessID != "" ||
+				got.sentry.managerStatus != "" || len(got.sentry.generateTypeIndices) != 0 ||
+				got.sentry.generateFromManager || got.sentry.exportWitnessID != "" ||
+				got.sentry.exportPath != "" ||
+				got.sentry.exportEndpoint != nil || got.sentry.exportIncludeEndpoint ||
+				got.sentry.exportEndpointError != "" ||
+				got.sentry.exportWrittenPath != "" || got.sentry.exportReturnView != ViewKeyDetails ||
+				got.sentry.exportShowJSON {
+				t.Fatalf("sentry workflow state not cleared: %+v", got.sentry)
+			}
+		})
+	}
 }
 
 func assertActivityStateCleared(t *testing.T, m Model) {

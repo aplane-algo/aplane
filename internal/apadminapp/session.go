@@ -33,7 +33,7 @@ const (
 )
 
 // Session is the transport-neutral admin session used by batch workflows.
-// Both local IPC and strict-known-host SSH transports implement it.
+// The local IPC transport implements it.
 type Session interface {
 	Dial() error
 	Close()

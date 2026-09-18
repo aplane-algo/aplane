@@ -1,12 +1,11 @@
-# APSigner
+# apadmin
 
-APSigner is the interactive admin and approval TUI for `apsigner`. It connects
-over local IPC by default and can also connect over the SSH admin subsystem in
-remote mode.
+apadmin is the interactive admin and approval TUI for `apsigner`. It connects
+over local IPC only, independently of apshell client configuration.
 
 ## Scope
 
-APSigner is the primary interactive surface for:
+apadmin is the primary interactive surface for:
 - unlock and approval operations
 - key generation, import, and deletion
 - runtime/admin settings and online guided policy editing
@@ -22,7 +21,7 @@ Adjacent tools:
 
 ```text
 apadmin (TUI)
-    ↓ line-delimited JSON admin protocol over IPC or SSH admin transport
+    ↓ line-delimited JSON admin protocol over local IPC
 apsigner (daemon)
     ↓ product runtime, approval, key management
 signer data directory
@@ -42,13 +41,13 @@ Local IPC mode:
 ./apadmin -d /path/to/signer-data
 ```
 
-Remote SSH admin mode:
+For remote administration, log in to the signer machine:
 
 ```bash
-./apadmin --remote --client-data /path/to/apclient
+ssh -t user@signer 'apadmin -d /path/to/signer-data'
 ```
 
-Batch commands use the same local IPC or remote SSH transport as the TUI:
+Batch commands use the same local IPC transport as the TUI:
 
 ```bash
 ./apadmin policy edit
@@ -68,16 +67,13 @@ Batch commands use the same local IPC or remote SSH transport as the TUI:
 ./apadmin generations list
 ```
 
-Online policy commands use the same local IPC or `--remote` SSH transport as
-the main TUI. They authenticate and unlock before policy access. The explicit
-`policy rescue` namespace accesses a stopped signer's store directly and never
-falls back from a failed online connection. Run `apadmin policy --help` for all
-verbs and stream behavior. Remote commands ignore `APSIGNER_PASSPHRASE`; for
-headless remote apply, use `policy apply FILE` and pipe one passphrase line on
-stdin so the policy document and authentication secret use separate inputs.
+Online policy commands use the same local IPC transport as the main TUI.
+They authenticate and unlock before policy access. The explicit `policy rescue`
+namespace accesses a stopped signer's store directly and never falls back from
+a failed online connection. Run `apadmin policy --help` for verbs and stream behavior.
 
-`APSIGNER_DATA` and `APCLIENT_DATA` can be used instead of passing `-d` or
-`--client-data`.
+`APSIGNER_DATA` can be used instead of `-d`; `--ipc-path` selects a socket
+explicitly. apadmin does not use `APCLIENT_DATA`, client tokens, or endpoint files.
 
 ## TUI Features
 
@@ -99,7 +95,7 @@ stdin so the policy document and authentication secret use separate inputs.
 
 ### Signing Approvals
 When `apsigner` receives a signing request:
-1. APSigner displays the transaction details.
+1. apadmin displays the transaction details.
 2. The operator reviews and approves or rejects.
 3. The response is sent back to `apsigner`.
 
@@ -124,31 +120,9 @@ When `apsigner` receives a signing request:
 Local mode reads the signer data directory configured by `-d` or
 `APSIGNER_DATA`.
 
-Remote mode reads the client endpoint registry and token from `--client-data`
-or `APCLIENT_DATA`. The client must already be enrolled: the endpoint token file
-must exist and the signer host must already be trusted in `known_hosts`. Use
-standalone `apshell request-token` or `apshell connect` before remote `apadmin`
-when setting up a client.
-
-Example remote client endpoint registry:
-
-```yaml
-schema_version: 1
-default: primary
-endpoints:
-  primary:
-    role: signer
-    url: ssh://signer.example.com:1127
-    signer_port: 11270
-    identity_file: .ssh/id_ed25519
-    known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
-```
-
 ## Backup and Restore
 
-For live managed backup and restore operations, use `apadmin` locally or with
-`--remote`:
+For live managed backup and restore operations, use `apadmin` on the signer machine:
 
 ```bash
 ./apadmin -d /path/to/signer-data backup create all

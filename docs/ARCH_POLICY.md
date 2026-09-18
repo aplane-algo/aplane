@@ -943,7 +943,7 @@ Implementation source of truth:
   compilation, and validation.
 - `internal/policy/transfer_routing_eval.go`: direct transfer movement
   extraction and route evaluation.
-- `cmd/apadmin/policy.go`: policy command adapter and local/remote transport selection.
+- `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
 - `internal/signerapp/policyeditor`: online, store-backed rescue, and standalone
   draft stores.

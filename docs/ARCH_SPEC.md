@@ -140,7 +140,7 @@ All under `cmd/`:
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
 | `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
-| `apadmin` | TUI and batch admin client over IPC or SSH; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, sentry references, endpoint export, and generation inventory, plus explicit offline policy rescue |
+| `apadmin` | TUI and batch admin client over local IPC; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, sentry references, endpoint export, and generation inventory, plus explicit offline policy rescue |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, private-store permission audit/migration, and offline key inventory; it has no live admin transport |
@@ -455,13 +455,13 @@ minisign-signed.
 - Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires a pre-enrolled default signer endpoint, its token, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; sentry enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine local versus remote console mode and the client/signer data paths. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. In local sentry mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. In remote mode, `apconsole` preflights the client data directory and requires a default signer endpoint, its token, and a trusted signer host in the endpoint's `known_hosts` before the UI starts. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or token-provisioning client. In local sentry mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
 
 - apshell↔apsigner
-- admin protocol over IPC or SSH admin subsystem ↔ apsigner
+- apadmin over local admin IPC ↔ apsigner
 - apshell↔plugins
 - encrypted disk↔unlocked memory
 - operator Unix group↔private signer store (runtime socket connectivity only)
@@ -607,7 +607,7 @@ filename is direct sentry component policy. The default approval fallback is
 store term key and loaded into the product runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
 `internal/signerapp/policytui`. `apadmin policy` edits the active document
-through authenticated admin IPC or SSH while `apsigner` is running;
+through authenticated local admin IPC while `apsigner` is running;
 `apadmin policy rescue` edits the selected domain directly while holding the
 store mutation lock. `internal/signerapp/policycmd` owns both workflows.
 Both modes select the policy domain from the node role; store-backed
@@ -1543,6 +1543,14 @@ Primary implementation ownership:
   `test/arch/client_layering_test.go`.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
+- `internal/sentry/enrollment`: strict public composition envelope joining a
+  canonical witness reference with optional portable endpoint metadata.
+- `internal/apadminapp`: operator-side sentry enrollment composition/import
+  ordering, explicit-endpoint ID discovery, and bounded read-only unique-route
+  verification. Discovery and verification persist neither fetched inventory
+  nor a reference-to-endpoint binding.
+- `internal/clientenroll`: shared client-owned synchronous token provisioning
+  and remote preflight used by shell and admin enrollment surfaces.
 - `internal/sentry/sentryrefs`: public sentry reference catalog used by
   generation UIs.
 - `internal/policy`: shared signer/sentry policy grammar, validation, and
@@ -1777,8 +1785,10 @@ guards:
 - `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`
   against signer, sentry, client/admin, and LocalNet algod containers on one
   Docker network. It verifies local install layout, shared LocalNet
-  reachability, SSH token provisioning, client signer reachability, guarded
-  signing, and corridor allowlist enforcement across the Docker network.
+  reachability, SSH token provisioning, local IPC `apadmin` sentry
+  public-reference export and authorized import, client signer
+  reachability, guarded signing, and corridor allowlist enforcement across the
+  Docker network.
 - `make docker-local-release-test` runs the same topology and assertions using
   published GitHub APlane release assets plus the PyPI and npm SDK packages.
 
@@ -1862,7 +1872,7 @@ See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Approval and Policy Contracts) for t
 The SSH tunnel is implemented in `internal/sshtunnel`. It provides:
 
 - an SSH server embedded in `apsigner` that forwards TCP connections to the local REST API,
-- SSH clients in `apshell`, remote `apadmin`, and the external Go, Python, and
+- SSH clients in `apshell` and the external Go, Python, and
   TypeScript SDKs that establish the tunnel.
 
 Watcher, template reload, audit logging, token provisioning, token revocation, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
@@ -1971,7 +1981,7 @@ Product-level boundaries:
 |------|-------|
 | Server | `cmd/apsigner/main.go`, `internal/signerapp/daemon/server.go`, `internal/signerapp/startup/*.go` |
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
-| Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `cmd/apconsole/preflight.go`, `cmd/apadmin/remote.go` |
+| Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `internal/clientenroll/token_request.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/store.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |

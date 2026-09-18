@@ -666,10 +666,11 @@ endpoints import --alias main --role signer signer.endpoint.json
 request-token
 ```
 
-The same default signer endpoint and endpoint token obtained here can also be used by remote `apadmin`:
+apadmin uses local IPC independently of apshell endpoints and tokens. For remote
+administration, log in to the signer host:
 
 ```bash
-apadmin --remote --client-data ~/aplane/apclient
+ssh -t user@signer 'apadmin -d /path/to/signer-data'
 ```
 
 ---
@@ -730,6 +731,98 @@ endpoints delete old-signer
 
 `endpoints delete` refuses to remove the signer endpoint. Sentry routing has no
 persisted key inventory to retain.
+
+---
+
+### apadmin sentry
+
+Manage public sentry witness references used by guarded-account generation:
+
+```text
+apadmin sentry export <witness-key-id> [output-json]
+apadmin sentry import <public-json|-> <name>
+apadmin sentry list
+apadmin sentry show <name>
+apadmin sentry remove <name>
+apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] --out <file>
+apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]
+```
+
+Run `export` against the sentry node. It asks the daemon to verify and return
+the canonical `aplane.witness-key-public.v1` envelope. With an output path,
+the `apadmin` process writes the public file on the machine where it runs. Without a path, the JSON is written to stdout.
+
+Run `import` against the primary signer and choose a local alias such as
+`lab-sentry`. The signer validates the key type, public key, and derived
+Witness Key ID before storing the public reference. Compare the complete
+Witness Key ID displayed by the sentry and signer before accepting it.
+
+When the source is `-`, stdin is reserved for the bounded JSON envelope:
+
+```bash
+cat lab-sentry.aplane-sentry.json | \
+  APSIGNER_PASSPHRASE="$APSIGNER_PASSPHRASE" \
+  apadmin -d "$SIGNER_DATA" sentry import - lab-sentry
+```
+
+`stdin` import obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
+controlling terminal. Headless combinations that cannot keep the document and
+passphrase separate fail before authentication.
+
+The interactive signer-side `apadmin` TUI provides the same public-reference
+catalog under `e: Sentries`. It uses aliases for navigation, shows the complete
+grouped Witness Key ID on trust screens, and can start generation of a
+compatible guarded or bounded-sentry account without exposing a raw Falcon
+public-key input. On a sentry node, `Export enrollment` offers the configured
+advertised endpoint as an explicit public-metadata option. A combined bundle
+review on the signer imports only the public reference. Any endpoint metadata
+is informational; configure routing separately in apshell.
+
+On a sentry node, open a witness key and choose `e: Export enrollment`, then
+select **SHOW JSON** for full JSON in the terminal: the console temporarily
+suspends and prints the complete document without inserting line breaks into
+long values. Select the JSON using the terminal's normal copy controls and
+scrollback, then press Enter to return to the export screen.
+File export and batch stdout also preserve the original JSON bytes.
+
+To import copied JSON, press `p: Paste JSON` in the Sentry References manager.
+Use your terminal's paste shortcut in the JSON field, then Tab to enter a
+reference name and continue to review. The field accepts a complete multiline
+public witness document or combined enrollment bundle, up to 64 KiB. Pasting
+again replaces the document; Backspace/Delete clears it. Compare the full
+Witness Key ID on the shared import review screen before enrolling. A bundled
+endpoint is informational and does not change client configuration.
+
+The `sentry enrollment` commands use the combined
+`aplane.sentry-enrollment.v1` handoff. Export always includes the verified
+public witness reference. An explicit URL/host includes a portable endpoint;
+`--include-endpoint` uses configured `endpoint.advertise_url`. It never
+includes a token, host trust, client-local alias, policy, or private witness
+material.
+
+Import accepts either a combined enrollment file or the standalone public
+witness file. `--name` chooses the signer-local reference alias. `--dry-run`
+validates the complete document and previews the reference import without
+changing the signer.
+
+```bash
+apadmin -d "$SENTRY_DATA" sentry enrollment export "$WITNESS_KEY_ID" \
+  --host sentry.example --out lab-sentry.aplane-sentry.json
+apadmin -d "$SIGNER_DATA" sentry enrollment import lab-sentry.aplane-sentry.json \
+  --name lab-sentry
+```
+
+Then configure the transaction client in apshell (use the sentry's actual SSH
+and REST ports):
+
+```text
+endpoints create --alias sentry-lab --endpoint ssh://sentry.example:1127 --sentryport 11270
+request-token --endpoint sentry-lab
+```
+
+Approve the Client Enrollment Request in apadmin on the sentry node. In apshell,
+run `endpoints discover-sentries` to inspect the live route before funding or
+rekeying to the guarded account. apadmin does not configure or verify client routes.
 
 ---
 

@@ -576,6 +576,51 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Error:    keyTypes.Error,
 				})
 
+			case MsgTypeSentryReferencesList:
+				var references SentryReferencesListMessage
+				if err := json.Unmarshal(line, &references); err != nil {
+					continue
+				}
+				c.emit(sessionID, SentryReferencesMsg{
+					References: references.References,
+					Error:      references.Error,
+				})
+
+			case MsgTypeImportSentryReferenceResult:
+				var result ImportSentryReferenceResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, SentryImportResultMsg{
+					Success:   result.Success,
+					Reference: result.Reference,
+					Error:     result.Error,
+				})
+
+			case MsgTypeRemoveSentryReferenceResult:
+				var result RemoveSentryReferenceResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, SentryRemoveResultMsg{
+					Success: result.Success,
+					Name:    result.Name,
+					Removed: result.Removed,
+					Error:   result.Error,
+				})
+
+			case MsgTypeExportSentryPublicResult:
+				var result ExportSentryPublicResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, SentryExportResultMsg{
+					Success:      result.Success,
+					WitnessKeyID: result.WitnessKeyID,
+					EnvelopeJSON: result.EnvelopeJSON,
+					Error:        result.Error,
+				})
+
 			case MsgTypeKeysChanged:
 				var keysChanged KeysChangedMessage
 				if err := json.Unmarshal(line, &keysChanged); err != nil {
@@ -1215,6 +1260,72 @@ func (c *IPCClient) SendListKeyTypes() error {
 
 func (m Model) sendListKeyTypesCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListKeyTypes() })
+}
+
+func (c *IPCClient) SendListSentryReferences() error {
+	msg := ListSentryReferencesMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeListSentryReferences,
+			ID:   fmt.Sprintf("sentry-references-%d", time.Now().UnixNano()),
+		},
+	}
+	return c.sendMessage(msg)
+}
+
+func (m Model) sendListSentryReferencesCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListSentryReferences() })
+}
+
+func (c *IPCClient) SendImportSentryReference(name, envelopeJSON string) error {
+	msg := ImportSentryReferenceMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeImportSentryReference,
+			ID:   fmt.Sprintf("sentry-import-%d", time.Now().UnixNano()),
+		},
+		Name:         name,
+		EnvelopeJSON: envelopeJSON,
+	}
+	return c.sendMessage(msg)
+}
+
+func (m Model) sendImportSentryReferenceCmd(name, envelopeJSON string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendImportSentryReference(name, envelopeJSON)
+	})
+}
+
+func (c *IPCClient) SendRemoveSentryReference(name string) error {
+	msg := RemoveSentryReferenceMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeRemoveSentryReference,
+			ID:   fmt.Sprintf("sentry-remove-%d", time.Now().UnixNano()),
+		},
+		Name: name,
+	}
+	return c.sendMessage(msg)
+}
+
+func (m Model) sendRemoveSentryReferenceCmd(name string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendRemoveSentryReference(name)
+	})
+}
+
+func (c *IPCClient) SendExportSentryPublic(witnessKeyID string) error {
+	msg := ExportSentryPublicMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeExportSentryPublic,
+			ID:   fmt.Sprintf("sentry-export-%d", time.Now().UnixNano()),
+		},
+		WitnessKeyID: witnessKeyID,
+	}
+	return c.sendMessage(msg)
+}
+
+func (m Model) sendExportSentryPublicCmd(witnessKeyID string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.SendExportSentryPublic(witnessKeyID)
+	})
 }
 
 // ReconnectCmd returns a tea.Cmd that forces a reconnection attempt

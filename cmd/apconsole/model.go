@@ -73,7 +73,7 @@ func newModel(connector tui.AdminConnector, dataDir string, shell shellExecutor,
 }
 
 func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool, initialNodeRole string) model {
-	signer := tui.NewModel(connector, dataDir).WithInitialNodeRole(initialNodeRole)
+	signer := tui.NewModel(connector, "").WithInitialNodeRole(initialNodeRole)
 	return model{
 		focus:            paneSigner,
 		shellDisabled:    !shellEnabled,

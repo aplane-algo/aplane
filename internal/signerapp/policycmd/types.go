@@ -57,7 +57,6 @@ type Command struct {
 	Target  policyeditor.Target
 	Source  string
 	DataDir string
-	Remote  bool
 }
 
 func (c Command) Validate() error {

@@ -50,11 +50,11 @@ func main() {
 	}
 
 	dataDir := flag.String("d", "", "Signer data directory (required for local mode, or set APSIGNER_DATA)")
-	clientDataDir := flag.String("client-data", "", "Client data directory for shell/remote SSH mode (or set APCLIENT_DATA)")
+	clientDataDir := flag.String("client-data", "", "Client data directory for the shell pane (or set APCLIENT_DATA)")
 	consoleConfig := flag.String("config", "", "apconsole profile path (default: auto-discover apconsole.yaml)")
 	networkLong := flag.String("network", "", "Network context token for the shell pane")
 	networkShort := flag.String("n", "", "Network context token for the shell pane")
-	remoteMode := flag.Bool("remote", false, "Connect to apsigner over SSH admin subsystem instead of local IPC")
+	remoteMode := flag.Bool("remote", false, "Removed: administration is IPC-only; SSH into the signer host instead")
 	noStartDaemon := flag.Bool("no-start-daemon", false, "Do not start apsigner when no local IPC socket exists")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
@@ -101,23 +101,6 @@ func main() {
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)
-	}
-
-	if startupCfg.Mode == consoleModeRemote {
-		remoteCfg, err := loadRemoteAdminConfig(startupCfg.ClientData)
-		if err != nil {
-			logErrorf("%v", err)
-			os.Exit(1)
-		}
-		shellSession, shellStartup := loadShellConsole(remoteCfg.dataDir, network)
-		shellStartup = append(consoleStartupNoticeLines(startupCfg.Notices), shellStartup...)
-		daemon := newDaemonModel(daemonInfo{
-			Status:  daemonStatusDisabled,
-			DataDir: remoteCfg.dataDir,
-			Detail:  "remote admin mode; daemon lifecycle is not managed by apconsole",
-		}, nil)
-		startConsole(remoteCfg.connector, remoteCfg.dataDir, "", shellSession, shellStartup, true, nil, daemon)
-		return
 	}
 
 	resolvedDataDir, err := bootstrap.ResolveDataDir(startupCfg.SignerData)
@@ -229,6 +212,7 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 	if daemonProcess != nil {
 		defer daemonProcess.Stop()
 	}
+
 	// Hand bubbletea the real terminal handle, then redirect os.Stdout and
 	// os.Stderr to /dev/null for the duration of the program. Any code path
 	// inside the embedded apshell session, plugin runtime, signer pane, etc.
@@ -276,13 +260,6 @@ func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole 
 		tea.WithInput(realStdin),
 		tea.WithOutput(realStdout),
 	)
-	if remoteConnector, ok := connector.(*tui.SSHAdminConnector); ok {
-		remoteConnector.HostKeyApproval = func(host, fingerprint string) (bool, error) {
-			resp := make(chan bool, 1)
-			p.Send(shellHostKeyApprovalMsg{host: host, fingerprint: fingerprint, response: resp})
-			return <-resp, nil
-		}
-	}
 	// Wire the shell session's SSH host key approval through the TUI. The
 	// goroutine running the shell command blocks on the response channel while
 	// bubbletea renders the prompt in the shell pane and waits for y/N.

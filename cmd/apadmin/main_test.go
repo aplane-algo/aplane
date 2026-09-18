@@ -5,13 +5,93 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
+
+func TestCatalogPassphraseKeepsEnvelopeStdinReserved(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
+	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
+	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closer != nil {
+		t.Fatal("catalogPassphrase() returned a terminal closer while using the local environment")
+	}
+	if string(secret) != "local-secret" {
+		t.Fatalf("passphrase = %q, want local environment value", secret)
+	}
+}
+
+func TestCatalogPassphraseKeepsEnrollmentBundleStdinReserved(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
+	prompt := newAdminBatchPrompt(strings.NewReader("enrollment-bundle"), io.Discard)
+	secret, closer, err := catalogPassphrase(
+		"sentry", []string{"enrollment", "import", "-", "--name", "lab"}, prompt, io.Discard,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closer != nil {
+		t.Fatal("catalogPassphrase() returned a terminal closer while using the local environment")
+	}
+	if string(secret) != "local-secret" {
+		t.Fatalf("passphrase = %q, want local environment value", secret)
+	}
+}
+
+func TestCatalogPassphraseUsesControllingTerminalForLocalStdinImport(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	tty, err := os.CreateTemp(t.TempDir(), "tty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tty.WriteString("local-terminal-secret\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tty.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	originalOpen := openControllingTerminal
+	openControllingTerminal = func() (*os.File, error) { return tty, nil }
+	t.Cleanup(func() { openControllingTerminal = originalOpen })
+
+	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
+	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closer == nil {
+		t.Fatal("catalogPassphrase() did not return the controlling terminal closer")
+	}
+	if string(secret) != "local-terminal-secret" {
+		t.Fatalf("passphrase = %q", secret)
+	}
+	_ = closer.Close()
+}
+
+func TestCatalogPassphraseRejectsHeadlessLocalStdinImport(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	originalOpen := openControllingTerminal
+	openControllingTerminal = func() (*os.File, error) { return nil, errors.New("no terminal") }
+	t.Cleanup(func() { openControllingTerminal = originalOpen })
+
+	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
+	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "APSIGNER_PASSPHRASE or a controlling terminal") {
+		t.Fatalf("error = %v", err)
+	}
+	if secret != nil || closer != nil {
+		t.Fatalf("secret=%q closer=%v, want neither", secret, closer)
+	}
+}
 
 func TestValidateFlagSpelling(t *testing.T) {
 	tests := []struct {
@@ -21,7 +101,7 @@ func TestValidateFlagSpelling(t *testing.T) {
 	}{
 		{
 			name: "long flags use double dash",
-			args: []string{"--remote", "--client-data", "/tmp/apclient", "--version", "--print-manifest"},
+			args: []string{"--ipc-path", "/tmp/aplane.sock", "--version", "--print-manifest"},
 		},
 		{
 			name: "short data dir flag remains single dash",
@@ -76,24 +156,12 @@ func TestCatalogCommandRejectsUsageBeforeCredentialOrConnection(t *testing.T) {
 func TestAdminBatchPromptUsesOneReaderForPassphraseAndConfirmation(t *testing.T) {
 	var stderr bytes.Buffer
 	prompt := newAdminBatchPrompt(strings.NewReader("secret\nyes\n"), &stderr)
-	secret, err := prompt.passphrase(true)
+	secret, err := prompt.passphrase()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(secret) != "secret" || !prompt.confirm("Proceed? ") {
 		t.Fatalf("secret=%q confirmation=false", secret)
-	}
-}
-
-func TestRemoteAdminBatchPromptIgnoresLocalEnvironment(t *testing.T) {
-	t.Setenv("APSIGNER_PASSPHRASE", "ambient-local-secret")
-	prompt := newAdminBatchPrompt(strings.NewReader("explicit-remote-secret\n"), io.Discard)
-	secret, err := prompt.passphrase(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(secret) != "explicit-remote-secret" {
-		t.Fatalf("remote passphrase = %q", secret)
 	}
 }
 

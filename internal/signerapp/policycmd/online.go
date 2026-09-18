@@ -36,7 +36,7 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 		return err
 	}
 	streams = streams.normalized()
-	passphrase, err := ReadPassphrase(streams.Stdin, streams.Stderr, command.Remote, command.Verb == VerbApply && command.Source == "-")
+	passphrase, err := ReadPassphrase(streams.Stdin, streams.Stderr, command.Verb == VerbApply && command.Source == "-")
 	if err != nil {
 		return err
 	}

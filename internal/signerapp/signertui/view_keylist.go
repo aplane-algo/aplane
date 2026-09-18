@@ -22,7 +22,8 @@ import (
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
 const (
-	keyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+	keyListHelpText       = "g: Generate | i: Import | e: Sentries | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+	sentryKeyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
 )
 
 // truncateLongHex shortens hex values longer than maxLen characters
@@ -219,6 +220,9 @@ func (m Model) activeKeyListTabLabel() string {
 }
 
 func (m Model) keyListFooterText() string {
+	if m.isSentryNode() {
+		return sentryKeyListHelpText
+	}
 	return keyListHelpText
 }
 

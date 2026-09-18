@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -149,21 +150,17 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 }
 
 func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func()) (*RequestTokenResult, error) {
-	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
-	if err != nil {
-		return nil, err
-	}
 	var progress func()
 	if len(onProvisioningStarted) > 0 {
 		progress = onProvisioningStarted[0]
 	}
 	wasConnected := a.eng.IsTunnelConnected()
-	token, err := a.eng.RequestTokenWithContext(
+	result, err := clientenroll.RequestEndpointToken(
 		ctx,
-		endpointSSH.Host,
-		endpointSSH.Port,
-		endpointSSH.IdentityFile,
-		endpointSSH.KnownHostsPath,
+		a.eng,
+		a.DataDir,
+		alias,
+		endpoint,
 		hostKeyApproval,
 		progress,
 	)
@@ -171,22 +168,13 @@ func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint c
 		return nil, err
 	}
 
-	tokenPath, err := a.tokenPathForRequest(endpointSSH.TokenFile)
-	if err != nil {
-		return nil, err
-	}
-	tokenPath, err = a.eng.SaveApshellTokenToPath(tokenPath, token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save token for endpoint %q: %w", alias, err)
-	}
-
-	result := &RequestTokenResult{
-		TokenPath:        tokenPath,
+	requestResult := &RequestTokenResult{
+		TokenPath:        result.TokenPath,
 		DisconnectedPrev: wasConnected,
-		Summary:          Summary{Message: fmt.Sprintf("Token received and saved to %s", tokenPath)},
+		Summary:          Summary{Message: fmt.Sprintf("Token received and saved to %s", result.TokenPath)},
 	}
-	result.RenderLines = []string{fmt.Sprintf("✓ %s", result.Summary.Message)}
-	return result, nil
+	requestResult.RenderLines = []string{fmt.Sprintf("✓ %s", requestResult.Summary.Message)}
+	return requestResult, nil
 }
 
 func (a *App) tokenPathForRequest(tokenPath string) (string, error) {

@@ -16,15 +16,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// saveTEALToFile saves public TEAL source below operator-owned client state,
-// never below the private signer identity directory.
+// saveTEALToFile saves public TEAL source in the selected export directory,
+// defaulting to the working directory.
 func saveTEALToFile(dataDir, address, teal string) (string, error) {
 	decoded, err := types.DecodeAddress(strings.ToUpper(strings.TrimSpace(address)))
 	if err != nil {
 		return "", fmt.Errorf("invalid account address for TEAL filename: %w", err)
 	}
 	address = decoded.String()
-	filesDir := filepath.Join(dataDir, "files")
+	filesDir := dataDir
+	if filesDir == "" {
+		filesDir = "."
+	}
 	if err := os.MkdirAll(filesDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create files directory: %w", err)
 	}
@@ -115,7 +118,12 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.forms.generateError = ""
 		m.forms.generateParamScrollOffset = 0 // Reset scroll
 		m.viewState = ViewGenerateForm
-		return m, tea.Batch(m.sendListKeyTypesCmd(), m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+		return m, tea.Batch(
+			m.sendListKeyTypesCmd(),
+			m.sendListSentryReferencesCmd(),
+			m.sendListLibraryTemplatesCmd(),
+			m.waitForMessageCmd(),
+		)
 
 	case "i":
 		// Import key
@@ -137,6 +145,9 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "l":
 		return m.openManualLockConfirm()
+
+	case "e", "E":
+		return m.openSentryReferenceManager()
 
 	case "s", "S":
 		// Open settings panel
@@ -181,14 +192,12 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "s":
 		// Save TEAL to file (only if TEAL is available)
-		if m.details.teal != "" && m.dataDir == "" {
-			m.details.saveStatus = "Save unavailable: pass --client-data or set APCLIENT_DATA"
-		} else if m.details.teal != "" {
+		if m.details.teal != "" {
 			savedPath, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
 			if err != nil {
 				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
 			} else {
-				m.details.saveStatus = fmt.Sprintf("Saved to client files/%s", filepath.Base(savedPath))
+				m.details.saveStatus = fmt.Sprintf("Saved to %s", savedPath)
 			}
 		}
 		return m, nil
@@ -199,6 +208,9 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewTEALFullDisplay
 		}
 		return m, nil
+
+	case "e":
+		return m.openSentryExport()
 
 	case "d":
 		// Delete selected key - show confirmation dialog

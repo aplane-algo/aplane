@@ -370,7 +370,7 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	if err := catalog.Run("sentry", []string{"list"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "KEY  (TYPE, name: lab-sentry)") {
+	if !strings.Contains(stdout.String(), "lab-sentry  KEY  (TYPE)") {
 		t.Fatalf("list stdout = %q", stdout.String())
 	}
 	stdout.Reset()
@@ -383,6 +383,42 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	}
 	if err := catalog.Run("sentry", []string{"remove", "lab-sentry"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCatalogImportsSentryEnvelopeFromStdin(t *testing.T) {
+	const envelope = `{"schema":"aplane.sentry-public.v1"}`
+	requester := &fakeRequester{handle: func(message, result any) error {
+		request, ok := message.(protocol.ImportSentryReferenceMessage)
+		if !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		if request.Name != "Lab" || request.EnvelopeJSON != envelope {
+			return fmt.Errorf("import = %#v", request)
+		}
+		*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{
+			Success: true,
+			Reference: protocol.SentryReferenceInfo{
+				Name: "lab", KeyType: "aplane.witness-falcon1024.v1",
+			},
+		}
+		return nil
+	}}
+	catalog := Catalog{
+		Client: requester,
+		Streams: Streams{
+			Stdin: strings.NewReader(envelope),
+		},
+	}
+	if err := catalog.Run("sentry", []string{"import", "-", "Lab"}); err != nil {
+		t.Fatalf("Catalog.Run() error = %v", err)
+	}
+}
+
+func TestReadSentryEnvelopeFromStdinRejectsOversize(t *testing.T) {
+	_, err := ReadSentryPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxSentryPublicEnvelopeBytes+1)))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("ReadSentryPublicEnvelope() error = %v, want size rejection", err)
 	}
 }
 

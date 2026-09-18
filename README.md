@@ -50,7 +50,7 @@ deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows suc
 | **apshell** | Interactive shell for building and submitting transactions (no private keys) |
 | **apconsole** | Unified TUI console combining apshell, signer admin, and local daemon status |
 | **apsigner** | Signing daemon with HTTP API, admin protocol, and SSH tunnel server |
-| **apadmin** | TUI and batch admin client over IPC or SSH, with explicit offline policy rescue |
+| **apadmin** | TUI and batch admin client over local IPC, with explicit offline policy rescue |
 | **apapprover** | Optional approval-only admin client over local IPC |
 | **apstore** | Stopped-daemon keystore bootstrap, verification, pruning, permission maintenance, and rescue |
 | **appass** | Passphrase auto-unlock setup TUI |
@@ -122,7 +122,7 @@ npm install aplanesdk
 ### Approval Workflow
 
 By default, signer-node transaction requests require explicit approval. An
-operator uses **apadmin** over local IPC or remote SSH, or **apapprover** over
+operator uses **apadmin** over local IPC, or **apapprover** over
 local IPC, to review pending requests and approve or reject them. Product policy
 can reject, force review, or narrowly auto-approve supported transaction
 patterns. See [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) for details.

@@ -154,6 +154,7 @@ func TestBoundedDerivedArgsMerkleProofRejectsNonMember(t *testing.T) {
 	}, keyMaterial, merkleDerivedMetadata(), boundedPathPureSpend)
 	if signErr == nil {
 		t.Fatal("boundedDerivedArgs() error = nil, want rejection")
+		return
 	}
 	if signErr.Kind != ErrorBadRequest {
 		t.Fatalf("error kind = %q, want %q", signErr.Kind, ErrorBadRequest)

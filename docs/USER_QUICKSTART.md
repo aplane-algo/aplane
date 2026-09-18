@@ -156,6 +156,17 @@ the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
 compiled providers and templates for the product store.
 
+To try a guarded account, first set up a separate sentry node and generate its
+`aplane.witness-falcon1024.v1` key. Export its public enrollment JSON. In the
+primary signer's apadmin, press `e` for **Sentries**, then `i` to import the file
+or `p` to paste JSON. Compare the full Witness Key ID before accepting the
+reference, then select **Generate account**.
+
+Configure a sentry endpoint separately in apshell and run
+`request-token --endpoint <alias>`. Approve the request in apadmin on the sentry.
+Use apshell's `endpoints discover-sentries` to inspect the live route before
+funding or rekeying to the guarded account.
+
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
 ## Optional: MCP for Agents

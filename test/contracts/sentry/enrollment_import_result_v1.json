@@ -1,0 +1,14 @@
+{
+  "schema": "aplane.sentry-enrollment-import-result.v1",
+  "dry_run": false,
+  "witness_key_id": "TDLABGFRRAHTNGVSCX6ALUZPBRWWAWEEXHZRCCYZ3DPSXC3Y3VEA",
+  "reference_import": {
+    "status": "imported",
+    "name": "lab-sentry"
+  },
+  "endpoint_import": {
+    "status": "applied",
+    "alias": "sentry-lab",
+    "url": "ssh://sentry.example:2223"
+  }
+}

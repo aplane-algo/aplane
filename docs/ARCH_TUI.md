@@ -2,8 +2,8 @@
 
 `apadmin` is the signer admin TUI. It is built on
 [Bubble Tea](https://github.com/charmbracelet/bubbletea) and communicates with
-`apsigner` over the admin protocol — local mode uses a Unix socket; remote
-mode opens the SSH `aplane-admin` subsystem. The TUI is a separate
+`apsigner` over the admin protocol through a local Unix socket. For remote
+administration, SSH into the signer machine and run `apadmin` there. The TUI is a separate
 admin-protocol client and does **not** route through `internal/engine` or the
 `apshell` REPL/MCP pipeline (see [ARCH_REPL.md](ARCH_REPL.md) and
 [ARCH_MCP.md](ARCH_MCP.md) for those).
@@ -58,6 +58,8 @@ identifies the current screen. The enum has families for:
 - Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
 - Approval popups (`ViewSigningPopup`, `ViewTokenProvisioningPopup`)
 - Generate / import flows (form, params, loading, display)
+- Signer-side public sentry-reference management (`ViewSentryReferences`,
+  details, import, removal confirmation, and removal progress)
 - Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
 - Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
 - Store recovery screen (`ViewStoreRecovery`): reconcile, direct credential restore, or rollback of the latest
@@ -75,6 +77,69 @@ identifies the current screen. The enum has families for:
 See `internal/signerapp/signertui/model.go` for the authoritative enum values and the
 one-line comments that document each screen's purpose. Compatibility-only
 policy view states in the enum are not active `apadmin` entry points.
+
+## Sentry Reference Manager
+
+On signer nodes, `e` from the key list opens the public sentry-reference
+manager. Rows are alias-first and show a compact Witness Key ID; the details
+screen shows the complete grouped ID, witness key type, public-key digest,
+import time, and all aliases for the same authority. It deliberately does not
+render the raw public-key hex. Imports reuse the full-ID enrollment review and
+return to the manager when they were started there. Removing a reference is an
+explicit alias-scoped mutation whose confirmation defaults to Cancel.
+
+From reference details, `Generate account` filters the signer-advertised key
+types by `sentry_component_key_type`. A sole compatible type proceeds directly
+to its parameter view with the stable Witness Key ID selected; multiple types
+use a dedicated filtered chooser. Canceling returns to the reference details
+instead of losing the manager context.
+
+The manager is role-gated and is not offered on sentry nodes. It communicates
+through the existing list/import/remove sentry-reference admin messages, so
+the signer remains responsible for authorization, lock-state enforcement,
+store serialization, and audit emission.
+
+On sentry nodes, witness-key details and the successful witness-generation
+screen offer `Export enrollment`. The sentry returns the existing public
+witness envelope over the admin protocol, while the operator-side `apadmin`
+process either writes it to the chosen local path or displays full JSON directly
+in the terminal. `SHOW JSON` releases the terminal through Bubble Tea's execution lifecycle and writes
+the complete original JSON for manual selection using terminal soft wrapping
+and scrollback. Enter restores the export screen. No clipboard commands or OSC 52
+sequences are emitted. File export or batch stdout also preserves the original
+JSON bytes. Files are written on the machine running `apadmin`. Ordinary account keys do not expose
+this action. The output path is directly editable and does not rename the
+witness credential or add an authority claim to the public envelope. Imports
+recognize the `.aplane-sentry.json` suffix and may prefill an editable alias
+from its sanitized filename stem.
+
+When the sentry advertises a portable endpoint, the export review offers an
+explicit, default-on `Include advertised endpoint` choice. The operator-side
+TUI composes the daemon-verified witness envelope and the validated endpoint
+into `aplane.sentry-enrollment.v1`; opting out or lacking an advertised
+endpoint retains the compatible witness-only file. Composition never adds a
+token, host trust, client alias, or private material.
+
+The import form also accepts a combined `aplane.sentry-enrollment.v1` bundle.
+The complete artifact is validated, and only the public witness reference is
+imported into the signer. Bundled endpoint metadata is informational; configure
+transaction-client routing separately in apshell. apadmin never reads or writes
+client endpoint registries, tokens, host trust, aliases, or caches.
+
+The manager exposes `p: Paste JSON` alongside `i: Import file`. The paste field
+captures a complete bracketed terminal paste without interpreting its contents
+as navigation keys, replacing the previous document. Input over 64 KiB clears
+the buffer and reports an error. Backspace/Delete clears the field. Both public
+witness and combined enrollment documents use the existing artifact parser and
+import review. Returning from review
+preserves the paste for correction; canceling or completing import clears it.
+
+Endpoint creation, token enrollment, and live route discovery belong to apshell.
+The reference details screen shows signer-owned metadata only.
+
+TEAL exports save to the working directory of the apadmin process. Address-list
+generation inputs require full account addresses; client aliases and sets are
+resolved only by apshell.
 
 ## Admin Panel
 
@@ -134,7 +199,7 @@ recoverable view.
 | `internal/signerapp/signertui/view.go` | Top-level View dispatch |
 | `internal/signerapp/signertui/activity.go` | Local keystroke activity reporting and idle lock timers |
 | `internal/signerapp/signertui/ipc_client.go` | IPC connection to the signer |
-| `internal/signerapp/signertui/connector.go` | SSH `aplane-admin` connector for remote mode |
+| `internal/signerapp/signertui/connector.go` | Local Unix socket admin connector |
 | `internal/signerapp/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
 | `internal/signerapp/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
 

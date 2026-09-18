@@ -65,6 +65,11 @@ installer upgrades are intentionally narrow:
 - existing install directories are supported in place only when their
   `install/release.json` reports at least the installer's minimum supported
   upgrade version,
+- installers require source release metadata before modifying an installation;
+  Git checkout installs without `release.json` derive it from the built binaries'
+  embedded version, commit, and build timestamp (matching signer/client version
+  and commit, or client alone in client-only mode). Successful installs persist
+  this metadata for future upgrade checks; unknown build stamps are rejected,
 - install directories below that floor or without release metadata require a
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
@@ -658,7 +663,6 @@ operations use the one process-owned runtime; `apadmin`, `apapprover`, and
 
 - test mode is only present in builds compiled with `-tags testmode`,
 - default builds keep the `-test` flag surface but reject it with a stub error instead of exposing the non-interactive path,
-- remote test mode uses the same build-tag gate and also rejects unknown SSH hosts instead of offering interactive trust-on-first-use.
 
 ## Configuration Contracts
 
@@ -1081,12 +1085,12 @@ Additional client-state notes:
 - systemd installs refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service before running the installer against that data directory
 - interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `No`. `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
-- `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
+- `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 2`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
 - if client `config.yaml` contains top-level `ssh:` or `signer_port:` routing, client startup fails closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, and `token_file`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 sentry endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
-- sentry keys are not persisted in endpoint records. Each guarded or bounded-sentry operation queries authenticated `/keys` on the configured sentry endpoints and builds an operation-scoped route snapshot. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, at most four workers, and deterministic endpoint-prefix selection once every required key has exactly one route.
+- sentry keys are not persisted in endpoint records. Each guarded or bounded-sentry operation queries authenticated `/keys` on every configured sentry endpoint and builds an operation-scoped route snapshot. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
 - `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
@@ -1115,10 +1119,11 @@ Additional client-state notes:
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
 - local-mode sentry `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; sentry policy editing happens through apadmin in the admin pane
+- the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, token provisioning, and endpoint configuration
 - for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
-- remote-mode `apconsole` requires the configured client data directory to be enrolled before the UI starts: `endpoints.yaml` must define a default signer endpoint, that endpoint's token file must exist, and the configured signer host must already be present in the endpoint `known_hosts_path`
-- remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
-- shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`, remote-mode `apconsole`, and remote `apadmin`
+- remote-mode `apconsole` is rejected; run apconsole on the signer machine, using an ordinary SSH login when needed
+- `apadmin` uses local IPC only and has no client enrollment prerequisite. For remote administration, SSH into the signer host and run apadmin there.
+- shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`
 - tombstones suppress locally deleted proposals for that local actor
 - cache files are signed JSON with a per-client `.cache_key` and are local,
   rebuildable client state. The signed envelope has `version: 1`; alias, set,
@@ -1780,9 +1785,66 @@ LogicSig bytecode and supplied as `sentry_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
+#### Sentry Enrollment Composition Envelope
+
+`apadmin sentry enrollment export <witness-key-id> ... --out <file>` emits the
+additive public composition schema `aplane.sentry-enrollment.v1`. It contains
+the canonical `aplane.witness-key-public.v1` document and may contain one
+canonical `aplane.endpoint.v1` document:
+
+```json
+{
+  "schema": "aplane.sentry-enrollment.v1",
+  "witness": {
+    "schema": "aplane.witness-key-public.v1",
+    "key_type": "aplane.witness-falcon1024.v1",
+    "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+    "public_key_hex": "0000...0000"
+  },
+  "endpoint": {
+    "schema": "aplane.endpoint.v1",
+    "url": "ssh://sentry.example:2223",
+    "signer_port": 11270
+  }
+}
+```
+
+`endpoint` is optional. The outer document is strict JSON, is bounded to 64
+KiB before decoding, rejects unknown fields and trailing JSON, and delegates
+nested validation to the standalone witness and endpoint envelope contracts.
+An explicitly `null` witness or endpoint is invalid. Stable serialization uses
+the field order shown above and ends with one newline.
+
+Batch export includes `endpoint` when `--host` or `--url` supplies routing
+metadata, or when `--include-endpoint` selects the daemon's configured
+`endpoint.advertise_url`. Without one of those choices it emits a witness-only
+composition bundle even when an advertise URL exists.
+
+Sentry-side TUI export offers the configured portable advertise URL as an
+explicit, default-on choice. The operator process composes it with the
+daemon-verified witness envelope and writes the result locally; opting out or
+lacking a valid advertised endpoint writes the compatible standalone witness
+envelope instead.
+
+The outer envelope adds no authority claim. In particular it contains no
+reference alias, endpoint alias or role, token, SSH identity, `known_hosts`
+entry, cached live inventory, private witness material, policy, or proof of
+endpoint ownership. The operator still chooses local aliases and compares the
+complete Witness Key ID against an independently observed value. The signer
+re-derives that ID through the existing sentry-reference import path.
+
+`apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]`
+accepts either the composition envelope or a standalone witness-public envelope.
+It validates the complete artifact before importing the reference through
+authorized local IPC. `--dry-run` validates without mutation. Bundled endpoint
+metadata is informational; apadmin does not read or write client state.
+The result retains `aplane.sentry-enrollment-import-result.v1` and its
+`endpoint_import.status` is always `not_requested`. Configure client routes,
+tokens, and SSH host trust separately in apshell.
+
 #### Sentry Public Key Reference Library
 
-`apadmin sentry import <export-json> <name>` imports an
+`apadmin sentry import <public-json|-> <name>` imports an
 `aplane.witness-key-public.v1` envelope into the product store's public
 sentry reference library:
 
@@ -1812,8 +1874,16 @@ remain readable through a bounded adapter and are projected as version 2 in
 memory without rewriting the store. A migrated historical discovery record carries
 `migration_origin: "v1_client_discovery"`; that closed marker is diagnostic
 provenance, not a live discovery source or routing input.
-Human list output treats the Witness Key ID as the primary identifier and shows
-the operator-assigned reference name. Detailed JSON also exposes a closed
+When the source is `-`, stdin is reserved for the bounded public JSON document.
+Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
+controlling terminal. Unsupported
+headless combinations fail before authentication instead of sharing stdin
+between the envelope and passphrase. The same separation applies to
+`sentry enrollment import -`.
+
+Human list output leads with the operator-assigned reference name and a compact
+10-leading/10-trailing Witness Key ID. Detailed JSON retains the complete ID
+and also exposes a closed
 migration marker when present.
 
 The library is a generation convenience and trust-input inventory for the user
@@ -1835,6 +1905,17 @@ containing Witness Key IDs whose sentry key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `sentry_public_key`; other
 provider-specific creation parameters remain exposed normally.
+
+The `apadmin` TUI also receives the optional `sentry_component_key_type` in
+its internal admin key-type projection and joins it with
+`list_sentry_references`. Guarded generation displays aliases but submits the
+canonical Witness Key ID. A sole compatible authority may be preselected;
+multiple authorities require an explicit picker choice. When none exists, the
+TUI opens an in-flow public-envelope enrollment review instead of exposing a
+raw `sentry_public_key` editor. The review locally validates the envelope and
+shows the complete grouped Witness Key ID before the authorized import RPC.
+The public `/keytypes` DTO and external SDK contract are unchanged by this TUI
+projection.
 
 #### External Contract Admin Inventory
 

@@ -27,8 +27,3 @@ func runTestMode(_ serverconfig.ServerConfig, _ []string) {
 	logErrorf(testBuildTagHint)
 	os.Exit(2)
 }
-
-func runRemoteTestMode(_ *remoteAdminConfig, _ []string) {
-	logErrorf(testBuildTagHint)
-	os.Exit(2)
-}

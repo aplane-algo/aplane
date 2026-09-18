@@ -49,8 +49,7 @@ whole-document replacements, writes the fresh sidecar, and activates the
 resulting runtime policy immediately.
 
 Use `apadmin policy` for a standalone guided or scriptable production client.
-It connects through authenticated admin IPC (or SSH with the normal
-`apadmin --remote` flag), selects the daemon's node role, unlocks the product
+It connects through authenticated local admin IPC, selects the daemon's node role, unlocks the product
 when required, and never needs filesystem access to the private signer store.
 
 ```bash
@@ -127,20 +126,12 @@ document, and writes a fresh sidecar. Use `--target signer` or
 stream for `apply -`, provide its passphrase through the local-only environment
 source or an interactive terminal.
 
-`APSIGNER_PASSPHRASE` is accepted only for explicit local IPC and rescue policy
-commands. Remote policy commands ignore it so an ambient secret for a local
-signer cannot be offered silently to another host. A local or remote command
-whose policy comes from the active document or a named file may read one
-passphrase line from nonterminal stdin. For example, scripted remote apply uses
-a named policy file so stdin remains available for authentication:
-
-```bash
-printf '%s\n' "$remote_passphrase" | apadmin --remote policy apply selected-policy.yaml
-```
-
-Remote `apply -` reserves stdin for policy YAML and therefore requires a
-controlling terminal for the passphrase. Without one, it fails before consuming
-the YAML and directs the operator to the named-file form above.
+`APSIGNER_PASSPHRASE` supplies the passphrase for local IPC and rescue policy
+commands. A command whose policy comes from the active document or a named file
+may also read one passphrase line from nonterminal stdin. `apply -` reserves
+stdin for YAML and requires the environment passphrase or a controlling terminal.
+For remote administration, SSH into the signer machine and run apadmin there;
+all named paths then refer to that machine.
 
 With a positional YAML file, `apadmin policy rescue check draft.yaml`,
 `apadmin policy rescue export draft.yaml`, and

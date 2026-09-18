@@ -273,6 +273,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	for i := startIdx; i < endIdx; i++ {
 		paramDef := params[i]
 		isFieldFocused := m.forms.generateFocus == i
+		isSentrySelector := m.isSentrySelectorParam(keyType, paramDef)
 
 		// Determine label - use input mode label if multiple modes exist
 		labelText := paramDef.Label
@@ -290,7 +291,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 				modeHint = fmt.Sprintf("  [</> to switch: %d/%d]", modeIdx+1, len(paramDef.InputModes))
 			}
 		}
-		if len(paramDef.Options) > 0 && isFieldFocused {
+		if isSentrySelector && isFieldFocused {
+			modeHint = "  [Enter to choose]"
+		} else if len(paramDef.Options) > 0 && isFieldFocused {
 			optionIdx := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
 			if optionIdx < 0 {
 				optionIdx = 0
@@ -315,6 +318,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
 		if len(paramDef.Options) > 0 {
 			fieldWidth = optionFieldWidth(paramDef.Options)
+		}
+		if isSentrySelector {
+			fieldWidth = 50
 		}
 		if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
 			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
@@ -369,12 +375,18 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if value == "" {
 			value = getPlaceholderForType(paramDef.Type)
 		}
+		if isSentrySelector {
+			value = m.sentrySelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
+		}
 
 		lines := paramInputLines(value)
 		if isFieldFocused && m.forms.genericLSigParams != nil {
 			currentValue := m.forms.genericLSigParams[paramDef.Name]
 			if currentValue == "" && len(paramDef.Options) > 0 {
 				currentValue = defaultParamValue(paramDef)
+			}
+			if isSentrySelector {
+				currentValue = m.sentrySelectionDisplay(currentValue)
 			}
 			currentLines := paramInputLines(currentValue)
 			currentLines[len(currentLines)-1] += "_"

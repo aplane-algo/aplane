@@ -797,17 +797,18 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 	out := make([]protocol.KeyTypeInfo, len(items))
 	for i, item := range items {
 		out[i] = protocol.KeyTypeInfo{
-			KeyType:           item.KeyType,
-			Family:            item.Family,
-			DisplayName:       item.DisplayName,
-			Description:       item.Description,
-			AuthorizationKind: item.AuthorizationKind,
-			RequiresLogicSig:  item.RequiresLogicSig,
-			MnemonicWordCount: item.MnemonicWordCount,
-			MnemonicImport:    item.MnemonicImport,
-			MnemonicScheme:    item.MnemonicScheme,
-			CreationParams:    protocolCreationParams(item.CreationParams),
-			RuntimeArgs:       protocolRuntimeArgs(item.RuntimeArgs),
+			KeyType:                item.KeyType,
+			Family:                 item.Family,
+			DisplayName:            item.DisplayName,
+			Description:            item.Description,
+			AuthorizationKind:      item.AuthorizationKind,
+			RequiresLogicSig:       item.RequiresLogicSig,
+			MnemonicWordCount:      item.MnemonicWordCount,
+			MnemonicImport:         item.MnemonicImport,
+			MnemonicScheme:         item.MnemonicScheme,
+			SentryComponentKeyType: item.SentryComponentKeyType,
+			CreationParams:         protocolCreationParams(item.CreationParams),
+			RuntimeArgs:            protocolRuntimeArgs(item.RuntimeArgs),
 		}
 	}
 	return out

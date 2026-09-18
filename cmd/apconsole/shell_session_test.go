@@ -4,9 +4,18 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func writeRemoteConfig(t *testing.T, dir, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestLoadShellConsoleRefusesUnsupportedClientEndpointConfig(t *testing.T) {
 	dir := t.TempDir()

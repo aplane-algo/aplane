@@ -7,8 +7,9 @@
 #
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
-# endpoint enrollment, sentry-key discovery, guarded transaction-signing flows,
-# and corridor allowlist enforcement. It also validates the guarded account
+# endpoint enrollment, local IPC sentry-reference import,
+# guarded transaction-signing flows, and corridor allowlist enforcement. It
+# also validates the guarded account
 # and bounded-sentry Corridor with SDK intent prep plus component signing.
 # Local mode uses the local Python SDK checkout; release mode uses the Python
 # package from PyPI and the TypeScript package from npm.
@@ -78,8 +79,8 @@ This test requires Docker privileges. LocalNet starts signer, sentry,
 client/admin, and an AlgoKit-style algod/KMD node.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
-API tokens for both nodes, generates a sentry key through the sentry
-endpoint, imports its public reference into the signer generation catalog,
+API tokens for both nodes, generates a sentry key through the sentry endpoint,
+then exports and imports the public sentry reference with local IPC apadmin,
 enables guarded Falcon/Falcon,
 imports the optional Corridor template, and verifies apshell can create, fund,
 and validate guarded, Corridor, and plain Falcon accounts against the selected
@@ -1255,32 +1256,27 @@ generate_sentry_component_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
 }
 
-import_sentry_reference_to_signer() {
+enroll_sentry_reference_to_signer() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
-
     local public_file out
     public_file="$(mktemp)"
-    if ! out="$(docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry export \
-        '$SENTRY_COMPONENT_KEY' /tmp/sentry-public.json 2>&1")"; then
-        printf '%s\n' "$out" >&2
-        rm -f "$public_file"
-        die "failed to export sentry public reference"
+    if ! docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry export '$SENTRY_COMPONENT_KEY' /tmp/sentry-public.json"; then
+        die "failed to export sentry public reference over local IPC"
     fi
-    printf '%s\n' "$out"
     docker cp "$SENTRY_CONTAINER:/tmp/sentry-public.json" "$public_file"
     docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/sentry-public.json"
     rm -f "$public_file"
     docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry import \
-        /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' 2>&1")"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry import /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry show '$SENTRY_REFERENCE_NAME' 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to import sentry public reference into signer"
+        die "local IPC sentry-reference import failed"
     fi
     printf '%s\n' "$out"
-    grep -Fq "sentry reference $SENTRY_REFERENCE_NAME imported" <<<"$out" \
-        || die "sentry reference import output did not include success marker"
+    grep -Fq "$SENTRY_COMPONENT_KEY" <<<"$out" \
+        || die "persisted sentry reference does not contain the expected Witness Key ID"
 }
 
 enable_guarded_keytype() {
@@ -1744,6 +1740,18 @@ main() {
     log "Requesting sentry API token from client container"
     request_sentry_token
 
+    log "Generating sentry key through client/sentry flow"
+    generate_sentry_component_key
+
+    log "Importing sentry public reference through local IPC"
+    enroll_sentry_reference_to_signer
+
+    # Local IPC export and import displace the node approval sessions.
+    # Re-establish both approval sessions before component signing.
+    log "Re-establishing signer and sentry approval sessions after public-reference import"
+    start_signer_apapprover
+    start_sentry_apapprover
+
     if [ "$RELEASE_INSTALL" = "1" ]; then
         if [ -n "$SDK_VERSION" ]; then
             log "Installing Python SDK from PyPI (aplanesdk==$SDK_VERSION)"
@@ -1765,20 +1773,6 @@ main() {
 
     log "Configuring Python SDK client data directories"
     configure_python_sdk_client_data
-
-    log "Generating sentry key through client/sentry flow"
-    generate_sentry_component_key
-
-    log "Importing sentry public reference into signer generation catalog"
-    import_sentry_reference_to_signer
-
-    # Local IPC admits one active admin session. The export and import commands
-    # deliberately displace the approval sessions that held each runtime
-    # unlocked, then relinquish their own leases on exit. Re-establish the
-    # approval sessions before HTTP generation and component signing.
-    log "Re-establishing signer and sentry approval sessions after public-reference handoff"
-    start_signer_apapprover
-    start_sentry_apapprover
 
     log "Generating external Corridor admin key on client"
     generate_corridor_admin_key
