@@ -131,7 +131,9 @@ func shouldAutoConnectAfterEnrollment(registry config.ClientEndpointRegistry, al
 	return ok && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner
 }
 
-func (r *REPLState) printTokenProvisioningWait() {
+func (r *REPLState) printTokenProvisioningWait(clientFingerprint string) {
+	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
+	r.progressPrintln("Compare this complete fingerprint with the Client Access Request in apadmin.")
 	r.progressPrintln("Waiting for operator approval in apadmin...")
 	r.progressPrintln("Leave this shell open while the operator approves or rejects the token request.")
 }

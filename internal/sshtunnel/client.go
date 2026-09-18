@@ -132,7 +132,7 @@ type Client struct {
 	identityFile        string
 	knownHostsPath      string
 	hostKeyApproval     HostKeyApprovalHandler // Callback for TOFU host key approval
-	onProvisioningStart func()
+	onProvisioningStart func(string)
 
 	apiToken string
 
@@ -183,8 +183,9 @@ func (c *Client) SetHostKeyApprovalHandler(handler HostKeyApprovalHandler) {
 }
 
 // SetProvisioningStartCallback sets a callback for token provisioning after
-// the SSH session starts the remote provision command.
-func (c *Client) SetProvisioningStartCallback(callback func()) {
+// the SSH session starts the remote provision command. Its argument is the
+// complete SHA256 fingerprint of the client key used for authentication.
+func (c *Client) SetProvisioningStartCallback(callback func(string)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onProvisioningStart = callback
@@ -212,7 +213,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	if token == "" {
 		return fmt.Errorf("API token required (call SetAPIToken first)")
 	}
-	authMethod, agentConn, err := c.authMethod()
+	authMethod, agentConn, err := c.authMethod(nil)
 	if err != nil {
 		return err
 	}
@@ -277,7 +278,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) authMethod() (ssh.AuthMethod, net.Conn, error) {
+func (c *Client) authMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
 	if c.identityFile != "" {
 		identityPath := expandUserPath(c.identityFile)
 		keyData, err := os.ReadFile(identityPath)
@@ -287,9 +288,9 @@ func (c *Client) authMethod() (ssh.AuthMethod, net.Conn, error) {
 				signer, genErr := c.generateIdentityKey(identityPath)
 				if genErr != nil {
 					// Fall back to SSH agent if key generation fails
-					return c.agentAuthMethod()
+					return c.agentAuthMethod(onSigned)
 				}
-				return ssh.PublicKeys(signer), nil, nil
+				return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
 			}
 			return nil, nil, fmt.Errorf("failed to read SSH identity file %s: %w", identityPath, err)
 		}
@@ -300,10 +301,10 @@ func (c *Client) authMethod() (ssh.AuthMethod, net.Conn, error) {
 			}
 			return nil, nil, fmt.Errorf("failed to parse SSH identity file %s: %w", identityPath, err)
 		}
-		return ssh.PublicKeys(signer), nil, nil
+		return ssh.PublicKeys(observeAuthSigner(signer, onSigned)), nil, nil
 	}
 
-	return c.agentAuthMethod()
+	return c.agentAuthMethod(onSigned)
 }
 
 // generateIdentityKey creates a new Ed25519 key pair and saves it to the specified path.
@@ -353,7 +354,7 @@ func (c *Client) generateIdentityKey(path string) (ssh.Signer, error) {
 	return signer, nil
 }
 
-func (c *Client) agentAuthMethod() (ssh.AuthMethod, net.Conn, error) {
+func (c *Client) agentAuthMethod(onSigned func(string)) (ssh.AuthMethod, net.Conn, error) {
 	agentSock := os.Getenv("SSH_AUTH_SOCK")
 	if agentSock == "" {
 		return nil, nil, fmt.Errorf("no SSH identity file configured and SSH_AUTH_SOCK is not set")
@@ -365,7 +366,16 @@ func (c *Client) agentAuthMethod() (ssh.AuthMethod, net.Conn, error) {
 	}
 
 	agentClient := agent.NewClient(conn)
-	return ssh.PublicKeysCallback(agentClient.Signers), conn, nil
+	return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+		signers, err := agentClient.Signers()
+		if err != nil {
+			return nil, err
+		}
+		for i, signer := range signers {
+			signers[i] = observeAuthSigner(signer, onSigned)
+		}
+		return signers, nil
+	}), conn, nil
 }
 
 func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
@@ -771,7 +781,8 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	authMethod, agentConn, err := c.authMethod()
+	var clientFingerprint string
+	authMethod, agentConn, err := c.authMethod(func(fingerprint string) { clientFingerprint = fingerprint })
 	if err != nil {
 		return "", err
 	}
@@ -835,7 +846,7 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	onProvisioningStart := c.onProvisioningStart
 	c.mu.Unlock()
 	if onProvisioningStart != nil {
-		onProvisioningStart()
+		onProvisioningStart(clientFingerprint)
 	}
 
 	// Drain stdout (the token on success) and stderr (error detail)

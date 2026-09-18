@@ -169,7 +169,7 @@ func (s *ConnectionState) RequestToken(
 	identityFile string,
 	knownHostsPath string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onProvisioningStart func(),
+	onProvisioningStart func(string),
 ) (string, error) {
 	return s.RequestTokenWithContext(context.Background(), host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
 }
@@ -182,7 +182,7 @@ func (s *ConnectionState) RequestTokenWithContext(
 	identityFile string,
 	knownHostsPath string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onProvisioningStart func(),
+	onProvisioningStart func(string),
 ) (string, error) {
 	client := sshtunnel.NewClient(host, sshPort, 0, 0, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {

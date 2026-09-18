@@ -183,7 +183,7 @@ func (a *App) ApplySentrySetupEndpoint(plan SentrySetupPlan, replace bool) (conf
 
 // CompleteSentrySetup establishes endpoint access when needed and verifies the
 // exact public witness from the handoff. It never changes the primary tunnel.
-func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func()) (*SentrySetupResult, error) {
+func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) (*SentrySetupResult, error) {
 	result := &SentrySetupResult{
 		Alias: plan.Alias, WitnessKeyID: plan.Witness.WitnessKeyID,
 		URL: endpoint.URL, Created: plan.Created, Updated: plan.Updated,
@@ -238,7 +238,7 @@ func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, end
 	return result, nil
 }
 
-func (a *App) requestSentryTokenIsolated(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func()) error {
+func (a *App) requestSentryTokenIsolated(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) error {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return err

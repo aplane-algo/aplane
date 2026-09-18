@@ -34,7 +34,7 @@ func (f *fakeTokenClient) RequestTokenWithContext(
 	identityFile string,
 	knownHostsPath string,
 	approval sshtunnel.HostKeyApprovalHandler,
-	progress func(),
+	progress func(string),
 ) (string, error) {
 	f.host = host
 	f.port = port
@@ -42,7 +42,7 @@ func (f *fakeTokenClient) RequestTokenWithContext(
 	f.knownHostsPath = knownHostsPath
 	f.approval = approval
 	if progress != nil {
-		progress()
+		progress("SHA256:test-client")
 		f.progressCalled = true
 	}
 	return f.requestToken, f.requestErr
@@ -72,7 +72,7 @@ func TestRequestEndpointTokenResolvesAndPersistsEndpointScope(t *testing.T) {
 			TokenFile:      filepath.Join(dataDir, "tokens", "east.token"),
 		},
 		approval,
-		func() {},
+		func(string) {},
 	)
 	if err != nil {
 		t.Fatalf("RequestEndpointToken() error = %v", err)

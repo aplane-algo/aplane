@@ -361,7 +361,9 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 	}
 }
 
-func (r *REPLState) printSentryProvisioningWait() {
+func (r *REPLState) printSentryProvisioningWait(clientFingerprint string) {
+	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
+	r.progressPrintln("Compare this complete fingerprint with the Client Access Request in apadmin.")
 	r.progressPrintln("Waiting for approval in apadmin on the sentry...")
 	r.progressPrintln("Leave this shell open while the sentry operator approves or rejects the request.")
 }

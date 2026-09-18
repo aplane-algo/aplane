@@ -1788,6 +1788,12 @@ LogicSig bytecode and supplied as `sentry_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
+During SSH token provisioning, apshell displays the complete SHA256 fingerprint
+of the key that signed SSH authentication, including agent-selected keys.
+The admin access request already carries that fingerprint; this adds no wire
+field. It identifies the requesting client key, not an individual request,
+the server host key, or a Witness Key ID.
+
 #### Sentry Enrollment Composition Envelope
 
 `apadmin sentry enrollment export <witness-key-id> ... --out <file>` emits the

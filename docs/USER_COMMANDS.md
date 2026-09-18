@@ -901,7 +901,10 @@ sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
 
 If the exported document omitted an endpoint, add
 `--endpoint ssh://sentry.example:1127 --sentry-port 11270`. Approve any **Client
-Access Request** in apadmin on the sentry node. The command verifies the
+Access Request** in apadmin on the sentry node. Compare the complete client
+SSH key fingerprint shown by apshell with the fingerprint in that request.
+This identifies the client key, not a unique request; concurrent requests using
+the same key have the same fingerprint. The command verifies the
 expected witness before it succeeds. `endpoints discover-sentries` remains
 available as a read-only diagnostic across every configured sentry route.
 apadmin does not configure or verify client routes.

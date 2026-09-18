@@ -149,8 +149,8 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func()) (*RequestTokenResult, error) {
-	var progress func()
+func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func(string)) (*RequestTokenResult, error) {
+	var progress func(string)
 	if len(onProvisioningStarted) > 0 {
 		progress = onProvisioningStarted[0]
 	}
