@@ -101,7 +101,7 @@ const (
 	initialAcceptErrorBackoff = 25 * time.Millisecond
 	maxAcceptErrorBackoff     = time.Second
 	invalidTokenProofDelay    = 5 * time.Second
-	sshHandshakeTimeout       = 30 * time.Second
+	sshHandshakeTimeout       = 60 * time.Second
 	maxPendingSSHHandshakes   = 64
 )
 
@@ -144,7 +144,7 @@ type Server struct {
 	// Connection tracking for graceful shutdown
 	activeConns              sync.WaitGroup                  // Tracks active connection handlers
 	sshConns                 map[*ssh.ServerConn]sshConnInfo // Active SSH connections for explicit close
-	rawConns                 map[net.Conn]struct{}           // Includes unauthenticated sockets; protected by sshConnsMu.
+	rawConns                 map[net.Conn]struct{}           // Sockets not yet tracked as active SSH connections; protected by sshConnsMu.
 	pendingHandshakes        int
 	handshakeTimeout         time.Duration
 	minimumTokenGeneration   uint64        // Minimum accepted product token generation
@@ -883,6 +883,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	// Track connection for graceful shutdown and product token revocation.
 	s.sshConnsMu.Lock()
 	s.sshConns[sshConn] = info
+	delete(s.rawConns, netConn)
 	staleAuth := s.connectionStaleLocked(info)
 	s.sshConnsMu.Unlock()
 
@@ -1388,24 +1389,21 @@ func (s *Server) StopContext(ctx context.Context) error {
 		}
 	}
 
-	// Include sockets still in authentication.
+	// Snapshot sockets awaiting active tracking and active SSH connections
+	// together; their handoff uses the same lock.
 	s.sshConnsMu.Lock()
 	rawConns := make([]net.Conn, 0, len(s.rawConns))
 	for conn := range s.rawConns {
 		rawConns = append(rawConns, conn)
 	}
-	s.sshConnsMu.Unlock()
-	for _, conn := range rawConns {
-		_ = conn.Close()
-	}
-
-	// Copy active connections (avoid holding lock during close)
-	s.sshConnsMu.Lock()
 	conns := make([]*ssh.ServerConn, 0, len(s.sshConns))
 	for conn := range s.sshConns {
 		conns = append(conns, conn)
 	}
 	s.sshConnsMu.Unlock()
+	for _, conn := range rawConns {
+		_ = conn.Close()
+	}
 
 	// Close all active SSH connections
 	for _, conn := range conns {

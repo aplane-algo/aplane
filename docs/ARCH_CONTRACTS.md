@@ -2186,16 +2186,18 @@ authorization and enrollment are sourced from
 
 Unavailable or invalid client token proofs incur a 5-second delay, interrupted
 by server shutdown. The SSH server allows at most 64 concurrent pending
-handshakes and closes excess arrivals. Authentication has a 30-second socket
+handshakes and closes excess arrivals. Authentication has a 60-second socket
 deadline, cleared after successful authentication. Accepted sockets are tracked
 before authentication so shutdown also closes stalled handshakes. The limit
 applies to pending authentication, not established sessions or subsequent
 operator approval for token provisioning.
 
-Client TCP dialing and SSH authentication share one setup timeout (30 seconds
+Client TCP dialing and SSH authentication share one setup timeout (60 seconds
 by default). Setup cancellation closes the socket to interrupt blocked I/O.
 Successful connections detach from that setup timeout; their established
 connection lifecycle and provisioning approval waits remain separately owned.
+The setup timeout also covers interactive first-use host-key approval, giving
+the operator time to compare the displayed fingerprint.
 
 Token provisioning flow:
 

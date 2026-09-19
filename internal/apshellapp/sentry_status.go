@@ -11,6 +11,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type SentryStatusRequest struct{}
@@ -35,7 +36,7 @@ func (a *App) SentryStatus(ctx context.Context, _ SentryStatusRequest) (*SentryS
 	for _, connection := range result.Connections {
 		lines = append(lines, fmt.Sprintf("  %s: %s", connection.Alias, connection.State), "    endpoint: "+connection.URL)
 		for _, id := range connection.Witnesses {
-			lines = append(lines, "    Witness Key ID: "+id)
+			lines = append(lines, "    Witness Key ID: "+witness.GroupedID(id))
 		}
 		if connection.Error != "" {
 			lines = append(lines, "    reason: "+connection.Error)
@@ -47,7 +48,7 @@ func (a *App) SentryStatus(ctx context.Context, _ SentryStatusRequest) (*SentryS
 	}
 	sort.Strings(duplicateIDs)
 	for _, id := range duplicateIDs {
-		lines = append(lines, "  Duplicate witness route: "+id+" via "+strings.Join(result.DuplicateRoutes[id], ", "))
+		lines = append(lines, "  Duplicate witness route: "+witness.GroupedID(id)+" via "+strings.Join(result.DuplicateRoutes[id], ", "))
 	}
 	if result.DiscoveryError != "" {
 		lines = append(lines, "  Route check: "+result.DiscoveryError)
@@ -65,7 +66,7 @@ func (a *App) SentryStatus(ctx context.Context, _ SentryStatusRequest) (*SentryS
 		}
 		lines = append(lines, fmt.Sprintf("  %s: %s", label, account.State))
 		if account.WitnessKeyID != "" {
-			lines = append(lines, "    Witness Key ID: "+account.WitnessKeyID)
+			lines = append(lines, "    Witness Key ID: "+witness.GroupedID(account.WitnessKeyID))
 		}
 		if len(account.Routes) > 0 {
 			lines = append(lines, "    routes: "+strings.Join(account.Routes, ", "))

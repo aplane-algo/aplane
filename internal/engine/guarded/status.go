@@ -97,10 +97,8 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			row.Error = err.Error()
 		} else {
 			required := sentryRequestKey{ComponentKeyType: key.SentryComponentKeyType, PublicKey: canonical}
-			for _, state := range states {
-				if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, required) {
-					row.Routes = append(row.Routes, state.alias)
-				}
+			for _, index := range matchingSentryEndpointIndices(required, states) {
+				row.Routes = append(row.Routes, states[index].alias)
 			}
 			_, matched, selectionErr := uniqueSentrySelections([]sentryRequestKey{required}, states)
 			switch {

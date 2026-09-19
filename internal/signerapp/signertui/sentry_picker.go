@@ -554,7 +554,7 @@ func (m Model) renderSentryImportForm() string {
 	}
 	body.WriteString("\n\nReference name:\n")
 	body.WriteString(nameStyle.Width(m.constrainParameterFieldWidth(40)).Render(m.sentry.importName))
-	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Sentry Key ID; edit if needed."))
+	body.WriteString("\n" + helpStyle.Render("Defaults from the filename or Witness Key ID; edit if needed."))
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("REVIEW SENTRY KEY")
 	if m.sentry.importFocus == 2 {

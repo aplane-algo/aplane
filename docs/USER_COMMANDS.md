@@ -725,6 +725,8 @@ apshell writes a `role: sentry` endpoint, confirms first-use SSH host trust,
 requests endpoint access if no token has been configured, and queries
 that endpoint for the exact witness. Approve a new access request in apadmin on
 the sentry node. This setup does not disconnect the primary signer connection.
+The host-key trust prompt displays `Timeout 60 seconds` for the connection
+attempt. If more time is needed to verify the fingerprint, retry the connection.
 
 An existing unchanged sentry alias reuses its custom REST port and credential paths.
 Changing the route requires interactive replacement consent and obtains new SSH

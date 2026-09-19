@@ -46,6 +46,10 @@ func TestSentryStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 			t.Fatalf("account=%+v", account)
 		}
 	}
+	joined := strings.Join(result.RenderLines, "\n")
+	if !strings.Contains(joined, "Witness Key ID: "+witness.GroupedID(id)) || strings.Contains(joined, "Witness Key ID: "+id) {
+		t.Fatalf("status did not group the display ID: %s", joined)
+	}
 	cacheAfter, _ := json.Marshal(app.eng.SignerCache)
 	if string(cacheBefore) != string(cacheAfter) || !reflect.DeepEqual(cfgBefore, app.Config) || !reflect.DeepEqual(registryBefore, app.eng.EndpointRegistry) || app.eng.Connection.SignerClient != client || !reflect.DeepEqual(filesBefore, snapshotStatusFiles(t, dir)) {
 		t.Fatal("status mutated client state")

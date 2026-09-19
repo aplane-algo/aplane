@@ -228,10 +228,16 @@ func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryE
 	if hostKeyMismatch != nil {
 		return aliases, states, hostKeyMismatch
 	}
-	if err := incompleteSentryDiscoveryError(aliases, states, discoveryCtx.Err()); err != nil {
-		return aliases, states, err
+	return aliases, states, completedSentrySweepError(ctx, aliases, states, discoveryCtx.Err())
+}
+
+func completedSentrySweepError(ctx context.Context, aliases []string, states []*sentryEndpointProbeResult, discoveryErr error) error {
+	if err := incompleteSentryDiscoveryError(aliases, states, discoveryErr); err != nil {
+		return err
 	}
-	return aliases, states, discoveryCtx.Err()
+	// A completed sweep remains usable even if its internal deadline expired
+	// while the final probe was returning. Caller cancellation still wins.
+	return ctx.Err()
 }
 
 func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointProbeResult, cause error) error {
@@ -354,12 +360,7 @@ func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryReques
 func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool, error) {
 	selected := make(map[sentryRequestKey]int, len(required))
 	for _, key := range required {
-		matches := make([]int, 0, 1)
-		for index, state := range states {
-			if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, key) {
-				matches = append(matches, index)
-			}
-		}
+		matches := matchingSentryEndpointIndices(key, states)
 		switch len(matches) {
 		case 0:
 			continue
@@ -384,6 +385,16 @@ func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpoin
 		}
 	}
 	return selected, len(selected) == len(required), nil
+}
+
+func matchingSentryEndpointIndices(required sentryRequestKey, states []*sentryEndpointProbeResult) []int {
+	matches := make([]int, 0, 1)
+	for index, state := range states {
+		if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, required) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
 }
 
 func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required sentryRequestKey) bool {

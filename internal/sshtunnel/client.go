@@ -61,6 +61,11 @@ func status() io.Writer {
 	return statusWriter
 }
 
+// HostKeyApprovalTimeoutNotice is shared by the shell and console prompts.
+func HostKeyApprovalTimeoutNotice() string {
+	return fmt.Sprintf("Timeout %.0f seconds", sshHandshakeTimeout.Seconds())
+}
+
 type subsystemStream struct {
 	channel ssh.Channel
 	client  *Client
@@ -241,7 +246,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 			ssh.KeyboardInteractive(authState.challenge),
 		},
 		HostKeyCallback: verifiedHostKeyCallback,
-		Timeout:         30 * time.Second,
+		Timeout:         sshHandshakeTimeout,
 	}
 
 	// Connect to SSH server
@@ -430,6 +435,7 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		approvalOnce.Do(func() {
 			_, _ = fmt.Fprintf(status(), "\n[SSH] Unknown host: %s\n", hostname)
 			_, _ = fmt.Fprintf(status(), "[SSH] Host key fingerprint: %s\n", fingerprint)
+			_, _ = fmt.Fprintln(status(), HostKeyApprovalTimeoutNotice())
 			approved, approvalErr = handler(hostname, fingerprint)
 		})
 
@@ -800,7 +806,7 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 		User:            tokenRequestSSHUsername,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         30 * time.Second,
+		Timeout:         sshHandshakeTimeout,
 	}
 
 	// Connect to SSH server

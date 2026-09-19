@@ -4,6 +4,7 @@
 package sshtunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,6 +118,9 @@ func TestGenerateIdentityKeyDoesNotOverwriteExistingFile(t *testing.T) {
 }
 
 func TestHostKeyApprovalIsPerCallback(t *testing.T) {
+	var promptOutput bytes.Buffer
+	SetStatusWriter(&promptOutput)
+	defer SetStatusWriter(nil)
 	knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
 	client := NewClient("example.com", 22, 0, 0, "", knownHostsPath)
 
@@ -140,6 +145,9 @@ func TestHostKeyApprovalIsPerCallback(t *testing.T) {
 	}
 	if err := first("example.com", remote, signer.PublicKey()); err != nil {
 		t.Fatalf("first host key callback error = %v", err)
+	}
+	if !strings.Contains(promptOutput.String(), "Timeout 60 seconds") {
+		t.Fatalf("host-key prompt omitted connection deadline notice: %s", promptOutput.String())
 	}
 	if err := os.Remove(knownHostsPath); err != nil {
 		t.Fatalf("Remove(known_hosts) error = %v", err)
