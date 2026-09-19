@@ -309,7 +309,7 @@ func TestPrepareSentryImportReviewSeparatesCombinedBundleEffects(t *testing.T) {
 	}
 	rendered := stripANSI(m.renderSentryImportReview())
 	for _, expected := range []string{
-		"Signer effect: enroll verifier as lab",
+		"Store this public sentry key as lab",
 		"Configure the transaction client separately in apshell.",
 	} {
 		if !strings.Contains(rendered, expected) {
@@ -318,6 +318,27 @@ func TestPrepareSentryImportReviewSeparatesCombinedBundleEffects(t *testing.T) {
 	}
 	if strings.Contains(rendered, reference.PublicKeyHex) {
 		t.Fatal("combined review rendered full public-key hex")
+	}
+}
+
+func TestPrepareSentryImportReviewDefaultsNameFromWitnessID(t *testing.T) {
+	reference := testTUIEnrollmentReference(t)
+	data, err := enrollment.MarshalWitness(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "---.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := Model{sentry: sentryState{importPath: path}}
+	m = m.prepareSentryImportReview()
+	if m.viewState != ViewSentryImportReview {
+		t.Fatalf("view state = %v, error = %q", m.viewState, m.sentry.importError)
+	}
+	if want := suggestedSentryReferenceName(reference.WitnessKeyID); m.sentry.importName != want {
+		t.Fatalf("default import name = %q, want %q", m.sentry.importName, want)
 	}
 }
 

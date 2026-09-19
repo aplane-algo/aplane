@@ -531,10 +531,11 @@ Current client config includes:
 Signer and sentry routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
-identity file, `known_hosts`, and token file. Live sentry-key discovery is
-operation-scoped and is not stored in the registry. `internal/endpointrefs`
-owns the public `aplane.endpoint.v1` JSON
+or more `sentry` endpoints. Endpoint records carry URL, remote REST port,
+identity file, `known_hosts`, and token file. Signer-role SSH endpoints may
+also select a local forwarding port; sentry-role SSH endpoints use direct
+channels and reject `local_port`. Live sentry-key discovery is operation-scoped
+and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
 
@@ -1491,8 +1492,9 @@ Runtime guarded and bounded-sentry routing performs the same live discovery at
 the start of each signing operation and keeps an operation-scoped route
 snapshot. It probes the deterministic configured endpoint order with bounded
 parallelism and stops only after every required embedded public key has one
-unambiguous route. `url: self` is an explicit co-location profile; there is no
-implicit fallback to the primary signer.
+unambiguous route. Same-host deployments use an explicit loopback or SSH
+endpoint for the separate sentry process; the primary signer connection is
+never reused as a sentry route.
 
 The signer reference catalog is a generation trust-input inventory, while
 live endpoint discovery is routing only. Neither proves endpoint ownership;
@@ -1537,7 +1539,9 @@ Primary implementation ownership:
   wires it and re-exports the discovery types). Its exported surface is only
   the sanctioned entry points (`New`/`Deps`/`Signer`/`SignerCacheView`,
   `HasGuardedEffectiveSigner`, `SignAndSubmitGroup`,
-  `DiscoverSentryComponentKeys`, `DiscoveredSentryComponentKey`, and the
+  `DiscoverSentryComponentKeys`, `DiscoveredSentryComponentKey`,
+  read-only `InspectRoutes` with `RouteStatus`, `ConnectionObservation`, and
+  `AccountRouteObservation` (closed probe connections, no signing), and the
   `ErrSentryDiscovery*` sentinels); the choreography internals are unexported
   and tested in-package. Import isolation is pinned by
   `test/arch/client_layering_test.go`.

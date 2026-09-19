@@ -43,7 +43,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	_, err := app.EndpointImport(t.Context(), EndpointImportRequest{
+	result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
 		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
 		Path: writeEndpointEnvelope(t, dataDir),
 	})
@@ -57,8 +57,35 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_sentries") {
 		t.Fatalf("endpoints.yaml = %q, want v2 connection profile only", data)
 	}
+	if result.LocalPort != 0 || strings.Contains(string(data), "local_port") {
+		t.Fatalf("import retained sentry local port: result = %#v, endpoints.yaml = %q", result, data)
+	}
 	if _, ok := app.eng.EndpointRegistry.Endpoint("sentry-local"); !ok {
 		t.Fatal("live engine endpoint registry was not refreshed")
+	}
+}
+
+func TestEndpointImportRejectsLocalPortForSentryRole(t *testing.T) {
+	dataDir := t.TempDir()
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270, LocalPort: 12271,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dataDir, "sentry-with-local-port.endpoint.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
+		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry, Path: path,
+	})
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
+		t.Fatalf("EndpointImport() error = %v, want sentry local_port rejection", err)
+	}
+	if _, statErr := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(statErr) {
+		t.Fatalf("endpoints.yaml stat error = %v, want absent", statErr)
 	}
 }
 
@@ -182,10 +209,10 @@ func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *te
 
 func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "self"}, true); err != nil {
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example"}, true); err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
@@ -305,7 +332,9 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 
 func writeEndpointEnvelope(t *testing.T, dir string) string {
 	t.Helper()
-	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270})
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

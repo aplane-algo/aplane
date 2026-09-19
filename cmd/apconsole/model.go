@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/theme"
 )
 
@@ -805,6 +806,8 @@ func (m model) renderHostKeyOverlay() string {
 		"",
 		kv("Host", pending.host),
 		kv("Fingerprint", pending.fingerprint),
+		"",
+		lipgloss.NewStyle().Foreground(lipgloss.Color(p.Help)).Render(sshtunnel.HostKeyApprovalTimeoutNotice()),
 		"",
 		prompt,
 		hint,

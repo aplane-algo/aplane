@@ -22,6 +22,10 @@ import (
 // SignAndSubmitGroup's frozen-bytes verification. Adding an entry here must be
 // a conscious API decision, mirrored in ARCH_SPEC's guarded ownership entry.
 var guardedSanctionedExports = map[string]bool{
+	"RouteStatus":                        true,
+	"ConnectionObservation":              true,
+	"AccountRouteObservation":            true,
+	"Signer.InspectRoutes":               true,
 	"New":                                true,
 	"Deps":                               true,
 	"Signer":                             true,

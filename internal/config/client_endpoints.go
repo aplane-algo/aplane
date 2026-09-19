@@ -40,9 +40,9 @@ type ClientEndpointConfig struct {
 	// Role declares how apshell may use this endpoint. A client has at most one
 	// signer endpoint and any number of sentry endpoints.
 	Role           string `yaml:"role"`
-	URL            string `yaml:"url" description:"Endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
+	URL            string `yaml:"url" description:"Endpoint URL: https://..., loopback http://..., or ssh://host[:port]"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
-	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// endpoints (0 = choose automatically)"`
+	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for signer-role ssh:// endpoints (0 = choose automatically); unsupported for sentry endpoints"`
 	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
@@ -150,7 +150,7 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 		return endpoint, err
 	}
 
-	if endpoint.TokenFile == "" && endpoint.URL != "self" {
+	if endpoint.TokenFile == "" {
 		if alias == DefaultClientEndpointName {
 			endpoint.TokenFile = tokenfile.APlaneTokenFile
 		} else {
@@ -184,8 +184,11 @@ func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) erro
 	if endpoint.LocalPort < 0 || endpoint.LocalPort > 65535 {
 		return fmt.Errorf("local_port must be 1-65535 when set")
 	}
+	if endpoint.Role == ClientEndpointRoleSentry && endpoint.LocalPort != 0 {
+		return fmt.Errorf("local_port is not supported for sentry endpoints")
+	}
 	if endpoint.URL == "self" {
-		return nil
+		return fmt.Errorf("url %q is not supported; configure an explicit ssh://, https://, or loopback http:// endpoint", endpoint.URL)
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {

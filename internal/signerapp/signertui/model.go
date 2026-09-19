@@ -266,19 +266,20 @@ type sentryState struct {
 	paramName  string
 	returnView ViewState
 
-	importPath       string
-	importPaste      bool
-	importJSON       string
-	importName       string
-	importFocus      int
-	importError      string
-	envelopeJSON     string
-	previewWitnessID string
-	previewKeyType   string
-	previewEndpoint  *endpointrefs.Envelope
-	requiredKeyType  string
-	pendingKeyType   string
-	pendingWitnessID string
+	importPath        string
+	importPaste       bool
+	importJSON        string
+	importName        string
+	importNameDefault string
+	importFocus       int
+	importError       string
+	envelopeJSON      string
+	previewWitnessID  string
+	previewKeyType    string
+	previewEndpoint   *endpointrefs.Envelope
+	requiredKeyType   string
+	pendingKeyType    string
+	pendingWitnessID  string
 
 	managerSelected int
 	managerScroll   int

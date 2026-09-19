@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 )
 
 type fakeRequester struct {
@@ -339,13 +340,17 @@ func TestCatalogKeyTypeEnableCanonicalizesAlias(t *testing.T) {
 
 func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sentry.json")
-	if err := os.WriteFile(path, []byte(`{"schema":"aplane.sentry-public.v1"}`), 0o600); err != nil {
+	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	requester := &fakeRequester{handle: func(message, result any) error {
 		switch request := message.(type) {
 		case protocol.ImportSentryReferenceMessage:
-			if request.Name != "Lab-Sentry" || !strings.Contains(request.EnvelopeJSON, "aplane.sentry-public.v1") {
+			if request.Name != "Lab-Sentry" || request.EnvelopeJSON != string(data) {
 				return fmt.Errorf("import = %#v", request)
 			}
 			*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{
@@ -387,7 +392,11 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 }
 
 func TestCatalogImportsSentryEnvelopeFromStdin(t *testing.T) {
-	const envelope = `{"schema":"aplane.sentry-public.v1"}`
+	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := string(data)
 	requester := &fakeRequester{handle: func(message, result any) error {
 		request, ok := message.(protocol.ImportSentryReferenceMessage)
 		if !ok {
@@ -553,5 +562,39 @@ func TestCatalogEndpointExportRefusesSymlinkOutput(t *testing.T) {
 	data, readErr := os.ReadFile(target)
 	if readErr != nil || string(data) != "keep" {
 		t.Fatalf("target = %q err=%v", data, readErr)
+	}
+}
+
+func TestSimpleSentryImportNormalizesCombinedDocument(t *testing.T) {
+	reference := testEnrollmentReference(t)
+	canonical, err := enrollment.MarshalWitness(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := enrollment.Marshal(enrollment.Envelope{Schema: enrollment.Schema, Witness: reference})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []bool{false, true} {
+		input := string(data)
+		if invalid {
+			input = strings.Replace(input, "\"witness\":", "\"unexpected\":true,\"witness\":", 1)
+		}
+		requester := &fakeRequester{handle: func(message, result any) error {
+			req := message.(protocol.ImportSentryReferenceMessage)
+			if req.EnvelopeJSON != string(canonical) {
+				t.Fatal("daemon received noncanonical witness")
+			}
+			*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{Success: true}
+			return nil
+		}}
+		err := (Catalog{Client: requester, Streams: Streams{Stdin: strings.NewReader(input)}}).Run("sentry", []string{"import", "-", "lab"})
+		if invalid {
+			if err == nil || len(requester.requests) != 0 {
+				t.Fatal("invalid combined input reached daemon")
+			}
+		} else if err != nil {
+			t.Fatal(err)
+		}
 	}
 }

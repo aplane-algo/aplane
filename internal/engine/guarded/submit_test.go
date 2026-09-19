@@ -464,7 +464,7 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	}
 }
 
-func TestRequestSentryComponentSignaturesUsesExplicitSelfEndpoint(t *testing.T) {
+func TestRequestSentryComponentSignaturesUsesExplicitLoopbackEndpoint(t *testing.T) {
 	publicKey, privateKey := testFalconSentryKeypair(t, 0x65)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
@@ -472,8 +472,9 @@ func TestRequestSentryComponentSignaturesUsesExplicitSelfEndpoint(t *testing.T) 
 	server := newSentryEndpointTestServer(t, sentryHex, privateKey, "", nil)
 	defer server.Close()
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
-	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{URL: "self"})
+	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{
+		URL: server.URL, TokenFile: writeSentryTokenFile(t, "sentry-token"),
+	})
 
 	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),

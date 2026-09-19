@@ -18,6 +18,22 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
+func TestCompletedSentrySweepIgnoresInternalDeadlineButHonorsCallerCancellation(t *testing.T) {
+	aliases := []string{"a"}
+	states := []*sentryEndpointProbeResult{{alias: "a", err: context.DeadlineExceeded}}
+	if err := completedSentrySweepError(t.Context(), aliases, states, context.DeadlineExceeded); err != nil {
+		t.Fatalf("completed sweep = %v, want nil", err)
+	}
+	if err := completedSentrySweepError(t.Context(), []string{"a", "b"}, append(states, nil), context.DeadlineExceeded); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("incomplete sweep = %v, want deadline error", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := completedSentrySweepError(ctx, aliases, states, context.DeadlineExceeded); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled caller = %v, want cancellation", err)
+	}
+}
+
 func TestLiveSentryResolverReusesOneProbeForSeveralKeys(t *testing.T) {
 	first := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	second := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "bb"}

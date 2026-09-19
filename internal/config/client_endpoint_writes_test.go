@@ -41,6 +41,22 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	}
 }
 
+func TestStoredClientEndpointLocalPortIsSignerOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	_, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleSentry, URL: "ssh://sentry.example", LocalPort: 12271,
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
+		t.Fatalf("UpsertStoredClientEndpoint(sentry local_port) error = %v, want role error", err)
+	}
+
+	if _, err := UpsertStoredClientEndpoint(dataDir, "primary", ClientEndpointConfig{
+		Role: ClientEndpointRoleSigner, URL: "ssh://signer.example", LocalPort: 12272,
+	}, false); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(signer local_port) error = %v", err)
+	}
+}
+
 func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
@@ -188,7 +204,7 @@ func TestStoredClientEndpointV2RejectsPublishedInventory(t *testing.T) {
 endpoints:
   sentry-local:
     role: sentry
-    url: self
+    url: ssh://sentry.example
     published_sentries: {}
 `
 	if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(data), 0o600); err != nil {
@@ -204,12 +220,12 @@ func TestStoredClientEndpointSentryLimit(t *testing.T) {
 	registry := emptyClientEndpointRegistry()
 	for i := 0; i < MaxClientSentryEndpoints; i++ {
 		alias := fmt.Sprintf("sentry-%02d", i)
-		registry.Endpoints[alias] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "self"}
+		registry.Endpoints[alias] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: fmt.Sprintf("ssh://sentry-%02d.example", i)}
 	}
 	if err := SaveStoredClientEndpointRegistry(t.TempDir(), registry); err != nil {
 		t.Fatalf("SaveStoredClientEndpointRegistry(12) error = %v", err)
 	}
-	registry.Endpoints["sentry-overflow"] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "self"}
+	registry.Endpoints["sentry-overflow"] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "ssh://sentry-overflow.example"}
 	err := SaveStoredClientEndpointRegistry(t.TempDir(), registry)
 	if err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12") {
 		t.Fatalf("SaveStoredClientEndpointRegistry(13) error = %v, want explicit limit", err)
@@ -223,7 +239,7 @@ func TestLoadClientEndpointRegistrySentryLimit(t *testing.T) {
 			var contents strings.Builder
 			contents.WriteString("schema_version: 2\nendpoints:\n")
 			for i := 0; i < count; i++ {
-				fmt.Fprintf(&contents, "  sentry-%02d:\n    role: sentry\n    url: self\n", i)
+				fmt.Fprintf(&contents, "  sentry-%02d:\n    role: sentry\n    url: ssh://sentry-%02d.example\n", i, i)
 			}
 			if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(contents.String()), 0o600); err != nil {
 				t.Fatal(err)
@@ -234,6 +250,21 @@ func TestLoadClientEndpointRegistrySentryLimit(t *testing.T) {
 			}
 			if count > MaxClientSentryEndpoints && (err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12")) {
 				t.Fatalf("LoadClientEndpointRegistry(%d) error = %v, want explicit limit", count, err)
+			}
+		})
+	}
+}
+
+func TestStoredClientEndpointRejectsSelfForEveryRole(t *testing.T) {
+	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleSentry} {
+		t.Run(role, func(t *testing.T) {
+			dataDir := t.TempDir()
+			_, err := UpsertStoredClientEndpoint(dataDir, role, ClientEndpointConfig{
+				Role: role,
+				URL:  "self",
+			}, false)
+			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
+				t.Fatalf("UpsertStoredClientEndpoint() error = %v, want unsupported self URL", err)
 			}
 		})
 	}

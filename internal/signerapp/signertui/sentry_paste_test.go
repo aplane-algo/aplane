@@ -42,6 +42,9 @@ func TestSentryPasteUsesImportReview(t *testing.T) {
 			if cmd != nil || m.viewState != ViewSentryImportForm || m.sentry.importJSON != string(tc.data) {
 				t.Fatal("paste did not capture the complete multiline document without submitting")
 			}
+			if want := suggestedSentryReferenceName(reference.WitnessKeyID); m.sentry.importName != want {
+				t.Fatalf("default import name = %q, want %q", m.sentry.importName, want)
+			}
 			m.sentry.importName = "Lab"
 			m = m.prepareSentryImportReview()
 			if m.viewState != ViewSentryImportReview || m.sentry.previewWitnessID != reference.WitnessKeyID || m.sentry.importName != "lab" {
@@ -102,5 +105,35 @@ func TestSentryPasteRoutesBracketedPasteToNameField(t *testing.T) {
 	}
 	if m.sentry.importError != "" {
 		t.Fatalf("importError = %q, want cleared", m.sentry.importError)
+	}
+}
+
+func TestSentryImportDefaultFollowsSourceUnlessEdited(t *testing.T) {
+	reference := testTUIEnrollmentReference(t)
+	data, err := enrollment.MarshalWitness(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Model{sentry: sentryState{importName: "sentry-old", importNameDefault: "sentry-old", importPaste: true}}
+	next, _ := m.handleSentryImportFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(string(data)), Paste: true})
+	m = next.(Model)
+	if m.sentry.importName == "sentry-old" || m.sentry.importName == "" {
+		t.Fatal("replacement paste retained stale default")
+	}
+	m.sentry.importName = "my-sentry"
+	next, _ = m.handleSentryImportFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(string(data)), Paste: true})
+	if next.(Model).sentry.importName != "my-sentry" {
+		t.Fatal("replacement paste overwrote custom name")
+	}
+	m = Model{sentry: sentryState{importName: "old", importNameDefault: "old", importPath: "/tmp/New.aplane-sentry.json"}}
+	m = m.suggestSentryImportNameFromPath()
+	if m.sentry.importName != "new" {
+		t.Fatal("replacement path retained stale default")
+	}
+	m.sentry.importName = "custom"
+	m.sentry.importPath = "/tmp/another.json"
+	m = m.suggestSentryImportNameFromPath()
+	if m.sentry.importName != "custom" {
+		t.Fatal("replacement path overwrote custom name")
 	}
 }

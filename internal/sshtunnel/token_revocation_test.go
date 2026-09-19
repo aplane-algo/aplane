@@ -208,6 +208,12 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	var authOnce sync.Once
 	var releaseOnce sync.Once
 	srv.testAfterAuthBeforeTrack = func() {
+		srv.sshConnsMu.Lock()
+		rawCount, activeCount := len(srv.rawConns), len(srv.sshConns)
+		srv.sshConnsMu.Unlock()
+		if rawCount != 1 || activeCount != 0 {
+			t.Errorf("pre-track socket ownership = raw %d, active %d; want raw 1, active 0", rawCount, activeCount)
+		}
 		authOnce.Do(func() { close(authComplete) })
 		<-releaseTrack
 	}
@@ -285,6 +291,12 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	}
 
 	<-serverDone
+	srv.sshConnsMu.Lock()
+	rawCount := len(srv.rawConns)
+	srv.sshConnsMu.Unlock()
+	if rawCount != 0 {
+		t.Fatalf("raw sockets after handler exit = %d, want 0", rawCount)
+	}
 }
 
 type activeSSHTestConn struct {

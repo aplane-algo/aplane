@@ -154,40 +154,22 @@ library instead:
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
 ```
 
-Before generating a guarded or bounded-sentry account, export the public
-witness envelope from the sentry and enroll it under an alias on the primary
-signer. In signer-side `apadmin`, press `e` for **Sentries**, import the public
-envelope, and compare the complete Witness Key ID. `Generate account` then
+Before generating a guarded or bounded-sentry account, choose **Export Sentry
+Key** on the sentry and **Import Sentry Key** on the primary signer. In
+signer-side `apadmin`, press `e` for **Sentries**, import the public file, and
+compare the complete Witness Key ID. `Generate account` then
 shows only enabled account key types compatible with that witness type. The UI
 submits the stable Witness Key ID and the signer resolves it to the full public
 key; the normal workflow does not ask the operator to paste Falcon hex.
 
-The batch equivalent is:
-
-```bash
-apadmin -d "$SENTRY_DATA" sentry export "$WITNESS_KEY_ID" sentry-public.json
-apadmin -d "$SIGNER_DATA" sentry import sentry-public.json lab-sentry
-```
-
-To carry optional endpoint metadata in the same public handoff, use the
-additive enrollment bundle:
-
-```bash
-apadmin -d "$SENTRY_DATA" sentry enrollment export "$WITNESS_KEY_ID" \
-  --host sentry.example --out lab-sentry.aplane-sentry.json
-apadmin -d "$SIGNER_DATA" sentry enrollment import lab-sentry.aplane-sentry.json \
-  --name lab-sentry
-```
-
 The Sentries manager also offers `p: Paste JSON`: paste either public document
-using your terminal's paste shortcut, enter a reference name, and review the
-full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
+using your terminal's paste shortcut, review or edit the proposed reference
+name, and compare the full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
 validation and signer-reference import as file import.
 
-The bundle is a public JSON file, not a key or credential. Its endpoint is
-client routing metadata only; token enrollment and SSH host trust remain
+The sentry key file contains public information only. Its endpoint is client
+routing metadata; client access provisioning and SSH host trust remain
 separate explicit steps in apshell. apadmin imports only the public reference.
-Use `--dry-run` to validate and preview the import without changing the signer.
 
 The sentry-side `apadmin` export screen also offers **SHOW JSON**, which prints
 the full JSON directly in the terminal for manual copying without creating
@@ -195,12 +177,19 @@ a file. Press Enter to return to the export screen. This uses terminal
 scrollback and natural wrapping without inserting newlines into JSON values.
 File export and the batch stdout command also preserve the original JSON bytes.
 
-This public-reference enrollment is separate from client endpoint and token
-enrollment. Configure a `role: sentry` endpoint in `apshell`, run
-`request-token --endpoint <alias>`, and approve that client request on the
-sentry before attempting guarded signing. In apshell, use
-`endpoints discover-sentries` to inspect live routes. apadmin uses local IPC
-only and never reads or writes the client endpoint registry or token files.
+In apshell, run `sentry add <sentry-key-json> --alias <connection-name>`, or
+`sentry add` to paste JSON. Supply the endpoint when it is absent from the file.
+Approve the **Client Access Request** in sentry-side apadmin after comparing the
+complete client SSH key fingerprint on both screens. Apshell configures the
+connection, obtains access, and checks for the expected witness.
+
+Connect apshell to the primary signer and run `sentry status` to inspect the
+guarded account's sentry route. apadmin uses local IPC and never reads or
+writes the client endpoint registry or token files.
+
+For scripting, batch import/export, and separate endpoint/token operations,
+see [the sentry command reference](USER_COMMANDS.md#apadmin-sentry) and
+[advanced manual endpoint configuration](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery).
 
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
 `ed25519` remains default-enabled and does not need this activation step.

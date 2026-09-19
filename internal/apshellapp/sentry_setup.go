@@ -30,7 +30,6 @@ type SentrySetupRequest struct {
 	Alias      string
 	URL        string
 	SignerPort int
-	LocalPort  *int
 	DryRun     bool
 }
 
@@ -93,18 +92,12 @@ func (a *App) PrepareSentrySetup(req SentrySetupRequest) (SentrySetupPlan, error
 	if candidate.URL == "" {
 		return SentrySetupPlan{}, fmt.Errorf("%w; pass --endpoint <url>", ErrSentryEndpointURLRequired)
 	}
-	if candidate.URL == "self" {
-		return SentrySetupPlan{}, fmt.Errorf("sentry setup cannot use endpoint %q; provide a client-reachable URL", candidate.URL)
-	}
-
 	if req.SignerPort != 0 {
 		candidate.SignerPort = req.SignerPort
 	} else if artifact.Endpoint != nil && artifact.Endpoint.SignerPort != 0 {
 		candidate.SignerPort = artifact.Endpoint.SignerPort
 	}
-	if req.LocalPort != nil {
-		candidate.LocalPort = *req.LocalPort
-	} else if artifact.Endpoint != nil && artifact.Endpoint.LocalPort != 0 {
+	if artifact.Endpoint != nil {
 		candidate.LocalPort = artifact.Endpoint.LocalPort
 	}
 
@@ -190,7 +183,7 @@ func (a *App) ApplySentrySetupEndpoint(plan SentrySetupPlan, replace bool) (conf
 
 // CompleteSentrySetup establishes endpoint access when needed and verifies the
 // exact public witness from the handoff. It never changes the primary tunnel.
-func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func()) (*SentrySetupResult, error) {
+func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) (*SentrySetupResult, error) {
 	result := &SentrySetupResult{
 		Alias: plan.Alias, WitnessKeyID: plan.Witness.WitnessKeyID,
 		URL: endpoint.URL, Created: plan.Created, Updated: plan.Updated,
@@ -245,7 +238,7 @@ func (a *App) CompleteSentrySetup(ctx context.Context, plan SentrySetupPlan, end
 	return result, nil
 }
 
-func (a *App) requestSentryTokenIsolated(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func()) error {
+func (a *App) requestSentryTokenIsolated(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) error {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return err

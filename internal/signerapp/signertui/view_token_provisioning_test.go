@@ -35,3 +35,11 @@ func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessRequestDisplaysFullClientFingerprint(t *testing.T) {
+	fingerprint := "SHA256:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+	m := Model{width: 110, height: 24, viewState: ViewTokenProvisioningPopup, tokenApproval: tokenApprovalState{request: &PendingTokenRequest{SSHFingerprint: fingerprint, RemoteAddr: "[2001:db8::1234]:54321"}}}
+	if rendered := stripANSI(m.renderTokenProvisioningPopup()); !strings.Contains(rendered, fingerprint) {
+		t.Fatalf("fingerprint lost: %s", rendered)
+	}
+}

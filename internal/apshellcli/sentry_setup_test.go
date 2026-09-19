@@ -22,15 +22,24 @@ import (
 func TestParseSentrySetupArgs(t *testing.T) {
 	options, err := parseSentrySetupArgs([]string{
 		"add", "handoff.json", "--alias", "Field", "--endpoint", "ssh://Sentry.example:2223/path",
-		"--sentry-port", "12270", "--local-port", "12271", "--replace", "--dry-run",
+		"--sentry-port", "12270", "--replace", "--dry-run",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if options.path != "handoff.json" || options.request.Alias != "Field" ||
 		options.request.URL != "ssh://Sentry.example:2223/path" || options.request.SignerPort != 12270 ||
-		options.request.LocalPort == nil || *options.request.LocalPort != 12271 || !options.replace || !options.request.DryRun {
+		!options.replace || !options.request.DryRun {
 		t.Fatalf("options = %#v", options)
+	}
+}
+
+func TestParseSentrySetupArgsRejectsLocalPort(t *testing.T) {
+	_, err := parseSentrySetupArgs([]string{
+		"add", "handoff.json", "--alias", "field", "--local-port", "12271",
+	})
+	if err == nil || !strings.Contains(err.Error(), sentrySetupUsage) {
+		t.Fatalf("parseSentrySetupArgs() error = %v, want usage error", err)
 	}
 }
 
@@ -187,6 +196,37 @@ func TestSentrySetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	}
 }
 
+func TestSentrySetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	documentPath := filepath.Join(dataDir, "handoff.json")
+	if err := os.WriteFile(documentPath, testCLIWitnessDocument(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := newIsolatedTestEngine(t, "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	state := &REPLState{
+		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
+		Config: cfg, AutoConfirm: true, currentCommandCtx: context.Background(),
+	}
+
+	_, err = state.cmdSentry([]string{
+		"add", documentPath, "--alias", "field", "--endpoint", "http://127.0.0.1:1",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
+		t.Fatalf("cmdSentry() error = %v, want missing direct-endpoint token error", err)
+	}
+	endpoint, ok := state.Config.Endpoints.Endpoint("field")
+	if !ok || endpoint.URL != "http://127.0.0.1:1" {
+		t.Fatalf("REPL endpoint after partial setup = %#v/%v, want persisted field endpoint", endpoint, ok)
+	}
+	if appEndpoint, appOK := state.App.Config.Endpoints.Endpoint("field"); !appOK || appEndpoint != endpoint {
+		t.Fatalf("REPL and application config diverged: repl=%#v app=%#v/%v", endpoint, appEndpoint, appOK)
+	}
+}
+
 func TestContextAwarePromptAdaptersReturnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -225,4 +265,28 @@ func testCLIWitnessDocument(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return document
+}
+
+func TestSentryStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
+	dir := t.TempDir()
+	eng, err := newIsolatedTestEngine(t, "testnet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, Config: cfg, AutoConfirm: true}
+	result, err := state.cmdSentry([]string{"status"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := result.RenderText(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "No sentry connections") || !strings.Contains(out.String(), "Unavailable:") {
+		t.Fatalf("status=%s", out.String())
+	}
+	if _, err := state.cmdSentry([]string{"status", "extra"}, nil); err == nil {
+		t.Fatal("accepted extra argument")
+	}
 }

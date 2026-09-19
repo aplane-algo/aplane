@@ -406,7 +406,9 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("Default: %s\n", yesNo(endpoint.IsDefault))
 	r.printf("URL: %s\n", endpoint.URL)
 	r.printf("Signer port: %d\n", endpoint.SignerPort)
-	r.printf("Local port: %d\n", endpoint.LocalPort)
+	if endpoint.Role == config.ClientEndpointRoleSigner {
+		r.printf("Local port: %d\n", endpoint.LocalPort)
+	}
 	r.printf("Identity file: %s\n", endpoint.IdentityFile)
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
 	r.printf("Token file: %s\n", endpoint.TokenFile)

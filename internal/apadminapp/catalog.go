@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"gopkg.in/yaml.v3"
@@ -448,6 +449,14 @@ func (c Catalog) exportSentry(args []string) error {
 
 func (c Catalog) importSentry(path, name string) error {
 	data, err := ReadSentryPublicEnvelope(path, c.Streams.Stdin)
+	if err != nil {
+		return err
+	}
+	artifact, err := enrollment.ParseArtifact(data)
+	if err != nil {
+		return err
+	}
+	data, err = enrollment.MarshalWitness(artifact.Witness)
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const sentrySetupUsage = "sentry add [public-json] [--alias <alias>] [--endpoint <url>] [--sentry-port <port>] [--local-port <port>] [--replace] [--dry-run]"
+const sentryUsage = "sentry status | " + sentrySetupUsage
+
+const sentrySetupUsage = "sentry add [public-json] [--alias <alias>] [--endpoint <url>] [--sentry-port <port>] [--replace] [--dry-run]"
 
 type sentrySetupCLIOptions struct {
 	request apshellapp.SentrySetupRequest
@@ -38,6 +40,23 @@ type sentrySetupProjection struct {
 }
 
 func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, error) {
+	if len(args) > 0 && args[0] == "status" {
+		if len(args) != 1 {
+			return nil, errors.New("usage: sentry status")
+		}
+		result, err := r.app().SentryStatus(r.commandContext(), apshellapp.SentryStatusRequest{})
+		if err != nil {
+			return nil, err
+		}
+		return newShellCommandResult(func(w io.Writer) error {
+			return r.withOutput(w, func() {
+				for _, line := range result.RenderLines {
+					r.println(line)
+				}
+			})
+		}, result.SentryStatusResult)
+	}
+
 	options, err := parseSentrySetupArgs(args)
 	if err != nil {
 		return nil, err
@@ -107,6 +126,9 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 	if err != nil {
 		return nil, err
 	}
+	if !plan.DryRun {
+		r.Config = r.app().Config
+	}
 	result, err := r.app().CompleteSentrySetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printSentryProvisioningWait)
 	if err != nil {
 		completed := "endpoint configuration retained"
@@ -119,12 +141,6 @@ func (r *REPLState) cmdSentry(args []string, _ interface{}) (command.Result, err
 			completed += " and access token saved"
 		}
 		return nil, fmt.Errorf("%s; live witness verification did not complete: %w", completed, err)
-	}
-	if !result.DryRun {
-		if cfg, loadErr := config.LoadConfig(r.DataDir); loadErr == nil {
-			r.Config = cfg
-			r.app().Config = cfg
-		}
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() { r.renderSentrySetupResult(result) })
@@ -163,21 +179,11 @@ func parseSentrySetupArgs(args []string) (sentrySetupCLIOptions, error) {
 			if i >= len(args) {
 				return out, errors.New("usage: " + sentrySetupUsage)
 			}
-			port, err := parseSetupPort(args[i], false)
+			port, err := parseSetupPort(args[i])
 			if err != nil {
 				return out, err
 			}
 			out.request.SignerPort = port
-		case "--local-port":
-			i++
-			if i >= len(args) {
-				return out, errors.New("usage: " + sentrySetupUsage)
-			}
-			port, err := parseSetupPort(args[i], true)
-			if err != nil {
-				return out, err
-			}
-			out.request.LocalPort = &port
 		default:
 			if strings.HasPrefix(args[i], "-") || out.path != "" {
 				return out, errors.New("usage: " + sentrySetupUsage)
@@ -188,9 +194,9 @@ func parseSentrySetupArgs(args []string) (sentrySetupCLIOptions, error) {
 	return out, nil
 }
 
-func parseSetupPort(value string, allowZero bool) (int, error) {
+func parseSetupPort(value string) (int, error) {
 	port, err := strconv.Atoi(value)
-	if err != nil || port < 0 || port > 65535 || (!allowZero && port == 0) {
+	if err != nil || port <= 0 || port > 65535 {
 		return 0, fmt.Errorf("invalid port %q", value)
 	}
 	return port, nil
@@ -207,13 +213,13 @@ func readBoundedSentrySetupFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read sentry JSON %s: %w", path, err)
 	}
 	if len(data) > enrollment.MaxEnvelopeBytes {
-		return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+		return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 	}
 	return data, nil
 }
 
 func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
-	r.println("Paste sentry enrollment JSON. The command continues when one complete document is received; Ctrl+C cancels.")
+	r.println("Paste sentry key JSON. The command continues when one complete document is received; Ctrl+C cancels.")
 	var document strings.Builder
 	var boundary jsonDocumentBoundary
 	blankLines := 0
@@ -234,11 +240,11 @@ func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
 		}
 		if boundary.complete {
 			if tooLarge {
-				return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+				return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 			}
 			data := []byte(document.String())
 			if _, parseErr := enrollment.ParseArtifact(data); parseErr != nil {
-				return nil, fmt.Errorf("invalid sentry enrollment JSON: %w", parseErr)
+				return nil, fmt.Errorf("invalid sentry key JSON: %w", parseErr)
 			}
 			return data, nil
 		}
@@ -249,9 +255,9 @@ func (r *REPLState) readSentrySetupPaste() ([]byte, error) {
 		}
 		if blankLines >= 2 {
 			if tooLarge {
-				return nil, fmt.Errorf("sentry enrollment artifact exceeds %d bytes", enrollment.MaxEnvelopeBytes)
+				return nil, fmt.Errorf("sentry key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 			}
-			return nil, fmt.Errorf("invalid sentry enrollment JSON")
+			return nil, fmt.Errorf("invalid sentry key JSON")
 		}
 	}
 }
@@ -333,8 +339,7 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 		if signerPort == 0 {
 			signerPort = config.DefaultRESTPort
 		}
-		r.printf("  signer REST port through SSH: %d\n", signerPort)
-		r.printf("  local tunnel port: %d (0 selects an available port)\n", plan.Endpoint.LocalPort)
+		r.printf("  Sentry API port through SSH: %d\n", signerPort)
 	}
 	r.printf("  Witness Key ID: %s\n", witness.GroupedID(plan.Witness.WitnessKeyID))
 	if plan.Created {
@@ -348,8 +353,7 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 				if previousPort == 0 {
 					previousPort = config.DefaultRESTPort
 				}
-				r.printf("  previous signer REST port: %d\n", previousPort)
-				r.printf("  previous local tunnel port: %d\n", plan.ExistingEndpoint.LocalPort)
+				r.printf("  previous Sentry API port: %d\n", previousPort)
 			}
 		}
 	} else {
@@ -357,7 +361,9 @@ func (r *REPLState) renderSentrySetupReview(plan apshellapp.SentrySetupPlan) {
 	}
 }
 
-func (r *REPLState) printSentryProvisioningWait() {
+func (r *REPLState) printSentryProvisioningWait(clientFingerprint string) {
+	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
+	r.progressPrintln("Compare this complete fingerprint with the Client Access Request in apadmin.")
 	r.progressPrintln("Waiting for approval in apadmin on the sentry...")
 	r.progressPrintln("Leave this shell open while the sentry operator approves or rejects the request.")
 }

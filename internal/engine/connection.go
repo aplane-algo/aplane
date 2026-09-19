@@ -68,7 +68,7 @@ func (e *Core) GetConnectionTarget() string {
 }
 
 // RequestTokenWithContext connects to the SSH server and requests a token provisioning.
-func (e *Core) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
+func (e *Core) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func(string)) (string, error) {
 	// Disconnect if currently connected (old token will be invalid after provisioning)
 	if e.IsTunnelConnected() {
 		_ = e.Disconnect()

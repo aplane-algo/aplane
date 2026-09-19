@@ -125,6 +125,39 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	aliases, states, err := s.probeSentryEndpoints(ctx)
+	if err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
+	}
+	selected, resolvedAll, err := uniqueSentrySelections(required, states)
+	if err != nil {
+		closeProbeResults(states, nil)
+		return nil, err
+	}
+	if !resolvedAll {
+		closeProbeResults(states, nil)
+		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, ctx.Err())
+	}
+
+	keep := map[*resolvedSentryEndpoint]bool{}
+	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
+	for key, index := range selected {
+		endpoint := states[index].endpoint
+		snapshot.routes[key] = endpoint
+		if !keep[endpoint] {
+			keep[endpoint] = true
+			snapshot.endpoints = append(snapshot.endpoints, endpoint)
+		}
+	}
+	closeProbeResults(states, keep)
+	s.warnSkippedSentryEndpoints(states)
+	return snapshot, nil
+}
+
+// probeSentryEndpoints owns the bounded sweep shared by signing and diagnostics.
+// Callers own every returned connection, including when the sweep fails.
+func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryEndpointProbeResult, error) {
 	aliases := make([]string, 0, len(s.endpointRegistry.Endpoints))
 	for alias, endpoint := range s.endpointRegistry.Endpoints {
 		if endpoint.Role == config.ClientEndpointRoleSentry {
@@ -133,12 +166,15 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	}
 	sort.Strings(aliases)
 	if len(aliases) > maxSentryDiscoveryEndpoints {
-		return nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
+		return aliases, nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
 	}
 	if len(aliases) == 0 {
-		return nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint (use url: self for a co-located sentry)", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
+		return aliases, nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint for the sentry process", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return aliases, nil, err
+	}
 	discoveryCtx, cancel := context.WithTimeout(ctx, sentryDiscoveryTotalTimeout)
 	defer cancel()
 	jobs := make(chan int)
@@ -190,36 +226,18 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 	}
 
 	if hostKeyMismatch != nil {
-		closeProbeResults(states, nil)
-		return nil, hostKeyMismatch
+		return aliases, states, hostKeyMismatch
 	}
-	if err := incompleteSentryDiscoveryError(aliases, states, discoveryCtx.Err()); err != nil {
-		closeProbeResults(states, nil)
-		return nil, err
-	}
-	selected, resolvedAll, err := uniqueSentrySelections(required, states)
-	if err != nil {
-		closeProbeResults(states, nil)
-		return nil, err
-	}
-	if !resolvedAll {
-		closeProbeResults(states, nil)
-		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, discoveryCtx.Err())
-	}
+	return aliases, states, completedSentrySweepError(ctx, aliases, states, discoveryCtx.Err())
+}
 
-	keep := map[*resolvedSentryEndpoint]bool{}
-	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
-	for key, index := range selected {
-		endpoint := states[index].endpoint
-		snapshot.routes[key] = endpoint
-		if !keep[endpoint] {
-			keep[endpoint] = true
-			snapshot.endpoints = append(snapshot.endpoints, endpoint)
-		}
+func completedSentrySweepError(ctx context.Context, aliases []string, states []*sentryEndpointProbeResult, discoveryErr error) error {
+	if err := incompleteSentryDiscoveryError(aliases, states, discoveryErr); err != nil {
+		return err
 	}
-	closeProbeResults(states, keep)
-	s.warnSkippedSentryEndpoints(states)
-	return snapshot, nil
+	// A completed sweep remains usable even if its internal deadline expired
+	// while the final probe was returning. Caller cancellation still wins.
+	return ctx.Err()
 }
 
 func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointProbeResult, cause error) error {
@@ -269,10 +287,9 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 			signerPort = config.DefaultRESTPort
 		}
 		progressOut := s.signerProgressWriter()
-		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
+		client, cleanup, err := connect.ConnectSentryWithSSH(ctx, connect.SentrySSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
-			LocalPort:       endpoint.LocalPort,
 			SignerPort:      signerPort,
 			Token:           token,
 			IdentityFile:    endpoint.IdentityFile,
@@ -290,16 +307,11 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 }
 
 func (s *Signer) probeConfiguredSentryEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-	var resolved *resolvedSentryEndpoint
-	if endpoint.URL == "self" {
-		resolved = &resolvedSentryEndpoint{client: s.conn, source: alias + " (self)"}
-	} else {
-		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
-		if err != nil {
-			return nil, nil, classifySentryDiscoveryConnectError(err)
-		}
-		resolved = &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
+	client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
+	if err != nil {
+		return nil, nil, classifySentryDiscoveryConnectError(err)
 	}
+	resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
 	keys, err := resolved.client.GetKeysWithContext(ctx)
 	if err != nil {
 		resolved.close()
@@ -348,12 +360,7 @@ func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryReques
 func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool, error) {
 	selected := make(map[sentryRequestKey]int, len(required))
 	for _, key := range required {
-		matches := make([]int, 0, 1)
-		for index, state := range states {
-			if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, key) {
-				matches = append(matches, index)
-			}
-		}
+		matches := matchingSentryEndpointIndices(key, states)
 		switch len(matches) {
 		case 0:
 			continue
@@ -378,6 +385,16 @@ func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpoin
 		}
 	}
 	return selected, len(selected) == len(required), nil
+}
+
+func matchingSentryEndpointIndices(required sentryRequestKey, states []*sentryEndpointProbeResult) []int {
+	matches := make([]int, 0, 1)
+	for index, state := range states {
+		if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, required) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
 }
 
 func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required sentryRequestKey) bool {
@@ -429,7 +446,7 @@ func unresolvedSentryDiscoveryError(required []sentryRequestKey, selected map[se
 			summary = append(summary, alias+": no matching key")
 		}
 	}
-	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint that advertises the required Witness Key ID (use url: self for a co-located sentry)", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
+	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint for the sentry process that advertises the required Witness Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
 	if len(causes) > 0 {
 		return fmt.Errorf("%s: %w", message, errors.Join(causes...))
 	}

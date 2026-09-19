@@ -160,11 +160,8 @@ func composeSentryExportArtifact(
 	endpoint *endpointrefs.Envelope,
 	includeEndpoint bool,
 ) (string, error) {
-	if endpoint == nil || !includeEndpoint {
-		if _, err := witness.ParsePublicReference([]byte(witnessJSON)); err != nil {
-			return "", err
-		}
-		return witnessJSON, nil
+	if !includeEndpoint {
+		endpoint = nil
 	}
 	reference, err := witness.ParsePublicReference([]byte(witnessJSON))
 	if err != nil {
@@ -197,9 +194,9 @@ func (m Model) sentryExportReturnView() ViewState {
 
 func (m Model) renderSentryExportPath() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Export Sentry Enrollment"))
+	body.WriteString(titleStyle.Render("Export Sentry Key"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("The public envelope is written by apadmin on this operator machine."))
+	body.WriteString(subtitleStyle.Render("Save the public sentry key on this machine. No private key or access token is included."))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.sentry.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
@@ -225,9 +222,9 @@ func (m Model) renderSentryExportPath() string {
 		body.WriteString("\n\n" + warningStyle.Render("Endpoint omitted: "+m.sentry.exportEndpointError))
 	}
 	body.WriteString("\n\n")
-	button := buttonInactiveStyle.Render("EXPORT ENROLLMENT FILE")
+	button := buttonInactiveStyle.Render("EXPORT SENTRY KEY")
 	if m.sentry.exportFocus == m.sentryExportButtonFocus() {
-		button = buttonActiveStyle.Render("EXPORT ENROLLMENT FILE")
+		button = buttonActiveStyle.Render("EXPORT SENTRY KEY")
 	}
 	body.WriteString(button)
 	body.WriteString("\n\n")
@@ -244,17 +241,17 @@ func (m Model) renderSentryExportPath() string {
 }
 
 func (m Model) renderSentryExporting() string {
-	action := "Exporting Sentry Enrollment"
+	action := "Exporting Sentry Key"
 	if m.sentry.exportShowJSON {
-		action = "Loading Sentry Enrollment JSON"
+		action = "Loading Sentry Key JSON"
 	}
 	return m.renderPopup(60, titleStyle.Render(action)+"\n\n"+subtitleStyle.Render("Please wait...")+"\n")
 }
 
 func (m Model) renderSentryExportResult() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Sentry Enrollment Exported"))
-	body.WriteString("\n\nPublic envelope written locally to:\n")
+	body.WriteString(titleStyle.Render("Sentry Key Exported"))
+	body.WriteString("\n\nPublic sentry key saved to:\n")
 	body.WriteString(m.sentry.exportWrittenPath)
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.sentry.exportWitnessID), m.popupBodyWidth(90)))
@@ -264,6 +261,7 @@ func (m Model) renderSentryExportResult() string {
 		body.WriteString("\n\nEndpoint: not included")
 	}
 	body.WriteString("\n")
+	body.WriteString("\nNext: import this file in primary-signer apadmin, then use sentry add in apshell.\n")
 	return m.renderPopup(90, body.String())
 }
 
@@ -282,7 +280,7 @@ func (d *sentryJSONTerminalDisplay) SetStdout(w io.Writer) { d.stdout = w }
 func (d *sentryJSONTerminalDisplay) SetStderr(io.Writer)   {}
 
 func (d *sentryJSONTerminalDisplay) Run() error {
-	if _, err := io.WriteString(d.stdout, "\nSentry enrollment JSON — select the document below to copy:\n\n"); err != nil {
+	if _, err := io.WriteString(d.stdout, "\nSentry key JSON — select the document below to copy:\n\n"); err != nil {
 		return err
 	}
 	if _, err := io.WriteString(d.stdout, d.document); err != nil {

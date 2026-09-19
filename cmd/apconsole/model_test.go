@@ -1245,6 +1245,7 @@ func TestViewRendersHostKeyOverlayWhenPending(t *testing.T) {
 		"Unknown SSH host",
 		"signer.example",
 		"SHA256:abc123",
+		"Timeout 60 seconds",
 		"Trust this server? [y/N]",
 		"Trust SSH host:",
 	} {

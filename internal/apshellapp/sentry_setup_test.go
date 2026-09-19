@@ -24,7 +24,7 @@ func TestPrepareSentrySetupUsesCombinedEndpointAndOverrides(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	document, reference := testSentryEnrollmentDocument(t, &endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://bundle.example:2223", SignerPort: 12270, LocalPort: 12271,
+		Schema: endpointrefs.Schema, URL: "ssh://bundle.example:2223", SignerPort: 12270,
 	})
 
 	plan, err := app.PrepareSentrySetup(SentrySetupRequest{
@@ -39,8 +39,20 @@ func TestPrepareSentrySetupUsesCombinedEndpointAndOverrides(t *testing.T) {
 	if plan.Witness != reference {
 		t.Fatalf("witness = %#v, want %#v", plan.Witness, reference)
 	}
-	if plan.Endpoint.URL != "ssh://override.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 12271 {
-		t.Fatalf("endpoint = %#v, want explicit URL/port and bundled local port", plan.Endpoint)
+	if plan.Endpoint.URL != "ssh://override.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 0 {
+		t.Fatalf("endpoint = %#v, want explicit URL/port", plan.Endpoint)
+	}
+}
+
+func TestPrepareSentrySetupRejectsBundledLocalPort(t *testing.T) {
+	document, _ := testSentryEnrollmentDocument(t, &endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: "ssh://bundle.example:2223", SignerPort: 12270, LocalPort: 12271,
+	})
+	_, err := newEndpointTestApp(t, t.TempDir()).PrepareSentrySetup(SentrySetupRequest{
+		Document: document, Alias: "field",
+	})
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
+		t.Fatalf("PrepareSentrySetup() error = %v, want sentry local_port rejection", err)
 	}
 }
 
@@ -48,7 +60,7 @@ func TestPrepareSentrySetupReusesUnchangedCustomEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	want := config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example:2223",
-		SignerPort: 12270, LocalPort: 12271, IdentityFile: "/custom/id",
+		SignerPort: 12270, IdentityFile: "/custom/id",
 		KnownHostsPath: "/custom/known_hosts", TokenFile: "/custom/token",
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {
@@ -142,13 +154,13 @@ func TestPrepareSentrySetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T) {
 			prepare: func(t *testing.T) (*App, SentrySetupRequest) {
 				return newEndpointTestApp(t, t.TempDir()), SentrySetupRequest{Document: document, Alias: "field", URL: "self"}
 			},
-			want: "cannot use endpoint",
+			want: `url "self" is not supported`,
 		},
 		{
 			name: "signer alias",
 			prepare: func(t *testing.T) (*App, SentrySetupRequest) {
 				dataDir := t.TempDir()
-				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "self"}, true); err != nil {
+				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 					t.Fatal(err)
 				}
 				return newEndpointTestApp(t, dataDir), SentrySetupRequest{Document: document, Alias: "primary", URL: "ssh://sentry.example"}

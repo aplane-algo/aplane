@@ -7,13 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	engineconnect "github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -55,7 +55,7 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 		return nil, fmt.Errorf("no token configured.\nRun 'request-token' to obtain a token, or copy a token to %s", tokenPath)
 	}
 
-	localPort, err := findAvailablePort()
+	localPort, err := engineconnect.FindAvailableLocalPort()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available local port: %w", err)
 	}
@@ -149,8 +149,8 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func()) (*RequestTokenResult, error) {
-	var progress func()
+func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func(string)) (*RequestTokenResult, error) {
+	var progress func(string)
 	if len(onProvisioningStarted) > 0 {
 		progress = onProvisioningStarted[0]
 	}
@@ -199,17 +199,6 @@ func decorateConnectResult(res *ConnectResult) {
 	if !res.Locked && res.KeyCount > 0 {
 		res.RenderLines = append(res.RenderLines, fmt.Sprintf("✓ Loaded %d signing key(s)", res.KeyCount))
 	}
-}
-
-func findAvailablePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = listener.Close() }()
-
-	addr := listener.Addr().(*net.TCPAddr)
-	return addr.Port, nil
 }
 
 var _ = engine.ErrAlreadyConnected

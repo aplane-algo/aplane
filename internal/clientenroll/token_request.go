@@ -23,7 +23,7 @@ type TokenClient interface {
 		identityFile string,
 		knownHostsPath string,
 		hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-		onProvisioningStart func(),
+		onProvisioningStart func(string),
 	) (string, error)
 	SaveApshellTokenToPath(tokenPath, token string) (string, error)
 }
@@ -43,7 +43,7 @@ func RequestEndpointToken(
 	alias string,
 	endpoint config.ClientEndpointConfig,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onProvisioningStart func(),
+	onProvisioningStart func(string),
 ) (TokenRequestResult, error) {
 	if client == nil {
 		return TokenRequestResult{}, fmt.Errorf("token client is unavailable")

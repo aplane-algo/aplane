@@ -29,7 +29,7 @@ func TestSentryJSONTerminalDisplayPreservesEntireDocument(t *testing.T) {
 	if err := display.Run(); err != nil {
 		t.Fatal(err)
 	}
-	prefix := "\nSentry enrollment JSON — select the document below to copy:\n\n"
+	prefix := "\nSentry key JSON — select the document below to copy:\n\n"
 	suffix := "\n\nPress Enter to return to the export screen.\n"
 	copied := strings.TrimSuffix(strings.TrimPrefix(output.String(), prefix), suffix)
 	if copied != string(document) {
@@ -136,7 +136,7 @@ func TestSentryExportOffersConfiguredAdvertisedEndpoint(t *testing.T) {
 	}
 }
 
-func TestComposeSentryExportArtifactBuildsCombinedBundleOnlyWhenSelected(t *testing.T) {
+func TestComposeSentryExportArtifactAlwaysBuildsCombinedBundle(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
 	witnessJSON, err := enrollment.MarshalWitness(reference)
 	if err != nil {
@@ -162,8 +162,12 @@ func TestComposeSentryExportArtifactBuildsCombinedBundleOnlyWhenSelected(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if witnessOnly != string(witnessJSON) {
-		t.Fatal("endpoint opt-out changed the canonical witness envelope")
+	parsed, err := enrollment.Parse([]byte(witnessOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Endpoint != nil || parsed.Witness != reference {
+		t.Fatal("endpoint opt-out lost witness or retained endpoint")
 	}
 }
 

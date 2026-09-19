@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -28,12 +29,11 @@ var (
 // boundary rather than the SSH implementation package.
 type HostKeyApproval = sshtunnel.HostKeyApprovalHandler
 
-// SentryTunnelConfig describes a one-shot SSH tunnel used for sentry
+// SentrySSHConfig describes a one-shot SSH connection used for sentry
 // component signing. It does not mutate the primary signer connection.
-type SentryTunnelConfig struct {
+type SentrySSHConfig struct {
 	Host            string
 	SSHPort         int
-	LocalPort       int
 	SignerPort      int
 	Token           string
 	IdentityFile    string
@@ -42,75 +42,69 @@ type SentryTunnelConfig struct {
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 }
 
-// FindAvailableLocalPort returns an unused loopback TCP port for a transient
-// sentry tunnel.
-func FindAvailableLocalPort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, fmt.Errorf("failed to reserve local port: %w", err)
-	}
-	defer func() { _ = listener.Close() }()
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok || addr.Port <= 0 {
-		return 0, fmt.Errorf("failed to determine reserved local port")
-	}
-	return addr.Port, nil
+const sentrySSHHTTPAuthority = "sentry.aplane.invalid:80"
+
+type sentrySSHDialer interface {
+	DialSignerAPI(context.Context) (net.Conn, error)
 }
 
-// ConnectSentryWithTunnel opens a transient tunnel to a remote sentry
-// signer and returns an authenticated HTTP client plus a cleanup callback.
-func ConnectSentryWithTunnel(ctx context.Context, cfg SentryTunnelConfig) (*signerclient.Client, func(), error) {
+// ConnectSentryWithSSH opens an authenticated SSH connection to a remote
+// sentry and returns an HTTP client that opens direct SSH channels to its REST
+// API, plus a cleanup callback.
+func ConnectSentryWithSSH(ctx context.Context, cfg SentrySSHConfig) (*signerclient.Client, func(), error) {
 	if cfg.Token == "" {
 		return nil, nil, fmt.Errorf("no API token configured")
 	}
-	if cfg.LocalPort == 0 {
-		port, err := FindAvailableLocalPort()
-		if err != nil {
-			return nil, nil, err
-		}
-		cfg.LocalPort = port
-	}
 
-	// The caller's context bounds connection setup, but a successful tunnel is
+	// The caller's context bounds connection setup, but a successful SSH link is
 	// owned by the returned cleanup callback. Discovery callers intentionally
 	// cancel their short per-endpoint probe context after /keys; binding the
-	// retained tunnel to that context would make the subsequent component call
+	// retained connection to that context would make the subsequent component call
 	// fail on an already-canceled connection.
-	tunnelCtx, cancelTunnel, detachSetup := newSentryTunnelLifetime(ctx)
-	tunnel := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.LocalPort, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
+	sshCtx, cancelSSH, detachSetup := newSentrySSHLifetime(ctx)
+	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, 0, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
 	if cfg.HostKeyApproval != nil {
-		tunnel.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
+		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	}
-	tunnel.SetAPIToken(cfg.Token)
-	if err := tunnel.ConnectWithKey(tunnelCtx); err != nil {
+	sshConnection.SetAPIToken(cfg.Token)
+	if err := sshConnection.ConnectWithKey(sshCtx); err != nil {
 		_ = detachSetup()
-		cancelTunnel()
+		cancelSSH()
 		return nil, nil, fmt.Errorf("SSH auth failed: %w", err)
 	}
-	if err := tunnel.StartPortForwarding(tunnelCtx); err != nil {
-		_ = detachSetup()
-		cancelTunnel()
-		_ = tunnel.Close()
-		return nil, nil, fmt.Errorf("failed to start port forwarding: %w", err)
-	}
 	if err := detachSetup(); err != nil {
-		cancelTunnel()
-		_ = tunnel.Close()
+		cancelSSH()
+		_ = sshConnection.Close()
 		return nil, nil, fmt.Errorf("SSH setup canceled: %w", err)
 	}
 
-	client := signerclient.NewSignerClientWithToken(fmt.Sprintf("http://localhost:%d", cfg.LocalPort), cfg.Token)
+	transport := newSentrySSHHTTPTransport(sshConnection)
+	client := signerclient.NewSignerClientWithToken("http://"+sentrySSHHTTPAuthority, cfg.Token)
+	client.Client = &http.Client{Transport: transport}
 	client.ProgressOut = cfg.ProgressOut
 	var closeOnce sync.Once
 	return client, func() {
 		closeOnce.Do(func() {
-			cancelTunnel()
-			_ = tunnel.Close()
+			transport.CloseIdleConnections()
+			_ = sshConnection.Close()
+			cancelSSH()
 		})
 	}, nil
 }
 
-func newSentryTunnelLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
+func newSentrySSHHTTPTransport(dialer sentrySSHDialer) *http.Transport {
+	return &http.Transport{
+		ForceAttemptHTTP2: false,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if network != "tcp" || addr != sentrySSHHTTPAuthority {
+				return nil, fmt.Errorf("unexpected sentry HTTP dial target %s %s", network, addr)
+			}
+			return dialer.DialSignerAPI(ctx)
+		},
+	}
+}
+
+func newSentrySSHLifetime(setupCtx context.Context) (context.Context, context.CancelFunc, func() error) {
 	lifetimeCtx, cancel := context.WithCancel(context.Background())
 	stopSetupCancellation := context.AfterFunc(setupCtx, cancel)
 	detach := func() error {
