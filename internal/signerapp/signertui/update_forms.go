@@ -404,11 +404,13 @@ func (m Model) handleParamModalKeys(
 
 	params := spec.Params
 	maxFocus := len(params)
-	if m.forms.genericLSigPasteParam != "" {
-		return m.handlePasteOnlyParamInput(msg, params)
-	}
 	if m.forms.generateFocus >= 0 && m.forms.generateFocus < len(params) {
 		param := params[m.forms.generateFocus]
+		if isContractAdminReferenceParam(param) && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 &&
+			(msg.Runes[0] == 'j' || msg.Runes[0] == 'k') {
+			m = m.appendToCurrentParam(string(msg.Runes), params)
+			return m, nil, ""
+		}
 		if m.isSentrySelectorParam(keyType, param) {
 			switch msg.String() {
 			case "enter", " ":
@@ -505,9 +507,6 @@ func (m Model) handleParamModalKeys(
 
 	case "backspace":
 		if m.forms.generateFocus < len(params) {
-			if isPasteOnlyParam(params[m.forms.generateFocus]) {
-				return m, nil, ""
-			}
 			paramName := params[m.forms.generateFocus].Name
 			if m.forms.genericLSigParams != nil {
 				if val, ok := m.forms.genericLSigParams[paramName]; ok && len(val) > 0 {
@@ -519,8 +518,8 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "enter", " ":
-		if m.forms.generateFocus < len(params) && isPasteOnlyParam(params[m.forms.generateFocus]) {
-			m.forms.genericLSigPasteParam = params[m.forms.generateFocus].Name
+		if msg.String() == " " && m.forms.generateFocus < len(params) && isContractAdminReferenceParam(params[m.forms.generateFocus]) {
+			m = m.appendToCurrentParam(" ", params)
 			return m, nil, ""
 		}
 		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
@@ -588,13 +587,10 @@ func (m Model) handleParamModalKeys(
 		}
 		return m, nil, ""
 
-	case "delete":
-		if m.forms.generateFocus < len(params) && isPasteOnlyParam(params[m.forms.generateFocus]) {
-			m.forms.genericLSigParams[params[m.forms.generateFocus].Name] = ""
-		}
+	case "insert":
 		return m, nil, ""
 
-	case "insert":
+	case "delete":
 		return m, nil, ""
 
 	default:
@@ -602,63 +598,12 @@ func (m Model) handleParamModalKeys(
 		if msg.Type == tea.KeyRunes {
 			input = string(msg.Runes)
 		}
-		if len(input) > 0 && m.forms.generateFocus < len(params) && !isPasteOnlyParam(params[m.forms.generateFocus]) {
+		if len(input) > 0 && m.forms.generateFocus < len(params) {
 			m = m.appendToCurrentParam(input, params)
 		}
 	}
 
 	return m, nil, ""
-}
-
-func (m Model) handlePasteOnlyParamInput(msg tea.KeyMsg, params []lsigprovider.ParameterDef) (Model, tea.Cmd, string) {
-	paramIdx := m.forms.generateFocus
-	if paramIdx < 0 || paramIdx >= len(params) || params[paramIdx].Name != m.forms.genericLSigPasteParam {
-		m.forms.genericLSigPasteParam = ""
-		return m, nil, ""
-	}
-	if msg.String() == "esc" {
-		m.forms.genericLSigPasteParam = ""
-		return m, nil, ""
-	}
-	if !msg.Paste {
-		return m, nil, ""
-	}
-
-	value, err := normalizePastedParam(string(msg.Runes), params[paramIdx])
-	if err != nil {
-		return m, nil, err.Error()
-	}
-	m.forms.genericLSigParams[params[paramIdx].Name] = value
-	m.forms.genericLSigPasteParam = ""
-	return m, nil, ""
-}
-
-func normalizePastedParam(input string, paramDef lsigprovider.ParameterDef) (string, error) {
-	var value strings.Builder
-	for _, r := range strings.TrimSpace(input) {
-		if paramDef.Type == "bytes" {
-			if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
-				continue
-			}
-			if r >= 'A' && r <= 'F' {
-				r += 'a' - 'A'
-			}
-			if (r < 'a' || r > 'f') && (r < '0' || r > '9') {
-				return "", fmt.Errorf("pasted %s contains non-hexadecimal characters", paramDef.Label)
-			}
-		} else if r < 32 || r > 126 {
-			return "", fmt.Errorf("pasted %s contains unsupported characters", paramDef.Label)
-		}
-		value.WriteRune(r)
-	}
-	if value.Len() == 0 {
-		return "", fmt.Errorf("pasted %s is empty", paramDef.Label)
-	}
-	maxLen := getMaxInputLengthForType(paramDef.Type, paramDef.MaxLength)
-	if value.Len() > maxLen {
-		return "", fmt.Errorf("pasted %s exceeds the maximum length of %d characters", paramDef.Label, maxLen)
-	}
-	return value.String(), nil
 }
 
 // initGenericLSigParams initializes the parameter map for a generic LogicSig.
@@ -679,7 +624,6 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	m.forms.genericLSigParamOrder = make([]string, len(params))
 	m.forms.genericLSigParamModes = make(map[string]int)
 	m.forms.genericLSigParamScroll = make(map[string]int)
-	m.forms.genericLSigPasteParam = ""
 	for i, p := range params {
 		m.forms.genericLSigParamOrder[i] = p.Name
 		m.forms.genericLSigParams[p.Name] = defaultParamValue(p)
@@ -757,8 +701,14 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 			}
 		}
 	}
+	if isContractAdminReferenceParam(paramDef) {
+		effectiveType = "string"
+	}
 
 	maxLen := getMaxInputLengthForType(effectiveType, paramDef.MaxLength)
+	if isContractAdminReferenceParam(paramDef) {
+		maxLen = 4096
+	}
 	lineMaxLen := 0
 	if effectiveType == "address[]" {
 		lineMaxLen = getFieldWidthForType(effectiveType, paramDef.MaxLength) - 1
@@ -1094,6 +1044,13 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 
 	for _, paramDef := range params {
 		value := m.forms.genericLSigParams[paramDef.Name]
+		if isContractAdminReferenceParam(paramDef) {
+			var err error
+			value, err = loadContractAdminPublicKey(value)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if value == "" && len(paramDef.Options) > 0 {
 			value = defaultParamValue(paramDef)
 		}

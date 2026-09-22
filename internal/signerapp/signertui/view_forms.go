@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -274,9 +273,13 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		paramDef := params[i]
 		isFieldFocused := m.forms.generateFocus == i
 		isSentrySelector := m.isSentrySelectorParam(keyType, paramDef)
+		isAdminReference := isContractAdminReferenceParam(paramDef)
 
 		// Determine label - use input mode label if multiple modes exist
 		labelText := paramDef.Label
+		if isAdminReference {
+			labelText = "Contract Admin Reference File (.wit.json)"
+		}
 		var modeHint string
 		if len(paramDef.InputModes) > 1 {
 			modeIdx := 0
@@ -316,6 +319,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		// Pad to field width - use mode's byte length if available, but keep
 		// the rendered input box inside the popup body.
 		fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
+		if isAdminReference {
+			fieldWidth = 62
+		}
 		if len(paramDef.Options) > 0 {
 			fieldWidth = optionFieldWidth(paramDef.Options)
 		}
@@ -339,44 +345,21 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if m.forms.genericLSigParams != nil {
 			value = m.forms.genericLSigParams[paramDef.Name]
 		}
-		if isPasteOnlyParam(paramDef) {
-			captureActive := m.forms.genericLSigPasteParam == paramDef.Name
-			preview := middleEllipsize(value, fieldWidth)
-			if value == "" {
-				preview = "(no key pasted)"
-			}
-			if captureActive {
-				preview = "Paste key now"
-			}
-			sb.WriteString(inputInactiveStyle.Render(fixedWidthFieldLine(preview, fieldWidth)))
-			sb.WriteString("\n")
-
-			action := "PASTE KEY"
-			if value != "" {
-				action = "REPLACE KEY"
-			}
-			if captureActive {
-				action = "WAITING FOR PASTE"
-			}
-			button := buttonInactiveStyle.Render("  [ " + action + " ]  ")
-			if isFieldFocused {
-				button = buttonActiveStyle.Render("> [ " + action + " ] <")
-			}
-			sb.WriteString(button)
-			if value != "" && !captureActive {
-				sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  %d characters", len(value))))
-			}
-			sb.WriteString("\n\n")
-			continue
-		}
 		if value == "" && len(paramDef.Options) > 0 {
 			value = defaultParamValue(paramDef)
 		}
 		if value == "" {
-			value = getPlaceholderForType(paramDef.Type)
+			if isAdminReference {
+				value = "Path to public .wit.json on this machine"
+			} else {
+				value = getPlaceholderForType(paramDef.Type)
+			}
 		}
 		if isSentrySelector {
 			value = m.sentrySelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
+		}
+		if isAdminReference && !isFieldFocused {
+			value = middleEllipsize(value, fieldWidth)
 		}
 
 		lines := paramInputLines(value)
@@ -387,6 +370,12 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 			}
 			if isSentrySelector {
 				currentValue = m.sentrySelectionDisplay(currentValue)
+			}
+			if isAdminReference {
+				currentRunes := []rune(currentValue)
+				if len(currentRunes) >= fieldWidth {
+					currentValue = string(currentRunes[len(currentRunes)-fieldWidth+1:])
+				}
 			}
 			currentLines := paramInputLines(currentValue)
 			currentLines[len(currentLines)-1] += "_"
@@ -459,16 +448,6 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	}
 
 	return m.renderPopup(80, sb.String())
-}
-
-func isPasteOnlyParam(paramDef lsigprovider.ParameterDef) bool {
-	if len(paramDef.Options) > 0 {
-		return false
-	}
-	if paramDef.Type == "bytes" && paramDef.MaxLength > 256 {
-		return true
-	}
-	return false
 }
 
 func middleEllipsize(value string, width int) string {

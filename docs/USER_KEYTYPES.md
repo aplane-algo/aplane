@@ -246,10 +246,14 @@ Generate the external contract-admin key first:
 aprekey generate --out /media/cold/bounded-admin
 ```
 
-Use the generated result's `public_key_hex` as the Contract Admin Public Key
-when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
-`.wit` artifact outside the signer. Ordinary spends use the
-normal client flow. Rekey with the dedicated helper:
+Copy the generated public `<WitnessKeyID>.wit.json` file to the machine running
+`apadmin`. When generating `aplane.falcon1024-allowlist-alock.v1`, enter that
+file's local path in **Contract Admin Reference File (.wit.json)**. `apadmin`
+validates the public reference and supplies its `public_key_hex` to the signer;
+it never reads the private `.wit` file. Keep the `.wit` artifact outside the
+signer. Scripted generation still accepts the `bounded_admin_public_key` hex
+parameter. Ordinary spends use the normal client flow. Rekey with the dedicated
+helper:
 
 ```bash
 aprekey rekey --client-data "$APCLIENT_DATA" \

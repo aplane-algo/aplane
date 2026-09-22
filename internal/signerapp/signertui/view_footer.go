@@ -131,9 +131,6 @@ func (m Model) passphraseFooterText() string {
 }
 
 func (m Model) parameterModalFooterText(keyType, verb string) string {
-	if m.forms.genericLSigPasteParam != "" {
-		return "Paste key now | Esc: Cancel"
-	}
 	spec := getParamSpecForKeyType(keyType)
 	if spec == nil {
 		return "Esc: Back"
@@ -141,9 +138,6 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 	for _, param := range spec.Params {
 		if isMultilineParamType(param.Type) {
 			return ""
-		}
-		if isPasteOnlyParam(param) {
-			return "Enter: Paste/Replace | Del: Clear | Tab: Next | Esc: Back"
 		}
 	}
 	return "Tab: Next | </> Switch mode | Enter: " + verb + " | Esc: Back"
