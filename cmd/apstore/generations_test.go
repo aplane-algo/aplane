@@ -104,3 +104,61 @@ func TestVerifyCurrentGenerationContentRejectsSymlinkedNamespaceBeforePrompt(t *
 		t.Fatalf("validateCurrentGenerationForContent() error = %v, want structural rejection", err)
 	}
 }
+
+func TestParsePruneArgs(t *testing.T) {
+	tests := []struct {
+		args    []string
+		want    pruneOptions
+		wantErr string
+	}{
+		{args: nil, want: pruneOptions{}},
+		{args: []string{"--all-priors"}, want: pruneOptions{allPriors: true}},
+		{args: []string{"--yes"}, want: pruneOptions{assumeYes: true}},
+		{args: []string{"--all-priors", "--yes"}, want: pruneOptions{allPriors: true, assumeYes: true}},
+		{args: []string{"--yes", "--all-priors"}, want: pruneOptions{allPriors: true, assumeYes: true}},
+		{args: []string{"--yes", "--yes"}, wantErr: "duplicate prune option --yes"},
+		{args: []string{"-y"}, wantErr: generationsPruneUsage},
+		{args: []string{"--force"}, wantErr: generationsPruneUsage},
+	}
+	for _, test := range tests {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			got, err := parsePruneArgs(test.args)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("parsePruneArgs(%q) error = %v, want %q", test.args, err, test.wantErr)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("parsePruneArgs(%q) = %+v, %v; want %+v", test.args, got, err, test.want)
+			}
+		})
+	}
+}
+
+// Unattended prune (cron/CI/provisioning) has no stdin; --yes must replace
+// the interactive confirmation while the prompt path still defaults to no.
+func TestGenerationsPruneUnattended(t *testing.T) {
+	for _, args := range [][]string{
+		{"prune", "--yes"},
+		{"prune", "--all-priors", "--yes"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			paths := newGenerationalTestStore(t, "prune-pass")
+			oldDataDirectory := dataDirectory
+			dataDirectory = paths.Root()
+			t.Cleanup(func() { dataDirectory = oldDataDirectory })
+			t.Setenv("APSIGNER_PASSPHRASE", "prune-pass")
+
+			if err := withTestStdin("", func() error { return cmdGenerations(args) }); err != nil {
+				t.Fatalf("cmdGenerations(%q) with empty stdin error = %v", args, err)
+			}
+
+			withoutYes := args[:len(args)-1]
+			err := withTestStdin("", func() error { return cmdGenerations(withoutYes) })
+			if err == nil || !strings.Contains(err.Error(), "prune cancelled") {
+				t.Fatalf("cmdGenerations(%q) with empty stdin error = %v, want prune cancelled", withoutYes, err)
+			}
+		})
+	}
+}

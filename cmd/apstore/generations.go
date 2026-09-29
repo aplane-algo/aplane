@@ -17,36 +17,36 @@ import (
 // (docs/ARCH_GENERATIONS.md). Destructive pruning is offline and requires the
 // daemon to stop. Live inventory is owned by `apadmin generations list`.
 //
-//	apstore generations prune               keep current + newest sealed prior
-//	apstore generations prune --all-priors  keep only current
+//	apstore generations prune [--yes]               keep current + newest sealed prior
+//	apstore generations prune --all-priors [--yes]  keep only current
+//
+// --yes accepts the destructive-consequence confirmation for unattended runs
+// (with APSIGNER_PASSPHRASE for --all-priors); the consequence is still logged.
 func cmdGenerations(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore generations prune [--all-priors]")
+		return fmt.Errorf("%s", generationsPruneUsage)
 	}
 	switch args[0] {
 	case "prune":
+		opts, err := parsePruneArgs(args[1:])
+		if err != nil {
+			return err
+		}
 		paths := keystorePaths()
 		if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
 			return fmt.Errorf("store is not initialized with the required atomic store-root layout")
 		}
-		retainRollbackParent := true
-		switch {
-		case len(args) == 1:
-		case len(args) == 2 && args[1] == "--all-priors":
-			retainRollbackParent = false
-		default:
-			return fmt.Errorf("usage: apstore generations prune [--all-priors]")
-		}
+		retainRollbackParent := !opts.allPriors
 		// Pruning deletes rollback targets; the operator confirms the
 		// destructive consequence before any gate that could succeed.
-		if retainRollbackParent {
-			if !confirmYesNo("Prune deletes sealed prior generations except the rollback target (the current generation's parent). Deleted generations cannot be recovered. Proceed? ") {
-				return fmt.Errorf("prune cancelled")
-			}
-		} else {
-			if !confirmYesNo("Prune --all-priors deletes ALL prior generations, including the rollback target for the most recent operation. Rollback becomes impossible and the deletion cannot be undone. Proceed? ") {
-				return fmt.Errorf("prune cancelled")
-			}
+		consequence := "Prune deletes sealed prior generations except the rollback target (the current generation's parent). Deleted generations cannot be recovered."
+		if !retainRollbackParent {
+			consequence = "Prune --all-priors deletes ALL prior generations, including the rollback target for the most recent operation. Rollback becomes impossible and the deletion cannot be undone."
+		}
+		if opts.assumeYes {
+			logInfof("%s Confirmed by --yes.", consequence)
+		} else if !confirmYesNo(consequence + " Proceed? [y/N]: ") {
+			return fmt.Errorf("prune cancelled")
 		}
 		active, kr, err := readStore()
 		if err != nil {
@@ -79,6 +79,33 @@ func cmdGenerations(args []string) error {
 	default:
 		return fmt.Errorf("unknown generations subcommand %q (use prune; live inventory is `apadmin generations list`)", args[0])
 	}
+}
+
+const generationsPruneUsage = "usage: apstore generations prune [--all-priors] [--yes]"
+
+type pruneOptions struct {
+	allPriors bool
+	assumeYes bool
+}
+
+func parsePruneArgs(args []string) (pruneOptions, error) {
+	var opts pruneOptions
+	seen := make(map[string]bool, len(args))
+	for _, arg := range args {
+		if seen[arg] {
+			return pruneOptions{}, fmt.Errorf("duplicate prune option %s; %s", arg, generationsPruneUsage)
+		}
+		seen[arg] = true
+		switch arg {
+		case "--all-priors":
+			opts.allPriors = true
+		case "--yes":
+			opts.assumeYes = true
+		default:
+			return pruneOptions{}, fmt.Errorf("%s", generationsPruneUsage)
+		}
+	}
+	return opts, nil
 }
 
 func validateCurrentGenerationForContent(gen storepaths.GenPaths) error {

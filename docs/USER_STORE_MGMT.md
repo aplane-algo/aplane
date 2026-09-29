@@ -484,6 +484,7 @@ destructive pruning:
 ./apadmin generations list                # current + sealed priors (read-only; retry if store_busy)
 ./apstore generations prune               # keep current + its parent
 ./apstore generations prune --all-priors  # keep only current
+./apstore generations prune --all-priors --yes  # unattended (with APSIGNER_PASSPHRASE)
 ```
 
 Complete generation publications that were never committed are preserved in a
@@ -528,12 +529,17 @@ remain rollback targets and stay readable under their historical key terms.
 credential restore) is no longer possible.
 
 Both prune modes ask for explicit confirmation before deleting anything,
-stating what is being given up. `prune --all-priors` additionally abandons
-every rollback fallback, so it prompts for the store passphrase and
-decrypt-validates the current generation's content (the same checks the
-signer's unlock gate applies) before deleting. Both prune modes also refuse
-to run if the current generation fails structural validation or, when the
+stating what is being given up; the default answer is no. `prune --all-priors`
+additionally abandons every rollback fallback, so it prompts for the store
+passphrase and decrypt-validates the current generation's content (the same
+checks the signer's unlock gate applies) before deleting. Both prune modes also
+refuse to run if the current generation fails structural validation or, when the
 parent is being retained, if that rollback target's seal does not verify.
+
+For unattended runs (cron, CI, provisioning), pass `--yes` to accept the
+confirmation; the consequence is still logged. With `--all-priors`, also set
+`APSIGNER_PASSPHRASE` so the passphrase prompt is skipped. The validation gates
+above still apply.
 
 ### Credential-Only Backup Boundary
 
