@@ -245,8 +245,8 @@ func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectCont
 	switch class {
 	case keys.ManagedCredentialAccount:
 		return crypto.AccountKeyContext(selector), true, nil
-	case keys.ManagedCredentialSentry:
-		return crypto.SentryCredentialContext(selector), true, nil
+	case keys.ManagedCredentialCosigner:
+		return crypto.CosignerCredentialContext(selector), true, nil
 	default:
 		return crypto.ObjectContext{}, false, fmt.Errorf(
 			"rollback source has unsupported credential class %q",

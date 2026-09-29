@@ -36,8 +36,8 @@ Each line is a JSON object with the following fields:
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Policy rule that forced manual review before the operator decision |
-| `witness_key_id` | string | Public witness authority affected by a sentry-reference mutation |
-| `migration_origin` | string | Closed historical origin retained on migrated sentry-reference records |
+| `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
+| `migration_origin` | string | Closed historical origin retained on migrated cosigner-reference records |
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
@@ -89,7 +89,7 @@ Fields are omitted when empty.
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
-| `SENTRY_REFERENCE_CHANGED` | A product sentry-reference catalog record was imported, promoted, or removed |
+| `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported, promoted, or removed |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, and `key_count`, in addition to normal session/

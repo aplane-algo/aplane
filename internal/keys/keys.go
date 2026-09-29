@@ -530,7 +530,7 @@ func managedCredentialClassMismatchError(err error) error {
 	)
 }
 
-// IsWitnessKey classifies a key payload as a sentry key.
+// IsWitnessKey classifies a key payload as a cosigner key.
 func IsWitnessKey(category string) bool {
 	return category == CategoryWitness
 }

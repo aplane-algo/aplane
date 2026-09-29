@@ -288,7 +288,7 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 func (c *ComposedDSA) paramsWithoutAdminKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name != BoundedAdminPublicKeyParameter && param.Name != BoundedSentryPublicKeyParameter {
+		if param.Name != BoundedAdminPublicKeyParameter && param.Name != BoundedCosignerPublicKeyParameter {
 			params = append(params, param)
 		}
 	}

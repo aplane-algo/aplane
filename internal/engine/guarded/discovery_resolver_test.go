@@ -18,40 +18,40 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
-func TestCompletedSentrySweepIgnoresInternalDeadlineButHonorsCallerCancellation(t *testing.T) {
+func TestCompletedCosignerSweepIgnoresInternalDeadlineButHonorsCallerCancellation(t *testing.T) {
 	aliases := []string{"a"}
-	states := []*sentryEndpointProbeResult{{alias: "a", err: context.DeadlineExceeded}}
-	if err := completedSentrySweepError(t.Context(), aliases, states, context.DeadlineExceeded); err != nil {
+	states := []*cosignerEndpointProbeResult{{alias: "a", err: context.DeadlineExceeded}}
+	if err := completedCosignerSweepError(t.Context(), aliases, states, context.DeadlineExceeded); err != nil {
 		t.Fatalf("completed sweep = %v, want nil", err)
 	}
-	if err := completedSentrySweepError(t.Context(), []string{"a", "b"}, append(states, nil), context.DeadlineExceeded); !errors.Is(err, context.DeadlineExceeded) {
+	if err := completedCosignerSweepError(t.Context(), []string{"a", "b"}, append(states, nil), context.DeadlineExceeded); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("incomplete sweep = %v, want deadline error", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := completedSentrySweepError(ctx, aliases, states, context.DeadlineExceeded); !errors.Is(err, context.Canceled) {
+	if err := completedCosignerSweepError(ctx, aliases, states, context.DeadlineExceeded); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled caller = %v, want cancellation", err)
 	}
 }
 
-func TestLiveSentryResolverReusesOneProbeForSeveralKeys(t *testing.T) {
-	first := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
-	second := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "bb"}
+func TestLiveCosignerResolverReusesOneProbeForSeveralKeys(t *testing.T) {
+	first := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+	second := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "bb"}
 	var probes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("only"),
-		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			probes.Add(1)
-			return resolverTestEndpoint("only"), []DiscoveredSentryComponentKey{
+			return resolverTestEndpoint("only"), []DiscoveredCosignerComponentKey{
 				{PublicKey: first.PublicKey, KeyType: first.ComponentKeyType},
 				{PublicKey: second.PublicKey, KeyType: second.ComponentKeyType},
 			}, nil
 		},
 	}
 
-	snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{first, second, first})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{first, second, first})
 	if err != nil {
-		t.Fatalf("resolveSentryEndpoints() error = %v", err)
+		t.Fatalf("resolveCosignerEndpoints() error = %v", err)
 	}
 	defer snapshot.close()
 	if got := probes.Load(); got != 1 {
@@ -62,62 +62,62 @@ func TestLiveSentryResolverReusesOneProbeForSeveralKeys(t *testing.T) {
 	}
 }
 
-func TestLiveSentryResolverRejectsDuplicateAdvertisers(t *testing.T) {
-	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+func TestLiveCosignerResolverRejectsDuplicateAdvertisers(t *testing.T) {
+	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	var closes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("z-later", "a-first"),
-		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-			return &resolvedSentryEndpoint{
+		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
+			return &resolvedCosignerEndpoint{
 				source:  alias,
 				cleanup: func() { closes.Add(1) },
-			}, []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
+			}, []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
 	if snapshot != nil {
 		snapshot.close()
 	}
-	if !errors.Is(err, errSentryDiscoveryDuplicateRoute) {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want duplicate-route failure", err)
+	if !errors.Is(err, errCosignerDiscoveryDuplicateRoute) {
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want duplicate-route failure", err)
 	}
 	if got := err.Error(); !strings.Contains(got, `endpoints "a-first", "z-later"`) {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want sorted duplicate aliases", err)
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want sorted duplicate aliases", err)
 	}
 	if got := closes.Load(); got != 2 {
 		t.Fatalf("closed endpoint connections = %d, want 2", got)
 	}
 }
 
-func TestLiveSentryResolverDoesNotAcceptRouteAfterDiscoveryCancellation(t *testing.T) {
-	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+func TestLiveCosignerResolverDoesNotAcceptRouteAfterDiscoveryCancellation(t *testing.T) {
+	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	var probes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("a", "b"),
-		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			probes.Add(1)
-			return resolverTestEndpoint("unexpected"), []DiscoveredSentryComponentKey{{
+			return resolverTestEndpoint("unexpected"), []DiscoveredCosignerComponentKey{{
 				PublicKey: key.PublicKey, KeyType: key.ComponentKeyType,
 			}}, nil
 		},
 	}
 
-	snapshot, err := s.resolveSentryEndpoints(ctx, []sentryRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(ctx, []cosignerRequestKey{key})
 	if snapshot != nil {
 		snapshot.close()
-		t.Fatal("resolveSentryEndpoints() returned a snapshot after cancellation")
+		t.Fatal("resolveCosignerEndpoints() returned a snapshot after cancellation")
 	}
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want context cancellation", err)
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want context cancellation", err)
 	}
 	if got := probes.Load(); got != 0 {
 		t.Fatalf("endpoint probes = %d, want 0 for pre-canceled discovery", got)
 	}
 }
 
-func TestLiveSentryResolverLimitsConcurrentProbes(t *testing.T) {
+func TestLiveCosignerResolverLimitsConcurrentProbes(t *testing.T) {
 	aliases := []string{"a", "b", "c", "d", "e", "f"}
 	started := make(chan struct{}, len(aliases))
 	release := make(chan struct{})
@@ -125,7 +125,7 @@ func TestLiveSentryResolverLimitsConcurrentProbes(t *testing.T) {
 	var maximum atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry(aliases...),
-		probeEndpoint: func(ctx context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(ctx context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			current := active.Add(1)
 			defer active.Add(-1)
 			for {
@@ -145,10 +145,10 @@ func TestLiveSentryResolverLimitsConcurrentProbes(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
+		_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
 		done <- err
 	}()
-	for range sentryDiscoveryWorkers {
+	for range cosignerDiscoveryWorkers {
 		<-started
 	}
 	select {
@@ -158,48 +158,48 @@ func TestLiveSentryResolverLimitsConcurrentProbes(t *testing.T) {
 	}
 	close(release)
 	if err := <-done; err == nil {
-		t.Fatal("resolveSentryEndpoints() error = nil, want missing-key failure")
+		t.Fatal("resolveCosignerEndpoints() error = nil, want missing-key failure")
 	}
-	if got := maximum.Load(); got != sentryDiscoveryWorkers {
-		t.Fatalf("maximum concurrent probes = %d, want %d", got, sentryDiscoveryWorkers)
+	if got := maximum.Load(); got != cosignerDiscoveryWorkers {
+		t.Fatalf("maximum concurrent probes = %d, want %d", got, cosignerDiscoveryWorkers)
 	}
 }
 
-func TestLiveSentryResolverClosesEveryUnusedEndpoint(t *testing.T) {
+func TestLiveCosignerResolverClosesEveryUnusedEndpoint(t *testing.T) {
 	var closes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("a", "b", "c"),
-		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-			return &resolvedSentryEndpoint{source: alias, cleanup: func() { closes.Add(1) }}, nil, nil
+		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
+			return &resolvedCosignerEndpoint{source: alias, cleanup: func() { closes.Add(1) }}, nil, nil
 		},
 	}
-	_, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "missing"}})
 	if err == nil {
-		t.Fatal("resolveSentryEndpoints() error = nil, want missing-key failure")
+		t.Fatal("resolveCosignerEndpoints() error = nil, want missing-key failure")
 	}
 	if got := closes.Load(); got != 3 {
 		t.Fatalf("closed endpoint connections = %d, want 3", got)
 	}
 }
 
-func TestLiveSentryResolverHostKeyMismatchAbortsGlobalSearch(t *testing.T) {
-	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+func TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch(t *testing.T) {
+	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("a-match", "b-mismatch"),
-		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			started <- struct{}{}
 			<-release
 			if alias == "b-mismatch" {
 				return nil, nil, fmt.Errorf("dial: %w", sshtunnel.ErrHostKeyMismatch)
 			}
-			return resolverTestEndpoint(alias), []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
+			return resolverTestEndpoint(alias), []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
 	done := make(chan error, 1)
 	go func() {
-		snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key})
+		snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
 		if snapshot != nil {
 			snapshot.close()
 		}
@@ -209,29 +209,29 @@ func TestLiveSentryResolverHostKeyMismatchAbortsGlobalSearch(t *testing.T) {
 	<-started
 	close(release)
 	err := <-done
-	if !errors.Is(err, errSentryDiscoveryHostKeyMismatch) {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want host-key mismatch", err)
+	if !errors.Is(err, errCosignerDiscoveryHostKeyMismatch) {
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want host-key mismatch", err)
 	}
 }
 
-func TestLiveSentryResolverWarnsWhenEarlierEndpointFails(t *testing.T) {
-	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+func TestLiveCosignerResolverWarnsWhenEarlierEndpointFails(t *testing.T) {
+	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	var progress bytes.Buffer
 	conn := connect.NewState()
 	conn.SetSignerProgressWriter(&progress)
 	s := &Signer{
 		conn:             conn,
 		endpointRegistry: resolverTestRegistry("a-offline", "b-match"),
-		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			if alias == "a-offline" {
-				return nil, nil, fmt.Errorf("%w: refused", ErrSentryDiscoveryUnavailable)
+				return nil, nil, fmt.Errorf("%w: refused", ErrCosignerDiscoveryUnavailable)
 			}
-			return resolverTestEndpoint(alias), []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
+			return resolverTestEndpoint(alias), []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key})
 	if err != nil {
-		t.Fatalf("resolveSentryEndpoints() error = %v", err)
+		t.Fatalf("resolveCosignerEndpoints() error = %v", err)
 	}
 	defer snapshot.close()
 	if got := progress.String(); !strings.Contains(got, "a-offline: unavailable") {
@@ -239,33 +239,33 @@ func TestLiveSentryResolverWarnsWhenEarlierEndpointFails(t *testing.T) {
 	}
 }
 
-func TestLiveSentryResolverRejectsEndpointOverflowBeforeProbing(t *testing.T) {
-	aliases := make([]string, 0, maxSentryDiscoveryEndpoints+1)
-	for i := 0; i <= maxSentryDiscoveryEndpoints; i++ {
-		aliases = append(aliases, fmt.Sprintf("sentry-%02d", i))
+func TestLiveCosignerResolverRejectsEndpointOverflowBeforeProbing(t *testing.T) {
+	aliases := make([]string, 0, maxCosignerDiscoveryEndpoints+1)
+	for i := 0; i <= maxCosignerDiscoveryEndpoints; i++ {
+		aliases = append(aliases, fmt.Sprintf("cosigner-%02d", i))
 	}
 	var probes atomic.Int32
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry(aliases...),
-		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
+		probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 			probes.Add(1)
 			return nil, nil, nil
 		},
 	}
-	_, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
-	if !errors.Is(err, ErrSentryDiscoveryConfig) || !strings.Contains(err.Error(), "configured 13 sentry endpoints; maximum is 12") {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want explicit endpoint ceiling", err)
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
+	if !errors.Is(err, ErrCosignerDiscoveryConfig) || !strings.Contains(err.Error(), "configured 13 cosigner endpoints; maximum is 12") {
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want explicit endpoint ceiling", err)
 	}
 	if got := probes.Load(); got != 0 {
 		t.Fatalf("endpoint probes = %d, want 0", got)
 	}
 }
 
-func TestLiveSentryResolverRemovesImplicitPrimarySignerFallback(t *testing.T) {
+func TestLiveCosignerResolverRemovesImplicitPrimarySignerFallback(t *testing.T) {
 	s := &Signer{endpointRegistry: config.ClientEndpointRegistry{Endpoints: map[string]config.ClientEndpointConfig{}}}
-	_, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
-	if !errors.Is(err, ErrSentryDiscoveryConfig) || !strings.Contains(err.Error(), "no sentry endpoints configured") {
-		t.Fatalf("resolveSentryEndpoints() error = %v, want explicit sentry endpoint requirement", err)
+	_, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}})
+	if !errors.Is(err, ErrCosignerDiscoveryConfig) || !strings.Contains(err.Error(), "no cosigner endpoints configured") {
+		t.Fatalf("resolveCosignerEndpoints() error = %v, want explicit cosigner endpoint requirement", err)
 	}
 }
 
@@ -275,16 +275,16 @@ func resolverTestRegistry(aliases ...string) config.ClientEndpointRegistry {
 		Endpoints:     make(map[string]config.ClientEndpointConfig, len(aliases)),
 	}
 	for _, alias := range aliases {
-		registry.Endpoints[alias] = config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "https://" + alias + ".example"}
+		registry.Endpoints[alias] = config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "https://" + alias + ".example"}
 	}
 	return registry
 }
 
-func resolverTestEndpoint(source string) *resolvedSentryEndpoint {
-	return &resolvedSentryEndpoint{source: source}
+func resolverTestEndpoint(source string) *resolvedCosignerEndpoint {
+	return &resolvedCosignerEndpoint{source: source}
 }
 
-func TestSentryDiscoveryFailureLabelsDistinguishSSHTrustFailures(t *testing.T) {
+func TestCosignerDiscoveryFailureLabelsDistinguishSSHTrustFailures(t *testing.T) {
 	tests := []struct {
 		err  error
 		want string
@@ -295,28 +295,28 @@ func TestSentryDiscoveryFailureLabelsDistinguishSSHTrustFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			if got := sentryDiscoveryFailureLabel(tt.err); got != tt.want {
-				t.Fatalf("sentryDiscoveryFailureLabel() = %q, want %q", got, tt.want)
+			if got := cosignerDiscoveryFailureLabel(tt.err); got != tt.want {
+				t.Fatalf("cosignerDiscoveryFailureLabel() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestLiveSentryResolverPublishesEachCleanupOnce(t *testing.T) {
-	key := sentryRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
+func TestLiveCosignerResolverPublishesEachCleanupOnce(t *testing.T) {
+	key := cosignerRequestKey{ComponentKeyType: "test.witness.v1", PublicKey: "aa"}
 	var mu sync.Mutex
 	closes := map[string]int{}
 	s := &Signer{
 		endpointRegistry: resolverTestRegistry("a"),
-		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-			return &resolvedSentryEndpoint{source: alias, cleanup: func() {
+		probeEndpoint: func(_ context.Context, alias string, _ config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
+			return &resolvedCosignerEndpoint{source: alias, cleanup: func() {
 				mu.Lock()
 				closes[alias]++
 				mu.Unlock()
-			}}, []DiscoveredSentryComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
+			}}, []DiscoveredCosignerComponentKey{{PublicKey: key.PublicKey, KeyType: key.ComponentKeyType}}, nil
 		},
 	}
-	snapshot, err := s.resolveSentryEndpoints(t.Context(), []sentryRequestKey{key, key})
+	snapshot, err := s.resolveCosignerEndpoints(t.Context(), []cosignerRequestKey{key, key})
 	if err != nil {
 		t.Fatal(err)
 	}

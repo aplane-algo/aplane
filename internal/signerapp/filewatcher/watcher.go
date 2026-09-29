@@ -132,7 +132,7 @@ func isReloadCandidate(path string) bool {
 		return true
 	}
 	return strings.HasSuffix(path, keys.AccountKeyExtension) ||
-		strings.HasSuffix(path, keys.SentryCredentialExtension) ||
+		strings.HasSuffix(path, keys.CosignerCredentialExtension) ||
 		strings.HasSuffix(path, ".template")
 }
 

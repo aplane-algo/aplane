@@ -78,23 +78,23 @@ func TestEngineIsTransitivelyUIFree(t *testing.T) {
 }
 
 // guardedAllowedImports is the pinned dependency surface of the isolated
-// guarded (sentry) signing package. The guarded flow is the most
+// guarded (cosigner) signing package. The guarded flow is the most
 // safety-critical client path, so its imports are kept small and reviewed:
 // adding an entry here should be a conscious decision, and the package must
 // never import internal/engine (the facade that embeds it).
 var guardedAllowedImports = map[string]bool{
-	modulePrefix + "/internal/cache":            true,
-	modulePrefix + "/internal/clientsign":       true,
-	modulePrefix + "/internal/config":           true,
-	modulePrefix + "/internal/engine/connect":   true,
-	modulePrefix + "/internal/lsigresource":     true,
-	modulePrefix + "/internal/sentry/canonical": true,
-	modulePrefix + "/internal/signerapi":        true,
-	modulePrefix + "/internal/signerclient":     true,
-	modulePrefix + "/internal/signing":          true,
-	modulePrefix + "/internal/tokenfile":        true,
-	modulePrefix + "/internal/txnutil":          true,
-	modulePrefix + "/internal/witness":          true,
+	modulePrefix + "/internal/cache":              true,
+	modulePrefix + "/internal/clientsign":         true,
+	modulePrefix + "/internal/config":             true,
+	modulePrefix + "/internal/engine/connect":     true,
+	modulePrefix + "/internal/lsigresource":       true,
+	modulePrefix + "/internal/cosigner/canonical": true,
+	modulePrefix + "/internal/signerapi":          true,
+	modulePrefix + "/internal/signerclient":       true,
+	modulePrefix + "/internal/signing":            true,
+	modulePrefix + "/internal/tokenfile":          true,
+	modulePrefix + "/internal/txnutil":            true,
+	modulePrefix + "/internal/witness":            true,
 }
 
 // TestGuardedPackageStaysIsolated pins the guarded package's dependency

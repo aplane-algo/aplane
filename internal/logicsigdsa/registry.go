@@ -96,7 +96,7 @@ func RoutingFamily(keyType string) string {
 // caller's registry (it runs under whatever lock the caller holds). It returns
 // the zero value and false when neither matches.
 //
-// Note: keygen deliberately does NOT use this — it must reject sentry key types
+// Note: keygen deliberately does NOT use this — it must reject cosigner key types
 // between the exact and family steps, so its lookup is spelled out inline.
 func ResolveByKeyType[T any](keyType string, get func(string) (T, bool)) (T, bool) {
 	if v, ok := get(keyType); ok {

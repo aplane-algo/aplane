@@ -80,94 +80,94 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
 }
 
-func (s *Session) HandleListSentryReferences(requestID string) {
+func (s *Session) HandleListCosignerReferences(requestID string) {
 	if s.requireBoundRuntime(requestID) == nil {
 		return
 	}
-	if !s.authorize(requestID, auth.ActionSentriesView, auth.Resource{Type: "sentry_references"}) {
+	if !s.authorize(requestID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_references"}) {
 		return
 	}
 	if s.inspectionServices == nil {
 		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	_ = s.WriteJSON(ProtocolSentryReferencesListMessage(requestID, s.inspectionServices.ListSentryReferences()))
+	_ = s.WriteJSON(ProtocolCosignerReferencesListMessage(requestID, s.inspectionServices.ListCosignerReferences()))
 }
 
-func (s *Session) HandleGetSentryReference(msg *protocol.GetSentryReferenceMessage) {
+func (s *Session) HandleGetCosignerReference(msg *protocol.GetCosignerReferenceMessage) {
 	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
+	if !s.authorize(msg.ID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.GetSentryReference(adminproto.GetSentryReferenceRequest{Name: msg.Name})
-	_ = s.WriteJSON(ProtocolSentryReferenceMessage(msg.ID, protocol.MsgTypeSentryReference, result))
+	result := s.inspectionServices.GetCosignerReference(adminproto.GetCosignerReferenceRequest{Name: msg.Name})
+	_ = s.WriteJSON(ProtocolCosignerReferenceMessage(msg.ID, protocol.MsgTypeCosignerReference, result))
 }
 
-func (s *Session) HandleImportSentryReference(msg *protocol.ImportSentryReferenceMessage) {
+func (s *Session) HandleImportCosignerReference(msg *protocol.ImportCosignerReferenceMessage) {
 	// Reference aliases select the witness public key embedded during guarded
 	// key generation, so mutation shares key generation's unlocked interlock.
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
+	if !s.authorize(msg.ID, auth.ActionCosignersManage, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.ImportSentryReference(adminproto.ImportSentryReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
+	result := s.inspectionServices.ImportCosignerReference(adminproto.ImportCosignerReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
 	if audit, ok := s.audit.(interface {
-		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
+		LogCosignerReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
-		audit.LogSentryReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Reference.MigrationOrigin, result.Success)
+		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Reference.MigrationOrigin, result.Success)
 	}
-	_ = s.WriteJSON(ProtocolSentryReferenceMessage(
+	_ = s.WriteJSON(ProtocolCosignerReferenceMessage(
 		msg.ID,
-		protocol.MsgTypeImportSentryReferenceResult,
-		adminproto.GetSentryReferenceResult(result),
+		protocol.MsgTypeImportCosignerReferenceResult,
+		adminproto.GetCosignerReferenceResult(result),
 	))
 }
 
-func (s *Session) HandleRemoveSentryReference(msg *protocol.RemoveSentryReferenceMessage) {
+func (s *Session) HandleRemoveCosignerReference(msg *protocol.RemoveCosignerReferenceMessage) {
 	if s.requireUnlockedRuntime(msg.ID) == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesManage, auth.Resource{Type: "sentry_reference", ID: msg.Name}) {
+	if !s.authorize(msg.ID, auth.ActionCosignersManage, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
 		return
 	}
 	if s.inspectionServices == nil {
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.RemoveSentryReference(adminproto.RemoveSentryReferenceRequest{Name: msg.Name})
+	result := s.inspectionServices.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: msg.Name})
 	if audit, ok := s.audit.(interface {
-		LogSentryReferenceChangedContext(SessionContext, string, string, string, string, bool)
+		LogCosignerReferenceChangedContext(SessionContext, string, string, string, string, bool)
 	}); ok {
-		audit.LogSentryReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, "", result.Success)
+		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, "", result.Success)
 	}
-	_ = s.WriteJSON(ProtocolRemoveSentryReferenceResultMessage(msg.ID, result))
+	_ = s.WriteJSON(ProtocolRemoveCosignerReferenceResultMessage(msg.ID, result))
 }
 
-func (s *Session) HandleExportSentryPublic(msg *protocol.ExportSentryPublicMessage) {
+func (s *Session) HandleExportCosignerPublic(msg *protocol.ExportCosignerPublicMessage) {
 	if s.requireBoundRuntime(msg.ID) == nil {
 		return
 	}
-	if !s.authorize(msg.ID, auth.ActionSentriesView, auth.Resource{Type: "sentry_public", ID: msg.WitnessKeyID}) {
+	if !s.authorize(msg.ID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_public", ID: msg.WitnessKeyID}) {
 		return
 	}
 	if s.inspectionServices == nil {
 		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
-	result := s.inspectionServices.ExportSentryPublic(adminproto.ExportSentryPublicRequest{WitnessKeyID: msg.WitnessKeyID})
-	_ = s.WriteJSON(ProtocolExportSentryPublicResultMessage(msg.ID, result))
+	result := s.inspectionServices.ExportCosignerPublic(adminproto.ExportCosignerPublicRequest{WitnessKeyID: msg.WitnessKeyID})
+	_ = s.WriteJSON(ProtocolExportCosignerPublicResultMessage(msg.ID, result))
 }
 
 func (s *Session) HandleListGenerations(requestID string) {

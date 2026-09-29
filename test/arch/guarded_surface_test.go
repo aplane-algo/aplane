@@ -15,30 +15,30 @@ import (
 )
 
 // guardedSanctionedExports is the reviewed public API of the isolated guarded
-// (sentry) signing package: construction, the two routing/submission entry
+// (cosigner) signing package: construction, the two routing/submission entry
 // points, endpoint discovery, and the discovery types and error sentinels.
 // Everything else in the package is choreography internals that must stay
 // unexported so callers cannot compose mid-flow steps out of sequence and skip
 // SignAndSubmitGroup's frozen-bytes verification. Adding an entry here must be
 // a conscious API decision, mirrored in ARCH_SPEC's guarded ownership entry.
 var guardedSanctionedExports = map[string]bool{
-	"RouteStatus":                        true,
-	"ConnectionObservation":              true,
-	"AccountRouteObservation":            true,
-	"Signer.InspectRoutes":               true,
-	"New":                                true,
-	"Deps":                               true,
-	"Signer":                             true,
-	"SignerCacheView":                    true,
-	"DiscoveredSentryComponentKey":       true,
-	"ErrSentryDiscoveryInvalidMetadata":  true,
-	"ErrSentryDiscoveryUnavailable":      true,
-	"ErrSentryDiscoveryLocked":           true,
-	"ErrSentryDiscoveryAuth":             true,
-	"ErrSentryDiscoveryConfig":           true,
-	"Signer.HasGuardedEffectiveSigner":   true,
-	"Signer.SignAndSubmitGroup":          true,
-	"Signer.DiscoverSentryComponentKeys": true,
+	"RouteStatus":                          true,
+	"ConnectionObservation":                true,
+	"AccountRouteObservation":              true,
+	"Signer.InspectRoutes":                 true,
+	"New":                                  true,
+	"Deps":                                 true,
+	"Signer":                               true,
+	"SignerCacheView":                      true,
+	"DiscoveredCosignerComponentKey":       true,
+	"ErrCosignerDiscoveryInvalidMetadata":  true,
+	"ErrCosignerDiscoveryUnavailable":      true,
+	"ErrCosignerDiscoveryLocked":           true,
+	"ErrCosignerDiscoveryAuth":             true,
+	"ErrCosignerDiscoveryConfig":           true,
+	"Signer.HasGuardedEffectiveSigner":     true,
+	"Signer.SignAndSubmitGroup":            true,
+	"Signer.DiscoverCosignerComponentKeys": true,
 }
 
 // TestGuardedExportSurfaceStaysSanctioned pins the guarded package's exported

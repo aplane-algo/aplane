@@ -127,15 +127,15 @@ func writeCredentialArchiveForBackupTest(t *testing.T, paths storepaths.Paths, r
 	return archive, address
 }
 
-func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
+func testCosignerComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
-	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
+	return keystest.CosignerComponentFalcon1024KeyJSON(t, 0xcd)
 }
 
 func TestLoadManagedRestoreSetRejectsRoleMismatch(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	archive, _ := writeCredentialArchiveForBackupTest(t, paths, noderole.RoleSigner)
-	set, err := LoadManagedRestoreSet(paths, archive, nil, []byte("export-passphrase"), noderole.RoleSentry)
+	set, err := LoadManagedRestoreSet(paths, archive, nil, []byte("export-passphrase"), noderole.RoleCosigner)
 	if set != nil {
 		set.ZeroSecrets()
 	}
@@ -173,7 +173,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 		KeyJSON:  payload,
 	}
 	defer entry.ZeroSecrets()
-	if err := os.WriteFile(filepath.Join(active.KeysDir(), selector+keys.SentryCredentialExtension), []byte("contradictory"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(active.KeysDir(), selector+keys.CosignerCredentialExtension), []byte("contradictory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	kr := cryptotest.Keyring(t, testExportMasterKey)
@@ -190,8 +190,8 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 	if err := ApplyCredentialEntry(active, entry, kr, true); err != nil {
 		t.Fatalf("ApplyCredentialEntry(replace) error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(active.KeysDir(), selector+keys.SentryCredentialExtension)); !os.IsNotExist(err) {
-		t.Fatalf("contradictory sentry credential remains: %v", err)
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), selector+keys.CosignerCredentialExtension)); !os.IsNotExist(err) {
+		t.Fatalf("contradictory cosigner credential remains: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), selector+keys.AccountKeyExtension)); err != nil {
 		t.Fatalf("canonical account credential missing: %v", err)

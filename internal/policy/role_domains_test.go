@@ -54,7 +54,7 @@ func TestStoredConfigApplyClientSigningRoleOverridesLegacyTopLevel(t *testing.T)
 	}
 }
 
-func TestStoredConfigApplySentryRole(t *testing.T) {
+func TestStoredConfigApplyCosignerRole(t *testing.T) {
 	rejectRekey := true
 	enabled := true
 	addr := types.Address{1}.String()
@@ -62,7 +62,7 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 		SchemaVersion: 1,
 		Enabled:       &enabled,
 		Routes: []StoredTransferRoute{{
-			ID:           "sentry_route",
+			ID:           "cosigner_route",
 			Networks:     []string{"testnet"},
 			Sources:      []string{"*"},
 			Assets:       []StoredAssetTerm{{Raw: "algo"}},
@@ -71,9 +71,9 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 	}},
 	}
 
-	cfg, err := stored.ApplySentry(DefaultConfig())
+	cfg, err := stored.ApplyCosigner(DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplySentry() error = %v", err)
+		t.Fatalf("ApplyCosigner() error = %v", err)
 	}
 	if !cfg.RejectRekey {
 		t.Fatal("RejectRekey = false, want true")
@@ -83,11 +83,11 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplySentryRekeyPolicy(t *testing.T) {
+func TestStoredConfigApplyCosignerRekeyPolicy(t *testing.T) {
 	source := types.Address{90}
 	target := types.Address{91}
 	otherTarget := types.Address{92}
-	stored, err := ParseStoredSentryConfig([]byte(fmt.Sprintf(`
+	stored, err := ParseStoredCosignerConfig([]byte(fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -101,11 +101,11 @@ rekey_policy:
       targets: ["@targets"]
 `, source.String(), target.String())))
 	if err != nil {
-		t.Fatalf("ParseStoredSentryConfig() error = %v", err)
+		t.Fatalf("ParseStoredCosignerConfig() error = %v", err)
 	}
-	cfg, err := stored.ApplySentry(DefaultConfig())
+	cfg, err := stored.ApplyCosigner(DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplySentry() error = %v", err)
+		t.Fatalf("ApplyCosigner() error = %v", err)
 	}
 	if cfg.RekeyPolicy == nil {
 		t.Fatal("RekeyPolicy = nil")
@@ -118,9 +118,9 @@ rekey_policy:
 	}
 }
 
-func TestParseStoredConfigRejectsSentryPolicyFields(t *testing.T) {
+func TestParseStoredConfigRejectsCosignerPolicyFields(t *testing.T) {
 	for _, raw := range []string{
-		"sentry: {}\n",
+		"cosigner: {}\n",
 		"reject_rekey: true\n",
 		"rekey_policy: {}\n",
 	} {
@@ -131,7 +131,7 @@ func TestParseStoredConfigRejectsSentryPolicyFields(t *testing.T) {
 	}
 }
 
-func TestParseStoredSentryConfigRejectsReviewProducingFields(t *testing.T) {
+func TestParseStoredCosignerConfigRejectsReviewProducingFields(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -142,7 +142,7 @@ func TestParseStoredSentryConfigRejectsReviewProducingFields(t *testing.T) {
 			raw: `
 always_review_warnings: true
 `,
-			want: "sentry.always_review_warnings",
+			want: "cosigner.always_review_warnings",
 		},
 		{
 			name: "review algo payments",
@@ -150,7 +150,7 @@ always_review_warnings: true
 review_algo_payments:
   testnet: 1
 `,
-			want: "sentry.review_algo_payments",
+			want: "cosigner.review_algo_payments",
 		},
 		{
 			name: "route miss review",
@@ -160,7 +160,7 @@ transfer_policy:
   enabled: true
   on_no_route: review
 `,
-			want: "sentry.transfer_policy.on_no_route",
+			want: "cosigner.transfer_policy.on_no_route",
 		},
 		{
 			name: "route review above",
@@ -183,27 +183,27 @@ transfer_policy:
 		{
 			name: "wrapper",
 			raw: `
-sentry: {}
+cosigner: {}
 `,
-			want: "sentry policy must not contain a sentry wrapper",
+			want: "cosigner policy must not contain a cosigner wrapper",
 		},
 		{
 			name: "client reject rekey",
 			raw: `
 client_signing: {}
 `,
-			want: "sentry policy client_signing",
+			want: "cosigner policy client_signing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseStoredSentryConfig([]byte(tt.raw))
+			_, err := ParseStoredCosignerConfig([]byte(tt.raw))
 			if err == nil {
-				t.Fatal("ParseStoredSentryConfig() error = nil, want role-domain rejection")
+				t.Fatal("ParseStoredCosignerConfig() error = nil, want role-domain rejection")
 			}
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ParseStoredSentryConfig() error = %v, want containing %q", err, tt.want)
+				t.Fatalf("ParseStoredCosignerConfig() error = %v, want containing %q", err, tt.want)
 			}
 		})
 	}
@@ -215,5 +215,5 @@ func roleDomainFixturePath(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_sentry.yaml")
+	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_cosigner.yaml")
 }

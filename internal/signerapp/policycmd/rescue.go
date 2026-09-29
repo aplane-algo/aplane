@@ -39,7 +39,7 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 
 func (r RescueRunner) runDraft(ctx context.Context, command Command, streams Streams, target policyeditor.Target) error {
 	parseTarget := target
-	if command.Verb == VerbToSentry {
+	if command.Verb == VerbToCosigner {
 		parseTarget = policyeditor.TargetSigner
 	}
 	fileStore := &policyeditor.FileStore{Path: command.Source, Target: parseTarget, DataDir: command.DataDir}
@@ -136,7 +136,7 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 }
 
 func rescueTarget(command Command) (policyeditor.Target, error) {
-	if command.Verb == VerbToSentry {
+	if command.Verb == VerbToCosigner {
 		return policyeditor.TargetSigner, nil
 	}
 	if command.Target == "" || command.Target == policyeditor.TargetAuto {

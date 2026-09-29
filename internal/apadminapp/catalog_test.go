@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 )
 
 type fakeRequester struct {
@@ -46,9 +46,9 @@ func (f *fakeRequester) requestWithTimeout(message, result any, timeout time.Dur
 
 func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 	readOnly := [][]string{
-		{"sentry", "export", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
-		{"sentry", "list"},
-		{"sentry", "show", "lab"},
+		{"cosigner", "export", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		{"cosigner", "list"},
+		{"cosigner", "show", "lab"},
 		{"endpoint", "export", "--host", "127.0.0.1"},
 		{"generations", "list"},
 		{"archive", "list"},
@@ -67,8 +67,8 @@ func TestCatalogAuthModePinsPublicReads(t *testing.T) {
 		{"template", "list"},
 		{"template", "import", "template.yaml"},
 		{"keytype", "enable", "aplane.ed25519.v1"},
-		{"sentry", "import", "sentry.json", "lab"},
-		{"sentry", "remove", "lab"},
+		{"cosigner", "import", "cosigner.json", "lab"},
+		{"cosigner", "remove", "lab"},
 		{"generations", "prune", "--confirm", "gen-1700000000-0123abcd"},
 		{"archive", "prune", "--confirm", "deleted/keys/A.key"},
 	}
@@ -87,7 +87,7 @@ func TestCatalogAuthModeRejectsMalformedBeforeConnection(t *testing.T) {
 	for _, command := range [][]string{
 		{"template", "show", "example.v1"},
 		{"keytype", "disable"},
-		{"sentry", "import", "only.json"},
+		{"cosigner", "import", "only.json"},
 		{"endpoint", "export", "--bogus"},
 		{"generations", "prune"},
 		{"archive", "prune"},
@@ -338,8 +338,8 @@ func TestCatalogKeyTypeEnableCanonicalizesAlias(t *testing.T) {
 	}
 }
 
-func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sentry.json")
+func TestCatalogCosignerImportListShowAndRemoveRequests(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cosigner.json")
 	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
 	if err != nil {
 		t.Fatal(err)
@@ -349,19 +349,19 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	}
 	requester := &fakeRequester{handle: func(message, result any) error {
 		switch request := message.(type) {
-		case protocol.ImportSentryReferenceMessage:
-			if request.Name != "Lab-Sentry" || request.EnvelopeJSON != string(data) {
+		case protocol.ImportCosignerReferenceMessage:
+			if request.Name != "Lab-Cosigner" || request.EnvelopeJSON != string(data) {
 				return fmt.Errorf("import = %#v", request)
 			}
-			*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{
-				Success: true, Reference: protocol.SentryReferenceInfo{Name: "lab-sentry", KeyType: "aplane.witness-falcon1024.v1"},
+			*result.(*protocol.ImportCosignerReferenceResultMessage) = protocol.ImportCosignerReferenceResultMessage{
+				Success: true, Reference: protocol.CosignerReferenceInfo{Name: "lab-cosigner", KeyType: "aplane.witness-falcon1024.v1"},
 			}
-		case protocol.ListSentryReferencesMessage:
-			*result.(*protocol.SentryReferencesListMessage) = protocol.SentryReferencesListMessage{References: []protocol.SentryReferenceInfo{{Name: "lab-sentry", ComponentKey: "KEY", KeyType: "TYPE"}}}
-		case protocol.GetSentryReferenceMessage:
-			*result.(*protocol.SentryReferenceMessage) = protocol.SentryReferenceMessage{Success: true, Reference: protocol.SentryReferenceInfo{Name: request.Name, ComponentKey: "KEY"}}
-		case protocol.RemoveSentryReferenceMessage:
-			*result.(*protocol.RemoveSentryReferenceResultMessage) = protocol.RemoveSentryReferenceResultMessage{Success: true, Removed: true, Name: request.Name}
+		case protocol.ListCosignerReferencesMessage:
+			*result.(*protocol.CosignerReferencesListMessage) = protocol.CosignerReferencesListMessage{References: []protocol.CosignerReferenceInfo{{Name: "lab-cosigner", ComponentKey: "KEY", KeyType: "TYPE"}}}
+		case protocol.GetCosignerReferenceMessage:
+			*result.(*protocol.CosignerReferenceMessage) = protocol.CosignerReferenceMessage{Success: true, Reference: protocol.CosignerReferenceInfo{Name: request.Name, ComponentKey: "KEY"}}
+		case protocol.RemoveCosignerReferenceMessage:
+			*result.(*protocol.RemoveCosignerReferenceResultMessage) = protocol.RemoveCosignerReferenceResultMessage{Success: true, Removed: true, Name: request.Name}
 		default:
 			return fmt.Errorf("request = %T", message)
 		}
@@ -369,45 +369,45 @@ func TestCatalogSentryImportListShowAndRemoveRequests(t *testing.T) {
 	}}
 	var stdout bytes.Buffer
 	catalog := Catalog{Client: requester, Streams: Streams{Stdout: &stdout}}
-	if err := catalog.Run("sentry", []string{"import", path, "Lab-Sentry"}); err != nil {
+	if err := catalog.Run("cosigner", []string{"import", path, "Lab-Cosigner"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := catalog.Run("sentry", []string{"list"}); err != nil {
+	if err := catalog.Run("cosigner", []string{"list"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "lab-sentry  KEY  (TYPE)") {
+	if !strings.Contains(stdout.String(), "lab-cosigner  KEY  (TYPE)") {
 		t.Fatalf("list stdout = %q", stdout.String())
 	}
 	stdout.Reset()
-	if err := catalog.Run("sentry", []string{"show", "lab-sentry"}); err != nil {
+	if err := catalog.Run("cosigner", []string{"show", "lab-cosigner"}); err != nil {
 		t.Fatal(err)
 	}
-	var shown protocol.SentryReferenceInfo
-	if err := json.Unmarshal(stdout.Bytes(), &shown); err != nil || shown.Name != "lab-sentry" {
+	var shown protocol.CosignerReferenceInfo
+	if err := json.Unmarshal(stdout.Bytes(), &shown); err != nil || shown.Name != "lab-cosigner" {
 		t.Fatalf("show = %#v err=%v output=%q", shown, err, stdout.String())
 	}
-	if err := catalog.Run("sentry", []string{"remove", "lab-sentry"}); err != nil {
+	if err := catalog.Run("cosigner", []string{"remove", "lab-cosigner"}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestCatalogImportsSentryEnvelopeFromStdin(t *testing.T) {
+func TestCatalogImportsCosignerEnvelopeFromStdin(t *testing.T) {
 	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	envelope := string(data)
 	requester := &fakeRequester{handle: func(message, result any) error {
-		request, ok := message.(protocol.ImportSentryReferenceMessage)
+		request, ok := message.(protocol.ImportCosignerReferenceMessage)
 		if !ok {
 			return fmt.Errorf("request = %T", message)
 		}
 		if request.Name != "Lab" || request.EnvelopeJSON != envelope {
 			return fmt.Errorf("import = %#v", request)
 		}
-		*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{
+		*result.(*protocol.ImportCosignerReferenceResultMessage) = protocol.ImportCosignerReferenceResultMessage{
 			Success: true,
-			Reference: protocol.SentryReferenceInfo{
+			Reference: protocol.CosignerReferenceInfo{
 				Name: "lab", KeyType: "aplane.witness-falcon1024.v1",
 			},
 		}
@@ -419,37 +419,37 @@ func TestCatalogImportsSentryEnvelopeFromStdin(t *testing.T) {
 			Stdin: strings.NewReader(envelope),
 		},
 	}
-	if err := catalog.Run("sentry", []string{"import", "-", "Lab"}); err != nil {
+	if err := catalog.Run("cosigner", []string{"import", "-", "Lab"}); err != nil {
 		t.Fatalf("Catalog.Run() error = %v", err)
 	}
 }
 
-func TestReadSentryEnvelopeFromStdinRejectsOversize(t *testing.T) {
-	_, err := ReadSentryPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxSentryPublicEnvelopeBytes+1)))
+func TestReadCosignerEnvelopeFromStdinRejectsOversize(t *testing.T) {
+	_, err := ReadCosignerPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxCosignerPublicEnvelopeBytes+1)))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("ReadSentryPublicEnvelope() error = %v, want size rejection", err)
+		t.Fatalf("ReadCosignerPublicEnvelope() error = %v, want size rejection", err)
 	}
 }
 
-func TestCatalogSentryExportStdoutIsJSONOnly(t *testing.T) {
+func TestCatalogCosignerExportStdoutIsJSONOnly(t *testing.T) {
 	const witnessKeyID = "6VY7A6IRYQVODHJ7QSLURSEZSYIR5VKMAPSHKNTGTYMH4GTEHA7Q"
-	const envelope = `{"schema":"aplane.sentry-public.v1","witness_key_id":"` + witnessKeyID + `"}`
+	const envelope = `{"schema":"aplane.cosigner-public.v1","witness_key_id":"` + witnessKeyID + `"}`
 	requester := &fakeRequester{handle: func(message, result any) error {
-		request, ok := message.(protocol.ExportSentryPublicMessage)
+		request, ok := message.(protocol.ExportCosignerPublicMessage)
 		if !ok {
 			return fmt.Errorf("request = %T", message)
 		}
 		if request.WitnessKeyID != witnessKeyID {
 			return fmt.Errorf("witness key ID = %q", request.WitnessKeyID)
 		}
-		*result.(*protocol.ExportSentryPublicResultMessage) = protocol.ExportSentryPublicResultMessage{
+		*result.(*protocol.ExportCosignerPublicResultMessage) = protocol.ExportCosignerPublicResultMessage{
 			Success: true, EnvelopeJSON: envelope,
 		}
 		return nil
 	}}
 	var stdout, stderr bytes.Buffer
 	err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run(
-		"sentry", []string{"export", witnessKeyID},
+		"cosigner", []string{"export", witnessKeyID},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -466,14 +466,14 @@ func TestCatalogSentryExportStdoutIsJSONOnly(t *testing.T) {
 	}
 }
 
-func TestCatalogSentryExportRejectsSpendingKeyBeforeRequest(t *testing.T) {
+func TestCatalogCosignerExportRejectsSpendingKeyBeforeRequest(t *testing.T) {
 	const spendingAddress = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	requester := &fakeRequester{}
 	err := (Catalog{Client: requester, Streams: Streams{Stdout: io.Discard}}).Run(
-		"sentry", []string{"export", spendingAddress},
+		"cosigner", []string{"export", spendingAddress},
 	)
 	if err == nil || !strings.Contains(err.Error(), "invalid Witness Key ID") {
-		t.Fatalf("sentry export error = %v, want Witness Key ID rejection", err)
+		t.Fatalf("cosigner export error = %v, want Witness Key ID rejection", err)
 	}
 	if len(requester.requests) != 0 {
 		t.Fatalf("requests = %d, want validation before request", len(requester.requests))
@@ -565,7 +565,7 @@ func TestCatalogEndpointExportRefusesSymlinkOutput(t *testing.T) {
 	}
 }
 
-func TestSimpleSentryImportNormalizesCombinedDocument(t *testing.T) {
+func TestSimpleCosignerImportNormalizesCombinedDocument(t *testing.T) {
 	reference := testEnrollmentReference(t)
 	canonical, err := enrollment.MarshalWitness(reference)
 	if err != nil {
@@ -581,14 +581,14 @@ func TestSimpleSentryImportNormalizesCombinedDocument(t *testing.T) {
 			input = strings.Replace(input, "\"witness\":", "\"unexpected\":true,\"witness\":", 1)
 		}
 		requester := &fakeRequester{handle: func(message, result any) error {
-			req := message.(protocol.ImportSentryReferenceMessage)
+			req := message.(protocol.ImportCosignerReferenceMessage)
 			if req.EnvelopeJSON != string(canonical) {
 				t.Fatal("daemon received noncanonical witness")
 			}
-			*result.(*protocol.ImportSentryReferenceResultMessage) = protocol.ImportSentryReferenceResultMessage{Success: true}
+			*result.(*protocol.ImportCosignerReferenceResultMessage) = protocol.ImportCosignerReferenceResultMessage{Success: true}
 			return nil
 		}}
-		err := (Catalog{Client: requester, Streams: Streams{Stdin: strings.NewReader(input)}}).Run("sentry", []string{"import", "-", "lab"})
+		err := (Catalog{Client: requester, Streams: Streams{Stdin: strings.NewReader(input)}}).Run("cosigner", []string{"import", "-", "lab"})
 		if invalid {
 			if err == nil || len(requester.requests) != 0 {
 				t.Fatal("invalid combined input reached daemon")

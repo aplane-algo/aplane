@@ -138,20 +138,20 @@ func policyCommandDocuments(active storepaths.ActivePaths) ([]policyCommandDocum
 		sidecar: policy.PolicyIntegritySidecarPath(policyPath),
 	}
 	switch nodeDoc.Role {
-	case noderole.RoleSentry:
+	case noderole.RoleCosigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
-			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredSentryConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
+			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredCosignerConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplyCosignerStoredConfig(dataDirectory, &config, stored)
 			})
 		}
 		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedSentryConfigActive(active, kr)
+			return policy.LoadVerifiedCosignerConfigActive(active, kr)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
-			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
+			return policyruntime.ApplyCosignerStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignSentryFileIntegrityActiveWithKeyring(active, kr, signedAt)
+			return policy.SignCosignerFileIntegrityActiveWithKeyring(active, kr, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {

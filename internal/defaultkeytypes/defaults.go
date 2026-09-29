@@ -39,7 +39,7 @@ var signerDefaultTemplates = []bundledTemplate{
 // immediately after a new product store is initialized.
 //
 // The caller must be in an initialization or store-mutation context and must
-// have already registered built-in LogicSig providers. Sentry nodes skip signer
+// have already registered built-in LogicSig providers. Cosigner nodes skip signer
 // account key types.
 func InstallForNewStore(paths storepaths.Paths, role noderole.Role, kr *crypto.Keyring, logf func(format string, args ...any)) error {
 	active, err := genstore.ResolveActive(paths)

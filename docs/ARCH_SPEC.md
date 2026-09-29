@@ -19,7 +19,7 @@
 - [Client Ownership Model](#client-ownership-model)
 - [Transaction Processing](#transaction-processing)
 - [Bounded Authorization Contracts](#bounded-authorization-contracts)
-- [Guarded Signing And Sentry Nodes](#guarded-signing-and-sentry-nodes)
+- [Guarded Signing And Cosigner Nodes](#guarded-signing-and-cosigner-nodes)
 - [Provider and Algorithm Model](#provider-and-algorithm-model)
 - [Keystore and Key Lifecycle](#keystore-and-key-lifecycle)
 - [Plugin System](#plugin-system)
@@ -105,9 +105,9 @@ Read [ARCH_APP_INTERACTION.md](ARCH_APP_INTERACTION.md) before changing app
 read/call/deploy behavior, ABI handling, `PreparedGroup`, or signer approval
 metadata for app calls.
 
-Read [ARCH_SENTRY.md](ARCH_SENTRY.md) before changing sentry node behavior,
-guarded account generation, sentry keys, guarded transaction
-orchestration, endpoint-discovered sentries, or `/sign/component` /
+Read [ARCH_COSIGNER.md](ARCH_COSIGNER.md) before changing cosigner node behavior,
+guarded account generation, cosigner keys, guarded transaction
+orchestration, endpoint-discovered cosigners, or `/sign/component` /
 `/sign/assemble` behavior.
 
 Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing composer-owned transaction
@@ -115,7 +115,7 @@ authorization, Falcon contract-admin custody, bounded schema v2, effect
 classification, or the `bounded1` signing flow.
 
 Read [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) before changing the canonical
-Corridor v1 bounded-sentry profile.
+Corridor v1 bounded-cosigner profile.
 
 Read [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) and the applicable
 `FORMAL_*_MODEL.md` document before changing behavior that has formalized
@@ -140,7 +140,7 @@ All under `cmd/`:
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
 | `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
-| `apadmin` | TUI and batch admin client over local IPC; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, sentry references, endpoint export, and generation inventory, plus explicit offline policy rescue |
+| `apadmin` | TUI and batch admin client over local IPC; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, cosigner references, endpoint export, and generation inventory, plus explicit offline policy rescue |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, private-store permission audit/migration, and offline key inventory; it has no live admin transport |
@@ -165,7 +165,7 @@ Documentation notes:
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
-| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -182,7 +182,7 @@ The UI layer is split between thin binary adapters and reusable shell/admin UI p
 - `cmd/apadmin`: TUI/batch adapter and composition entry point;
   `internal/apadminapp` owns authenticated noninteractive catalog and store
   workflows over admin transport
-- `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local sentry nodes using admin plus daemon panes only
+- `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local cosigner nodes using admin plus daemon panes only
 - `internal/signerapp/signertui`: Bubble Tea signer admin UI
 - `cmd/appass`: Bubble Tea passphrase setup UI
 - `cmd/aplocalnet`: Bubble Tea/CLI LocalNet setup adapter; `internal/aplocalnet` owns reachability checks and config/plugin/env mutations
@@ -413,7 +413,7 @@ transactions plus signer-advertised structured resource hints to `/plan`.
 Resource hints are planning inputs, not client-created dummy transactions. The
 SDK validates the returned canonical group and mutation report, derives the
 target/context/dummy position partition, and locally signs only the canonical
-dummy suffix returned by `/plan`. It then obtains the required user, sentry, or
+dummy suffix returned by `/plan`. It then obtains the required user, cosigner, or
 bounded-base components, calls ordinary `/sign` for any non-guarded original
 positions, and sends the frozen group plus signed passthrough positions to
 `/sign/assemble` for signer-owned final assembly. Submission or simulation uses
@@ -453,9 +453,9 @@ minisign-signed.
 
 - One `apsigner` on the signer host
 - Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires a pre-enrolled default signer endpoint, its token, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
-- One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; sentry enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
+- One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; cosigner enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or token-provisioning client. In local sentry mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or token-provisioning client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
@@ -528,19 +528,19 @@ Current client config includes:
 - theme settings.
 - signer status polling interval.
 
-Signer and sentry routing is not stored as active top-level `config.yaml`
+Signer and cosigner routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `sentry` endpoints. Endpoint records carry URL, remote REST port,
+or more `cosigner` endpoints. Endpoint records carry URL, remote REST port,
 identity file, `known_hosts`, and token file. Signer-role SSH endpoints may
-also select a local forwarding port; sentry-role SSH endpoints use direct
-channels and reject `local_port`. Live sentry-key discovery is operation-scoped
+also select a local forwarding port; cosigner-role SSH endpoints use direct
+channels and reject `local_port`. Live cosigner-key discovery is operation-scoped
 and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
 
 `internal/config.Config` contains no signer-routing fields. Client signer and
-sentry routing is loaded exclusively from `endpoints.yaml`; top-level
+cosigner routing is loaded exclusively from `endpoints.yaml`; top-level
 `config.yaml` `ssh:` and `signer_port:` fields fail closed.
 
 ### Server Configuration
@@ -580,8 +580,8 @@ Runtime reads resolve through the product runtime rather than directly from
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
 signer data directory has a root `node.yaml` with exactly one role:
-`signer` or `sentry`. New installs default to `signer` unless explicitly
-initialized as sentry nodes. The role is immutable in supported tools, is
+`signer` or `cosigner`. New installs default to `signer` unless explicitly
+initialized as cosigner nodes. The role is immutable in supported tools, is
 integrity-bound to the product store with an HMAC sidecar over the exact root
 `node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
 service dispatch. Product runtime config does not own node role; a `mode` field
@@ -600,8 +600,8 @@ Signer policy participates in the ordered approval engine. The current policy
 verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
 node-role policy is product-store scoped and stored at
 the selected generation's `policy.yaml` with a sibling HMAC sidecar. On signer
-nodes the document is client-signing policy; on sentry nodes the same
-filename is direct sentry component policy. The default approval fallback is
+nodes the document is client-signing policy; on cosigner nodes the same
+filename is direct cosigner component policy. The default approval fallback is
 `user_auto_approve`, persisted in
 `identities/default/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the product
@@ -614,7 +614,7 @@ store mutation lock. `internal/signerapp/policycmd` owns both workflows.
 Both modes select the policy domain from the node role; store-backed
 role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
-target-aware (`signer|sentry`), validate replacements before writing, use
+target-aware (`signer|cosigner`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
 fresh sidecar, and update the product runtime immediately on success. The policy
 admin surface reads, validates, and replaces only complete YAML documents
@@ -627,8 +627,8 @@ does not project policy fields.
 The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. On sentry nodes, component signing selects overrides by the
-txid-shaped Witness Key ID from the sentry-domain `policy.yaml`.
+address. On cosigner nodes, component signing selects overrides by the
+txid-shaped Witness Key ID from the cosigner-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1002,10 +1002,10 @@ group.
 
 Mixed plugin/server-managed groups retain their ordinary canonicalization and
 signing path, then branch to client algod only after the final executable group
-exists. Guarded groups likewise complete the normal user and sentry component
+exists. Guarded groups likewise complete the normal user and cosigner component
 signing plus `/sign/assemble` path before the client routes the assembled group
 to submit or simulate. The client consequently holds executable guarded bytes
-in both modes. See [ARCH_SENTRY.md](ARCH_SENTRY.md).
+in both modes. See [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
 
 ## Client Ownership Model
 
@@ -1215,10 +1215,10 @@ declares `policy_gate: layer3`; it can narrow but never broaden the envelope.
 The one bounded1 contract admin primitive is the Falcon-1024 witness key. The
 signer retains the spending key and public contract-admin metadata; the private
 admin witness remains in standalone `.wit` custody. Admin-key rekey uses
-`POST /sign/bounded-admin`, never ordinary caller runtime args or sentry
-assembly. Sentry-enabled spend profiles advertise
-`signing_flow: bounded-sentry1` and use bounded component assembly; their admin
-rekey still bypasses the sentry. Spending-key rekey remains possible only when
+`POST /sign/bounded-admin`, never ordinary caller runtime args or cosigner
+assembly. Cosigner-enabled spend profiles advertise
+`signing_flow: bounded-cosigner1` and use bounded component assembly; their admin
+rekey still bypasses the cosigner. Spending-key rekey remains possible only when
 the profile explicitly selects it and always receives forced operator review.
 Planning owns the single finalized-transaction classification boundary after
 fee pooling. The executor checks the selected path and loaded durable metadata
@@ -1229,7 +1229,7 @@ effects fail closed.
 
 `aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
 profile. `aplane.corridor.v1` composes the framework Merkle policy with a
-sentry spend gate and external-admin rekey. External key generation and ceremonies are owned by
+cosigner spend gate and external-admin rekey. External key generation and ceremonies are owned by
 `aprekey`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,
 schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
@@ -1249,19 +1249,19 @@ format, admin transcript, and Falcon signing ops), with encrypted standalone
 witness custody in `internal/witness/artifact` and
 `internal/apboundedadminapp` composing the client application.
 
-## Guarded Signing And Sentry Nodes
+## Guarded Signing And Cosigner Nodes
 
 This section is the system-map summary. The detailed subsystem architecture,
 trust boundaries, guarded authorizer semantics, endpoint routing model, and
-implementation map live in [ARCH_SENTRY.md](ARCH_SENTRY.md).
+implementation map live in [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
 
 Guarded signing is APlane's two-party LogicSig authorization path for
 accounts whose LogicSig bytecode requires both:
 
 - a user component signature produced by the user signer that owns the
   guarded-account key file, and
-- a sentry component signature produced by a separate sentry signer that
-  owns a sentry key and evaluates sentry-domain `policy.yaml`.
+- a cosigner component signature produced by a separate cosigner signer that
+  owns a cosigner key and evaluates cosigner-domain `policy.yaml`.
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1270,17 +1270,17 @@ the final signed group with algod.
 ### Node Roles
 
 Each initialized signer data root has one immutable root `node.yaml` role:
-`signer` or `sentry`.
+`signer` or `cosigner`.
 
 | Node role | May hold | Must not hold |
 |---|---|---|
-| `signer` | ordinary account-signing keys and guarded account keys | sentry private keys |
-| `sentry` | sentry private keys and sentry policy | ordinary account-signing keys or guarded account keys |
+| `signer` | ordinary account-signing keys and guarded account keys | cosigner private keys |
+| `cosigner` | cosigner private keys and cosigner policy | ordinary account-signing keys or guarded account keys |
 
 There is no `dual` role and no supported same-process mixed-role hosting.
 Same-host development or production co-location uses separate signer and
-sentry data roots and separate `apsigner` processes. Independence is a
-deployment-domain property: a signer node and sentry node operated by the
+cosigner data roots and separate `apsigner` processes. Independence is a
+deployment-domain property: a signer node and cosigner node operated by the
 same party are still one trust domain, even when their key classes are
 structurally separated.
 
@@ -1310,23 +1310,23 @@ base32_no_padding(SHA512_256(
 
 The Witness Key ID intentionally has the visual shape of an Algorand transaction
 ID, but it is not a valid Algorand address because addresses are 58 characters.
-Signer-custodied sentry witnesses use
-`<active-generation>/keys/<WitnessKeyID>.sen`; account authority uses the same
+Signer-custodied cosigner witnesses use
+`<active-generation>/keys/<WitnessKeyID>.cos`; account authority uses the same
 active namespace with `<AlgorandAddress>.key`. Physically, the active namespace
 is `identities/default/generations/<gen-id>/keys/`, selected by the store root.
 There is no root-level credential namespace or compatibility fallback. External contract-admin
 witnesses remain standalone `.wit` artifacts and are never scanned by the signer.
-The full sentry public key remains the verifier key embedded in guarded
+The full cosigner public key remains the verifier key embedded in guarded
 account LogicSig bytecode. The same witness key form can serve a bounded
 contract-admin enrollment under standalone custody, but one keypair should
 never serve both roles. `internal/witness` owns identity and custodian/domain
-capabilities; `internal/sentry/keytypes` owns guarded-account role mapping.
+capabilities; `internal/cosigner/keytypes` owns guarded-account role mapping.
 
-Guarded account key types name both the account DSA and the sentry DSA:
+Guarded account key types name both the account DSA and the cosigner DSA:
 
-- `aplane.falcon1024-sentry1024.v1`
+- `aplane.falcon1024-cosigner1024.v1`
 
-A guarded account key file stores the resolved `sentry_public_key` and the
+A guarded account key file stores the resolved `cosigner_public_key` and the
 LogicSig bytecode embeds that same public key. `/sign` rejects guarded-account
 key types and witness key types. Guarded accounts are signed only
 through the component-signing and assembly flow below.
@@ -1334,20 +1334,20 @@ through the component-signing and assembly flow below.
 ### Component Message Contract
 
 Component signatures are role-separated. Message construction is owned by
-`internal/sentry/message`, and signature verification is owned by
-`internal/sentry/verify` (signer-side only; clients treat component
+`internal/cosigner/message`, and signature verification is owned by
+`internal/cosigner/verify` (signer-side only; clients treat component
 signatures as opaque). Callers must use those shared primitives rather
 than reconstructing the component message locally.
 
 The message commits to:
 
-- the APlane sentry domain string and version,
-- the component role (`user` or `sentry`), and
+- the APlane cosigner domain string and version,
+- the component role (`user` or `cosigner`), and
 - the target transaction ID derived from the canonical group entry.
 
-User-role and sentry-role signatures are not interchangeable. The LogicSig
-program and the user signer's assembly step verify the sentry signature
-against the sentry public key embedded in the local guarded-account key.
+User-role and cosigner-role signatures are not interchangeable. The LogicSig
+program and the user signer's assembly step verify the cosigner signature
+against the cosigner public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
@@ -1360,28 +1360,28 @@ invalid input. The signer does not assert that those bytes originated at its
 own `/plan` endpoint. Independently constructed canonical bytes may succeed
 when they satisfy the same signer-owned authorization and policy checks.
 
-This changed the bounded-sentry component boundary deliberately. The retired
+This changed the bounded-cosigner component boundary deliberately. The retired
 bounded-specific route planned and approved in one call. The unified component
 route instead reconstructs the
 bounded authorization envelope from frozen bytes, typed position context, and
 the signer's durable key metadata, then applies policy and operator approval to
 those exact bytes. Every released signature or receipt is derived from the
 same decoded group that policy evaluated and the operator saw. Assembly keeps
-the authorization models distinct: guarded targets require user and sentry
-component signatures, while bounded-sentry targets require the bounded
-assembly receipt as well as their base and sentry signatures.
+the authorization models distinct: guarded targets require user and cosigner
+component signatures, while bounded-cosigner targets require the bounded
+assembly receipt as well as their base and cosigner signatures.
 
 The old bounded-specific component and assembly routes are retired and return
 404. This section owns the invariants that survive that migration.
 
-The current guarded choreography is named `sentry1`. Signer `/keys` and
-`/keytypes` inventory label guarded keys with `signing_flow: sentry1` and
-`sentry_component_key_type`; clients route on the flow label, treat key-type
+The current guarded choreography is named `cosigner1`. Signer `/keys` and
+`/keytypes` inventory label guarded keys with `signing_flow: cosigner1` and
+`cosigner_component_key_type`; clients route on the flow label, treat key-type
 and component-key-type strings as opaque, and fail fast on flow labels they do
-not implement. The `sentry1` label is frozen: any choreography change mints a
+not implement. The `cosigner1` label is frozen: any choreography change mints a
 new label, and unrelated future mechanisms get their own label family.
 For cache compatibility, a client may treat a cached built-in guarded key type
-that lacks `signing_flow` or sentry metadata as stale and refresh `/keys`
+that lacks `signing_flow` or cosigner metadata as stale and refresh `/keys`
 before route selection; the refreshed `signing_flow` remains the routing
 authority.
 
@@ -1403,14 +1403,14 @@ fixed before any downstream component or non-guarded signature is produced.
 For guarded targets, the client obtains component signatures:
 
 1. user signer `/sign/component` with `kind:"user"`,
-2. sentry signer `/sign/component` with `kind:"sentry"`.
+2. cosigner signer `/sign/component` with `kind:"cosigner"`.
 
 The user-role component request proves the user signer controls the
 guarded effective signer and runs the signer-domain approval gates (hard
 policy rejection, always-review rules, blocking operator approval) before any
 key operation, with the guarded account as the per-target policy key. The
-sentry-role component request evaluates decoded target transaction facts
-against sentry-domain `policy.yaml` and returns sentry component signatures
+cosigner-role component request evaluates decoded target transaction facts
+against cosigner-domain `policy.yaml` and returns cosigner component signatures
 when allowed.
 
 If the original group also has non-guarded positions, the client then calls the
@@ -1432,29 +1432,29 @@ passthrough entries.
 
 Guarded component signing supports a guarded account either as `txn.Sender` or
 as the effective signer/AuthAddr for another sender. Component messages still
-commit only to role and target transaction ID; sentry policy is based on
+commit only to role and target transaction ID; cosigner policy is based on
 decoded transaction facts and does not receive a separate authorizer field.
 Per-authorizer delegation controls would require a versioned component message
-and LogicSig change and are not part of this flow. Sentry-role component signing
+and LogicSig change and are not part of this flow. Cosigner-role component signing
 is transfer policy based: target transactions must produce direct transfer
 movements covered by `transfer_policy`. App calls, key registration, asset
-configuration, and other unsupported target shapes are rejected for sentry
+configuration, and other unsupported target shapes are rejected for cosigner
 role because routing cannot authorize them.
 
 ### Trust Model
 
 The trust decision is made at guarded-account generation, when the operator
-selects the sentry public key that is baked into the LogicSig bytecode and
+selects the cosigner public key that is baked into the LogicSig bytecode and
 stored in the key file. Later endpoint routing is mechanical:
 
 - endpoint import is not an ownership proof,
 - `/keys` is self-reported inventory and is not an ownership proof,
 - a wrong endpoint can only produce a signature that fails assembly or
-  on-chain LogicSig verification unless it holds the real sentry key.
+  on-chain LogicSig verification unless it holds the real cosigner key.
 
 The enforcement layers are:
 
-1. required `/sign/assemble` verification against the sentry public key
+1. required `/sign/assemble` verification against the cosigner public key
    embedded in the local user signer's guarded-account key, and
 2. final on-chain LogicSig verification.
 
@@ -1464,9 +1464,9 @@ forward signatures to assembly as opaque material.
 ### Endpoint Routing
 
 Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
-at most one `signer` endpoint and zero or more `sentry` endpoints. Endpoint
+at most one `signer` endpoint and zero or more `cosigner` endpoints. Endpoint
 records contain connection profile data, endpoint role, token-file path,
-known-hosts path, and SSH identity path. They do not persist sentry-key
+known-hosts path, and SSH identity path. They do not persist cosigner-key
 inventory.
 
 Operator handoff and manual endpoint setup use two paths:
@@ -1476,25 +1476,25 @@ Operator handoff and manual endpoint setup use two paths:
   (`--url` or `--host`) or the operator-declared signer
   `config.yaml` value `endpoint.advertise_url`; it is not inferred from the
   SSH listener bind address.
-- `apshell endpoints import --alias <name> --role signer|sentry`
+- `apshell endpoints import --alias <name> --role signer|cosigner`
   writes client-local endpoint routing.
-- `apshell endpoints create --alias <name> --endpoint <url> --sentryport
-  <port>` writes a manual sentry endpoint profile when no exported endpoint
+- `apshell endpoints create --alias <name> --endpoint <url> --cosignerport
+  <port>` writes a manual cosigner endpoint profile when no exported endpoint
   envelope is used.
 - bearer tokens are obtained separately with `request-token --endpoint`.
 - SSH host trust remains owned by the existing known-hosts flow.
 
-`apshell endpoints discover-sentries` is a read-only diagnostic. It queries
-authenticated `/keys` on configured sentry endpoints, validates Witness Key ID
+`apshell endpoints discover-cosigners` is a read-only diagnostic. It queries
+authenticated `/keys` on configured cosigner endpoints, validates Witness Key ID
 metadata, and prints the live results without changing client or signer state.
 
-Runtime guarded and bounded-sentry routing performs the same live discovery at
+Runtime guarded and bounded-cosigner routing performs the same live discovery at
 the start of each signing operation and keeps an operation-scoped route
 snapshot. It probes the deterministic configured endpoint order with bounded
 parallelism and stops only after every required embedded public key has one
 unambiguous route. Same-host deployments use an explicit loopback or SSH
-endpoint for the separate sentry process; the primary signer connection is
-never reused as a sentry route.
+endpoint for the separate cosigner process; the primary signer connection is
+never reused as a cosigner route.
 
 The signer reference catalog is a generation trust-input inventory, while
 live endpoint discovery is routing only. Neither proves endpoint ownership;
@@ -1502,17 +1502,17 @@ the embedded public key and verified component signature remain authoritative.
 
 ### Policy And Audit
 
-Signer nodes use `policy.yaml` for account signing. Sentry nodes also use
-`policy.yaml`, parsed in the sentry policy domain, for sentry component
+Signer nodes use `policy.yaml` for account signing. Cosigner nodes also use
+`policy.yaml`, parsed in the cosigner policy domain, for cosigner component
 signing. Both domains use the shared policy grammar and HMAC sidecar model, but
-sentry policy has no manual-review or operator-default verdict. It is
+cosigner policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
-authorized by the effective sentry policy, and deny guards fail closed.
+authorized by the effective cosigner policy, and deny guards fail closed.
 
-Sentry policy overrides are keyed by Witness Key ID.
+Cosigner policy overrides are keyed by Witness Key ID.
 Client-signing policy overrides are keyed by signing auth address.
 
-Sentry component approvals and rejections are recorded through existing sign
+Cosigner component approvals and rejections are recorded through existing sign
 audit events. Current records put the Witness Key ID in `txn_auth`, the
 decoded target sender in `txn_sender`, and the matching deterministic policy
 rule in `policy_rule_id` when one applies.
@@ -1522,42 +1522,42 @@ rule in `policy_rule_id` when one applies.
 Primary implementation ownership:
 
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
-- `internal/sentry/message`: role-separated component message construction.
-- `internal/sentry/canonical`: canonical group decoding and group hashing.
-- `internal/sentry/verify`: component signature verification primitives
+- `internal/cosigner/message`: role-separated component message construction.
+- `internal/cosigner/canonical`: canonical group decoding and group hashing.
+- `internal/cosigner/verify`: component signature verification primitives
   (signer-side only; client binaries must not link them).
-- `internal/sentry/keytypes`: sentry and guarded key-type identifiers,
+- `internal/cosigner/keytypes`: cosigner and guarded key-type identifiers,
   Witness Key ID validation, and DSA mapping.
-- `internal/signerapp/signing`: signer-side component signing, sentry policy
+- `internal/signerapp/signing`: signer-side component signing, cosigner policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
   `/sign/assemble`.
-- `internal/engine/guarded`: client guarded-send orchestration, sentry
-  component-signature collection, and sentry endpoint resolution/discovery,
+- `internal/engine/guarded`: client guarded-send orchestration, cosigner
+  component-signature collection, and cosigner endpoint resolution/discovery,
   isolated from the engine facade (it depends on the engine only through a
   narrow `SignerCacheView` and injected connection/caches; `internal/engine`
   wires it and re-exports the discovery types). Its exported surface is only
   the sanctioned entry points (`New`/`Deps`/`Signer`/`SignerCacheView`,
   `HasGuardedEffectiveSigner`, `SignAndSubmitGroup`,
-  `DiscoverSentryComponentKeys`, `DiscoveredSentryComponentKey`,
+  `DiscoverCosignerComponentKeys`, `DiscoveredCosignerComponentKey`,
   read-only `InspectRoutes` with `RouteStatus`, `ConnectionObservation`, and
   `AccountRouteObservation` (closed probe connections, no signing), and the
-  `ErrSentryDiscovery*` sentinels); the choreography internals are unexported
+  `ErrCosignerDiscovery*` sentinels); the choreography internals are unexported
   and tested in-package. Import isolation is pinned by
   `test/arch/client_layering_test.go`.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
-- `internal/sentry/enrollment`: strict public composition envelope joining a
+- `internal/cosigner/enrollment`: strict public composition envelope joining a
   canonical witness reference with optional portable endpoint metadata.
-- `internal/apadminapp`: operator-side sentry enrollment composition/import
+- `internal/apadminapp`: operator-side cosigner enrollment composition/import
   ordering, explicit-endpoint ID discovery, and bounded read-only unique-route
   verification. Discovery and verification persist neither fetched inventory
   nor a reference-to-endpoint binding.
 - `internal/clientenroll`: shared client-owned synchronous token provisioning
   and remote preflight used by shell and admin enrollment surfaces.
-- `internal/sentry/sentryrefs`: public sentry reference catalog used by
+- `internal/cosigner/cosignerrefs`: public cosigner reference catalog used by
   generation UIs.
-- `internal/policy`: shared signer/sentry policy grammar, validation, and
+- `internal/policy`: shared signer/cosigner policy grammar, validation, and
   evaluation domains.
 
 Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK
@@ -1583,7 +1583,7 @@ It owns:
 
 The keystore compatibility model is split between:
 
-- `.key` account-authority and `.sen` sentry-credential envelope/payload compatibility for individual entries,
+- `.key` account-authority and `.cos` cosigner-credential envelope/payload compatibility for individual entries,
 - `store-root.enc` compatibility for passphrase verification, KDF parameters, and generation selection,
   and the `.keystore` marker for the store format gate.
 
@@ -1674,8 +1674,8 @@ These caches are not interchangeable:
   `keyset_revision` changes. MCP mode does not run this background
   poller; it relies on startup connection and serialized command execution
   instead. The signer cache carries the signer-advertised key type, LogicSig
-  size budget, signing argument schema, guarded `signing_flow`, sentry
-  component key type, and embedded sentry public key. Guarded key-type checks
+  size budget, signing argument schema, guarded `signing_flow`, cosigner
+  component key type, and embedded cosigner public key. Guarded key-type checks
   in the cache layer are compatibility freshness heuristics only; client
   signing route selection remains driven by `signing_flow`,
 - auth cache depends on network state and signer/alias information,
@@ -1728,7 +1728,7 @@ The repo uses:
   `policy_command_subtraction_test.go` keep live administration and policy
   ownership in `apadmin` rather than regrowing retired command surfaces;
   `admin_protocol_boundary_test.go` pins wire/domain/transport
-  dependency direction; `sentry_catalog_test.go` separates signer-owned
+  dependency direction; `cosigner_catalog_test.go` separates signer-owned
   generation references from client routing discovery;
   `template_mutation_boundary_test.go` makes `templatelibrary` the sole
   feature-level template/key-type mutation owner; and
@@ -1759,7 +1759,7 @@ The repo uses:
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `approval_coordinator`,
   `approval_composition`, `session_ownership`,
-  `guarded_assembly`, `bounded_sentry`, `plugin_signing`, and
+  `guarded_assembly`, `bounded_cosigner`, `plugin_signing`, and
   `store_root_commit`, plus liveness
   configurations for `approval_coordinator` and an expected-failure
   outgoing-seal-pinning negative control for `store_root_commit`.
@@ -1787,9 +1787,9 @@ guards:
 - `make docker-systemd-test` runs `scripts/docker-systemd-smoke.sh` against a
   fresh Ubuntu systemd container and verifies systemd install/uninstall state.
 - `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`
-  against signer, sentry, client/admin, and LocalNet algod containers on one
+  against signer, cosigner, client/admin, and LocalNet algod containers on one
   Docker network. It verifies local install layout, shared LocalNet
-  reachability, SSH token provisioning, local IPC `apadmin` sentry
+  reachability, SSH token provisioning, local IPC `apadmin` cosigner
   public-reference export and authorized import, client signer
   reachability, guarded signing, and corridor allowlist enforcement across the
   Docker network.
@@ -1850,9 +1850,9 @@ Verification expectations remain:
 - IPC notifications and request/response message shapes remain compatible with `apadmin` and `apapprover`,
 - token provisioning and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
-- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.sen`, `.template`, `config.yaml`, `audit.log`, and token files.
+- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.cos`, `.template`, `config.yaml`, `audit.log`, and token files.
 - client endpoint compatibility is checked for `endpoints.yaml`,
-  endpoint token files, endpoint handoff envelopes, and public sentry
+  endpoint token files, endpoint handoff envelopes, and public cosigner
   reference records when those surfaces change.
 
 ## Authentication
@@ -2003,7 +2003,7 @@ Product-level boundaries:
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keys (payload codec) | `internal/keys/payload_codec.go`, `internal/keys/save.go`, `internal/keys/keys.go`, `internal/keys/file_types.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
-| Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
+| Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/cosigner/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/defaultkeytypes/defaults.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `internal/signerapp/daemon/admin_services.go` |
 | Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_GENERATIONS.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |

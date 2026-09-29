@@ -54,7 +54,7 @@ const (
 	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
 	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
-	AuditSentryReferenceChanged           AuditEventType = "SENTRY_REFERENCE_CHANGED"
+	AuditCosignerReferenceChanged         AuditEventType = "COSIGNER_REFERENCE_CHANGED"
 	AuditBackupImported                   AuditEventType = "BACKUP_IMPORTED"
 	AuditBackupExportStarted              AuditEventType = "BACKUP_EXPORT_STARTED"
 	AuditGenerationQuarantineIntent       AuditEventType = "GENERATION_QUARANTINE_INTENT"
@@ -85,8 +85,8 @@ type AuditEntry struct {
 	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
 	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Policy rule that forced manual review
-	WitnessKeyID         string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a sentry-reference mutation
-	MigrationOrigin      string         `json:"migration_origin,omitempty"`    // Closed historical origin for migrated sentry references
+	WitnessKeyID         string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a cosigner-reference mutation
+	MigrationOrigin      string         `json:"migration_origin,omitempty"`    // Closed historical origin for migrated cosigner references
 	KeyCount             int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256        string         `json:"archive_sha256,omitempty"`
 	ReplaceExisting      bool           `json:"replace_existing,omitempty"`
@@ -885,12 +885,12 @@ func (a *AuditLogger) LogPassphraseChangeFailed(reason string) {
 	a.Log(entry)
 }
 
-// LogSentryReferenceChangedContext records authenticated online sentry
+// LogCosignerReferenceChangedContext records authenticated online cosigner
 // reference mutations by stable Witness Key ID without placing public-key
 // material in the audit log.
-func (a *AuditLogger) LogSentryReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey, migrationOrigin string, success bool) {
+func (a *AuditLogger) LogCosignerReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey, migrationOrigin string, success bool) {
 	entry := sessionAuditFields(ctx)
-	entry.Event = AuditSentryReferenceChanged
+	entry.Event = AuditCosignerReferenceChanged
 	entry.Outcome = action
 	if !success {
 		entry.Outcome = "failed"

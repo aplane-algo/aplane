@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Smoke-test an APlane Docker topology against LocalNet:
 #   1. signer apsigner node
-#   2. sentry apsigner node
+#   2. cosigner apsigner node
 #   3. client/admin node with apshell and apadmin
 #   4. AlgoKit-style LocalNet algod/KMD node
 #
 # The test keeps the existing docker-local behavior surface focused on install,
-# SSH token provisioning, client reachability, shared LocalNet wiring, sentry
-# endpoint enrollment, local IPC sentry-reference import,
+# SSH token provisioning, client reachability, shared LocalNet wiring, cosigner
+# endpoint enrollment, local IPC cosigner-reference import,
 # guarded transaction-signing flows, and corridor allowlist enforcement. It
 # also validates the guarded account
-# and bounded-sentry Corridor with SDK intent prep plus component signing.
+# and bounded-cosigner Corridor with SDK intent prep plus component signing.
 # Local mode uses the local Python SDK checkout; release mode uses the Python
 # package from PyPI and the TypeScript package from npm.
 
@@ -31,7 +31,7 @@ RUN_ID="$$"
 NETWORK_NAME="aplane-local-smoke-net-$RUN_ID"
 ALGOD_CONTAINER="aplane-local-algod-$RUN_ID"
 SIGNER_CONTAINER="aplane-local-signer-$RUN_ID"
-SENTRY_CONTAINER="aplane-local-sentry-$RUN_ID"
+COSIGNER_CONTAINER="aplane-local-cosigner-$RUN_ID"
 CLIENT_CONTAINER="aplane-local-client-$RUN_ID"
 TEST_USER="tester"
 TEST_PASSPHRASE="passphrase-for-docker-smoke"
@@ -44,8 +44,8 @@ ALGOD_CONFIG_DIR=""
 LOCALNET_GENESIS_HASH=""
 NETWORK_TOKEN="localnet"
 FALCON_ADDRESS=""
-SENTRY_COMPONENT_KEY=""
-SENTRY_REFERENCE_NAME="docker-sentry"
+COSIGNER_COMPONENT_KEY=""
+COSIGNER_REFERENCE_NAME="docker-cosigner"
 GUARDED_ADDRESS=""
 CORRIDOR_ADDRESS=""
 CORRIDOR_ALLOWED_ADDRESS=""
@@ -75,21 +75,21 @@ Options:
   --keep-container      Leave containers and network running for debugging
   -h, --help            Show this help
 
-This test requires Docker privileges. LocalNet starts signer, sentry,
+This test requires Docker privileges. LocalNet starts signer, cosigner,
 client/admin, and an AlgoKit-style algod/KMD node.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
-signer container DNS name, adds the sentry endpoint through apshell, requests
-API tokens for both nodes, generates a sentry key through the sentry endpoint,
-then exports and imports the public sentry reference with local IPC apadmin,
+signer container DNS name, adds the cosigner endpoint through apshell, requests
+API tokens for both nodes, generates a cosigner key through the cosigner endpoint,
+then exports and imports the public cosigner reference with local IPC apadmin,
 enables guarded Falcon/Falcon,
 imports the optional Corridor template, and verifies apshell can create, fund,
 and validate guarded, Corridor, and plain Falcon accounts against the selected
 network. It then
 submits the same guarded 0 ALGO self-send with SDK preparation and guarded
 signing helpers. It also sends an allowlisted Corridor payment through the
-SDK's bounded-base component, sentry component, and shared assembly choreography,
+SDK's bounded-base component, cosigner component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
-proves that sentry loss blocks spend while its external admin can still rekey
+proves that cosigner loss blocks spend while its external admin can still rekey
 the account. By default the Python SDK comes from the local aplanesdk repo;
 with --release-install, Python comes from PyPI and TypeScript comes from npm.
 EOF
@@ -201,7 +201,7 @@ cleanup() {
     if [ "$KEEP_CONTAINER" = "1" ]; then
         printf '\nKept containers for debugging:\n'
         printf '  %s\n' "$ALGOD_CONTAINER"
-        printf '  %s\n' "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER"
+        printf '  %s\n' "$SIGNER_CONTAINER" "$COSIGNER_CONTAINER" "$CLIENT_CONTAINER"
         printf 'Kept Docker network: %s\n' "$NETWORK_NAME"
         if [ -n "$ALGOD_CONFIG_DIR" ]; then
             printf 'Kept LocalNet config dir: %s\n' "$ALGOD_CONFIG_DIR"
@@ -209,7 +209,7 @@ cleanup() {
         return
     fi
     docker rm -f "$ALGOD_CONTAINER" >/dev/null 2>&1 || true
-    docker rm -f "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER" >/dev/null 2>&1 || true
+    docker rm -f "$SIGNER_CONTAINER" "$COSIGNER_CONTAINER" "$CLIENT_CONTAINER" >/dev/null 2>&1 || true
     docker network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
     if [ -n "$ALGOD_CONFIG_DIR" ]; then
         rm -rf "$ALGOD_CONFIG_DIR"
@@ -400,7 +400,7 @@ start_containers() {
         -v "$ALGOD_CONFIG_DIR/goal_mount:/root/goal_mount" \
         -d "$ALGOD_IMAGE" >/dev/null
     docker run --name "$SIGNER_CONTAINER" --network "$NETWORK_NAME" --network-alias signer -d "$IMAGE_NAME" >/dev/null
-    docker run --name "$SENTRY_CONTAINER" --network "$NETWORK_NAME" --network-alias sentry -d "$IMAGE_NAME" >/dev/null
+    docker run --name "$COSIGNER_CONTAINER" --network "$NETWORK_NAME" --network-alias cosigner -d "$IMAGE_NAME" >/dev/null
     docker run --name "$CLIENT_CONTAINER" --network "$NETWORK_NAME" --network-alias client -d "$IMAGE_NAME" >/dev/null
 }
 
@@ -628,8 +628,8 @@ YAML
                 '$ALGOD_URL' '$KMD_URL' '$ALGOD_TOKEN' >> '$env_path'"
 }
 
-configure_sentry_policy() {
-    docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+configure_cosigner_policy() {
+    docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
         apadmin -d /home/$TEST_USER/aplane/apsigner policy rescue apply - <<'YAML'
 transfer_policy:
@@ -648,7 +648,7 @@ YAML
 
 verify_localnet_reachable_from_nodes() {
     local container
-    for container in "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER"; do
+    for container in "$SIGNER_CONTAINER" "$COSIGNER_CONTAINER" "$CLIENT_CONTAINER"; do
         docker_exec_as_tester "$container" "curl -fsS -H 'X-Algo-API-Token: $ALGOD_TOKEN' '$ALGOD_URL/v2/status' >/tmp/algod-status.json"
     done
 }
@@ -660,7 +660,7 @@ prepare_selected_network() {
 
 configure_selected_network() {
     configure_node_localnet "$SIGNER_CONTAINER"
-    configure_node_localnet "$SENTRY_CONTAINER"
+    configure_node_localnet "$COSIGNER_CONTAINER"
     configure_client_localnet
 }
 
@@ -688,26 +688,26 @@ endpoints:
 YAML"
 }
 
-create_client_sentry_endpoint() {
-    local sentry_ssh_port sentry_port out
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
-    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
-    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+create_client_cosigner_endpoint() {
+    local cosigner_ssh_port cosigner_port out
+    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
+    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
+    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints create --alias local-sentry --endpoint ssh://sentry:%s --sentryport %s\nendpoints show local-sentry\n' '$sentry_ssh_port' '$sentry_port' > /tmp/create-sentry-endpoint.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints create --alias local-cosigner --endpoint ssh://cosigner:%s --cosignerport %s\nendpoints show local-cosigner\n' '$cosigner_ssh_port' '$cosigner_port' > /tmp/create-cosigner-endpoint.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/create-sentry-endpoint.script 2>&1")"; then
+        apshell -script /tmp/create-cosigner-endpoint.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to add sentry endpoint through apshell"
+        die "failed to add cosigner endpoint through apshell"
     fi
     printf '%s\n' "$out"
-    grep -Fq 'Configured sentry endpoint local-sentry' <<<"$out" \
-        || die "sentry endpoint creation output did not include success marker"
+    grep -Fq 'Configured cosigner endpoint local-cosigner' <<<"$out" \
+        || die "cosigner endpoint creation output did not include success marker"
 }
 
 verify_layout() {
     docker_exec_as_tester "$SIGNER_CONTAINER" "test -x /home/$TEST_USER/aplane/apsigner/bin/apsigner && test -f /home/$TEST_USER/aplane/apsigner/config.yaml"
-    docker_exec_as_tester "$SENTRY_CONTAINER" "test -x /home/$TEST_USER/aplane/apsigner/bin/apsigner && test -f /home/$TEST_USER/aplane/apsigner/config.yaml"
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "test -x /home/$TEST_USER/aplane/apsigner/bin/apsigner && test -f /home/$TEST_USER/aplane/apsigner/config.yaml"
     docker_exec_as_tester "$CLIENT_CONTAINER" "test -x /home/$TEST_USER/aplane/apclient/bin/apshell && test -x /home/$TEST_USER/aplane/apclient/bin/apadmin && test -f /home/$TEST_USER/aplane/apclient/endpoints.yaml"
 }
 
@@ -748,12 +748,12 @@ populate_known_hosts_for() {
 }
 
 populate_known_hosts() {
-    local signer_ssh_port sentry_ssh_port
+    local signer_ssh_port cosigner_ssh_port
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
+    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
     docker_exec_as_tester "$CLIENT_CONTAINER" "rm -f /home/$TEST_USER/aplane/apclient/.ssh/known_hosts"
     populate_known_hosts_for "$SIGNER_CONTAINER" signer "$signer_ssh_port"
-    populate_known_hosts_for "$SENTRY_CONTAINER" sentry "$sentry_ssh_port"
+    populate_known_hosts_for "$COSIGNER_CONTAINER" cosigner "$cosigner_ssh_port"
 }
 
 start_apapprover() {
@@ -806,8 +806,8 @@ start_signer_apapprover() {
     start_apapprover "$SIGNER_CONTAINER" /tmp/apapprover.log signer
 }
 
-start_sentry_apapprover() {
-    start_apapprover "$SENTRY_CONTAINER" /tmp/apapprover.log sentry
+start_cosigner_apapprover() {
+    start_apapprover "$COSIGNER_CONTAINER" /tmp/apapprover.log cosigner
 }
 
 run_request_token() {
@@ -818,12 +818,12 @@ run_request_token() {
         || die "request-token did not produce a client token file"
 }
 
-request_sentry_token() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-token --endpoint local-sentry' > /tmp/req-sentry-token.script"
+request_cosigner_token() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-token --endpoint local-cosigner' > /tmp/req-cosigner-token.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/req-sentry-token.script 2>&1 | tee /tmp/req-sentry-token.log"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token" \
-        || die "request-token did not produce a local-sentry token file"
+        apshell -script /tmp/req-cosigner-token.script 2>&1 | tee /tmp/req-cosigner-token.log"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token" \
+        || die "request-token did not produce a local-cosigner token file"
 }
 
 install_python_sdk_client() {
@@ -900,13 +900,13 @@ YAML"
 }
 
 configure_python_sdk_client_data() {
-    local signer_ssh_port signer_port sentry_ssh_port sentry_port
+    local signer_ssh_port signer_port cosigner_ssh_port cosigner_port
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
     signer_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" signer_port)"
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
-    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
+    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
+    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
     [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
-    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
 
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-primary" \
@@ -915,16 +915,16 @@ configure_python_sdk_client_data() {
         "$signer_port" \
         "/home/$TEST_USER/aplane/apclient/aplane.token"
     write_sdk_data_dir \
-        "/home/$TEST_USER/aplane/apclient-sdk-sentry" \
-        "sentry" \
-        "$sentry_ssh_port" \
-        "$sentry_port" \
-        "/home/$TEST_USER/aplane/apclient/tokens/local-sentry.token"
+        "/home/$TEST_USER/aplane/apclient-sdk-cosigner" \
+        "cosigner" \
+        "$cosigner_ssh_port" \
+        "$cosigner_port" \
+        "/home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token"
 }
 
 run_python_sdk_guarded_validate() {
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local py_file
     py_file="$(mktemp)"
@@ -959,18 +959,18 @@ def signed_group_b64(signed_hexes: list[str]) -> str:
 
 def main() -> int:
     primary_data = require_env("APCLIENT_DATA")
-    sentry_data = require_env("APLANE_SENTRY_DATA")
+    cosigner_data = require_env("APLANE_COSIGNER_DATA")
     guarded_address = require_env("APLANE_GUARDED_ADDRESS")
-    sentry_component_key = require_env("APLANE_SENTRY_COMPONENT_KEY")
+    cosigner_component_key = require_env("APLANE_COSIGNER_COMPONENT_KEY")
     algod_url = require_env("APLANE_ALGOD_URL")
     algod_token = os.environ.get("APLANE_ALGOD_TOKEN", "").strip()
 
     algod_client = algod.AlgodClient(algod_token, algod_url)
 
     with SignerClient.from_env(data_dir=primary_data, timeout=180) as user_client, SignerClient.from_env(
-        data_dir=sentry_data,
+        data_dir=cosigner_data,
         timeout=180,
-    ) as sentry_client:
+    ) as cosigner_client:
         prepared = user_client.prepare_payment(
             algod_client,
             sender=guarded_address,
@@ -982,8 +982,8 @@ def main() -> int:
         )
         result = sign_prepared_guarded_group(
             user_client=user_client,
-            sentry_client=sentry_client,
-            sentry_component_key=sentry_component_key,
+            cosigner_client=cosigner_client,
+            cosigner_component_key=cosigner_component_key,
             prepared_group=PreparedGroup([prepared]),
         )
         if not result.signed_group:
@@ -1005,9 +1005,9 @@ PY
 
     docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
-        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
         APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
-        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         PYTHONUNBUFFERED=1 \
@@ -1018,7 +1018,7 @@ run_python_sdk_corridor_validate() {
     [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "Corridor allowed address is not set"
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "Corridor blocked address is not set"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local py_file
     py_file="$(mktemp)"
@@ -1035,7 +1035,7 @@ from aplanesdk import (
     SignerClient,
     SignerError,
     send_raw_transaction,
-    sign_prepared_bounded_sentry_group,
+    sign_prepared_bounded_cosigner_group,
 )
 
 MIN_TXN_FEE = 1000
@@ -1056,11 +1056,11 @@ def signed_group_b64(signed_hexes: list[str]) -> str:
 
 def main() -> int:
     primary_data = require_env("APCLIENT_DATA")
-    sentry_data = require_env("APLANE_SENTRY_DATA")
+    cosigner_data = require_env("APLANE_COSIGNER_DATA")
     corridor_address = require_env("APLANE_CORRIDOR_ADDRESS")
     allowed_address = require_env("APLANE_CORRIDOR_ALLOWED_ADDRESS")
     blocked_address = require_env("APLANE_CORRIDOR_BLOCKED_ADDRESS")
-    sentry_component_key = require_env("APLANE_SENTRY_COMPONENT_KEY")
+    cosigner_component_key = require_env("APLANE_COSIGNER_COMPONENT_KEY")
     algod_url = require_env("APLANE_ALGOD_URL")
     algod_token = os.environ.get("APLANE_ALGOD_TOKEN", "").strip()
 
@@ -1069,9 +1069,9 @@ def main() -> int:
         data_dir=primary_data,
         timeout=180,
     ) as user_client, SignerClient.from_env(
-        data_dir=sentry_data,
+        data_dir=cosigner_data,
         timeout=180,
-    ) as sentry_client:
+    ) as cosigner_client:
         allowed = user_client.prepare_payment(
             algod_client,
             sender=corridor_address,
@@ -1081,18 +1081,18 @@ def main() -> int:
             fee=MIN_TXN_FEE,
             use_flat_fee=True,
         )
-        result = sign_prepared_bounded_sentry_group(
+        result = sign_prepared_bounded_cosigner_group(
             user_client=user_client,
-            sentry_client=sentry_client,
-            sentry_component_key=sentry_component_key,
+            cosigner_client=cosigner_client,
+            cosigner_component_key=cosigner_component_key,
             prepared_group=PreparedGroup([allowed]),
         )
         if not result.signed_group:
             raise RuntimeError(
-                "SDK bounded-sentry signing returned an empty signed group"
+                "SDK bounded-cosigner signing returned an empty signed group"
             )
         print(
-            "Python SDK bounded-sentry Corridor group size: "
+            "Python SDK bounded-cosigner Corridor group size: "
             f"{len(result.signed_group)}"
         )
         txid = send_raw_transaction(
@@ -1100,7 +1100,7 @@ def main() -> int:
             signed_group_b64(result.signed_group),
         )
         transaction.wait_for_confirmation(algod_client, txid, 10)
-        print(f"Python SDK bounded-sentry Corridor submitted: {txid}")
+        print(f"Python SDK bounded-cosigner Corridor submitted: {txid}")
 
         blocked = user_client.prepare_payment(
             algod_client,
@@ -1112,10 +1112,10 @@ def main() -> int:
             use_flat_fee=True,
         )
         try:
-            sign_prepared_bounded_sentry_group(
+            sign_prepared_bounded_cosigner_group(
                 user_client=user_client,
-                sentry_client=sentry_client,
-                sentry_component_key=sentry_component_key,
+                cosigner_client=cosigner_client,
+                cosigner_component_key=cosigner_component_key,
                 prepared_group=PreparedGroup([blocked]),
             )
         except SignerError as exc:
@@ -1123,7 +1123,7 @@ def main() -> int:
                 raise RuntimeError(
                     "SDK Corridor denial did not report allowlist rejection"
                 ) from exc
-            print("Python SDK bounded-sentry Corridor denial verified")
+            print("Python SDK bounded-cosigner Corridor denial verified")
         else:
             raise RuntimeError(
                 "SDK Corridor unexpectedly signed a non-allowlisted payment"
@@ -1140,11 +1140,11 @@ PY
 
     docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
-        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
         APLANE_CORRIDOR_ADDRESS='$CORRIDOR_ADDRESS' \
         APLANE_CORRIDOR_ALLOWED_ADDRESS='$CORRIDOR_ALLOWED_ADDRESS' \
         APLANE_CORRIDOR_BLOCKED_ADDRESS='$CORRIDOR_BLOCKED_ADDRESS' \
-        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         PYTHONUNBUFFERED=1 \
@@ -1154,7 +1154,7 @@ PY
 run_typescript_sdk_guarded_validate() {
     [ "$RELEASE_INSTALL" = "1" ] || return 0
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local js_file
     js_file="$(mktemp)"
@@ -1179,9 +1179,9 @@ function requireEnv(name) {
 
 async function main() {
   const primaryData = requireEnv("APCLIENT_DATA");
-  const sentryData = requireEnv("APLANE_SENTRY_DATA");
+  const cosignerData = requireEnv("APLANE_COSIGNER_DATA");
   const guardedAddress = requireEnv("APLANE_GUARDED_ADDRESS");
-  const sentryComponentKey = requireEnv("APLANE_SENTRY_COMPONENT_KEY");
+  const cosignerComponentKey = requireEnv("APLANE_COSIGNER_COMPONENT_KEY");
   const algodUrl = requireEnv("APLANE_ALGOD_URL");
   const algodToken = String(process.env.APLANE_ALGOD_TOKEN || "").trim();
 
@@ -1190,7 +1190,7 @@ async function main() {
   const algodPort = algodEndpoint.port || (algodEndpoint.protocol === "https:" ? "443" : "80");
   const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
   const userClient = await SignerClient.fromEnv({ dataDir: primaryData, timeout: 180 });
-  const sentryClient = await SignerClient.fromEnv({ dataDir: sentryData, timeout: 180 });
+  const cosignerClient = await SignerClient.fromEnv({ dataDir: cosignerData, timeout: 180 });
   try {
     const prepared = await userClient.preparePayment(algodClient, {
       sender: guardedAddress,
@@ -1202,8 +1202,8 @@ async function main() {
     });
     const result = await signPreparedGuardedGroup({
       userClient,
-      sentryClient,
-      sentryComponentKey,
+      cosignerClient,
+      cosignerComponentKey,
       preparedGroup: { transactions: [prepared] },
     });
     if (!result.signedGroup || result.signedGroup.length === 0) {
@@ -1215,7 +1215,7 @@ async function main() {
     await algosdk.waitForConfirmation(algodClient, txid, 10);
     console.log(`TypeScript SDK guarded validation submitted: ${txid}`);
   } finally {
-    await sentryClient.close();
+    await cosignerClient.close();
     await userClient.close();
   }
 }
@@ -1234,82 +1234,82 @@ JS
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "cd '$TS_SDK_DIR' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
-        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_COSIGNER_DATA=/home/$TEST_USER/aplane/apclient-sdk-cosigner \
         APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
-        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_COSIGNER_COMPONENT_KEY='$COSIGNER_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         NODE_OPTIONS='--dns-result-order=ipv4first' \
         node ./sdk-guarded-validate.mjs"
 }
 
-generate_sentry_component_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.witness-falcon1024.v1\n' > /tmp/generate-sentry.script"
+generate_cosigner_component_key() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-cosigner\ngenerate aplane.witness-falcon1024.v1\n' > /tmp/generate-cosigner.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/generate-sentry.script 2>&1")"; then
+        apshell -script /tmp/generate-cosigner.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate sentry key through client/sentry flow"
+        die "failed to generate cosigner key through client/cosigner flow"
     fi
     printf '%s\n' "$out"
-    SENTRY_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
+    COSIGNER_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
 }
 
-enroll_sentry_reference_to_signer() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+enroll_cosigner_reference_to_signer() {
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     local public_file out
     public_file="$(mktemp)"
-    if ! docker_exec_as_tester "$SENTRY_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry export '$SENTRY_COMPONENT_KEY' /tmp/sentry-public.json"; then
-        die "failed to export sentry public reference over local IPC"
+    if ! docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner export '$COSIGNER_COMPONENT_KEY' /tmp/cosigner-public.json"; then
+        die "failed to export cosigner public reference over local IPC"
     fi
-    docker cp "$SENTRY_CONTAINER:/tmp/sentry-public.json" "$public_file"
-    docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/sentry-public.json"
-    docker cp "$public_file" "$CLIENT_CONTAINER:/tmp/sentry-public.json"
+    docker cp "$COSIGNER_CONTAINER:/tmp/cosigner-public.json" "$public_file"
+    docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/cosigner-public.json"
+    docker cp "$public_file" "$CLIENT_CONTAINER:/tmp/cosigner-public.json"
     rm -f "$public_file"
-    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sentry-public.json
+    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.json
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry import /tmp/sentry-public.json '$SENTRY_REFERENCE_NAME' && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin sentry show '$SENTRY_REFERENCE_NAME' 2>&1")"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner import /tmp/cosigner-public.json '$COSIGNER_REFERENCE_NAME' && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner show '$COSIGNER_REFERENCE_NAME' 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "local IPC sentry-reference import failed"
+        die "local IPC cosigner-reference import failed"
     fi
     printf '%s\n' "$out"
-    grep -Fq "$SENTRY_COMPONENT_KEY" <<<"$out" \
-        || die "persisted sentry reference does not contain the expected Witness Key ID"
+    grep -Fq "$COSIGNER_COMPONENT_KEY" <<<"$out" \
+        || die "persisted cosigner reference does not contain the expected Witness Key ID"
 }
 
-verify_guided_sentry_setup() {
-    local sentry_ssh_port sentry_port out
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
-    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
-    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+verify_guided_cosigner_setup() {
+    local cosigner_ssh_port cosigner_port out
+    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
+    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
+    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-sentry\n' > /tmp/delete-sentry-endpoint.script && \
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-cosigner\n' > /tmp/delete-cosigner-endpoint.script && \
         . /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/delete-sentry-endpoint.script >/tmp/delete-sentry-endpoint.log 2>&1 && \
-        rm -f /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token && \
-        printf 'sentry add /tmp/sentry-public.json --alias local-sentry --endpoint ssh://sentry:%s --sentry-port %s\n' '$sentry_ssh_port' '$sentry_port' > /tmp/add-sentry.script"
+        apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
+        rm -f /home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token && \
+        printf 'cosigner add /tmp/cosigner-public.json --alias local-cosigner --endpoint ssh://cosigner:%s --cosigner-port %s\n' '$cosigner_ssh_port' '$cosigner_port' > /tmp/add-cosigner.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/add-sentry.script 2>&1")"; then
+        apshell -script /tmp/add-cosigner.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "guided sentry setup failed"
+        die "guided cosigner setup failed"
     fi
     printf '%s\n' "$out"
     grep -Fq 'Connected; expected witness found' <<<"$out" \
-        || die "guided sentry setup did not report exact witness verification"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token" \
-        || die "guided sentry setup did not save the sentry token"
+        || die "guided cosigner setup did not report exact witness verification"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token" \
+        || die "guided cosigner setup did not save the cosigner token"
 }
 
 enable_guarded_keytype() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024-sentry1024.v1 2>&1")"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin keytype enable aplane.falcon1024-cosigner1024.v1 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to enable guarded Falcon/Falcon sentry key type on signer"
+        die "failed to enable guarded Falcon/Falcon cosigner key type on signer"
     fi
     printf '%s\n' "$out"
 }
@@ -1367,14 +1367,14 @@ EXPECT_SCRIPT
 }
 
 generate_guarded_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry1024.v1 sentry=%s\n' '$SENTRY_REFERENCE_NAME' > /tmp/generate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-cosigner1024.v1 cosigner=%s\n' '$COSIGNER_REFERENCE_NAME' > /tmp/generate-guarded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-guarded.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate guarded Falcon/Falcon sentry account through client/signer flow"
+        die "failed to generate guarded Falcon/Falcon cosigner account through client/signer flow"
     fi
     printf '%s\n' "$out"
     GUARDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
@@ -1382,7 +1382,7 @@ generate_guarded_key() {
 }
 
 generate_corridor_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     [ -n "$CORRIDOR_ADMIN_PUBLIC_KEY" ] || die "Corridor admin public key is not set"
     CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
     CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
@@ -1390,8 +1390,8 @@ generate_corridor_key() {
     [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "could not resolve corridor blocked account"
     [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 sentry=%s bounded_admin_public_key=%s recipients=%s\n' \
-        '$SENTRY_REFERENCE_NAME' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 cosigner=%s bounded_admin_public_key=%s recipients=%s\n' \
+        '$COSIGNER_REFERENCE_NAME' '$CORRIDOR_ADMIN_PUBLIC_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-corridor.script 2>&1")"; then
@@ -1560,24 +1560,24 @@ validate_corridor_blocked_send_fails() {
         || die "corridor blocked send did not report allowlist rejection"
 }
 
-validate_corridor_send_after_sentry_delete_fails() {
+validate_corridor_send_after_cosigner_delete_fails() {
     [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "Corridor allowed address is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nsend 0 algo from %s to %s note=corridor-missing-sentry\n' \
-        '$CORRIDOR_ADDRESS' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/send-corridor-missing-sentry.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nsend 0 algo from %s to %s note=corridor-missing-cosigner\n' \
+        '$CORRIDOR_ADDRESS' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/send-corridor-missing-cosigner.script"
     local out
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/send-corridor-missing-sentry.script 2>&1" || true)"
+        apshell -script /tmp/send-corridor-missing-cosigner.script 2>&1" || true)"
     printf '%s\n' "$out"
     if grep -Fq 'Transaction submitted:' <<<"$out"; then
-        die "Corridor send unexpectedly submitted after sentry key deletion"
+        die "Corridor send unexpectedly submitted after cosigner key deletion"
     fi
-    grep -Fq 'no live sentry route for Witness Key ID' <<<"$out" \
-        || die "Corridor send failure did not report the missing sentry key"
+    grep -Fq 'no live cosigner route for Witness Key ID' <<<"$out" \
+        || die "Corridor send failure did not report the missing cosigner key"
 }
 
-rekey_corridor_without_sentry() {
+rekey_corridor_without_cosigner() {
     [ -n "$CORRIDOR_ADDRESS" ] || die "Corridor address is not set"
     [ -n "$FALCON_ADDRESS" ] || die "Falcon rekey target is not set"
     [ -n "$CORRIDOR_ADMIN_KEY" ] || die "Corridor admin artifact is not set"
@@ -1607,7 +1607,7 @@ EXPECT_SCRIPT
 
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "expect /tmp/rekey-corridor.exp 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "external Corridor admin rekey failed while sentry key was unavailable"
+        die "external Corridor admin rekey failed while cosigner key was unavailable"
     fi
     printf '%s\n' "$out"
     grep -Fq 'Governed rekey transaction submitted:' <<<"$out" \
@@ -1616,8 +1616,8 @@ EXPECT_SCRIPT
         || die "Corridor admin rekey did not confirm"
 }
 
-delete_sentry_component_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+delete_cosigner_component_key() {
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -e
@@ -1626,34 +1626,34 @@ delete_sentry_component_key() {
 from aplanesdk import SignerClient
 
 with SignerClient.from_env(
-    data_dir='/home/$TEST_USER/aplane/apclient-sdk-sentry',
+    data_dir='/home/$TEST_USER/aplane/apclient-sdk-cosigner',
 ) as client:
-    client.delete_key('$SENTRY_COMPONENT_KEY')
+    client.delete_key('$COSIGNER_COMPONENT_KEY')
 print('{\"success\":true}')
 PY")"; then
         printf '%s\n' "$out" >&2
-        die "failed to delete sentry key through sentry admin API"
+        die "failed to delete cosigner key through cosigner admin API"
     fi
     printf '%s\n' "$out"
     grep -Fq '"success":true' <<<"$out" \
-        || die "sentry key deletion output did not include success marker"
+        || die "cosigner key deletion output did not include success marker"
 }
 
-validate_guarded_self_send_after_sentry_delete_fails() {
+validate_guarded_self_send_after_cosigner_delete_fails() {
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded-missing-sentry.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded-missing-cosigner.script"
     local out
     out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/validate-guarded-missing-sentry.script 2>&1" || true)"
+        apshell -script /tmp/validate-guarded-missing-cosigner.script 2>&1" || true)"
     printf '%s\n' "$out"
     if grep -Fq 'Validated successfully' <<<"$out"; then
-        die "guarded validation unexpectedly included success marker after sentry key deletion"
+        die "guarded validation unexpectedly included success marker after cosigner key deletion"
     fi
     grep -Fq 'Failed:' <<<"$out" \
-        || die "guarded validation did not report a failed transaction after sentry key deletion"
-    grep -Fq 'no live sentry route for Witness Key ID' <<<"$out" \
-        || die "guarded validation failure did not report missing sentry key"
+        || die "guarded validation did not report a failed transaction after cosigner key deletion"
+    grep -Fq 'no live cosigner route for Witness Key ID' <<<"$out" \
+        || die "guarded validation failure did not report missing cosigner key"
 }
 
 verify_signer_reachable() {
@@ -1672,7 +1672,7 @@ verify_client_admin_node() {
 
 shutdown_nodes() {
     docker_exec_as_tester "$SIGNER_CONTAINER" "pkill expect || true; pkill apapprover || true; pkill apsigner || true"
-    docker_exec_as_tester "$SENTRY_CONTAINER" "pkill expect || true; pkill apapprover || true; pkill apsigner || true"
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "pkill expect || true; pkill apapprover || true; pkill apsigner || true"
     sleep 1
 }
 
@@ -1700,14 +1700,14 @@ main() {
 
     log "Creating test users"
     create_test_user "$SIGNER_CONTAINER"
-    create_test_user "$SENTRY_CONTAINER"
+    create_test_user "$COSIGNER_CONTAINER"
     create_test_user "$CLIENT_CONTAINER"
 
     log "Installing signer node"
     run_node_installer "$SIGNER_CONTAINER" signer
 
-    log "Installing sentry node"
-    run_node_installer "$SENTRY_CONTAINER" sentry
+    log "Installing cosigner node"
+    run_node_installer "$COSIGNER_CONTAINER" cosigner
 
     log "Installing client/admin node"
     run_client_installer
@@ -1715,15 +1715,15 @@ main() {
     log "Preparing $NETWORK_TOKEN network profile"
     prepare_selected_network
 
-    log "Configuring signer and sentry network listeners"
+    log "Configuring signer and cosigner network listeners"
     configure_node_network "$SIGNER_CONTAINER" signer
-    configure_node_network "$SENTRY_CONTAINER" sentry
+    configure_node_network "$COSIGNER_CONTAINER" cosigner
 
-    log "Configuring signer, sentry, and client for $NETWORK_TOKEN"
+    log "Configuring signer, cosigner, and client for $NETWORK_TOKEN"
     configure_selected_network
 
-    log "Configuring sentry policy for guarded smoke transactions"
-    configure_sentry_policy
+    log "Configuring cosigner policy for guarded smoke transactions"
+    configure_cosigner_policy
 
     log "Verifying $NETWORK_TOKEN reachability from APlane nodes"
     verify_selected_network_reachable
@@ -1737,17 +1737,17 @@ main() {
     log "Generating client SSH key"
     generate_client_ssh_key
 
-    log "Starting signer and sentry apsigner processes"
+    log "Starting signer and cosigner apsigner processes"
     start_node "$SIGNER_CONTAINER" /tmp/apsigner.log
-    start_node "$SENTRY_CONTAINER" /tmp/apsentry.log
+    start_node "$COSIGNER_CONTAINER" /tmp/apcosigner.log
 
-    log "Seeding client known_hosts for signer and sentry"
+    log "Seeding client known_hosts for signer and cosigner"
     populate_known_hosts
 
-    log "Adding sentry endpoint from client container"
-    create_client_sentry_endpoint
+    log "Adding cosigner endpoint from client container"
+    create_client_cosigner_endpoint
 
-    log "Enabling guarded Falcon/Falcon sentry key type on signer"
+    log "Enabling guarded Falcon/Falcon cosigner key type on signer"
     enable_guarded_keytype
 
     log "Importing optional Corridor template on signer"
@@ -1756,29 +1756,29 @@ main() {
     log "Starting signer-side approver for token bootstrap"
     start_signer_apapprover
 
-    log "Starting sentry-side approver for token bootstrap"
-    start_sentry_apapprover
+    log "Starting cosigner-side approver for token bootstrap"
+    start_cosigner_apapprover
 
     log "Requesting signer API token from client container"
     run_request_token
 
-    log "Requesting sentry API token from client container"
-    request_sentry_token
+    log "Requesting cosigner API token from client container"
+    request_cosigner_token
 
-    log "Generating sentry key through client/sentry flow"
-    generate_sentry_component_key
+    log "Generating cosigner key through client/cosigner flow"
+    generate_cosigner_component_key
 
-    log "Importing sentry public reference through local IPC"
-    enroll_sentry_reference_to_signer
+    log "Importing cosigner public reference through local IPC"
+    enroll_cosigner_reference_to_signer
 
     # Local IPC export and import displace the node approval sessions.
     # Re-establish both approval sessions before component signing.
-    log "Re-establishing signer and sentry approval sessions after public-reference import"
+    log "Re-establishing signer and cosigner approval sessions after public-reference import"
     start_signer_apapprover
-    start_sentry_apapprover
+    start_cosigner_apapprover
 
-    log "Reconfiguring and verifying sentry through guided apshell setup"
-    verify_guided_sentry_setup
+    log "Reconfiguring and verifying cosigner through guided apshell setup"
+    verify_guided_cosigner_setup
 
     if [ "$RELEASE_INSTALL" = "1" ]; then
         if [ -n "$SDK_VERSION" ]; then
@@ -1805,7 +1805,7 @@ main() {
     log "Generating external Corridor admin key on client"
     generate_corridor_admin_key
 
-    log "Generating guarded Falcon/Falcon sentry account through client/signer flow"
+    log "Generating guarded Falcon/Falcon cosigner account through client/signer flow"
     generate_guarded_key
 
     log "Funding generated guarded account on $NETWORK_TOKEN"
@@ -1829,7 +1829,7 @@ main() {
     fund_corridor_key
     verify_corridor_funded
 
-    log "Validating bounded-sentry Corridor through Python SDK"
+    log "Validating bounded-cosigner Corridor through Python SDK"
     run_python_sdk_corridor_validate
 
     log "Verifying corridor allowlisted recipient succeeds"
@@ -1854,17 +1854,17 @@ main() {
     log "Verifying apadmin is present on client/admin node"
     verify_client_admin_node
 
-    log "Deleting sentry key from sentry node"
-    delete_sentry_component_key
+    log "Deleting cosigner key from cosigner node"
+    delete_cosigner_component_key
 
-    log "Verifying guarded validation fails after sentry key deletion"
-    validate_guarded_self_send_after_sentry_delete_fails
+    log "Verifying guarded validation fails after cosigner key deletion"
+    validate_guarded_self_send_after_cosigner_delete_fails
 
-    log "Verifying Corridor spend fails after sentry key deletion"
-    validate_corridor_send_after_sentry_delete_fails
+    log "Verifying Corridor spend fails after cosigner key deletion"
+    validate_corridor_send_after_cosigner_delete_fails
 
-    log "Rekeying Corridor through its external admin while sentry is unavailable"
-    rekey_corridor_without_sentry
+    log "Rekeying Corridor through its external admin while cosigner is unavailable"
+    rekey_corridor_without_cosigner
 
     log "Shutting down nodes"
     shutdown_nodes

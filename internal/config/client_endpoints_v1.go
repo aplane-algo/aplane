@@ -10,7 +10,7 @@ import (
 )
 
 // These types are the bounded read adapter for endpoints.yaml v1. Retired
-// published_sentries data is decoded only here and is deliberately absent
+// published_cosigners data is decoded only here and is deliberately absent
 // from the production endpoint types returned to callers.
 type clientEndpointRegistryV1 struct {
 	SchemaVersion int                               `yaml:"schema_version"`
@@ -19,17 +19,17 @@ type clientEndpointRegistryV1 struct {
 }
 
 type clientEndpointConfigV1 struct {
-	Role              string                                     `yaml:"role"`
-	URL               string                                     `yaml:"url"`
-	SignerPort        int                                        `yaml:"signer_port,omitempty"`
-	LocalPort         int                                        `yaml:"local_port,omitempty"`
-	IdentityFile      string                                     `yaml:"identity_file,omitempty"`
-	KnownHostsPath    string                                     `yaml:"known_hosts_path,omitempty"`
-	TokenFile         string                                     `yaml:"token_file,omitempty"`
-	PublishedSentries map[string]clientEndpointPublishedSentryV1 `yaml:"published_sentries,omitempty"`
+	Role               string                                       `yaml:"role"`
+	URL                string                                       `yaml:"url"`
+	SignerPort         int                                          `yaml:"signer_port,omitempty"`
+	LocalPort          int                                          `yaml:"local_port,omitempty"`
+	IdentityFile       string                                       `yaml:"identity_file,omitempty"`
+	KnownHostsPath     string                                       `yaml:"known_hosts_path,omitempty"`
+	TokenFile          string                                       `yaml:"token_file,omitempty"`
+	PublishedCosigners map[string]clientEndpointPublishedCosignerV1 `yaml:"published_cosigners,omitempty"`
 }
 
-type clientEndpointPublishedSentryV1 struct {
+type clientEndpointPublishedCosignerV1 struct {
 	ComponentKey string `yaml:"component_key"`
 	KeyType      string `yaml:"key_type"`
 	LastSeenAt   string `yaml:"last_seen_at,omitempty"`

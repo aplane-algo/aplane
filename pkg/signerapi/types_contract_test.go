@@ -252,7 +252,7 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeCacheRefresh,
 		ErrCodeInternal,
 		ErrCodeBoundedAdminRequired,
-		ErrCodeBoundedSentryRequired,
+		ErrCodeBoundedCosignerRequired,
 	}
 }
 

@@ -24,6 +24,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
@@ -40,8 +42,6 @@ import (
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -188,13 +188,13 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	}
 }
 
-func TestServiceGenerateKeySentryComponent(t *testing.T) {
+func TestServiceGenerateKeyCosignerComponent(t *testing.T) {
 	for _, keyType := range []string{
 		witness.Falcon1024V1,
 		witness.Falcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
+			ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 			audit := &auditRecorder{}
 			svc := Service{AuditLog: audit, Runtime: ir}
 
@@ -237,10 +237,10 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 	}
 }
 
-func TestServiceGenerateBoundedSentryFromReference(t *testing.T) {
+func TestServiceGenerateBoundedCosignerFromReference(t *testing.T) {
 	configureFalconCompileMock(t)
 	ir := setupProductRuntime(t)
-	const keyType = "test.falcon1024-bounded-sentry-keyadmin.v1"
+	const keyType = "test.falcon1024-bounded-cosigner-keyadmin.v1"
 	spec, err := composeddsa.ParseTemplateSpec([]byte(`
 schema_version: 2
 derivation_version: 3
@@ -248,16 +248,16 @@ template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
 publisher: test
-family: falcon1024-bounded-sentry-keyadmin
+family: falcon1024-bounded-cosigner-keyadmin
 version: 1
-display_name: Bounded Sentry Keyadmin Test
+display_name: Bounded Cosigner Keyadmin Test
 max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
   max_fee: 10000
-  sentry:
-    contract: sentry1
+  cosigner:
+    contract: cosigner1
     required_on: [spend]
 teal: |
   pushint 1
@@ -277,12 +277,12 @@ teal: |
 		t.Fatal(err)
 	}
 
-	sentryPublicKey := bytes.Repeat([]byte{0x61}, falconfamily.PublicKeySize)
-	componentKey, err := witness.ID(witness.Falcon1024V1, sentryPublicKey)
+	cosignerPublicKey := bytes.Repeat([]byte{0x61}, falconfamily.PublicKeySize)
+	componentKey, err := witness.ID(witness.Falcon1024V1, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reference, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, hex.EncodeToString(sentryPublicKey))
+	reference, err := cosignerrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, hex.EncodeToString(cosignerPublicKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,43 +290,43 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), "bounded-sentry", referenceJSON); err != nil {
+	if _, err := cosignerrefs.Import(ir.KeyPaths(), "bounded-cosigner", referenceJSON); err != nil {
 		t.Fatal(err)
 	}
 
 	result, svcErr := (Service{Runtime: ir}).GenerateKey(context.Background(), keyType, map[string]string{
-		sentryrefs.ParamSentryName: "bounded-sentry",
+		cosignerrefs.ParamCosignerName: "bounded-cosigner",
 	}, nil)
 	if svcErr != nil {
 		t.Fatalf("GenerateKey() error = %#v", svcErr)
 	}
 	summary := ir.KeyStore().GetSigningSummary()[result.Address]
-	if summary.Parameters[boundedmeta.SentryPublicKeyParameter] != hex.EncodeToString(sentryPublicKey) {
+	if summary.Parameters[boundedmeta.CosignerPublicKeyParameter] != hex.EncodeToString(cosignerPublicKey) {
 		t.Fatalf("stored parameters = %#v", summary.Parameters)
 	}
-	if summary.BoundedAuthorization == nil || summary.BoundedAuthorization.Sentry == nil ||
-		summary.BoundedAuthorization.Sentry.ComponentKeyID != componentKey {
-		t.Fatalf("stored bounded sentry metadata = %#v", summary.BoundedAuthorization)
+	if summary.BoundedAuthorization == nil || summary.BoundedAuthorization.Cosigner == nil ||
+		summary.BoundedAuthorization.Cosigner.ComponentKeyID != componentKey {
+		t.Fatalf("stored bounded cosigner metadata = %#v", summary.BoundedAuthorization)
 	}
 }
 
-func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
+func TestKeyDetailsParametersProjectsGuardedCosignerSelector(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0xab}, witness.Falcon1024PublicKeySize)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
 
-	got := keyDetailsParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
-		keytypes.ParameterSentryPublicKey: hex.EncodeToString(publicKey),
-		"other":                           "kept",
+	got := keyDetailsParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+		keytypes.ParameterCosignerPublicKey: hex.EncodeToString(publicKey),
+		"other":                             "kept",
 	})
 
-	if got[keyDetailsSentryLabel] != componentKey {
-		t.Fatalf("Sentry = %q, want %q", got[keyDetailsSentryLabel], componentKey)
+	if got[keyDetailsCosignerLabel] != componentKey {
+		t.Fatalf("Cosigner = %q, want %q", got[keyDetailsCosignerLabel], componentKey)
 	}
-	if _, ok := got[keytypes.ParameterSentryPublicKey]; ok {
-		t.Fatalf("projected parameters exposed raw sentry public key: %#v", got)
+	if _, ok := got[keytypes.ParameterCosignerPublicKey]; ok {
+		t.Fatalf("projected parameters exposed raw cosigner public key: %#v", got)
 	}
 	if got["other"] != "kept" {
 		t.Fatalf("other parameter = %q, want kept", got["other"])
@@ -345,14 +345,14 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 		t.Fatalf("GenerateKey(component in signer node) error = %#v, want node role invalid input", err)
 	}
 
-	ir = setupProductRuntimeWithRole(t, noderole.RoleSentry)
+	ir = setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc.Runtime = ir
 	result, err = svc.GenerateKey(context.Background(), "ed25519", nil, nil)
 	if result != nil {
-		t.Fatalf("GenerateKey(ed25519 in sentry node) result = %#v, want nil", result)
+		t.Fatalf("GenerateKey(ed25519 in cosigner node) result = %#v, want nil", result)
 	}
-	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "sentry"`) {
-		t.Fatalf("GenerateKey(ed25519 in sentry node) error = %#v, want node role invalid input", err)
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "cosigner"`) {
+		t.Fatalf("GenerateKey(ed25519 in cosigner node) error = %#v, want node role invalid input", err)
 	}
 }
 
@@ -505,8 +505,8 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 	}
 }
 
-func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
-	ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
+func TestServiceDeleteKeyRemovesCosignerComponentKey(t *testing.T) {
+	ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc := Service{Runtime: ir}
 
 	genResult, genErr := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil, nil)
@@ -526,10 +526,10 @@ func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 		t.Fatal("DeleteKey(component) returned empty deleted path")
 	}
 	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
-		t.Fatalf("sentry key file still present after delete: stat err = %v", err)
+		t.Fatalf("cosigner key file still present after delete: stat err = %v", err)
 	}
 	if _, err := os.Stat(delResult.DeletedPath); err != nil {
-		t.Fatalf("deleted sentry key path %q stat error = %v", delResult.DeletedPath, err)
+		t.Fatalf("deleted cosigner key path %q stat error = %v", delResult.DeletedPath, err)
 	}
 	if _, err := ir.FindKeyFile(genResult.Address); err == nil {
 		t.Fatalf("FindKeyFile(%q) after delete succeeded, want stale snapshot cleared", genResult.Address)
@@ -680,7 +680,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	configureFalconCompileMock(t)
 
-	ir := setupProductRuntimeWithRole(t, noderole.RoleSentry)
+	ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc := Service{Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
@@ -688,7 +688,7 @@ func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	if result != nil {
 		t.Fatalf("ImportKey(disallowed node role) result = %#v, want nil", result)
 	}
-	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "sentry"`) {
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "cosigner"`) {
 		t.Fatalf("ImportKey(disallowed node role) error = %#v, want node role invalid input", err)
 	}
 }

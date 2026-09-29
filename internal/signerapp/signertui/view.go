@@ -273,8 +273,8 @@ func (m Model) View() string {
 
 // AdminTitle returns the role-specific operator-facing title for this admin UI.
 func (m Model) AdminTitle() string {
-	if m.isSentryNode() {
-		return "Sentry Admin"
+	if m.isCosignerNode() {
+		return "Cosigner Admin"
 	}
 	return "Signer Admin"
 }
@@ -401,31 +401,31 @@ func (m Model) renderViewContent() string {
 		content = m.renderGenerateForm()
 	case ViewGenerateParams:
 		content = m.renderGenerateParams()
-	case ViewSentryPicker:
-		content = m.renderSentryPicker()
-	case ViewSentryImportForm:
-		content = m.renderSentryImportForm()
-	case ViewSentryImportReview:
-		content = m.renderSentryImportReview()
-	case ViewSentryImporting:
-		content = m.renderSentryImporting()
-	case ViewSentryReferences:
-		content = m.renderSentryReferences()
-	case ViewSentryReferenceDetails:
-		content = m.renderSentryReferenceDetails()
-	case ViewSentryRemoveConfirm:
-		content = m.renderSentryRemoveConfirm()
-	case ViewSentryRemoving:
-		content = m.renderSentryRemoving()
-	case ViewSentryGenerateType:
-		content = m.renderSentryGenerateType()
-	case ViewSentryExportPath:
-		content = m.renderSentryExportPath()
-	case ViewSentryExporting:
-		content = m.renderSentryExporting()
-	case ViewSentryExportResult:
-		content = m.renderSentryExportResult()
-	case ViewSentryExportJSON:
+	case ViewCosignerPicker:
+		content = m.renderCosignerPicker()
+	case ViewCosignerImportForm:
+		content = m.renderCosignerImportForm()
+	case ViewCosignerImportReview:
+		content = m.renderCosignerImportReview()
+	case ViewCosignerImporting:
+		content = m.renderCosignerImporting()
+	case ViewCosignerReferences:
+		content = m.renderCosignerReferences()
+	case ViewCosignerReferenceDetails:
+		content = m.renderCosignerReferenceDetails()
+	case ViewCosignerRemoveConfirm:
+		content = m.renderCosignerRemoveConfirm()
+	case ViewCosignerRemoving:
+		content = m.renderCosignerRemoving()
+	case ViewCosignerGenerateType:
+		content = m.renderCosignerGenerateType()
+	case ViewCosignerExportPath:
+		content = m.renderCosignerExportPath()
+	case ViewCosignerExporting:
+		content = m.renderCosignerExporting()
+	case ViewCosignerExportResult:
+		content = m.renderCosignerExportResult()
+	case ViewCosignerExportJSON:
 		content = "Displaying JSON in the terminal..."
 	case ViewGenerating:
 		content = m.renderGenerating()

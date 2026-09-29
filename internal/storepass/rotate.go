@@ -319,9 +319,9 @@ func reencryptSealedGeneration(
 		if _, err := policy.ParseStoredConfig(policyBytes); err != nil {
 			return counts, fmt.Errorf("parse outgoing signer policy: %w", err)
 		}
-	case noderole.RoleSentry:
-		if _, err := policy.ParseStoredSentryConfig(policyBytes); err != nil {
-			return counts, fmt.Errorf("parse outgoing sentry policy: %w", err)
+	case noderole.RoleCosigner:
+		if _, err := policy.ParseStoredCosignerConfig(policyBytes); err != nil {
+			return counts, fmt.Errorf("parse outgoing cosigner policy: %w", err)
 		}
 	default:
 		return counts, fmt.Errorf("unsupported node role %q", nodeDocument.Role)
@@ -382,8 +382,8 @@ func generationMemberContext(relative string) (crypto.ObjectContext, bool, strin
 		switch class {
 		case keys.ManagedCredentialAccount:
 			return crypto.AccountKeyContext(selector), true, "key", nil
-		case keys.ManagedCredentialSentry:
-			return crypto.SentryCredentialContext(selector), true, "key", nil
+		case keys.ManagedCredentialCosigner:
+			return crypto.CosignerCredentialContext(selector), true, "key", nil
 		default:
 			return crypto.ObjectContext{}, false, "", fmt.Errorf("unsupported credential class %q", class)
 		}

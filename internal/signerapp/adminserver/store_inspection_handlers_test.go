@@ -26,27 +26,27 @@ type inspectionStub struct {
 	pruneResult        adminproto.PruneGenerationQuarantineResult
 	archiveListResult  adminproto.DeletedArchiveInventory
 	archivePruneResult adminproto.PruneDeletedArchiveResult
-	listResult         adminproto.ListSentryReferencesResult
+	listResult         adminproto.ListCosignerReferencesResult
 }
 
-func (s *inspectionStub) ListSentryReferences() adminproto.ListSentryReferencesResult {
+func (s *inspectionStub) ListCosignerReferences() adminproto.ListCosignerReferencesResult {
 	s.listCalls++
 	return s.listResult
 }
-func (*inspectionStub) GetSentryReference(adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
-	return adminproto.GetSentryReferenceResult{}
+func (*inspectionStub) GetCosignerReference(adminproto.GetCosignerReferenceRequest) adminproto.GetCosignerReferenceResult {
+	return adminproto.GetCosignerReferenceResult{}
 }
-func (s *inspectionStub) ImportSentryReference(adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s *inspectionStub) ImportCosignerReference(adminproto.ImportCosignerReferenceRequest) adminproto.ImportCosignerReferenceResult {
 	s.importCalls++
-	return adminproto.ImportSentryReferenceResult{Success: true}
+	return adminproto.ImportCosignerReferenceResult{Success: true}
 }
-func (s *inspectionStub) RemoveSentryReference(adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s *inspectionStub) RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest) adminproto.RemoveCosignerReferenceResult {
 	s.removeCalls++
-	return adminproto.RemoveSentryReferenceResult{Success: true}
+	return adminproto.RemoveCosignerReferenceResult{Success: true}
 }
 
-func (*inspectionStub) ExportSentryPublic(adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
-	return adminproto.ExportSentryPublicResult{}
+func (*inspectionStub) ExportCosignerPublic(adminproto.ExportCosignerPublicRequest) adminproto.ExportCosignerPublicResult {
+	return adminproto.ExportCosignerPublicResult{}
 }
 func (*inspectionStub) ListGenerations() adminproto.GenerationInventory {
 	return adminproto.GenerationInventory{}
@@ -132,7 +132,7 @@ func (a *quarantinePruneAudit) LogGenerationQuarantinePruneContext(
 	a.operationID = operationID
 }
 
-func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
+func TestHandleCosignerReferenceMutationsRejectLockedIdentity(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	if ir.IsUnlocked() {
 		t.Fatal("new product runtime unexpectedly unlocked")
@@ -142,12 +142,12 @@ func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
 	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: &recordingAuthorizer{}})
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
-	session.HandleImportSentryReference(&protocol.ImportSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportSentryReference, ID: "import-sentry"},
+	session.HandleImportCosignerReference(&protocol.ImportCosignerReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportCosignerReference, ID: "import-cosigner"},
 		Name:        "lab", EnvelopeJSON: `{}`,
 	})
-	session.HandleRemoveSentryReference(&protocol.RemoveSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReference, ID: "remove-sentry"},
+	session.HandleRemoveCosignerReference(&protocol.RemoveCosignerReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReference, ID: "remove-cosigner"},
 		Name:        "lab",
 	})
 
@@ -160,34 +160,34 @@ func TestHandleSentryReferenceMutationsRejectLockedIdentity(t *testing.T) {
 	}
 }
 
-func TestHandleListSentryReferencesAuthorizesBeforeReading(t *testing.T) {
+func TestHandleListCosignerReferencesAuthorizesBeforeReading(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
-	inspection := &inspectionStub{listResult: adminproto.ListSentryReferencesResult{
-		References: []adminproto.SentryReferenceInfo{{Name: "lab", ComponentKey: "WKID", KeyType: "witness"}},
+	inspection := &inspectionStub{listResult: adminproto.ListCosignerReferencesResult{
+		References: []adminproto.CosignerReferenceInfo{{Name: "lab", ComponentKey: "WKID", KeyType: "witness"}},
 	}}
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
-	session.HandleListSentryReferences("list-sentries")
+	session.HandleListCosignerReferences("list-cosigners")
 
 	if inspection.listCalls != 1 {
-		t.Fatalf("ListSentryReferences calls = %d, want 1", inspection.listCalls)
+		t.Fatalf("ListCosignerReferences calls = %d, want 1", inspection.listCalls)
 	}
-	if authorizer.got.action != auth.ActionSentriesView || authorizer.got.resource.Type != "sentry_references" {
+	if authorizer.got.action != auth.ActionCosignersView || authorizer.got.resource.Type != "cosigner_references" {
 		t.Fatalf("authorization = %q %+v", authorizer.got.action, authorizer.got.resource)
 	}
-	var response protocol.SentryReferencesListMessage
+	var response protocol.CosignerReferencesListMessage
 	if err := decodeSingleWrite(conn, &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Type != protocol.MsgTypeSentryReferencesList || len(response.References) != 1 || response.References[0].Name != "lab" {
+	if response.Type != protocol.MsgTypeCosignerReferencesList || len(response.References) != 1 || response.References[0].Name != "lab" {
 		t.Fatalf("response = %#v", response)
 	}
 }
 
-func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
+func TestHandleImportCosignerReferenceDenialStopsMutation(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{}
@@ -196,16 +196,16 @@ func TestHandleImportSentryReferenceDenialStopsMutation(t *testing.T) {
 	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer})
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
-	session.HandleImportSentryReference(&protocol.ImportSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportSentryReference, ID: "import-sentry"},
+	session.HandleImportCosignerReference(&protocol.ImportCosignerReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportCosignerReference, ID: "import-cosigner"},
 		Name:        "lab", EnvelopeJSON: `{}`,
 	})
 
 	if inspection.importCalls != 0 {
-		t.Fatalf("ImportSentryReference calls = %d, want 0", inspection.importCalls)
+		t.Fatalf("ImportCosignerReference calls = %d, want 0", inspection.importCalls)
 	}
-	if authorizer.got.action != auth.ActionSentriesManage {
-		t.Fatalf("authorization action = %q, want %q", authorizer.got.action, auth.ActionSentriesManage)
+	if authorizer.got.action != auth.ActionCosignersManage {
+		t.Fatalf("authorization action = %q, want %q", authorizer.got.action, auth.ActionCosignersManage)
 	}
 	msgs := decodeAdminProtoWrites(t, conn)
 	if len(msgs) != 1 || msgs[0].Code != protocol.ErrCodeAuthorizationDenied {

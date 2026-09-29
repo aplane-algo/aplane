@@ -235,16 +235,16 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	original := &state.SignerCache
 
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
-		Address:                "ADDR1",
-		KeyType:                "aplane.falcon1024-sentry1024.v1",
-		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
+		Address:                  "ADDR1",
+		KeyType:                  "aplane.falcon1024-cosigner1024.v1",
+		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		LogicSigResources: &signerapi.LogicSigResourceProfile{
 			Spend:         &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 			AdminRekey:    &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 		},
 		Parameters: map[string]string{
-			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
+			"cosigner_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -252,14 +252,14 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if &state.SignerCache != original {
 		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
 	}
-	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-sentry1024.v1" {
+	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-cosigner1024.v1" {
 		t.Fatalf("original pointer key type = %q, want guarded key type", got)
 	}
-	if got, ok := original.SentryPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
-		t.Fatalf("sentry public key = %q/%v, want cached value", got, ok)
+	if got, ok := original.CosignerPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
+		t.Fatalf("cosigner public key = %q/%v, want cached value", got, ok)
 	}
-	if got, ok := original.SentryComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
-		t.Fatalf("sentry component key type = %q/%v, want cached value", got, ok)
+	if got, ok := original.CosignerComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
+		t.Fatalf("cosigner component key type = %q/%v, want cached value", got, ok)
 	}
 	if profile, ok := original.LogicSigResourceProfile("ADDR1"); !ok || profile.Spend == nil || profile.Spend.ArgumentBytes != 1_423 {
 		t.Fatalf("LogicSig resources = %+v/%v, want cached spend profile", profile, ok)
@@ -271,29 +271,29 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if original.Count() != 0 {
 		t.Fatalf("original pointer count after empty populate = %d, want 0", original.Count())
 	}
-	if got, ok := original.SentryPublicKeyForAddress("ADDR1"); ok || got != "" {
-		t.Fatalf("sentry public key after empty populate = %q/%v, want empty false", got, ok)
+	if got, ok := original.CosignerPublicKeyForAddress("ADDR1"); ok || got != "" {
+		t.Fatalf("cosigner public key after empty populate = %q/%v, want empty false", got, ok)
 	}
 }
 
-func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
+func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
-		Address: "BOUNDED", KeyType: "aplane.custom-bounded-sentry.v1",
-		SigningFlow:            signerapi.SigningFlowBoundedSentry1,
-		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
+		Address: "BOUNDED", KeyType: "aplane.custom-bounded-cosigner.v1",
+		SigningFlow:              signerapi.SigningFlowBoundedCosigner1,
+		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
-			MaxFee: 10_000,
-			Sentry: &signerapi.BoundedSentryAuthorizationInfo{PublicKeyHex: "abcd"},
+			MaxFee:   10_000,
+			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	if got, ok := state.SignerCache.SentryPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
-		t.Fatalf("bounded sentry public key = %q/%v", got, ok)
+	if got, ok := state.SignerCache.CosignerPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
+		t.Fatalf("bounded cosigner public key = %q/%v", got, ok)
 	}
-	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowBoundedSentry1 {
-		t.Fatalf("bounded sentry flow = %q", got)
+	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowBoundedCosigner1 {
+		t.Fatalf("bounded cosigner flow = %q", got)
 	}
 	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
@@ -411,9 +411,9 @@ func TestSaveApshellTokenPersistsTokenFile(t *testing.T) {
 
 func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
 	state := newTestState(t)
-	tokenPath := filepath.Join(state.DataDir, "tokens", "sentry-local.token")
+	tokenPath := filepath.Join(state.DataDir, "tokens", "cosigner-local.token")
 
-	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "sentry-token")
+	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "cosigner-token")
 	if err != nil {
 		t.Fatalf("SaveApshellTokenToPath() error = %v", err)
 	}
@@ -424,8 +424,8 @@ func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadToken() error = %v", err)
 	}
-	if got != "sentry-token" {
-		t.Fatalf("persisted token = %q, want sentry-token", got)
+	if got != "cosigner-token" {
+		t.Fatalf("persisted token = %q, want cosigner-token", got)
 	}
 }
 

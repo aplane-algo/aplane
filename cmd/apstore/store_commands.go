@@ -91,7 +91,7 @@ func cmdInitialize(args []string) error {
 
 var initializeStoreForCommand = initializeStoreLocal
 
-const initializeUsage = "usage: apstore initialize [--role signer|sentry]"
+const initializeUsage = "usage: apstore initialize [--role signer|cosigner]"
 
 func parseInitializeRole(args []string) (noderole.Role, error) {
 	fs := flag.NewFlagSet("apstore initialize", flag.ContinueOnError)

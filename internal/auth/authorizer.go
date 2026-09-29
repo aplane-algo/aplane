@@ -37,8 +37,8 @@ const (
 	ActionKeysImport                 Action = "keys.import"
 	ActionKeysExport                 Action = "keys.export"
 	ActionKeysDelete                 Action = "keys.delete"
-	ActionSentriesView               Action = "sentries.view"
-	ActionSentriesManage             Action = "sentries.manage"
+	ActionCosignersView              Action = "cosigners.view"
+	ActionCosignersManage            Action = "cosigners.manage"
 	ActionGenerationsView            Action = "generations.view"
 	ActionGenerationQuarantinePrune  Action = "identity.generation.quarantine.prune"
 	ActionGenerationAbandonedDiscard Action = "identity.generation.abandoned.discard"
@@ -78,8 +78,8 @@ var knownActions = map[Action]struct{}{
 	ActionKeysImport:                 {},
 	ActionKeysExport:                 {},
 	ActionKeysDelete:                 {},
-	ActionSentriesView:               {},
-	ActionSentriesManage:             {},
+	ActionCosignersView:              {},
+	ActionCosignersManage:            {},
 	ActionGenerationsView:            {},
 	ActionGenerationQuarantinePrune:  {},
 	ActionGenerationAbandonedDiscard: {},

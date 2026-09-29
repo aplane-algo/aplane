@@ -8,11 +8,11 @@ group becomes signed output:
 
   - A1  : role domain separation — a component signature carries the role
           byte it was produced under; a user-role signature never verifies
-          as a sentry signature or vice versa (the SHA512/256 domain
-          prefix "APLANE_SENTRY_V1" || role || txid).
+          as a cosigner signature or vice versa (the SHA512/256 domain
+          prefix "APLANE_COSIGNER_V1" || role || txid).
   - A6  : the user component signature must verify against the user
           public key stored in the local guarded key.
-  - A7  : the sentry component signature must verify against the sentry
+  - A7  : the cosigner component signature must verify against the cosigner
           public key embedded in the local key at generation time.
   - A8  : passthrough bytes are kept only if their decoded transaction ID
           equals the canonical group entry at that index.
@@ -36,7 +36,7 @@ token equality (keyOK /\ role match /\ txid match), not math. The model
 therefore checks the CHECKS, not Falcon-1024 itself.
 
 The model intentionally omits (honest gaps, mirrored from the code):
-  - parameter<->bytecode consistency: the sentry public key verified at
+  - parameter<->bytecode consistency: the cosigner public key verified at
     assembly comes from the stored Parameters; the chain enforces the key
     compiled into the bytecode. Assembly trusts that generation bound
     them (explicit assumption in FORMAL_GUARDED_SIGNING_MODEL.md).
@@ -45,7 +45,7 @@ The model intentionally omits (honest gaps, mirrored from the code):
   - canonical msgpack re-encoding equality on passthrough bytes (the code
     additionally rejects noncanonical passthrough encodings; strictly
     narrower than PassthroughKept, so omission is conservative),
-  - sentry policy evaluation (runs at component-sign time, A4 — not at
+  - cosigner policy evaluation (runs at component-sign time, A4 — not at
     assembly),
   - group-level semantics (fees, dummy budget), replay of identical
     component signatures (txid-bound, reproduces the same txn),
@@ -68,8 +68,8 @@ ASSUME MaxEntries \in Nat /\ MaxEntries >= 1
 EntryKind == {"target", "passthrough"}
 
 \* Component-signature roles: the domain-separation byte in the signed
-\* message (0x01 user, 0x02 sentry).
-Role == {"user", "sentry"}
+\* message (0x01 user, 0x02 cosigner).
+Role == {"user", "cosigner"}
 
 \* Txid binding of a presented signature or decoded passthrough, relative
 \* to the canonical entry it is presented for. "match" = the canonical
@@ -88,7 +88,7 @@ Sig == [keyOK : BOOLEAN, role : Role, txid : Binding]
 TargetEntry == [
     kind         : {"target"},
     userSig      : Sig,
-    sentrySig    : Sig,
+    cosignerSig    : Sig,
     addrOK       : BOOLEAN,
     senderOK     : BOOLEAN,
     signedTxidOK : BOOLEAN
@@ -112,7 +112,7 @@ Entry == TargetEntry \cup PassthroughEntry
    component_assemble.go's per-entry checks in order. *)
 
 \* Signature verification (crypto abstracted to token equality):
-\* internal/sentry/message/message.go builds the signed message from the
+\* internal/cosigner/message/message.go builds the signed message from the
 \* role byte and the canonical entry txid; verification succeeds only for
 \* the right key, the expected role domain, and the entry's txid.
 Verifies(sig, expectedRole) ==
@@ -120,12 +120,12 @@ Verifies(sig, expectedRole) ==
     /\ sig.role = expectedRole
     /\ sig.txid = "match"
 
-\* assembleGuardedTarget: user verify (A6, role domain A1), sentry verify
+\* assembleGuardedTarget: user verify (A6, role domain A1), cosigner verify
 \* (A7, role domain A1), derived-address binding, post-sign txid re-check
 \* and sender/AuthAddr binding (A14).
 TargetAccepted(e) ==
     /\ Verifies(e.userSig, "user")
-    /\ Verifies(e.sentrySig, "sentry")
+    /\ Verifies(e.cosignerSig, "cosigner")
     /\ e.addrOK
     /\ e.signedTxidOK
     /\ e.senderOK
@@ -193,15 +193,15 @@ A6_UserSignatureVerified ==
                 /\ group[i].userSig.role = "user"
                 /\ group[i].userSig.txid = "match"
 
-\* A7/A1 (sentry side): same for the sentry signature against the
-\* generation-time embedded sentry key, under the sentry role domain.
-A7_SentrySignatureVerified ==
+\* A7/A1 (cosigner side): same for the cosigner signature against the
+\* generation-time embedded cosigner key, under the cosigner role domain.
+A7_CosignerSignatureVerified ==
     output # <<>> =>
         \A i \in 1..Len(group) :
             group[i].kind = "target" =>
-                /\ group[i].sentrySig.keyOK
-                /\ group[i].sentrySig.role = "sentry"
-                /\ group[i].sentrySig.txid = "match"
+                /\ group[i].cosignerSig.keyOK
+                /\ group[i].cosignerSig.role = "cosigner"
+                /\ group[i].cosignerSig.txid = "match"
 
 \* A1 (role separation, stated directly): no output ever rests on a
 \* signature accepted under the wrong role domain. Subsumed by A6/A7 but
@@ -211,8 +211,8 @@ A1_RoleDomainSeparation ==
     output # <<>> =>
         \A i \in 1..Len(group) :
             group[i].kind = "target" =>
-                /\ group[i].userSig.role # "sentry"
-                /\ group[i].sentrySig.role # "user"
+                /\ group[i].userSig.role # "cosigner"
+                /\ group[i].cosignerSig.role # "user"
 
 \* A8: passthrough bytes are kept only when their decoded txid equals the
 \* canonical entry's, a signature is present, and the sender is not a
@@ -243,7 +243,7 @@ NoPartialOutput ==
 Safety ==
     /\ TypeOK
     /\ A6_UserSignatureVerified
-    /\ A7_SentrySignatureVerified
+    /\ A7_CosignerSignatureVerified
     /\ A1_RoleDomainSeparation
     /\ A8_PassthroughTxidBound
     /\ A14_AssembledTxnBound

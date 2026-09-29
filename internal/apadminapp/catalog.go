@@ -17,6 +17,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -24,7 +25,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"gopkg.in/yaml.v3"
@@ -111,36 +111,36 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		if len(args) == 2 && (args[0] == "enable" || args[0] == "disable") {
 			return AuthUnlock, nil
 		}
-	case "sentry":
+	case "cosigner":
 		if len(args) == 0 {
-			return AuthUnlock, fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
+			return AuthUnlock, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
 		}
 		switch args[0] {
 		case "enrollment":
-			return sentryEnrollmentAuthMode(args[1:])
+			return cosignerEnrollmentAuthMode(args[1:])
 		case "export":
 			if len(args) < 2 || len(args) > 3 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin sentry export <sentry-key-id> [output-json]")
+				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
 			}
 			return AuthReadOnly, nil
 		case "list":
 			if len(args) != 1 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin sentry list")
+				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner list")
 			}
 			return AuthReadOnly, nil
 		case "show":
 			if len(args) != 2 {
-				return AuthReadOnly, fmt.Errorf("usage: apadmin sentry show <name>")
+				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner show <name>")
 			}
 			return AuthReadOnly, nil
 		case "import":
 			if len(args) != 3 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin sentry import <public-json|-> <name>")
+				return AuthUnlock, fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
 			}
 			return AuthUnlock, nil
 		case "remove":
 			if len(args) != 2 {
-				return AuthUnlock, fmt.Errorf("usage: apadmin sentry remove <name>")
+				return AuthUnlock, fmt.Errorf("usage: apadmin cosigner remove <name>")
 			}
 			return AuthUnlock, nil
 		}
@@ -202,8 +202,8 @@ func (c Catalog) Run(command string, args []string) error {
 		return c.runTemplate(args)
 	case "keytype":
 		return c.runKeyType(args)
-	case "sentry":
-		return c.runSentry(args)
+	case "cosigner":
+		return c.runCosigner(args)
 	case "endpoint":
 		return c.runEndpoint(args)
 	case "generations":
@@ -381,74 +381,74 @@ func (c Catalog) runKeyType(args []string) error {
 	return nil
 }
 
-func (c Catalog) runSentry(args []string) error {
+func (c Catalog) runCosigner(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
+		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
 	}
 	switch args[0] {
 	case "enrollment":
-		return c.runSentryEnrollment(args[1:])
+		return c.runCosignerEnrollment(args[1:])
 	case "export":
 		if len(args) < 2 || len(args) > 3 {
-			return fmt.Errorf("usage: apadmin sentry export <sentry-key-id> [output-json]")
+			return fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
 		}
-		return c.exportSentry(args[1:])
+		return c.exportCosigner(args[1:])
 	case "import":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: apadmin sentry import <public-json|-> <name>")
+			return fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
 		}
-		return c.importSentry(args[1], args[2])
+		return c.importCosigner(args[1], args[2])
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: apadmin sentry list")
+			return fmt.Errorf("usage: apadmin cosigner list")
 		}
-		return c.listSentries()
+		return c.listCosigners()
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin sentry show <name>")
+			return fmt.Errorf("usage: apadmin cosigner show <name>")
 		}
-		return c.showSentry(args[1])
+		return c.showCosigner(args[1])
 	case "remove":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin sentry remove <name>")
+			return fmt.Errorf("usage: apadmin cosigner remove <name>")
 		}
-		return c.removeSentry(args[1])
+		return c.removeCosigner(args[1])
 	default:
-		return fmt.Errorf("usage: apadmin sentry <export|import|list|show|remove|enrollment>")
+		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
 	}
 }
 
-func (c Catalog) exportSentry(args []string) error {
+func (c Catalog) exportCosigner(args []string) error {
 	keyID, err := witness.NormalizeID(args[0])
 	if err != nil {
 		return fmt.Errorf("invalid Witness Key ID: %w", err)
 	}
 	result, err := requestInspectionWithRetry(c, func() any {
-		return protocol.ExportSentryPublicMessage{
-			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublic, ID: c.requestID("sentry-export")},
+		return protocol.ExportCosignerPublicMessage{
+			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeExportCosignerPublic, ID: c.requestID("cosigner-export")},
 			WitnessKeyID: keyID,
 		}
-	}, func(result *protocol.ExportSentryPublicResultMessage) string { return result.Code })
+	}, func(result *protocol.ExportCosignerPublicResultMessage) string { return result.Code })
 	if err != nil {
 		return err
 	}
 	if !result.Success {
-		return resultError("sentry export failed", result.Code, result.Error)
+		return resultError("cosigner export failed", result.Code, result.Error)
 	}
 	data := []byte(result.EnvelopeJSON)
 	if len(args) == 1 {
 		_, err := c.Streams.Stdout.Write(data)
 		return err
 	}
-	if err := WriteSentryPublicEnvelope(args[1], data); err != nil {
+	if err := WriteCosignerPublicEnvelope(args[1], data); err != nil {
 		return err
 	}
-	c.info("sentry public key envelope written: %s", args[1])
+	c.info("cosigner public key envelope written: %s", args[1])
 	return nil
 }
 
-func (c Catalog) importSentry(path, name string) error {
-	data, err := ReadSentryPublicEnvelope(path, c.Streams.Stdin)
+func (c Catalog) importCosigner(path, name string) error {
+	data, err := ReadCosignerPublicEnvelope(path, c.Streams.Stdin)
 	if err != nil {
 		return err
 	}
@@ -460,37 +460,37 @@ func (c Catalog) importSentry(path, name string) error {
 	if err != nil {
 		return err
 	}
-	var result protocol.ImportSentryReferenceResultMessage
-	if err := c.Client.Request(protocol.ImportSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportSentryReference, ID: c.requestID("sentry-import")},
+	var result protocol.ImportCosignerReferenceResultMessage
+	if err := c.Client.Request(protocol.ImportCosignerReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportCosignerReference, ID: c.requestID("cosigner-import")},
 		Name:        name, EnvelopeJSON: string(data),
 	}, &result); err != nil {
 		return err
 	}
 	if !result.Success {
-		return resultError("sentry import failed", result.Code, result.Error)
+		return resultError("cosigner import failed", result.Code, result.Error)
 	}
-	c.info("sentry reference %s imported for %s", result.Reference.Name, result.Reference.KeyType)
+	c.info("cosigner reference %s imported for %s", result.Reference.Name, result.Reference.KeyType)
 	return nil
 }
 
-func (c Catalog) listSentries() error {
+func (c Catalog) listCosigners() error {
 	result, err := requestInspectionWithRetry(c, func() any {
-		return protocol.ListSentryReferencesMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListSentryReferences, ID: c.requestID("sentry-list")},
+		return protocol.ListCosignerReferencesMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListCosignerReferences, ID: c.requestID("cosigner-list")},
 		}
-	}, func(result *protocol.SentryReferencesListMessage) string { return result.Code })
+	}, func(result *protocol.CosignerReferencesListMessage) string { return result.Code })
 	if err != nil {
 		return err
 	}
 	if result.Error != "" {
-		return resultError("sentry list failed", result.Code, result.Error)
+		return resultError("cosigner list failed", result.Code, result.Error)
 	}
 	if len(result.References) == 0 {
-		c.info("no sentry references found")
+		c.info("no cosigner references found")
 		return nil
 	}
-	c.info("found %d sentry reference(s)", len(result.References))
+	c.info("found %d cosigner reference(s)", len(result.References))
 	for _, record := range result.References {
 		label := "unknown"
 		if record.Name != "" {
@@ -501,42 +501,42 @@ func (c Catalog) listSentries() error {
 	return nil
 }
 
-func (c Catalog) showSentry(name string) error {
+func (c Catalog) showCosigner(name string) error {
 	result, err := requestInspectionWithRetry(c, func() any {
-		return protocol.GetSentryReferenceMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetSentryReference, ID: c.requestID("sentry-show")},
+		return protocol.GetCosignerReferenceMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetCosignerReference, ID: c.requestID("cosigner-show")},
 			Name:        name,
 		}
-	}, func(result *protocol.SentryReferenceMessage) string { return result.Code })
+	}, func(result *protocol.CosignerReferenceMessage) string { return result.Code })
 	if err != nil {
 		return err
 	}
 	if !result.Success {
-		return resultError("sentry show failed", result.Code, result.Error)
+		return resultError("cosigner show failed", result.Code, result.Error)
 	}
 	data, err := json.MarshalIndent(result.Reference, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode sentry reference: %w", err)
+		return fmt.Errorf("encode cosigner reference: %w", err)
 	}
 	_, err = c.Streams.Stdout.Write(append(data, '\n'))
 	return err
 }
 
-func (c Catalog) removeSentry(name string) error {
-	var result protocol.RemoveSentryReferenceResultMessage
-	if err := c.Client.Request(protocol.RemoveSentryReferenceMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReference, ID: c.requestID("sentry-remove")},
+func (c Catalog) removeCosigner(name string) error {
+	var result protocol.RemoveCosignerReferenceResultMessage
+	if err := c.Client.Request(protocol.RemoveCosignerReferenceMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReference, ID: c.requestID("cosigner-remove")},
 		Name:        name,
 	}, &result); err != nil {
 		return err
 	}
 	if !result.Success {
-		return resultError("sentry remove failed", result.Code, result.Error)
+		return resultError("cosigner remove failed", result.Code, result.Error)
 	}
 	if result.Removed {
-		c.info("sentry reference %s removed", name)
+		c.info("cosigner reference %s removed", name)
 	} else {
-		c.info("sentry reference %s was already absent", name)
+		c.info("cosigner reference %s was already absent", name)
 	}
 	return nil
 }

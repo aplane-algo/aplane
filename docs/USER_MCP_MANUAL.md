@@ -170,7 +170,7 @@ Box names also accept `<app-id>:<name>`.
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 
 The two native account key types are not LogicSig-backed. Witness keys are
-auxiliary non-account keys; signer-custodied instances serve the sentry
+auxiliary non-account keys; signer-custodied instances serve the cosigner
 component role, while standalone `.wit` instances may serve contract admin.
 
 ### Key types (identifiers are `publisher.family.vN`)
@@ -184,11 +184,11 @@ component role, while standalone `.wit` instances may serve contract admin.
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new stores |
 | `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
 | `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
-| `aplane.corridor.v1` | bounded-sentry dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
+| `aplane.corridor.v1` | bounded-cosigner dsa_lsig (Merkle spend corridor, admin-protected rekey) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
-| `aplane.falcon1024-sentry1024.v1` | guarded dsa_lsig | library-visible |
-| `aplane.witness-falcon1024.v1` | witness key | sentry node `.sen` custody or external `.wit` custody |
+| `aplane.falcon1024-cosigner1024.v1` | guarded dsa_lsig | library-visible |
+| `aplane.witness-falcon1024.v1` | witness key | cosigner node `.cos` custody or external `.wit` custody |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is product-scoped. Visibility states: `default_enabled` (every
@@ -233,10 +233,10 @@ existing key's ability to sign.
 
 ### Corridors
 
-A **Corridor v1** account uses the optional `aplane.corridor.v1` bounded-sentry
+A **Corridor v1** account uses the optional `aplane.corridor.v1` bounded-cosigner
 LogicSig profile. Its non-self payment and asset-transfer destinations must
 prove membership in the generation-time Merkle recipient set, and every spend
-also needs the enrolled sentry's Falcon authorization. A distinct offline
+also needs the enrolled cosigner's Falcon authorization. A distinct offline
 contract-admin witness co-authorizes pure rekey operations.
 
 Recipient-constrained accounts can compose into **graphs** — a directed edge
@@ -398,26 +398,26 @@ in `identities/default/config.yaml`.
 - Wire-level auth outcomes: `401` (authentication), `403` (authorization,
   fail-closed).
 
-### Sentry / guarded signing (when present)
+### Cosigner / guarded signing (when present)
 
-Guarded account key types embed a sentry's public key in their LogicSig, so a
+Guarded account key types embed a cosigner's public key in their LogicSig, so a
 transaction needs **two** authorizations: the user signer proves control, and a
-separate **sentry** signer authorizes the facts under sentry policy. The client
+separate **cosigner** signer authorizes the facts under cosigner policy. The client
 orchestrates this automatically when any effective signer is a guarded account —
 it never holds keys:
 
-- Guarded/sentry keys are **never** signed via plain `/sign` (it rejects them).
-  They go through `/sign/component` (roles `user` and `sentry`) and
+- Guarded/cosigner keys are **never** signed via plain `/sign` (it rejects them).
+  They go through `/sign/component` (roles `user` and `cosigner`) and
   `/sign/assemble`.
-- Sentry endpoints live in `endpoints.yaml` with `role: sentry`. For each
+- Cosigner endpoints live in `endpoints.yaml` with `role: cosigner`. For each
   operation, the client queries authenticated `/keys` and routes to the one
   endpoint advertising the required embedded public key.
-- Sentry policy has only two outcomes — **reject or sign** (no human, no
-  Operator Default). A locked, unreachable, stale, or wrong sentry endpoint
+- Cosigner policy has only two outcomes — **reject or sign** (no human, no
+  Operator Default). A locked, unreachable, stale, or wrong cosigner endpoint
   fails **closed** before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
-> [ARCH_SENTRY.md](ARCH_SENTRY.md).
+> [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
 
 ---
 
@@ -448,10 +448,10 @@ bytes even though apshell does not submit them.
 - **`request-token`** obtains an API token from the signer — **interactive and
   not available via MCP**; run real `apshell` in a terminal once to enroll. MCP
   refuses to start without an existing enrollment (token + trusted host).
-- **`endpoints`** manages signer/sentry routing profiles (`list`, `show`,
-  `create`, `import`, `discover-sentries`, `default`, `delete`). Routing lives in
+- **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
+  `create`, `import`, `discover-cosigners`, `default`, `delete`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
-  endpoint; the rest are `role: sentry`.
+  endpoint; the rest are `role: cosigner`.
 
 **Networks** are local context tokens — `mainnet`, `testnet`, `betanet`,
 `localnet`, and custom tokens. Built-ins map to fixed genesis hashes; custom
@@ -566,7 +566,7 @@ each MCP server instance uses its own:
 | Path | Holds |
 |------|-------|
 | `config.yaml` | network, `networks_allowed`, theme, poll interval, per-network algod |
-| `endpoints.yaml` | signer + sentry routing profiles (the default endpoint) |
+| `endpoints.yaml` | signer + cosigner routing profiles (the default endpoint) |
 | `plugins.yaml` | names of enabled plugins |
 | `plugins.available/<name>/` | plugin payloads |
 | `aplane.token` (and `tokens/<alias>.token`) | API tokens (from `request-token`) |
@@ -612,7 +612,7 @@ each MCP server instance uses its own:
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_SENTRY.md](ARCH_SENTRY.md) — guarded signing
+- [ARCH_COSIGNER.md](ARCH_COSIGNER.md) — guarded signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [WP_CORRIDORS.md](WP_CORRIDORS.md) — corridors (constrained-transfer graphs)
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins

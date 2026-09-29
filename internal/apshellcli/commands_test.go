@@ -30,15 +30,15 @@ func TestTokenEnrollmentAutoConnectsOnlyDefaultSigner(t *testing.T) {
 	registry := config.ClientEndpointRegistry{
 		Default: "primary",
 		Endpoints: map[string]config.ClientEndpointConfig{
-			"primary": {Role: config.ClientEndpointRoleSigner},
-			"sentry":  {Role: config.ClientEndpointRoleSentry},
+			"primary":  {Role: config.ClientEndpointRoleSigner},
+			"cosigner": {Role: config.ClientEndpointRoleCosigner},
 		},
 	}
 	if !shouldAutoConnectAfterEnrollment(registry, "primary") {
 		t.Fatal("default signer enrollment should auto-connect")
 	}
-	if shouldAutoConnectAfterEnrollment(registry, "sentry") {
-		t.Fatal("sentry enrollment should not auto-connect")
+	if shouldAutoConnectAfterEnrollment(registry, "cosigner") {
+		t.Fatal("cosigner enrollment should not auto-connect")
 	}
 }
 

@@ -52,7 +52,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                reloadFromWatcher copies the callback out before releasing
 //	                watcherMu.
 //	policyMu        guards policyCfg/storedPolicyCfg and
-//	                sentryPolicyCfg/storedSentryPolicyCfg. Held alone.
+//	                cosignerPolicyCfg/storedCosignerPolicyCfg. Held alone.
 //	sshKeysMu       guards sshKeys. Held alone.
 //
 // Atomics:
@@ -87,15 +87,15 @@ type Runtime struct {
 	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock      func() sync.Locker
 
-	approval              atomic.Pointer[signerapproval.Coordinator]
-	authenticator         auth.Authenticator
-	runtimeCfg            *RuntimeConfig
-	nodeRole              noderole.Role
-	policyMu              sync.RWMutex
-	policyCfg             *policy.Config
-	storedPolicyCfg       *policy.StoredConfig
-	sentryPolicyCfg       *policy.Config
-	storedSentryPolicyCfg *policy.StoredConfig
+	approval                atomic.Pointer[signerapproval.Coordinator]
+	authenticator           auth.Authenticator
+	runtimeCfg              *RuntimeConfig
+	nodeRole                noderole.Role
+	policyMu                sync.RWMutex
+	policyCfg               *policy.Config
+	storedPolicyCfg         *policy.StoredConfig
+	cosignerPolicyCfg       *policy.Config
+	storedCosignerPolicyCfg *policy.StoredConfig
 
 	// SSH authorized keys for this identity
 	sshKeys   []ssh.PublicKey
@@ -248,41 +248,41 @@ func (ir *Runtime) PolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	return stored, effective
 }
 
-// SentryPolicy returns a copy of the effective sentry component policy
+// CosignerPolicy returns a copy of the effective cosigner component policy
 // for this identity.
-func (ir *Runtime) SentryPolicy() *policy.Config {
+func (ir *Runtime) CosignerPolicy() *policy.Config {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	if ir.sentryPolicyCfg == nil {
+	if ir.cosignerPolicyCfg == nil {
 		return nil
 	}
-	return ir.sentryPolicyCfg.Clone()
+	return ir.cosignerPolicyCfg.Clone()
 }
 
-// StoredSentryPolicy returns a copy of the stored sentry policy snapshot
-// that produced the currently active effective sentry policy, if one is
+// StoredCosignerPolicy returns a copy of the stored cosigner policy snapshot
+// that produced the currently active effective cosigner policy, if one is
 // available.
-func (ir *Runtime) StoredSentryPolicy() *policy.StoredConfig {
+func (ir *Runtime) StoredCosignerPolicy() *policy.StoredConfig {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	if ir.storedSentryPolicyCfg == nil {
+	if ir.storedCosignerPolicyCfg == nil {
 		return nil
 	}
-	return ir.storedSentryPolicyCfg.Clone()
+	return ir.storedCosignerPolicyCfg.Clone()
 }
 
-// SentryPolicySnapshot returns copies of the active stored and effective
-// sentry policy state.
-func (ir *Runtime) SentryPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
+// CosignerPolicySnapshot returns copies of the active stored and effective
+// cosigner policy state.
+func (ir *Runtime) CosignerPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
 	var stored *policy.StoredConfig
-	if ir.storedSentryPolicyCfg != nil {
-		stored = ir.storedSentryPolicyCfg.Clone()
+	if ir.storedCosignerPolicyCfg != nil {
+		stored = ir.storedCosignerPolicyCfg.Clone()
 	}
 	var effective *policy.Config
-	if ir.sentryPolicyCfg != nil {
-		effective = ir.sentryPolicyCfg.Clone()
+	if ir.cosignerPolicyCfg != nil {
+		effective = ir.cosignerPolicyCfg.Clone()
 	}
 	return stored, effective
 }
@@ -310,29 +310,29 @@ func (ir *Runtime) SetPolicyState(stored *policy.StoredConfig, cfg *policy.Confi
 	ir.policyCfg = cfg.Clone()
 }
 
-// SetSentryPolicy installs the effective sentry policy for this
+// SetCosignerPolicy installs the effective cosigner policy for this
 // identity.
-func (ir *Runtime) SetSentryPolicy(cfg *policy.Config) {
-	ir.SetSentryPolicyState(nil, cfg)
+func (ir *Runtime) SetCosignerPolicy(cfg *policy.Config) {
+	ir.SetCosignerPolicyState(nil, cfg)
 }
 
-// SetSentryPolicyState installs the stored sentry policy snapshot and
-// the effective sentry policy for this identity as one atomic runtime
+// SetCosignerPolicyState installs the stored cosigner policy snapshot and
+// the effective cosigner policy for this identity as one atomic runtime
 // update.
-func (ir *Runtime) SetSentryPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
+func (ir *Runtime) SetCosignerPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
 	ir.policyMu.Lock()
 	defer ir.policyMu.Unlock()
 	if cfg == nil {
-		ir.storedSentryPolicyCfg = nil
-		ir.sentryPolicyCfg = nil
+		ir.storedCosignerPolicyCfg = nil
+		ir.cosignerPolicyCfg = nil
 		return
 	}
 	if stored == nil {
-		ir.storedSentryPolicyCfg = nil
+		ir.storedCosignerPolicyCfg = nil
 	} else {
-		ir.storedSentryPolicyCfg = stored.Clone()
+		ir.storedCosignerPolicyCfg = stored.Clone()
 	}
-	ir.sentryPolicyCfg = cfg.Clone()
+	ir.cosignerPolicyCfg = cfg.Clone()
 }
 
 // --- Lock state ---

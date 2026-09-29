@@ -156,19 +156,19 @@ the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
 compiled providers and templates for the product store.
 
-To try a guarded account, first set up a separate sentry node and generate its
-`aplane.witness-falcon1024.v1` key. Choose **Export Sentry Key**. In the
-primary signer's apadmin, press `e` for **Sentries**, then `i` to import the file
+To try a guarded account, first set up a separate cosigner node and generate its
+`aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**. In the
+primary signer's apadmin, press `e` for **Cosigners**, then `i` to import the file
 or `p` to paste JSON. Compare the full Witness Key ID before accepting the
 reference, then select **Generate account**.
 
-In apshell, run `sentry add <sentry-key-json> --alias <alias>`. Supply
+In apshell, run `cosigner add <cosigner-key-json> --alias <alias>`. Supply
 `--endpoint <url>` when the exported document has no address. Review the full
 Witness Key ID, then compare the full client SSH key fingerprint displayed in
-apshell and the **Client Access Request** in sentry-side apadmin before approving.
+apshell and the **Client Access Request** in cosigner-side apadmin before approving.
 The command configures the client route, obtains access, and verifies the
 expected witness. With apshell connected to the primary signer, run
-`sentry status` to inspect the guarded account's current sentry route before
+`cosigner status` to inspect the guarded account's current cosigner route before
 funding or rekeying. Route availability does not establish transaction-policy
 or on-chain validity.
 

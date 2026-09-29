@@ -35,7 +35,7 @@ component signing and assembly, and assembly verifies `AuthAddr` is the guarded
 account when the decoded sender differs.
 
 The remaining limitation is policy scope. Component messages bind role and
-target transaction ID; sentry policy is transaction-fact based and does not
+target transaction ID; cosigner policy is transaction-fact based and does not
 receive a separate authorizer field. Per-authorizer allowlists would require a
 versioned component message and LogicSig change.
 

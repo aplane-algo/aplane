@@ -23,7 +23,7 @@ import (
 //
 // KeyOverrides maps a concrete signing authority key to a fully resolved Config
 // that should be used when that key signs. Signing account overrides are keyed
-// by Algorand auth address. Sentry component overrides are keyed by component
+// by Algorand auth address. Cosigner component overrides are keyed by component
 // selector. Overrides inherit from the base config for any field they do not
 // set. Nested overrides are not supported (KeyOverrides on an override value is
 // always nil).
@@ -43,7 +43,7 @@ type Config struct {
 	TransferPolicy              *TransferPolicy
 	RekeyPolicy                 *RekeyPolicy
 	KeyOverrides                map[string]*Config
-	Sentry                      *Config
+	Cosigner                    *Config
 	GenesisHashResolver         apconfig.GenesisHashNetworkResolver
 	FormatASAAmount             func(network string, assetID uint64, raw uint64) (string, bool)
 }
@@ -57,12 +57,12 @@ type StoredConfig struct {
 	StoredPolicyCore `yaml:",inline"`
 
 	ClientSigning *StoredRoleConfig        `yaml:"client_signing,omitempty"`
-	Sentry        *StoredRoleConfig        `yaml:"sentry,omitempty"`
+	Cosigner      *StoredRoleConfig        `yaml:"cosigner,omitempty"`
 	KeyOverrides  map[string]*StoredConfig `yaml:"key_overrides,omitempty"`
 }
 
 // StoredRoleConfig is a sparse role-domain policy block nested under
-// client_signing: or sentry:. It intentionally does not recurse into role
+// client_signing: or cosigner:. It intentionally does not recurse into role
 // blocks or key_overrides.
 type StoredRoleConfig struct {
 	StoredPolicyCore `yaml:",inline"`
@@ -150,7 +150,7 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	cp := *c
 	cp.StoredPolicyCore = *c.StoredPolicyCore.Clone()
 	cp.ClientSigning = c.ClientSigning.Clone()
-	cp.Sentry = c.Sentry.Clone()
+	cp.Cosigner = c.Cosigner.Clone()
 	if c.KeyOverrides != nil {
 		cp.KeyOverrides = make(map[string]*StoredConfig, len(c.KeyOverrides))
 		for key, override := range c.KeyOverrides {
@@ -171,7 +171,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("policy config must be a mapping")
 	}
-	allowed := allowedFieldSet("client_signing", "sentry", "key_overrides")
+	allowed := allowedFieldSet("client_signing", "cosigner", "key_overrides")
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		if _, ok := allowed[key]; !ok {
@@ -187,7 +187,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
 		return err
 	}
-	if err := validateRoleConfig("sentry", c.Sentry); err != nil {
+	if err := validateRoleConfig("cosigner", c.Cosigner); err != nil {
 		return err
 	}
 	return nil
@@ -220,28 +220,28 @@ func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
 	switch role {
 	case "client_signing":
 		if cfg.RejectRekey != nil {
-			return fmt.Errorf("client_signing.reject_rekey is not supported; reject_rekey is sentry-only")
+			return fmt.Errorf("client_signing.reject_rekey is not supported; reject_rekey is cosigner-only")
 		}
 		if cfg.RekeyPolicy != nil {
-			return fmt.Errorf("client_signing.rekey_policy is not supported; rekey_policy is sentry-only")
+			return fmt.Errorf("client_signing.rekey_policy is not supported; rekey_policy is cosigner-only")
 		}
-	case "sentry":
+	case "cosigner":
 		if cfg.RejectForeignRekey != nil {
-			return fmt.Errorf("sentry.reject_foreign_rekey is not supported; use sentry.reject_rekey")
+			return fmt.Errorf("cosigner.reject_foreign_rekey is not supported; use cosigner.reject_rekey")
 		}
 		if cfg.AlwaysReviewWarnings != nil {
-			return fmt.Errorf("sentry.always_review_warnings is not supported; sentry policy cannot produce review verdicts")
+			return fmt.Errorf("cosigner.always_review_warnings is not supported; cosigner policy cannot produce review verdicts")
 		}
 		if cfg.AutoApproveSelfNoOpTransfer != nil {
-			return fmt.Errorf("sentry.auto_approve_self_noop_transfer is not supported; sentry has no operator default")
+			return fmt.Errorf("cosigner.auto_approve_self_noop_transfer is not supported; cosigner has no operator default")
 		}
 		if len(cfg.ReviewAlgoPayments) > 0 {
-			return fmt.Errorf("sentry.review_algo_payments is not supported; sentry policy cannot produce review verdicts")
+			return fmt.Errorf("cosigner.review_algo_payments is not supported; cosigner policy cannot produce review verdicts")
 		}
 		if len(cfg.ReviewASAAmounts) > 0 {
-			return fmt.Errorf("sentry.review_asa_amounts is not supported; sentry policy cannot produce review verdicts")
+			return fmt.Errorf("cosigner.review_asa_amounts is not supported; cosigner policy cannot produce review verdicts")
 		}
-		if err := validateSentryTransferPolicy(cfg.TransferPolicy); err != nil {
+		if err := validateCosignerTransferPolicy(cfg.TransferPolicy); err != nil {
 			return err
 		}
 	default:
@@ -250,26 +250,26 @@ func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
 	return nil
 }
 
-func validateSentryTransferPolicy(tp *StoredTransferPolicy) error {
+func validateCosignerTransferPolicy(tp *StoredTransferPolicy) error {
 	if tp == nil {
 		return nil
 	}
-	if err := requireRejectRouteMiss("sentry.transfer_policy.on_no_route", tp.OnNoRoute); err != nil {
+	if err := requireRejectRouteMiss("cosigner.transfer_policy.on_no_route", tp.OnNoRoute); err != nil {
 		return err
 	}
-	if err := requireRejectRouteMiss("sentry.transfer_policy.close_on_no_route", tp.CloseOnNoRoute); err != nil {
+	if err := requireRejectRouteMiss("cosigner.transfer_policy.close_on_no_route", tp.CloseOnNoRoute); err != nil {
 		return err
 	}
-	if err := requireRejectRouteMiss("sentry.transfer_policy.clawback_on_no_route", tp.ClawbackOnNoRoute); err != nil {
+	if err := requireRejectRouteMiss("cosigner.transfer_policy.clawback_on_no_route", tp.ClawbackOnNoRoute); err != nil {
 		return err
 	}
 	for _, route := range tp.Routes {
 		if route.Limits != nil && route.Limits.ReviewAbove != nil {
-			return fmt.Errorf("sentry.transfer_policy route %q limits.review_above is not supported; sentry policy cannot produce review verdicts", route.ID)
+			return fmt.Errorf("cosigner.transfer_policy route %q limits.review_above is not supported; cosigner policy cannot produce review verdicts", route.ID)
 		}
 		for network, limits := range route.LimitsByNetwork {
 			if limits.ReviewAbove != nil {
-				return fmt.Errorf("sentry.transfer_policy route %q limits_by_network[%s].review_above is not supported; sentry policy cannot produce review verdicts", route.ID, network)
+				return fmt.Errorf("cosigner.transfer_policy route %q limits_by_network[%s].review_above is not supported; cosigner policy cannot produce review verdicts", route.ID, network)
 			}
 		}
 	}
@@ -284,7 +284,7 @@ func requireRejectRouteMiss(label string, value *string) error {
 	case "", string(TransferOnNoRouteReject):
 		return nil
 	default:
-		return fmt.Errorf("%s must be %q for sentry policy, got %q", label, TransferOnNoRouteReject, *value)
+		return fmt.Errorf("%s must be %q for cosigner policy, got %q", label, TransferOnNoRouteReject, *value)
 	}
 }
 
@@ -339,10 +339,10 @@ func (c *Config) Clone() *Config {
 	if c.RekeyPolicy != nil {
 		cp.RekeyPolicy = c.RekeyPolicy.Clone()
 	}
-	if c.Sentry != nil {
-		cp.Sentry = c.Sentry.Clone()
-		if cp.Sentry != nil {
-			cp.Sentry.Sentry = nil
+	if c.Cosigner != nil {
+		cp.Cosigner = c.Cosigner.Clone()
+		if cp.Cosigner != nil {
+			cp.Cosigner.Cosigner = nil
 		}
 	}
 	return &cp
@@ -366,7 +366,7 @@ func (c *Config) ForKey(key string) *Config {
 
 // NormalizeKeyOverrideKey canonicalizes a runtime key-override lookup selector.
 // It accepts both signer auth addresses and Witness Key IDs because Config.ForKey
-// is shared by signer and sentry effective policy snapshots. Policy document
+// is shared by signer and cosigner effective policy snapshots. Policy document
 // validation must use the role-specific normalizers below instead.
 func NormalizeKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
@@ -388,7 +388,7 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 
 // NormalizeSigningKeyOverrideKey validates and canonicalizes a signer-domain
 // policy key_overrides selector. Signer overrides are keyed by Algorand auth
-// address; Witness Key IDs are valid only in sentry-domain policy.
+// address; Witness Key IDs are valid only in cosigner-domain policy.
 func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -404,17 +404,17 @@ func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 	return addr.String(), nil
 }
 
-// NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
-// policy key_overrides selector. Sentry overrides are always keyed by
+// NormalizeCosignerKeyOverrideKey validates and canonicalizes a cosigner
+// policy key_overrides selector. Cosigner overrides are always keyed by
 // Witness Key ID, not spending-account address.
-func NormalizeSentryKeyOverrideKey(key string) (string, error) {
+func NormalizeCosignerKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
-		return "", fmt.Errorf("sentry key override selector is required")
+		return "", fmt.Errorf("cosigner key override selector is required")
 	}
 	selector, err := witness.NormalizeID(raw)
 	if err != nil {
-		return "", fmt.Errorf("sentry key override selector must be a Witness Key ID: %w", err)
+		return "", fmt.Errorf("cosigner key override selector must be a Witness Key ID: %w", err)
 	}
 	return selector, nil
 }
@@ -538,11 +538,11 @@ func PolicyPath(dataRoot string) string {
 	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "policy.yaml")
 }
 
-// SentryPath returns the path to the policy file used by sentry nodes.
+// CosignerPath returns the path to the policy file used by cosigner nodes.
 // Single-mode nodes store the active role policy in policy.yaml; this helper is
-// retained so sentry-domain callers can keep using the sentry parser and
+// retained so cosigner-domain callers can keep using the cosigner parser and
 // validator without carrying a separate filename.
-func SentryPath(dataRoot string) string {
+func CosignerPath(dataRoot string) string {
 	return PolicyPath(dataRoot)
 }
 
@@ -579,15 +579,15 @@ func ParseStoredConfig(data []byte) (*StoredConfig, error) {
 	return cfg, nil
 }
 
-// ParseStoredSentryConfig parses policy.yaml bytes for a sentry node
+// ParseStoredCosignerConfig parses policy.yaml bytes for a cosigner node
 // without performing any integrity verification. The document is direct
-// sentry policy; it must not contain a sentry: wrapper.
-func ParseStoredSentryConfig(data []byte) (*StoredConfig, error) {
+// cosigner policy; it must not contain a cosigner: wrapper.
+func ParseStoredCosignerConfig(data []byte) (*StoredConfig, error) {
 	cfg, err := parseStoredConfig(data)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSentryDocument(cfg); err != nil {
+	if err := validateCosignerDocument(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -612,13 +612,13 @@ func MarshalStoredConfig(cfg *StoredConfig) ([]byte, error) {
 	return yaml.Marshal(cfg)
 }
 
-// MarshalStoredSentryConfig serializes a whole stored sentry policy
+// MarshalStoredCosignerConfig serializes a whole stored cosigner policy
 // config.
-func MarshalStoredSentryConfig(cfg *StoredConfig) ([]byte, error) {
+func MarshalStoredCosignerConfig(cfg *StoredConfig) ([]byte, error) {
 	if cfg == nil {
 		cfg = &StoredConfig{}
 	}
-	if err := validateSentryDocument(cfg); err != nil {
+	if err := validateCosignerDocument(cfg); err != nil {
 		return nil, err
 	}
 	return yaml.Marshal(cfg)
@@ -634,19 +634,19 @@ func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	effective.Sentry = nil
+	effective.Cosigner = nil
 	return effective, nil
 }
 
-// ApplySentry overlays sentry-node policy.yaml values onto sentry
-// defaults and returns the effective sentry component policy. The document is
-// direct: no sentry: wrapper is used.
-func (c *StoredConfig) ApplySentry(defaults *Config) (*Config, error) {
-	if err := validateSentryDocument(c); err != nil {
+// ApplyCosigner overlays cosigner-node policy.yaml values onto cosigner
+// defaults and returns the effective cosigner component policy. The document is
+// direct: no cosigner: wrapper is used.
+func (c *StoredConfig) ApplyCosigner(defaults *Config) (*Config, error) {
+	if err := validateCosignerDocument(c); err != nil {
 		return nil, err
 	}
-	base := defaultSentryConfig(defaults)
-	effective, err := applyDirectSentryConfig(c, base)
+	base := defaultCosignerConfig(defaults)
+	effective, err := applyDirectCosignerConfig(c, base)
 	if err != nil {
 		return nil, err
 	}
@@ -658,14 +658,14 @@ func (c *StoredConfig) ApplySentry(defaults *Config) (*Config, error) {
 			if overrideStored == nil {
 				continue
 			}
-			canonicalKey, normalizeErr := NormalizeSentryKeyOverrideKey(key)
+			canonicalKey, normalizeErr := NormalizeCosignerKeyOverrideKey(key)
 			if normalizeErr != nil {
 				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
 			}
 			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
 				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
 			}
-			overrideCfg, err := applyDirectSentryConfig(overrideStored, overrideBase)
+			overrideCfg, err := applyDirectCosignerConfig(overrideStored, overrideBase)
 			if err != nil {
 				return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
 			}
@@ -681,13 +681,13 @@ func validateSigningDocument(c *StoredConfig) error {
 		return nil
 	}
 	if c.RejectRekey != nil {
-		return fmt.Errorf("signer policy reject_rekey is not supported; use sentry policy")
+		return fmt.Errorf("signer policy reject_rekey is not supported; use cosigner policy")
 	}
 	if c.RekeyPolicy != nil {
-		return fmt.Errorf("signer policy rekey_policy is not supported; use sentry policy")
+		return fmt.Errorf("signer policy rekey_policy is not supported; use cosigner policy")
 	}
-	if c.Sentry != nil {
-		return fmt.Errorf("signer policy sentry is not supported; use sentry policy")
+	if c.Cosigner != nil {
+		return fmt.Errorf("signer policy cosigner is not supported; use cosigner policy")
 	}
 	for key, override := range c.KeyOverrides {
 		if _, err := NormalizeSigningKeyOverrideKey(key); err != nil {
@@ -697,55 +697,55 @@ func validateSigningDocument(c *StoredConfig) error {
 			continue
 		}
 		if override.RejectRekey != nil {
-			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in signer policy; use sentry policy", key)
+			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in signer policy; use cosigner policy", key)
 		}
 		if override.RekeyPolicy != nil {
-			return fmt.Errorf("key_overrides for %q: rekey_policy is not supported in signer policy; use sentry policy", key)
+			return fmt.Errorf("key_overrides for %q: rekey_policy is not supported in signer policy; use cosigner policy", key)
 		}
-		if override.Sentry != nil {
-			return fmt.Errorf("key_overrides for %q: sentry is not supported in signer policy; use sentry policy", key)
+		if override.Cosigner != nil {
+			return fmt.Errorf("key_overrides for %q: cosigner is not supported in signer policy; use cosigner policy", key)
 		}
 	}
 	return nil
 }
 
-func validateSentryDocument(c *StoredConfig) error {
+func validateCosignerDocument(c *StoredConfig) error {
 	if c == nil {
 		return nil
 	}
 	if c.ClientSigning != nil {
-		return fmt.Errorf("sentry policy client_signing is not supported")
+		return fmt.Errorf("cosigner policy client_signing is not supported")
 	}
-	if c.Sentry != nil {
-		return fmt.Errorf("sentry policy must not contain a sentry wrapper; put sentry policy fields at top level")
+	if c.Cosigner != nil {
+		return fmt.Errorf("cosigner policy must not contain a cosigner wrapper; put cosigner policy fields at top level")
 	}
-	if err := validateRoleConfig("sentry", c.toStoredRoleConfig()); err != nil {
+	if err := validateRoleConfig("cosigner", c.toStoredRoleConfig()); err != nil {
 		return err
 	}
 	for key, override := range c.KeyOverrides {
-		if _, err := NormalizeSentryKeyOverrideKey(key); err != nil {
+		if _, err := NormalizeCosignerKeyOverrideKey(key); err != nil {
 			return fmt.Errorf("key_overrides for %q: %w", key, err)
 		}
 		if override == nil {
 			continue
 		}
 		if override.ClientSigning != nil {
-			return fmt.Errorf("key_overrides for %q: client_signing is not supported in sentry policy", key)
+			return fmt.Errorf("key_overrides for %q: client_signing is not supported in cosigner policy", key)
 		}
-		if override.Sentry != nil {
-			return fmt.Errorf("key_overrides for %q: sentry wrapper is not supported in sentry policy", key)
+		if override.Cosigner != nil {
+			return fmt.Errorf("key_overrides for %q: cosigner wrapper is not supported in cosigner policy", key)
 		}
 		if len(override.KeyOverrides) > 0 {
 			return fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", key)
 		}
-		if err := validateRoleConfig("sentry", override.toStoredRoleConfig()); err != nil {
+		if err := validateRoleConfig("cosigner", override.toStoredRoleConfig()); err != nil {
 			return fmt.Errorf("key_overrides for %q: %w", key, err)
 		}
 	}
 	return nil
 }
 
-func defaultSentryConfig(defaults *Config) *Config {
+func defaultCosignerConfig(defaults *Config) *Config {
 	base := DefaultConfig()
 	if defaults != nil {
 		base = DefaultConfigWithGenesisHashResolver(defaults.GenesisHashResolver)
@@ -756,20 +756,20 @@ func defaultSentryConfig(defaults *Config) *Config {
 	return base
 }
 
-func applyDirectSentryConfig(stored *StoredConfig, defaults *Config) (*Config, error) {
+func applyDirectCosignerConfig(stored *StoredConfig, defaults *Config) (*Config, error) {
 	if stored == nil {
 		stored = &StoredConfig{}
 	}
 	direct := stored.Clone()
 	direct.ClientSigning = nil
-	direct.Sentry = nil
+	direct.Cosigner = nil
 	direct.KeyOverrides = nil
-	direct.TransferPolicy = normalizeSentryTransferPolicy(direct.TransferPolicy)
+	direct.TransferPolicy = normalizeCosignerTransferPolicy(direct.TransferPolicy)
 	cfg, err := direct.Apply(defaults)
 	if err != nil {
 		return nil, err
 	}
-	cfg.Sentry = nil
+	cfg.Cosigner = nil
 	cfg.KeyOverrides = nil
 	return cfg, nil
 }
@@ -802,7 +802,7 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
 		return nil, err
 	}
-	if err := validateRoleConfig("sentry", c.Sentry); err != nil {
+	if err := validateRoleConfig("cosigner", c.Cosigner); err != nil {
 		return nil, err
 	}
 
@@ -881,11 +881,11 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		effective = clientSigningCfg
 	}
 
-	sentryCfg, err := c.applySentry(effective)
+	cosignerCfg, err := c.applyCosigner(effective)
 	if err != nil {
 		return nil, err
 	}
-	effective.Sentry = sentryCfg
+	effective.Cosigner = cosignerCfg
 
 	if len(c.KeyOverrides) > 0 {
 		// Use a detached copy of the resolved base as the "defaults" for each
@@ -924,16 +924,16 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 	return effective, nil
 }
 
-func (c *StoredConfig) applySentry(clientEffective *Config) (*Config, error) {
-	if c == nil || c.Sentry == nil {
-		if clientEffective != nil && clientEffective.Sentry != nil {
-			return clientEffective.Sentry.Clone(), nil
+func (c *StoredConfig) applyCosigner(clientEffective *Config) (*Config, error) {
+	if c == nil || c.Cosigner == nil {
+		if clientEffective != nil && clientEffective.Cosigner != nil {
+			return clientEffective.Cosigner.Clone(), nil
 		}
 		return nil, nil
 	}
 	var base *Config
-	if clientEffective.Sentry != nil {
-		base = clientEffective.Sentry.Clone()
+	if clientEffective.Cosigner != nil {
+		base = clientEffective.Cosigner.Clone()
 	} else {
 		base = DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
 		base.FormatASAAmount = clientEffective.FormatASAAmount
@@ -942,18 +942,18 @@ func (c *StoredConfig) applySentry(clientEffective *Config) (*Config, error) {
 	common := c.commonStoredConfig()
 	cfg, err := common.Apply(base)
 	if err != nil {
-		return nil, fmt.Errorf("sentry common policy: %w", err)
+		return nil, fmt.Errorf("cosigner common policy: %w", err)
 	}
-	roleStored := c.Sentry.toStoredConfig()
+	roleStored := c.Cosigner.toStoredConfig()
 	if roleStored.TransferPolicy != nil {
-		roleStored.TransferPolicy = normalizeSentryTransferPolicy(roleStored.TransferPolicy)
+		roleStored.TransferPolicy = normalizeCosignerTransferPolicy(roleStored.TransferPolicy)
 	}
 	cfg, err = roleStored.Apply(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("sentry: %w", err)
+		return nil, fmt.Errorf("cosigner: %w", err)
 	}
 	cfg.KeyOverrides = nil
-	cfg.Sentry = nil
+	cfg.Cosigner = nil
 	return cfg, nil
 }
 
@@ -968,7 +968,7 @@ func (c *StoredConfig) commonStoredConfig() *StoredConfig {
 		MaxFeeMicroAlgos:     c.MaxFeeMicroAlgos,
 		MaxAlgoPayments:      cloneUintMap(c.MaxAlgoPayments),
 		MaxASAAmounts:        cloneStoredASAAmounts(c.MaxASAAmounts),
-		TransferPolicy:       normalizeSentryTransferPolicy(c.TransferPolicy),
+		TransferPolicy:       normalizeCosignerTransferPolicy(c.TransferPolicy),
 	}}
 }
 
@@ -993,7 +993,7 @@ func (c *StoredConfig) toStoredRoleConfig() *StoredRoleConfig {
 	return &StoredRoleConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
 }
 
-func normalizeSentryTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {
+func normalizeCosignerTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {
 	if tp == nil {
 		return nil
 	}

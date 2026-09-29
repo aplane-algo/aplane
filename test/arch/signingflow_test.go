@@ -30,16 +30,16 @@ var clientPackageDirs = []string{
 // forbiddenGuardedSwitches are the compiled key-type classification helpers
 // that would silently re-couple clients to the built-in guarded families. A
 // client using them cannot handle a guarded key family it was not compiled
-// with; routing must come from signing_flow (see signerapi.SigningFlowSentry1).
+// with; routing must come from signing_flow (see signerapi.SigningFlowCosigner1).
 var forbiddenGuardedSwitches = []string{
 	"IsGuardedAccountKeyType",
-	"SentryComponentKeyTypeForGuardedAccount",
+	"CosignerComponentKeyTypeForGuardedAccount",
 	"ComponentPublicKeySize",
-	"IsSentryComponentKeyType",
+	"IsCosignerComponentKeyType",
 	"witness.ID(",
 }
 
-// TestClientPackagesRouteOnSigningFlow pins the sentry1 signing-flow
+// TestClientPackagesRouteOnSigningFlow pins the cosigner1 signing-flow
 // contract: client packages must not classify keys with the compiled guarded
 // key-type switches in production code. Test files are exempt because they
 // simulate the daemon side of the contract.
@@ -76,8 +76,8 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 	testsByFile := map[string][]string{
 		"../../internal/signerapp/signing/component_test.go": {
 			"TestPrepareComponentSigningCanonicalizesTargetsAndMessages",
-			"TestSignComponentSentryRequiresPolicyBeforeKeyLoad",
-			"TestSignComponentSentryPolicyAllowsSigning",
+			"TestSignComponentCosignerRequiresPolicyBeforeKeyLoad",
+			"TestSignComponentCosignerPolicyAllowsSigning",
 			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
 			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",
 		},
@@ -89,8 +89,8 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestSignComponentUserRoleUserAutoApproveSkipsPrompt",
 			"TestSignComponentUserRoleForeignRekeyLegForcesReview",
 		},
-		"../../internal/signerapp/signing/bounded_sentry_test.go": {
-			"TestValidateBoundedComponentPlanRequiresSentrySpend",
+		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
+			"TestValidateBoundedComponentPlanRequiresCosignerSpend",
 			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
 			"TestAssembleBoundedTargetVerifiesBothAuthorities",
 		},

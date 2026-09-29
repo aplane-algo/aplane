@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
@@ -34,17 +34,17 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
 	wantLibraryVisible := []string{
 		"aplane.ed25519.v1",
-		"aplane.falcon1024-sentry1024.v1",
+		"aplane.falcon1024-cosigner1024.v1",
 	}
 	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
 		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
 	}
 
 	if witness.Falcon1024V1 != "aplane.witness-falcon1024.v1" {
-		t.Fatalf("sentry component key type = %q", witness.Falcon1024V1)
+		t.Fatalf("cosigner component key type = %q", witness.Falcon1024V1)
 	}
-	if keytypes.GuardedFalcon1024Sentry1024V1 != "aplane.falcon1024-sentry1024.v1" {
-		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024Sentry1024V1)
+	if keytypes.GuardedFalcon1024Cosigner1024V1 != "aplane.falcon1024-cosigner1024.v1" {
+		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024Cosigner1024V1)
 	}
 }
 

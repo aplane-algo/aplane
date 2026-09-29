@@ -34,7 +34,7 @@ Bounded1 is the framework-enforced execution contract used by every bundled
 composed DSA template. Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before
 changing schema-v2 composed templates, transaction-effect classification,
 argument slots, Falcon contract-admin signing, or the `bounded1` /
-`bounded-sentry1` signing flows.
+`bounded-cosigner1` signing flows.
 Admin-capable account files contain the spending key and immutable public
 contract-admin metadata; private admin material exists only in the external
 `.wit` artifact. Never copy that private key into account
@@ -125,7 +125,7 @@ bare DSA versions use compiler auto-salting. Assignments are: omitted
 `derivation_version` means unsalted, and explicit `derivation_version: 3` means
 compiler-owned TEAL v13 auto-salting.
 The bundled `aplane.falcon1024.v1`, `aplane.ed25519.v1`, and dedicated guarded
-sentry provider (`aplane.falcon1024-sentry1024.v1`) all use the compiler-owned
+cosigner provider (`aplane.falcon1024-cosigner1024.v1`) all use the compiler-owned
 mode. User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
@@ -201,15 +201,15 @@ Go-defined key types:
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `falcon1024` | Protocol-native PQ signing key | Go-defined | default-enabled on signer nodes | `internal/signing/falcon1024` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
-| `aplane.witness-falcon1024.v1` | Witness key (sentry custody or external contract-admin custody) | Go-defined | default-enabled on sentry nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
-| `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
+| `aplane.witness-falcon1024.v1` | Witness key (cosigner custody or external contract-admin custody) | Go-defined | default-enabled on cosigner nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
+| `aplane.falcon1024-cosigner1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `falcon1024`, `aplane.falcon1024.v1`, and
 `aplane.witness-falcon1024.v1` are default-enabled, while
-`aplane.falcon1024-sentry1024.v1` and
+`aplane.falcon1024-cosigner1024.v1` and
 `aplane.ed25519.v1` are library-visible and not available for generation until
 the product store enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See
@@ -271,13 +271,13 @@ Bundled YAML templates, if installed:
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
 | `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apadmin template import library/templates/aplane.falcon1024-timelock.v1.yaml` | selected generation `keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
-| `aplane.corridor.v1` | Bounded1 composed DSA template with sentry-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
+| `aplane.corridor.v1` | Bounded1 composed DSA template with cosigner-gated spend | `apadmin template import library/templates/aplane.corridor.v1.yaml` | selected generation `keytypes/aplane.corridor.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed and
 enabled in the product store, then loaded by `apsigner`. New signer-role stores
 start with `aplane.falcon1024-allowlist.v1` already installed and enabled;
-sentry-role stores do not. The `apadmin`
+cosigner-role stores do not. The `apadmin`
 KeyType Library lists plaintext library entries and also reports installed
 templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
@@ -313,8 +313,8 @@ Key deletion uses the same product-store archive root:
 generations/<selected-generation>/keys/<address>.key
   -> generations/<selected-generation>/deleted/keys/<address>.key
 
-generations/<selected-generation>/keys/<witness_key_id>.sen
-  -> generations/<selected-generation>/deleted/keys/<witness_key_id>.sen
+generations/<selected-generation>/keys/<witness_key_id>.cos
+  -> generations/<selected-generation>/deleted/keys/<witness_key_id>.cos
 ```
 
 Archived keys and templates are outside active key/template scans. A user-requested
@@ -336,7 +336,7 @@ Choose exactly one primary category.
 > **Three resolution axes — don't collapse them.** Wiring a key type touches three
 > separate mechanisms: **Resolve** (key type → implementation, via family-keyed
 > registries), **Classify** (category facts, via string switches in the neutral
-> `internal/sentry/keytypes` leaf), and **Behave** (the operation, via
+> `internal/cosigner/keytypes` leaf), and **Behave** (the operation, via
 > provider-capability interfaces). They are deliberately distinct because each is
 > called from a place with different availability (registry? provider instance?
 > neither?). Read [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md); routing by

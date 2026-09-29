@@ -106,7 +106,7 @@ func TestSavePolicyPreparationFailureLeavesExistingPairUntouched(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
+func TestSaveAndLoadVerifiedCosignerConfigWithKeyring(t *testing.T) {
 	root := t.TempDir()
 	// A real term key length: the keyring requires 32 bytes where the
 	// bare HKDF helper accepted anything non-empty.
@@ -114,12 +114,12 @@ func TestSaveAndLoadVerifiedSentryConfigWithKeyring(t *testing.T) {
 	rejectRekey := true
 	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey}}
 
-	if err := SaveStoredSentryConfigWithKeyring(root, want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveStoredSentryConfigWithKeyring() error = %v", err)
+	if err := SaveStoredCosignerConfigWithKeyring(root, want, cryptotest.Keyring(t, masterKey), time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredCosignerConfigWithKeyring() error = %v", err)
 	}
-	got, err := LoadVerifiedSentryConfigWithKeyring(root, cryptotest.Keyring(t, masterKey))
+	got, err := LoadVerifiedCosignerConfigWithKeyring(root, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() error = %v", err)
+		t.Fatalf("LoadVerifiedCosignerConfigWithKeyring() error = %v", err)
 	}
 	if got.RejectRekey == nil || !*got.RejectRekey {
 		t.Fatalf("RejectRekey = %#v, want true", got.RejectRekey)

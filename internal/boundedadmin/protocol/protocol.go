@@ -124,14 +124,14 @@ func RequestHash(payload RequestPayload) ([sha512.Size256]byte, error) {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
 	encoded = boundedmeta.AppendUint64(encoded, metadata.MaxFee)
-	if metadata.Sentry == nil {
+	if metadata.Cosigner == nil {
 		encoded = boundedmeta.AppendUint32(encoded, 0)
 	} else {
 		encoded = boundedmeta.AppendUint32(encoded, 1)
-		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.ComponentKeyType))
-		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.PublicKeyHex))
-		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Sentry.ComponentKeyID))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(metadata.Sentry.SignatureArgIndex))
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Cosigner.ComponentKeyType))
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Cosigner.PublicKeyHex))
+		encoded = boundedmeta.AppendField(encoded, []byte(metadata.Cosigner.ComponentKeyID))
+		encoded = boundedmeta.AppendUint32(encoded, uint32(metadata.Cosigner.SignatureArgIndex))
 	}
 	encoded = appendMutation(encoded, partial.Mutations)
 	return sha512.Sum512_256(encoded), nil

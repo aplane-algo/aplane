@@ -198,7 +198,7 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 			{Name: "recipient", Label: "Recipient", Type: "address", Required: true},
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
 			{Name: "unlock_round", Label: "Unlock Round", Type: "uint64", Required: true},
-			{Name: "sentry_public_key", Label: "Sentry public key", Type: "bytes", Required: true, MaxLength: 64},
+			{Name: "cosigner_public_key", Label: "Cosigner public key", Type: "bytes", Required: true, MaxLength: 64},
 			{Name: "note", Label: "Note", Type: "string", MaxLength: 200},
 		},
 	}})
@@ -207,11 +207,11 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 		width:  58,
 		height: 72,
 		forms: formsState{generateKeyType: 0, generateFocus: 1, genericLSigParams: map[string]string{
-			"recipient":         strings.Repeat("A", 58),
-			"recipients":        strings.Repeat("B", 58) + "\n" + strings.Repeat("C", 58),
-			"unlock_round":      "18446744073709551615",
-			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
-			"note":              strings.Repeat("D", 200),
+			"recipient":           strings.Repeat("A", 58),
+			"recipients":          strings.Repeat("B", 58) + "\n" + strings.Repeat("C", 58),
+			"unlock_round":        "18446744073709551615",
+			"cosigner_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
+			"note":                strings.Repeat("D", 200),
 		}, genericLSigParamModes: map[string]int{}, genericLSigParamScroll: map[string]int{
 			"recipients": 0,
 		}},
@@ -229,11 +229,11 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-sentry1024.v1",
-		DisplayName: "Falcon-1024 / Falcon-1024 Sentry",
+		KeyType:     "aplane.falcon1024-cosigner1024.v1",
+		DisplayName: "Falcon-1024 / Falcon-1024 Cosigner",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:    "sentry",
-			Label:   "Sentry",
+			Name:    "cosigner",
+			Label:   "Cosigner",
 			Type:    "select",
 			Options: []string{"test1"},
 			Default: "test1",
@@ -243,10 +243,10 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	m := Model{
 		width:  100,
 		height: 30,
-		forms:  formsState{generateFocus: 0, genericLSigParams: map[string]string{"sentry": ""}, genericLSigParamModes: map[string]int{"sentry": 0}, genericLSigParamScroll: map[string]int{"sentry": 0}},
+		forms:  formsState{generateFocus: 0, genericLSigParams: map[string]string{"cosigner": ""}, genericLSigParamModes: map[string]int{"cosigner": 0}, genericLSigParamScroll: map[string]int{"cosigner": 0}},
 	}
 
-	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-sentry1024.v1", "GENERATE", "")
+	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-cosigner1024.v1", "GENERATE", "")
 	if !strings.Contains(stripANSI(rendered), "test1_") {
 		t.Fatalf("focused select did not render default option:\n%s", stripANSI(rendered))
 	}

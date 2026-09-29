@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package keygen
+
+import (
+	"context"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"strings"
+	"testing"
+
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
+)
+
+type registryTestGenerator struct {
+	family string
+}
+
+func (g *registryTestGenerator) RoutingFamily() string { return g.family }
+
+func (g *registryTestGenerator) GenerateFromSeed(context.Context, storepaths.Paths, []byte, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+	return nil, nil
+}
+
+func (g *registryTestGenerator) GenerateFromMnemonic(context.Context, storepaths.Paths, string, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+	return nil, nil
+}
+
+func (g *registryTestGenerator) GenerateRandom(context.Context, storepaths.Paths, *crypto.Keyring, string, map[string]string) (*GenerationResult, error) {
+	return nil, nil
+}
+
+func TestGetGeneratorRequiresExactCosignerKeyTypeRegistration(t *testing.T) {
+	original := registry
+	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
+	defer func() { registry = original }()
+
+	Register(&registryTestGenerator{family: "falcon1024"})
+
+	tests := []string{
+		witness.Falcon1024V1,
+		keytypes.GuardedFalcon1024Cosigner1024V1,
+	}
+	for _, keyType := range tests {
+		t.Run(keyType, func(t *testing.T) {
+			_, err := GetGenerator(keyType)
+			if err == nil {
+				t.Fatal("GetGenerator() error = nil, want exact-registration rejection")
+			}
+			if !strings.Contains(err.Error(), "no exact key generator registered") {
+				t.Fatalf("GetGenerator() error = %v, want exact-registration rejection", err)
+			}
+		})
+	}
+}
+
+func TestGetGeneratorAllowsExactCosignerKeyTypeRegistration(t *testing.T) {
+	original := registry
+	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
+	defer func() { registry = original }()
+
+	exact := &registryTestGenerator{family: witness.Falcon1024V1}
+	Register(exact)
+
+	got, err := GetGenerator(witness.Falcon1024V1)
+	if err != nil {
+		t.Fatalf("GetGenerator() error = %v", err)
+	}
+	if got != exact {
+		t.Fatalf("GetGenerator() = %#v, want exact generator", got)
+	}
+}

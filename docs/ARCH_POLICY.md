@@ -9,7 +9,7 @@ This document covers two domains:
 
 - the **client-signing** policy: tier-based verdicts over
   signer-controlled transactions with an operator default fallback,
-- the **sentry** policy implemented for sentry component signing:
+- the **cosigner** policy implemented for cosigner component signing:
   policy-as-authorization for `/sign/component`, no operator default, no
   review verdict.
 
@@ -17,8 +17,8 @@ The client-signing domain applies to ordinary `/sign` requests and to
 user-role `/sign/component` requests: guarded user-component signing runs the
 same hard rejection, always-review, and operator approval sequence, with the
 guarded account as the per-target policy key and non-target group positions
-evaluated as foreign context. Sentry-role `/sign/component` requests use the
-sentry domain (see [ARCH_SENTRY.md](ARCH_SENTRY.md)).
+evaluated as foreign context. Cosigner-role `/sign/component` requests use the
+cosigner domain (see [ARCH_COSIGNER.md](ARCH_COSIGNER.md)).
 
 Both domains share one YAML grammar, one parser, one fixture corpus, and one
 verdict-model description. Fields that apply to only one domain are tagged
@@ -28,13 +28,13 @@ inline.
 
 Signer policy decides what `apsigner` may produce a signature for after
 request planning has identified the signable units. For client signing, the
-unit is a signer-controlled transaction; for sentry, the unit is a
+unit is a signer-controlled transaction; for cosigner, the unit is a
 target transaction in `/sign/component`. Policy is separate from:
 
 - authentication and authorization, which decide who may ask for signing,
 - key ownership and unlock state, which decide whether signing keys are usable,
 - the operator default, which decides whether unmatched client-signing requests
-  need manual review. Sentry has no operator default.
+  need manual review. Cosigner has no operator default.
 
 ## Storage
 
@@ -74,7 +74,7 @@ identities/default/config.yaml
 policy rule; it is the user/operator default used only when policy has no
 matching verdict.
 
-Signing and sentry component policy use the same filename, selected by the
+Signing and cosigner component policy use the same filename, selected by the
 root `node.yaml` role:
 
 ```text
@@ -96,8 +96,8 @@ defaults to `true`, while `reject_close_remainder`, `reject_asset_close`,
 empty. `transfer_policy` may be absent entirely; if it is present, it must
 satisfy the explicit routing schema below.
 
-On sentry nodes, `policy.yaml` is the sentry component policy. It uses the
-same sparse field names but is direct: there is no top-level `sentry:`
+On cosigner nodes, `policy.yaml` is the cosigner component policy. It uses the
+same sparse field names but is direct: there is no top-level `cosigner:`
 wrapper. Review-producing fields are invalid in this document, and route
 misses default to deterministic `reject` when `transfer_policy.enabled:true`.
 
@@ -135,34 +135,34 @@ Operational flow:
    - `user_auto_approve:true` signs without approval.
 
 For client signing, Always Review blocks both `user_auto_approve:true` and any
-matching Always Approve rule. Sentry rejects review-producing policy
+matching Always Approve rule. Cosigner rejects review-producing policy
 instead of treating it as a promptable phase.
 
 ### Verdict Mapping By Role
 
 The four-tier model is the canonical shape for **client-signing** requests.
-**Sentry** is policy-as-authorization with no human in the loop, so its
+**Cosigner** is policy-as-authorization with no human in the loop, so its
 normal verdict surface has two outcomes (reject or sign). The shared phase
-order is still used, but review is not a valid sentry outcome:
+order is still used, but review is not a valid cosigner outcome:
 
-| Phase | Client signing | Sentry |
+| Phase | Client signing | Cosigner |
 |-------|----------------|-------------|
 | Always Deny | Reject | Reject |
 | Always Review | Require operator approval | Invalid outcome; fail closed as config error |
 | Always Approve | Sign without approval | Sign |
-| Operator Default | Per `user_auto_approve` | Not applicable; unmatched sentry requests reject |
+| Operator Default | Per `user_auto_approve` | Not applicable; unmatched cosigner requests reject |
 
-The deterministic sentry surface is enforced by keeping review-producing
-fields out of sentry-domain `policy.yaml`. Policy load rejects
+The deterministic cosigner surface is enforced by keeping review-producing
+fields out of cosigner-domain `policy.yaml`. Policy load rejects
 `always_review_warnings`, `review_algo_payments`, `review_asa_amounts`,
 `transfer_policy.on_no_route: review`, route `review_above`, and equivalent
-review-producing behavior in sentry policy. If implementation ever
-encounters a review verdict while evaluating a sentry component request,
+review-producing behavior in cosigner policy. If implementation ever
+encounters a review verdict while evaluating a cosigner component request,
 the request fails closed as a policy configuration error rather than waiting
 for a prompt.
 
 `user_auto_approve` is client-signing-only. It lives in
-`identities/default/config.yaml` and has no sentry analog.
+`identities/default/config.yaml` and has no cosigner analog.
 
 ## Role Domains
 
@@ -188,7 +188,7 @@ client_signing:
   # top-level client-signing values.
 ```
 
-Sentry-node `policy.yaml` is the sentry component policy document:
+Cosigner-node `policy.yaml` is the cosigner component policy document:
 
 ```yaml
 transfer_policy:
@@ -205,12 +205,12 @@ rekey_policy:
 
 On signer nodes, the accepted top-level keys in `policy.yaml` are the
 client-signing field set, `client_signing`, and `key_overrides`.
-Signer-domain `policy.yaml` rejects `sentry:` and top-level `reject_rekey` or
-`rekey_policy`; those belong to the sentry policy domain.
+Signer-domain `policy.yaml` rejects `cosigner:` and top-level `reject_rekey` or
+`rekey_policy`; those belong to the cosigner policy domain.
 
-On sentry nodes, the accepted top-level keys in `policy.yaml` are the
-sentry field set and `key_overrides`. Sentry-domain `policy.yaml` rejects
-`client_signing:` and `sentry:` wrappers. Unknown top-level keys fail
+On cosigner nodes, the accepted top-level keys in `policy.yaml` are the
+cosigner field set and `key_overrides`. Cosigner-domain `policy.yaml` rejects
+`client_signing:` and `cosigner:` wrappers. Unknown top-level keys fail
 validation in both domains.
 
 Client-signing semantics:
@@ -223,9 +223,9 @@ Client-signing semantics:
   `on_no_route: review`). It may also nest its own `transfer_policy:` /
   amount-guard maps that override common values for client-signing evaluation.
 
-Sentry semantics:
+Cosigner semantics:
 
-- Top-level fields in sentry-domain `policy.yaml` are the sentry policy.
+- Top-level fields in cosigner-domain `policy.yaml` are the cosigner policy.
 - `reject_rekey` and `rekey_policy` are valid only here.
 - `reject_foreign_rekey`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_algo_payments`, and
@@ -235,12 +235,12 @@ Sentry semantics:
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
   transactions when `reject_rekey` is absent or false. It authorizes only pure
   0 ALGO self-payment rekeys whose sender and target match an allowed edge.
-  Bounded-sentry v1 does not invoke sentry policy for rekeys; its sentry slot
+  Bounded-cosigner v1 does not invoke cosigner policy for rekeys; its cosigner slot
   is spend-only and forbidden on administrative paths.
 
 Both policy domains are validated by schema, not by the product runtime's current key
-inventory. A sentry node can carry sentry-domain `policy.yaml` before an
-sentry key is installed.
+inventory. A cosigner node can carry cosigner-domain `policy.yaml` before an
+cosigner key is installed.
 
 For compatibility, the loader treats top-level
 `reject_foreign_rekey`, `auto_approve_self_noop_transfer`,
@@ -249,8 +249,8 @@ For compatibility, the loader treats top-level
 semantics. A top-level `transfer_policy` that
 contains review-producing behavior (`on_no_route: review`, `review_above`,
 and similar fields) is valid for client signing, but it is not a complete
-sentry allow-list; a sentry request that would need those review
-outcomes fails closed unless sentry-domain `policy.yaml` supplies a
+cosigner allow-list; a cosigner request that would need those review
+outcomes fails closed unless cosigner-domain `policy.yaml` supplies a
 deterministic replacement.
 
 ## Bounded Authorization Interaction
@@ -299,31 +299,31 @@ Policy fields by domain:
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
-| `reject_rekey` | sentry | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
-| `rekey_policy` | sentry | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
+| `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
+| `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
 | `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling |
 | `max_algo_payments` | common | Per-network raw microAlgo ceilings for ALGO payments |
 | `max_asa_amounts` | common | Per-network raw unit ceilings for ASA transfers |
-| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for sentry, routing is the positive authorization surface |
+| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for cosigner, routing is the positive authorization surface |
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
-sender. `reject_rekey` is the sentry coarse-deny analog and ignores key
+sender. `reject_rekey` is the cosigner coarse-deny analog and ignores key
 ownership: when true, any non-zero `RekeyTo` rejects. When it is absent or
-false, the sentry still fails closed unless `rekey_policy.allowed` authorizes
+false, the cosigner still fails closed unless `rekey_policy.allowed` authorizes
 the exact sender-to-target edge and the target transaction is a pure 0 ALGO
 self-payment with no close remainder.
-This sentry-domain rekey surface applies to dedicated `sentry1` guarded
+This cosigner-domain rekey surface applies to dedicated `cosigner1` guarded
 accounts. Corridor v1 uses a distinct external contract-admin witness for its
-bounded pure-rekey path and never asks sentry policy to authorize that target.
+bounded pure-rekey path and never asks cosigner policy to authorize that target.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule
-must be evaluated. For sentry, an unknown genesis hash always fails
-closed regardless of which rules are configured, because sentry is
+must be evaluated. For cosigner, an unknown genesis hash always fails
+closed regardless of which rules are configured, because cosigner is
 authorization rather than a guardrail and cannot fall through to operator
 default.
 
@@ -342,17 +342,17 @@ close-out misses according to `close_on_no_route`, clawback misses according to
 matched clawback movements without `clawback.allow:true`, and matching
 movements above a route's `reject_above` threshold. For client signing, routes
 never auto-approve a request; a route match only lets the movement continue
-through the remaining policy phases. For sentry, routing is the positive
+through the remaining policy phases. For cosigner, routing is the positive
 authorization surface. See [Transfer Routing](#transfer-routing).
 
 ## Always Review
 
 Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
-sentry domain has no operator above the signer, so review-producing
-fields are rejected in sentry-domain `policy.yaml` at policy load time.
+cosigner domain has no operator above the signer, so review-producing
+fields are rejected in cosigner-domain `policy.yaml` at policy load time.
 Top-level review-producing compatibility fields belong to client signing. If a
-review verdict is reachable while evaluating a sentry
+review verdict is reachable while evaluating a cosigner
 component request, the request fails closed as a policy configuration error.
 See [Verdict Mapping By Role](#verdict-mapping-by-role).
 
@@ -376,7 +376,7 @@ been rejected by a matching `max_asa_amounts` threshold.
 For client signing, unknown genesis hashes trigger a distinct fail-closed rule
 that forces review when a configured transfer-guard review threshold cannot be
 mapped to a network token. This rule is independent of the configured threshold
-values. Sentry rejects unknown genesis hashes when network-scoped policy
+values. Cosigner rejects unknown genesis hashes when network-scoped policy
 must be evaluated because it has no review fallback.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
@@ -409,10 +409,10 @@ Policy fields by domain:
 
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
-sentry: a sentry is not the owner of the sender it is authorizing.
-The field is rejected at load time in sentry-domain `policy.yaml`. If an invalid
-effective sentry policy is injected in tests or by compatibility code, the
-rule simply does not match a sentry request because no signer-owned address
+cosigner: a cosigner is not the owner of the sender it is authorizing.
+The field is rejected at load time in cosigner-domain `policy.yaml`. If an invalid
+effective cosigner policy is injected in tests or by compatibility code, the
+rule simply does not match a cosigner request because no signer-owned address
 is in scope to compare against.
 
 `auto_approve_self_noop_transfer` applies only to a single signer-controlled
@@ -439,7 +439,7 @@ controls only whether that shape skips manual approval.
 
 Operator Default is not policy. It is the fallback behavior for client-signing
 requests that did not match Always Deny, Always Review, or Always Approve. It
-does not apply to sentry: an unmatched sentry component request is
+does not apply to cosigner: an unmatched cosigner component request is
 Always Deny per [Verdict Mapping By Role](#verdict-mapping-by-role).
 
 The setting is:
@@ -458,56 +458,56 @@ Behavior:
 
 - `user_auto_approve:false`: unmatched client-signing requests require operator review.
 - `user_auto_approve:true`: unmatched client-signing requests sign without operator review.
-- sentry component requests: ignored; the verdict is reject.
+- cosigner component requests: ignored; the verdict is reject.
 
 ## Transfer Routing
 
 `transfer_policy` is the implemented v1 route table for direct transfer
 movements. The same routing engine applies to both client-signing and
-sentry evaluation. Client-signing routes live in `policy.yaml`; sentry
-component routes live in sentry-domain `policy.yaml`. Transfer routing is not projected
+cosigner evaluation. Client-signing routes live in `policy.yaml`; cosigner
+component routes live in cosigner-domain `policy.yaml`. Transfer routing is not projected
 through admin IPC.
 
 For client signing, a route match means "allowed to continue through the
 normal policy phases"; it does not approve signing and never produces an
 Always Approve verdict.
 
-For sentry, routing is the positive authorization surface. A sentry
+For cosigner, routing is the positive authorization surface. A cosigner
 component request is eligible to sign only when all evaluated target
 transactions are supported transfer shapes, every extracted target movement is
 covered by a matching route, no route or transaction guard produces a deny
-verdict, and the effective sentry routing block contains no
+verdict, and the effective cosigner routing block contains no
 review-producing behavior. In other words: for client signing, routing is a
-guardrail; for sentry, routing is an allow-list.
+guardrail; for cosigner, routing is an allow-list.
 
-Always Deny and deterministic transaction guards run before sentry
+Always Deny and deterministic transaction guards run before cosigner
 allow-list success. A route match cannot rescue a target rejected by rekey,
 close-out, clawback, fee, amount, blocked-destination, or unsupported-shape
 rules.
 
 In `policy.yaml`, a `transfer_policy:` block may also be nested inside
 `client_signing:` to override the top-level client-signing routes. In
-sentry-domain `policy.yaml`, the top-level `transfer_policy:` is the sentry
+cosigner-domain `policy.yaml`, the top-level `transfer_policy:` is the cosigner
 allow-list. These blocks follow the same schema, validation, and overlay rules
-except for sentry route-miss boilerplate. In sentry-domain `policy.yaml`,
+except for cosigner route-miss boilerplate. In cosigner-domain `policy.yaml`,
 route-miss behavior is not configurable:
 `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` may be omitted
 and are interpreted as `reject`; if present, the only accepted value is
 `reject`. `review_above` under `limits` or `limits_by_network` is rejected.
 
 For client-signing evaluation, an `on_no_route: review` miss produces Always
-Review. For sentry evaluation, review or operator-default routing outcomes
+Review. For cosigner evaluation, review or operator-default routing outcomes
 are not valid authorization outcomes. Examples include `on_no_route: review`,
 `close_on_no_route: operator_default`, and route-level `review_above`. If such
-behavior appears in the effective sentry routing block, the sentry
+behavior appears in the effective cosigner routing block, the cosigner
 request fails closed as a policy configuration error. Operators can keep review
-behavior in `policy.yaml` and provide a deterministic sentry-domain `policy.yaml`
-transfer policy for sentry component signing.
+behavior in `policy.yaml` and provide a deterministic cosigner-domain `policy.yaml`
+transfer policy for cosigner component signing.
 
 For example, a top-level compatibility `transfer_policy` with one deterministic
-`A -> B` route and `on_no_route: review` can authorize a sentry request for
+`A -> B` route and `on_no_route: review` can authorize a cosigner request for
 `A -> B` if no other guard denies it. A request for `A -> D` fails closed
-because the route miss would need a review verdict, which sentry cannot
+because the route miss would need a review verdict, which cosigner cannot
 produce.
 
 For operator examples and troubleshooting, see
@@ -519,7 +519,7 @@ Routing's shape is deliberately conservative:
   A matching route is allow-to-continue, not approval, because fee, rekey,
   close-out, clawback, warning, threshold-guard, and Operator Default
   behavior must still be able to apply.
-- For sentry, it is an allow-list: every target movement must be covered
+- For cosigner, it is an allow-list: every target movement must be covered
   by a matching route, and any deny verdict rejects the request.
 - It denies by absence rather than by general explicit deny routes. In v1,
   operators grant allowed source/asset/destination paths and use `on_no_route`
@@ -547,12 +547,12 @@ Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` or route entries fail validation. For top-level and
 `client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
 routing is enabled unless the block is a key override that inherits an
-product-wide `on_no_route` value. sentry-domain `policy.yaml` omits that choice and
+product-wide `on_no_route` value. cosigner-domain `policy.yaml` omits that choice and
 treats route misses as `reject`. For top-level and
 `client_signing.transfer_policy` blocks, `close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
 document or override the stricter close-out and clawback route-miss behavior.
-For sentry-domain `policy.yaml` transfer policy, those values are implicit `reject` as
+For cosigner-domain `policy.yaml` transfer policy, those values are implicit `reject` as
 described above.
 
 Top-level routing schema:
@@ -618,12 +618,12 @@ transactions:
   and `destinations`.
 
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
-`clawback` are the supported sentry transfer-movement surface in MVP; a
+`clawback` are the supported cosigner transfer-movement surface in MVP; a
 target transaction must extract at least one of these movements to be eligible
-for sentry-role component signing.
+for cosigner-role component signing.
 
 For client signing, other transaction types produce no routing movement and
-continue through the remaining policy phases. For sentry MVP, target
+continue through the remaining policy phases. For cosigner MVP, target
 transactions that produce no supported transfer movement are rejected because
 there is no route coverage that can authorize them. Passthrough, foreign, and
 non-target group slots are not governed by this signer's route table because
@@ -665,9 +665,9 @@ Verdict production for each movement:
    are Always Review.
 11. Otherwise, client-signing routing produces no verdict and the request
    continues to warning review, explicit auto-approval, or Operator Default.
-   For sentry routing, a target movement that reaches this step is
+   For cosigner routing, a target movement that reaches this step is
    covered by policy; if every target movement is covered and no deny guard
-   matched, the transfer-policy portion of sentry authorization succeeds.
+   matched, the transfer-policy portion of cosigner authorization succeeds.
 
 `limits_by_network` overrides global `limits` for that network. If both review
 and reject thresholds are set, `reject_above` must be greater than or equal to
@@ -681,7 +681,7 @@ signer-generated LogicSig-budget dummy transactions, is routing-exempt. Routing
 exemption suppresses all routing verdicts for that shape. Non-routing guards
 such as warning analysis, fee checks, rekey/close/clawback guards, and the
 self no-op auto-approval predicate still apply according to their own rules.
-For sentry, the self no-op predicate never fires because it requires
+For cosigner, the self no-op predicate never fires because it requires
 signer-owned address context.
 
 Key override routing blocks are sparse overlays, except `enabled` must be
@@ -711,21 +711,21 @@ Routing rule IDs:
 The per-route IDs use the stable grammar
 `transfer_policy:<route_id>:<outcome>`, where `<outcome>` is one of
 `close_rejected`, `clawback_rejected`, `reject_above`, or `review_above`.
-`review_above` rule IDs are client-signing-only. Sentry can emit
+`review_above` rule IDs are client-signing-only. Cosigner can emit
 blocked-destination, route-miss, close/clawback rejection, unknown-genesis, and
 `reject_above` IDs, but review-producing route outcomes are invalid for
-sentry component requests.
+cosigner component requests.
 
-Sentry component policy rule IDs:
+Cosigner component policy rule IDs:
 
-- `sentry_policy:missing`
-- `sentry_policy:transfer_policy_required`
-- `sentry_policy:deterministic_routing_required`
-- `sentry_policy:non_transfer`
-- `sentry_policy:reject_rekey`
+- `cosigner_policy:missing`
+- `cosigner_policy:transfer_policy_required`
+- `cosigner_policy:deterministic_routing_required`
+- `cosigner_policy:non_transfer`
+- `cosigner_policy:reject_rekey`
 
-These rule IDs are emitted when the sentry role has no effective
-sentry-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
+These rule IDs are emitted when the cosigner role has no effective
+cosigner-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
 route-miss behavior that is not deterministic `reject`, is asked to attest a
 target with no supported transfer movement, or rejects a non-zero `RekeyTo`
 because the coarse deny switch is set, the rekey shape is unsupported, or
@@ -735,12 +735,12 @@ because the coarse deny switch is set, the rekey shape is unsupported, or
 
 Both policy domains may contain `key_overrides`, a map from concrete signing
 authority selector to sparse policy blocks. In signer-domain `policy.yaml`,
-selectors are Algorand auth addresses for client signing. In sentry-domain
+selectors are Algorand auth addresses for client signing. In cosigner-domain
 `policy.yaml`, selectors are Witness Key IDs.
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for
-rekeyed accounts: the auth address controls the override. During sentry
+rekeyed accounts: the auth address controls the override. During cosigner
 component signing, the effective policy is selected by the request
 `component_key` Witness Key ID.
 
@@ -751,9 +751,9 @@ explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
 If no matching selector exists, the product-wide effective policy for that
-document applies. Override blocks in sentry-domain `policy.yaml` are direct sparse
-sentry policy blocks and must satisfy the same validation as the
-product-wide sentry policy: no review-producing route outcomes.
+document applies. Override blocks in cosigner-domain `policy.yaml` are direct sparse
+cosigner policy blocks and must satisfy the same validation as the
+product-wide cosigner policy: no review-producing route outcomes.
 
 ## Transaction Scope
 
@@ -763,17 +763,17 @@ are not signed by this signer, so they are not evaluated by this signer's
 transaction-level policy. They still participate in request planning, group
 context, warning display, and approval rendering.
 
-For sentry, the evaluated slots are the `target_indices` of a
-`/sign/component` request. The sentry node does not own the sender
-account; "target" means "transaction this sentry is being asked to authorize"
+For cosigner, the evaluated slots are the `target_indices` of a
+`/sign/component` request. The cosigner node does not own the sender
+account; "target" means "transaction this cosigner is being asked to authorize"
 rather than "transaction signed by a key this identity holds." Non-target
 group members (including passthrough slots prepared by the user signer and
 foreign slots) participate in group context, warning display, and the
 operator-facing approval description, but they do not receive their own
-sentry policy verdict.
+cosigner policy verdict.
 
 Groups receive group-level approval. A grouped request does not fan out into
-separate per-transaction human approvals. For sentry this is trivially
+separate per-transaction human approvals. For cosigner this is trivially
 true because no human approval is involved.
 
 ## Admin Surface
@@ -788,17 +788,17 @@ plus a fresh sidecar, and updates the active runtime policy immediately.
 
 The admin protocol and `internal/signerapp/admin` expose target-aware policy
 messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
-Targets are `signer` and `sentry` policy domains; the filename is always
+Targets are `signer` and `cosigner` policy domains; the filename is always
 `policy.yaml`. Omitted targets default from the node role. Signer nodes reject
-the sentry target, and sentry nodes reject the signer target. New policy
+the cosigner target, and cosigner nodes reject the signer target. New policy
 UI work should reuse `internal/signerapp/policytui` with an appropriate store rather than
 adding a second field-editing model.
 
-Client-signing and sentry component `transfer_policy` are both persisted in
+Client-signing and cosigner component `transfer_policy` are both persisted in
 `policy.yaml`, with schema validation selected by node role. `apstore policy
 check|sign|verify` operates on the active node-role policy. `apadmin policy`
 uses the daemon's node-role target online. `apadmin policy rescue` resolves
-`auto` from `node.yaml`; `--target signer|sentry` may select a domain for a
+`auto` from `node.yaml`; `--target signer|cosigner` may select a domain for a
 standalone draft, while store-backed role-incompatible targets fail closed.
 There is no scalar policy-settings IPC. The shared full-document editor renders
 and saves transfer policy through canonical YAML.
@@ -864,14 +864,14 @@ SHA-256 digest of the exact trusted selected document bytes.
 stdout. `apadmin policy rescue apply -` reads exact replacement YAML bytes from
 stdin, parses and runtime-validates them in the
 selected policy domain, and writes `policy.yaml` plus a fresh sidecar
-while holding the same lock. `--target signer|sentry` explicitly selects
+while holding the same lock. `--target signer|cosigner` explicitly selects
 the domain when auto-selection is not desired.
-`apadmin policy rescue to-sentry` parses and runtime-validates a signing
+`apadmin policy rescue to-cosigner` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
-sentry-domain `policy.yaml`, and prints the result to stdout. The projection
+cosigner-domain `policy.yaml`, and prints the result to stdout. The projection
 preserves hard-reject bounds and transfer routes, removes review-only route thresholds,
 and fails closed for route-miss `review` or `operator_default` behavior because
-sentry policy has no human-review verdict.
+cosigner policy has no human-review verdict.
 With a positional YAML file, the rescue `check`, `export`, and `digest` verbs
 parse and runtime-validate the file without reading the production sidecar or
 requesting the store passphrase.
@@ -923,12 +923,12 @@ policy decision:
   rule forces a prompt.
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
 
-Sentry component signing uses the same policy rule identifiers for decoded
-transaction facts. Sentry component approvals and policy rejections are
+Cosigner component signing uses the same policy rule identifiers for decoded
+transaction facts. Cosigner component approvals and policy rejections are
 recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit events with the
 Witness Key ID in `txn_auth`, the decoded sender in `txn_sender`, and the
 policy rule in `policy_rule_id` when applicable. The
-architecture overview is in [ARCH_SENTRY.md](ARCH_SENTRY.md);
+architecture overview is in [ARCH_COSIGNER.md](ARCH_COSIGNER.md);
 compatibility-bearing audit details live in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 

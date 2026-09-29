@@ -43,7 +43,7 @@ type KeyMaterial struct {
 
 // WitnessKeyMaterial holds raw signer-custodied witness material. Witness keys
 // are not transaction-signing provider keys and this hot custody class may be
-// used only by the sentry component-signing flow.
+// used only by the cosigner component-signing flow.
 type WitnessKeyMaterial struct {
 	WitnessKeyID string
 	PublicKey    []byte

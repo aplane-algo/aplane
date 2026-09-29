@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
+func TestSignerAdminServicesOwnCosignerReferenceLifecycle(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	svc := server.adminServices()
@@ -30,7 +30,7 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, publicKey)
+	envelope, err := cosignerrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,25 +39,25 @@ func TestSignerAdminServicesOwnSentryReferenceLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported := svc.ImportSentryReference(adminproto.ImportSentryReferenceRequest{Name: "lab", EnvelopeJSON: string(raw)})
+	imported := svc.ImportCosignerReference(adminproto.ImportCosignerReferenceRequest{Name: "lab", EnvelopeJSON: string(raw)})
 	if !imported.Success || imported.Reference.Name != "lab" {
-		t.Fatalf("ImportSentryReference() = %#v", imported)
+		t.Fatalf("ImportCosignerReference() = %#v", imported)
 	}
-	listed := svc.ListSentryReferences()
+	listed := svc.ListCosignerReferences()
 	if listed.Error != "" || len(listed.References) != 1 || listed.References[0].ComponentKey != witnessKeyID {
-		t.Fatalf("ListSentryReferences() = %#v", listed)
+		t.Fatalf("ListCosignerReferences() = %#v", listed)
 	}
-	got := svc.GetSentryReference(adminproto.GetSentryReferenceRequest{Name: "lab"})
+	got := svc.GetCosignerReference(adminproto.GetCosignerReferenceRequest{Name: "lab"})
 	if !got.Success || got.Reference.PublicKeyHex != publicKey {
-		t.Fatalf("GetSentryReference() = %#v", got)
+		t.Fatalf("GetCosignerReference() = %#v", got)
 	}
-	removed := svc.RemoveSentryReference(adminproto.RemoveSentryReferenceRequest{Name: "lab"})
+	removed := svc.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: "lab"})
 	if !removed.Success || !removed.Removed || removed.ComponentKey != witnessKeyID {
-		t.Fatalf("RemoveSentryReference() = %#v", removed)
+		t.Fatalf("RemoveCosignerReference() = %#v", removed)
 	}
 }
 
-func TestSignerAdminServicesExportsSentryPublicFromAuthenticatedGeneration(t *testing.T) {
+func TestSignerAdminServicesExportsCosignerPublicFromAuthenticatedGeneration(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -69,7 +69,7 @@ func TestSignerAdminServicesExportsSentryPublicFromAuthenticatedGeneration(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, strings.Repeat("ab", len(publicBytes)))
+	envelope, err := cosignerrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, strings.Repeat("ab", len(publicBytes)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,16 +85,16 @@ func TestSignerAdminServicesExportsSentryPublicFromAuthenticatedGeneration(t *te
 		t.Fatal(err)
 	}
 
-	result := server.adminServices().ExportSentryPublic(adminproto.ExportSentryPublicRequest{WitnessKeyID: witnessKeyID})
+	result := server.adminServices().ExportCosignerPublic(adminproto.ExportCosignerPublicRequest{WitnessKeyID: witnessKeyID})
 	if !result.Success || result.WitnessKeyID != witnessKeyID {
-		t.Fatalf("ExportSentryPublic() = %#v", result)
+		t.Fatalf("ExportCosignerPublic() = %#v", result)
 	}
 	var got witness.PublicReference
 	if err := json.Unmarshal([]byte(result.EnvelopeJSON), &got); err != nil {
-		t.Fatalf("ExportSentryPublic() returned invalid JSON: %v", err)
+		t.Fatalf("ExportCosignerPublic() returned invalid JSON: %v", err)
 	}
 	if got != *envelope {
-		t.Fatalf("ExportSentryPublic() envelope = %#v, want %#v", got, *envelope)
+		t.Fatalf("ExportCosignerPublic() envelope = %#v, want %#v", got, *envelope)
 	}
 }
 

@@ -12,8 +12,8 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 	valid := AssemblyRequest{
 		RequestID: "asm-1", GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
 		Targets: []AssemblyTarget{
-			{TargetIndex: 0, Kind: AssemblyTargetKindGuarded, AuthAddress: "GUARDED", UserSignature: "aa", SentrySignature: "bb"},
-			{TargetIndex: 1, Kind: AssemblyTargetKindBoundedSentry, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd", SentrySignature: "ee"},
+			{TargetIndex: 0, Kind: AssemblyTargetKindGuarded, AuthAddress: "GUARDED", UserSignature: "aa", CosignerSignature: "bb"},
+			{TargetIndex: 1, Kind: AssemblyTargetKindBoundedCosigner, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd", CosignerSignature: "ee"},
 		},
 		Passthrough: []AssemblyPassthroughItem{{TargetIndex: 2, SignedTxnHex: "ff"}},
 	}

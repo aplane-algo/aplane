@@ -9,6 +9,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -17,8 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -63,15 +63,15 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			keyInfo.IsSpendingAccount = &spending
 		}
 		if keytypes.IsGuardedAccountKeyType(keyType) {
-			keyInfo.SigningFlow = signerapi.SigningFlowSentry1
-			keyInfo.SentryComponentKeyType, _ = keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
+			keyInfo.SigningFlow = signerapi.SigningFlowCosigner1
+			keyInfo.CosignerComponentKeyType, _ = keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
 		if summary.BoundedAuthorization != nil {
 			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
 			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
-			if summary.BoundedAuthorization.Sentry != nil {
-				keyInfo.SentryComponentKeyType = summary.BoundedAuthorization.Sentry.ComponentKeyType
+			if summary.BoundedAuthorization.Cosigner != nil {
+				keyInfo.CosignerComponentKeyType = summary.BoundedAuthorization.Cosigner.ComponentKeyType
 			}
 			keyInfo.BoundedAuthorization = boundedInfo(summary.BoundedAuthorization)
 		}
@@ -125,12 +125,12 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 }
 
 func guardedAccountParameters(_ string, parameters map[string]string) map[string]string {
-	sentryPublicKey := parameters[keytypes.ParameterSentryPublicKey]
-	if sentryPublicKey == "" {
+	cosignerPublicKey := parameters[keytypes.ParameterCosignerPublicKey]
+	if cosignerPublicKey == "" {
 		return nil
 	}
 	out := map[string]string{
-		keytypes.ParameterSentryPublicKey: sentryPublicKey,
+		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
 	}
 	return out
 }
@@ -144,7 +144,7 @@ var boundedInventoryParameterNames = []string{
 	"max_payment_amount",
 	"max_asset_amount",
 	"unlock_round",
-	composeddsa.BoundedSentryPublicKeyParameter,
+	composeddsa.BoundedCosignerPublicKeyParameter,
 	composeddsa.BoundedAdminPublicKeyParameter,
 }
 
@@ -229,7 +229,7 @@ func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeI
 		return nil, err
 	}
 	infos := s.buildKeyTypes(validTypes, enabled)
-	applySentryReferenceParams(ir, infos)
+	applyCosignerReferenceParams(ir, infos)
 	return infos, nil
 }
 
@@ -254,13 +254,13 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		}
 
 		if witness.IsKeyType(keyType) {
-			info.Family, info.DisplayName, info.Description = sentryComponentKeyTypeMetadata(keyType)
+			info.Family, info.DisplayName, info.Description = cosignerComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
 		}
-		if componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType); ok {
-			info.SigningFlow = signerapi.SigningFlowSentry1
-			info.SentryComponentKeyType = componentType
+		if componentType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType); ok {
+			info.SigningFlow = signerapi.SigningFlowCosigner1
+			info.CosignerComponentKeyType = componentType
 		}
 
 		meta, err := algorithm.GetMetadata(keyType)
@@ -281,8 +281,8 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 				if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
 					info.SigningFlow = boundedSigningFlow(metadata)
-					if metadata.Sentry != nil {
-						info.SentryComponentKeyType = metadata.Sentry.ComponentKeyType
+					if metadata.Cosigner != nil {
+						info.CosignerComponentKeyType = metadata.Cosigner.ComponentKeyType
 					}
 					info.BoundedAuthorization = boundedInfo(metadata)
 				}
@@ -395,8 +395,8 @@ type boundedInventoryProvider interface {
 }
 
 func boundedSigningFlow(metadata *boundedmeta.Metadata) string {
-	if metadata != nil && metadata.Sentry != nil {
-		return signerapi.SigningFlowBoundedSentry1
+	if metadata != nil && metadata.Cosigner != nil {
+		return signerapi.SigningFlowBoundedCosigner1
 	}
 	return signerapi.SigningFlowBounded1
 }
@@ -417,12 +417,12 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		AdminKeyID:        metadata.AdminKeyID,
 		ProgramBindingHex: metadata.ProgramBindingHex,
 	}
-	if metadata.Sentry != nil {
-		info.Sentry = &signerapi.BoundedSentryAuthorizationInfo{
-			Contract: metadata.Sentry.Contract, ComponentKeyType: metadata.Sentry.ComponentKeyType,
-			PublicKeyHex: metadata.Sentry.PublicKeyHex, ComponentKeyID: metadata.Sentry.ComponentKeyID,
-			SignatureMaxSize: metadata.Sentry.SignatureMaxSize,
-			RequiredOn:       append([]string(nil), metadata.Sentry.RequiredOn...),
+	if metadata.Cosigner != nil {
+		info.Cosigner = &signerapi.BoundedCosignerAuthorizationInfo{
+			Contract: metadata.Cosigner.Contract, ComponentKeyType: metadata.Cosigner.ComponentKeyType,
+			PublicKeyHex: metadata.Cosigner.PublicKeyHex, ComponentKeyID: metadata.Cosigner.ComponentKeyID,
+			SignatureMaxSize: metadata.Cosigner.SignatureMaxSize,
+			RequiredOn:       append([]string(nil), metadata.Cosigner.RequiredOn...),
 		}
 	}
 	for _, arg := range metadata.DerivedArgs {
@@ -464,11 +464,11 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	return info
 }
 
-func applySentryReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) {
+func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) {
 	if ir == nil {
 		return
 	}
-	refs, err := sentryrefs.List(ir.KeyPaths())
+	refs, err := cosignerrefs.List(ir.KeyPaths())
 	if err != nil || len(refs) == 0 {
 		return
 	}
@@ -491,7 +491,7 @@ func applySentryReferenceParams(ir *productruntime.Runtime, infos []signerapi.Ke
 	}
 
 	for i := range infos {
-		componentType := infos[i].SentryComponentKeyType
+		componentType := infos[i].CosignerComponentKeyType
 		if componentType == "" {
 			continue
 		}
@@ -499,8 +499,8 @@ func applySentryReferenceParams(ir *productruntime.Runtime, infos []signerapi.Ke
 		if len(componentIDs) == 0 {
 			continue
 		}
-		sentryParam := signerapi.CreationParamInfo{
-			Name:        sentryrefs.ParamSentryName,
+		cosignerParam := signerapi.CreationParamInfo{
+			Name:        cosignerrefs.ParamCosignerName,
 			Label:       "Witness Key ID",
 			Description: "Imported Witness Key ID to embed in the guarded account",
 			Type:        "select",
@@ -508,15 +508,15 @@ func applySentryReferenceParams(ir *productruntime.Runtime, infos []signerapi.Ke
 			Options:     append([]string(nil), componentIDs...),
 			Default:     componentIDs[0],
 		}
-		infos[i].CreationParams = replaceSentryPublicKeyParam(infos[i].CreationParams, sentryParam)
+		infos[i].CreationParams = replaceCosignerPublicKeyParam(infos[i].CreationParams, cosignerParam)
 	}
 }
 
-func replaceSentryPublicKeyParam(params []signerapi.CreationParamInfo, replacement signerapi.CreationParamInfo) []signerapi.CreationParamInfo {
+func replaceCosignerPublicKeyParam(params []signerapi.CreationParamInfo, replacement signerapi.CreationParamInfo) []signerapi.CreationParamInfo {
 	out := make([]signerapi.CreationParamInfo, 0, len(params))
 	replaced := false
 	for _, param := range params {
-		if param.Name == keytypes.ParameterSentryPublicKey {
+		if param.Name == keytypes.ParameterCosignerPublicKey {
 			out = append(out, replacement)
 			replaced = true
 			continue
@@ -529,12 +529,12 @@ func replaceSentryPublicKeyParam(params []signerapi.CreationParamInfo, replaceme
 	return out
 }
 
-func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
+func cosignerComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
 	case witness.Falcon1024V1:
-		return "sentry-falcon1024", "Sentry Falcon-1024 key", "Raw Falcon-1024 sentry signing key for sentry-role component signatures"
+		return "cosigner-falcon1024", "Cosigner Falcon-1024 key", "Raw Falcon-1024 cosigner signing key for cosigner-role component signatures"
 	default:
-		return keyType, keyType, "Raw sentry signing key for sentry-role component signatures"
+		return keyType, keyType, "Raw cosigner signing key for cosigner-role component signatures"
 	}
 }
 

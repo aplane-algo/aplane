@@ -13,8 +13,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -22,8 +22,8 @@ import (
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
 const (
-	keyListHelpText       = "g: Generate | i: Import | e: Sentries | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
-	sentryKeyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+	keyListHelpText         = "g: Generate | i: Import | e: Cosigners | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+	cosignerKeyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
 )
 
 // truncateLongHex shortens hex values longer than maxLen characters
@@ -65,14 +65,14 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 
 func buildGuardedDetailsParameterLines(parameters map[string]string) []string {
 	var lines []string
-	if value, ok := parameters["Sentry"]; ok {
-		lines = append(lines, formatParameterDisplayLines("Sentry", "", value)...)
+	if value, ok := parameters["Cosigner"]; ok {
+		lines = append(lines, formatParameterDisplayLines("Cosigner", "", value)...)
 		lines = append(lines, "")
 	}
 
 	keys := make([]string, 0, len(parameters))
 	for key := range parameters {
-		if key == "Sentry" || key == keytypes.ParameterSentryPublicKey {
+		if key == "Cosigner" || key == keytypes.ParameterCosignerPublicKey {
 			continue
 		}
 		keys = append(keys, key)
@@ -176,17 +176,17 @@ func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
 }
 
 func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
-	isSentry := witness.IsKeyType(key.KeyType)
-	if tab == keyListTabSentry {
-		return isSentry
+	isCosigner := witness.IsKeyType(key.KeyType)
+	if tab == keyListTabCosigner {
+		return isCosigner
 	}
-	return !isSentry
+	return !isCosigner
 }
 
 func (m Model) keyListMode() string {
 	switch m.nodeRole() {
-	case "sentry":
-		return "sentry"
+	case "cosigner":
+		return "cosigner"
 	default:
 		return "signing"
 	}
@@ -194,8 +194,8 @@ func (m Model) keyListMode() string {
 
 func (m Model) effectiveKeyListTab() keyListTab {
 	switch m.keyListMode() {
-	case "sentry":
-		return keyListTabSentry
+	case "cosigner":
+		return keyListTabCosigner
 	default:
 		return keyListTabSigning
 	}
@@ -213,15 +213,15 @@ func (m *Model) syncKeyListTabWithMode() {
 }
 
 func (m Model) activeKeyListTabLabel() string {
-	if m.effectiveKeyListTab() == keyListTabSentry {
-		return "Sentry"
+	if m.effectiveKeyListTab() == keyListTabCosigner {
+		return "Cosigner"
 	}
 	return "Signing"
 }
 
 func (m Model) keyListFooterText() string {
-	if m.isSentryNode() {
-		return sentryKeyListHelpText
+	if m.isCosignerNode() {
+		return cosignerKeyListHelpText
 	}
 	return keyListHelpText
 }
@@ -364,7 +364,7 @@ func (m Model) renderKeyDetails() string {
 	if m.details.publicKeyHex != "" {
 		label := "Public key"
 		if witness.IsKeyType(m.details.keyType) {
-			label = "Sentry public key"
+			label = "Cosigner public key"
 		}
 		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.details.publicKeyHex)), m.popupBodyWidth(62)))
 		sb.WriteString("\n")

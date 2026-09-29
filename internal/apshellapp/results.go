@@ -738,18 +738,18 @@ type EndpointImportResult struct {
 	RenderLines    []string
 }
 
-// EndpointCreateSentryResult describes manual creation of a sentry endpoint
+// EndpointCreateCosignerResult describes manual creation of a cosigner endpoint
 // profile.
-type EndpointCreateSentryResult struct {
-	Alias       string
-	Role        string
-	URL         string
-	SentryPort  int
-	TokenFile   string
-	DryRun      bool
-	Created     bool
-	Updated     bool
-	RenderLines []string
+type EndpointCreateCosignerResult struct {
+	Alias        string
+	Role         string
+	URL          string
+	CosignerPort int
+	TokenFile    string
+	DryRun       bool
+	Created      bool
+	Updated      bool
+	RenderLines  []string
 }
 
 // EndpointDefaultResult describes a default endpoint change.
@@ -765,25 +765,25 @@ type EndpointDeleteResult struct {
 	RenderLines []string
 }
 
-// DiscoveredEndpointSentryKey describes one sentry key advertised by an
+// DiscoveredEndpointCosignerKey describes one cosigner key advertised by an
 // endpoint during discovery.
-type DiscoveredEndpointSentryKey struct {
+type DiscoveredEndpointCosignerKey struct {
 	PublicKey    string
 	ComponentKey string
 	KeyType      string
 }
 
-// EndpointSentryDiscovery describes discovered sentry keys for one endpoint.
-type EndpointSentryDiscovery struct {
+// EndpointCosignerDiscovery describes discovered cosigner keys for one endpoint.
+type EndpointCosignerDiscovery struct {
 	Alias   string
-	Keys    []DiscoveredEndpointSentryKey
+	Keys    []DiscoveredEndpointCosignerKey
 	Skipped bool
 	Error   string
 }
 
-// EndpointDiscoverSentriesResult describes a read-only sentry endpoint sweep.
-type EndpointDiscoverSentriesResult struct {
-	Endpoints      []EndpointSentryDiscovery
+// EndpointDiscoverCosignersResult describes a read-only cosigner endpoint sweep.
+type EndpointDiscoverCosignersResult struct {
+	Endpoints      []EndpointCosignerDiscovery
 	PublicKeyCount int
 	RenderLines    []string
 }

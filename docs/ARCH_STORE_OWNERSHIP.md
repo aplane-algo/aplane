@@ -7,7 +7,7 @@ This document is the source of truth for which process may access or mutate
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and the closed product-principal/action
 model in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
-Each signer or sentry data root contains one product store at
+Each signer or cosigner data root contains one product store at
 `identities/default/` and managed backups at `backups/default/`. Store-owning
 APIs accept no identity locator, and live mutation/inspection uses one
 process-wide product-store lock.
@@ -71,7 +71,7 @@ moved behind an existing owner.
 | `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
 | `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
 | `internal/policy`, `internal/noderole` when invoked by the daemon | Authenticated policy and node-role state |
-| `internal/sentry/sentryrefs` when invoked by the daemon | Public sentry-reference inventory |
+| `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/tokenfile` when invoked by signer administration | Product bearer-token state |
 
 Normal operators reach these owners through authenticated HTTP or the admin protocol over IPC/SSH;
@@ -115,7 +115,7 @@ operator-owned state outside `APSIGNER_DATA`.
 The multi-UID clients `apadmin`, `apapprover`, `approbe`, and systemd-attach
 `apconsole` resolve the public runtime socket without reading signer
 configuration. `apadmin` owns every general running-daemon administration
-workflow: policy editing, template and key-type administration, sentry-reference
+workflow: policy editing, template and key-type administration, cosigner-reference
 administration, endpoint export, generation listing, managed backup transfer,
 restore, and passphrase rotation. Those workflows use typed admin operations;
 operator-selected exports are written to operator-owned locations. `apstore`
@@ -223,7 +223,7 @@ The migration order is fixed:
 
 1. harden writers and ownership traversal;
 2. establish config-free runtime-socket discovery and move normal clients;
-3. add missing authenticated policy, sentry-reference, and generation reads;
+3. add missing authenticated policy, cosigner-reference, and generation reads;
 4. move the socket to the protected runtime directory;
 5. audit and migrate a stopped legacy store;
 6. enable strict startup enforcement and private creation defaults;

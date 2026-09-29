@@ -220,7 +220,7 @@ func TestInstallerAndDockerSmokeDoNotWriteRootLevelPolicy(t *testing.T) {
 		t.Error("docker-local-four-node-smoke.sh writes the retired root-level policy path")
 	}
 	if !strings.Contains(string(smoke), `policy rescue apply -`) {
-		t.Error("docker-local-four-node-smoke.sh does not apply sentry policy through authenticated rescue")
+		t.Error("docker-local-four-node-smoke.sh does not apply cosigner policy through authenticated rescue")
 	}
 }
 

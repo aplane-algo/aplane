@@ -105,8 +105,8 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 	}
 	for _, arg := range args {
 		switch arg {
-		case "--check", "--yaml", "--sha256", "--save", "--to-sentry", "--online":
-			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (check, export, digest, apply, or to-sentry)", arg)
+		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online":
+			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (check, export, digest, apply, or to-cosigner)", arg)
 		}
 	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
@@ -116,7 +116,7 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		mode = " rescue"
 	}
 	fs.Usage = func() {
-		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s [VERB] [--target auto|signer|sentry] [FILE|-]
+		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s [VERB] [--target auto|signer|cosigner] [FILE|-]
 
 Verbs:
   edit [FILE]       open the guided editor (default)
@@ -124,7 +124,7 @@ Verbs:
   export [FILE]     write exact validated YAML
   digest [FILE]     write the exact YAML SHA-256 digest
   apply FILE|-      validate and replace production policy
-  to-sentry [FILE]  convert signer policy to sentry policy
+  to-cosigner [FILE]  convert signer policy to cosigner policy
 
 Online commands authenticate and unlock before policy access; local IPC may use
 APSIGNER_PASSPHRASE. IPC commands may read one passphrase line from stdin.
@@ -135,7 +135,7 @@ production edits, and reject --ipc-path.
 
 `, mode)
 	}
-	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or sentry")
+	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or cosigner")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
 	}

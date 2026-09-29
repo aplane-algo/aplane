@@ -8,9 +8,9 @@ APlane supports three install modes:
 
 | Mode | Command | Use Case |
 |------|---------|----------|
-| **Local** (default) | `./install.sh [--role signer\|sentry] [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
+| **Local** (default) | `./install.sh [--role signer\|cosigner] [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
 | **Client-only** | `./install.sh --client` | apshell only, connects to a remote signer. |
-| **Systemd** | `sudo ./install.sh --systemd [--role signer\|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
+| **Systemd** | `sudo ./install.sh --systemd [--role signer\|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
 
 **Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and bootstrap `--client` modes work on both Linux and macOS. Windows is client-only via the `aplane-client_<version>_windows_amd64.zip` release archive.
 
@@ -23,8 +23,8 @@ APlane supports three install modes:
 | `--no-start` | Skip `systemctl start apsigner` so the service is installed but not started. |
 
 **Node role:** local and systemd installs default to `--role signer`. Use
-`--role sentry` only for a dedicated sentry data root. Node roles are
-immutable; create separate top-level roots for signer and sentry nodes.
+`--role cosigner` only for a dedicated cosigner data root. Node roles are
+immutable; create separate top-level roots for signer and cosigner nodes.
 
 **Environment defaults:** `APLANE_INSTALL_ROOT` supplies the optional
 `[path]` / `[operator-root]` argument when it is omitted. `APLANE_BINDIR`
@@ -81,8 +81,8 @@ Local mode installs both the signer and client into a single directory under the
 # Install to a custom path
 ./install.sh /path/to/my/aplane
 
-# Install a dedicated local sentry node
-./install.sh --role sentry ~/aplane-sentry
+# Install a dedicated local cosigner node
+./install.sh --role cosigner ~/aplane-cosigner
 
 # Equivalent custom path via environment
 APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
@@ -125,8 +125,8 @@ otherwise create a group-writable directory.
 
 Each local install selects **random available ports** in the dynamic range (49152–65534) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
 
-For `--role sentry`, the selected ports are written into `apsigner/config.yaml`
-and an `apclient/endpoints.yaml` `local-sentry` endpoint. The generated
+For `--role cosigner`, the selected ports are written into `apsigner/config.yaml`
+and an `apclient/endpoints.yaml` `local-cosigner` endpoint. The generated
 endpoint registry intentionally has no default signer endpoint.
 
 ### Confirmation prompt
@@ -157,7 +157,7 @@ available. macOS does not use Linux capabilities, so this prompt is skipped.
 
 The installer runs `apstore initialize --role <role>` locally before first node
 startup to create the keystore. You'll be prompted to set a passphrase. This
-passphrase is needed each time you unlock the signer or sentry via `apadmin`.
+passphrase is needed each time you unlock the signer or cosigner via `apadmin`.
 
 ### Environment setup
 
@@ -189,9 +189,9 @@ Approve the request in the signer pane; that first enrollment writes
 `aplane.token` into the client data directory and the shell immediately attempts
 to connect.
 
-For local sentry nodes, `apconsole` shows the sentry admin pane and daemon pane
-only. Unlock the sentry in that console, then follow
-[Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts)
+For local cosigner nodes, `apconsole` shows the cosigner admin pane and daemon pane
+only. Unlock the cosigner in that console, then follow
+[Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
 to export its public key and configure access from your transaction client.
 
 Or start components individually:
@@ -213,53 +213,53 @@ For a signer node:
 4. In the shell pane, run `request-token` to obtain an API token via SSH provisioning
 5. Approve the request in the signer pane
 
-For a sentry node:
+For a cosigner node:
 
 1. Run `./start.sh` from the install root
-2. Unlock the sentry admin pane with the keystore passphrase
-3. Follow [Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts)
+2. Unlock the cosigner admin pane with the keystore passphrase
+3. Follow [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
    below to export the key and add the connection in apshell.
 
 `request-token` creates the client SSH key if it is missing, then waits for an
 operator to approve client access in `apadmin` or `apapprover`.
 After approval, the shell saves the token for the selected endpoint and
 immediately attempts to connect only when that endpoint is the default signer.
-Sentry access provisioning leaves the primary signer connection unchanged.
+Cosigner access provisioning leaves the primary signer connection unchanged.
 
-### Configure a sentry for guarded accounts
+### Configure a cosigner for guarded accounts
 
 Witness trust, endpoint routing, and transport credentials are deliberately
 separate. Complete them in this order:
 
-1. On the sentry node, generate an `aplane.witness-falcon1024.v1` key and choose
-   **Export Sentry Key** from its success or key-details screen. Include the
+1. On the cosigner node, generate an `aplane.witness-falcon1024.v1` key and choose
+   **Export Cosigner Key** from its success or key-details screen. Include the
    advertised endpoint when one is available.
-2. On the primary signer, press `e` in `apadmin`, choose **Import Sentry Key**,
+2. On the primary signer, press `e` in `apadmin`, choose **Import Cosigner Key**,
    import the public file, review or edit its proposed reference name, and
-   compare the complete Witness Key ID with the value shown on the sentry.
-3. In `apshell`, run `sentry add <sentry-key-json> --alias <alias>`. Review the
+   compare the complete Witness Key ID with the value shown on the cosigner.
+3. In `apshell`, run `cosigner add <cosigner-key-json> --alias <alias>`. Review the
    endpoint and complete Witness Key ID.
 4. Compare the full client SSH key fingerprint shown by apshell and the
-   **Client Access Request** in sentry-side apadmin, then approve the request.
+   **Client Access Request** in cosigner-side apadmin, then approve the request.
    Apshell saves the token and verifies the expected witness.
 5. Generate the compatible guarded account on the primary signer. Connect
-   apshell to that signer and run `sentry status` to inspect the account's route
+   apshell to that signer and run `cosigner status` to inspect the account's route
    before funding or rekeying. This is a point-in-time connection check, not
    confirmation of transaction policy or on-chain validity.
 
-The sentry key file contains the public key and may contain public endpoint
-metadata. It never contains the private sentry key, an access token, or SSH host
+The cosigner key file contains the public key and may contain public endpoint
+metadata. It never contains the private cosigner key, an access token, or SSH host
 trust. Signer import and client setup are independent and may safely reuse the
 same file.
 
-### Advanced: provision an existing local sentry endpoint
+### Advanced: provision an existing local cosigner endpoint
 
-For an already configured `local-sentry` endpoint, you can provision its access
+For an already configured `local-cosigner` endpoint, you can provision its access
 token separately. In another terminal, source the install's `apenv.sh`, start
-apshell, and run `request-token --endpoint local-sentry`. Approve the request
-in the sentry admin pane after comparing the complete client SSH fingerprint.
-The client saves `tokens/local-sentry.token`. This manual access step does not
-import a public sentry key into the primary signer.
+apshell, and run `request-token --endpoint local-cosigner`. Approve the request
+in the cosigner admin pane after comparing the complete client SSH fingerprint.
+The client saves `tokens/local-cosigner.token`. This manual access step does not
+import a public cosigner key into the primary signer.
 
 For new guarded-account setup, use the guided flow above. See
 [advanced endpoint commands](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery)
@@ -272,7 +272,7 @@ Simply install to different paths:
 ```bash
 ./install.sh ~/demo-buyer
 ./install.sh ~/demo-seller
-./install.sh --role sentry ~/demo-sentry
+./install.sh --role cosigner ~/demo-cosigner
 ```
 
 Each instance gets its own random ports, keystore, and `start.sh` launcher. They can run simultaneously without interference.
@@ -464,9 +464,9 @@ This installs:
 4. Ask the signer operator to approve the token enrollment in `apadmin` or `apapprover`
 
 The normal `request-token` flow handles the client's SSH-key and API-token
-enrollment together. It does not enroll a sentry witness as a guarded-account
+enrollment together. It does not enroll a cosigner witness as a guarded-account
 co-authority. For guarded accounts, follow
-[Configure a sentry for guarded accounts](#configure-a-sentry-for-guarded-accounts).
+[Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts).
 After approval, interactive `apshell` saves the token and immediately attempts
 to connect to the signer.
 
@@ -525,7 +525,7 @@ for a custom binary directory (default: `/usr/local/bin`):
 ```bash
 sudo ./install.sh --systemd --bindir /opt/aplane/bin
 sudo ./install.sh --systemd /srv/operator/aplane --bindir /opt/aplane/bin
-sudo ./install.sh --systemd --role sentry /srv/operator/aplane-sentry
+sudo ./install.sh --systemd --role cosigner /srv/operator/aplane-cosigner
 sudo APLANE_INSTALL_ROOT=/srv/operator/aplane APLANE_BINDIR=/opt/aplane/bin ./install.sh --systemd
 ```
 
@@ -888,8 +888,8 @@ Then initialize the keystore and start the service:
 
 ```bash
 sudo apstore -d /var/lib/apsigner initialize
-# For a dedicated sentry node:
-sudo apstore -d /var/lib/apsigner initialize --role sentry
+# For a dedicated cosigner node:
+sudo apstore -d /var/lib/apsigner initialize --role cosigner
 sudo systemctl start apsigner
 apadmin
 ```
@@ -914,8 +914,8 @@ If you skipped Step 5, initialize the keystore before unlocking:
 
 ```bash
 sudo apstore -d /var/lib/apsigner initialize
-# For a dedicated sentry node:
-sudo apstore -d /var/lib/apsigner initialize --role sentry
+# For a dedicated cosigner node:
+sudo apstore -d /var/lib/apsigner initialize --role cosigner
 apadmin
 ```
 
@@ -1008,7 +1008,7 @@ $APSIGNER_DATA/identities/default/
 ├── unlock.yaml       # Product-local passphrase helper settings
 ├── .ssh/
 │   └── authorized_keys  # Product-local enrolled client public keys
-├── sentries/         # Product-local public sentry references
+├── cosigners/         # Product-local public cosigner references
 ├── generations/<gen-id>/
 │   ├── manifest.json
 │   ├── seal.json

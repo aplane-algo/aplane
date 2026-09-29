@@ -16,19 +16,19 @@ import (
 type Target string
 
 const (
-	TargetAuto   Target = "auto"
-	TargetSigner Target = "signer"
-	TargetSentry Target = "sentry"
+	TargetAuto     Target = "auto"
+	TargetSigner   Target = "signer"
+	TargetCosigner Target = "cosigner"
 )
 
 func ParseTarget(raw string) (Target, error) {
 	switch target := Target(strings.ToLower(strings.TrimSpace(raw))); target {
 	case "", TargetAuto:
 		return TargetAuto, nil
-	case TargetSigner, TargetSentry:
+	case TargetSigner, TargetCosigner:
 		return target, nil
 	default:
-		return "", fmt.Errorf("invalid policy target %q (expected auto, signer, or sentry)", raw)
+		return "", fmt.Errorf("invalid policy target %q (expected auto, signer, or cosigner)", raw)
 	}
 }
 
@@ -36,14 +36,14 @@ func TargetForNodeRole(role noderole.Role) (Target, error) {
 	switch role {
 	case noderole.RoleSigner:
 		return TargetSigner, nil
-	case noderole.RoleSentry:
-		return TargetSentry, nil
+	case noderole.RoleCosigner:
+		return TargetCosigner, nil
 	default:
 		return "", fmt.Errorf("unsupported node role %q", role)
 	}
 }
 
-// ResolveTarget resolves auto from root node.yaml. Explicit signer or sentry
+// ResolveTarget resolves auto from root node.yaml. Explicit signer or cosigner
 // targets are returned as-is for offline review and conversion.
 func ResolveTarget(dataDir string, target Target) (Target, error) {
 	if target == "" {
@@ -79,8 +79,8 @@ func (t Target) SidecarName() string {
 
 func (t Target) Label() string {
 	switch t {
-	case TargetSentry:
-		return "Sentry Policy"
+	case TargetCosigner:
+		return "Cosigner Policy"
 	default:
 		return "Signer Policy"
 	}
@@ -88,8 +88,8 @@ func (t Target) Label() string {
 
 func (t Target) StatusNoun() string {
 	switch t {
-	case TargetSentry:
-		return "sentry policy"
+	case TargetCosigner:
+		return "cosigner policy"
 	default:
 		return "policy"
 	}
@@ -97,8 +97,8 @@ func (t Target) StatusNoun() string {
 
 func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {
 	switch t {
-	case TargetSentry:
-		return policy.ParseStoredSentryConfig(data)
+	case TargetCosigner:
+		return policy.ParseStoredCosignerConfig(data)
 	default:
 		return policy.ParseStoredConfig(data)
 	}
@@ -106,8 +106,8 @@ func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {
 
 func (t Target) Marshal(stored *policy.StoredConfig) ([]byte, error) {
 	switch t {
-	case TargetSentry:
-		return policy.MarshalStoredSentryConfig(stored)
+	case TargetCosigner:
+		return policy.MarshalStoredCosignerConfig(stored)
 	default:
 		return policy.MarshalStoredConfig(stored)
 	}

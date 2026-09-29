@@ -19,8 +19,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -31,16 +31,16 @@ import (
 func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	guarded := testAddress(1).String()
 	nonGuarded := testAddress(2).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
 		setTestLogicSigResources(c, guarded, 1500)
 		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 			ProgramBytes: 77,
 			Default:      &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 		})
-		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
 
@@ -58,7 +58,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -105,11 +105,11 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) {
 	guarded := testAddress(1).String()
 	nativeFalcon := testAddress(2).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
 		setTestLogicSigResources(c, guarded, 1_500)
-		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nativeFalcon, "falcon1024")
 	})
 
@@ -119,7 +119,7 @@ func TestBuildBoundedComponentRequestsDeclaresForeignNativeFalcon(t *testing.T) 
 	}
 	requests, err := s.buildBoundedComponentRequests(
 		txns,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -140,12 +140,12 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	sender := testAddress(4).String()
 	guardedAuthorizer := testAddress(1).String()
 	nonGuarded := testAddress(2).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Sentry1024V1)
+		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Cosigner1024V1)
 		setTestLogicSigResources(c, guardedAuthorizer, 1500)
-		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
+		c.SetCosignerPublicKeyForAddress(guardedAuthorizer, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
 
@@ -163,11 +163,11 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
 		map[int]guardedTarget{0: {
-			Index:                  0,
-			Sender:                 sender,
-			Account:                guardedAuthorizer,
-			SentryComponentKeyType: witness.Falcon1024V1,
-			SentryPublicKey:        sentryHex,
+			Index:                    0,
+			Sender:                   sender,
+			Account:                  guardedAuthorizer,
+			CosignerComponentKeyType: witness.Falcon1024V1,
+			CosignerPublicKey:        cosignerHex,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -193,10 +193,10 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	guarded := testAddress(1).String()
 	nonGuarded := testAddress(2).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, "test.bounded-sentry.v1")
+		c.AddAddress(guarded, "test.bounded-cosigner.v1")
 		c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
 			ProgramBytes:  2_500,
 			Spend:         &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
@@ -216,7 +216,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		len(txns),
 		map[int]guardedTarget{0: {
 			Index: 0, Sender: guarded, Account: guarded,
-			Flow: signerapi.SigningFlowBoundedSentry1, SentryPublicKey: sentryHex,
+			Flow: signerapi.SigningFlowBoundedCosigner1, CosignerPublicKey: cosignerHex,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -237,12 +237,12 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 // made and no passthrough entries are produced.
 func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	guarded := testAddress(1).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
 		setTestLogicSigResources(c, guarded, 1500)
-		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 	})
 
 	plannedTxns := []types.Transaction{
@@ -258,7 +258,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -278,12 +278,12 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	guarded := testAddress(1).String()
 	nonGuarded := testAddress(2).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
+	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Cosigner1024V1)
 		setTestLogicSigResources(c, guarded, 1500)
-		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
 		c.AddAddress(nonGuarded, "ed25519")
 	})
 
@@ -300,7 +300,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 
 	_, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, cosignerHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "no signature for non-guarded position 2") {

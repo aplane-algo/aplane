@@ -1,25 +1,25 @@
 # Release Notes
 
-## Unified guarded and bounded-sentry signing flow
+## Unified guarded and bounded-cosigner signing flow
 
-Guarded and bounded-sentry signing now share `/plan`, `/sign/component`, and
-`/sign/assemble`. Component requests use explicit `user`, `sentry`, or
+Guarded and bounded-cosigner signing now share `/plan`, `/sign/component`, and
+`/sign/assemble`. Component requests use explicit `user`, `cosigner`, or
 `bounded-base` targets over one frozen group; assembly uses discriminated
-`guarded` or `bounded-sentry` targets. `/plan` is the sole canonicalizer, and
+`guarded` or `bounded-cosigner` targets. `/plan` is the sole canonicalizer, and
 bounded authorization is reconstructed from signer-held metadata before the
 operator approves the exact frozen bytes.
 
 The pre-release `/sign/bounded-component` and `/sign/bounded-assemble` routes
 were removed and return 404. SDK callers must use `requestComponents` and
-`requestAssemble` (with language-appropriate naming). Mixed `sentry1` and
-`bounded-sentry1` targets remain rejected pending an atomic multi-gate signing
+`requestAssemble` (with language-appropriate naming). Mixed `cosigner1` and
+`bounded-cosigner1` targets remain rejected pending an atomic multi-gate signing
 implementation. Contract-admin `bounded1` remains separate through `aprekey`
 and `/sign/bounded-admin`.
 
 ## Fixed single-product runtime
 
 APlane is a single-operator, single-signing-authority product. Every
-signer or sentry process owns exactly one runtime at `identities/default/`.
+signer or cosigner process owns exactly one runtime at `identities/default/`.
 Any additional direct entry under `identities/` fails startup before token,
 key, policy, template, or watcher loading. HTTP and SSH bind the fixed product
 runtime; admin protocol v5 and product CLIs expose no runtime selector.

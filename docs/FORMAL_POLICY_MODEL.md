@@ -43,10 +43,10 @@ Client-signing policy decides whether a planned signing request is:
 - explicitly approved without manual review,
 - handled by the operator default.
 
-Sentry component policy is a separate deterministic surface stored in
-sentry-domain `policy.yaml`: no manual-review verdict and no operator default. This
+Cosigner component policy is a separate deterministic surface stored in
+cosigner-domain `policy.yaml`: no manual-review verdict and no operator default. This
 document defines the shared snapshot and sparse-override vocabulary; the
-sentry-specific decision rules are modeled in
+cosigner-specific decision rules are modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 Client simulation obtains signatures through ordinary signing, so every policy
@@ -250,8 +250,8 @@ Client-signing rules:
 5. Override fields are sparse overlays over the product policy; nested
    overrides are rejected.
 
-Sentry overrides are keyed by Witness Key ID and are consumed only by the
-sentry-role component-signing flow modeled in
+Cosigner overrides are keyed by Witness Key ID and are consumed only by the
+cosigner-role component-signing flow modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection

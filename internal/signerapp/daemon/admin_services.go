@@ -15,11 +15,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -347,86 +347,86 @@ func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
 	return adminproto.ListKeyTypesResult{KeyTypes: resp.KeyTypes}
 }
 
-func (s signerAdminServices) ListSentryReferences() adminproto.ListSentryReferencesResult {
+func (s signerAdminServices) ListCosignerReferences() adminproto.ListCosignerReferencesResult {
 	ir := s.ProductRuntime()
-	var records []sentryrefs.Record
+	var records []cosignerrefs.Record
 	err := s.withStoreInspection(func() error {
 		var err error
-		records, err = sentryrefs.List(ir.KeyPaths())
+		records, err = cosignerrefs.List(ir.KeyPaths())
 		return err
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "list_failed")
-		return adminproto.ListSentryReferencesResult{Code: code, Error: message}
+		return adminproto.ListCosignerReferencesResult{Code: code, Error: message}
 	}
-	result := adminproto.ListSentryReferencesResult{References: make([]adminproto.SentryReferenceInfo, len(records))}
+	result := adminproto.ListCosignerReferencesResult{References: make([]adminproto.CosignerReferenceInfo, len(records))}
 	for i := range records {
-		result.References[i] = adminSentryReference(records[i])
+		result.References[i] = adminCosignerReference(records[i])
 	}
 	return result
 }
 
-func (s signerAdminServices) GetSentryReference(req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult {
+func (s signerAdminServices) GetCosignerReference(req adminproto.GetCosignerReferenceRequest) adminproto.GetCosignerReferenceResult {
 	ir := s.ProductRuntime()
-	var record sentryrefs.Record
+	var record cosignerrefs.Record
 	var found bool
 	err := s.withStoreInspection(func() error {
 		var err error
-		record, found, err = sentryrefs.Get(ir.KeyPaths(), req.Name)
+		record, found, err = cosignerrefs.Get(ir.KeyPaths(), req.Name)
 		return err
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "read_failed")
-		return adminproto.GetSentryReferenceResult{Code: code, Error: message}
+		return adminproto.GetCosignerReferenceResult{Code: code, Error: message}
 	}
 	if !found {
-		return adminproto.GetSentryReferenceResult{Code: "not_found", Error: fmt.Sprintf("sentry reference %q not found", req.Name)}
+		return adminproto.GetCosignerReferenceResult{Code: "not_found", Error: fmt.Sprintf("cosigner reference %q not found", req.Name)}
 	}
-	return adminproto.GetSentryReferenceResult{Success: true, Reference: adminSentryReference(record)}
+	return adminproto.GetCosignerReferenceResult{Success: true, Reference: adminCosignerReference(record)}
 }
 
-func (s signerAdminServices) ImportSentryReference(req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult {
+func (s signerAdminServices) ImportCosignerReference(req adminproto.ImportCosignerReferenceRequest) adminproto.ImportCosignerReferenceResult {
 	ir := s.ProductRuntime()
-	var record *sentryrefs.Record
+	var record *cosignerrefs.Record
 	err := s.withStoreMutation(func() error {
 		var err error
-		record, err = sentryrefs.Import(ir.KeyPaths(), req.Name, []byte(req.EnvelopeJSON))
+		record, err = cosignerrefs.Import(ir.KeyPaths(), req.Name, []byte(req.EnvelopeJSON))
 		return err
 	})
 	if err != nil {
-		return adminproto.ImportSentryReferenceResult{Code: "import_failed", Error: err.Error()}
+		return adminproto.ImportCosignerReferenceResult{Code: "import_failed", Error: err.Error()}
 	}
-	return adminproto.ImportSentryReferenceResult{Success: true, Reference: adminSentryReference(*record)}
+	return adminproto.ImportCosignerReferenceResult{Success: true, Reference: adminCosignerReference(*record)}
 }
 
-func (s signerAdminServices) RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult {
+func (s signerAdminServices) RemoveCosignerReference(req adminproto.RemoveCosignerReferenceRequest) adminproto.RemoveCosignerReferenceResult {
 	ir := s.ProductRuntime()
 	var removed bool
 	var componentKey string
 	err := s.withStoreMutation(func() error {
-		existing, found, err := sentryrefs.Get(ir.KeyPaths(), req.Name)
+		existing, found, err := cosignerrefs.Get(ir.KeyPaths(), req.Name)
 		if err != nil {
 			return err
 		}
 		if found {
 			componentKey = existing.ComponentKey
 		}
-		removed, err = sentryrefs.Delete(ir.KeyPaths(), req.Name)
+		removed, err = cosignerrefs.Delete(ir.KeyPaths(), req.Name)
 		return err
 	})
 	if err != nil {
-		return adminproto.RemoveSentryReferenceResult{Name: req.Name, Code: "remove_failed", Error: err.Error()}
+		return adminproto.RemoveCosignerReferenceResult{Name: req.Name, Code: "remove_failed", Error: err.Error()}
 	}
-	return adminproto.RemoveSentryReferenceResult{
+	return adminproto.RemoveCosignerReferenceResult{
 		Success: true, Name: req.Name, ComponentKey: componentKey, Removed: removed,
 	}
 }
 
-func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult {
+func (s signerAdminServices) ExportCosignerPublic(req adminproto.ExportCosignerPublicRequest) adminproto.ExportCosignerPublicResult {
 	ir := s.ProductRuntime()
 	componentKey, err := witness.NormalizeID(req.WitnessKeyID)
 	if err != nil {
-		return adminproto.ExportSentryPublicResult{Code: "invalid_witness_key_id", Error: err.Error()}
+		return adminproto.ExportCosignerPublicResult{Code: "invalid_witness_key_id", Error: err.Error()}
 	}
 	var envelope witness.PublicReference
 	var found bool
@@ -440,17 +440,17 @@ func (s signerAdminServices) ExportSentryPublic(req adminproto.ExportSentryPubli
 	})
 	if err != nil {
 		code, message := identityStoreInspectionError(err, "export_failed")
-		return adminproto.ExportSentryPublicResult{Code: code, Error: message}
+		return adminproto.ExportCosignerPublicResult{Code: code, Error: message}
 	}
 	if !found {
-		return adminproto.ExportSentryPublicResult{Code: "not_found", Error: fmt.Sprintf("sentry public metadata for %s not found", componentKey)}
+		return adminproto.ExportCosignerPublicResult{Code: "not_found", Error: fmt.Sprintf("cosigner public metadata for %s not found", componentKey)}
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
-		return adminproto.ExportSentryPublicResult{Code: "encode_failed", Error: err.Error()}
+		return adminproto.ExportCosignerPublicResult{Code: "encode_failed", Error: err.Error()}
 	}
 	data = append(data, '\n')
-	return adminproto.ExportSentryPublicResult{Success: true, WitnessKeyID: componentKey, EnvelopeJSON: string(data)}
+	return adminproto.ExportCosignerPublicResult{Success: true, WitnessKeyID: componentKey, EnvelopeJSON: string(data)}
 }
 
 func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
@@ -626,8 +626,8 @@ func identityStoreInspectionError(err error, fallbackCode string) (string, strin
 	return fallbackCode, err.Error()
 }
 
-func adminSentryReference(record sentryrefs.Record) adminproto.SentryReferenceInfo {
-	return adminproto.SentryReferenceInfo{
+func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerReferenceInfo {
+	return adminproto.CosignerReferenceInfo{
 		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
 		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
 		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,

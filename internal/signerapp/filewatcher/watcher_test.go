@@ -11,7 +11,7 @@ func TestIsReloadCandidate(t *testing.T) {
 		want bool
 	}{
 		{"account.key", true},
-		{"sentry.sen", true},
+		{"cosigner.cos", true},
 		{"policy.template", true},
 		{"external.wit", false},
 		{"external.wit.json", false},

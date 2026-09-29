@@ -19,14 +19,14 @@ func consoleNodeRole(paths storepaths.Paths) (noderole.Role, string) {
 }
 
 func shellPaneEnabledForNodeRole(role noderole.Role) bool {
-	return role != noderole.RoleSentry
+	return role != noderole.RoleCosigner
 }
 
-func sentryShellDisabledLines(notices []string) []string {
+func cosignerShellDisabledLines(notices []string) []string {
 	lines := consoleStartupNoticeLines(notices)
 	lines = append(lines,
-		"[config] shell pane disabled on sentry nodes",
-		"Use F1 Admin and press p to edit sentry policy.",
+		"[config] shell pane disabled on cosigner nodes",
+		"Use F1 Admin and press p to edit cosigner policy.",
 	)
 	return lines
 }

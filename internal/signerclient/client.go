@@ -548,7 +548,7 @@ func (c *Client) RequestComponentsWithContext(ctx context.Context, reqBody signe
 		return nil, fmt.Errorf("invalid component request: %w", err)
 	}
 	var result signerapi.ComponentResponse
-	if reqBody.TargetKind() == signerapi.ComponentTargetKindSentry {
+	if reqBody.TargetKind() == signerapi.ComponentTargetKindCosigner {
 		response, err := doJSON[signerapi.ComponentResponse](c, ctx, "POST", "/sign/component", reqBody, componentSignTimeout, "failed to make request to Signer")
 		if err != nil {
 			return nil, err

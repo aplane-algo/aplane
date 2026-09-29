@@ -110,7 +110,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}
 }
 
-func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
+func TestCmdRebuildRoleOverrideRestoresCosignerBackup(t *testing.T) {
 	RegisterProviders()
 
 	oldDataDirectory := dataDirectory
@@ -124,21 +124,21 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 	}()
 
 	backupRoot := t.TempDir()
-	componentKey, keyJSON := testSentryComponentKeyJSONForApstore(t)
+	componentKey, keyJSON := testCosignerComponentKeyJSONForApstore(t)
 	if err := writeStandaloneBackup(filepath.Join(backupRoot, "apb"), componentKey, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 	if err := backup.WriteReadme(backupRoot); err != nil {
 		t.Fatalf("WriteReadme() error = %v", err)
 	}
-	archivePath := filepath.Join(t.TempDir(), "sentry-rebuild.tar.gz")
-	sealTestArchive(t, backupRoot, noderole.RoleSentry)
+	archivePath := filepath.Join(t.TempDir(), "cosigner-rebuild.tar.gz")
+	sealTestArchive(t, backupRoot, noderole.RoleCosigner)
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
 
 	if err := withTestStdin("export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", func() error {
-		return cmdRebuild([]string{archivePath, "--role", "sentry", "--address", componentKey})
+		return cmdRebuild([]string{archivePath, "--role", "cosigner", "--address", componentKey})
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
@@ -152,11 +152,11 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithKeyring() error = %v", err)
 	}
-	if role.Role != noderole.RoleSentry {
-		t.Fatalf("rebuilt node role = %q, want sentry", role.Role)
+	if role.Role != noderole.RoleCosigner {
+		t.Fatalf("rebuilt node role = %q, want cosigner", role.Role)
 	}
-	if _, err := os.Stat(apkeys.SentryCredentialFilePathActive(active, componentKey)); err != nil {
-		t.Fatalf("rebuilt sentry key file missing: %v", err)
+	if _, err := os.Stat(apkeys.CosignerCredentialFilePathActive(active, componentKey)); err != nil {
+		t.Fatalf("rebuilt cosigner key file missing: %v", err)
 	}
 	env, ok, err := apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
 	if err != nil {
@@ -182,12 +182,12 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 		t.Fatalf("WriteSealedManifest() error = %v", err)
 	}
 
-	role, err := selectRebuildNodeRole(root, passphrase, noderole.RoleSentry, true)
+	role, err := selectRebuildNodeRole(root, passphrase, noderole.RoleCosigner, true)
 	if err != nil {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
-	if role != noderole.RoleSentry {
-		t.Fatalf("selectRebuildNodeRole() role = %q, want sentry", role)
+	if role != noderole.RoleCosigner {
+		t.Fatalf("selectRebuildNodeRole() role = %q, want cosigner", role)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestSelectRebuildNodeRoleUsesSealedManifestRole(t *testing.T) {
 	passphrase := []byte("export-passphrase")
 	if err := backup.WriteSealedManifest(
 		root,
-		noderole.RoleSentry,
+		noderole.RoleCosigner,
 		time.Unix(100, 0),
 		passphrase,
 	); err != nil {
@@ -207,8 +207,8 @@ func TestSelectRebuildNodeRoleUsesSealedManifestRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
-	if role != noderole.RoleSentry {
-		t.Fatalf("selectRebuildNodeRole() role = %q, want sentry from the sealed manifest", role)
+	if role != noderole.RoleCosigner {
+		t.Fatalf("selectRebuildNodeRole() role = %q, want cosigner from the sealed manifest", role)
 	}
 }
 
@@ -627,7 +627,7 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	}
 }
 
-func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
+func testCosignerComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
-	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
+	return keystest.CosignerComponentFalcon1024KeyJSON(t, 0xcd)
 }

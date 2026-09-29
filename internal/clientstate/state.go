@@ -12,8 +12,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientdata"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
@@ -178,8 +178,8 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 	s.SignerCache.LogicSigResources = make(map[string]lsigresource.Profile)
 	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
 	s.SignerCache.SigningFlows = make(map[string]string)
-	s.SignerCache.SentryComponentKeyTypes = make(map[string]string)
-	s.SignerCache.SentryPublicKeys = make(map[string]string)
+	s.SignerCache.CosignerComponentKeyTypes = make(map[string]string)
+	s.SignerCache.CosignerPublicKeys = make(map[string]string)
 	s.SignerCache.BoundedMaxFees = make(map[string]uint64)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
@@ -195,15 +195,15 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 		if keyInfo.SigningFlow != "" {
 			s.SignerCache.SetSigningFlowForAddress(keyInfo.Address, keyInfo.SigningFlow)
 		}
-		if keyInfo.SentryComponentKeyType != "" {
-			s.SignerCache.SetSentryComponentKeyTypeForAddress(keyInfo.Address, keyInfo.SentryComponentKeyType)
+		if keyInfo.CosignerComponentKeyType != "" {
+			s.SignerCache.SetCosignerComponentKeyTypeForAddress(keyInfo.Address, keyInfo.CosignerComponentKeyType)
 		}
-		sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]
-		if sentryPublicKey == "" && keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.Sentry != nil {
-			sentryPublicKey = keyInfo.BoundedAuthorization.Sentry.PublicKeyHex
+		cosignerPublicKey := keyInfo.Parameters[keytypes.ParameterCosignerPublicKey]
+		if cosignerPublicKey == "" && keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.Cosigner != nil {
+			cosignerPublicKey = keyInfo.BoundedAuthorization.Cosigner.PublicKeyHex
 		}
-		if sentryPublicKey != "" {
-			s.SignerCache.SetSentryPublicKeyForAddress(keyInfo.Address, sentryPublicKey)
+		if cosignerPublicKey != "" {
+			s.SignerCache.SetCosignerPublicKeyForAddress(keyInfo.Address, cosignerPublicKey)
 		}
 		if keyInfo.BoundedAuthorization != nil {
 			s.SignerCache.SetBoundedMaxFeeForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.MaxFee)

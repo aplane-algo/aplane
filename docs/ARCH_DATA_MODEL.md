@@ -76,9 +76,9 @@ Important vocabulary:
   `ed25519` or `aplane.falcon1024.v1`.
 - **Witness Key ID** means the 52-character uppercase base32 SHA-512/256 digest
   over canonical length-prefixed domain, key type, and public-key fields. It
-  identifies the same role-neutral public key form in hot sentry custody or
+  identifies the same role-neutral public key form in hot cosigner custody or
   standalone contract-admin custody; it is not an Algorand account address.
-  Sentry-role wire/storage fields may call this value `component_key`.
+  Cosigner-role wire/storage fields may call this value `component_key`.
 
 ## System Boundaries
 
@@ -90,7 +90,7 @@ Important vocabulary:
 - product runtime config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
   and key type state,
 - encrypted installed templates,
-- public sentry references and witness public metadata sidecars,
+- public cosigner references and witness public metadata sidecars,
 - signer-wide ASA metadata cache,
 - audit log,
 - managed backup archives,
@@ -108,7 +108,7 @@ intent and receive finalized signed transaction bytes, not key material.
 - endpoint-scoped bearer token files copied from signer enrollment,
 - SSH client keys and known-hosts trust,
 - aliases, sets, signer inventory cache, auth cache, ASA cache,
-- operation-scoped live sentry routing,
+- operation-scoped live cosigner routing,
 - plugins and plugin activation,
 - saved JavaScript scripts,
 - local swap proposal state.
@@ -128,10 +128,10 @@ DTOs and contract fixtures.
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
 | Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
-| Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
-| Live sentry discovery | Signing operation | authenticated `/keys` responses from configured sentry endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-sentry orchestration | `internal/engine/guarded` |
+| Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and cosigner connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
+| Live cosigner discovery | Signing operation | authenticated `/keys` responses from configured cosigner endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-cosigner orchestration | `internal/engine/guarded` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
-| Node role | Signer data dir plus selected generation | `APSIGNER_DATA/node.yaml` plus selected generation `node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
+| Node role | Signer data dir plus selected generation | `APSIGNER_DATA/node.yaml` plus selected generation `node.yaml.hmac` | single-purpose signer/cosigner role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, runtime load, keyadmin, restore, signing dispatch |
 | Signing authority | Product signer | `identities/default/` | one `productruntime.Runtime` | lock, readiness, key, and principal-attributed audit state without a runtime ID | `internal/signerapp/productruntime` |
 | Product runtime config | Product signer | `identities/default/config.yaml` (parsed as `productruntime.StoredConfig`) | `productruntime.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/productruntime`, `internal/signerapp/admin` |
 | Unlock config | Product signer | `identities/default/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig`, `cmd/appass` |
@@ -139,22 +139,22 @@ DTOs and contract fixtures.
 | Keystore marker | Product signer | `identities/default/.keystore` | version 6 / `store-root/v1` format gate only | none | `internal/crypto` |
 | Term keys/session | Product runtime | unsealed from `store-root.enc`, resident only while unlocked | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Account authority | Selected generation | `generations/<gen-id>/keys/<address>.key` | address -> key file/type/LogicSig resource-profile indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
-| Sentry witness authority | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
-| Sentry public sidecar | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apadmin sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
-| Public sentry reference | Signer identity | `identities/default/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `internal/apadminapp` |
+| Cosigner witness authority | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.cos` | Witness Key ID -> witness credential index | `/keys`, cosigner component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
+| Cosigner public sidecar | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.wit.json` | public cosigner-key export metadata | `apadmin cosigner export` | `internal/keys`, `internal/cosigner/cosignerrefs` |
+| Public cosigner reference | Signer identity | `identities/default/cosigners/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/cosigner/cosignerrefs`, `internal/signerapp/rest`, `internal/apadminapp` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
-| Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or sentry component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
+| Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Product signer and client | signer `identities/default/aplane.token`, client `aplane.token` | product token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
 | SSH enrollment | Product signer | `identities/default/.ssh/authorized_keys` | product SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Guarded assembly request | Request-scoped | user and sentry component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or cosigner component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Guarded assembly request | Request-scoped | user and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` |
 | ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
@@ -174,8 +174,8 @@ Client data dir
   -> algod endpoint and client caches
   -> endpoints.yaml
       -> default signer endpoint
-      -> zero or more sentry endpoints
-      -> live /keys discovery -> operation-scoped sentry routing
+      -> zero or more cosigner endpoints
+      -> live /keys discovery -> operation-scoped cosigner routing
   -> endpoint tokens + SSH trust
   -> signer HTTP/admin connection
 
@@ -184,9 +184,9 @@ Signer data dir
   -> product runtime
       -> store-root.enc -> selected generation + unsealed term keys
       -> selected generation key files -> runtime key indexes -> /keys and signing
-      -> sentries public references -> /keytypes generation options
+      -> cosigners public references -> /keytypes generation options
       -> key type state + installed templates -> /keytypes and generation
-      -> policy.yaml + HMAC -> signer approval verdicts or sentry component-sign authorization by node role
+      -> policy.yaml + HMAC -> signer approval verdicts or cosigner component-sign authorization by node role
       -> API token + SSH keys -> authn
       -> approval coordinator -> sign/token prompts
       -> process-wide admin session -> admin mutations and approvals
@@ -204,7 +204,7 @@ identity term key
 The strongest signing authority is:
 
 ```text
-encrypted canonical managed credential (`.key` or `.sen`)
+encrypted canonical managed credential (`.key` or `.cos`)
   -> stored key type, bytecode, derivation record, signing args, base key type
   -> signer-side base provider where cryptographic signing is required
 ```
@@ -248,21 +248,21 @@ identities/default/
     manifest.json          # immutable at-mint operation record
     seal.json              # final content record, written before flip-away
     keys/*.key
-    keys/*.sen
-    keys/*.wit.json        # public sentry metadata sidecar (not private authority)
+    keys/*.cos
+    keys/*.wit.json        # public cosigner metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
     policy.yaml
     policy.yaml.hmac
     node.yaml.hmac
-    sentries/*.json
+    cosigners/*.json
     deleted/{keys,keytypes}/
   quarantine/generations/<gen-id>/
   aplane.token
   config.yaml
   unlock.yaml
   .ssh/authorized_keys
-  sentries/*.json
+  cosigners/*.json
   passphrase | passphrase.cred   # optional helper artifacts
 ```
 
@@ -280,8 +280,8 @@ generation and commits it with one durable `store-root.enc` replacement.
 - token authority,
 - SSH enrollment,
 - effective product runtime config,
-- effective node-role policy: client-signing policy on signer nodes or sentry
-  component policy on sentry nodes,
+- effective node-role policy: client-signing policy on signer nodes or cosigner
+  component policy on cosigner nodes,
 - watcher and shutdown lifecycle.
 
 The process owns one product runtime over the fixed `identities/default/`
@@ -304,10 +304,10 @@ payload families are:
 | `ed25519` | Native Algorand signing key. |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
-| `witness` | Signer-custodied witness key (`.sen`) used only through sentry-role `/sign/component`. |
+| `witness` | Signer-custodied witness key (`.cos`) used only through cosigner-role `/sign/component`. |
 
 Category selects the managed credential class and filename extension: account
-categories use `.key`; `witness` uses `.sen`. There is no durable payload
+categories use `.key`; `witness` uses `.cos`. There is no durable payload
 category named `component`; “component signing” is the wire/runtime flow, not
 the on-disk category.
 
@@ -328,15 +328,15 @@ Durable signing metadata includes:
 - creation parameters and timestamps.
 
 Dedicated guarded account keys are DSA LogicSig keys whose stored bytecode
-embeds a sentry public key (currently `aplane.falcon1024-sentry1024.v1`). They
+embeds a cosigner public key (currently `aplane.falcon1024-cosigner1024.v1`). They
 are not accepted by `/sign`; the client must use the
-guarded flow: user `/sign/component`, sentry `/sign/component`, user
+guarded flow: user `/sign/component`, cosigner `/sign/component`, user
 `/sign/assemble`, then algod submit. Inventory advertises
-`signing_flow: sentry1` for those keys. Sentry witness keys are selected by an uppercase,
+`signing_flow: cosigner1` for those keys. Cosigner witness keys are selected by an uppercase,
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
-Bounded keys with durable `bounded_authorization.sentry` use the distinct
-`bounded-sentry1` flow. Corridor v1 is the first such template. Their spend
+Bounded keys with durable `bounded_authorization.cosigner` use the distinct
+`bounded-cosigner1` flow. Corridor v1 is the first such template. Their spend
 path uses `/plan`, kind-tagged `/sign/component`, and `/sign/assemble`; their
 admin path remains `/sign/bounded-admin`.
 
@@ -369,16 +369,16 @@ and `/keytypes` generation metadata uses `runtime_args`.
 ### Bounded Authorization And External Contract Admin
 
 Bounded1 is an authorization contract used by both `bounded1` and
-`bounded-sentry1` signing choreographies. Normative field inventory, encodings, and custody
+`bounded-cosigner1` signing choreographies. Normative field inventory, encodings, and custody
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
   `bounded_authorization` (signing metadata version 2), owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
-- Inventory advertises `signing_flow: bounded1` without a sentry or
-  `bounded-sentry1` with a sentry. Admin-key rekeys always route to
-  `POST /sign/bounded-admin` rather than ordinary runtime args or sentry assembly.
+- Inventory advertises `signing_flow: bounded1` without a cosigner or
+  `bounded-cosigner1` with a cosigner. Admin-key rekeys always route to
+  `POST /sign/bounded-admin` rather than ordinary runtime args or cosigner assembly.
 - The spending key remains signer-managed (`.key`). The Falcon contract-admin
   private material is **not** a signer-managed credential: it lives in a
   standalone encrypted `.wit` bundle (`aplane.witness-key-bundle.v1`) owned by
@@ -456,9 +456,9 @@ client-signing policy. Runtime client-signing policy is an effective
 - network-scoped ALGO and ASA transfer thresholds,
 - YAML-only `key_overrides`.
 
-On sentry nodes, the same `policy.yaml` file is parsed as the sentry component
+On cosigner nodes, the same `policy.yaml` file is parsed as the cosigner component
 policy. It uses the same transfer routing model as deterministic authorization for
-`/sign/component`; it has no operator default and no review verdict. Sentry
+`/sign/component`; it has no operator default and no review verdict. Cosigner
 `key_overrides` are keyed by Witness Key ID, while client-signing overrides
 are keyed by Algorand auth address.
 
@@ -531,14 +531,14 @@ Client config selects:
 The selected network token scopes algod lookup and cache state. It is a local
 namespace and must not be treated as chain identity.
 
-Signer and sentry endpoint routing lives in `endpoints.yaml`, not in
+Signer and cosigner endpoint routing lives in `endpoints.yaml`, not in
 `config.yaml`. The endpoint registry contains a `schema_version`, one default
 signer endpoint alias, and endpoint records with `role: signer` or
-`role: sentry`. Endpoint records own connection details such as URL,
+`role: cosigner`. Endpoint records own connection details such as URL,
 signer/local ports, token file, SSH identity file, and known-hosts path.
 
-Sentry endpoint records do not contain key inventory. Guarded and
-bounded-sentry operations query authenticated `/keys` and retain routing only
+Cosigner endpoint records do not contain key inventory. Guarded and
+bounded-cosigner operations query authenticated `/keys` and retain routing only
 for the lifetime of that operation. The signer reference catalog is a
 generation trust-input inventory, while live endpoint discovery is routing
 only. Neither proves endpoint ownership; the embedded public key and verified
@@ -695,7 +695,7 @@ Primary projections:
 - `GroupSignResponse`,
 - `MutationReport`,
 - `KeysResponse` / `KeyInfo` (including `signing_flow`,
-  `sentry_component_key_type`, optional `bounded_authorization`),
+  `cosigner_component_key_type`, optional `bounded_authorization`),
 - `KeyTypesResponse`,
 - `StatusResponse`,
 - `HealthResponse`,
@@ -705,7 +705,7 @@ Primary projections:
 
 HTTP token authentication resolves the product-admin principal, and handlers
 use the process-owned product runtime. Clients route signing on inventory `signing_flow`
-labels (`sentry1`, `bounded1`, `bounded-sentry1`, or empty for plain `/sign`)
+labels (`cosigner1`, `bounded1`, `bounded-cosigner1`, or empty for plain `/sign`)
 and must fail closed on unknown labels.
 
 ### Admin Protocol
@@ -727,7 +727,7 @@ The admin protocol projects:
 - sign approval prompts and responses,
 - token provisioning prompts,
 - backup/restore results,
-- sentry-reference and generation inventory,
+- cosigner-reference and generation inventory,
 - admin and policy settings.
 
 Admin IPC exposes live administration. It is not the same contract as the HTTP
@@ -827,15 +827,15 @@ durable sign request table.
    non-guarded original indices, budgets every LogicSig by effective signer,
    and signs required dummy transactions locally.
 3. Client calls the user signer `/sign/component` for user-role signatures.
-4. Client routes by embedded sentry public key to a sentry endpoint from
-   `endpoints.yaml` and calls sentry `/sign/component`.
+4. Client routes by embedded cosigner public key to a cosigner endpoint from
+   `endpoints.yaml` and calls cosigner `/sign/component`.
 5. If non-guarded originals exist, client calls the primary signer `/sign` over
    the full canonical group: non-guarded originals are sign-mode entries,
    guarded targets are `foreign` entries with accurate `lsig_resources` hints, and
    dummies are `foreign` context entries.
 6. Client calls user signer `/sign/assemble` with guarded targets plus
    passthrough signed bytes for non-guarded originals and dummies.
-7. User signer verifies sentry signatures against the sentry public key
+7. User signer verifies cosigner signatures against the cosigner public key
    embedded in the local guarded account key, packs LogicSig args, and returns
    signed group bytes.
 8. Client submits the signed bytes to algod.
@@ -888,18 +888,18 @@ credentials directly because no live signer store is being mutated.
 | Passphrase | secret | parsed into mutable buffers where possible; zero promptly |
 | Term keys | secret | unsealed from `store-root.enc` at unlock; cached only while unlocked; zeroed on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
-| `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
+| `.cos` cosigner witness material | secret | encrypted at rest; usable only in the cosigner component-signing domain |
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
 | Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
-| `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or sentry policy according to node role |
+| `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or cosigner policy according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
 | SSH private key | client secret | client-side file, used for tunnel auth |
 | Backup export passphrase | secret | protects `.apb` payloads |
 | Audit log | sensitive operational record | mode `0600`; append/rotate |
-| Public sentry reference | public metadata | generation input only; not endpoint trust or ownership proof |
-| Endpoint-published sentries | public routing metadata | routing input only; not endpoint trust or ownership proof |
+| Public cosigner reference | public metadata | generation input only; not endpoint trust or ownership proof |
+| Endpoint-published cosigners | public routing metadata | routing input only; not endpoint trust or ownership proof |
 
 Signer-wide ASA metadata and product-store key type state records are not secrets.
 They still must be mutated through supported paths because they affect UX,
@@ -921,13 +921,13 @@ generation availability, provenance, and policy editing behavior.
 - Server config can seed the default `user_auto_approve`; product runtime config owns
   the effective live setting; policy owns rule verdicts.
 - Policy HMAC authenticates exact YAML bytes and fails closed on mismatch.
-- `policy.yaml` is client-signing policy on signer nodes and sentry component
-  policy on sentry nodes. Neither domain may wrap the other.
-- Client signer and sentry routing authority is `endpoints.yaml`, not
+- `policy.yaml` is client-signing policy on signer nodes and cosigner component
+  policy on cosigner nodes. Neither domain may wrap the other.
+- Client signer and cosigner routing authority is `endpoints.yaml`, not
   `config.yaml`.
 - Witness Key IDs are uppercase 52-character base32-no-padding
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
-  embedded sentry verifier keys are full public-key hex values.
+  embedded cosigner verifier keys are full public-key hex values.
 - Endpoint import and `/keys` discovery are routing/configuration inputs, not
   trust proofs.
 - `/keys` per-key `signing_args` are the key file's durable signing-argument
@@ -1005,7 +1005,7 @@ Current implementation constraints:
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |
-| Sentry key types/messages/references | `internal/sentry`, `pkg/signerapi/sentry.go`, [ARCH_SENTRY.md](ARCH_SENTRY.md) |
+| Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_COSIGNER.md](ARCH_COSIGNER.md) |
 | Bounded authorization / external admin | `internal/boundedmeta`, `lsig/composeddsa`, `internal/witness/artifact`, `internal/boundedadmin`, `internal/apboundedadminapp`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |

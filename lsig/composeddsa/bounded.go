@@ -37,8 +37,8 @@ const (
 	BoundedAdminPublicKeySize = boundedmeta.FalconAdminPublicKeySize
 	// BoundedAdminSignatureMaxSize is the frozen Falcon-1024 signature bound.
 	BoundedAdminSignatureMaxSize = boundedmeta.FalconAdminSignatureSize
-	// BoundedSentryPublicKeyParameter is injected for sentry-enabled profiles.
-	BoundedSentryPublicKeyParameter = boundedmeta.SentryPublicKeyParameter
+	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
+	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
@@ -85,7 +85,7 @@ type BoundedAuthorizationProfile struct {
 	SpendEffects    []txeffects.SpendEffect
 	MaxFee          uint64
 	AdminOperations []AdminOperationSpec
-	Sentry          *boundedmeta.SentryAuthorization
+	Cosigner        *boundedmeta.CosignerAuthorization
 }
 
 type boundedFingerprint struct {
@@ -99,10 +99,10 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	cloned := *profile
 	cloned.SpendEffects = append([]txeffects.SpendEffect(nil), profile.SpendEffects...)
 	cloned.AdminOperations = append([]AdminOperationSpec(nil), profile.AdminOperations...)
-	if profile.Sentry != nil {
-		sentry := *profile.Sentry
-		sentry.RequiredOn = slices.Clone(profile.Sentry.RequiredOn)
-		cloned.Sentry = &sentry
+	if profile.Cosigner != nil {
+		cosigner := *profile.Cosigner
+		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
+		cloned.Cosigner = &cosigner
 	}
 	return &cloned
 }
@@ -134,7 +134,7 @@ func (profile *BoundedAuthorizationProfile) validate() error {
 	if err := boundedmeta.ValidateAdminOperations(operations); err != nil {
 		return err
 	}
-	if err := boundedmeta.ValidateSentryAuthorizationProfile(profile.Sentry); err != nil {
+	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner); err != nil {
 		return err
 	}
 	return nil
@@ -207,15 +207,15 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 		encoded = boundedmeta.AppendField(encoded, []byte(operation.Authorization))
 		encoded = boundedmeta.AppendField(encoded, []byte(operation.PolicyGate))
 	}
-	if canonical.Sentry == nil {
+	if canonical.Cosigner == nil {
 		encoded = boundedmeta.AppendUint32(encoded, 0)
 	} else {
 		encoded = boundedmeta.AppendUint32(encoded, 1)
-		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Sentry.Contract))
-		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Sentry.ComponentKeyType))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(canonical.Sentry.SignatureMaxSize))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.Sentry.RequiredOn)))
-		for _, path := range canonical.Sentry.RequiredOn {
+		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.Contract))
+		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.ComponentKeyType))
+		encoded = boundedmeta.AppendUint32(encoded, uint32(canonical.Cosigner.SignatureMaxSize))
+		encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.Cosigner.RequiredOn)))
+		for _, path := range canonical.Cosigner.RequiredOn {
 			encoded = boundedmeta.AppendField(encoded, []byte(path))
 		}
 	}
@@ -272,13 +272,13 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	}
 	if metadata.Contract != profile.Contract || metadata.MaxFee != profile.MaxFee ||
 		!slices.Equal(metadata.SpendEffects, spendEffects) || !slices.Equal(metadata.AdminOperations, operations) ||
-		!equalSentryProfile(metadata.Sentry, profile.Sentry) {
+		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
 	return nil
 }
 
-func equalSentryProfile(a, b *boundedmeta.SentryAuthorization) bool {
+func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
@@ -309,14 +309,14 @@ func boundedAdminPublicKeyParameterDef() lsigprovider.ParameterDef {
 	}
 }
 
-func boundedSentryPublicKeyParameterDef() lsigprovider.ParameterDef {
+func boundedCosignerPublicKeyParameterDef() lsigprovider.ParameterDef {
 	return lsigprovider.ParameterDef{
-		Name:        BoundedSentryPublicKeyParameter,
-		Label:       "Sentry Public Key",
+		Name:        BoundedCosignerPublicKeyParameter,
+		Label:       "Cosigner Public Key",
 		Description: "Falcon-1024 public key for bounded spend authorization",
 		Type:        "bytes",
 		Required:    true,
-		MaxLength:   boundedmeta.SentryPublicKeySizeV1 * 2,
+		MaxLength:   boundedmeta.CosignerPublicKeySizeV1 * 2,
 	}
 }
 
@@ -368,21 +368,21 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		return metadata, err
 	}
 	profile := c.bounded
-	var sentryPublicKey []byte
-	if profile.Sentry != nil {
-		sentryPublicKey, err = decodeHexParameter(params[BoundedSentryPublicKeyParameter], BoundedSentryPublicKeyParameter, boundedmeta.SentryPublicKeySizeV1)
+	var cosignerPublicKey []byte
+	if profile.Cosigner != nil {
+		cosignerPublicKey, err = decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(sentryPublicKey, publicKey) {
-			return nil, fmt.Errorf("bounded sentry witness key must differ from the spending key")
+		if bytes.Equal(cosignerPublicKey, publicKey) {
+			return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
 		}
-		componentKeyID, err := witness.ID(profile.Sentry.ComponentKeyType, sentryPublicKey)
+		componentKeyID, err := witness.ID(profile.Cosigner.ComponentKeyType, cosignerPublicKey)
 		if err != nil {
 			return nil, err
 		}
-		metadata.Sentry.PublicKeyHex = hex.EncodeToString(sentryPublicKey)
-		metadata.Sentry.ComponentKeyID = componentKeyID
+		metadata.Cosigner.PublicKeyHex = hex.EncodeToString(cosignerPublicKey)
+		metadata.Cosigner.ComponentKeyID = componentKeyID
 	}
 
 	if boundedRequiresAdminKey(profile) {
@@ -390,8 +390,8 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(adminPublicKey, sentryPublicKey) {
-			return nil, fmt.Errorf("bounded sentry witness key must differ from the contract-admin key")
+		if bytes.Equal(adminPublicKey, cosignerPublicKey) {
+			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
 		}
 		profileEncoding, err := CanonicalBoundedProfile(profile, metadata)
 		if err != nil {
@@ -427,24 +427,24 @@ func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params m
 	return adminPublicKey, nil
 }
 
-func (c *ComposedDSA) validatedSentryPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
-	sentryPublicKey, err := decodeHexParameter(params[BoundedSentryPublicKeyParameter], BoundedSentryPublicKeyParameter, boundedmeta.SentryPublicKeySizeV1)
+func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
+	cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, boundedmeta.CosignerPublicKeySizeV1)
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(sentryPublicKey, spendingPublicKey) {
-		return nil, fmt.Errorf("bounded sentry witness key must differ from the spending key")
+	if bytes.Equal(cosignerPublicKey, spendingPublicKey) {
+		return nil, fmt.Errorf("bounded cosigner witness key must differ from the spending key")
 	}
 	if c.bounded != nil && boundedRequiresAdminKey(c.bounded) {
 		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(sentryPublicKey, adminPublicKey) {
-			return nil, fmt.Errorf("bounded sentry witness key must differ from the contract-admin key")
+		if bytes.Equal(cosignerPublicKey, adminPublicKey) {
+			return nil, fmt.Errorf("bounded cosigner witness key must differ from the contract-admin key")
 		}
 	}
-	return sentryPublicKey, nil
+	return cosignerPublicKey, nil
 }
 
 func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata, error) {
@@ -466,10 +466,10 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 		RuntimeArgs:  append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
 		DerivedArgs:  append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
 	}
-	if profile.Sentry != nil {
-		sentry := *profile.Sentry
-		sentry.RequiredOn = slices.Clone(profile.Sentry.RequiredOn)
-		metadata.Sentry = &sentry
+	if profile.Cosigner != nil {
+		cosigner := *profile.Cosigner
+		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
+		metadata.Cosigner = &cosigner
 	}
 	for _, effect := range profile.SpendEffects {
 		metadata.SpendEffects = append(metadata.SpendEffects, string(effect))
@@ -510,10 +510,10 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: rekeyRule, AdminRekey: boundedmeta.ArgForbidden},
 		})
 	}
-	if profile.Sentry != nil {
+	if profile.Cosigner != nil {
 		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry,
-			MaxSize: profile.Sentry.SignatureMaxSize,
+			Index: len(slots), Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
+			MaxSize: profile.Cosigner.SignatureMaxSize,
 			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		})
 	}
@@ -599,11 +599,11 @@ func layer3PolicyName(policy *Layer3Policy) string {
 
 func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, templateVars []tealtemplate.TemplateVariable, teal string) error {
 	for _, param := range params {
-		if isBoundedSentryReservedName(param.Name) {
-			if param.Name != BoundedSentryPublicKeyParameter || profile.Sentry == nil {
-				return fmt.Errorf("parameter name %q uses reserved sentry namespace", param.Name)
+		if isBoundedCosignerReservedName(param.Name) {
+			if param.Name != BoundedCosignerPublicKeyParameter || profile.Cosigner == nil {
+				return fmt.Errorf("parameter name %q uses reserved cosigner namespace", param.Name)
 			}
-			want := boundedSentryPublicKeyParameterDef()
+			want := boundedCosignerPublicKeyParameterDef()
 			if param.Type != want.Type || !param.Required || param.MaxLength != want.MaxLength {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
 			}
@@ -621,16 +621,16 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		}
 	}
 	for _, arg := range runtimeArgs {
-		if isBoundedSentryReservedName(arg.Name) {
-			return fmt.Errorf("runtime arg name %q uses reserved sentry namespace", arg.Name)
+		if isBoundedCosignerReservedName(arg.Name) {
+			return fmt.Errorf("runtime arg name %q uses reserved cosigner namespace", arg.Name)
 		}
 		if strings.HasPrefix(arg.Name, boundedReservedNamePrefix) {
 			return fmt.Errorf("runtime arg name %q uses reserved bounded_ prefix", arg.Name)
 		}
 	}
 	for _, variable := range templateVars {
-		if isBoundedSentryReservedName(variable.Name) || isBoundedSentryReservedName(variable.Parameter) {
-			return fmt.Errorf("template variable %q uses reserved sentry namespace", variable.Name)
+		if isBoundedCosignerReservedName(variable.Name) || isBoundedCosignerReservedName(variable.Parameter) {
+			return fmt.Errorf("template variable %q uses reserved cosigner namespace", variable.Name)
 		}
 		if strings.HasPrefix(variable.Name, boundedReservedNamePrefix) {
 			return fmt.Errorf("template variable name %q uses reserved bounded_ prefix", variable.Name)
@@ -655,8 +655,8 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 	return nil
 }
 
-func isBoundedSentryReservedName(name string) bool {
-	return name == "sentry" || strings.HasPrefix(name, "sentry_")
+func isBoundedCosignerReservedName(name string) bool {
+	return name == "cosigner" || strings.HasPrefix(name, "cosigner_")
 }
 
 func decodeHexParameter(value, name string, expectedSize int) ([]byte, error) {

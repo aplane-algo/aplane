@@ -60,8 +60,8 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | selected generation `keys/<address>.key` | Native signing authority. |
 | LogicSig key file | selected generation `keys/<address>.key` | Final LogicSig bytecode, derivation metadata, signing metadata, and any private DSA key material. |
-| Sentry witness credential | selected generation `keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
-| Witness public sidecar | selected generation `keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
+| Cosigner witness credential | selected generation `keys/<witness_key_id>.cos` | Witness key in cosigner custody; component-signing authority for cosigner-role `/sign/component`, never an Algorand spending account. |
+| Witness public sidecar | selected generation `keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local cosigner key. |
 | External contract-admin witness | Operator-controlled `<witness_key_id>.wit`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
@@ -76,16 +76,16 @@ This separation is deliberate:
 | Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; template YAML is not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
-authority. They exist so `apadmin sentry export` can work without
+authority. They exist so `apadmin cosigner export` can work without
 decrypting private key material. Backup payloads do not need to carry the
-sidecar as a separate authority; restore flows that write sentry keys must
-regenerate the sidecar from the restored sentry key payload.
-Missing sidecars do not make a sentry key unable to sign, but they do block
+sidecar as a separate authority; restore flows that write cosigner keys must
+regenerate the sidecar from the restored cosigner key payload.
+Missing sidecars do not make a cosigner key unable to sign, but they do block
 offline public export until regenerated or backfilled.
 
 The durable and wire contracts use `component_key`, `component_selector`, and
 component signing terminology. Human-facing UI may label the same selector as a
-Sentry Key or Witness Key ID; that label does not change the storage or HTTP
+Cosigner Key or Witness Key ID; that label does not change the storage or HTTP
 field names.
 
 `node.yaml` is plaintext so the process can report its role during early
@@ -108,18 +108,18 @@ role: signer
 created_at: "2026-06-07T00:00:00Z"
 ```
 
-Valid roles are exactly `signer` and `sentry`.
+Valid roles are exactly `signer` and `cosigner`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary and bounded LogicSig account keys, guarded account keys, and public sentry references used for generation. | Sentry component private keys and all external contract-admin private artifacts. | Normal `/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
-| `sentry` | Sentry component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Sentry-role `/sign/component`. |
+| `signer` | Native signing keys, ordinary and bounded LogicSig account keys, guarded account keys, and public cosigner references used for generation. | Cosigner component private keys and all external contract-admin private artifacts. | Normal `/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
+| `cosigner` | Cosigner component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Cosigner-role `/sign/component`. |
 
 Rules:
 
 - every initialized signer data root has one root `node.yaml`,
 - new installs default to `role: signer` unless the initializer explicitly
-  creates a sentry node,
+  creates a cosigner node,
 - there is no `dual` role,
 - there is no supported role-change command,
 - identity-level `mode` is unsupported because node role belongs only in root
@@ -133,7 +133,7 @@ A node hosts one product store. Role-conflicting key inventory anywhere in
 the data directory is a node-level store contradiction: startup/reload fails
 closed for the node rather than allowing the product runtime to continue.
 This is a deliberate
-safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.sen` can make the
+safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.cos` can make the
 node unavailable until the operator removes it, while supported restore/import
 paths should preflight role before writing so this fail-closed path remains a
 backstop. After a reload detects a role inventory conflict, the process records
@@ -141,9 +141,9 @@ a sticky node failure so HTTP and admin operations refuse the product runtime
 until operator cleanup and restart.
 
 Local development that needs both roles uses two complete data roots and two
-apsigner processes, for example `~/aplane-signer/` and `~/aplane-sentry/`.
+apsigner processes, for example `~/aplane-signer/` and `~/aplane-cosigner/`.
 Running those two nodes on one host is useful for development and operations,
-but it is not independent sentry. Independence remains a deployment-domain
+but it is not independent cosigner. Independence remains a deployment-domain
 property.
 
 ## Key Type Lifecycle
@@ -164,7 +164,7 @@ subject to the node role gate above.
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
 | Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include native `ed25519`, native `falcon1024`, and LogicSig `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid and the transaction network supports its authorization kind. | None. |
-| Default-enabled sentry key type | Raw sentry-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on sentry nodes. | Component-signing only on sentry nodes; never normal spending `/sign`. | None. |
+| Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current type is `aplane.witness-falcon1024.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
@@ -245,17 +245,17 @@ key is rejected during reload rather than published as a signable key.
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
 | Store recovery-blocked | `store-root.enc` or its selected generation failed reconciliation or validation at unlock, or root durability could not be confirmed. | No; the identity is held in recovery mode with signing blocked. | The operator can reconcile, roll back an eligible restore, or directly restore a validated credential archive when destination authority remains valid. |
-| Present but signer locked | Encrypted `.key` or `.sen` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
-| Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.sen` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
-| Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.sen`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
+| Present but signer locked | Encrypted `.key` or `.cos` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
+| Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.cos` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
+| Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.cos`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
-| Sentry key valid | Payload category/type is a sentry key and Witness Key ID is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a sentry key on sentry nodes, regenerating the public sidecar; never as a spending account. |
+| Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
 | Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `aprekey`. | Restores from durable bounded metadata. The external `.wit` artifact is never part of signer backup or restore. |
-| Guarded account key valid | DSA LogicSig key whose bytecode embeds the sentry public key. | Only on signer nodes through guarded orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Guarded account key valid | DSA LogicSig key whose bytecode embeds the cosigner public key. | Only on signer nodes through guarded orchestration: user component signature, cosigner component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, a manual-counter key omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
@@ -267,9 +267,9 @@ key is rejected during reload rather than published as a signable key.
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or sentry witness `.sen`; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
 | Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
-| Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
+| Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Authenticate and inspect complete credential payloads without mutation. | Reports addresses, key types, destination presence, errors, and role mismatches. |
 | Restore apply | Every selected credential validates and replacement conflicts are explicitly accepted. | Mint one generation containing credential changes only, replace `store-root.enc` once, then reload. | All selected credentials become active together; a definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
@@ -286,7 +286,7 @@ follow the direct key restore path.
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
 destination role. Rebuild treats source role metadata as a default and
-diagnostic, not authority: `apstore rebuild --role signer|sentry` sets the
+diagnostic, not authority: `apstore rebuild --role signer|cosigner` sets the
 destination role explicitly, while omitted `--role` uses manifest metadata when
 present and otherwise defaults to `signer`.
 
@@ -336,8 +336,8 @@ is not published as valid runtime inventory.
 
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
-| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its term key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
-| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, key/store/template/mnemonic import, restore, or sentry component signing. Client endpoint import is routing state and is outside this key lifecycle. |
+| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its term key is available. | None. | Default role is `signer`; cosigner role is explicit at initialization. |
+| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, key/store/template/mnemonic import, restore, or cosigner component signing. Client endpoint import is routing state and is outside this key lifecycle. |
 | `apadmin keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apadmin keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
 | `apadmin template import` | Installs encrypted template and enabled state. | None. | Active after reload. |
@@ -374,8 +374,8 @@ is not published as valid runtime inventory.
 9. LogicSig key bytecode must derive an off-curve LogicSig address.
 10. DSA LogicSig keys require their stored `base_key_type` provider to be
     supported at sign time.
-11. Sentry keys are component-signing keys, not spending accounts.
-12. Sentry public sidecars are derived public metadata and must not
+11. Cosigner keys are component-signing keys, not spending accounts.
+12. Cosigner public sidecars are derived public metadata and must not
     be treated as independent signing authority.
 13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.

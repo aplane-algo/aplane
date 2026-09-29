@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
@@ -208,17 +208,17 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	}
 }
 
-func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
+func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
-	sentryPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.SentryPublicKeySizeV1)
-	componentKeyID, err := witness.ID(boundedmeta.SentryComponentKeyTypeV1, sentryPublicKey)
+	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.CosignerPublicKeySizeV1)
+	componentKeyID, err := witness.ID(boundedmeta.CosignerComponentKeyTypeV1, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload := NewDSALSigPayload(
-		"test.bounded-sentry.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
-		map[string]string{boundedmeta.SentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey)},
-		bytecode, 0, "", nil, "1:bounded-sentry",
+		"test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
+		map[string]string{boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
+		bytecode, 0, "", nil, "1:bounded-cosigner",
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
@@ -226,14 +226,14 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.ContractV1, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			PublicKeyHex: hex.EncodeToString(sentryPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
@@ -249,12 +249,12 @@ func TestBoundedSentryPayloadMetadataRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.BoundedAuthorization.Sentry == nil || parsed.BoundedAuthorization.Sentry.ComponentKeyID != componentKeyID {
-		t.Fatalf("sentry metadata = %#v", parsed.BoundedAuthorization.Sentry)
+	if parsed.BoundedAuthorization.Cosigner == nil || parsed.BoundedAuthorization.Cosigner.ComponentKeyID != componentKeyID {
+		t.Fatalf("cosigner metadata = %#v", parsed.BoundedAuthorization.Cosigner)
 	}
 
-	payload.Parameters[boundedmeta.SentryPublicKeyParameter] = strings.Repeat("00", boundedmeta.SentryPublicKeySizeV1)
-	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "does not match parameters.sentry_public_key") {
+	payload.Parameters[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("00", boundedmeta.CosignerPublicKeySizeV1)
+	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "does not match parameters.cosigner_public_key") {
 		t.Fatalf("MarshalPayload() mismatch error = %v", err)
 	}
 }

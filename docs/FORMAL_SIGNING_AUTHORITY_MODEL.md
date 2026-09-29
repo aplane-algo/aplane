@@ -26,7 +26,7 @@ Normative inputs:
 This model covers how an existing key file authorizes signing behavior after it
 has been created, imported, restored, or loaded by `apsigner`.
 
-Guarded account keys and sentry keys are existing key files, but
+Guarded account keys and cosigner keys are existing key files, but
 their request path is not ordinary `/sign`: direct signing rejects those key
 types and the component-signing plus assembly workflow is modeled separately in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
@@ -50,7 +50,7 @@ means no successful load/sign/restore result exists for that input.
 ### Key File
 
 `KeyFile` is an encrypted managed credential payload: account authority uses
-`.key`, and sentry witness authority uses `.sen`. It becomes observable only
+`.key`, and cosigner witness authority uses `.cos`. It becomes observable only
 after the product store's current term key decrypts it. The model observes:
 
 - key type,
@@ -129,7 +129,7 @@ Canonical filename binding is a store invariant, not a selection preference.
 A scan accepts a managed credential only when its name is
 `Selector(payload) || ExtensionForCategory(payload.category)`: account
 categories use `<AlgorandAddress>.key`, while witness category uses
-`<WitnessKeyID>.sen`. A selector mismatch or category/extension mismatch is
+`<WitnessKeyID>.cos`. A selector mismatch or category/extension mismatch is
 skipped as invalid authority; it does not install a runtime entry. See S13.
 
 The model intentionally chooses skip-and-warn for misnamed files rather than
@@ -146,7 +146,7 @@ previously-published snapshot rather than selecting a winner.
 Recovery is operator-driven and performed while `apsigner` is stopped. For a
 legacy witness `.key`, preserve the file and use a prior build to create and
 verify an `.apb` backup before removing the stale file; restore with the current
-build to produce canonical `.sen`. Other noncanonical artifacts must be
+build to produce canonical `.cos`. Other noncanonical artifacts must be
 validated before canonical placement or removed, then the identity is reloaded.
 
 ### Auth Address Binding
@@ -406,7 +406,7 @@ Category(p) in {ed25519, dsa_lsig, generic_lsig} =>
   ExtensionForCategory(Category(p)) = ".key"
 
 Category(p) = witness =>
-  ExtensionForCategory(Category(p)) = ".sen"
+  ExtensionForCategory(Category(p)) = ".cos"
 
 FileName(f) != CanonicalName(Payload(f)) =>
   RuntimeKeyIndex.Resolve(Selector(Payload(f))) unchanged by f and
@@ -415,7 +415,7 @@ FileName(f) != CanonicalName(Payload(f)) =>
 
 Canonical writers use the same function. Restore may replace an exact
 canonical destination only with `overwrite:true` and always rejects a
-contradictory `.key`/`.sen` class for the same selector. `.wit` and `.wit.json`
+contradictory `.key`/`.cos` class for the same selector. `.wit` and `.wit.json`
 are outside the managed-credential candidate set. Accepted duplicate selectors
 remain a fatal collision fallback rather than selecting by directory order.
 

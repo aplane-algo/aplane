@@ -132,7 +132,7 @@ internal/engine/
 ├── connect/               # Signer HTTP requests and SSH tunnel lifecycle state
 │   ├── client.go          # Signer client construction and request helpers
 │   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
-│   ├── sentry_endpoint.go # Sentry endpoint connection helpers
+│   ├── cosigner_endpoint.go # Cosigner endpoint connection helpers
 │   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade
@@ -140,9 +140,9 @@ internal/engine/
 ├── group.go               # PreparedGroup, grouped preparation and execution
 ├── guarded.go             # Guarded package wiring and public re-exports
 ├── guarded/               # Isolated guarded-account client orchestration
-│   ├── discovery.go       # Sentry endpoint/key discovery
+│   ├── discovery.go       # Cosigner endpoint/key discovery
 │   ├── signer.go          # Narrow dependency surface and Signer type
-│   └── submit.go          # Guarded and bounded-sentry component signing, assembly, and submission
+│   └── submit.go          # Guarded and bounded-cosigner component signing, assembly, and submission
 ├── init.go                # Package initialization
 ├── keygen_params.go       # Key-generation parameter normalization
 ├── keymgmt.go             # Key management operations
@@ -187,7 +187,7 @@ type Core struct {
     *clientstate.State
     Connection *connect.ConnectionState
     // cache watcher, signer-cache synchronization, execution flags,
-    // and sentry endpoint configuration
+    // and cosigner endpoint configuration
 }
 
 // Engine is the application facade. Domain operations are methods on Engine
@@ -211,11 +211,11 @@ narrow read-only signer-cache view. `guarded.go` owns that wiring and re-exports
 the discovery types and error sentinels used by existing engine callers. The
 dependency and exported-surface boundaries are pinned by `test/arch`.
 
-The same isolated package dispatches explicit inventory flow labels. `sentry1`
-uses user/sentry component signing plus guarded assembly; `bounded-sentry1`
-uses user-first bounded component release, sentry-role component signing, and
+The same isolated package dispatches explicit inventory flow labels. `cosigner1`
+uses user/cosigner component signing plus guarded assembly; `bounded-cosigner1`
+uses user-first bounded component release, cosigner-role component signing, and
 bounded assembly. It rejects unknown labels and groups that mix those two
-choreographies. `bounded1` profiles without an online sentry continue through
+choreographies. `bounded1` profiles without an online cosigner continue through
 ordinary signing or the bounded-admin path selected by transaction effects.
 
 Submission and confirmation diagnostics are returned on typed result values as
@@ -632,7 +632,7 @@ submission time — caches only affect address resolution and display.
 **Self-healing mechanisms**:
 - SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,
   `/status` keyset-revision changes, and guarded submit paths whose cached
-  signer row is missing current signing-flow or sentry metadata
+  signer row is missing current signing-flow or cosigner metadata
 - AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
 - ASACache: fetches from blockchain on cache miss
 

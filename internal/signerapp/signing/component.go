@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -84,9 +84,9 @@ func (r componentPlanRequest) validate() error {
 		if r.ComponentKey == "" {
 			return fmt.Errorf("component_key is required for user role")
 		}
-	case signerapi.ComponentSignRoleSentry:
+	case signerapi.ComponentSignRoleCosigner:
 	default:
-		return fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleSentry)
+		return fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleCosigner)
 	}
 	if len(r.GroupBytesHex) == 0 {
 		return fmt.Errorf("group_bytes_hex is empty")
@@ -111,9 +111,9 @@ func componentMessageRole(role signerapi.ComponentSignRole) (message.Role, error
 	switch role {
 	case signerapi.ComponentSignRoleUser:
 		return message.RoleUser, nil
-	case signerapi.ComponentSignRoleSentry:
-		return message.RoleSentry, nil
+	case signerapi.ComponentSignRoleCosigner:
+		return message.RoleCosigner, nil
 	default:
-		return 0, fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleSentry)
+		return 0, fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleCosigner)
 	}
 }

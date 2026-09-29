@@ -251,29 +251,29 @@ endpoints:
 	}
 }
 
-func TestLoadConfigRejectsSentryEndpointsField(t *testing.T) {
+func TestLoadConfigRejectsCosignerEndpointsField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
 network: testnet
-sentry_endpoints:
+cosigner_endpoints:
   ? %q
   :
-    url: ssh://sentry.example
-`, sentryEndpointTestHex("d6"))), 0o600); err != nil {
+    url: ssh://cosigner.example
+`, cosignerEndpointTestHex("d6"))), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	_, err := LoadConfigFromPath(path)
 	if err == nil {
-		t.Fatal("LoadConfigFromPath error = nil, want unknown sentry_endpoints field")
+		t.Fatal("LoadConfigFromPath error = nil, want unknown cosigner_endpoints field")
 	}
-	if !strings.Contains(err.Error(), "field sentry_endpoints not found") {
-		t.Fatalf("LoadConfigFromPath error = %q, want sentry_endpoints unknown field", err)
+	if !strings.Contains(err.Error(), "field cosigner_endpoints not found") {
+		t.Fatalf("LoadConfigFromPath error = %q, want cosigner_endpoints unknown field", err)
 	}
 }
 
 func TestLoadClientEndpointRegistryRejectsSelfForEveryRole(t *testing.T) {
-	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleSentry} {
+	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleCosigner} {
 		t.Run(role, func(t *testing.T) {
 			dataDir := t.TempDir()
 			contents := fmt.Sprintf("schema_version: 2\nendpoints:\n  local:\n    role: %s\n    url: self\n", role)
@@ -388,7 +388,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 			))),
 		},
 		{
-			name: "install.sh write_apshell_sentry_endpoint_registry",
+			name: "install.sh write_apshell_cosigner_endpoint_registry",
 			data: []byte(strings.NewReplacer(
 				"$host", "127.0.0.1",
 				"$signer_port", "11270",
@@ -396,7 +396,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 			).Replace(extractInstallHereDocAfter(
 				t,
 				string(installer),
-				"write_apshell_sentry_endpoint_registry() {",
+				"write_apshell_cosigner_endpoint_registry() {",
 				`cat > "$target" <<EOF`,
 			))),
 		},
@@ -463,6 +463,6 @@ func decodeClientEndpointRegistryKnownFields(data []byte) error {
 	return normalizeStoredClientEndpointRegistry(&registry)
 }
 
-func sentryEndpointTestHex(prefix string) string {
+func cosignerEndpointTestHex(prefix string) string {
 	return prefix + strings.Repeat("00", 32-1)
 }

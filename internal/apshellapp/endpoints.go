@@ -25,18 +25,18 @@ type EndpointImportRequest struct {
 	DryRun bool
 }
 
-// EndpointCreateSentryRequest creates or replaces one client-local sentry
+// EndpointCreateCosignerRequest creates or replaces one client-local cosigner
 // endpoint profile without requiring an exported endpoint envelope.
-type EndpointCreateSentryRequest struct {
-	Alias      string
-	URL        string
-	SentryPort int
-	DryRun     bool
+type EndpointCreateCosignerRequest struct {
+	Alias        string
+	URL          string
+	CosignerPort int
+	DryRun       bool
 }
 
-// EndpointDiscoverSentriesRequest requests a read-only sweep of configured
-// sentry endpoint inventories.
-type EndpointDiscoverSentriesRequest struct{}
+// EndpointDiscoverCosignersRequest requests a read-only sweep of configured
+// cosigner endpoint inventories.
+type EndpointDiscoverCosignersRequest struct{}
 
 // EndpointsList returns the resolved client endpoint registry.
 func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
@@ -135,23 +135,23 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	return result, nil
 }
 
-// EndpointCreateSentry creates or replaces a client-local sentry endpoint
-// profile. It does not copy tokens, host-key trust, or sentry key inventory.
-func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRequest) (*EndpointCreateSentryResult, error) {
+// EndpointCreateCosigner creates or replaces a client-local cosigner endpoint
+// profile. It does not copy tokens, host-key trust, or cosigner key inventory.
+func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosignerRequest) (*EndpointCreateCosignerResult, error) {
 	if err := config.ValidateClientEndpointAlias(req.Alias); err != nil {
 		return nil, fmt.Errorf("endpoint alias is required: %w", err)
 	}
 	if req.URL == "" {
 		return nil, fmt.Errorf("endpoint URL is required")
 	}
-	if req.SentryPort <= 0 || req.SentryPort > 65535 {
-		return nil, fmt.Errorf("sentry port must be 1-65535")
+	if req.CosignerPort <= 0 || req.CosignerPort > 65535 {
+		return nil, fmt.Errorf("cosigner port must be 1-65535")
 	}
 
 	endpoint := config.ClientEndpointConfig{
-		Role:       config.ClientEndpointRoleSentry,
+		Role:       config.ClientEndpointRoleCosigner,
 		URL:        req.URL,
-		SignerPort: req.SentryPort,
+		SignerPort: req.CosignerPort,
 	}
 	var (
 		endpointPlan config.StoredClientEndpointUpsertPlan
@@ -166,15 +166,15 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 		return nil, err
 	}
 
-	result := &EndpointCreateSentryResult{
-		Alias:      req.Alias,
-		Role:       endpointPlan.Endpoint.Role,
-		URL:        endpointPlan.Endpoint.URL,
-		SentryPort: endpointPlan.Endpoint.SignerPort,
-		TokenFile:  endpointPlan.Endpoint.TokenFile,
-		DryRun:     req.DryRun,
-		Created:    endpointPlan.Created,
-		Updated:    endpointPlan.Updated,
+	result := &EndpointCreateCosignerResult{
+		Alias:        req.Alias,
+		Role:         endpointPlan.Endpoint.Role,
+		URL:          endpointPlan.Endpoint.URL,
+		CosignerPort: endpointPlan.Endpoint.SignerPort,
+		TokenFile:    endpointPlan.Endpoint.TokenFile,
+		DryRun:       req.DryRun,
+		Created:      endpointPlan.Created,
+		Updated:      endpointPlan.Updated,
 	}
 
 	if !req.DryRun {
@@ -183,22 +183,22 @@ func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRe
 			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
 		}
 	}
-	result.RenderLines = endpointCreateSentryRenderLines(result)
+	result.RenderLines = endpointCreateCosignerRenderLines(result)
 	return result, nil
 }
 
-// EndpointDiscoverSentries performs a read-only diagnostic sweep of configured
+// EndpointDiscoverCosigners performs a read-only diagnostic sweep of configured
 // endpoint /keys inventories.
-func (a *App) EndpointDiscoverSentries(ctx context.Context, _ EndpointDiscoverSentriesRequest) (*EndpointDiscoverSentriesResult, error) {
-	result, err := a.discoverEndpointSentries(ctx)
+func (a *App) EndpointDiscoverCosigners(ctx context.Context, _ EndpointDiscoverCosignersRequest) (*EndpointDiscoverCosignersResult, error) {
+	result, err := a.discoverEndpointCosigners(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result.RenderLines = endpointDiscoverSentriesRenderLines(result)
+	result.RenderLines = endpointDiscoverCosignersRenderLines(result)
 	return result, nil
 }
 
-func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSentriesResult, error) {
+func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverCosignersResult, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
 		return nil, err
@@ -207,40 +207,40 @@ func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSe
 
 	aliases := make([]string, 0, len(cfg.Endpoints.Endpoints))
 	for alias, endpoint := range cfg.Endpoints.Endpoints {
-		if endpoint.Role == config.ClientEndpointRoleSentry {
+		if endpoint.Role == config.ClientEndpointRoleCosigner {
 			aliases = append(aliases, alias)
 		}
 	}
 	sort.Strings(aliases)
 	if len(aliases) == 0 {
-		return nil, fmt.Errorf("no sentry endpoints configured")
+		return nil, fmt.Errorf("no cosigner endpoints configured")
 	}
 
-	discoveries := make([]EndpointSentryDiscovery, 0, len(aliases))
+	discoveries := make([]EndpointCosignerDiscovery, 0, len(aliases))
 	seenPublicKeys := map[string]string{}
 	publicKeyCount := 0
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
-		keys, err := a.eng.DiscoverSentryComponentKeys(ctx, endpoint)
+		keys, err := a.eng.DiscoverCosignerComponentKeys(ctx, endpoint)
 		if err != nil {
-			if !errors.Is(err, engine.ErrSentryDiscoveryUnavailable) &&
-				!errors.Is(err, engine.ErrSentryDiscoveryLocked) {
+			if !errors.Is(err, engine.ErrCosignerDiscoveryUnavailable) &&
+				!errors.Is(err, engine.ErrCosignerDiscoveryLocked) {
 				return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
-			discoveries = append(discoveries, EndpointSentryDiscovery{
+			discoveries = append(discoveries, EndpointCosignerDiscovery{
 				Alias:   alias,
 				Skipped: true,
 				Error:   err.Error(),
 			})
 			continue
 		}
-		discovery := EndpointSentryDiscovery{Alias: alias}
+		discovery := EndpointCosignerDiscovery{Alias: alias}
 		for _, key := range keys {
 			if previousAlias, exists := seenPublicKeys[key.PublicKey]; exists {
-				return nil, fmt.Errorf("sentry public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
+				return nil, fmt.Errorf("cosigner public key advertised by both endpoint aliases %q and %q", previousAlias, alias)
 			}
 			seenPublicKeys[key.PublicKey] = alias
-			discovery.Keys = append(discovery.Keys, DiscoveredEndpointSentryKey{
+			discovery.Keys = append(discovery.Keys, DiscoveredEndpointCosignerKey{
 				PublicKey:    key.PublicKey,
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
@@ -249,7 +249,7 @@ func (a *App) discoverEndpointSentries(ctx context.Context) (*EndpointDiscoverSe
 		}
 		discoveries = append(discoveries, discovery)
 	}
-	result := &EndpointDiscoverSentriesResult{
+	result := &EndpointDiscoverCosignersResult{
 		Endpoints:      discoveries,
 		PublicKeyCount: publicKeyCount,
 	}
@@ -383,7 +383,7 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	return lines
 }
 
-func endpointCreateSentryRenderLines(result *EndpointCreateSentryResult) []string {
+func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []string {
 	action := "Configured"
 	if result.DryRun {
 		action = "Would configure"
@@ -399,14 +399,14 @@ func endpointCreateSentryRenderLines(result *EndpointCreateSentryResult) []strin
 	return []string{
 		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
 		fmt.Sprintf("  url: %s", result.URL),
-		fmt.Sprintf("  sentry port: %d", result.SentryPort),
+		fmt.Sprintf("  cosigner port: %d", result.CosignerPort),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
 	}
 }
 
-func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult) []string {
+func endpointDiscoverCosignersRenderLines(result *EndpointDiscoverCosignersResult) []string {
 	lines := []string{
-		fmt.Sprintf("Discovered sentry inventory from %d endpoint(s): %d key(s)", len(result.Endpoints), result.PublicKeyCount),
+		fmt.Sprintf("Discovered cosigner inventory from %d endpoint(s): %d key(s)", len(result.Endpoints), result.PublicKeyCount),
 	}
 	for _, endpoint := range result.Endpoints {
 		if endpoint.Skipped {
@@ -423,7 +423,7 @@ func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult)
 	return lines
 }
 
-func endpointDiscoveredComponentLines(keys []DiscoveredEndpointSentryKey) []string {
+func endpointDiscoveredComponentLines(keys []DiscoveredEndpointCosignerKey) []string {
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].ComponentKey == keys[j].ComponentKey {
 			return keys[i].KeyType < keys[j].KeyType

@@ -15,9 +15,9 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -168,40 +168,40 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
 
-	_, wrongSentryPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
+	_, wrongCosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("failed to generate wrong sentry keypair: %v", err)
+		t.Fatalf("failed to generate wrong cosigner keypair: %v", err)
 	}
-	sentrySlot := transferAccount.argumentIndex(t, boundedmeta.ArgSourceSentry)
-	t.Run("empty sentry slot fails", func(t *testing.T) {
-		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-empty-sentry")
+	cosignerSlot := transferAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+	t.Run("empty cosigner slot fails", func(t *testing.T) {
+		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-empty-cosigner")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(_ types.Digest, args [][]byte) [][]byte {
-			args[sentrySlot] = []byte{}
+			args[cosignerSlot] = []byte{}
 			return args
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
-	t.Run("signature from wrong sentry key fails", func(t *testing.T) {
-		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-wrong-sentry")
+	t.Run("signature from wrong cosigner key fails", func(t *testing.T) {
+		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-wrong-cosigner")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-			args[sentrySlot] = transferAccount.signComponent(t, message.RoleSentry, txid, wrongSentryPrivateKey)
+			args[cosignerSlot] = transferAccount.signComponent(t, message.RoleCosigner, txid, wrongCosignerPrivateKey)
 			return args
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
-	t.Run("user-role sentry signature fails", func(t *testing.T) {
+	t.Run("user-role cosigner signature fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-wrong-role")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
-			args[sentrySlot] = transferAccount.signComponent(t, message.RoleUser, txid, transferAccount.sentryPrivateKey)
+			args[cosignerSlot] = transferAccount.signComponent(t, message.RoleUser, txid, transferAccount.cosignerPrivateKey)
 			return args
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
 	})
-	t.Run("sentry signature over wrong transaction ID fails", func(t *testing.T) {
+	t.Run("cosigner signature over wrong transaction ID fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-wrong-txid")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(txid types.Digest, args [][]byte) [][]byte {
 			txid[0] ^= 0xff
-			args[sentrySlot] = transferAccount.signComponent(t, message.RoleSentry, txid, transferAccount.sentryPrivateKey)
+			args[cosignerSlot] = transferAccount.signComponent(t, message.RoleCosigner, txid, transferAccount.cosignerPrivateKey)
 			return args
 		})
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
@@ -263,13 +263,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 }
 
 type corridorExecutionAccount struct {
-	address          string
-	bytecode         []byte
-	recipientsParam  string
-	userPrivateKey   []byte
-	sentryPrivateKey []byte
-	adminPrivateKey  []byte
-	metadata         *boundedmeta.Metadata
+	address            string
+	bytecode           []byte
+	recipientsParam    string
+	userPrivateKey     []byte
+	cosignerPrivateKey []byte
+	adminPrivateKey    []byte
+	metadata           *boundedmeta.Metadata
 }
 
 func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, recipients []types.Address) corridorExecutionAccount {
@@ -292,9 +292,9 @@ func newCorridorExecutionAccountWithCompiler(
 	if err != nil {
 		t.Fatalf("failed to generate corridor user keypair: %v", err)
 	}
-	sentryPublicKey, sentryPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
+	cosignerPublicKey, cosignerPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
-		t.Fatalf("failed to generate corridor sentry keypair: %v", err)
+		t.Fatalf("failed to generate corridor cosigner keypair: %v", err)
 	}
 	adminPublicKey, adminPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
 	if err != nil {
@@ -322,8 +322,8 @@ func newCorridorExecutionAccountWithCompiler(
 	provider.SetAlgodClient(compiler)
 	params := map[string]string{
 		"recipients": recipientsParam,
-		composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey),
-		composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminPublicKey),
+		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey),
+		composeddsa.BoundedAdminPublicKeyParameter:    hex.EncodeToString(adminPublicKey),
 	}
 	derived, err := provider.DeriveLsigWithSalt(context.Background(), userPublicKey, params)
 	if err != nil {
@@ -335,13 +335,13 @@ func newCorridorExecutionAccountWithCompiler(
 	}
 
 	return corridorExecutionAccount{
-		address:          derived.Address.String(),
-		bytecode:         derived.Bytecode,
-		recipientsParam:  recipientsParam,
-		userPrivateKey:   userPrivateKey,
-		sentryPrivateKey: sentryPrivateKey,
-		adminPrivateKey:  adminPrivateKey,
-		metadata:         metadata,
+		address:            derived.Address.String(),
+		bytecode:           derived.Bytecode,
+		recipientsParam:    recipientsParam,
+		userPrivateKey:     userPrivateKey,
+		cosignerPrivateKey: cosignerPrivateKey,
+		adminPrivateKey:    adminPrivateKey,
+		metadata:           metadata,
 	}
 }
 
@@ -407,8 +407,8 @@ func (a corridorExecutionAccount) signedGroup(t *testing.T, targetTxn types.Tran
 	if err != nil {
 		t.Fatalf("failed to sign corridor base message: %v", err)
 	}
-	sentrySignature := a.signComponent(t, message.RoleSentry, txid, a.sentryPrivateKey)
-	args := a.spendArgs(t, userSignature, proof, sentrySignature)
+	cosignerSignature := a.signComponent(t, message.RoleCosigner, txid, a.cosignerPrivateKey)
+	args := a.spendArgs(t, userSignature, proof, cosignerSignature)
 	if mutateArgs != nil {
 		args = mutateArgs(txid, args)
 	}
@@ -492,7 +492,7 @@ func (a corridorExecutionAccount) adminRekeyArgs(t *testing.T, baseSignature []b
 	return args
 }
 
-func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, sentrySignature []byte) [][]byte {
+func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, cosignerSignature []byte) [][]byte {
 	t.Helper()
 	if a.metadata == nil {
 		t.Fatal("Corridor bounded metadata is missing")
@@ -516,8 +516,8 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 			}
 			value = derivedValues[derivedIndex]
 			derivedIndex++
-		case boundedmeta.ArgSourceSentry:
-			value = sentrySignature
+		case boundedmeta.ArgSourceCosigner:
+			value = cosignerSignature
 		case boundedmeta.ArgSourceAdmin:
 			value = nil
 		default:

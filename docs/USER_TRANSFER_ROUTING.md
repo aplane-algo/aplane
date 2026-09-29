@@ -43,8 +43,8 @@ apadmin policy rescue edit draft-policy.yaml
 When `apadmin policy rescue` opens production policy from `APSIGNER_DATA` or
 `-d`, it
 prompts for the store passphrase and auto-selects the document from
-`node.yaml`: signer nodes edit `policy.yaml`, sentry nodes edit
-sentry-domain `policy.yaml`. Use `--target signer` or `--target sentry` to override
+`node.yaml`: signer nodes edit `policy.yaml`, cosigner nodes edit
+cosigner-domain `policy.yaml`. Use `--target signer` or `--target cosigner` to override
 auto-selection. When it opens a standalone YAML file, it validates that file
 without unlocking the store; if the file-backed draft is later applied to
 production with `a`, the passphrase prompt happens at apply time. Local rescue

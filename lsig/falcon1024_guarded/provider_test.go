@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/sentry/message"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
@@ -16,10 +16,10 @@ func TestProviderValidateCreationParams(t *testing.T) {
 	p := NewProviderV1()
 	valid := strings.Repeat("01", family.PublicKeySize)
 
-	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamCosignerPublicKey: valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(valid) error = %v", err)
 	}
-	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: "0x" + valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamCosignerPublicKey: "0x" + valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(0x valid) error = %v", err)
 	}
 
@@ -29,9 +29,9 @@ func TestProviderValidateCreationParams(t *testing.T) {
 		want   string
 	}{
 		{name: "missing", params: nil, want: "missing required parameter"},
-		{name: "short", params: map[string]string{ParamSentryPublicKey: "01"}, want: "expected 1793 bytes"},
-		{name: "bad hex", params: map[string]string{ParamSentryPublicKey: "not-hex"}, want: "invalid hex"},
-		{name: "unknown", params: map[string]string{ParamSentryPublicKey: valid, "extra": "1"}, want: "unknown parameter"},
+		{name: "short", params: map[string]string{ParamCosignerPublicKey: "01"}, want: "expected 1793 bytes"},
+		{name: "bad hex", params: map[string]string{ParamCosignerPublicKey: "not-hex"}, want: "invalid hex"},
+		{name: "unknown", params: map[string]string{ParamCosignerPublicKey: valid, "extra": "1"}, want: "unknown parameter"},
 	}
 
 	for _, tt := range tests {
@@ -47,9 +47,9 @@ func TestProviderValidateCreationParams(t *testing.T) {
 func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	p := NewProviderV1()
 	userPublicKey := bytes.Repeat([]byte{0xa1}, family.PublicKeySize)
-	sentryPublicKeyHex := strings.Repeat("b2", family.PublicKeySize)
+	cosignerPublicKeyHex := strings.Repeat("b2", family.PublicKeySize)
 
-	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamSentryPublicKey: sentryPublicKeyHex})
+	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamCosignerPublicKey: cosignerPublicKeyHex})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 		"assert",
 		"arg 1",
 		"pushbytes 0x" + strings.Repeat("a1", family.PublicKeySize),
-		"pushbytes 0x" + sentryPublicKeyHex,
+		"pushbytes 0x" + cosignerPublicKeyHex,
 		"pushbytes 0x" + bytesToHex([]byte(message.DomainTagV1)),
 		"pushbytes 0x01",
 		"pushbytes 0x02",
@@ -77,7 +77,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	}
 
 	if strings.Index(teal, "arg 0") > strings.Index(teal, "arg 1") {
-		t.Fatalf("user signature arg must precede sentry arg:\n%s", teal)
+		t.Fatalf("user signature arg must precede cosigner arg:\n%s", teal)
 	}
 	if strings.Count(teal, "falcon_verify") != 2 {
 		t.Fatalf("GenerateTEAL() falcon_verify count = %d, want 2:\n%s", strings.Count(teal, "falcon_verify"), teal)
@@ -86,7 +86,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 		t.Fatalf("GenerateTEAL() unexpectedly includes ed25519 verifier:\n%s", teal)
 	}
 	if strings.Index(teal, "arg 0") > strings.Index(teal, "arg 1") {
-		t.Fatalf("user signature arg must precede sentry arg:\n%s", teal)
+		t.Fatalf("user signature arg must precede cosigner arg:\n%s", teal)
 	}
 	if strings.Count(teal, "txn TxID") != 2 {
 		t.Fatalf("GenerateTEAL() txn TxID count = %d, want 2:\n%s", strings.Count(teal, "txn TxID"), teal)
@@ -96,9 +96,9 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 func TestBuildArgsUnpacksComponentSignatures(t *testing.T) {
 	p := NewProviderV1()
 	userSig := bytes.Repeat([]byte{0x11}, 100)
-	sentrySig := bytes.Repeat([]byte{0x22}, 200)
+	cosignerSig := bytes.Repeat([]byte{0x22}, 200)
 
-	packed, err := PackComponentSignatures(userSig, sentrySig)
+	packed, err := PackComponentSignatures(userSig, cosignerSig)
 	if err != nil {
 		t.Fatalf("PackComponentSignatures() error = %v", err)
 	}
@@ -109,24 +109,24 @@ func TestBuildArgsUnpacksComponentSignatures(t *testing.T) {
 	if len(args) != 2 {
 		t.Fatalf("BuildArgs() len = %d, want 2", len(args))
 	}
-	if !bytes.Equal(args[0], userSig) || !bytes.Equal(args[1], sentrySig) {
-		t.Fatalf("BuildArgs() = %x/%x, want %x/%x", args[0], args[1], userSig, sentrySig)
+	if !bytes.Equal(args[0], userSig) || !bytes.Equal(args[1], cosignerSig) {
+		t.Fatalf("BuildArgs() = %x/%x, want %x/%x", args[0], args[1], userSig, cosignerSig)
 	}
 }
 
 func TestComponentSignaturePackingUsesCompressedMaximum(t *testing.T) {
 	for _, size := range []int{1281, family.MaxSignatureSize} {
 		userSig := bytes.Repeat([]byte{0x11}, size)
-		sentrySig := bytes.Repeat([]byte{0x22}, size)
-		packed, err := PackComponentSignatures(userSig, sentrySig)
+		cosignerSig := bytes.Repeat([]byte{0x22}, size)
+		packed, err := PackComponentSignatures(userSig, cosignerSig)
 		if err != nil {
 			t.Fatalf("PackComponentSignatures(%d) error = %v", size, err)
 		}
-		gotUser, gotSentry, err := UnpackComponentSignaturesForKeyType(KeyTypeV1, packed)
+		gotUser, gotCosigner, err := UnpackComponentSignaturesForKeyType(KeyTypeV1, packed)
 		if err != nil {
 			t.Fatalf("UnpackComponentSignaturesForKeyType(%d) error = %v", size, err)
 		}
-		if !bytes.Equal(gotUser, userSig) || !bytes.Equal(gotSentry, sentrySig) {
+		if !bytes.Equal(gotUser, userSig) || !bytes.Equal(gotCosigner, cosignerSig) {
 			t.Fatalf("signature round trip at %d bytes did not preserve components", size)
 		}
 	}
@@ -136,7 +136,7 @@ func TestComponentSignaturePackingUsesCompressedMaximum(t *testing.T) {
 		t.Fatalf("PackComponentSignatures accepted %d-byte user signature", len(tooLarge))
 	}
 	if _, err := PackComponentSignatures([]byte{1}, tooLarge); err == nil {
-		t.Fatalf("PackComponentSignatures accepted %d-byte sentry signature", len(tooLarge))
+		t.Fatalf("PackComponentSignatures accepted %d-byte cosigner signature", len(tooLarge))
 	}
 }
 
@@ -147,12 +147,12 @@ func TestBuildArgsRejectsMalformedSignatureBlob(t *testing.T) {
 		t.Fatalf("BuildArgs(short) error = %v, want too short", err)
 	}
 	_, err = PackComponentSignaturesForKeyType(KeyTypeV1, []byte{1}, nil)
-	if err == nil || !strings.Contains(err.Error(), "sentry Falcon signature length") {
-		t.Fatalf("PackComponentSignaturesForKeyType(bad sentry) error = %v, want length error", err)
+	if err == nil || !strings.Contains(err.Error(), "cosigner Falcon signature length") {
+		t.Fatalf("PackComponentSignaturesForKeyType(bad cosigner) error = %v, want length error", err)
 	}
 	_, err = p.BuildArgs([]byte{0, 1, 1, 0, 0}, nil)
-	if err == nil || !strings.Contains(err.Error(), "sentry Falcon signature length") {
-		t.Fatalf("BuildArgs(bad sentry length) error = %v, want length error", err)
+	if err == nil || !strings.Contains(err.Error(), "cosigner Falcon signature length") {
+		t.Fatalf("BuildArgs(bad cosigner length) error = %v, want length error", err)
 	}
 	_, err = p.BuildArgs([]byte{0, 1, 1, 2}, map[string][]byte{"extra": {1}})
 	if err == nil || !strings.Contains(err.Error(), "unknown arg") {

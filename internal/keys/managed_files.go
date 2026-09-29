@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	AccountKeyExtension       = ".key"
-	SentryCredentialExtension = ".sen"
+	AccountKeyExtension         = ".key"
+	CosignerCredentialExtension = ".cos"
 )
 
 type ManagedCredentialClass string
@@ -33,8 +33,8 @@ type ManagedCredentialFile struct {
 }
 
 const (
-	ManagedCredentialAccount ManagedCredentialClass = "account"
-	ManagedCredentialSentry  ManagedCredentialClass = "sentry"
+	ManagedCredentialAccount  ManagedCredentialClass = "account"
+	ManagedCredentialCosigner ManagedCredentialClass = "cosigner"
 )
 
 var (
@@ -51,7 +51,7 @@ func ManagedCredentialClassForCategory(category string) (ManagedCredentialClass,
 	case CategoryEd25519, CategoryNativePQ, CategoryDSALsig, CategoryGenericLsig:
 		return ManagedCredentialAccount, nil
 	case CategoryWitness:
-		return ManagedCredentialSentry, nil
+		return ManagedCredentialCosigner, nil
 	default:
 		return "", fmt.Errorf("unsupported managed credential category %q", category)
 	}
@@ -61,8 +61,8 @@ func (c ManagedCredentialClass) Extension() string {
 	switch c {
 	case ManagedCredentialAccount:
 		return AccountKeyExtension
-	case ManagedCredentialSentry:
-		return SentryCredentialExtension
+	case ManagedCredentialCosigner:
+		return CosignerCredentialExtension
 	default:
 		return ""
 	}
@@ -76,9 +76,9 @@ func ParseManagedCredentialFilename(name string) (selector string, class Managed
 	case strings.HasSuffix(name, AccountKeyExtension):
 		selector = strings.TrimSuffix(name, AccountKeyExtension)
 		class = ManagedCredentialAccount
-	case strings.HasSuffix(name, SentryCredentialExtension):
-		selector = strings.TrimSuffix(name, SentryCredentialExtension)
-		class = ManagedCredentialSentry
+	case strings.HasSuffix(name, CosignerCredentialExtension):
+		selector = strings.TrimSuffix(name, CosignerCredentialExtension)
+		class = ManagedCredentialCosigner
 	default:
 		return "", "", false
 	}
@@ -159,10 +159,10 @@ func AccountKeyFilePathActive(active storepaths.ActivePaths, address string) str
 	return filepath.Join(active.KeysDir(), address+AccountKeyExtension)
 }
 
-// SentryCredentialFilePath is for code that already owns a validated Witness
+// CosignerCredentialFilePath is for code that already owns a validated Witness
 // Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
-func SentryCredentialFilePath(paths storepaths.Paths, witnessKeyID string) string {
-	return SentryCredentialFilePathActive(mustResolveActive(paths), witnessKeyID)
+func CosignerCredentialFilePath(paths storepaths.Paths, witnessKeyID string) string {
+	return CosignerCredentialFilePathActive(mustResolveActive(paths), witnessKeyID)
 }
 
 // mustResolveActive backs the string-returning convenience path builders,
@@ -177,10 +177,10 @@ func mustResolveActive(paths storepaths.Paths) storepaths.ActivePaths {
 	return paths.GenerationPaths(generationID)
 }
 
-// SentryCredentialFilePathActive is SentryCredentialFilePath against
+// CosignerCredentialFilePathActive is CosignerCredentialFilePath against
 // resolved active-store paths.
-func SentryCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID string) string {
-	return filepath.Join(active.KeysDir(), witnessKeyID+SentryCredentialExtension)
+func CosignerCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID string) string {
+	return filepath.Join(active.KeysDir(), witnessKeyID+CosignerCredentialExtension)
 }
 
 // ManagedCredentialDestination reports the canonical destination and whether
@@ -207,7 +207,7 @@ func ManagedCredentialDestinationActive(active storepaths.ActivePaths, selector,
 
 	otherClass := ManagedCredentialAccount
 	if class == ManagedCredentialAccount {
-		otherClass = ManagedCredentialSentry
+		otherClass = ManagedCredentialCosigner
 	}
 	contradictoryPath := filepath.Join(active.KeysDir(), selector+otherClass.Extension())
 	if _, err := os.Lstat(contradictoryPath); err == nil {
@@ -264,7 +264,7 @@ func validateManagedSelector(selector string, class ManagedCredentialClass) erro
 			return fmt.Errorf("invalid canonical Algorand account selector %q", selector)
 		}
 		return nil
-	case ManagedCredentialSentry:
+	case ManagedCredentialCosigner:
 		if _, err := witness.NormalizeID(selector); err != nil {
 			return fmt.Errorf("invalid canonical Witness Key ID %q: %w", selector, err)
 		}
@@ -312,8 +312,8 @@ func contextForClass(selector string, class ManagedCredentialClass) (crypto.Obje
 	switch class {
 	case ManagedCredentialAccount:
 		return crypto.AccountKeyContext(selector), nil
-	case ManagedCredentialSentry:
-		return crypto.SentryCredentialContext(selector), nil
+	case ManagedCredentialCosigner:
+		return crypto.CosignerCredentialContext(selector), nil
 	default:
 		return crypto.ObjectContext{}, fmt.Errorf("unsupported managed credential class %q", class)
 	}

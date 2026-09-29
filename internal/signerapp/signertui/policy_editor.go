@@ -62,8 +62,8 @@ func (m Model) loadPolicyEditorCmd(target policyeditor.Target) tea.Cmd {
 }
 
 func (m Model) defaultPolicyEditorTarget() policyeditor.Target {
-	if m.admin.settings != nil && strings.EqualFold(strings.TrimSpace(m.admin.settings.NodeRole), "sentry") {
-		return policyeditor.TargetSentry
+	if m.admin.settings != nil && strings.EqualFold(strings.TrimSpace(m.admin.settings.NodeRole), "cosigner") {
+		return policyeditor.TargetCosigner
 	}
 	return policyeditor.TargetSigner
 }

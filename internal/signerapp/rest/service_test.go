@@ -18,6 +18,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -31,8 +33,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -244,14 +244,14 @@ func TestServicePrepareBoundedAdminDelegatesTypedPartial(t *testing.T) {
 }
 
 func TestServiceSignComponentsDelegates(t *testing.T) {
-	ir := setupProductRuntimeWithRole(t, true, noderole.RoleSentry)
+	ir := setupProductRuntimeWithRole(t, true, noderole.RoleCosigner)
 	componentKey := strings.Repeat("ab", 32)
 	stub := &stubSigningService{
 		components: &signerapi.ComponentResponse{
 			RequestID: "cmp-1",
 			Components: []signerapi.Component{{
 				TargetIndex:     0,
-				Kind:            signerapi.ComponentTargetKindSentry,
+				Kind:            signerapi.ComponentTargetKindCosigner,
 				Signature:       "aa",
 				SignatureScheme: witness.Falcon1024V1,
 			}},
@@ -272,7 +272,7 @@ func TestServiceSignComponentsDelegates(t *testing.T) {
 		RequestID:     "cmp-1",
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: componentKey,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: componentKey,
 		}},
 	}
 	ctx := context.WithValue(context.Background(), testContextKey("component"), "ctx")
@@ -317,11 +317,11 @@ func TestServiceAssembleDelegates(t *testing.T) {
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
-			TargetIndex:     0,
-			Kind:            signerapi.AssemblyTargetKindGuarded,
-			AuthAddress:     "ADDR",
-			UserSignature:   "aa",
-			SentrySignature: "bb",
+			TargetIndex:       0,
+			Kind:              signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:       "ADDR",
+			UserSignature:     "aa",
+			CosignerSignature: "bb",
 		}},
 	}
 	ctx := context.WithValue(context.Background(), testContextKey("assemble"), "ctx")
@@ -433,7 +433,7 @@ func TestAuthorizationKindForCategory(t *testing.T) {
 }
 
 func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
-	ir := setupProductRuntimeWithRole(t, true, noderole.RoleSentry)
+	ir := setupProductRuntimeWithRole(t, true, noderole.RoleCosigner)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{Runtime: ir}}}
 
 	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: witness.Falcon1024V1})
@@ -482,7 +482,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	infos := Service{}.buildKeyTypes([]string{
 		"ed25519",
 		witness.Falcon1024V1,
-		keytypes.GuardedFalcon1024Sentry1024V1,
+		keytypes.GuardedFalcon1024Cosigner1024V1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
 	for _, info := range infos {
@@ -490,24 +490,24 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	}
 
 	guarded := map[string]string{
-		keytypes.GuardedFalcon1024Sentry1024V1: witness.Falcon1024V1,
+		keytypes.GuardedFalcon1024Cosigner1024V1: witness.Falcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
 		if !ok {
 			t.Fatalf("buildKeyTypes() missing %s", keyType)
 		}
-		if info.SigningFlow != signerapi.SigningFlowSentry1 {
-			t.Fatalf("%s signing_flow = %q, want %q", keyType, info.SigningFlow, signerapi.SigningFlowSentry1)
+		if info.SigningFlow != signerapi.SigningFlowCosigner1 {
+			t.Fatalf("%s signing_flow = %q, want %q", keyType, info.SigningFlow, signerapi.SigningFlowCosigner1)
 		}
-		if info.SentryComponentKeyType != wantComponent {
-			t.Fatalf("%s sentry_component_key_type = %q, want %q", keyType, info.SentryComponentKeyType, wantComponent)
+		if info.CosignerComponentKeyType != wantComponent {
+			t.Fatalf("%s cosigner_component_key_type = %q, want %q", keyType, info.CosignerComponentKeyType, wantComponent)
 		}
 	}
 	for _, keyType := range []string{"ed25519", witness.Falcon1024V1} {
 		info := byType[keyType]
-		if info.SigningFlow != "" || info.SentryComponentKeyType != "" {
-			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.SentryComponentKeyType)
+		if info.SigningFlow != "" || info.CosignerComponentKeyType != "" {
+			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.CosignerComponentKeyType)
 		}
 	}
 }
@@ -546,13 +546,13 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	}
 }
 
-func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
-	const keyType = "test.rest-bounded-sentry.v1"
+func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
+	const keyType = "test.rest-bounded-cosigner.v1"
 	profile := &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 2_000,
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: profile})
@@ -561,14 +561,14 @@ func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
 		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
 	}
 	info := infos[0]
-	if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || info.SentryComponentKeyType != witness.Falcon1024V1 {
-		t.Fatalf("bounded sentry routing = %#v", info)
+	if info.SigningFlow != signerapi.SigningFlowBoundedCosigner1 || info.CosignerComponentKeyType != witness.Falcon1024V1 {
+		t.Fatalf("bounded cosigner routing = %#v", info)
 	}
-	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Sentry == nil {
-		t.Fatalf("bounded sentry metadata = %#v", info.BoundedAuthorization)
+	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Cosigner == nil {
+		t.Fatalf("bounded cosigner metadata = %#v", info.BoundedAuthorization)
 	}
-	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.SentryPublicKeyParameter {
-		t.Fatalf("creation params = %#v, want raw sentry public key before reference projection", got)
+	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.CosignerPublicKeyParameter {
+		t.Fatalf("creation params = %#v, want raw cosigner public key before reference projection", got)
 	}
 }
 
@@ -591,28 +591,28 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 }
 
 func TestGuardedAccountParametersProjection(t *testing.T) {
-	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
+	const cosignerPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
-	got := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
-		keytypes.ParameterSentryPublicKey: sentryPublicKey,
-		"unrelated":                       "not-projected",
+	got := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
+		"unrelated":                         "not-projected",
 	})
-	if got[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
-		t.Fatalf("guardedAccountParameters() = %#v, want sentry public key", got)
+	if got[keytypes.ParameterCosignerPublicKey] != cosignerPublicKey {
+		t.Fatalf("guardedAccountParameters() = %#v, want cosigner public key", got)
 	}
 	if _, ok := got["unrelated"]; ok {
 		t.Fatalf("guardedAccountParameters() projected unrelated parameter: %#v", got)
 	}
 
-	got[keytypes.ParameterSentryPublicKey] = "mutated"
-	again := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
-		keytypes.ParameterSentryPublicKey: sentryPublicKey,
+	got[keytypes.ParameterCosignerPublicKey] = "mutated"
+	again := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+		keytypes.ParameterCosignerPublicKey: cosignerPublicKey,
 	})
-	if again[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
+	if again[keytypes.ParameterCosignerPublicKey] != cosignerPublicKey {
 		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
 	}
 
-	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, nil); empty != nil {
+	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Cosigner1024V1, nil); empty != nil {
 		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
@@ -620,12 +620,12 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 func TestBoundedAccountParametersProjection(t *testing.T) {
 	got := boundedAccountParameters(map[string]string{
 		"recipients": "ADDR1,ADDR2",
-		composeddsa.BoundedSentryPublicKeyParameter: "sentry-public",
-		composeddsa.BoundedAdminPublicKeyParameter:  "admin-public",
-		"future_sensitive_parameter":                "must-not-leak",
+		composeddsa.BoundedCosignerPublicKeyParameter: "cosigner-public",
+		composeddsa.BoundedAdminPublicKeyParameter:    "admin-public",
+		"future_sensitive_parameter":                  "must-not-leak",
 	})
 	if len(got) != 3 || got["recipients"] != "ADDR1,ADDR2" ||
-		got[composeddsa.BoundedSentryPublicKeyParameter] != "sentry-public" ||
+		got[composeddsa.BoundedCosignerPublicKeyParameter] != "cosigner-public" ||
 		got[composeddsa.BoundedAdminPublicKeyParameter] != "admin-public" {
 		t.Fatalf("boundedAccountParameters() = %#v, want reviewed public projection", got)
 	}
@@ -637,7 +637,7 @@ func TestBoundedAccountParametersProjection(t *testing.T) {
 	}
 }
 
-func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
+func TestServiceKeyTypesIncludesNativeAndFalconCosigner(t *testing.T) {
 	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
 	if len(keyTypes) == 0 {
 		t.Fatal("buildKeyTypes() returned no key types")
@@ -663,8 +663,8 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 		}
 		if keyType.KeyType == witness.Falcon1024V1 {
 			foundFalconComponent = true
-			if keyType.Family != "sentry-falcon1024" || keyType.MnemonicImport {
-				t.Fatalf("Falcon sentry key type info = %#v, want sentry metadata", keyType)
+			if keyType.Family != "cosigner-falcon1024" || keyType.MnemonicImport {
+				t.Fatalf("Falcon cosigner key type info = %#v, want cosigner metadata", keyType)
 			}
 		}
 	}
@@ -705,20 +705,20 @@ func TestServiceKeyTypesForRuntimeFiltersByNodeRole(t *testing.T) {
 		t.Fatalf("signer node key types included %s", witness.Falcon1024V1)
 	}
 
-	ir = setupProductRuntimeWithRole(t, false, noderole.RoleSentry)
+	ir = setupProductRuntimeWithRole(t, false, noderole.RoleCosigner)
 	resp, svcErr = Service{}.KeyTypes(ir)
 	if svcErr != nil {
-		t.Fatalf("KeyTypes(sentry) error = %v", svcErr)
+		t.Fatalf("KeyTypes(cosigner) error = %v", svcErr)
 	}
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
-		t.Fatal("sentry node key types included ed25519")
+		t.Fatal("cosigner node key types included ed25519")
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, witness.Falcon1024V1) {
-		t.Fatalf("sentry node key types missing %s", witness.Falcon1024V1)
+		t.Fatalf("cosigner node key types missing %s", witness.Falcon1024V1)
 	}
 }
 
-func TestServiceKeyTypesForRuntimeUsesSentryReferenceOptions(t *testing.T) {
+func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	ir := setupProductRuntime(t, false)
 	publicKey := strings.Repeat("ab", falconfamily.PublicKeySize)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
@@ -729,7 +729,7 @@ func TestServiceKeyTypesForRuntimeUsesSentryReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
+	env, err := cosignerrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -737,14 +737,14 @@ func TestServiceKeyTypesForRuntimeUsesSentryReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), "lab-sentry", data); err != nil {
+	if _, err := cosignerrefs.Import(ir.KeyPaths(), "lab-cosigner", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
-	if err := os.WriteFile(ir.KeyPaths().SentryRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
-		t.Fatalf("WriteFile(corrupt sentry reference) error = %v", err)
+	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(corrupt cosigner reference) error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
+		KeyType: keytypes.GuardedFalcon1024Cosigner1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -757,26 +757,26 @@ func TestServiceKeyTypesForRuntimeUsesSentryReferenceOptions(t *testing.T) {
 	}
 	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.GuardedFalcon1024Sentry1024V1 {
+		if info.KeyType == keytypes.GuardedFalcon1024Cosigner1024V1 {
 			params = info.CreationParams
 			break
 		}
 	}
 	if len(params) != 1 {
-		t.Fatalf("CreationParams = %#v, want one sentry selector", params)
+		t.Fatalf("CreationParams = %#v, want one cosigner selector", params)
 	}
-	if params[0].Name != sentryrefs.ParamSentryName || params[0].Type != "select" {
-		t.Fatalf("sentry param = %#v, want select sentry", params[0])
+	if params[0].Name != cosignerrefs.ParamCosignerName || params[0].Type != "select" {
+		t.Fatalf("cosigner param = %#v, want select cosigner", params[0])
 	}
 	if params[0].Label != "Witness Key ID" {
-		t.Fatalf("sentry label = %q, want Witness Key ID label", params[0].Label)
+		t.Fatalf("cosigner label = %q, want Witness Key ID label", params[0].Label)
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
+		t.Fatalf("cosigner options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
 }
 
-func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
+func TestServiceKeyTypesReadsV1CosignerReferencesWithoutWriting(t *testing.T) {
 	ir := setupProductRuntime(t, false)
 	publicKey := strings.Repeat("bc", falconfamily.PublicKeySize)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
@@ -788,8 +788,8 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy, err := json.Marshal(map[string]any{
-		"schema":                  "aplane.sentry-public-key-ref.v1",
-		"name":                    "legacy-sentry",
+		"schema":                  "aplane.cosigner-public-key-ref.v1",
+		"name":                    "legacy-cosigner",
 		"component_key":           componentKey,
 		"key_type":                witness.Falcon1024V1,
 		"public_key_encoding":     "hex",
@@ -800,16 +800,16 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := ir.KeyPaths().SentryRefsDir()
+	dir := ir.KeyPaths().CosignerRefsDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := ir.KeyPaths().SentryRefPath("legacy-sentry")
+	path := ir.KeyPaths().CosignerRefPath("legacy-cosigner")
 	if err := os.WriteFile(path, legacy, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
-		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
+		KeyType: keytypes.GuardedFalcon1024Cosigner1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -827,7 +827,7 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 	var found bool
 	for _, info := range resp.KeyTypes {
 		for _, param := range info.CreationParams {
-			if param.Name == sentryrefs.ParamSentryName && len(param.Options) == 1 && param.Options[0] == componentKey {
+			if param.Name == cosignerrefs.ParamCosignerName && len(param.Options) == 1 && param.Options[0] == componentKey {
 				found = true
 			}
 		}
@@ -840,11 +840,11 @@ func TestServiceKeyTypesReadsV1SentryReferencesWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(after, legacy) {
-		t.Fatalf("KeyTypes() rewrote v1 sentry reference:\nbefore=%s\nafter=%s", legacy, after)
+		t.Fatalf("KeyTypes() rewrote v1 cosigner reference:\nbefore=%s\nafter=%s", legacy, after)
 	}
 }
 
-func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
+func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 	ir := setupProductRuntime(t, false)
 	publicKey := strings.Repeat("7d", falconfamily.PublicKeySize)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
@@ -855,7 +855,7 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
+	env, err := cosignerrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,16 +863,16 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sentryrefs.Import(ir.KeyPaths(), "bounded-sentry", data); err != nil {
+	if _, err := cosignerrefs.Import(ir.KeyPaths(), "bounded-cosigner", data); err != nil {
 		t.Fatal(err)
 	}
 
-	const keyType = "test.rest-reference-bounded-sentry.v1"
+	const keyType = "test.rest-reference-bounded-cosigner.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
 		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: witness.Falcon1024V1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
@@ -889,12 +889,12 @@ func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
 		if info.KeyType != keyType {
 			continue
 		}
-		if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || len(info.CreationParams) != 1 {
-			t.Fatalf("bounded sentry key type = %#v", info)
+		if info.SigningFlow != signerapi.SigningFlowBoundedCosigner1 || len(info.CreationParams) != 1 {
+			t.Fatalf("bounded cosigner key type = %#v", info)
 		}
 		param := info.CreationParams[0]
-		if param.Name != sentryrefs.ParamSentryName || len(param.Options) != 1 || param.Options[0] != componentKey {
-			t.Fatalf("bounded sentry selector = %#v", param)
+		if param.Name != cosignerrefs.ParamCosignerName || len(param.Options) != 1 || param.Options[0] != componentKey {
+			t.Fatalf("bounded cosigner selector = %#v", param)
 		}
 		return
 	}
@@ -1199,10 +1199,10 @@ func (p restTestDSAProvider) DisplayName() string  { return "REST Test DSA" }
 func (p restTestDSAProvider) Description() string  { return "Test provider" }
 func (p restTestDSAProvider) DisplayColor() string { return "" }
 func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef {
-	if p.bounded != nil && p.bounded.Sentry != nil {
+	if p.bounded != nil && p.bounded.Cosigner != nil {
 		return []lsigprovider.ParameterDef{{
-			Name: boundedmeta.SentryPublicKeyParameter, Type: "bytes", Required: true,
-			MaxLength: boundedmeta.SentryPublicKeySizeV1 * 2,
+			Name: boundedmeta.CosignerPublicKeyParameter, Type: "bytes", Required: true,
+			MaxLength: boundedmeta.CosignerPublicKeySizeV1 * 2,
 		}}
 	}
 	return nil
@@ -1241,13 +1241,13 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		MaxFee:                 p.bounded.MaxFee,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}
-	if p.bounded.Sentry != nil {
-		sentry := *p.bounded.Sentry
-		sentry.RequiredOn = append([]string(nil), p.bounded.Sentry.RequiredOn...)
-		metadata.Sentry = &sentry
+	if p.bounded.Cosigner != nil {
+		cosigner := *p.bounded.Cosigner
+		cosigner.RequiredOn = append([]string(nil), p.bounded.Cosigner.RequiredOn...)
+		metadata.Cosigner = &cosigner
 		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
-			Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry,
-			MaxSize: boundedmeta.SentrySignatureMaxSizeV1,
+			Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
+			MaxSize: boundedmeta.CosignerSignatureMaxSizeV1,
 			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		})
 	}
@@ -1354,24 +1354,24 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 
 func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	signingOnly := setupProductRuntime(t, true)
-	componentReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry}}}
-	if _, err := (Service{}).SignComponents(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "sentry component signing") {
-		t.Fatalf("SignComponents(sentry kind in signer node) error = %#v, want forbidden node role error", err)
+	componentReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner}}}
+	if _, err := (Service{}).SignComponents(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "cosigner component signing") {
+		t.Fatalf("SignComponents(cosigner kind in signer node) error = %#v, want forbidden node role error", err)
 	}
 
-	sentryOnly := setupProductRuntimeWithRole(t, true, noderole.RoleSentry)
-	if _, err := (Service{}).SignGroup(context.Background(), sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
-		t.Fatalf("SignGroup(sentry node) error = %#v, want forbidden node role error", err)
+	cosignerOnly := setupProductRuntimeWithRole(t, true, noderole.RoleCosigner)
+	if _, err := (Service{}).SignGroup(context.Background(), cosignerOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
+		t.Fatalf("SignGroup(cosigner node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Plan(sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
-		t.Fatalf("Plan(sentry node) error = %#v, want forbidden node role error", err)
+	if _, err := (Service{}).Plan(cosignerOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
+		t.Fatalf("Plan(cosigner node) error = %#v, want forbidden node role error", err)
 	}
 	userReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser, AuthAddress: "ADDR"}}}
-	if _, err := (Service{}).SignComponents(context.Background(), sentryOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
-		t.Fatalf("SignComponents(user kind in sentry node) error = %#v, want forbidden node role error", err)
+	if _, err := (Service{}).SignComponents(context.Background(), cosignerOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
+		t.Fatalf("SignComponents(user kind in cosigner node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Assemble(context.Background(), sentryOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
-		t.Fatalf("Assemble(sentry node) error = %#v, want forbidden node role error", err)
+	if _, err := (Service{}).Assemble(context.Background(), cosignerOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
+		t.Fatalf("Assemble(cosigner node) error = %#v, want forbidden node role error", err)
 	}
 
 	unknownRole := setupProductRuntimeWithRole(t, true, noderole.Role("unknown"))

@@ -20,11 +20,11 @@ const (
 	ClientEndpointsFile       = "endpoints.yaml"
 	DefaultClientEndpointName = "primary"
 
-	ClientEndpointRoleSigner = "signer"
-	ClientEndpointRoleSentry = "sentry"
+	ClientEndpointRoleSigner   = "signer"
+	ClientEndpointRoleCosigner = "cosigner"
 
 	ClientEndpointSchemaVersion = 2
-	MaxClientSentryEndpoints    = 12
+	MaxClientCosignerEndpoints  = 12
 )
 
 // ClientEndpointRegistry stores client-local signer endpoint profiles loaded
@@ -38,11 +38,11 @@ type ClientEndpointRegistry struct {
 // ClientEndpointConfig describes one signer endpoint connection profile.
 type ClientEndpointConfig struct {
 	// Role declares how apshell may use this endpoint. A client has at most one
-	// signer endpoint and any number of sentry endpoints.
+	// signer endpoint and any number of cosigner endpoints.
 	Role           string `yaml:"role"`
 	URL            string `yaml:"url" description:"Endpoint URL: https://..., loopback http://..., or ssh://host[:port]"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
-	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for signer-role ssh:// endpoints (0 = choose automatically); unsupported for sentry endpoints"`
+	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for signer-role ssh:// endpoints (0 = choose automatically); unsupported for cosigner endpoints"`
 	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
@@ -128,12 +128,12 @@ func ValidateClientEndpointAlias(alias string) error {
 
 func ValidateClientEndpointRole(role string) error {
 	switch strings.TrimSpace(role) {
-	case ClientEndpointRoleSigner, ClientEndpointRoleSentry:
+	case ClientEndpointRoleSigner, ClientEndpointRoleCosigner:
 		return nil
 	case "":
-		return fmt.Errorf("role is required (expected %q or %q)", ClientEndpointRoleSigner, ClientEndpointRoleSentry)
+		return fmt.Errorf("role is required (expected %q or %q)", ClientEndpointRoleSigner, ClientEndpointRoleCosigner)
 	default:
-		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleSentry)
+		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleCosigner)
 	}
 }
 
@@ -184,8 +184,8 @@ func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) erro
 	if endpoint.LocalPort < 0 || endpoint.LocalPort > 65535 {
 		return fmt.Errorf("local_port must be 1-65535 when set")
 	}
-	if endpoint.Role == ClientEndpointRoleSentry && endpoint.LocalPort != 0 {
-		return fmt.Errorf("local_port is not supported for sentry endpoints")
+	if endpoint.Role == ClientEndpointRoleCosigner && endpoint.LocalPort != 0 {
+		return fmt.Errorf("local_port is not supported for cosigner endpoints")
 	}
 	if endpoint.URL == "self" {
 		return fmt.Errorf("url %q is not supported; configure an explicit ssh://, https://, or loopback http:// endpoint", endpoint.URL)
@@ -317,13 +317,13 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	}
 
 	signerAlias := ""
-	sentryCount := 0
+	cosignerCount := 0
 	for alias, endpoint := range registry.Endpoints {
 		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 			return fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		if endpoint.Role == ClientEndpointRoleSentry {
-			sentryCount++
+		if endpoint.Role == ClientEndpointRoleCosigner {
+			cosignerCount++
 		}
 		if endpoint.Role != ClientEndpointRoleSigner {
 			continue
@@ -333,8 +333,8 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 		}
 		signerAlias = alias
 	}
-	if sentryCount > MaxClientSentryEndpoints {
-		return fmt.Errorf("%s configures %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, sentryCount, MaxClientSentryEndpoints)
+	if cosignerCount > MaxClientCosignerEndpoints {
+		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
 	}
 	if signerAlias == "" {
 		if registry.Default != "" {

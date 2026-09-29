@@ -98,7 +98,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 				RequestID: componentReq.RequestID,
 				Components: []signerapi.Component{{
 					TargetIndex:     0,
-					Kind:            signerapi.ComponentTargetKindSentry,
+					Kind:            signerapi.ComponentTargetKindCosigner,
 					Signature:       "aabb",
 					SignatureScheme: "aplane.witness-falcon1024.v1",
 				}},
@@ -143,7 +143,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	component, err := state.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner,
 			ComponentKey: "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		}},
 	})
@@ -153,11 +153,11 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	assembly, err := state.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
-			TargetIndex:     0,
-			Kind:            signerapi.AssemblyTargetKindGuarded,
-			AuthAddress:     "ADDR1",
-			UserSignature:   "aabb",
-			SentrySignature: "bbcc",
+			TargetIndex:       0,
+			Kind:              signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:       "ADDR1",
+			UserSignature:     "aabb",
+			CosignerSignature: "bbcc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {

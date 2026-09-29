@@ -129,8 +129,8 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 			switch class {
 			case keys.ManagedCredentialAccount:
 				ctx = crypto.AccountKeyContext(selector)
-			case keys.ManagedCredentialSentry:
-				ctx = crypto.SentryCredentialContext(selector)
+			case keys.ManagedCredentialCosigner:
+				ctx = crypto.CosignerCredentialContext(selector)
 			default:
 				return fmt.Errorf("unsupported deleted credential class in %q", entry.Path)
 			}

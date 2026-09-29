@@ -45,18 +45,18 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 	assertFileOmits(t, filepath.Join(root, "main.go"), "adminSocketPath")
 	assertFileOmits(t, filepath.Join(root, "dispatch.go"),
 		`case "backup":`, `case "restore":`, `case "changepass":`,
-		`case "template":`, `case "keytype":`, `case "sentry":`, `case "endpoint":`,
+		`case "template":`, `case "keytype":`, `case "cosigner":`, `case "endpoint":`,
 	)
 	assertFileOmits(t, filepath.Join(root, "usage.go"),
 		"apstore backup", "apstore restore", "apstore changepass", "apstore template",
-		"apstore keytype", "apstore sentry", "apstore endpoint", "generations <list",
+		"apstore keytype", "apstore cosigner", "apstore endpoint", "generations <list",
 	)
 	assertFileOmits(t, filepath.Join(root, "generations.go"), `case "list":`)
 }
 
 func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 	root := filepath.Join("..", "..")
-	retired := regexp.MustCompile(`\bapstore(?:\s+-d\s+(?:"[^"]*"|'[^']*'|\S+))?\s+(?:(?:backup|restore|changepass|template|keytype|sentry|endpoint)\b|generations\s+list\b)`)
+	retired := regexp.MustCompile(`\bapstore(?:\s+-d\s+(?:"[^"]*"|'[^']*'|\S+))?\s+(?:(?:backup|restore|changepass|template|keytype|cosigner|endpoint)\b|generations\s+list\b)`)
 	historical := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {

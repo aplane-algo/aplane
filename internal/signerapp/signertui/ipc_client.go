@@ -576,45 +576,45 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Error:    keyTypes.Error,
 				})
 
-			case MsgTypeSentryReferencesList:
-				var references SentryReferencesListMessage
+			case MsgTypeCosignerReferencesList:
+				var references CosignerReferencesListMessage
 				if err := json.Unmarshal(line, &references); err != nil {
 					continue
 				}
-				c.emit(sessionID, SentryReferencesMsg{
+				c.emit(sessionID, CosignerReferencesMsg{
 					References: references.References,
 					Error:      references.Error,
 				})
 
-			case MsgTypeImportSentryReferenceResult:
-				var result ImportSentryReferenceResultMessage
+			case MsgTypeImportCosignerReferenceResult:
+				var result ImportCosignerReferenceResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
 					continue
 				}
-				c.emit(sessionID, SentryImportResultMsg{
+				c.emit(sessionID, CosignerImportResultMsg{
 					Success:   result.Success,
 					Reference: result.Reference,
 					Error:     result.Error,
 				})
 
-			case MsgTypeRemoveSentryReferenceResult:
-				var result RemoveSentryReferenceResultMessage
+			case MsgTypeRemoveCosignerReferenceResult:
+				var result RemoveCosignerReferenceResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
 					continue
 				}
-				c.emit(sessionID, SentryRemoveResultMsg{
+				c.emit(sessionID, CosignerRemoveResultMsg{
 					Success: result.Success,
 					Name:    result.Name,
 					Removed: result.Removed,
 					Error:   result.Error,
 				})
 
-			case MsgTypeExportSentryPublicResult:
-				var result ExportSentryPublicResultMessage
+			case MsgTypeExportCosignerPublicResult:
+				var result ExportCosignerPublicResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
 					continue
 				}
-				c.emit(sessionID, SentryExportResultMsg{
+				c.emit(sessionID, CosignerExportResultMsg{
 					Success:      result.Success,
 					WitnessKeyID: result.WitnessKeyID,
 					EnvelopeJSON: result.EnvelopeJSON,
@@ -1262,25 +1262,25 @@ func (m Model) sendListKeyTypesCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListKeyTypes() })
 }
 
-func (c *IPCClient) SendListSentryReferences() error {
-	msg := ListSentryReferencesMessage{
+func (c *IPCClient) SendListCosignerReferences() error {
+	msg := ListCosignerReferencesMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeListSentryReferences,
-			ID:   fmt.Sprintf("sentry-references-%d", time.Now().UnixNano()),
+			Type: MsgTypeListCosignerReferences,
+			ID:   fmt.Sprintf("cosigner-references-%d", time.Now().UnixNano()),
 		},
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendListSentryReferencesCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListSentryReferences() })
+func (m Model) sendListCosignerReferencesCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListCosignerReferences() })
 }
 
-func (c *IPCClient) SendImportSentryReference(name, envelopeJSON string) error {
-	msg := ImportSentryReferenceMessage{
+func (c *IPCClient) SendImportCosignerReference(name, envelopeJSON string) error {
+	msg := ImportCosignerReferenceMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeImportSentryReference,
-			ID:   fmt.Sprintf("sentry-import-%d", time.Now().UnixNano()),
+			Type: MsgTypeImportCosignerReference,
+			ID:   fmt.Sprintf("cosigner-import-%d", time.Now().UnixNano()),
 		},
 		Name:         name,
 		EnvelopeJSON: envelopeJSON,
@@ -1288,43 +1288,43 @@ func (c *IPCClient) SendImportSentryReference(name, envelopeJSON string) error {
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendImportSentryReferenceCmd(name, envelopeJSON string) tea.Cmd {
+func (m Model) sendImportCosignerReferenceCmd(name, envelopeJSON string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendImportSentryReference(name, envelopeJSON)
+		return c.SendImportCosignerReference(name, envelopeJSON)
 	})
 }
 
-func (c *IPCClient) SendRemoveSentryReference(name string) error {
-	msg := RemoveSentryReferenceMessage{
+func (c *IPCClient) SendRemoveCosignerReference(name string) error {
+	msg := RemoveCosignerReferenceMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeRemoveSentryReference,
-			ID:   fmt.Sprintf("sentry-remove-%d", time.Now().UnixNano()),
+			Type: MsgTypeRemoveCosignerReference,
+			ID:   fmt.Sprintf("cosigner-remove-%d", time.Now().UnixNano()),
 		},
 		Name: name,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendRemoveSentryReferenceCmd(name string) tea.Cmd {
+func (m Model) sendRemoveCosignerReferenceCmd(name string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendRemoveSentryReference(name)
+		return c.SendRemoveCosignerReference(name)
 	})
 }
 
-func (c *IPCClient) SendExportSentryPublic(witnessKeyID string) error {
-	msg := ExportSentryPublicMessage{
+func (c *IPCClient) SendExportCosignerPublic(witnessKeyID string) error {
+	msg := ExportCosignerPublicMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeExportSentryPublic,
-			ID:   fmt.Sprintf("sentry-export-%d", time.Now().UnixNano()),
+			Type: MsgTypeExportCosignerPublic,
+			ID:   fmt.Sprintf("cosigner-export-%d", time.Now().UnixNano()),
 		},
 		WitnessKeyID: witnessKeyID,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendExportSentryPublicCmd(witnessKeyID string) tea.Cmd {
+func (m Model) sendExportCosignerPublicCmd(witnessKeyID string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		return c.SendExportSentryPublic(witnessKeyID)
+		return c.SendExportCosignerPublic(witnessKeyID)
 	})
 }
 

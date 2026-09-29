@@ -3,12 +3,12 @@
 This matrix summarizes the account operations each APlane key type can authorize
 at the key-type or LogicSig layer.
 
-Assume DSA signatures and sentry signatures, if applicable, have been produced
+Assume DSA signatures and cosigner signatures, if applicable, have been produced
 and verify successfully. For example, `Y` for `aplane.falcon1024.v1` means the
 operation is allowed by the key type after the Falcon signature verifies over
 the transaction ID; it does not mean an unsigned transaction can pass. For
-guarded sentry key types, the table describes the on-chain guarded-account
-LogicSig after both the user and sentry component signatures are present.
+guarded cosigner key types, the table describes the on-chain guarded-account
+LogicSig after both the user and cosigner component signatures are present.
 Composed templates add their own suffix checks after base DSA verification.
 Generic TEAL-only templates have no base DSA gate, so their entries describe
 the TEAL policy directly.
@@ -18,9 +18,9 @@ Legend:
 - `Y`: allowed by the key type shape.
 - `N`: denied by the key type shape.
 - `C`: conditionally allowed by key-type parameters, runtime arguments,
-  timelocks, allowlists, or sentry transfer policy.
+  timelocks, allowlists, or cosigner transfer policy.
 
-Signer policy, sentry policy, operator approval, transaction validity, network
+Signer policy, cosigner policy, operator approval, transaction validity, network
 rules, fees, and account state can still reject a transaction that is marked
 `Y` or `C` here.
 
@@ -36,7 +36,7 @@ included as normal user-account operations.
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.falcon1024-sentry1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-cosigner1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 
@@ -80,20 +80,20 @@ included as normal user-account operations.
   narrow that set. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
-- `aplane.falcon1024-sentry1024.v1` requires guarded signing assembly.
-  Once both the user and sentry component signatures verify, the on-chain
+- `aplane.falcon1024-cosigner1024.v1` requires guarded signing assembly.
+  Once both the user and cosigner component signatures verify, the on-chain
   guarded-account LogicSig does not restrict transaction type or special
-  transaction fields. The sentry policy that decides whether to issue the
-  sentry component signature is separate from this table: current sentry
-  authorization is transfer-route based, rejects non-transfer sentry targets,
+  transaction fields. The cosigner policy that decides whether to issue the
+  cosigner component signature is separate from this table: current cosigner
+  authorization is transfer-route based, rejects non-transfer cosigner targets,
   and rejects rekey by default.
-- `aplane.corridor.v1` is a bounded-sentry template. Its on-chain LogicSig
-  requires the Falcon spending signature and sentry signature for every spend,
+- `aplane.corridor.v1` is a bounded-cosigner template. Its on-chain LogicSig
+  requires the Falcon spending signature and cosigner signature for every spend,
   then permits `pay` and `axfer` only when the receiver is self or is proven by
   a signer-derived 512-byte fixed-depth Merkle proof against the key-file
   recipient list. Close and clawback fields and non-transfer transaction types
   are rejected. Rekey is only the bounded pure 0-ALGO self-payment form and
-  requires the distinct offline Falcon contract-admin signature; the sentry is
+  requires the distinct offline Falcon contract-admin signature; the cosigner is
   forbidden on that path.
 - `aplane.htlc.v1` allows claim paths to the configured recipient before
   timeout with the configured preimage, refund paths to the configured refund

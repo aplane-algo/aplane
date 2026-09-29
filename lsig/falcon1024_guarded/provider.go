@@ -14,12 +14,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -28,40 +28,40 @@ import (
 )
 
 const (
-	FamilyName  = "aplane.falcon1024-sentry1024"
-	KeyTypeV1   = keytypes.GuardedFalcon1024Sentry1024V1
+	FamilyName  = "aplane.falcon1024-cosigner1024"
+	KeyTypeV1   = keytypes.GuardedFalcon1024Cosigner1024V1
 	BaseKeyType = "aplane.falcon1024.v1"
 
-	ParamSentryPublicKey = keytypes.ParameterSentryPublicKey
+	ParamCosignerPublicKey = keytypes.ParameterCosignerPublicKey
 
 	SignatureSize = 4 + family.MaxSignatureSize + family.MaxSignatureSize
 )
 
 // Provider implements the guarded-account LogicSig shape for a Falcon user
-// component signature plus a sentry component signature.
+// component signature plus a cosigner component signature.
 type Provider struct {
-	keyType                string
-	familyName             string
-	displayName            string
-	description            string
-	sentryComponentKeyType string
-	sentryPublicKeySize    int
-	signatureSize          int
-	sentrySignatureArg     string
-	algodClient            *algod.Client
-	algodMu                sync.RWMutex
+	keyType                  string
+	familyName               string
+	displayName              string
+	description              string
+	cosignerComponentKeyType string
+	cosignerPublicKeySize    int
+	signatureSize            int
+	cosignerSignatureArg     string
+	algodClient              *algod.Client
+	algodMu                  sync.RWMutex
 }
 
 func NewProviderV1() *Provider {
 	return &Provider{
-		keyType:                KeyTypeV1,
-		familyName:             FamilyName,
-		displayName:            "Falcon-1024 / Falcon-1024 Sentry",
-		description:            "Falcon-1024 account requiring a Falcon-1024 sentry signature",
-		sentryComponentKeyType: witness.Falcon1024V1,
-		sentryPublicKeySize:    family.PublicKeySize,
-		signatureSize:          SignatureSize,
-		sentrySignatureArg:     "sentry_falcon1024_component_signature",
+		keyType:                  KeyTypeV1,
+		familyName:               FamilyName,
+		displayName:              "Falcon-1024 / Falcon-1024 Cosigner",
+		description:              "Falcon-1024 account requiring a Falcon-1024 cosigner signature",
+		cosignerComponentKeyType: witness.Falcon1024V1,
+		cosignerPublicKeySize:    family.PublicKeySize,
+		signatureSize:            SignatureSize,
+		cosignerSignatureArg:     "cosigner_falcon1024_component_signature",
 	}
 }
 
@@ -87,13 +87,13 @@ func (p *Provider) MnemonicWordCount() int       { return family.MnemonicWordCou
 func (p *Provider) SupportsMnemonicImport() bool { return false }
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 	return []lsigprovider.ParameterDef{{
-		Name:        ParamSentryPublicKey,
-		Label:       "Sentry public key",
-		Description: "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account",
+		Name:        ParamCosignerPublicKey,
+		Label:       "Cosigner public key",
+		Description: "Hex-encoded Falcon-1024 cosigner public key embedded in the guarded account",
 		Type:        "bytes",
 		Required:    true,
-		MaxLength:   p.sentryPublicKeySize * 2,
-		Example:     strings.Repeat("00", p.sentryPublicKeySize),
+		MaxLength:   p.cosignerPublicKeySize * 2,
+		Example:     strings.Repeat("00", p.cosignerPublicKeySize),
 	}}
 }
 
@@ -105,7 +105,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	if err := generictemplate.ValidateParameterValues(normalized, p.CreationParams()); err != nil {
 		return err
 	}
-	_, err = decodeSentryPublicKeyForSize(normalized[ParamSentryPublicKey], p.sentryPublicKeySize)
+	_, err = decodeCosignerPublicKeyForSize(normalized[ParamCosignerPublicKey], p.cosignerPublicKeySize)
 	return err
 }
 
@@ -122,16 +122,16 @@ func (p *Provider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 // BuildArgs assembles LogicSig args as:
 //
 //	arg 0: Falcon user component signature
-//	arg 1: sentry component signature
+//	arg 1: cosigner component signature
 func (p *Provider) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	if err := rejectRuntimeArgs(runtimeArgs); err != nil {
 		return nil, err
 	}
-	userSig, sentrySig, err := UnpackComponentSignaturesForKeyType(p.keyType, signature)
+	userSig, cosignerSig, err := UnpackComponentSignaturesForKeyType(p.keyType, signature)
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{userSig, sentrySig}, nil
+	return [][]byte{userSig, cosignerSig}, nil
 }
 
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
@@ -183,11 +183,11 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err := p.ValidateCreationParams(normalized); err != nil {
 		return "", err
 	}
-	sentryPublicKey, err := decodeSentryPublicKeyForSize(normalized[ParamSentryPublicKey], p.sentryPublicKeySize)
+	cosignerPublicKey, err := decodeCosignerPublicKeyForSize(normalized[ParamCosignerPublicKey], p.cosignerPublicKeySize)
 	if err != nil {
 		return "", err
 	}
-	sentryVerifier := p.sentryVerifyTEAL(sentryPublicKey)
+	cosignerVerifier := p.cosignerVerifyTEAL(cosignerPublicKey)
 
 	return fmt.Sprintf(`#pragma version 13
 
@@ -207,11 +207,11 @@ assert
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
 		byte(message.RoleUser),
 		hex.EncodeToString(publicKey),
-		sentryVerifier), nil
+		cosignerVerifier), nil
 }
 
-func (p *Provider) sentryVerifyTEAL(sentryPublicKey []byte) string {
-	return fmt.Sprintf(`// === Sentry Falcon-1024 component signature ===
+func (p *Provider) cosignerVerifyTEAL(cosignerPublicKey []byte) string {
+	return fmt.Sprintf(`// === Cosigner Falcon-1024 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x
 concat
@@ -222,8 +222,8 @@ arg 1
 pushbytes 0x%s
 falcon_verify
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
-		byte(message.RoleSentry),
-		hex.EncodeToString(sentryPublicKey))
+		byte(message.RoleCosigner),
+		hex.EncodeToString(cosignerPublicKey))
 }
 
 // CompatibilityFingerprint returns the behavior-only compatibility fingerprint
@@ -241,36 +241,36 @@ func (p *Provider) CompatibilityFingerprint() string {
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(p.BaseKeyType()),
 		SaltStyle:     string(lsigsalt.StyleAlgodAutoSalt),
 		Arg0:          "user_falcon1024_component_signature",
-		Arg1:          p.sentrySignatureArg,
+		Arg1:          p.cosignerSignatureArg,
 	})
 }
 
 // PackComponentSignatures prepares the opaque signature blob accepted by
 // BuildArgs. It is intended for /sign/assemble after both component signatures
 // have been verified.
-func PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
-	return PackComponentSignaturesForKeyType(KeyTypeV1, userSignature, sentrySignature)
+func PackComponentSignatures(userSignature, cosignerSignature []byte) ([]byte, error) {
+	return PackComponentSignaturesForKeyType(KeyTypeV1, userSignature, cosignerSignature)
 }
 
-func (p *Provider) PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
-	return PackComponentSignaturesForKeyType(p.keyType, userSignature, sentrySignature)
+func (p *Provider) PackComponentSignatures(userSignature, cosignerSignature []byte) ([]byte, error) {
+	return PackComponentSignaturesForKeyType(p.keyType, userSignature, cosignerSignature)
 }
 
-func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySignature []byte) ([]byte, error) {
+func PackComponentSignaturesForKeyType(keyType string, userSignature, cosignerSignature []byte) ([]byte, error) {
 	if len(userSignature) == 0 || len(userSignature) > family.MaxSignatureSize {
 		return nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", len(userSignature), family.MaxSignatureSize)
 	}
 	switch keyType {
 	case KeyTypeV1:
-		if len(sentrySignature) == 0 || len(sentrySignature) > family.MaxSignatureSize {
-			return nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", len(sentrySignature), family.MaxSignatureSize)
+		if len(cosignerSignature) == 0 || len(cosignerSignature) > family.MaxSignatureSize {
+			return nil, fmt.Errorf("cosigner Falcon signature length %d invalid (expected 1..%d bytes)", len(cosignerSignature), family.MaxSignatureSize)
 		}
-		out := make([]byte, 4+len(userSignature)+len(sentrySignature))
+		out := make([]byte, 4+len(userSignature)+len(cosignerSignature))
 		binary.BigEndian.PutUint16(out[:2], uint16(len(userSignature)))
 		copy(out[2:], userSignature)
 		offset := 2 + len(userSignature)
-		binary.BigEndian.PutUint16(out[offset:offset+2], uint16(len(sentrySignature)))
-		copy(out[offset+2:], sentrySignature)
+		binary.BigEndian.PutUint16(out[offset:offset+2], uint16(len(cosignerSignature)))
+		copy(out[offset+2:], cosignerSignature)
 		return out, nil
 	default:
 		return nil, fmt.Errorf("key type %q is not a guarded Falcon account key type", keyType)
@@ -280,13 +280,13 @@ func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySign
 func UnpackComponentSignaturesForKeyType(keyType string, signature []byte) ([]byte, []byte, error) {
 	switch keyType {
 	case KeyTypeV1:
-		return unpackFalconSentrySignature(signature)
+		return unpackFalconCosignerSignature(signature)
 	default:
 		return nil, nil, fmt.Errorf("key type %q is not a guarded Falcon account key type", keyType)
 	}
 }
 
-func unpackFalconSentrySignature(signature []byte) ([]byte, []byte, error) {
+func unpackFalconCosignerSignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 4 {
 		return nil, nil, fmt.Errorf("guarded signature blob is too short")
 	}
@@ -297,26 +297,26 @@ func unpackFalconSentrySignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 2+userLen+2 {
 		return nil, nil, fmt.Errorf("guarded signature blob is too short")
 	}
-	sentryOffset := 2 + userLen
-	sentryLen := int(binary.BigEndian.Uint16(signature[sentryOffset : sentryOffset+2]))
-	if sentryLen <= 0 || sentryLen > family.MaxSignatureSize {
-		return nil, nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", sentryLen, family.MaxSignatureSize)
+	cosignerOffset := 2 + userLen
+	cosignerLen := int(binary.BigEndian.Uint16(signature[cosignerOffset : cosignerOffset+2]))
+	if cosignerLen <= 0 || cosignerLen > family.MaxSignatureSize {
+		return nil, nil, fmt.Errorf("cosigner Falcon signature length %d invalid (expected 1..%d bytes)", cosignerLen, family.MaxSignatureSize)
 	}
-	if len(signature) != sentryOffset+2+sentryLen {
+	if len(signature) != cosignerOffset+2+cosignerLen {
 		return nil, nil, fmt.Errorf("invalid guarded signature blob length")
 	}
-	return signature[2:sentryOffset], signature[sentryOffset+2:], nil
+	return signature[2:cosignerOffset], signature[cosignerOffset+2:], nil
 }
 
-func decodeSentryPublicKeyForSize(value string, wantSize int) ([]byte, error) {
+func decodeCosignerPublicKeyForSize(value string, wantSize int) ([]byte, error) {
 	value = strings.TrimSpace(value)
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
 	decoded, err := hex.DecodeString(value)
 	if err != nil {
-		return nil, fmt.Errorf("sentry_public_key must be hex: %w", err)
+		return nil, fmt.Errorf("cosigner_public_key must be hex: %w", err)
 	}
 	if len(decoded) != wantSize {
-		return nil, fmt.Errorf("sentry_public_key length %d invalid (expected %d bytes)", len(decoded), wantSize)
+		return nil, fmt.Errorf("cosigner_public_key length %d invalid (expected %d bytes)", len(decoded), wantSize)
 	}
 	return decoded, nil
 }

@@ -27,19 +27,19 @@ const (
 	ViewTokenProvisioningPopup // Token provisioning approval popup
 	ViewGenerateForm
 	ViewGenerateParams // Parameter input modal for generic LogicSigs
-	ViewSentryPicker   // Select an enrolled sentry reference for guarded generation
-	ViewSentryImportForm
-	ViewSentryImportReview
-	ViewSentryImporting
-	ViewSentryReferences
-	ViewSentryReferenceDetails
-	ViewSentryRemoveConfirm
-	ViewSentryRemoving
-	ViewSentryGenerateType
-	ViewSentryExportPath
-	ViewSentryExporting
-	ViewSentryExportResult
-	ViewSentryExportJSON
+	ViewCosignerPicker // Select an enrolled cosigner reference for guarded generation
+	ViewCosignerImportForm
+	ViewCosignerImportReview
+	ViewCosignerImporting
+	ViewCosignerReferences
+	ViewCosignerReferenceDetails
+	ViewCosignerRemoveConfirm
+	ViewCosignerRemoving
+	ViewCosignerGenerateType
+	ViewCosignerExportPath
+	ViewCosignerExporting
+	ViewCosignerExportResult
+	ViewCosignerExportJSON
 	ViewGenerating      // Loading state while generating
 	ViewGenerateDisplay // Shows generated key confirmation
 	ViewImportForm
@@ -115,7 +115,7 @@ type keyListTab int
 
 const (
 	keyListTabSigning keyListTab = iota
-	keyListTabSentry
+	keyListTabCosigner
 )
 
 // PendingSignRequest holds a signing request waiting for approval
@@ -250,17 +250,17 @@ type formsState struct {
 	genericLSigParamScroll map[string]int
 }
 
-type sentryChoice struct {
+type cosignerChoice struct {
 	WitnessKeyID string
 	KeyType      string
 	PrimaryAlias string
 	Aliases      []string
 }
 
-type sentryState struct {
-	references []SentryReferenceInfo
+type cosignerState struct {
+	references []CosignerReferenceInfo
 	loaded     bool
-	choices    []sentryChoice
+	choices    []cosignerChoice
 	selected   int
 	paramName  string
 	returnView ViewState
@@ -404,7 +404,7 @@ type Model struct {
 	backup        backupState
 	restore       restoreState
 	forms         formsState
-	sentry        sentryState
+	cosigner      cosignerState
 	del           deleteConfirmState
 	admin         adminPanelState
 	manualLock    manualLockState
@@ -755,32 +755,32 @@ type KeyTypesMsg struct {
 	Error    string
 }
 
-type SentryReferencesMsg struct {
-	References []SentryReferenceInfo
+type CosignerReferencesMsg struct {
+	References []CosignerReferenceInfo
 	Error      string
 }
 
-type SentryImportResultMsg struct {
+type CosignerImportResultMsg struct {
 	Success   bool
-	Reference SentryReferenceInfo
+	Reference CosignerReferenceInfo
 	Error     string
 }
 
-type SentryRemoveResultMsg struct {
+type CosignerRemoveResultMsg struct {
 	Success bool
 	Name    string
 	Removed bool
 	Error   string
 }
 
-type SentryExportResultMsg struct {
+type CosignerExportResultMsg struct {
 	Success      bool
 	WitnessKeyID string
 	EnvelopeJSON string
 	Error        string
 }
 
-type SentryExportWrittenMsg struct {
+type CosignerExportWrittenMsg struct {
 	Path  string
 	Error error
 }

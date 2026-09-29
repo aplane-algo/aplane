@@ -50,7 +50,7 @@ func TestSaveInitialRefusesOverwrite(t *testing.T) {
 	if _, _, err := SaveInitial(paths, RoleSigner, time.Now()); err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	_, _, err := SaveInitial(paths, RoleSentry, time.Now())
+	_, _, err := SaveInitial(paths, RoleCosigner, time.Now())
 	if !errors.Is(err, ErrRoleFileExists) {
 		t.Fatalf("SaveInitial(overwrite) error = %v, want ErrRoleFileExists", err)
 	}
@@ -68,7 +68,7 @@ func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	if err := SaveGenerationSidecarWithKeyring(paths, active, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("SaveGenerationSidecarWithKeyring() error = %v", err)
 	}
-	if err := os.WriteFile(paths.NodeRolePath(), []byte("schema_version: 1\nrole: sentry\n"), 0o660); err != nil {
+	if err := os.WriteFile(paths.NodeRolePath(), []byte("schema_version: 1\nrole: cosigner\n"), 0o660); err != nil {
 		t.Fatalf("WriteFile(tamper) error = %v", err)
 	}
 	_, err = LoadAndVerifyGenerationWithKeyring(paths, active, cryptotest.Keyring(t, masterKey))

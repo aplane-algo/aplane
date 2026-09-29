@@ -95,36 +95,36 @@ func TestBuildBoundedAdminResultPublishesRecomputedTranscript(t *testing.T) {
 	}
 }
 
-func TestBuildBoundedAdminResultPublishesSentryVerifierMetadata(t *testing.T) {
+func TestBuildBoundedAdminResultPublishesCosignerVerifierMetadata(t *testing.T) {
 	plan, request := testBoundedAdminPlan(t)
 	metadata := plan.BoundedItems[0].Metadata
-	sentryPublicKey := make([]byte, boundedmeta.SentryPublicKeySizeV1)
-	for i := range sentryPublicKey {
-		sentryPublicKey[i] = 0x55
+	cosignerPublicKey := make([]byte, boundedmeta.CosignerPublicKeySizeV1)
+	for i := range cosignerPublicKey {
+		cosignerPublicKey[i] = 0x55
 	}
-	componentKeyID, err := witness.ID(boundedmeta.SentryComponentKeyTypeV1, sentryPublicKey)
+	componentKeyID, err := witness.ID(boundedmeta.CosignerComponentKeyTypeV1, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata.Sentry = &boundedmeta.SentryAuthorization{
-		Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-		PublicKeyHex: hex.EncodeToString(sentryPublicKey), ComponentKeyID: componentKeyID,
-		SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+	metadata.Cosigner = &boundedmeta.CosignerAuthorization{
+		Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+		PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
+		SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 	}
 	metadata.ArgumentLayout = []boundedmeta.ArgumentSlot{
 		{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 1280, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-		{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+		{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
 		{Index: 2, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: boundedmeta.FalconAdminSignatureSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgRequired}},
 	}
 	result, svcErr := buildBoundedAdminResult(plan, len(request.Requests), 0, plan.BoundedItems[0], []string{"partial"})
 	if svcErr != nil {
 		t.Fatal(svcErr)
 	}
-	if result.Authorization.AdminSignatureArgIndex != 2 || result.Authorization.Sentry == nil {
+	if result.Authorization.AdminSignatureArgIndex != 2 || result.Authorization.Cosigner == nil {
 		t.Fatalf("authorization = %#v", result.Authorization)
 	}
-	if result.Authorization.Sentry.ComponentKeyID != componentKeyID || result.Authorization.Sentry.SignatureArgIndex != 1 {
-		t.Fatalf("sentry authorization = %#v", result.Authorization.Sentry)
+	if result.Authorization.Cosigner.ComponentKeyID != componentKeyID || result.Authorization.Cosigner.SignatureArgIndex != 1 {
+		t.Fatalf("cosigner authorization = %#v", result.Authorization.Cosigner)
 	}
 }
 
@@ -141,10 +141,10 @@ func TestBoundedAdminRequiredEmitsContractedCode(t *testing.T) {
 	}
 }
 
-func TestBoundedSentryRequiredEmitsContractedCode(t *testing.T) {
-	err := boundedSentryRequired()
-	if err.Code() != signerapi.ErrCodeBoundedSentryRequired {
-		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeBoundedSentryRequired)
+func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
+	err := boundedCosignerRequired()
+	if err.Code() != signerapi.ErrCodeBoundedCosignerRequired {
+		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeBoundedCosignerRequired)
 	}
 	if err.HTTPStatus() != 400 {
 		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())

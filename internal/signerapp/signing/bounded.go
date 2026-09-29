@@ -206,12 +206,12 @@ func planHasBoundedAdminKeyOperation(plan *PlanResult) bool {
 	return false
 }
 
-func planHasBoundedSentrySpend(plan *PlanResult) bool {
+func planHasBoundedCosignerSpend(plan *PlanResult) bool {
 	if plan == nil {
 		return false
 	}
 	for _, item := range plan.BoundedItems {
-		if item != nil && item.Path == boundedPathPureSpend && item.Metadata != nil && item.Metadata.Sentry != nil {
+		if item != nil && item.Path == boundedPathPureSpend && item.Metadata != nil && item.Metadata.Cosigner != nil {
 			return true
 		}
 	}

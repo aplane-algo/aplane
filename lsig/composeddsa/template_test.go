@@ -384,8 +384,8 @@ teal: int 1
 			want: "field mystery not found",
 		},
 		{
-			name: "unknown nested sentry field",
-			yaml: "schema_version: 2\nbounded:\n  sentry:\n    contract: sentry1\n    mystery: true\n",
+			name: "unknown nested cosigner field",
+			yaml: "schema_version: 2\nbounded:\n  cosigner:\n    contract: cosigner1\n    mystery: true\n",
 			want: "field mystery not found",
 		},
 		{
@@ -423,7 +423,7 @@ teal: int 1
 	}
 }
 
-func TestComposedSchemaV2BuildsBoundedSentryProfile(t *testing.T) {
+func TestComposedSchemaV2BuildsBoundedCosignerProfile(t *testing.T) {
 	RegisterBase(BaseRegistration{
 		BaseKeyType:       "aplane.falcon1024.v1",
 		FamilyName:        "falcon1024",
@@ -437,16 +437,16 @@ template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
 publisher: aplane
-family: bounded-sentry-test
+family: bounded-cosigner-test
 version: 1
-display_name: Bounded Sentry Test
+display_name: Bounded Cosigner Test
 max_opcode_cost: 20000
 bounded:
   contract: bounded1
   spend_effects: [pay]
   max_fee: 10000
-  sentry:
-    contract: sentry1
+  cosigner:
+    contract: cosigner1
     required_on: [spend]
 teal: |
   int 1
@@ -460,19 +460,19 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	params := provider.CreationParams()
-	if len(params) != 1 || params[0].Name != BoundedSentryPublicKeyParameter || params[0].MaxLength != boundedmeta.SentryPublicKeySizeV1*2 {
-		t.Fatalf("CreationParams() = %#v, want injected sentry public key", params)
+	if len(params) != 1 || params[0].Name != BoundedCosignerPublicKeyParameter || params[0].MaxLength != boundedmeta.CosignerPublicKeySizeV1*2 {
+		t.Fatalf("CreationParams() = %#v, want injected cosigner public key", params)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Sentry == nil || metadata.Sentry.Contract != boundedmeta.SentryContractV1 {
+	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.Contract != boundedmeta.CosignerContractV1 {
 		t.Fatalf("BoundedAuthorizationMetadata() = %#v", metadata)
 	}
-	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != boundedmeta.ArgSourceSentry || got[1].Paths.Spend != boundedmeta.ArgRequired {
-		t.Fatalf("ArgumentLayout = %#v, want base/sentry layout", got)
+	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != boundedmeta.ArgSourceCosigner || got[1].Paths.Spend != boundedmeta.ArgRequired {
+		t.Fatalf("ArgumentLayout = %#v, want base/cosigner layout", got)
 	}
 }
 
-func TestComposedSchemaV2RejectsInvalidBoundedSentry(t *testing.T) {
+func TestComposedSchemaV2RejectsInvalidBoundedCosigner(t *testing.T) {
 	RegisterBase(BaseRegistration{
 		BaseKeyType:       "aplane.falcon1024.v1",
 		FamilyName:        "falcon1024",
@@ -480,21 +480,21 @@ func TestComposedSchemaV2RejectsInvalidBoundedSentry(t *testing.T) {
 		Ops:               boundedTestOps{},
 		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
 	})
-	registerTemplateTestBase("test.non-falcon-bounded-sentry.v1")
+	registerTemplateTestBase("test.non-falcon-bounded-cosigner.v1")
 	base := `
 schema_version: 2
 template_type: composed
 base_key_type: %s
 template_mode: strict
 publisher: test
-family: invalid-bounded-sentry
+family: invalid-bounded-cosigner
 version: 1
-display_name: Invalid Bounded Sentry
+display_name: Invalid Bounded Cosigner
 bounded:
   contract: bounded1
   spend_effects: [pay]
   max_fee: 10000
-  sentry:
+  cosigner:
     contract: %s
     required_on: [%s]
 teal: |
@@ -504,9 +504,9 @@ teal: |
 	tests := []struct {
 		name, baseKeyType, contract, requiredOn, want string
 	}{
-		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "sentry2", requiredOn: "spend", want: "unsupported bounded sentry contract"},
-		{name: "path", baseKeyType: "aplane.falcon1024.v1", contract: "sentry1", requiredOn: "spending_rekey", want: "exactly [spend]"},
-		{name: "base", baseKeyType: "test.non-falcon-bounded-sentry.v1", contract: "sentry1", requiredOn: "spend", want: "requires base_key_type"},
+		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner2", requiredOn: "spend", want: "unsupported bounded cosigner contract"},
+		{name: "path", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner1", requiredOn: "spending_rekey", want: "exactly [spend]"},
+		{name: "base", baseKeyType: "test.non-falcon-bounded-cosigner.v1", contract: "cosigner1", requiredOn: "spend", want: "requires base_key_type"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

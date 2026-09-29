@@ -407,34 +407,34 @@ func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePo
 	}
 }
 
-func ProtocolSentryReferencesListMessage(id string, result adminproto.ListSentryReferencesResult) protocol.SentryReferencesListMessage {
-	refs := make([]protocol.SentryReferenceInfo, len(result.References))
+func ProtocolCosignerReferencesListMessage(id string, result adminproto.ListCosignerReferencesResult) protocol.CosignerReferencesListMessage {
+	refs := make([]protocol.CosignerReferenceInfo, len(result.References))
 	for i := range result.References {
-		refs[i] = protocolSentryReference(result.References[i])
+		refs[i] = protocolCosignerReference(result.References[i])
 	}
-	return protocol.SentryReferencesListMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSentryReferencesList, ID: id},
+	return protocol.CosignerReferencesListMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCosignerReferencesList, ID: id},
 		References:  refs, Code: result.Code, Error: result.Error,
 	}
 }
 
-func ProtocolSentryReferenceMessage(id, messageType string, result adminproto.GetSentryReferenceResult) protocol.SentryReferenceMessage {
-	return protocol.SentryReferenceMessage{
+func ProtocolCosignerReferenceMessage(id, messageType string, result adminproto.GetCosignerReferenceResult) protocol.CosignerReferenceMessage {
+	return protocol.CosignerReferenceMessage{
 		BaseMessage: protocol.BaseMessage{Type: messageType, ID: id}, Success: result.Success,
-		Reference: protocolSentryReference(result.Reference), Code: result.Code, Error: result.Error,
+		Reference: protocolCosignerReference(result.Reference), Code: result.Code, Error: result.Error,
 	}
 }
 
-func ProtocolRemoveSentryReferenceResultMessage(id string, result adminproto.RemoveSentryReferenceResult) protocol.RemoveSentryReferenceResultMessage {
-	return protocol.RemoveSentryReferenceResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveSentryReferenceResult, ID: id},
+func ProtocolRemoveCosignerReferenceResultMessage(id string, result adminproto.RemoveCosignerReferenceResult) protocol.RemoveCosignerReferenceResultMessage {
+	return protocol.RemoveCosignerReferenceResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReferenceResult, ID: id},
 		Success:     result.Success, Name: result.Name, Removed: result.Removed, Code: result.Code, Error: result.Error,
 	}
 }
 
-func ProtocolExportSentryPublicResultMessage(id string, result adminproto.ExportSentryPublicResult) protocol.ExportSentryPublicResultMessage {
-	return protocol.ExportSentryPublicResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportSentryPublicResult, ID: id},
+func ProtocolExportCosignerPublicResultMessage(id string, result adminproto.ExportCosignerPublicResult) protocol.ExportCosignerPublicResultMessage {
+	return protocol.ExportCosignerPublicResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeExportCosignerPublicResult, ID: id},
 		Success:     result.Success, WitnessKeyID: result.WitnessKeyID, EnvelopeJSON: result.EnvelopeJSON,
 		Code: result.Code, Error: result.Error,
 	}
@@ -526,8 +526,8 @@ func ProtocolPruneDeletedArchiveResultMessage(id string, result adminproto.Prune
 	}
 }
 
-func protocolSentryReference(item adminproto.SentryReferenceInfo) protocol.SentryReferenceInfo {
-	return protocol.SentryReferenceInfo{
+func protocolCosignerReference(item adminproto.CosignerReferenceInfo) protocol.CosignerReferenceInfo {
+	return protocol.CosignerReferenceInfo{
 		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
 		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
 		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
@@ -797,18 +797,18 @@ func protocolKeyTypes(items []signerapi.KeyTypeInfo) []protocol.KeyTypeInfo {
 	out := make([]protocol.KeyTypeInfo, len(items))
 	for i, item := range items {
 		out[i] = protocol.KeyTypeInfo{
-			KeyType:                item.KeyType,
-			Family:                 item.Family,
-			DisplayName:            item.DisplayName,
-			Description:            item.Description,
-			AuthorizationKind:      item.AuthorizationKind,
-			RequiresLogicSig:       item.RequiresLogicSig,
-			MnemonicWordCount:      item.MnemonicWordCount,
-			MnemonicImport:         item.MnemonicImport,
-			MnemonicScheme:         item.MnemonicScheme,
-			SentryComponentKeyType: item.SentryComponentKeyType,
-			CreationParams:         protocolCreationParams(item.CreationParams),
-			RuntimeArgs:            protocolRuntimeArgs(item.RuntimeArgs),
+			KeyType:                  item.KeyType,
+			Family:                   item.Family,
+			DisplayName:              item.DisplayName,
+			Description:              item.Description,
+			AuthorizationKind:        item.AuthorizationKind,
+			RequiresLogicSig:         item.RequiresLogicSig,
+			MnemonicWordCount:        item.MnemonicWordCount,
+			MnemonicImport:           item.MnemonicImport,
+			MnemonicScheme:           item.MnemonicScheme,
+			CosignerComponentKeyType: item.CosignerComponentKeyType,
+			CreationParams:           protocolCreationParams(item.CreationParams),
+			RuntimeArgs:              protocolRuntimeArgs(item.RuntimeArgs),
 		}
 	}
 	return out

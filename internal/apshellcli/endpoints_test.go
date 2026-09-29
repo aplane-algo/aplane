@@ -34,21 +34,21 @@ func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
 	}
 }
 
-func TestEndpointMachineProjectionOmitsLocalPortForSentryRole(t *testing.T) {
+func TestEndpointMachineProjectionOmitsLocalPortForCosignerRole(t *testing.T) {
 	projection := projectEndpointEntry(apshellapp.EndpointEntry{
-		Alias: "sentry", Role: config.ClientEndpointRoleSentry,
-		URL: "ssh://sentry.example:22", LocalPort: 12271,
+		Alias: "cosigner", Role: config.ClientEndpointRoleCosigner,
+		URL: "ssh://cosigner.example:22", LocalPort: 12271,
 	})
 	data, err := json.Marshal(projection)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(data, []byte("local_port")) {
-		t.Fatalf("machine sentry endpoint projection contains local_port: %s", data)
+		t.Fatalf("machine cosigner endpoint projection contains local_port: %s", data)
 	}
 }
 
-func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
+func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	eng, err := newIsolatedTestEngine(t, "testnet")
@@ -66,9 +66,9 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 
 	result, err := state.cmdEndpoints([]string{
 		"create",
-		"--alias", "sentry-local",
+		"--alias", "cosigner-local",
 		"--endpoint", "ssh://127.0.0.1:2223",
-		"--sentryport", "12270",
+		"--cosignerport", "12270",
 	}, nil)
 	if err != nil {
 		t.Fatalf("cmdEndpoints(create) error = %v", err)
@@ -77,9 +77,9 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 		t.Fatalf("RenderText() error = %v", err)
 	}
 	rendered := out.String()
-	if !strings.Contains(rendered, "Configured sentry endpoint sentry-local") ||
-		!strings.Contains(rendered, "sentry port: 12270") ||
-		!strings.Contains(rendered, "request-token --endpoint sentry-local") {
+	if !strings.Contains(rendered, "Configured cosigner endpoint cosigner-local") ||
+		!strings.Contains(rendered, "cosigner port: 12270") ||
+		!strings.Contains(rendered, "request-token --endpoint cosigner-local") {
 		t.Fatalf("output missing create details:\n%s", rendered)
 	}
 
@@ -87,15 +87,15 @@ func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
+	endpoint, ok := cfg.Endpoints.Endpoint("cosigner-local")
 	if !ok {
-		t.Fatal("sentry-local endpoint missing")
+		t.Fatal("cosigner-local endpoint missing")
 	}
-	if endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
-		t.Fatalf("endpoint = %#v, want sentry ssh endpoint with signer_port 12270", endpoint)
+	if endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
+		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint with signer_port 12270", endpoint)
 	}
-	if live, ok := state.Config.Endpoints.Endpoint("sentry-local"); !ok || live.URL != endpoint.URL {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve sentry-local", live, ok)
+	if live, ok := state.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve cosigner-local", live, ok)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelopePath := filepath.Join(dataDir, "sentry.endpoint.json")
+	envelopePath := filepath.Join(dataDir, "cosigner.endpoint.json")
 	if err := os.WriteFile(envelopePath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	}
 
 	result, err := state.cmdEndpoints([]string{
-		"import", "--alias", "local-sentry", "--role", "sentry", envelopePath,
+		"import", "--alias", "local-cosigner", "--role", "cosigner", envelopePath,
 	}, nil)
 	if err != nil {
 		t.Fatalf("cmdEndpoints(import) error = %v", err)
@@ -130,47 +130,47 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	if err := result.RenderText(state.Out); err != nil {
 		t.Fatalf("RenderText() error = %v", err)
 	}
-	endpoint, ok := state.Config.Endpoints.Endpoint("local-sentry")
-	if !ok || endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-sentry", endpoint, ok)
+	endpoint, ok := state.Config.Endpoints.Endpoint("local-cosigner")
+	if !ok || endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-cosigner", endpoint, ok)
 	}
 }
 
-func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
-	req, err := parseEndpointCreateSentryArgs([]string{
-		"--alias", "sentry-local",
+func TestParseEndpointCreateCosignerArgsAcceptsHyphenatedPortFlag(t *testing.T) {
+	req, err := parseEndpointCreateCosignerArgs([]string{
+		"--alias", "cosigner-local",
 		"--endpoint", "ssh://127.0.0.1:2223",
-		"--sentry-port", "12270",
+		"--cosigner-port", "12270",
 		"--dry-run",
 	})
 	if err != nil {
-		t.Fatalf("parseEndpointCreateSentryArgs() error = %v", err)
+		t.Fatalf("parseEndpointCreateCosignerArgs() error = %v", err)
 	}
-	if req.Alias != "sentry-local" || req.URL != "ssh://127.0.0.1:2223" || req.SentryPort != 12270 || !req.DryRun {
-		t.Fatalf("request = %#v, want parsed manual sentry endpoint", req)
+	if req.Alias != "cosigner-local" || req.URL != "ssh://127.0.0.1:2223" || req.CosignerPort != 12270 || !req.DryRun {
+		t.Fatalf("request = %#v, want parsed manual cosigner endpoint", req)
 	}
 }
 
-func TestEndpointsUsageListsDiscoverSentries(t *testing.T) {
+func TestEndpointsUsageListsDiscoverCosigners(t *testing.T) {
 	state := &REPLState{}
 	registry := state.initCommandRegistry()
 	cmd, ok := registry.Lookup("endpoints")
 	if !ok {
 		t.Fatal("endpoints command is not registered")
 	}
-	if !strings.Contains(cmd.Usage, "endpoints discover-sentries") || strings.Contains(cmd.Usage, "discover-sentries [--dry-run]") {
-		t.Fatalf("endpoints registry usage = %q, want discover-sentries", cmd.Usage)
+	if !strings.Contains(cmd.Usage, "endpoints discover-cosigners") || strings.Contains(cmd.Usage, "discover-cosigners [--dry-run]") {
+		t.Fatalf("endpoints registry usage = %q, want discover-cosigners", cmd.Usage)
 	}
-	if strings.Contains(cmd.Usage, "sync-sentries") {
-		t.Fatalf("endpoints registry usage = %q, contains retired sync-sentries", cmd.Usage)
+	if strings.Contains(cmd.Usage, "sync-cosigners") {
+		t.Fatalf("endpoints registry usage = %q, contains retired sync-cosigners", cmd.Usage)
 	}
 
 	_, err := state.cmdEndpoints(nil, nil)
 	if err == nil {
 		t.Fatal("cmdEndpoints() error = nil, want usage")
 	}
-	if !strings.Contains(err.Error(), "endpoints discover-sentries") {
-		t.Fatalf("cmdEndpoints() error = %q, want discover-sentries", err)
+	if !strings.Contains(err.Error(), "endpoints discover-cosigners") {
+		t.Fatalf("cmdEndpoints() error = %q, want discover-cosigners", err)
 	}
 }
 
@@ -179,31 +179,31 @@ func TestRenderEndpointShowContainsConnectionStateOnly(t *testing.T) {
 	state := &REPLState{Out: &out}
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
-			Alias: "sentry-local",
-			Role:  config.ClientEndpointRoleSentry,
+			Alias: "cosigner-local",
+			Role:  config.ClientEndpointRoleCosigner,
 			URL:   "ssh://127.0.0.1:2223",
 		},
 	})
 	rendered := out.String()
-	if strings.Contains(rendered, "Published sentries") || strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "LAST SEEN") {
+	if strings.Contains(rendered, "Published cosigners") || strings.Contains(rendered, "COSIGNER KEY") || strings.Contains(rendered, "LAST SEEN") {
 		t.Fatalf("rendered endpoint show = %q, want connection state only", rendered)
 	}
 }
 
-func TestRenderEndpointsListOmitsCachedSentryInventory(t *testing.T) {
+func TestRenderEndpointsListOmitsCachedCosignerInventory(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
 	state.renderEndpointsList(&apshellapp.EndpointsListResult{
 		Endpoints: []apshellapp.EndpointEntry{{
-			Alias: "sentry-local",
-			Role:  config.ClientEndpointRoleSentry,
+			Alias: "cosigner-local",
+			Role:  config.ClientEndpointRoleCosigner,
 			URL:   "ssh://127.0.0.1:2223",
 		}},
 	})
 
 	rendered := out.String()
-	if strings.Contains(rendered, "SENTRY KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
+	if strings.Contains(rendered, "COSIGNER KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
 		t.Fatalf("rendered endpoint list header = %q, want no cached inventory columns", rendered)
 	}
 }

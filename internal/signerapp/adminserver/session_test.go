@@ -481,11 +481,11 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 
 func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T) {
 	wantAllowed := map[string]bool{
-		protocol.MsgTypeGetAdminSettings:     true,
-		protocol.MsgTypeListSentryReferences: true,
-		protocol.MsgTypeGetSentryReference:   true,
-		protocol.MsgTypeExportSentryPublic:   true,
-		protocol.MsgTypeListGenerations:      true,
+		protocol.MsgTypeGetAdminSettings:       true,
+		protocol.MsgTypeListCosignerReferences: true,
+		protocol.MsgTypeGetCosignerReference:   true,
+		protocol.MsgTypeExportCosignerPublic:   true,
+		protocol.MsgTypeListGenerations:        true,
 	}
 	if len(authOnlyDispatchTypes) != len(wantAllowed) {
 		t.Fatalf("auth_only allowlist size = %d, want %d", len(authOnlyDispatchTypes), len(wantAllowed))

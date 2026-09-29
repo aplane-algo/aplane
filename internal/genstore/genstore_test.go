@@ -279,7 +279,7 @@ func TestAnchoredHistoricalSealAndExactMemberOpen(t *testing.T) {
 		gen,
 		anchor,
 		"keys/A.key",
-		crypto.SentryCredentialContext("A"),
+		crypto.CosignerCredentialContext("A"),
 		multi,
 	); err == nil {
 		t.Fatal("OpenAnchoredEnvelope() accepted the wrong logical context")

@@ -55,42 +55,42 @@ func LoadVerifiedStoredConfigActive(active storepaths.ActivePaths, kr *crypto.Ke
 	return stored, err
 }
 
-// LoadVerifiedSentryConfig reads policy.yaml for a sentry node, verifies
-// policy.yaml.hmac against the document bytes, then parses the stored sentry
+// LoadVerifiedCosignerConfig reads policy.yaml for a cosigner node, verifies
+// policy.yaml.hmac against the document bytes, then parses the stored cosigner
 // policy.
-func LoadVerifiedSentryConfig(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedSentryConfigDocument(dataRoot, kr)
+func LoadVerifiedCosignerConfig(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedCosignerConfigDocument(dataRoot, kr)
 	return stored, err
 }
 
-// LoadVerifiedSentryConfigDocument reads, authenticates, and parses the
-// sentry-domain policy.yaml, returning the exact verified document bytes.
-func LoadVerifiedSentryConfigDocument(dataRoot string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+// LoadVerifiedCosignerConfigDocument reads, authenticates, and parses the
+// cosigner-domain policy.yaml, returning the exact verified document bytes.
+func LoadVerifiedCosignerConfigDocument(dataRoot string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
-		SentryPath(dataRoot),
+		CosignerPath(dataRoot),
 		kr,
-		ParseStoredSentryConfig,
-		"sentry policy",
-		"sentry policy config",
+		ParseStoredCosignerConfig,
+		"cosigner policy",
+		"cosigner policy config",
 	)
 }
 
-// LoadVerifiedSentryConfigDocumentActive reads the sentry policy from one
+// LoadVerifiedCosignerConfigDocumentActive reads the cosigner policy from one
 // already-resolved generation.
-func LoadVerifiedSentryConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
+func LoadVerifiedCosignerConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
 		active.PolicyPath(),
 		kr,
-		ParseStoredSentryConfig,
-		"sentry policy",
-		"sentry policy config",
+		ParseStoredCosignerConfig,
+		"cosigner policy",
+		"cosigner policy config",
 	)
 }
 
-// LoadVerifiedSentryConfigActive verifies and parses the sentry policy in one
+// LoadVerifiedCosignerConfigActive verifies and parses the cosigner policy in one
 // already-resolved generation.
-func LoadVerifiedSentryConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedSentryConfigDocumentActive(active, kr)
+func LoadVerifiedCosignerConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
+	stored, _, err := LoadVerifiedCosignerConfigDocumentActive(active, kr)
 	return stored, err
 }
 
@@ -122,10 +122,10 @@ func LoadVerifiedStoredConfigWithKeyring(dataRoot string, kr *crypto.Keyring) (*
 	return LoadVerifiedStoredConfig(dataRoot, kr)
 }
 
-// LoadVerifiedSentryConfigWithKeyring verifies policy.yaml with the identity
-// keyring as a sentry policy and parses it.
-func LoadVerifiedSentryConfigWithKeyring(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
-	return LoadVerifiedSentryConfig(dataRoot, kr)
+// LoadVerifiedCosignerConfigWithKeyring verifies policy.yaml with the identity
+// keyring as a cosigner policy and parses it.
+func LoadVerifiedCosignerConfigWithKeyring(dataRoot string, kr *crypto.Keyring) (*StoredConfig, error) {
+	return LoadVerifiedCosignerConfig(dataRoot, kr)
 }
 
 // SaveStoredConfigWithIntegrity writes policy.yaml and policy.yaml.hmac. The
@@ -143,14 +143,14 @@ func SaveStoredConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr *crypt
 	return SavePolicyBytesWithIntegrity(dataRoot, policyBytes, kr, signedAt)
 }
 
-// SaveStoredSentryConfigWithIntegrity writes policy.yaml and
-// policy.yaml.hmac for a sentry node.
-func SaveStoredSentryConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	sentryBytes, err := MarshalStoredSentryConfig(cfg)
+// SaveStoredCosignerConfigWithIntegrity writes policy.yaml and
+// policy.yaml.hmac for a cosigner node.
+func SaveStoredCosignerConfigWithIntegrity(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	cosignerBytes, err := MarshalStoredCosignerConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
+		return fmt.Errorf("failed to marshal cosigner policy config: %w", err)
 	}
-	return SaveSentryBytesWithIntegrity(dataRoot, sentryBytes, kr, signedAt)
+	return SaveCosignerBytesWithIntegrity(dataRoot, cosignerBytes, kr, signedAt)
 }
 
 // SaveStoredConfigActiveWithKeyring writes the signer policy and integrity
@@ -170,19 +170,19 @@ func SaveStoredConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *Store
 	)
 }
 
-// SaveStoredSentryConfigActiveWithKeyring writes the sentry policy and
+// SaveStoredCosignerConfigActiveWithKeyring writes the cosigner policy and
 // integrity sidecar into one already-resolved generation.
-func SaveStoredSentryConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	policyBytes, err := MarshalStoredSentryConfig(cfg)
+func SaveStoredCosignerConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	policyBytes, err := MarshalStoredCosignerConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
+		return fmt.Errorf("failed to marshal cosigner policy config: %w", err)
 	}
 	return savePolicyBytesWithIntegrityAtPath(
 		active.PolicyPath(),
 		policyBytes,
 		kr,
 		signedAt,
-		"sentry policy config",
+		"cosigner policy config",
 		"policy integrity sidecar",
 	)
 }
@@ -200,15 +200,15 @@ func SavePolicyBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes
 	)
 }
 
-// SaveSentryBytesActiveWithKeyring writes exact sentry-policy bytes and their
+// SaveCosignerBytesActiveWithKeyring writes exact cosigner-policy bytes and their
 // integrity sidecar into one already-resolved generation.
-func SaveSentryBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+func SaveCosignerBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
 	return savePolicyBytesWithIntegrityAtPath(
 		active.PolicyPath(),
 		policyBytes,
 		kr,
 		signedAt,
-		"sentry policy config",
+		"cosigner policy config",
 		"policy integrity sidecar",
 	)
 }
@@ -220,11 +220,11 @@ func SavePolicyBytesWithIntegrity(dataRoot string, policyBytes []byte, kr *crypt
 	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot), policyBytes, kr, signedAt, "policy config", "policy integrity sidecar")
 }
 
-// SaveSentryBytesWithIntegrity writes exact sentry-policy bytes to
+// SaveCosignerBytesWithIntegrity writes exact cosigner-policy bytes to
 // policy.yaml plus policy.yaml.hmac. The caller owns parsing and runtime
 // validation before calling this lower-level primitive.
-func SaveSentryBytesWithIntegrity(dataRoot string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(SentryPath(dataRoot), sentryBytes, kr, signedAt, "sentry policy config", "policy integrity sidecar")
+func SaveCosignerBytesWithIntegrity(dataRoot string, cosignerBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(CosignerPath(dataRoot), cosignerBytes, kr, signedAt, "cosigner policy config", "policy integrity sidecar")
 }
 
 func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time, configLabel, sidecarLabel string) error {
@@ -257,10 +257,10 @@ func SaveStoredConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr *crypto.
 	return SaveStoredConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
 }
 
-// SaveStoredSentryConfigWithKeyring writes sentry policy.yaml plus
+// SaveStoredCosignerConfigWithKeyring writes cosigner policy.yaml plus
 // policy.yaml.hmac with the identity keyring.
-func SaveStoredSentryConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveStoredSentryConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
+func SaveStoredCosignerConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
+	return SaveStoredCosignerConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
 }
 
 // SavePolicyBytesWithKeyring writes exact policy.yaml bytes plus
@@ -269,10 +269,10 @@ func SavePolicyBytesWithKeyring(dataRoot string, policyBytes []byte, kr *crypto.
 	return SavePolicyBytesWithIntegrity(dataRoot, policyBytes, kr, signedAt)
 }
 
-// SaveSentryBytesWithKeyring writes exact sentry-policy bytes plus
+// SaveCosignerBytesWithKeyring writes exact cosigner-policy bytes plus
 // policy.yaml.hmac with the identity keyring.
-func SaveSentryBytesWithKeyring(dataRoot string, sentryBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveSentryBytesWithIntegrity(dataRoot, sentryBytes, kr, signedAt)
+func SaveCosignerBytesWithKeyring(dataRoot string, cosignerBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
+	return SaveCosignerBytesWithIntegrity(dataRoot, cosignerBytes, kr, signedAt)
 }
 
 // SignPolicyFileIntegrity writes policy.yaml.hmac for the current policy.yaml
@@ -282,10 +282,10 @@ func SignPolicyFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.
 	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot), kr, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
 }
 
-// SignSentryFileIntegrity writes policy.yaml.hmac for the current
-// sentry-policy bytes in policy.yaml.
-func SignSentryFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(SentryPath(dataRoot), kr, signedAt, ParseStoredSentryConfig, "sentry policy", "sentry policy config", "policy integrity sidecar")
+// SignCosignerFileIntegrity writes policy.yaml.hmac for the current
+// cosigner-policy bytes in policy.yaml.
+func SignCosignerFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(CosignerPath(dataRoot), kr, signedAt, ParseStoredCosignerConfig, "cosigner policy", "cosigner policy config", "policy integrity sidecar")
 }
 
 func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt time.Time, parser storedConfigParser, docLabel, configLabel, sidecarLabel string) error {
@@ -320,10 +320,10 @@ func SignPolicyFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, sig
 	return SignPolicyFileIntegrity(dataRoot, kr, signedAt)
 }
 
-// SignSentryFileIntegrityWithKeyring signs the current sentry-policy bytes in
+// SignCosignerFileIntegrityWithKeyring signs the current cosigner-policy bytes in
 // policy.yaml with the identity keyring.
-func SignSentryFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
-	return SignSentryFileIntegrity(dataRoot, kr, signedAt)
+func SignCosignerFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
+	return SignCosignerFileIntegrity(dataRoot, kr, signedAt)
 }
 
 // SignPolicyFileIntegrityActiveWithKeyring signs the current signer-policy
@@ -340,16 +340,16 @@ func SignPolicyFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr 
 	)
 }
 
-// SignSentryFileIntegrityActiveWithKeyring signs the current sentry-policy
+// SignCosignerFileIntegrityActiveWithKeyring signs the current cosigner-policy
 // bytes in one already-resolved generation.
-func SignSentryFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
+func SignCosignerFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
 	return signPolicyFileIntegrityAtPath(
 		active.PolicyPath(),
 		kr,
 		signedAt,
-		ParseStoredSentryConfig,
-		"sentry policy",
-		"sentry policy config",
+		ParseStoredCosignerConfig,
+		"cosigner policy",
+		"cosigner policy config",
 		"policy integrity sidecar",
 	)
 }

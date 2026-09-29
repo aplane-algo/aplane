@@ -497,8 +497,8 @@ This model does not prove:
 - filesystem reload ordering,
 - server shutdown and runtime destruction ordering,
 - backup/restore behavior,
-- additional compliance-sentry semantics beyond the current guarded and
-  bounded-sentry flows.
+- additional compliance-cosigner semantics beyond the current guarded and
+  bounded-cosigner flows.
 
 Those belong in separate models or assumptions.
 

@@ -183,21 +183,21 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 func TestGenericSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-sentry1024.v1",
-		DisplayName: "Falcon-1024 / Ed25519 Sentry",
+		KeyType:     "aplane.falcon1024-cosigner1024.v1",
+		DisplayName: "Falcon-1024 / Ed25519 Cosigner",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "environment",
 			Label:   "Environment",
 			Type:    "select",
-			Options: []string{"lab-sentry", "backup-sentry"},
-			Default: "lab-sentry",
+			Options: []string{"lab-cosigner", "backup-cosigner"},
+			Default: "lab-cosigner",
 		}},
 	}})
 
 	m := Model{forms: formsState{generateKeyType: 0}}
-	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry1024.v1")
-	if got := m.forms.genericLSigParams["environment"]; got != "lab-sentry" {
-		t.Fatalf("default environment = %q, want lab-sentry", got)
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-cosigner1024.v1")
+	if got := m.forms.genericLSigParams["environment"]; got != "lab-cosigner" {
+		t.Fatalf("default environment = %q, want lab-cosigner", got)
 	}
 
 	m.forms.generateFocus = 0
@@ -206,34 +206,34 @@ func TestGenericSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 		t.Fatalf("cycle command = %v, want nil", cmd)
 	}
 	m = next.(Model)
-	if got := m.forms.genericLSigParams["environment"]; got != "backup-sentry" {
-		t.Fatalf("cycled environment = %q, want backup-sentry", got)
+	if got := m.forms.genericLSigParams["environment"]; got != "backup-cosigner" {
+		t.Fatalf("cycled environment = %q, want backup-cosigner", got)
 	}
 
 	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(Model)
-	if got := m.forms.genericLSigParams["environment"]; got != "lab-sentry" {
-		t.Fatalf("left-cycled environment = %q, want lab-sentry", got)
+	if got := m.forms.genericLSigParams["environment"]; got != "lab-cosigner" {
+		t.Fatalf("left-cycled environment = %q, want lab-cosigner", got)
 	}
 }
 
 func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
-	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"sentry_public_key"}, generateFocus: 0}}
+	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"cosigner_public_key"}, generateFocus: 0}}
 	input := "D6FB74E10151AC3B0EAA7431B9B92C772C2A4A600C10B88CFD30169EA1AB4D0A"
 	params := []lsigprovider.ParameterDef{{
-		Name:      "sentry_public_key",
+		Name:      "cosigner_public_key",
 		Type:      "bytes",
 		MaxLength: 64,
 	}}
 
 	got := m.appendToCurrentParam(input, params)
-	if got.forms.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.forms.genericLSigParams["sentry_public_key"])
+	if got.forms.genericLSigParams["cosigner_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.forms.genericLSigParams["cosigner_public_key"])
 	}
 
 	got = got.appendToCurrentParam("ffff", params)
-	if got.forms.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input exceeded max length: %q", got.forms.genericLSigParams["sentry_public_key"])
+	if got.forms.genericLSigParams["cosigner_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input exceeded max length: %q", got.forms.genericLSigParams["cosigner_public_key"])
 	}
 }
 

@@ -498,7 +498,7 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	store := NewAtomicFileKeyStoreForPaths(paths)
 	store.cache["addr1"] = keys.KeyScanInfo{
 		Category:               keys.CategoryDSALsig,
-		Parameters:             map[string]string{"sentry_public_key": "abc123"},
+		Parameters:             map[string]string{"cosigner_public_key": "abc123"},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		SigningArgs: []keys.StoredSigningArg{
 			{Name: "proof", Type: "bytes", Required: true, ByteLength: 32},
@@ -521,15 +521,15 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	if got.TemplateFingerprint != "semantic-a" {
 		t.Fatalf("TemplateFingerprint = %q, want semantic-a", got.TemplateFingerprint)
 	}
-	if got.Parameters["sentry_public_key"] != "abc123" {
-		t.Fatalf("Parameters = %#v, want sentry_public_key", got.Parameters)
+	if got.Parameters["cosigner_public_key"] != "abc123" {
+		t.Fatalf("Parameters = %#v, want cosigner_public_key", got.Parameters)
 	}
 	if len(got.SigningArgs) != 1 || got.SigningArgs[0].Name != "proof" {
 		t.Fatalf("SigningArgs = %+v, want proof arg", got.SigningArgs)
 	}
 
-	got.Parameters["sentry_public_key"] = "mutated"
-	if store.cache["addr1"].Parameters["sentry_public_key"] != "abc123" {
+	got.Parameters["cosigner_public_key"] = "mutated"
+	if store.cache["addr1"].Parameters["cosigner_public_key"] != "abc123" {
 		t.Fatal("GetSigningSummary should return a copy, not mutate cached parameters")
 	}
 
@@ -571,11 +571,11 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(component key) error = %v", err)
 	}
-	encrypted, err := cryptotest.Keyring(t, testMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(componentKey))
+	encrypted, err := cryptotest.Keyring(t, testMasterKey).Seal(keyJSON, crypto.CosignerCredentialContext(componentKey))
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, componentKey), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(keys.CosignerCredentialFilePath(paths, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 

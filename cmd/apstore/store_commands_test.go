@@ -91,7 +91,7 @@ func TestParseInitializeRole(t *testing.T) {
 	}{
 		{name: "default signer", want: noderole.RoleSigner},
 		{name: "explicit signer", args: []string{"--role", "signer"}, want: noderole.RoleSigner},
-		{name: "explicit sentry", args: []string{"--role", "sentry"}, want: noderole.RoleSentry},
+		{name: "explicit cosigner", args: []string{"--role", "cosigner"}, want: noderole.RoleCosigner},
 		{name: "dual rejected", args: []string{"--role", "dual"}, wantErr: "invalid initialize role"},
 		{name: "extra arg rejected", args: []string{"extra"}, wantErr: "usage: apstore initialize"},
 	}

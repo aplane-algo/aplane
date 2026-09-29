@@ -26,7 +26,7 @@ func TestManagedCredentialClassForCategory(t *testing.T) {
 		{CategoryNativePQ, ManagedCredentialAccount, AccountKeyExtension},
 		{CategoryDSALsig, ManagedCredentialAccount, AccountKeyExtension},
 		{CategoryGenericLsig, ManagedCredentialAccount, AccountKeyExtension},
-		{CategoryWitness, ManagedCredentialSentry, SentryCredentialExtension},
+		{CategoryWitness, ManagedCredentialCosigner, CosignerCredentialExtension},
 	}
 	for _, test := range tests {
 		class, err := ManagedCredentialClassForCategory(test.category)
@@ -60,7 +60,7 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if witnessName != witnessID+SentryCredentialExtension {
+	if witnessName != witnessID+CosignerCredentialExtension {
 		t.Fatalf("witness filename = %q", witnessName)
 	}
 
@@ -92,14 +92,14 @@ func TestValidateManagedCredentialFilename(t *testing.T) {
 	if err := ValidateManagedCredentialFilename(account+AccountKeyExtension, account, CategoryEd25519); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateManagedCredentialFilename(witnessID+SentryCredentialExtension, witnessID, CategoryWitness); err != nil {
+	if err := ValidateManagedCredentialFilename(witnessID+CosignerCredentialExtension, witnessID, CategoryWitness); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateManagedCredentialFilename(witnessID+AccountKeyExtension, witnessID, CategoryWitness); !errors.Is(err, ErrManagedCredentialClassMismatch) {
 		t.Fatalf("legacy witness .key error = %v", err)
 	}
-	if err := ValidateManagedCredentialFilename(account+SentryCredentialExtension, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassMismatch) {
-		t.Fatalf("account .sen error = %v", err)
+	if err := ValidateManagedCredentialFilename(account+CosignerCredentialExtension, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassMismatch) {
+		t.Fatalf("account .cos error = %v", err)
 	}
 	other := types.Address{3}.String()
 	if err := ValidateManagedCredentialFilename(other+AccountKeyExtension, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialSelectorMismatch) {
@@ -113,15 +113,15 @@ func TestParseManagedCredentialFilenameExcludesStandaloneWitnessFiles(t *testing
 			t.Fatalf("ParseManagedCredentialFilename(%q) accepted non-candidate", name)
 		}
 	}
-	selector, class, ok := ParseManagedCredentialFilename("ID.sen")
-	if !ok || selector != "ID" || class != ManagedCredentialSentry {
-		t.Fatalf("ParseManagedCredentialFilename(ID.sen) = (%q, %q, %v)", selector, class, ok)
+	selector, class, ok := ParseManagedCredentialFilename("ID.cos")
+	if !ok || selector != "ID" || class != ManagedCredentialCosigner {
+		t.Fatalf("ParseManagedCredentialFilename(ID.cos) = (%q, %q, %v)", selector, class, ok)
 	}
 }
 
 func TestScanManagedCredentialFiles(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"ACCOUNT.key", "WITNESS.sen", "EXTERNAL.wit", "EXTERNAL.wit.json", "notes.txt"} {
+	for _, name := range []string{"ACCOUNT.key", "WITNESS.cos", "EXTERNAL.wit", "EXTERNAL.wit.json", "notes.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -140,8 +140,8 @@ func TestScanManagedCredentialFiles(t *testing.T) {
 	if files[0].Name != "ACCOUNT.key" || files[0].Class != ManagedCredentialAccount || files[0].Selector != "ACCOUNT" {
 		t.Fatalf("account record = %#v", files[0])
 	}
-	if files[1].Name != "WITNESS.sen" || files[1].Class != ManagedCredentialSentry || files[1].Selector != "WITNESS" {
-		t.Fatalf("sentry record = %#v", files[1])
+	if files[1].Name != "WITNESS.cos" || files[1].Class != ManagedCredentialCosigner || files[1].Selector != "WITNESS" {
+		t.Fatalf("cosigner record = %#v", files[1])
 	}
 }
 
@@ -152,7 +152,7 @@ func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
 	if err := os.MkdirAll(activeKeysDirForTest(t, paths), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	contradictory := filepath.Join(activeKeysDirForTest(t, paths), account+SentryCredentialExtension)
+	contradictory := filepath.Join(activeKeysDirForTest(t, paths), account+CosignerCredentialExtension)
 	if err := os.WriteFile(contradictory, []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}

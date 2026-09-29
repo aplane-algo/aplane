@@ -578,7 +578,7 @@ func TestRequestBoundedAdmin_Success(t *testing.T) {
 	}
 }
 
-func TestRequestUnifiedBoundedSentryEndpoints(t *testing.T) {
+func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/sign/component":
@@ -608,7 +608,7 @@ func TestRequestUnifiedBoundedSentryEndpoints(t *testing.T) {
 	}
 	assembly, err := c.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.AssemblyTarget{{
-			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SentrySignature: "cc",
+			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "cc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
@@ -634,7 +634,7 @@ func TestRequestComponentsRejectsUnrequestedTargetKind(t *testing.T) {
 	_, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: "SENTRY",
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: "COSIGNER",
 		}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "indices or kinds do not match") {
@@ -651,7 +651,7 @@ func TestRequestComponentsRejectsOutOfGroupTargetIndex(t *testing.T) {
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
 			RequestID: got.RequestID,
 			Components: []signerapi.Component{{
-				TargetIndex: 1, Kind: signerapi.ComponentTargetKindSentry,
+				TargetIndex: 1, Kind: signerapi.ComponentTargetKindCosigner,
 				Signature: "aa", SignatureScheme: "aplane.falcon1024.v1",
 			}},
 		})), nil
@@ -660,7 +660,7 @@ func TestRequestComponentsRejectsOutOfGroupTargetIndex(t *testing.T) {
 	_, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, ComponentKey: "SENTRY",
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: "COSIGNER",
 		}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "indices or kinds do not match") {
@@ -798,14 +798,14 @@ func TestRequestComponentsPostsToComponentEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if got.TargetKind() != signerapi.ComponentTargetKindSentry || got.Targets[0].ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
-			t.Fatalf("component request = %+v, want sentry component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
+		if got.TargetKind() != signerapi.ComponentTargetKindCosigner || got.Targets[0].ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
+			t.Fatalf("component request = %+v, want cosigner component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
 		}
 		resp := signerapi.ComponentResponse{
 			RequestID: got.RequestID,
 			Components: []signerapi.Component{{
 				TargetIndex:     0,
-				Kind:            signerapi.ComponentTargetKindSentry,
+				Kind:            signerapi.ComponentTargetKindCosigner,
 				Signature:       "aabb",
 				SignatureScheme: "aplane.witness-falcon1024.v1",
 			}},
@@ -816,7 +816,7 @@ func TestRequestComponentsPostsToComponentEndpoint(t *testing.T) {
 	got, err := c.RequestComponents(signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner,
 			ComponentKey: "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		}},
 	})
@@ -852,11 +852,11 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 	got, err := c.RequestAssemble(signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
-			TargetIndex:     0,
-			Kind:            signerapi.AssemblyTargetKindGuarded,
-			AuthAddress:     "ADDR1",
-			UserSignature:   "aabb",
-			SentrySignature: "bbcc",
+			TargetIndex:       0,
+			Kind:              signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:       "ADDR1",
+			UserSignature:     "aabb",
+			CosignerSignature: "bbcc",
 		}},
 	})
 	if err != nil {

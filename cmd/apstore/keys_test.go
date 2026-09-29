@@ -24,7 +24,7 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
-		attResult, attPublicHex := generateTestSentryComponentKey(t, passphrase)
+		attResult, attPublicHex := generateTestCosignerComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
 			return withTestStdin(string(passphrase)+"\n", func() error {
@@ -47,27 +47,27 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 			t.Fatalf("list output = %q, want ed25519 key type", out)
 		}
 		if !strings.Contains(out, "aplane.witness-falcon1024.v1") {
-			t.Fatalf("list output = %q, want sentry key type display", out)
+			t.Fatalf("list output = %q, want cosigner key type display", out)
 		}
 		if strings.Contains(out, edResult.PublicKeyHex) {
 			t.Fatalf("list output exposed Ed25519 public key hex: %q", out)
 		}
 		if strings.Contains(out, attPublicHex) {
-			t.Fatalf("list output exposed sentry public key hex: %q", out)
+			t.Fatalf("list output exposed cosigner public key hex: %q", out)
 		}
 	})
 }
 
-func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
+func generateTestCosignerComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
 	t.Helper()
 	activePaths, kr := deriveTestStore(t, passphrase)
 	generator := &falconkeygen.WitnessFalcon1024Generator{}
 	result, err := generator.GenerateRandom(context.Background(), activePaths, kr, witness.Falcon1024V1, nil)
 	if err != nil {
-		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
+		t.Fatalf("GenerateRandom(cosigner-falcon1024) error = %v", err)
 	}
 	if result.PublicKeyHex == "" {
-		t.Fatal("GenerateRandom(sentry-falcon1024) public key is empty")
+		t.Fatal("GenerateRandom(cosigner-falcon1024) public key is empty")
 	}
 	return result, result.PublicKeyHex
 }

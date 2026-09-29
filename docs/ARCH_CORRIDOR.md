@@ -2,7 +2,7 @@
 
 ## Status
 
-`aplane.corridor.v1` is the first bundled profile that composes optional sentry
+`aplane.corridor.v1` is the first bundled profile that composes optional cosigner
 authorization into `bounded1`. It is an optional schema-v2 template source at
 `library/templates/aplane.corridor.v1.yaml`; it is not a compiled provider,
 authorization-contract identifier, key category, or special transaction
@@ -17,13 +17,13 @@ The dimensions are independent:
 | Base signing primitive | `aplane.falcon1024.v1` |
 | Authorization contract | `bounded1` |
 | Layer-3 policy | framework-owned `merkle_allowlist` |
-| Spend auxiliary authority | `sentry1`, Falcon witness, required on spend |
+| Spend auxiliary authority | `cosigner1`, Falcon witness, required on spend |
 | Rekey auxiliary authority | distinct offline Falcon contract-admin witness |
-| Advertised signing flow | `bounded-sentry1` |
+| Advertised signing flow | `bounded-cosigner1` |
 
 Changing one dimension does not reinterpret the others. In particular,
 `bounded1` is the on-chain envelope and durable metadata vocabulary, while
-`bounded-sentry1` is the client/server choreography used to obtain a complete
+`bounded-cosigner1` is the client/server choreography used to obtain a complete
 spend signature.
 
 ### V1 compatibility ratification
@@ -35,10 +35,10 @@ they were pre-release artifacts and do not define a durable Corridor
 compatibility contract. No account generated from that provider is supported
 as a production Corridor account. Developer or LocalNet instances must be
 discarded or decommissioned and recreated from this template. The key type,
-canonical program, metadata, and `bounded-sentry1` flow documented here become
+canonical program, metadata, and `bounded-cosigner1` flow documented here become
 the Corridor v1 compatibility baseline.
 
-The complete sentry-bearing profile encoding, behavior parameters, Merkle
+The complete cosigner-bearing profile encoding, behavior parameters, Merkle
 root/proof, argument masks, program binding, and admin transcript are frozen
 together in
 [bounded1 Golden vector 2](ARCH_BOUNDED_DSA.md#golden-vector-2-corridor).
@@ -55,7 +55,7 @@ Every accepted path requires the Falcon spending signature and
 A non-self `Receiver` or `AssetReceiver` must have a valid 512-byte proof
 against the fixed-depth Merkle root compiled from the durable `recipients`
 parameter. Self receivers bypass proof verification. Every spend also requires
-the enrolled sentry's Falcon signature over the `APLANE_SENTRY_V1` sentry-role
+the enrolled cosigner's Falcon signature over the `APLANE_COSIGNER_V1` cosigner-role
 TxID message.
 
 Root construction, recipient canonicalization, duplicate rejection, padding,
@@ -63,12 +63,12 @@ node hashing, and proof order are frozen by the
 [bounded1 Merkle allowlist compatibility contract](ARCH_BOUNDED_DSA.md#merkle-allowlist-compatibility-contract).
 
 Corridor rejects close remainder, asset close, clawback, hybrid rekey+spend,
-unsupported transaction types, missing or malformed proofs, missing sentry
+unsupported transaction types, missing or malformed proofs, missing cosigner
 authorization, and arguments supplied from the wrong source.
 
 The only administrative operation is the bounded pure-rekey normal form. It
 requires the spending signature plus the distinct external contract-admin
-signature. It does not require or permit a sentry signature or Merkle proof.
+signature. It does not require or permit a cosigner signature or Merkle proof.
 The admin witness is therefore a rekey co-authorizer, not an independent
 spending-key recovery key.
 
@@ -77,8 +77,8 @@ spending-key recovery key.
 Generation resolves three distinct Falcon keypairs:
 
 1. the signer-held spending key;
-2. the sentry-node `.sen` witness selected by `sentry` or supplied as
-   `sentry_public_key`; and
+2. the cosigner-node `.cos` witness selected by `cosigner` or supplied as
+   `cosigner_public_key`; and
 3. the offline `.wit` contract-admin witness represented by
    `bounded_admin_public_key`.
 
@@ -95,7 +95,7 @@ The custody consequences are asymmetric:
 
 - a stolen spending key cannot rekey the account without the admin witness;
 - the spending key plus the admin witness can rekey away from an unavailable
-  or compromised sentry or replace the current Corridor program;
+  or compromised cosigner or replace the current Corridor program;
 - the admin witness cannot recover an account after the spending key is lost.
 
 Operators must therefore back up the spending key and admin witness as distinct
@@ -108,33 +108,33 @@ The frozen online flow is:
 
 ```text
 client -> user signer  POST /sign/component (kind=bounded-base)
-client -> sentry node  POST /sign/component (kind=sentry)
-client -> user signer  POST /sign/assemble (kind=bounded-sentry)
+client -> cosigner node  POST /sign/component (kind=cosigner)
+client -> user signer  POST /sign/assemble (kind=bounded-cosigner)
 client -> algod         submit or simulate exact signed group
 ```
 
 The first call finalizes group bytes and fees, applies user-signer policy and
 operator approval, and releases the base signature args plus a spending-key
-assembly receipt. First-party clients contact the sentry only after that
-release. The sentry endpoint does not verify a prior base component, so this
+assembly receipt. First-party clients contact the cosigner only after that
+release. The cosigner endpoint does not verify a prior base component, so this
 order is client choreography for audit quality, efficiency, and predictable
-operator UX rather than a sentry-enforced security property. Final assembly
-verifies the base signature, receipt, sentry signature, durable metadata,
+operator UX rather than a cosigner-enforced security property. Final assembly
+verifies the base signature, receipt, cosigner signature, durable metadata,
 source/path masks, derived Merkle proof, frozen TxID, LogicSig address, and
 authorizer binding.
 
 Ordinary `/sign` rejects Corridor spends. First-party clients reject groups
-mixing `sentry1` and `bounded-sentry1` targets because they do not implement a
+mixing `cosigner1` and `bounded-cosigner1` targets because they do not implement a
 combined assembly workflow; this is not a signer-side whole-group prohibition.
 Contract-admin rekey uses `/sign/bounded-admin` plus `aprekey` and never
-contacts the sentry.
+contacts the cosigner.
 
-The sentry component is transaction-scoped: it binds the sentry role and TxID,
+The cosigner component is transaction-scoped: it binds the cosigner role and TxID,
 not the Corridor account, authorizer, or program binding. Final assembly and
-the LogicSig perform those account/program checks. Reusing one sentry key
+the LogicSig perform those account/program checks. Reusing one cosigner key
 across Corridor accounts therefore creates a shared transaction-policy domain;
-per-authorizer sentry policy would require a new component-message and LogicSig
-version. See [ARCH_SENTRY.md](ARCH_SENTRY.md#component-message).
+per-authorizer cosigner policy would require a new component-message and LogicSig
+version. See [ARCH_COSIGNER.md](ARCH_COSIGNER.md#component-message).
 
 ## Close and Decommission
 
@@ -146,7 +146,7 @@ two-step governance action:
 2. use that successor authorizer to close the ALGO account or asset positions.
 
 Step 1 requires both the existing spending key and the contract-admin witness.
-It can escape a failed sentry or current policy, but it cannot recover a lost
+It can escape a failed cosigner or current policy, but it cannot recover a lost
 spending key.
 
 `CloseRemainderTo`, `AssetCloseTo`, and `AssetSender` remain zero on every
@@ -170,6 +170,6 @@ microAlgo ceiling. Compiler golden values are toolchain-pinned; the stored
 final bytecode is authoritative.
 
 For shared definitions, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md),
-[ARCH_SENTRY.md](ARCH_SENTRY.md), [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md),
+[ARCH_COSIGNER.md](ARCH_COSIGNER.md), [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md),
 [ARCH_HTTP_API.md](ARCH_HTTP_API.md), and the machine-checked choreography in
-[FORMAL_TLA_BOUNDED_SENTRY_MODEL.md](FORMAL_TLA_BOUNDED_SENTRY_MODEL.md).
+[FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md).

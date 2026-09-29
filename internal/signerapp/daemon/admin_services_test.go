@@ -108,7 +108,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 	convertTestSignerToGenerational(t, server)
-	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("role: sentry\n"), 0o600); err != nil {
+	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("role: cosigner\n"), 0o600); err != nil {
 		t.Fatalf("tamper node role: %v", err)
 	}
 
@@ -284,7 +284,7 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 
 	err := server.adminServices().adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
 		Key:   "mode",
-		Value: "sentry",
+		Value: "cosigner",
 	})
 	if err == nil {
 		t.Fatal("UpdateAdminSetting(mode) error = nil")

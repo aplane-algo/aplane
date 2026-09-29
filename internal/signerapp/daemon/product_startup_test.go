@@ -140,7 +140,7 @@ func TestBuildProductRuntimeRejectsStoredMode(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
-	if err := productruntime.SaveStoredSetting(root, "mode", "sentry"); err != nil {
+	if err := productruntime.SaveStoredSetting(root, "mode", "cosigner"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root); err != nil {
@@ -422,7 +422,7 @@ func TestBuildProductRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("schema_version: 1\nrole: sentry\n"), 0o660); err != nil {
+	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("schema_version: 1\nrole: cosigner\n"), 0o660); err != nil {
 		t.Fatal(err)
 	}
 	_, err = ir.ReloadWithPassphrase(passphrase)

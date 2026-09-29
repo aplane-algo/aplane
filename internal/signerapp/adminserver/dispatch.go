@@ -55,13 +55,13 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeReplacePolicy:     typed("replace policy", (*Session).HandleReplacePolicy),
 	protocol.MsgTypeValidatePolicy:    typed("validate policy", (*Session).HandleValidatePolicy),
 
-	protocol.MsgTypeListSentryReferences: typed("list sentry references", func(s *Session, m *protocol.ListSentryReferencesMessage) {
-		s.HandleListSentryReferences(m.ID)
+	protocol.MsgTypeListCosignerReferences: typed("list cosigner references", func(s *Session, m *protocol.ListCosignerReferencesMessage) {
+		s.HandleListCosignerReferences(m.ID)
 	}),
-	protocol.MsgTypeGetSentryReference:    typed("get sentry reference", (*Session).HandleGetSentryReference),
-	protocol.MsgTypeImportSentryReference: typed("import sentry reference", (*Session).HandleImportSentryReference),
-	protocol.MsgTypeRemoveSentryReference: typed("remove sentry reference", (*Session).HandleRemoveSentryReference),
-	protocol.MsgTypeExportSentryPublic:    typed("export sentry public metadata", (*Session).HandleExportSentryPublic),
+	protocol.MsgTypeGetCosignerReference:    typed("get cosigner reference", (*Session).HandleGetCosignerReference),
+	protocol.MsgTypeImportCosignerReference: typed("import cosigner reference", (*Session).HandleImportCosignerReference),
+	protocol.MsgTypeRemoveCosignerReference: typed("remove cosigner reference", (*Session).HandleRemoveCosignerReference),
+	protocol.MsgTypeExportCosignerPublic:    typed("export cosigner public metadata", (*Session).HandleExportCosignerPublic),
 	protocol.MsgTypeListGenerations: typed("list generations", func(s *Session, m *protocol.ListGenerationsMessage) {
 		s.HandleListGenerations(m.ID)
 	}),
@@ -106,11 +106,11 @@ var dispatchTable = map[string]dispatchFunc{
 // normal admin request to dispatchTable must not silently make it available to
 // a non-owning observer session.
 var authOnlyDispatchTypes = map[string]bool{
-	protocol.MsgTypeGetAdminSettings:     true,
-	protocol.MsgTypeListSentryReferences: true,
-	protocol.MsgTypeGetSentryReference:   true,
-	protocol.MsgTypeExportSentryPublic:   true,
-	protocol.MsgTypeListGenerations:      true,
+	protocol.MsgTypeGetAdminSettings:       true,
+	protocol.MsgTypeListCosignerReferences: true,
+	protocol.MsgTypeGetCosignerReference:   true,
+	protocol.MsgTypeExportCosignerPublic:   true,
+	protocol.MsgTypeListGenerations:        true,
 }
 
 // Dispatch handles the subset of protocol messages that already live entirely

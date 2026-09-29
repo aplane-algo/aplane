@@ -17,7 +17,7 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
+func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
@@ -52,7 +52,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	info, ok := scan[result.Address]
 	if !ok {
-		t.Fatalf("scan missing sentry key %q", result.Address)
+		t.Fatalf("scan missing cosigner key %q", result.Address)
 	}
 	if info.Category != keys.CategoryWitness {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryWitness)

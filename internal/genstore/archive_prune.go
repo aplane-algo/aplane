@@ -128,7 +128,7 @@ func validateDeletedArchiveRelativePath(relative string) (string, error) {
 	}
 	switch dir {
 	case "deleted/keys":
-		if !strings.HasSuffix(base, ".key") && !strings.HasSuffix(base, ".sen") {
+		if !strings.HasSuffix(base, ".key") && !strings.HasSuffix(base, ".cos") {
 			return "", fmt.Errorf("invalid deleted credential entry %q", relative)
 		}
 	case "deleted/keytypes":

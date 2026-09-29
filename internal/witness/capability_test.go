@@ -11,11 +11,11 @@ func TestWitnessCustodianCapabilities(t *testing.T) {
 		domain    MessageDomain
 		want      bool
 	}{
-		{CustodianNetworkedSigner, DomainSentryComponent, true},
+		{CustodianNetworkedSigner, DomainCosignerComponent, true},
 		{CustodianNetworkedSigner, DomainBoundedAdmin, false},
-		{CustodianOfflineCeremony, DomainSentryComponent, false},
+		{CustodianOfflineCeremony, DomainCosignerComponent, false},
 		{CustodianOfflineCeremony, DomainBoundedAdmin, true},
-		{Custodian("unknown"), DomainSentryComponent, false},
+		{Custodian("unknown"), DomainCosignerComponent, false},
 	}
 	for _, test := range tests {
 		if got := Allows(test.custodian, test.domain); got != test.want {

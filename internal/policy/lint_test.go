@@ -219,8 +219,8 @@ key_overrides:
 	}
 }
 
-func TestStoredConfigApplyRejectsSentryKeyIDAsSigningKeyOverrideSelector(t *testing.T) {
-	const sentryKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+func TestStoredConfigApplyRejectsCosignerKeyIDAsSigningKeyOverrideSelector(t *testing.T) {
+	const cosignerKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 
 	_, err := ParseStoredConfig([]byte(`
 key_overrides:
@@ -233,7 +233,7 @@ key_overrides:
 	if !strings.Contains(err.Error(), "not a Witness Key ID") {
 		t.Fatalf("ParseStoredConfig() error = %v, want Witness Key ID rejection", err)
 	}
-	if _, err := NormalizeSentryKeyOverrideKey(sentryKeyID); err != nil {
+	if _, err := NormalizeCosignerKeyOverrideKey(cosignerKeyID); err != nil {
 		t.Fatalf("test Witness Key ID is invalid: %v", err)
 	}
 }
@@ -249,27 +249,27 @@ func TestStoredConfigApplyRejectsInvalidNilKeyOverrideSelector(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplySentryAcceptsSentryKeyIDOverride(t *testing.T) {
-	const sentryKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+func TestStoredConfigApplyCosignerAcceptsCosignerKeyIDOverride(t *testing.T) {
+	const cosignerKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 
 	rejectClawback := true
 	stored := &StoredConfig{
 		KeyOverrides: map[string]*StoredConfig{
-			sentryKeyID: {
+			cosignerKeyID: {
 				StoredPolicyCore: StoredPolicyCore{RejectClawback: &rejectClawback},
 			},
 		},
 	}
-	cfg, err := stored.ApplySentry(DefaultConfig())
+	cfg, err := stored.ApplyCosigner(DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplySentry() error = %v", err)
+		t.Fatalf("ApplyCosigner() error = %v", err)
 	}
-	override := cfg.ForKey(sentryKeyID)
+	override := cfg.ForKey(cosignerKeyID)
 	if override == cfg {
-		t.Fatal("ForKey did not return the sentry override config")
+		t.Fatal("ForKey did not return the cosigner override config")
 	}
 	if !override.RejectClawback {
-		t.Fatal("sentry override RejectClawback = false, want true")
+		t.Fatal("cosigner override RejectClawback = false, want true")
 	}
 }
 

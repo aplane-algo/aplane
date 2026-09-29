@@ -767,7 +767,7 @@ Contract decoding policy:
 
 The Docker smoke tests build or consume a release tarball and run it inside
 Ubuntu containers. The local four-node path validates the installed product
-across signer, sentry, client/admin, and LocalNet nodes. The systemd path
+across signer, cosigner, client/admin, and LocalNet nodes. The systemd path
 focuses on packaging, install and uninstall behavior, and the live-daemon gate
 that prevents replacing files while a signer is running.
 
@@ -790,9 +790,9 @@ make docker-systemd-test
 ```
 
 `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`. It
-starts signer, sentry, client/admin, and AlgoKit-style LocalNet algod/KMD
+starts signer, cosigner, client/admin, and AlgoKit-style LocalNet algod/KMD
 containers on one Docker network. It verifies local install layouts, shared
-LocalNet reachability, SSH token provisioning for signer and sentry endpoints,
+LocalNet reachability, SSH token provisioning for signer and cosigner endpoints,
 local IPC `apadmin` public-reference export and import, guarded signing, Corridor allowlist
 and external-admin behavior, and guarded preparation/signing through a local
 Python SDK checkout.

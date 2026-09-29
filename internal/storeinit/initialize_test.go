@@ -95,7 +95,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	}
 }
 
-func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
+func TestInitializeCreatesExplicitCosignerNodeRole(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	passphrase := []byte("init-passphrase")
@@ -104,7 +104,7 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	if _, err := Initialize(passphrase, Options{
 		DataDir: dataDir,
 		Paths:   paths,
-		Role:    noderole.RoleSentry,
+		Role:    noderole.RoleCosigner,
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
@@ -117,18 +117,18 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
-	if role.Role != noderole.RoleSentry {
-		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
+	if role.Role != noderole.RoleCosigner {
+		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleCosigner)
 	}
-	if _, err := policy.LoadVerifiedSentryConfigActive(active, kr); err != nil {
-		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
+	if _, err := policy.LoadVerifiedCosignerConfigActive(active, kr); err != nil {
+		t.Fatalf("cosigner policy integrity baseline did not verify: %v", err)
 	}
 	rec, ok, err := keytypestate.GetActive(active, defaultkeytypes.Falcon1024AllowlistKeyType)
 	if err != nil {
 		t.Fatalf("keytypestate.GetActive(default key type) error = %v", err)
 	}
 	if ok {
-		t.Fatalf("sentry initialization installed signer default key type: %+v", rec)
+		t.Fatalf("cosigner initialization installed signer default key type: %+v", rec)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	_, err := Initialize([]byte("init-passphrase"), Options{
 		DataDir: dataDir,
 		Paths:   paths,
-		Role:    noderole.RoleSentry,
+		Role:    noderole.RoleCosigner,
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to generate API token") {
 		t.Fatalf("Initialize() error = %v, want token failure", err)

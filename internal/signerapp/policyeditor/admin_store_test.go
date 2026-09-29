@@ -86,21 +86,21 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 
 func TestAdminStoreValidateUsesTargetMarshalAndClientValidation(t *testing.T) {
 	client := &fakeAdminPolicyClient{
-		validation: AdminPolicyValidation{Success: true, Target: TargetSentry},
+		validation: AdminPolicyValidation{Success: true, Target: TargetCosigner},
 	}
-	store := &AdminStore{Client: client, Target: TargetSentry}
-	stored, err := policy.ParseStoredSentryConfig([]byte(sentryYAMLForAdminStoreTest("allow_validate")))
+	store := &AdminStore{Client: client, Target: TargetCosigner}
+	stored, err := policy.ParseStoredCosignerConfig([]byte(cosignerYAMLForAdminStoreTest("allow_validate")))
 	if err != nil {
-		t.Fatalf("ParseStoredSentryConfig(): %v", err)
+		t.Fatalf("ParseStoredCosignerConfig(): %v", err)
 	}
 
 	if err := store.Validate(context.Background(), stored); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if client.validateCalls != 1 || client.lastTarget != TargetSentry {
-		t.Fatalf("ValidatePolicy calls = %d target = %q, want one sentry call", client.validateCalls, client.lastTarget)
+	if client.validateCalls != 1 || client.lastTarget != TargetCosigner {
+		t.Fatalf("ValidatePolicy calls = %d target = %q, want one cosigner call", client.validateCalls, client.lastTarget)
 	}
-	if strings.Contains(client.lastPolicyYAML, "sentry:") ||
+	if strings.Contains(client.lastPolicyYAML, "cosigner:") ||
 		!strings.Contains(client.lastPolicyYAML, "allow_validate") {
 		t.Fatalf("validation YAML has wrong shape:\n%s", client.lastPolicyYAML)
 	}
@@ -169,7 +169,7 @@ func TestAdminStoreFailedSaveDoesNotUpdateExpectedSHA(t *testing.T) {
 	}
 }
 
-func sentryYAMLForAdminStoreTest(routeID string) string {
+func cosignerYAMLForAdminStoreTest(routeID string) string {
 	return `transfer_policy:
   schema_version: 1
   enabled: true

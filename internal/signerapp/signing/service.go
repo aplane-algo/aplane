@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -37,7 +37,7 @@ type Service struct {
 	IsUnlocked                    IsUnlockedFunc
 	BeforeExecute                 BeforeExecuteFunc
 	Policy                        *policy.Config
-	SentryPolicy                  *policy.Config
+	CosignerPolicy                *policy.Config
 }
 
 type SignGroupResult struct {
@@ -88,8 +88,8 @@ func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupS
 	if planHasBoundedAdminKeyOperation(plan) {
 		return nil, boundedAdminRequired()
 	}
-	if planHasBoundedSentrySpend(plan) {
-		return nil, boundedSentryRequired()
+	if planHasBoundedCosignerSpend(plan) {
+		return nil, boundedCosignerRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, req, session, plan)
 }
@@ -187,8 +187,8 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		}
 		s.logUserComponentApproved(plan, reviewRuleID)
 		return result, nil
-	case signerapi.ComponentSignRoleSentry:
-		if err := s.evaluateSentryComponentPolicy(plan); err != nil {
+	case signerapi.ComponentSignRoleCosigner:
+		if err := s.evaluateCosignerComponentPolicy(plan); err != nil {
 			return nil, err
 		}
 		if session == nil {
@@ -199,11 +199,11 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 			return nil, leaseErr
 		}
 		defer release()
-		result, signErr := signPreparedSentryComponents(ctx, plan, session)
+		result, signErr := signPreparedCosignerComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
 		}
-		s.logSentryComponentApproved(plan, result)
+		s.logCosignerComponentApproved(plan, result)
 		return result, nil
 	default:
 		return nil, badRequest("unsupported component signing role")
@@ -270,7 +270,7 @@ func rejectOrdinarySignKeyTypes(plan *PlanResult) *ServiceError {
 		return internal("signing plan is nil")
 	}
 	for i, keyType := range plan.AuthKeyTypes {
-		if message, rejected := sentrySignRejectMessage(keyType); rejected {
+		if message, rejected := cosignerSignRejectMessage(keyType); rejected {
 			return badRequest(fmt.Sprintf("transaction %d: %s", i+1, message))
 		}
 	}

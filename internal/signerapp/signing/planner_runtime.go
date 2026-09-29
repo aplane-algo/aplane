@@ -300,7 +300,7 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		// /sign executor rejects them. Witness keys are not transaction
 		// authorities at all and remain invalid here.
 		if witness.IsKeyType(keyType) {
-			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, sentryComponentSignRejectMessage))
+			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, cosignerComponentSignRejectMessage))
 		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++

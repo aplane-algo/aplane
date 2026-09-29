@@ -11,8 +11,8 @@ identities/default/generations/<selected-generation>/policy.yaml
 identities/default/generations/<selected-generation>/policy.yaml.hmac
 ```
 
-`policy.yaml` controls account signing on signer nodes and sentry component
-signing on sentry nodes. Its `.hmac` sidecar authenticates the exact YAML
+`policy.yaml` controls account signing on signer nodes and cosigner component
+signing on cosigner nodes. Its `.hmac` sidecar authenticates the exact YAML
 bytes. After the signed baseline exists, a missing or mismatched sidecar fails
 closed rather than silently loading defaults.
 
@@ -43,7 +43,7 @@ rule.
 Use `apadmin` for online guided policy edits while `apsigner` is running. From
 the main key list, press `p`, or open Settings and choose `Policy`. `apadmin`
 targets the node-role policy domain automatically: signer nodes edit
-signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
+signer-domain `policy.yaml`, and cosigner nodes edit cosigner-domain
 `policy.yaml`. It validates drafts with the running signer, applies changes as
 whole-document replacements, writes the fresh sidecar, and activates the
 resulting runtime policy immediately.
@@ -64,7 +64,7 @@ apadmin policy rescue edit draft-policy.yaml
 `apadmin policy` with no verb is the same as `apadmin policy edit`. A draft
 passed to `edit` is validated through the daemon and uses the current live
 snapshot as its optimistic-concurrency base. The `check`, `export`, `digest`,
-`apply`, and `to-sentry` verbs are noninteractive batch operations. Every
+`apply`, and `to-cosigner` verbs are noninteractive batch operations. Every
 online verb authenticates first; if the daemon is locked, even the read-only
 `check`, `export`, and `digest` commands unlock it before reading policy state
 and are therefore not guaranteed to preserve the daemon's lock state.
@@ -122,7 +122,7 @@ SHA-256 digest of the trusted selected document bytes.
 trusted bytes. `apadmin policy rescue apply -` reads replacement YAML
 from stdin, validates it in the selected policy domain, writes the selected
 document, and writes a fresh sidecar. Use `--target signer` or
-`--target sentry` to override auto-selection. Because stdin is the document
+`--target cosigner` to override auto-selection. Because stdin is the document
 stream for `apply -`, provide its passphrase through the local-only environment
 source or an interactive terminal.
 
@@ -172,8 +172,8 @@ applied.
 | Field | Meaning |
 |-------|---------|
 | `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer product. Defaults to `true`. |
-| `reject_rekey` | Sentry-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
-| `rekey_policy` | Sentry-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. YAML-only. |
+| `reject_rekey` | Cosigner-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
+| `rekey_policy` | Cosigner-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. YAML-only. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
 | `reject_asset_close` | Reject ASA transfer txns with non-zero `AssetCloseTo`. Defaults to `false`. |
 | `reject_clawback` | Reject ASA clawback txns using `AssetSender`. Defaults to `false`. |
@@ -196,7 +196,7 @@ Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
 shared `apadmin` policy TUI does not expose controls to change them. Existing
 YAML-authored clawback settings are preserved by unrelated guided edits.
 
-Sentry rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse
+Cosigner rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse
 deny-all policy. To authorize a controlled rekey, omit `reject_rekey` or set it
 to `false`, and add `rekey_policy.allowed` entries:
 
@@ -213,9 +213,9 @@ Network-specific address sets are not accepted for rekey policy. The target
 transaction must be a pure 0 ALGO self-payment with non-zero `RekeyTo` and no
 close remainder.
 
-`rekey_policy` applies to dedicated `sentry1` guarded accounts. Corridor v1's
-sentry is spend-only; its pure rekey instead requires the separate offline
-contract-admin witness and does not contact the sentry.
+`rekey_policy` applies to dedicated `cosigner1` guarded accounts. Corridor v1's
+cosigner is spend-only; its pure rekey instead requires the separate offline
+contract-admin witness and does not contact the cosigner.
 
 ## Basic Example
 

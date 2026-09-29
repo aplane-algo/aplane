@@ -25,8 +25,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -35,7 +35,7 @@ import (
 
 type guardedSimulationCapture struct {
 	userRoleCalls     atomic.Int32
-	sentryRoleCalls   atomic.Int32
+	cosignerRoleCalls atomic.Int32
 	assembleCalls     atomic.Int32
 	signerSimulateHit atomic.Int32
 
@@ -76,7 +76,7 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		t.Fatalf("decode sentry public key: %v", err)
+		t.Fatalf("decode cosigner public key: %v", err)
 	}
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -118,9 +118,9 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 		case signerapi.ComponentTargetKindUser:
 			capture.userRoleCalls.Add(1)
 			capture.record("user")
-		case signerapi.ComponentTargetKindSentry:
-			capture.sentryRoleCalls.Add(1)
-			capture.record("sentry")
+		case signerapi.ComponentTargetKindCosigner:
+			capture.cosignerRoleCalls.Add(1)
+			capture.record("cosigner")
 		default:
 			http.Error(w, "unexpected component role", http.StatusBadRequest)
 			return
@@ -212,21 +212,21 @@ func newGuardedAlgodSimulationClient(t *testing.T, failure string, captured *mod
 }
 
 func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
-	publicKey, _ := testFalconSentryKeypair(t, 0x71)
-	sentryHex := hex.EncodeToString(publicKey)
+	publicKey, _ := testFalconCosignerKeypair(t, 0x71)
+	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
 	capture := &guardedSimulationCapture{}
-	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	signerServer := newGuardedExecutableTestServer(t, cosignerHex, capture)
 	defer signerServer.Close()
 	var simulateReq models.SimulateRequest
 	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
 	defer closeAlgod()
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
-	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{
-		URL: signerServer.URL, TokenFile: writeSentryTokenFile(t, "sentry-token"),
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", config.ClientEndpointConfig{
+		URL: signerServer.URL, TokenFile: writeCosignerTokenFile(t, "cosigner-token"),
 	})
 	s.algod = algodClient
 
@@ -239,11 +239,11 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SignAndSubmitGroup(simulate) error = %v", err)
 	}
-	if capture.userRoleCalls.Load() != 1 || capture.sentryRoleCalls.Load() != 1 {
-		t.Fatalf("component calls user/sentry = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.sentryRoleCalls.Load())
+	if capture.userRoleCalls.Load() != 1 || capture.cosignerRoleCalls.Load() != 1 {
+		t.Fatalf("component calls user/cosigner = %d/%d, want 1/1", capture.userRoleCalls.Load(), capture.cosignerRoleCalls.Load())
 	}
-	if got := strings.Join(capture.eventSnapshot(), ","); got != "user,keys,sentry,assemble" {
-		t.Fatalf("guarded event order = %s, want user,keys,sentry,assemble", got)
+	if got := strings.Join(capture.eventSnapshot(), ","); got != "user,keys,cosigner,assemble" {
+		t.Fatalf("guarded event order = %s, want user,keys,cosigner,assemble", got)
 	}
 	if capture.assembleCalls.Load() != 1 {
 		t.Fatalf("/sign/assemble calls = %d, want 1", capture.assembleCalls.Load())
@@ -262,8 +262,8 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 
 	assembly, assembledHex := capture.snapshot()
-	if len(assembly.Targets) != 1 || assembly.Targets[0].UserSignature == "" || assembly.Targets[0].SentrySignature == "" {
-		t.Fatalf("assembly targets = %#v, want executable user+sentry signatures", assembly.Targets)
+	if len(assembly.Targets) != 1 || assembly.Targets[0].UserSignature == "" || assembly.Targets[0].CosignerSignature == "" {
+		t.Fatalf("assembly targets = %#v, want executable user+cosigner signatures", assembly.Targets)
 	}
 	if len(assembledHex) != len(simulateReq.TxnGroups[0].Txns) {
 		t.Fatalf("assembled/simulated lengths = %d/%d", len(assembledHex), len(simulateReq.TxnGroups[0].Txns))
@@ -282,10 +282,10 @@ func TestSignAndSubmitGroupSimulateUsesExecutableGuardedFlow(t *testing.T) {
 	}
 }
 
-func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
-	publicKey, _ := testFalconSentryKeypair(t, 0x72)
-	sentryHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-sentry")
+func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
+	publicKey, _ := testFalconCosignerKeypair(t, 0x72)
+	cosignerHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-cosigner")
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +300,7 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		appendEvent("keys")
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: sentryHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: cosignerHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
 	})
 	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
 		var req signerapi.GroupSignRequest
@@ -325,8 +325,8 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1"}}})
 			return
 		}
-		appendEvent("sentry")
-		_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindSentry, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
+		appendEvent("cosigner")
+		_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, Signature: "cc", SignatureScheme: witness.Falcon1024V1}}})
 	})
 	mux.HandleFunc("/sign/assemble", func(w http.ResponseWriter, r *http.Request) {
 		appendEvent("assemble")
@@ -345,10 +345,10 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	defer closeAlgod()
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
-		c.AddAddress(account, "test.bounded-sentry.v1")
-		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedSentry1)
-		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
-		c.SetSentryPublicKeyForAddress(account, sentryHex)
+		c.AddAddress(account, "test.bounded-cosigner.v1")
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedCosigner1)
+		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
 		c.SetBoundedMaxFeeForAddress(account, 10_000)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes:  4_000,
@@ -358,8 +358,8 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 		})
 	})
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
-	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{
-		URL: server.URL, TokenFile: writeSentryTokenFile(t, "sentry-token"),
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", config.ClientEndpointConfig{
+		URL: server.URL, TokenFile: writeCosignerTokenFile(t, "cosigner-token"),
 	})
 	s.algod = algodClient
 	if _, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard}); err != nil {
@@ -367,15 +367,15 @@ func TestBoundedSentrySimulateUsesUserFirstChoreography(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.Join(events, ",") != "base,keys,sentry,assemble" {
-		t.Fatalf("bounded-sentry event order = %v, want base, keys, sentry, assemble", events)
+	if strings.Join(events, ",") != "base,keys,cosigner,assemble" {
+		t.Fatalf("bounded-cosigner event order = %v, want base, keys, cosigner, assemble", events)
 	}
 }
 
-func TestBoundedSentryRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
-	publicKey, _ := testFalconSentryKeypair(t, 0x73)
-	sentryHex := hex.EncodeToString(publicKey)
-	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-sentry")
+func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
+	publicKey, _ := testFalconCosignerKeypair(t, 0x73)
+	cosignerHex := hex.EncodeToString(publicKey)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded-cosigner")
 	var componentCalls atomic.Int32
 
 	mux := http.NewServeMux()
@@ -400,10 +400,10 @@ func TestBoundedSentryRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
 
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
-		c.AddAddress(account, "test.bounded-sentry.v1")
-		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedSentry1)
-		c.SetSentryComponentKeyTypeForAddress(account, witness.Falcon1024V1)
-		c.SetSentryPublicKeyForAddress(account, sentryHex)
+		c.AddAddress(account, "test.bounded-cosigner.v1")
+		c.SetSigningFlowForAddress(account, signerapi.SigningFlowBoundedCosigner1)
+		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
+		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
 		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes: 1,
@@ -426,21 +426,21 @@ func TestBoundedSentryRejectsPlannedFeeBeforeReleasingComponents(t *testing.T) {
 }
 
 func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
-	publicKey, _ := testFalconSentryKeypair(t, 0x72)
-	sentryHex := hex.EncodeToString(publicKey)
+	publicKey, _ := testFalconCosignerKeypair(t, 0x72)
+	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
 
 	capture := &guardedSimulationCapture{}
-	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	signerServer := newGuardedExecutableTestServer(t, cosignerHex, capture)
 	defer signerServer.Close()
 	var simulateReq models.SimulateRequest
 	algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "logic eval error", &simulateReq)
 	defer closeAlgod()
 
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
-	s.endpointRegistry = sentryEndpointRegistry("local-sentry", config.ClientEndpointConfig{
-		URL: signerServer.URL, TokenFile: writeSentryTokenFile(t, "sentry-token"),
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", config.ClientEndpointConfig{
+		URL: signerServer.URL, TokenFile: writeCosignerTokenFile(t, "cosigner-token"),
 	})
 	s.algod = algodClient
 
@@ -462,14 +462,14 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 }
 
 func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
-	publicKey, _ := testFalconSentryKeypair(t, 0x73)
-	sentryHex := hex.EncodeToString(publicKey)
+	publicKey, _ := testFalconCosignerKeypair(t, 0x73)
+	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(5), testAddress(6), "guarded")
 
 	capture := &guardedSimulationCapture{}
-	signerServer := newGuardedExecutableTestServer(t, sentryHex, capture)
+	signerServer := newGuardedExecutableTestServer(t, cosignerHex, capture)
 	defer signerServer.Close()
-	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
 
 	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
@@ -480,7 +480,7 @@ func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "algod client not configured") {
 		t.Fatalf("SignAndSubmitGroup(nil algod) error = %v, want algod configuration error", err)
 	}
-	if capture.userRoleCalls.Load() != 0 || capture.sentryRoleCalls.Load() != 0 || capture.assembleCalls.Load() != 0 {
-		t.Fatalf("signer calls user/sentry/assemble = %d/%d/%d, want 0/0/0", capture.userRoleCalls.Load(), capture.sentryRoleCalls.Load(), capture.assembleCalls.Load())
+	if capture.userRoleCalls.Load() != 0 || capture.cosignerRoleCalls.Load() != 0 || capture.assembleCalls.Load() != 0 {
+		t.Fatalf("signer calls user/cosigner/assemble = %d/%d/%d, want 0/0/0", capture.userRoleCalls.Load(), capture.cosignerRoleCalls.Load(), capture.assembleCalls.Load())
 	}
 }

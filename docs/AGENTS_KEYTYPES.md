@@ -27,7 +27,7 @@ custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
 `aplane.falcon1024-allowlist-alock.v1` can break existing keys and backups. The
-guarded sentry provider (`aplane.falcon1024-sentry1024.v1`) is Go-defined.
+guarded cosigner provider (`aplane.falcon1024-cosigner1024.v1`) is Go-defined.
 `aplane.corridor.v1` and `aplane.falcon1024-allowlist.v2` are shipped,
 versioned YAML templates and remain compatibility boundaries.
 
@@ -124,8 +124,8 @@ For bounded1 work, read
   signing, inventory, backup, and restore use that stored snapshot rather than
   the installed YAML;
 - `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
-  `bounded-sentry1` from durable metadata; every client must dispatch empty,
-  `sentry1`, `bounded1`, and `bounded-sentry1` explicitly and reject unknown flows;
+  `bounded-cosigner1` from durable metadata; every client must dispatch empty,
+  `cosigner1`, `bounded1`, and `bounded-cosigner1` explicitly and reject unknown flows;
 - the implementation manifest and independent protocol inventory remain
   separate completeness controls; and
 - schema v1 rejects `bounded`, while schema v2 rejects unknown and duplicate
