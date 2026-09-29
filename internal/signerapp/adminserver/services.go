@@ -66,11 +66,11 @@ type TemplateServices interface {
 }
 
 type StoreInspectionServices interface {
-	ListSentryReferences() adminproto.ListSentryReferencesResult
-	GetSentryReference(req adminproto.GetSentryReferenceRequest) adminproto.GetSentryReferenceResult
-	ImportSentryReference(req adminproto.ImportSentryReferenceRequest) adminproto.ImportSentryReferenceResult
-	RemoveSentryReference(req adminproto.RemoveSentryReferenceRequest) adminproto.RemoveSentryReferenceResult
-	ExportSentryPublic(req adminproto.ExportSentryPublicRequest) adminproto.ExportSentryPublicResult
+	ListCosignerReferences() adminproto.ListCosignerReferencesResult
+	GetCosignerReference(req adminproto.GetCosignerReferenceRequest) adminproto.GetCosignerReferenceResult
+	ImportCosignerReference(req adminproto.ImportCosignerReferenceRequest) adminproto.ImportCosignerReferenceResult
+	RemoveCosignerReference(req adminproto.RemoveCosignerReferenceRequest) adminproto.RemoveCosignerReferenceResult
+	ExportCosignerPublic(req adminproto.ExportCosignerPublicRequest) adminproto.ExportCosignerPublicResult
 	ListGenerations() adminproto.GenerationInventory
 	PruneGenerationQuarantine(req adminproto.PruneGenerationQuarantineRequest) adminproto.PruneGenerationQuarantineResult
 	DiscardAbandonedGenerations(req adminproto.DiscardAbandonedGenerationsRequest) adminproto.DiscardAbandonedGenerationsResult

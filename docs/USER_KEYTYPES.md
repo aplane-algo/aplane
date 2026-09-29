@@ -23,18 +23,18 @@ authorities:
 
 DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
 an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
-provider policy. Sentry guarding is an additional authority, not a DSA policy
-category. Corridor is a bounded1 template that composes this sentry authority;
+provider policy. Cosigner guarding is an additional authority, not a DSA policy
+category. Corridor is a bounded1 template that composes this cosigner authority;
 it is not a dedicated compiled policy.
 
 | Auxiliary authority type | Meaning |
 |---|---|
-| **Sentry witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
+| **Cosigner witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
 | **Contract-admin witness key** | The same witness key form in a standalone `.wit` container, used only for a bounded admin operation. It is not imported into the signer. |
 
 Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
-derivation. Custody keeps their capabilities separate: hot signer `.sen`
-records use durable category `witness` and can sign only the sentry component
+derivation. Custody keeps their capabilities separate: hot signer `.cos`
+records use durable category `witness` and can sign only the cosigner component
 domain; standalone `.wit` files can sign only the bounded admin domain. Never
 reuse one witness keypair across these roles. Local generation rejects known
 collisions, but cannot detect a key copied or enrolled out of band.
@@ -147,48 +147,48 @@ apadmin -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
 Another library-visible compiled provider is the guarded account key type
-`aplane.falcon1024-sentry1024.v1`. Corridor is installed through the template
+`aplane.falcon1024-cosigner1024.v1`. Corridor is installed through the template
 library instead:
 
 ```bash
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
 ```
 
-Before generating a guarded or bounded-sentry account, choose **Export Sentry
-Key** on the sentry and **Import Sentry Key** on the primary signer. In
-signer-side `apadmin`, press `e` for **Sentries**, import the public file, and
+Before generating a guarded or bounded-cosigner account, choose **Export Cosigner
+Key** on the cosigner and **Import Cosigner Key** on the primary signer. In
+signer-side `apadmin`, press `e` for **Cosigners**, import the public file, and
 compare the complete Witness Key ID. `Generate account` then
 shows only enabled account key types compatible with that witness type. The UI
 submits the stable Witness Key ID and the signer resolves it to the full public
 key; the normal workflow does not ask the operator to paste Falcon hex.
 
-The Sentries manager also offers `p: Paste JSON`: paste either public document
+The Cosigners manager also offers `p: Paste JSON`: paste either public document
 using your terminal's paste shortcut, review or edit the proposed reference
 name, and compare the full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
 validation and signer-reference import as file import.
 
-The sentry key file contains public information only. Its endpoint is client
+The cosigner key file contains public information only. Its endpoint is client
 routing metadata; client access provisioning and SSH host trust remain
 separate explicit steps in apshell. apadmin imports only the public reference.
 
-The sentry-side `apadmin` export screen also offers **SHOW JSON**, which prints
+The cosigner-side `apadmin` export screen also offers **SHOW JSON**, which prints
 the full JSON directly in the terminal for manual copying without creating
 a file. Press Enter to return to the export screen. This uses terminal
 scrollback and natural wrapping without inserting newlines into JSON values.
 File export and the batch stdout command also preserve the original JSON bytes.
 
-In apshell, run `sentry add <sentry-key-json> --alias <connection-name>`, or
-`sentry add` to paste JSON. Supply the endpoint when it is absent from the file.
-Approve the **Client Access Request** in sentry-side apadmin after comparing the
+In apshell, run `cosigner add <cosigner-key-json> --alias <connection-name>`, or
+`cosigner add` to paste JSON. Supply the endpoint when it is absent from the file.
+Approve the **Client Access Request** in cosigner-side apadmin after comparing the
 complete client SSH key fingerprint on both screens. Apshell configures the
 connection, obtains access, and checks for the expected witness.
 
-Connect apshell to the primary signer and run `sentry status` to inspect the
-guarded account's sentry route. apadmin uses local IPC and never reads or
+Connect apshell to the primary signer and run `cosigner status` to inspect the
+guarded account's cosigner route. apadmin uses local IPC and never reads or
 writes the client endpoint registry or token files.
 
 For scripting, batch import/export, and separate endpoint/token operations,
-see [the sentry command reference](USER_COMMANDS.md#apadmin-sentry) and
+see [the cosigner command reference](USER_COMMANDS.md#apadmin-cosigner) and
 [advanced manual endpoint configuration](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery).
 
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native

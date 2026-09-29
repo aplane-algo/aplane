@@ -5,7 +5,7 @@
 > For key and key type lifecycle state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 > For the explanatory network context model, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
-> For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
+> For guarded signing and cosigner node architecture, see [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
 > For bounded authorization and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 > Load this document when working on a specific subsystem, not as general pre-reading.
 
@@ -108,31 +108,31 @@ Canonical forms:
   `aplane.falcon1024-allowlist-alock.v1`
 - witness keys use the same canonical key-type identifier contract,
   currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
-  as sentry component-signing keys selected by 52-character txid-shaped
+  as cosigner component-signing keys selected by 52-character txid-shaped
   Witness Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
   `component_key`.
 - external bounded contract-admin authorities use the same witness key type
   and Witness Key ID, but private material remains in a structurally distinct
   standalone `.wit` container owned by `aprekey`. It is never a signer-managed
-  `.key`/`.sen` credential or spending account.
+  `.key`/`.cos` credential or spending account.
 - `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.
 - the dedicated guarded account key type
-  `aplane.falcon1024-sentry1024.v1` names both its account DSA and sentry DSA.
+  `aplane.falcon1024-cosigner1024.v1` names both its account DSA and cosigner DSA.
   `aplane.corridor.v1` is instead an optional schema-v2 composed template: its
-  durable `bounded_authorization` metadata declares `bounded1`, a `sentry1`
+  durable `bounded_authorization` metadata declares `bounded1`, a `cosigner1`
   spend gate, and the framework Merkle allowlist policy. Clients must not infer
   those dimensions from the key-type string.
 
 Witness key records carry no role field. Enrollment assigns the role and
 custody assigns signing capability: networked signer custody may produce only
-the `APLANE_SENTRY_V1` component-domain family, while standalone ceremony
+the `APLANE_COSIGNER_V1` component-domain family, while standalone ceremony
 custody may produce only `APLANE_BOUNDED_ADMIN_AUTH_V1`. One witness keypair
 should serve only one role for its lifetime. Generation rejects collisions
-visible in local key metadata and sentry references, but cannot detect or
+visible in local key metadata and cosigner references, but cannot detect or
 prevent out-of-band key copying or enrollment.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
@@ -156,7 +156,7 @@ Terminology:
   creation parameters, TEAL bytecode, metadata, and guarded assembly remain
   owned by the full `key_type` unless a specific contract says otherwise.
   Guarded account key types are the important example: their signing primitive
-  is Falcon-1024, but their account semantics and sentry assembly are guarded
+  is Falcon-1024, but their account semantics and cosigner assembly are guarded
   account semantics.
 - `Family` / `FamilyName` on Go provider types are registry/display metadata.
   Current family-keyed registry fallback is an implementation detail, not a
@@ -168,18 +168,18 @@ See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shap
 The DTO and error-code source of truth is `pkg/signerapi`; `internal/signerapi`
 contains aliases for in-repo callers, not an independent schema.
 
-### Sentry Component Message Contract
+### Cosigner Component Message Contract
 
 Component signatures for guarded signing sign:
 
 ```text
-SHA512_256("APLANE_SENTRY_V1" || role_byte || txid)
+SHA512_256("APLANE_COSIGNER_V1" || role_byte || txid)
 ```
 
 where `role_byte` is `0x01` for the user component role and `0x02` for the
-sentry component role, and `txid` is the canonical 32-byte transaction ID for
+cosigner component role, and `txid` is the canonical 32-byte transaction ID for
 the target group entry. Message construction is owned by
-`internal/sentry/message`; clients and signers must use that shared primitive,
+`internal/cosigner/message`; clients and signers must use that shared primitive,
 or an SDK equivalent with matching vectors, rather than reconstructing the
 message independently. The message does not carry a separate sender or
 authorizer field; guarded-authorizer binding is derived from the canonical
@@ -204,12 +204,12 @@ policy or approval input.
 
 For every component call, policy evaluation, operator rendering, and component
 message derivation use the same decoded frozen group. In particular, the
-bounded-sentry migration replaces the legacy plan-and-approve-together call
+bounded-cosigner migration replaces the legacy plan-and-approve-together call
 with approval of frozen bytes. The signer reconstructs bounded authorization
 from its durable metadata and validates client-supplied runtime arguments; the
 client cannot supply or weaken the durable envelope. Guarded assembly remains
-authorized by user and sentry signatures. Bounded-sentry assembly remains
-authorized by its base signature, sentry signature, and assembly receipt. A
+authorized by user and cosigner signatures. Bounded-cosigner assembly remains
+authorized by its base signature, cosigner signature, and assembly receipt. A
 shared transport does not make these authorization materials interchangeable.
 
 ### Bounded Authorization Contract V1
@@ -221,7 +221,7 @@ bounded1 DTOs defined below.
 This release is the first supported `bounded1` contract. Earlier repository
 vectors and developer-generated keys were pre-release and are not
 compatibility-bearing; such keys must be recreated. The canonical profile and
-goldens below, including the optional-sentry presence encoding, establish the
+goldens below, including the optional-cosigner presence encoding, establish the
 v1 baseline.
 
 Bounded1 uses TEAL v13 and admits only pure payments, pure asset transfers,
@@ -250,8 +250,8 @@ u32(spend_effect_count) || field(each effect in pay,axfer,asset_opt_in order) ||
 u64(max_fee) ||
 u32(admin_operation_count) ||
 field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
-u32(sentry_present) ||
-if present: field("sentry1") || field("aplane.witness-falcon1024.v1") ||
+u32(cosigner_present) ||
+if present: field("cosigner1") || field("aplane.witness-falcon1024.v1") ||
 u32(1423) || u32(1) || field("spend") ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
@@ -275,8 +275,8 @@ values participate. A missing or explicitly empty optional parameter uses a
 zero-length `canonical_value`, distinct from explicit zero, false, or an empty
 list. The separately bound injected
 `bounded_admin_public_key`, display/provenance data, paths, and per-request
-runtime values do not. A sentry-enabled profile does include its injected
-`sentry_public_key` behavior parameter. Static runtime/derived declarations and
+runtime values do not. A cosigner-enabled profile does include its injected
+`cosigner_public_key` behavior parameter. Static runtime/derived declarations and
 path masks are part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
@@ -320,14 +320,14 @@ SHA512_256(
 )
 ```
 
-For `bounded-sentry1`, the user signer also returns a Falcon-signed assembly
+For `bounded-cosigner1`, the user signer also returns a Falcon-signed assembly
 receipt. With `field` as above, `metadata_json` equal to JSON encoding of the
 normalized durable `bounded_authorization` structure, and runtime arguments
 sorted by name, its message is:
 
 ```text
 SHA512_256(
-  field("APLANE_BOUNDED_SENTRY_ASSEMBLY_V1") ||
+  field("APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1") ||
   field(bounded_account) ||
   field(transaction_id) ||
   field(SHA512_256(metadata_json)) ||
@@ -336,7 +336,7 @@ SHA512_256(
 ```
 
 Assembly verifies this receipt with the bounded spending public key before it
-accepts the base component or sentry signature.
+accepts the base component or cosigner signature.
 
 For the complete vector inputs in `ARCH_BOUNDED_DSA.md`, the frozen outputs are:
 
@@ -352,17 +352,17 @@ dc6c476953d76d3fcea7ace82ef90624b170fa6aed699988d381ce790a613ce1
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer
-3 values, caller runtime Layer 3 values, the optional sentry signature, and the
+3 values, caller runtime Layer 3 values, the optional cosigner signature, and the
 optional admin signature.
 Each slot has a frozen index, maximum, source, and path mask. Interior unused
 Layer 3 slots are explicit empty values; only trailing unused slots may be
 omitted. An admin-key partial omits the admin slot, and external completion pads
 to and fills the metadata-declared admin index. Ordinary `/sign` rejects
-caller-supplied contract-admin, sentry, or signer-derived values. The frozen
-flow labels are `bounded1` for profiles without a sentry and
-`bounded-sentry1` for profiles with the sentry spend gate. The typed admin
-partial endpoint remains `POST /sign/bounded-admin`; bounded-sentry spend uses
-`POST /plan`, bounded-base and sentry targets on `POST /sign/component`, then
+caller-supplied contract-admin, cosigner, or signer-derived values. The frozen
+flow labels are `bounded1` for profiles without a cosigner and
+`bounded-cosigner1` for profiles with the cosigner spend gate. The typed admin
+partial endpoint remains `POST /sign/bounded-admin`; bounded-cosigner spend uses
+`POST /plan`, bounded-base and cosigner targets on `POST /sign/component`, then
 `POST /sign/assemble`.
 
 Signer planning classifies for initial path sizing, finalizes grouping, dummy,
@@ -398,11 +398,11 @@ Its address and asset lists are inline, canonical, and independently capped at
 allowlist's `spend_effects`. Omitting `bounded.layer3` selects contained custom
 author TEAL.
 
-A profile with `bounded.sentry` may not declare a
+A profile with `bounded.cosigner` may not declare a
 `spending_key`-authorized rekey. The combination would bypass the spend-only
-sentry gate and is not routable through `bounded-sentry1`; schema-v2 template
-and durable metadata validation reject it. Sentry-enabled profiles use
-`admin_key` rekey to escape a failed sentry or replace the current program.
+cosigner gate and is not routable through `bounded-cosigner1`; schema-v2 template
+and durable metadata validation reject it. Cosigner-enabled profiles use
+`admin_key` rekey to escape a failed cosigner or replace the current program.
 That path requires both the base spending signature and the external admin
 signature; the admin key cannot recover a lost spending key.
 
@@ -420,7 +420,7 @@ defined normatively in
 
 `aprekey` owns external contract-admin witness custody. Its encrypted
 artifacts use the `.wit` extension and filenames of the form
-`<WITNESS_KEY_ID>.wit`. They are not signer-managed `.key` or `.sen` files
+`<WITNESS_KEY_ID>.wit`. They are not signer-managed `.key` or `.cos` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
 before parsing or passphrase work. The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
@@ -512,7 +512,7 @@ closed. Apshell and apconsole have no contract-admin artifact workflow.
 `prepare-rekey` and `prepare-unrekey` perform signer planning, policy, approval,
 group finalization, and spending-partial creation, then write a strict
 `aplane.bounded-admin-request.v2` to `.apbounded-admin-request`. V2 adds the
-optional sentry authorization record to the request-hash transcript; V1
+optional cosigner authorization record to the request-hash transcript; V1
 requests are rejected with `unsupported_request_schema` so version-skewed
 offline helpers fail explicitly rather than reporting a generic hash mismatch. Offline `sign`
 validates the request and writes `aplane.bounded-admin-signature.v1` to
@@ -573,14 +573,14 @@ distinct from both `unlock_failed` and credential rejection.
 The pre-auth `auth_only` request verifies the same passphrase and binds the
 admin session without authorizing or invoking `identity.unlock`. Read-only
 clients use a distinct message type so an older server rejects it before
-processing instead of silently unlocking. Bound-only sentry-reference,
+processing instead of silently unlocking. Bound-only cosigner-reference,
 generation-inventory, and endpoint-settings reads use this mode; operations
 whose handlers require unlocked or recovery state continue to use `auth`.
 `auth_only` creates a server-enforced public-read capability. The session is a
 non-owning observer: it does not replace the active admin owner, receive
 approval notifications, fail pending approvals, or participate in
 lock-on-disconnect cleanup. The signer accepts only endpoint-settings,
-sentry-reference/public-export, and generation-inventory request types on this
+cosigner-reference/public-export, and generation-inventory request types on this
 session; every accepted request still uses its normal grant and runtime-state
 checks.
 
@@ -690,7 +690,7 @@ Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
 The Go `Config` type contains no signer-routing fields. Current signer and
-sentry routing is loaded from `endpoints.yaml` into `ClientEndpointRegistry`.
+cosigner routing is loaded from `endpoints.yaml` into `ClientEndpointRegistry`.
 Top-level client `config.yaml` `ssh:` and `signer_port:` fields are rejected;
 they are not compatibility aliases.
 
@@ -742,8 +742,8 @@ Signer policy participates in the ordered approval engine.
 The active node-role policy is product-store scoped and stored in
 the selected generation's `policy.yaml`, with a sibling `.hmac` sidecar that
 authenticates the exact YAML bytes with a key derived from the product store
-key. Signer nodes parse it as client-signing policy; sentry nodes parse it as
-direct sentry component policy. The default approval fallback is
+key. Signer nodes parse it as client-signing policy; cosigner nodes parse it as
+direct cosigner component policy. The default approval fallback is
 `user_auto_approve`, lives in `identities/default/config.yaml`, and is not a
 policy document field. The policy document is verified and loaded on
 unlock/reload before the key scan; a missing policy file or missing/mismatched
@@ -758,7 +758,7 @@ mixed pair, which verification rejects fail-closed and requires explicit
 repair.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-sentry overrides are keyed by Witness Key ID. These overrides apply to
+cosigner overrides are keyed by Witness Key ID. These overrides apply to
 policy phases and can be changed through authenticated full-document
 `replace_policy`, or by direct/offline YAML editing followed by
 `apadmin policy rescue apply` or `apstore policy sign` before the signer will
@@ -796,8 +796,8 @@ Validation:
   30 minutes. The default is `60s`. The product runtime configuration may
   override the process default.
 - initialized signer data roots must contain root `node.yaml` with role
-  `signer` or `sentry`. New initialization defaults to `signer` unless an
-  sentry node is explicitly requested. Product runtime config `mode` is an
+  `signer` or `cosigner`. New initialization defaults to `signer` unless an
+  cosigner node is explicitly requested. Product runtime config `mode` is an
   unsupported field and is rejected.
 - node role gates key generation, mnemonic import, restore, signer key reload,
   and signing service dispatch. Hand-placed key files or restored keys from the
@@ -963,7 +963,7 @@ execution, output decoding, environment filtering, and validation.
       manifest.json         # immutable at-mint operation record
       seal.json             # final content record, written before flip-away
       keys/*.key            # account authority, selected by Algorand address
-      keys/*.sen            # sentry witness authority, selected by Witness Key ID
+      keys/*.cos            # cosigner witness authority, selected by Witness Key ID
       keys/*.wit.json       # derived public witness reference; not private authority
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
@@ -979,7 +979,7 @@ execution, output decoding, environment filtering, and validation.
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
-    sentries/<name>.json
+    cosigners/<name>.json
 ```
 
 Additional signer-state notes:
@@ -1088,21 +1088,21 @@ Additional client-state notes:
 - `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 2`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
 - if client `config.yaml` contains top-level `ssh:` or `signer_port:` routing, client startup fails closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
-- endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, or `https://...`), `signer_port`, `identity_file`, `known_hosts_path`, and `token_file`. Signer-role records may also set `local_port` for their persistent SSH forward; sentry-role records reject it because sentry HTTP connections use direct SSH channels without a local listener. Relative file paths resolve against `APCLIENT_DATA`. The special URL `self` is rejected for every role; same-host signer and sentry processes use explicit endpoints. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 sentry endpoints.
+- endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]`, loopback `http://...`, or `https://...`), `signer_port`, `identity_file`, `known_hosts_path`, and `token_file`. Signer-role records may also set `local_port` for their persistent SSH forward; cosigner-role records reject it because cosigner HTTP connections use direct SSH channels without a local listener. Relative file paths resolve against `APCLIENT_DATA`. The special URL `self` is rejected for every role; same-host signer and cosigner processes use explicit endpoints. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
-- sentry keys are not persisted in endpoint records. Each guarded or bounded-sentry operation queries authenticated `/keys` on every configured sentry endpoint and builds an operation-scoped route snapshot. SSH sentry endpoints carry HTTP over restricted direct channels on their authenticated SSH connection and never allocate a transient local port. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
+- cosigner keys are not persisted in endpoint records. Each guarded or bounded-cosigner operation queries authenticated `/keys` on every configured cosigner endpoint and builds an operation-scoped route snapshot. SSH cosigner endpoints carry HTTP over restricted direct channels on their authenticated SSH connection and never allocate a transient local port. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
-- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
-- `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. Sentry-role imports reject portable `local_port` metadata; signer-role imports retain it. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
-- `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
-- `apshell endpoints discover-sentries` is a read-only diagnostic. It scans configured `sentry` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
-- `apshell sentry status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, provisions tokens, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `sentry` command remains blocked through MCP.
-- `apshell sentry add [public-json] --alias <alias> [--endpoint <url>] [--sentry-port <port>] [--replace] [--dry-run]` accepts either `aplane.witness-key-public.v1` or `aplane.sentry-enrollment.v1`. With no file it captures one bounded document through the interactive line reader. It rejects a bundled portable `local_port`, plans and revalidates a `role: sentry` endpoint under the shared client-data mutation lock, performs SSH trust and token enrollment only after releasing that lock, and verifies that the chosen endpoint advertises the exact validated witness from the document. The setup connection and token request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, token requests, or network probes. Script use requires complete arguments and existing host trust; conflicting replacements require interactive review. The command is blocked through MCP.
-- endpoint create, import, delete, default selection, and `sentry add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits and token persistence occur outside endpoint-write critical sections; token persistence acquires the same non-reentrant client lock independently.
-- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no sentry-inventory dependency.
+- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the daemon-reported `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
+- `apshell endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. Cosigner-role imports reject portable `local_port` metadata; signer-role imports retain it. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `cosigner` alias for dev co-location. Import is not an ownership or trust proof and does not discover cosigner keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
+- `apshell endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--cosignerport` is stored as the endpoint `signer_port` REST port used behind SSH cosigner endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, copy tokens, or establish SSH host trust.
+- `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
+- `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, provisions tokens, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
+- `apshell cosigner add [public-json] --alias <alias> [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]` accepts either `aplane.witness-key-public.v1` or `aplane.cosigner-enrollment.v1`. With no file it captures one bounded document through the interactive line reader. It rejects a bundled portable `local_port`, plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, performs SSH trust and token enrollment only after releasing that lock, and verifies that the chosen endpoint advertises the exact validated witness from the document. The setup connection and token request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, token requests, or network probes. Script use requires complete arguments and existing host trust; conflicting replacements require interactive review. The command is blocked through MCP.
+- endpoint create, import, delete, default selection, and `cosigner add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits and token persistence occur outside endpoint-write critical sections; token persistence acquires the same non-reentrant client lock independently.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
-- `request-token` enrolls only configured endpoints: without arguments it uses the default signer endpoint; `request-token --endpoint <alias>` uses that signer or sentry endpoint. The removed positional host form is not accepted. After successful enrollment, `apshell` saves the selected endpoint's token and only auto-connects when that endpoint is the default signer.
+- `request-token` enrolls only configured endpoints: without arguments it uses the default signer endpoint; `request-token --endpoint <alias>` uses that signer or cosigner endpoint. The removed positional host form is not accepted. After successful enrollment, `apshell` saves the selected endpoint's token and only auto-connects when that endpoint is the default signer.
 - `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted `known_hosts`)
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
@@ -1121,7 +1121,7 @@ Additional client-state notes:
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
-- local-mode sentry `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; sentry policy editing happens through apadmin in the admin pane
+- local-mode cosigner `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; cosigner policy editing happens through apadmin in the admin pane
 - the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, token provisioning, and endpoint configuration
 - for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
 - remote-mode `apconsole` is rejected; run apconsole on the signer machine, using an ordinary SSH login when needed
@@ -1138,7 +1138,7 @@ Additional client-state notes:
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
-  `signing_flows`, `sentry_component_key_types`, and `sentry_public_keys`.
+  `signing_flows`, `cosigner_component_key_types`, and `cosigner_public_keys`.
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
@@ -1150,7 +1150,7 @@ Additional client-state notes:
   must not exceed the persisted declaration. This validates the selected path
   ceiling, not the feasibility of every assembled group.
   For guarded signing, clients route on `signing_flows`; a cached
-  built-in guarded key type with missing flow or sentry metadata is only a
+  built-in guarded key type with missing flow or cosigner metadata is only a
   stale-cache signal that triggers `/keys` refresh before route selection.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
@@ -1214,7 +1214,7 @@ installer re-runs, and test setup flows may refresh this directory from the repo
 directory are reference material and are not active key types by themselves.
 New signer-store initialization installs and enables
 `aplane.falcon1024-allowlist.v1` from the bundled library source into the
-product-store encrypted template store; sentry-role initialization skips this
+product-store encrypted template store; cosigner-role initialization skips this
 signer account key type. Other bundled templates remain install sources until
 explicitly imported/enabled in the product store.
 
@@ -1227,7 +1227,7 @@ The bundled templates that ship under `library/templates/` are:
 | `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
 | `aplane.htlc.v1` | Hash time-locked contract |
 | `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
-| `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, sentry-authorized spends, and external-admin pure rekey |
+| `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, cosigner-authorized spends, and external-admin pure rekey |
 
 Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
 new signer stores; the rest are available to install from the library.
@@ -1337,7 +1337,7 @@ selector:
 | Class | Selector |
 | --- | --- |
 | `account-key` | Algorand address |
-| `sentry-credential` | Witness Key ID |
+| `cosigner-credential` | Witness Key ID |
 | `keytype-template` | key type |
 
 Behavior:
@@ -1424,7 +1424,7 @@ template, or deleted-archive authority.
 
 The product-store active policy is stored at
 `identities/default/generations/<selected-generation>/policy.yaml`. Signer nodes parse that file as
-client-signing policy. Sentry nodes parse that same file as direct sentry
+client-signing policy. Cosigner nodes parse that same file as direct cosigner
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
@@ -1470,13 +1470,13 @@ Policy load behavior:
 - direct YAML edits require offline `apadmin policy rescue apply -` or `apstore policy sign`
   before the signer trusts them
 - `apadmin policy rescue` defaults to `--target auto`; for store-backed operations, auto
-  reads root `node.yaml` and targets the signer or sentry policy domain for
+  reads root `node.yaml` and targets the signer or cosigner policy domain for
   the single `policy.yaml` file
 - `apadmin policy rescue export` emits the exact verified selected document bytes;
   `apadmin policy rescue apply -` reads replacement YAML bytes from stdin,
   validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
-  under the store mutation lock; `--target signer|sentry` explicitly
+  under the store mutation lock; `--target signer|cosigner` explicitly
   selects the domain; store-backed role-incompatible targets fail closed. A
   root-run offline edit of a production store restores the owner recorded in
   root-controlled `install/service-principal.json` before returning
@@ -1487,14 +1487,14 @@ Policy load behavior:
   and opens the draft in the online editor; batch output/check flags validate
   the positional draft and exit without opening the editor
 
-### Managed Credential Files (`.key` and `.sen`)
+### Managed Credential Files (`.key` and `.cos`)
 
 Both managed classes use the same encrypted envelope and canonical payload
 schema. Their extension is fixed by payload category:
 
 - `.key`: `ed25519`, `native_pq`, `dsa_lsig`, and `generic_lsig` account authority,
   selected by a 58-character Algorand address;
-- `.sen`: `witness` authority assigned to sentry custody, selected by a
+- `.cos`: `witness` authority assigned to cosigner custody, selected by a
   52-character Witness Key ID.
 
 Managed credential files carry:
@@ -1514,8 +1514,8 @@ Categories:
 - protocol-native post-quantum signing keys (`native_pq`),
 - DSA-backed LogicSig keys,
 - generic LogicSig template instances,
-- signer-custodied witness keys serving the sentry role (durable category
-  `witness`; used only through sentry-role `/sign/component`).
+- signer-custodied witness keys serving the cosigner role (durable category
+  `witness`; used only through cosigner-role `/sign/component`).
 
 Generic LogicSig entries contain final compiler bytecode, derivation metadata,
 and parameters rather than a private signing key. Current compiler-auto-salted
@@ -1621,9 +1621,9 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - `runtime_args` and `derived_args`: canonical declarations, possibly empty
 - `argument_layout`: complete ordered slots with source, maximum, and all path masks
 - `layer3_policy`: exactly `custom`, `fixed_allowlist`, or `merkle_allowlist`
-- optional `sentry`: contract, witness key type, resolved public key and Witness
+- optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and exact `[spend]` path; its argument slot
-  source is `sentry`
+  source is `cosigner`
 - `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
   uses `authorization: admin_key`; the key ID must derive from that public key,
   and the public key must equal `parameters.bounded_admin_public_key`
@@ -1671,10 +1671,10 @@ filename:
 CanonicalName(payload) = Selector(payload) || ExtensionForCategory(payload.category)
 ```
 
-After decrypting a `.key` or `.sen` candidate, the scanner derives the payload
+After decrypting a `.key` or `.cos` candidate, the scanner derives the payload
 selector and category. It accepts the file only when the basename equals the
 canonical name. A witness payload in `<id>.key`, an account payload in
-`<address>.sen`, or any selector mismatch is skipped and reported; `.wit` and
+`<address>.cos`, or any selector mismatch is skipped and reported; `.wit` and
 `.wit.json` are never private-credential candidates. Writers and restore derive
 the same canonical destination. Restore rejects a contradictory managed class
 for the same selector even with `overwrite:true`; an exact canonical destination
@@ -1751,18 +1751,18 @@ Witness Key IDs with their key type, durable category, creation timestamp, and
 key-file name.
 
 The default human output must not emit private key material, mnemonic material,
-or raw public-key hex. Sentry keys are identified by their Witness Key ID, not
-by the raw sentry public key. Recoverable key-scan warnings may be reported
+or raw public-key hex. Cosigner keys are identified by their Witness Key ID, not
+by the raw cosigner public key. Recoverable key-scan warnings may be reported
 while still listing keys that scanned successfully.
 
-#### Sentry Public Key Export Envelope
+#### Cosigner Public Key Export Envelope
 
-`apadmin sentry export <witness-key-id> [output-json]` emits a public-only JSON
-envelope for a sentry key. The command reads the
+`apadmin cosigner export <witness-key-id> [output-json]` emits a public-only JSON
+envelope for a cosigner key. The command reads the
 `keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
 equals the canonical Witness Key ID derived from the public key, and never reads
 or decrypts private key material. If the sidecar is missing or malformed,
-export fails closed; the operator must regenerate the sentry key or run an
+export fails closed; the operator must regenerate the cosigner key or run an
 explicit metadata backfill before exporting.
 
 The envelope schema is shown below. The Falcon public key hex is abbreviated in
@@ -1781,10 +1781,10 @@ this prose example; persisted envelopes contain all 3,586 hex characters.
 `base32_no_padding(SHA512_256(field("APLANE_WITNESS_KEY_ID_V1") ||
 field(key_type) || field(canonical_public_key_bytes)))`. It resembles an
 Algorand transaction ID and is not a valid Algorand address. Role-specific
-wire and sentry-reference records retain the field name `component_key`.
+wire and cosigner-reference records retain the field name `component_key`.
 `public_key_hex` is the raw component
 public key encoded in hex; it is the value embedded into guarded-account
-LogicSig bytecode and supplied as `sentry_public_key` during guarded account
+LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
@@ -1794,16 +1794,16 @@ The admin access request already carries that fingerprint; this adds no wire
 field. It identifies the requesting client key, not an individual request,
 the server host key, or a Witness Key ID.
 
-#### Sentry Enrollment Composition Envelope
+#### Cosigner Enrollment Composition Envelope
 
-`apadmin sentry enrollment export <witness-key-id> ... --out <file>` emits the
-additive public composition schema `aplane.sentry-enrollment.v1`. It contains
+`apadmin cosigner enrollment export <witness-key-id> ... --out <file>` emits the
+additive public composition schema `aplane.cosigner-enrollment.v1`. It contains
 the canonical `aplane.witness-key-public.v1` document and may contain one
 canonical `aplane.endpoint.v1` document:
 
 ```json
 {
-  "schema": "aplane.sentry-enrollment.v1",
+  "schema": "aplane.cosigner-enrollment.v1",
   "witness": {
     "schema": "aplane.witness-key-public.v1",
     "key_type": "aplane.witness-falcon1024.v1",
@@ -1812,7 +1812,7 @@ canonical `aplane.endpoint.v1` document:
   },
   "endpoint": {
     "schema": "aplane.endpoint.v1",
-    "url": "ssh://sentry.example:2223",
+    "url": "ssh://cosigner.example:2223",
     "signer_port": 11270
   }
 }
@@ -1829,7 +1829,7 @@ metadata, or when `--include-endpoint` selects the daemon's configured
 `endpoint.advertise_url`. Without one of those choices it emits a witness-only
 composition bundle even when an advertise URL exists.
 
-Sentry-side TUI export offers the configured portable advertise URL as an
+Cosigner-side TUI export offers the configured portable advertise URL as an
 explicit, default-on choice. The operator process composes it with the
 daemon-verified witness envelope and writes the result locally; opting out or
 lacking a valid advertised endpoint omits the endpoint member while retaining
@@ -1840,27 +1840,27 @@ reference alias, endpoint alias or role, token, SSH identity, `known_hosts`
 entry, cached live inventory, private witness material, policy, or proof of
 endpoint ownership. The operator still chooses local aliases and compares the
 complete Witness Key ID against an independently observed value. The signer
-re-derives that ID through the existing sentry-reference import path.
+re-derives that ID through the existing cosigner-reference import path.
 
-`apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]`
+`apadmin cosigner enrollment import <file|-> --name <reference-name> [--dry-run]`
 accepts either the composition envelope or a standalone witness-public envelope.
 It validates the complete artifact before importing the reference through
 authorized local IPC. `--dry-run` validates without mutation. Bundled endpoint
 metadata is informational; apadmin does not read or write client state.
-The result retains `aplane.sentry-enrollment-import-result.v1` and its
+The result retains `aplane.cosigner-enrollment-import-result.v1` and its
 `endpoint_import.status` is always `not_requested`. Configure client routes,
 tokens, and SSH host trust separately in apshell.
 
-#### Sentry Public Key Reference Library
+#### Cosigner Public Key Reference Library
 
-`apadmin sentry import <public-json|-> <name>` imports an
+`apadmin cosigner import <public-json|-> <name>` imports an
 standalone `aplane.witness-key-public.v1` or combined
-`aplane.sentry-enrollment.v1` document into the product store's public
-sentry reference library. The operator-side adapter validates the complete
+`aplane.cosigner-enrollment.v1` document into the product store's public
+cosigner reference library. The operator-side adapter validates the complete
 document and sends only the canonical witness reference through IPC:
 
 ```text
-identities/default/sentries/<name>.json
+identities/default/cosigners/<name>.json
 ```
 
 Reference names are normalized to lowercase and may contain lowercase letters,
@@ -1868,8 +1868,8 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 
 ```json
 {
-  "schema": "aplane.sentry-public-key-ref.v2",
-  "name": "lab-sentry",
+  "schema": "aplane.cosigner-public-key-ref.v2",
+  "name": "lab-cosigner",
   "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
   "key_type": "aplane.witness-falcon1024.v1",
   "public_key_encoding": "hex",
@@ -1890,7 +1890,7 @@ Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
 controlling terminal. Unsupported
 headless combinations fail before authentication instead of sharing stdin
 between the envelope and passphrase. The same separation applies to
-`sentry enrollment import -`.
+`cosigner enrollment import -`.
 
 Human list output leads with the operator-assigned reference name and a compact
 10-leading/10-trailing Witness Key ID. Detailed JSON retains the complete ID
@@ -1898,32 +1898,32 @@ and also exposes a closed
 migration marker when present.
 
 The library is a generation convenience and trust-input inventory for the user
-signer. When generating a dedicated guarded account or a sentry-enabled bounded
+signer. When generating a dedicated guarded account or a cosigner-enabled bounded
 template, callers may provide
-`sentry=<witness-key-id>` instead of `sentry_public_key=<hex>`.
-`sentry=<name>` is also accepted as a compatibility input. The signer resolves the
+`cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
+`cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
-matches the definition's required sentry key type,
+matches the definition's required cosigner key type,
 rejects requests that provide both forms, and persists the resolved
-`sentry_public_key` plus the template's other creation parameters in the key
+`cosigner_public_key` plus the template's other creation parameters in the key
 file. `aplane.corridor.v1`, for example, persists its public recipient list and
 complete bounded metadata; later signing does not require the YAML source to
 remain installed.
 
 Product `/keytypes` metadata may expose imported references as a
-creation parameter named `sentry` with `type:"select"` and `options[]`
-containing Witness Key IDs whose sentry key type matches the guarded
+creation parameter named `cosigner` with `type:"select"` and `options[]`
+containing Witness Key IDs whose cosigner key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
-the durable key file still stores the resolved `sentry_public_key`; other
+the durable key file still stores the resolved `cosigner_public_key`; other
 provider-specific creation parameters remain exposed normally.
 
-The `apadmin` TUI also receives the optional `sentry_component_key_type` in
+The `apadmin` TUI also receives the optional `cosigner_component_key_type` in
 its internal admin key-type projection and joins it with
-`list_sentry_references`. Guarded generation displays aliases but submits the
+`list_cosigner_references`. Guarded generation displays aliases but submits the
 canonical Witness Key ID. A sole compatible authority may be preselected;
 multiple authorities require an explicit picker choice. When none exists, the
 TUI opens an in-flow public-envelope enrollment review instead of exposing a
-raw `sentry_public_key` editor. The review locally validates the envelope and
+raw `cosigner_public_key` editor. The review locally validates the envelope and
 shows the complete grouped Witness Key ID before the authorized import RPC.
 The public `/keytypes` DTO and external SDK contract are unchanged by this TUI
 projection.
@@ -2079,10 +2079,10 @@ Signing-audit semantics:
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
 - signing audit over HTTP records `transport:"http"` and the token-authenticated principal as requester
-- sentry-role component signing currently records approvals and policy
+- cosigner-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
   Witness Key ID, `txn_sender` is the decoded target sender, and
-  `policy_rule_id` carries the deterministic sentry rule when present
+  `policy_rule_id` carries the deterministic cosigner rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
@@ -2298,11 +2298,11 @@ fallback switch stored in product runtime config and shown in `apadmin` as
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
 
-Client-signing and sentry component `transfer_policy` are both persisted in
+Client-signing and cosigner component `transfer_policy` are both persisted in
 `policy.yaml`, with schema selected by node role. Both domains are validated by
 the normal policy load path and by `apstore policy check/sign/verify`.
 `apadmin policy rescue` auto-targets the node-role domain and
-`--target signer|sentry` can explicitly select a domain for offline work;
+`--target signer|cosigner` can explicitly select a domain for offline work;
 `apadmin policy` uses the node-role target online through admin IPC. There is no
 scalar policy-settings IPC; guided edits use the shared full-document editor
 and are saved as whole-document YAML replacements. The rescue `export` and
@@ -2376,7 +2376,7 @@ Watched paths:
 
 Mechanism:
 
-- reacts to Create, Write, Remove, and Rename on `.key`, `.sen`, and `.template` files
+- reacts to Create, Write, Remove, and Rename on `.key`, `.cos`, and `.template` files
 - a `store-root.enc` replacement is a reload candidate; reload authenticates the new
   active generation and re-arms the watcher on its directories
 - missing key and key type directories are tracked and added later when created
@@ -2736,14 +2736,14 @@ The authority boundary is:
 A backup preserves complete managed credential records, not only raw private
 key bytes. This includes durable LogicSig bytecode, signing-argument contracts,
 bounded authorization, and other versioned signing metadata carried by
-`.key` and `.sen` payloads. Restore never imports operational authority from
+`.key` and `.cos` payloads. Restore never imports operational authority from
 the source.
 
 ### Export and archive shape
 
 Export:
 
-1. discovers canonical managed credentials from active `.key` and `.sen`
+1. discovers canonical managed credentials from active `.key` and `.cos`
    files; external `.wit`, contract-admin, and deleted artifacts are excluded
 2. opens each credential with its object-bound destination term envelope
 3. parses and validates the complete credential payload, then canonicalizes it
@@ -2898,7 +2898,7 @@ responsible for the destination policy under which restored authority runs.
 
 ### Offline rebuild
 
-`apstore rebuild <archive-path> [--role signer|sentry]` remains the rescue
+`apstore rebuild <archive-path> [--role signer|cosigner]` remains the rescue
 path for an absent product store. It applies the same credential validation
 and credential-only semantics into a newly staged first generation. The sealed
 manifest source role supplies the default role; an explicit incompatible role
@@ -2970,7 +2970,7 @@ Cross-SDK compatibility-bearing behavior:
   signer-advertised structured LogicSig resource hints to `/plan`; validate the
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
-  dummy suffix returned by `/plan`; obtain the required user, sentry, or
+  dummy suffix returned by `/plan`; obtain the required user, cosigner, or
   bounded-base components; call ordinary `/sign` for any non-guarded original
   positions; and call `/sign/assemble` with the frozen group and signed
   passthrough positions. Resource hints are planning inputs, not locally
@@ -2978,9 +2978,9 @@ Cross-SDK compatibility-bearing behavior:
   submission or simulation uses the exact assembled group. User-role
   `/sign/component` requests run the signer-domain approval gates and can block
   on operator approval, so SDK deadlines for them follow the same
-  approval-aware rule as `/sign`, not the short sentry-role component deadline.
+  approval-aware rule as `/sign`, not the short cosigner-role component deadline.
 - Guarded simulation uses the same component and assembly flow as submission.
-  The client obtains ordinary user and sentry component signatures, signs local
+  The client obtains ordinary user and cosigner component signatures, signs local
   non-guarded legs through `/sign`, assembles through `/sign/assemble`, verifies
   the frozen canonical bytes, and only then sends the exact executable group to
   its configured algod simulation endpoint.

@@ -7,7 +7,7 @@
 > Status: This whitepaper preserves exploratory design framing, including
 > variants that are not shipped. Normative words below apply to that proposed
 > model, not to the current product contract.
-> See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md), [ARCH_SENTRY.md](ARCH_SENTRY.md),
+> See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md), [ARCH_COSIGNER.md](ARCH_COSIGNER.md),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
@@ -23,9 +23,9 @@ profile matrix explored below:
 - the program commits to a fixed-depth Merkle root; a non-self spend supplies
   a signer-derived proof for a generation-time recipient;
 - every spend requires the Falcon spending signature and a required Falcon
-  sentry signature;
+  cosigner signature;
 - pure rekey requires both the spending signature and a distinct offline
-  Falcon contract-admin signature, and does not contact the sentry;
+  Falcon contract-admin signature, and does not contact the cosigner;
 - close, clawback, hybrid rekey-and-spend, and unsupported transaction forms
   are rejected; decommissioning is rekey first, then close under the successor;
 - the optional amount/window bounds, optional or Ed25519 guard, direct close,
@@ -60,13 +60,13 @@ clawback-enabled assets, an account's corridor destinations are the only routes
 account-controlled value may travel. Transfers outside them are impossible, even
 if the account's Falcon key is stolen.
 
-Second, an account's corridor may be gated by a separate sentry. A sentry is 
+Second, an account's corridor may be gated by a separate cosigner. A cosigner is 
 a second signer that maintains its own policy and key material. For those
 transfers, the program requires both the account holder's authorization and
-a per-transaction sentry approval issued under deterministic policy. The holder 
-initiates transfer; the sentry permits or denies. 
+a per-transaction cosigner approval issued under deterministic policy. The holder 
+initiates transfer; the cosigner permits or denies. 
 
-APlane makes sentry signing invisible to the end user in its transaction handling, but there 
+APlane makes cosigner signing invisible to the end user in its transaction handling, but there 
 is nothing proprietary about the technique and only standard Algorand primitives
 are used. 
 
@@ -74,21 +74,21 @@ Policy is divided into two layers with different volatility profiles:
 
 - **Structural policy — where corridors exist.** Compiled into the account's 
   LogicSig: the holder's Falcon key, the corridor destination definitions, 
-  the embedded sentry key, and the governance rekey path. Corridors change 
+  the embedded cosigner key, and the governance rekey path. Corridors change 
   only by construction — a Falcon-authorized governance rekey under dedicated 
-  governance keys, separate from both spending and sentry authorities — with the 
+  governance keys, separate from both spending and cosigner authorities — with the 
   account address stable across all versions.
 - **Operational policy — when gates open.** Gate policy rules held on separate
-  sentry nodes, evaluated fail-closed per transaction and enforced on-chain
-  through a required sentry signature. Gate rules change by an authenticated policy
+  cosigner nodes, evaluated fail-closed per transaction and enforced on-chain
+  through a required cosigner signature. Gate rules change by an authenticated policy
   edit, with no on-chain transaction.
 
-Optionally, a "sentry" signer may also be used to provide a second signature for
+Optionally, a "cosigner" signer may also be used to provide a second signature for
 additional transaction approval. This approval process runs off-chain, so while
 it can be based on transaction / group details, it can also be based on off-chain
 state as well - eg., anything a process can look up via HTTP. 
 
-Like the destination address of a corridor, the use of a specific pre-determined sentry key
+Like the destination address of a corridor, the use of a specific pre-determined cosigner key
 is cryptographically enforced, similar to the concept of multisig.
 
 
@@ -289,7 +289,7 @@ account type.
 
 ### 5.1 Verdict model — gates are shut by default
 
-Sentry nodes evaluate their gate rules with deterministic, fail-closed
+Cosigner nodes evaluate their gate rules with deterministic, fail-closed
 semantics: matching allow policy opens the gate (signs); deny rules leave
 it shut; unmatched requests leave it shut; manual review and operator
 default are not valid outcomes — a guard cannot be talked through a gate.
@@ -303,18 +303,18 @@ Movement authorization by sender, receiver, asset, and amount; deny rules;
 network scoping; and per-guard-key overrides — approved classes, active
 assets, and compliance gating expressed as gate rules rather than as
 on-chain state anywhere. Updating gate rules is an authenticated policy edit
-on the sentry node; it takes effect on the next signing request with no on-chain
+on the cosigner node; it takes effect on the next signing request with no on-chain
 transaction and no effect on any account's program. Gate rules can narrow
 which traffic passes through a corridor; they can never authorize travel
 where no corridor exists.
 
 ### 5.3 V1 trust domain
 
-In v1, the signer and sentry are assumed to be operated by the same
+In v1, the signer and cosigner are assumed to be operated by the same
 organization, using separate node roles, data roots, keys, and policy
-documents. The sentry is therefore an internal control and policy-enforcement
+documents. The cosigner is therefore an internal control and policy-enforcement
 point, not third-party attestation. It still provides key separation and
-fail-closed gate enforcement: the sentry key cannot spend, and the holder key
+fail-closed gate enforcement: the cosigner key cannot spend, and the holder key
 alone cannot pass guarded traffic. It does not protect against a fully
 compromised or malicious operator that can command both roles.
 
@@ -378,7 +378,7 @@ through a transaction that (a) carries a valid Falcon signature from the
 account's spend key bound to that exact transaction — the holder initiated it;
 (b) travels the corridor — the receiver, including any close target, is in the
 compiled destination set; and (c) for guarded accounts, passes an open gate — a
-valid sentry signature issued under fail-closed gate rules. The corridor
+valid cosigner signature issued under fail-closed gate rules. The corridor
 program is the sole effective signer for account-authorized movement; there is
 no state to corrupt, no upgrade hook, and no administrative override of the
 transfer path. The construction path can change the account's future corridor
@@ -390,7 +390,7 @@ construction authority constructs corridors; it does not travel them.
 | Compromise / failure | Worst case | Bound |
 |---|---|---|
 | Spend (holder Falcon) key | Attacker initiates transfers | Corridor destinations only; on guarded accounts every transfer still needs an open gate, so rule-violating traffic is stopped at the gate — except an always-available escape hatch, which the holder key can use without a gate but only to push value to the fixed recovery corridor (§7.3) |
-| Guard (sentry) key | Attacker opens gates | **Opens gates, cannot construct corridors**: no spend occurs without the holder signature, and holder–guard collusion is still confined to the corridor |
+| Guard (cosigner) key | Attacker opens gates | **Opens gates, cannot construct corridors**: no spend occurs without the holder signature, and holder–guard collusion is still confined to the corridor |
 | Gate-rule tampering | Improper gate openings | Same bound as guard-key compromise; rule files are tamper-evident and edits are audited |
 | Governance key | Attacker rekeys the account to an arbitrary program | **Total for that account — this is the one power that constructs corridors.** Hence cold, M-of-N, distinct from the spend key, and absent entirely on immutable accounts |
 | Guard unavailability | Every gate that guard controls is shut (fail closed) | Availability loss only, never integrity loss; bounded by the escape hatch where present — a timed hatch unlocks after its activation round, an always-available hatch is open throughout (§7.3) |
@@ -437,7 +437,7 @@ the desired posture simply omit the hatch.
 ### 7.4 Monitoring
 
 Production deployments monitor: gate rejections and gate openings (from the
-sentry's signed audit log), construction rekeys on every account (an on-chain
+cosigner's signed audit log), construction rekeys on every account (an on-chain
 watch), spend attempts rejected at the signer, balances below operating
 reserve, and escape-hatch activity — activation proximity for timed hatches,
 and any use of an always-available hatch. Transactions failing
@@ -448,8 +448,8 @@ scanning.
 
 ## Appendix: Glossary — The Corridor Model
 
-Production terminology (sentry, component signature, sentry-domain policy,
-bounded authorization, and bounded-sentry flow) remains canonical. The
+Production terminology (cosigner, component signature, cosigner-domain policy,
+bounded authorization, and bounded-cosigner flow) remains canonical. The
 corridor vocabulary is an explanatory layer; the mappings below are
 conceptual and do not override the shipped v1 differences listed at the top of
 this paper.
@@ -460,21 +460,21 @@ this paper.
 | Destination | An allowlist entry | A single address in an account's corridor. Each destination is one directed edge A→B of the corridor map. |
 | Wall | Absence of a destination | Any address not among the corridor's destinations. Impassable by every party, including all key holders. |
 | Construction | Governance rekey | Adding, removing, or reconfiguring corridor destinations by rekeying to a successor program. Deliberate, key-ceremonied, on-chain. |
-| Guard | Sentry | A separate sentry-role node holding a component key and deterministic gate policy. In v1, this is an internal control point operated by the same organization as the sending accounts, not third-party attestation. |
+| Guard | Cosigner | A separate cosigner-role node holding a component key and deterministic gate policy. In v1, this is an internal control point operated by the same organization as the sending accounts, not third-party attestation. |
 | Guarded account | Guarded account (production term) | An account whose program requires both the holder's signature and the guard's co-signature. Two-party: the holder initiates, the guard admits, neither acts alone. |
-| Gate | The sentry's per-transaction admission decision | Opened only by a sentry signature issued under matching allow policy. Shut by default: denied or unmatched transactions, unsupported shapes, and unreachable or locked sentries all leave the gate shut. |
+| Gate | The cosigner's per-transaction admission decision | Opened only by a cosigner signature issued under matching allow policy. Shut by default: denied or unmatched transactions, unsupported shapes, and unreachable or locked cosigners all leave the gate shut. |
 | Gated corridor | An attested corridor | The corridor of a guarded account: structurally constructed AND per-transaction gated. |
 | Ungated corridor | A non-attested corridor | The corridor of an ungated account: structurally constructed, no guard posted. Used where structural bounds alone are the intended control. |
-| Gate rules | The sentry's policy document | The deterministic, fail-closed policy under which the guard opens gates. |
+| Gate rules | The cosigner's policy document | The deterministic, fail-closed policy under which the guard opens gates. |
 | Corridor map | The network graph | The emergent union of every account's corridor. Not stored anywhere. |
 | Escape hatch | Recovery path | An optional gate-free path restricted to a recovery corridor. Either timed — unlocks only after an activation round — or always-available, open from day one. Realizable as a compiled destination or a hatch side account (§7.3). |
 
 Two sentences carry the security model and recur throughout:
 
 1. **A compromised guard can open gates; it cannot construct corridors.**
-   Sentry compromise never expands where value can flow (§7.2).
+   Cosigner compromise never expands where value can flow (§7.2).
 2. **The holder initiates; the guard admits.** Neither the spend key nor the
-   sentry key alone moves value from a guarded account (§3).
+   cosigner key alone moves value from a guarded account (§3).
 
 The substrate needs no metaphor — the ledger is Algorand, the signing
 infrastructure is APlane — and everything the system adds on top is named

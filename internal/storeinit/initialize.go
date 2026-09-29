@@ -125,8 +125,8 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 					return fmt.Errorf("create generation node role integrity sidecar: %w", err)
 				}
 				var policyErr error
-				if role == noderole.RoleSentry {
-					policyErr = policy.SaveStoredSentryConfigActiveWithKeyring(
+				if role == noderole.RoleCosigner {
+					policyErr = policy.SaveStoredCosignerConfigActiveWithKeyring(
 						staged,
 						&policy.StoredConfig{},
 						keyring,

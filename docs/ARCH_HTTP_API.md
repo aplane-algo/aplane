@@ -71,7 +71,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
 | `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
-| `bounded_sentry_required` | sentry-gated bounded spend sent to ordinary `/sign` | `400` |
+| `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -86,7 +86,7 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations 60 seconds, `/plan` 60 seconds,
-  `/sign/component` 2 minutes for sentry targets, `/sign/assemble` 2 minutes,
+  `/sign/component` 2 minutes for cosigner targets, `/sign/assemble` 2 minutes,
   and `/sign` or approval-bearing `/sign/component` based on approval wait.
   User and bounded-base `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
@@ -172,7 +172,7 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   through `signed[]`.
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; guarded
-  and bounded-sentry groups both use `/plan`, `/sign/component`, and
+  and bounded-cosigner groups both use `/plan`, `/sign/component`, and
   `/sign/assemble`. The client
   then sends the exact returned group to its configured algod simulate
   endpoint. Apsigner cannot distinguish this from a request whose result will
@@ -218,9 +218,9 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   closed on the client.
 - Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
   pure spends and explicitly spending-key-authorized rekeys return complete
-  base-argument LogicSigs from `/sign` only when no sentry is required.
-- Sentry-enabled bounded spends are rejected with
-  `code:"bounded_sentry_required"`; they must use the `bounded-sentry1`
+  base-argument LogicSigs from `/sign` only when no cosigner is required.
+- Cosigner-enabled bounded spends are rejected with
+  `code:"bounded_cosigner_required"`; they must use the `bounded-cosigner1`
   choreography below.
 
 `/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
@@ -246,32 +246,32 @@ finalized transaction, durable metadata, and program contract.
 `/sign/component` accepts `signerapi.ComponentRequest`: optional `request_id`,
 frozen TX-prefixed `group_bytes_hex[]`, discriminated `targets[]`, foreign-only
 `contextual_positions[]`, and a contiguous `dummy_positions[]` suffix. The
-three position sets form a closed partition. Target `kind` is `user`, `sentry`,
+three position sets form a closed partition. Target `kind` is `user`, `cosigner`,
 or `bounded-base`; kind-specific fields are rejected on other kinds.
 Dummy classification is semantic in both directions: every declared dummy must
 match the canonical signer-added suffix form, and a canonical dummy suffix may
 not be relabeled as caller-supplied original positions.
 
 The endpoint never plans or mutates a group. User and bounded-base targets are
-policy- and operator-gated and use the live `/sign/cancel` lifecycle. Sentry
-targets use deterministic sentry policy without operator approval. Bounded-base
+policy- and operator-gated and use the live `/sign/cancel` lifecycle. Cosigner
+targets use deterministic cosigner policy without operator approval. Bounded-base
 authorization is reconstructed from frozen bytes and signer-held metadata,
 including resources, fees, runtime arguments, and the canonical dummy suffix.
 The response is `signerapi.ComponentResponse`, with `request_id` and
-kind-tagged `components[]`. User/sentry components carry `signature`; bounded
+kind-tagged `components[]`. User/cosigner components carry `signature`; bounded
 components carry `auth_address`, `base_signatures[]`, canonical `runtime_args`,
 and `assembly_receipt`. Every component carries `target_index`, `kind`, and
 `signature_scheme`.
 
 The Falcon-signed bounded assembly receipt commits to the account, target TxID,
 normalized durable metadata, and sorted runtime arguments under
-`APLANE_BOUNDED_SENTRY_ASSEMBLY_V1`. It prevents transplanting released base
+`APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1`. It prevents transplanting released base
 material into another account, metadata instance, or runtime-argument set.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
 the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
-Guarded targets carry user and sentry signatures; bounded-sentry targets carry
-base signatures, runtime arguments, an assembly receipt, and a sentry
+Guarded targets carry user and cosigner signatures; bounded-cosigner targets carry
+base signatures, runtime arguments, an assembly receipt, and a cosigner
 signature. Every position is covered exactly once. The response is
 `signerapi.AssemblyResponse` with `request_id` and aligned `signed_group[]`.
 
@@ -280,7 +280,7 @@ against their local guarded account key and both component signatures. Bounded
 targets reload durable metadata, verify receipt and both authorities against
 the frozen TxID, derive only declared signer-generated arguments, and check the
 LogicSig address and authorizer. Contract-admin paths never use this endpoint
-or contact a sentry. Assembly request IDs are correlation-only and are not
+or contact a cosigner. Assembly request IDs are correlation-only and are not
 cancelable through `/sign/cancel`.
 
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
@@ -297,7 +297,7 @@ cancelable through `/sign/cancel`.
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
-error. Sentry-only `/sign/component` and `/sign/assemble` request IDs are
+error. Cosigner-only `/sign/component` and `/sign/assemble` request IDs are
 correlation fields rather than live cancel handles and return `not_found` if
 supplied to `/sign/cancel`.
 
@@ -319,7 +319,7 @@ tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
 Only live synchronous `/sign` requests and approval-bearing user or
-bounded-base `/sign/component` requests are cancelable. Sentry-only component
+bounded-base `/sign/component` requests are cancelable. Cosigner-only component
 requests and assembly requests are correlation-only. Once a cancelable request
 is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
@@ -349,16 +349,16 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
   envelope. Witness rows omit it because they are not spending accounts.
-- optional `signing_flow`: explicit signing choreography label. `sentry1`
+- optional `signing_flow`: explicit signing choreography label. `cosigner1`
   selects legacy guarded component signing, `bounded1` selects bounded routing
-  without an online sentry, `bounded-sentry1` selects the user-first bounded
-  component/sentry/assembly flow, and empty means ordinary `/sign`. Clients
+  without an online cosigner, `bounded-cosigner1` selects the user-first bounded
+  component/cosigner/assembly flow, and empty means ordinary `/sign`. Clients
   dispatch these cases explicitly and fail closed on labels they do not
   implement.
-- optional `sentry_component_key_type`: the sentry component key type used by
-  this key's `signing_flow` (for `sentry1` or `bounded-sentry1`)
+- optional `cosigner_component_key_type`: the cosigner component key type used by
+  this key's `signing_flow` (for `cosigner1` or `bounded-cosigner1`)
 - optional `bounded_authorization`: present for `signing_flow: bounded1` and
-  `bounded-sentry1`.
+  `bounded-cosigner1`.
   It contains `contract`, `base_signature_arg_layout`,
   `spend_effects`, `max_fee`, `admin_operations` (including each operation's
   `policy_gate`), `runtime_args`, `derived_args`, the path-specific
@@ -369,7 +369,7 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `logic_sig_resources`, containing final compiled program bytes and
   path-specific argument-byte and maximum-opcode-cost ceilings
 - optional `is_generic_lsig`
-- optional `is_witness_key` and `is_spending_account`: sentry-key rows use
+- optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
   `address` as the Witness Key ID, not as an Algorand spending address.
   Witness Key IDs are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
@@ -380,13 +380,13 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
   an absent field the same as an empty list.
 - optional `parameters`: non-secret key creation parameters needed by clients
   to orchestrate key-type-specific workflows. For guarded account rows this
-  includes `sentry_public_key`, the sentry public key embedded in the
+  includes `cosigner_public_key`, the cosigner public key embedded in the
   account LogicSig bytecode. Its key family and size are determined by the
   guarded account `key_type`. SDK consumers must treat this as signer-owned
-  metadata, not as proof of remote sentry endpoint ownership.
+  metadata, not as proof of remote cosigner endpoint ownership.
   Bounded rows expose only the reviewed public parameter projection used by
   the bundled profiles (`recipients`, asset/amount limits, `unlock_round`, and
-  framework sentry/admin public keys). Newly stored bounded parameters are
+  framework cosigner/admin public keys). Newly stored bounded parameters are
   omitted until explicitly classified as public; `/keys` never defaults to
   exposing the complete stored creation-parameter map.
 - optional `template_provenance_status`, `template_provenance_note`; these are
@@ -410,7 +410,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/status` response:
 
-- `node_role`: optional signer node role (`signer` or `sentry`); omitted when unset
+- `node_role`: optional signer node role (`signer` or `cosigner`); omitted when unset
 - `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
   is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
@@ -431,7 +431,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`

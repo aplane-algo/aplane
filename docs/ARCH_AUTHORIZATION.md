@@ -212,16 +212,16 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
-| `sign.component` | Request user, sentry, or bounded-base authorization components over a frozen group | `transaction` | Yes |
-| `sign.assemble` | Assemble verified user and sentry component signatures into signed guarded transactions | `transaction` | Yes |
+| `sign.component` | Request user, cosigner, or bounded-base authorization components over a frozen group | `transaction` | Yes |
+| `sign.assemble` | Assemble verified user and cosigner component signatures into signed guarded transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key | `key` | Yes |
 | `keys.import` | Import a key | `key` | Yes |
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
-| `sentries.view` | List/show public sentry references and export public witness metadata | `sentry_references`, `sentry_reference`, `sentry_public` | No |
-| `sentries.manage` | Import or remove signer-owned public sentry references | `sentry_reference` | Yes |
+| `cosigners.view` | List/show public cosigner references and export public witness metadata | `cosigner_references`, `cosigner_reference`, `cosigner_public` | No |
+| `cosigners.manage` | Import or remove signer-owned public cosigner references | `cosigner_reference` | Yes |
 | `generations.view` | Inspect current/retained generations, quarantine, and selected deleted-archive usage | `generations`, `deleted_archive` | No; runtime must be unlocked or authenticated recovery |
 | `identity.generation.quarantine.prune` | Irreversibly delete explicitly selected non-authoritative quarantined generation publications after durable audit | `generation_quarantine` | Yes; recovery-admin state is allowed |
 | `identity.generation.abandoned.discard` | Irreversibly delete explicitly selected in-place abandoned publications that reconciliation cannot safely quarantine | `generation_abandoned` | Yes; recovery-admin state is allowed |

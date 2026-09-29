@@ -253,9 +253,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			resized, resizeCmd := m.resyncSignerSize()
 			m = resized.(model)
 			return m, tea.Batch(signerCmd, m.shell.Init(), resizeCmd)
-		case "sentry":
+		case "cosigner":
 			m.shellRolePending = false
-			m.daemon.lines = append(m.daemon.lines, "[config] shell pane disabled on sentry nodes")
+			m.daemon.lines = append(m.daemon.lines, "[config] shell pane disabled on cosigner nodes")
 			return m, signerCmd
 		default:
 			// Unknown and missing roles remain fail-closed. A later settings
@@ -492,7 +492,7 @@ func (m model) signerPaneTitle() string {
 		return titled.AdminTitle()
 	}
 	if !m.shellEnabled() {
-		return "Sentry Admin"
+		return "Cosigner Admin"
 	}
 	return "Signer Admin"
 }

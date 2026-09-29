@@ -14,9 +14,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
@@ -402,15 +402,15 @@ func routingPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config 
 	return cfg
 }
 
-func sentryPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
+func cosignerPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
 	t.Helper()
-	stored, err := policy.ParseStoredSentryConfig([]byte(raw))
+	stored, err := policy.ParseStoredCosignerConfig([]byte(raw))
 	if err != nil {
-		t.Fatalf("ParseStoredSentryConfig() error = %v", err)
+		t.Fatalf("ParseStoredCosignerConfig() error = %v", err)
 	}
-	cfg, err := stored.ApplySentry(policy.DefaultConfig())
+	cfg, err := stored.ApplyCosigner(policy.DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplySentry() error = %v", err)
+		t.Fatalf("ApplyCosigner() error = %v", err)
 	}
 	return cfg
 }
@@ -582,7 +582,7 @@ func TestOrdinarySignRejectsGuardedKeyBeforeApproval(t *testing.T) {
 	}}}
 	plan := &PlanResult{
 		AllTxns:        []types.Transaction{{}},
-		AuthKeyTypes:   []string{keytypes.GuardedFalcon1024Sentry1024V1},
+		AuthKeyTypes:   []string{keytypes.GuardedFalcon1024Cosigner1024V1},
 		ForeignIndices: map[int]bool{},
 	}
 

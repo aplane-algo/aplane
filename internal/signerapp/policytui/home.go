@@ -91,8 +91,8 @@ func blockedDestinationsSummary(c *policy.StoredConfig) string {
 }
 
 func policyFieldsForTarget(target policyeditor.Target) []field {
-	if target == policyeditor.TargetSentry {
-		return sentryPolicyFields()
+	if target == policyeditor.TargetCosigner {
+		return cosignerPolicyFields()
 	}
 	return signerPolicyFields()
 }
@@ -146,7 +146,7 @@ func signerPolicyFields() []field {
 	}
 }
 
-func sentryPolicyFields() []field {
+func cosignerPolicyFields() []field {
 	return []field{
 		boolField("reject_rekey", "Reject rekey", false, func(c *policy.StoredConfig) **bool {
 			return &c.RejectRekey

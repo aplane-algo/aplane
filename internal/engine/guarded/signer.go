@@ -2,8 +2,8 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package guarded implements the client-side orchestration of APlane's
-// two-party guarded (sentry) signing flow: building the canonical group,
-// collecting user and sentry component signatures, requesting non-guarded
+// two-party guarded (cosigner) signing flow: building the canonical group,
+// collecting user and cosigner component signatures, requesting non-guarded
 // signatures over the frozen bytes, and assembling the final signed group.
 //
 // It is deliberately isolated from internal/engine so the safety-critical
@@ -38,12 +38,12 @@ type SignerCacheView interface {
 	// SigningFlow returns the signer-advertised signing_flow for an address,
 	// or "" if the address is not a guarded key.
 	SigningFlow(address string) string
-	// SentryComponentKeyType returns the sentry component key type advertised
+	// CosignerComponentKeyType returns the cosigner component key type advertised
 	// for a guarded account.
-	SentryComponentKeyType(address string) (string, bool)
-	// SentryPublicKey returns the sentry public key embedded in a guarded
+	CosignerComponentKeyType(address string) (string, bool)
+	// CosignerPublicKey returns the cosigner public key embedded in a guarded
 	// account's LogicSig, as advertised in inventory.
-	SentryPublicKey(address string) (string, bool)
+	CosignerPublicKey(address string) (string, bool)
 	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
 	// account.
 	BoundedMaxFee(address string) (uint64, bool)
@@ -70,7 +70,7 @@ type Signer struct {
 	authCache        *cache.AuthAddressCache
 	endpointRegistry config.ClientEndpointRegistry
 	cache            SignerCacheView
-	probeEndpoint    sentryEndpointProbe
+	probeEndpoint    cosignerEndpointProbe
 	hostKeyApproval  connect.HostKeyApproval
 }
 

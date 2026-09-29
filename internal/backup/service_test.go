@@ -93,21 +93,21 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	}
 }
 
-func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
+func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
+	selector, keyJSON := testCosignerComponentBackupKeyJSON(t)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.CosignerCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.CosignerCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
+	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	if err := policy.SaveStoredCosignerConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,21 +117,21 @@ func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
 
 		archivePath,
 		nil,
-		noderole.RoleSentry,
+		noderole.RoleCosigner,
 		cryptotest.Keyring(t, testExportMasterKey),
 	))
 	if err != nil {
 		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
 	if result.KeyCount != 1 || len(result.Addresses) != 1 || result.Addresses[0] != selector {
-		t.Fatalf("archive result = %#v, want sentry witness %s", result, selector)
+		t.Fatalf("archive result = %#v, want cosigner witness %s", result, selector)
 	}
 	extractDir := t.TempDir()
 	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "apb", selector+".apb")); err != nil {
-		t.Fatalf("sentry witness .apb missing: %v", err)
+		t.Fatalf("cosigner witness .apb missing: %v", err)
 	}
 }
 

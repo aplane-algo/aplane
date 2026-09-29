@@ -13,13 +13,13 @@ type (
 )
 
 const (
-	ErrorBadRequest            = svcerr.KindBadRequest
-	ErrorForbidden             = svcerr.KindForbidden
-	ErrorLocked                = svcerr.KindLocked
-	ErrorUnavailable           = svcerr.KindUnavailable
-	ErrorInternal              = svcerr.KindInternal
-	ErrorBoundedAdminRequired  = svcerr.KindBoundedAdminRequired
-	ErrorBoundedSentryRequired = svcerr.KindBoundedSentryRequired
+	ErrorBadRequest              = svcerr.KindBadRequest
+	ErrorForbidden               = svcerr.KindForbidden
+	ErrorLocked                  = svcerr.KindLocked
+	ErrorUnavailable             = svcerr.KindUnavailable
+	ErrorInternal                = svcerr.KindInternal
+	ErrorBoundedAdminRequired    = svcerr.KindBoundedAdminRequired
+	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }
@@ -36,12 +36,12 @@ func boundedAdminRequired() *ServiceError {
 	return &ServiceError{Kind: ErrorBoundedAdminRequired, Message: "Falcon-admin bounded operation requires POST /sign/bounded-admin"}
 }
 
-// boundedSentryRequired rejects a sentry-gated bounded spend submitted on the
+// boundedCosignerRequired rejects a cosigner-gated bounded spend submitted on the
 // plain /sign path and directs clients to the user-first component flow.
-func boundedSentryRequired() *ServiceError {
+func boundedCosignerRequired() *ServiceError {
 	return &ServiceError{
-		Kind:    ErrorBoundedSentryRequired,
-		Message: "bounded-sentry operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
+		Kind:    ErrorBoundedCosignerRequired,
+		Message: "bounded-cosigner operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
 	}
 }
 

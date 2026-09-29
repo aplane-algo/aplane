@@ -221,21 +221,21 @@ request-token --endpoint main
 connect main
 ```
 
-For a sentry endpoint, the client can also create the endpoint profile manually
-when the operator already knows the client-reachable URL and sentry REST port:
+For a cosigner endpoint, the client can also create the endpoint profile manually
+when the operator already knows the client-reachable URL and cosigner REST port:
 
 ```bash
-endpoints create --alias local-sentry \
-  --endpoint ssh://sentry.example.com:1127 \
-  --sentryport 11270
-request-token --endpoint local-sentry
-endpoints discover-sentries
+endpoints create --alias local-cosigner \
+  --endpoint ssh://cosigner.example.com:1127 \
+  --cosignerport 11270
+request-token --endpoint local-cosigner
+endpoints discover-cosigners
 ```
 
-Discovery is a read-only connectivity diagnostic. To make the sentry key
-available when generating guarded accounts, export it on the sentry node with
-`apadmin sentry export` and explicitly import it on the signer node with
-`apadmin sentry import`. Signing operations resolve the matching endpoint from
+Discovery is a read-only connectivity diagnostic. To make the cosigner key
+available when generating guarded accounts, export it on the cosigner node with
+`apadmin cosigner export` and explicitly import it on the signer node with
+`apadmin cosigner import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.
 
 If the signer operator sets a client-reachable advertised URL in
@@ -290,13 +290,13 @@ Useful local commands:
 endpoints list
 endpoints show main
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
-endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
+endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223 --cosignerport 12270
 endpoints default main
 endpoints delete old-signer
 ```
 
 Token enrollment is endpoint-only. Import or configure a signer endpoint
-before running `request-token`; create or import a sentry endpoint before
+before running `request-token`; create or import a cosigner endpoint before
 running `request-token --endpoint <alias>`.
 
 ---
@@ -320,7 +320,7 @@ Day-to-day:
   admin settings, and edit the node-role policy while `apsigner` is running.
 - Use `apadmin policy rescue` for offline or scriptable policy inspection,
   validation, and signing of the node-role policy document: `policy.yaml` for signer nodes or
-  sentry-domain `policy.yaml` for sentry nodes.
+  cosigner-domain `policy.yaml` for cosigner nodes.
 - Use `appass` only to switch passphrase auto-handling mode (`prompt`,
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
@@ -482,8 +482,8 @@ cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
 
 # Initialize the local keystore before starting apsigner
 ./apstore initialize
-# Or, for a dedicated sentry node:
-./apstore initialize --role sentry
+# Or, for a dedicated cosigner node:
+./apstore initialize --role cosigner
 ./apsigner
 ```
 
@@ -589,7 +589,7 @@ documents with the store passphrase.
 For byte-preserving scripted edits, `apadmin policy rescue export` emits the
 verified selected document bytes and `apadmin policy rescue apply -` reads
 replacement YAML from stdin, validates it in the selected policy domain, and writes a fresh sidecar.
-Use `--target signer|sentry` to override auto-selection. `apstore policy sign` and
+Use `--target signer|cosigner` to override auto-selection. `apstore policy sign` and
 `apadmin policy rescue` save modes are offline store mutations, so run them while
 `apsigner` is stopped or before starting the signer. Direct YAML edits are
 active only after the next
@@ -608,8 +608,8 @@ Always Deny > Always Review > Always Approve > Operator Default
 | Field | Type | Meaning |
 |-------|------|---------|
 | `reject_foreign_rekey` | bool | Reject txns with non-zero `RekeyTo` only when the rekey target is not held by the current signer |
-| `reject_rekey` | bool | Sentry-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo` |
-| `rekey_policy` | map | Sentry-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
+| `reject_rekey` | bool | Cosigner-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo` |
+| `rekey_policy` | map | Cosigner-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | bool | Reject payment txns with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | bool | Reject ASA transfer txns with non-zero `AssetCloseTo` |
 | `reject_clawback` | bool | Reject ASA clawback txns using `AssetSender` |
@@ -635,7 +635,7 @@ increase exactly matches the required dummy fees.
 Fresh product policies default to:
 
 - `reject_foreign_rekey: true` (foreign rekey changes account control to an address outside this signer, so it is rejected by default)
-- sentry-domain `reject_rekey: false`, but non-zero `RekeyTo` still fails closed unless `rekey_policy.allowed` authorizes the sender-to-target edge
+- cosigner-domain `reject_rekey: false`, but non-zero `RekeyTo` still fails closed unless `rekey_policy.allowed` authorizes the sender-to-target edge
 - `reject_close_remainder: false`
 - `reject_asset_close: false`
 - `reject_clawback: false`
@@ -643,9 +643,9 @@ Fresh product policies default to:
 - `auto_approve_self_noop_transfer: false`
 - other guards unset / disabled
 
-`rekey_policy` applies to dedicated `sentry1` guarded accounts. Corridor v1's
-sentry is spend-only; its pure rekey uses the separate offline contract-admin
-witness and does not evaluate sentry policy.
+`rekey_policy` applies to dedicated `cosigner1` guarded accounts. Corridor v1's
+cosigner is spend-only; its pure rekey uses the separate offline contract-admin
+witness and does not evaluate cosigner policy.
 
 ### Example
 
@@ -681,7 +681,7 @@ max_asa_amounts:
 transactions. Use `apadmin` for online guided editing while the signer is
 running, or `apadmin -d "$APSIGNER_DATA" policy rescue edit` for offline guided
 editing of common policy and transfer guards. Advanced routing fields can also be edited directly
-in `policy.yaml` or sentry-domain `policy.yaml`; then run `apstore policy check` and
+in `policy.yaml` or cosigner-domain `policy.yaml`; then run `apstore policy check` and
 `apstore policy sign` before starting or reloading the signer. For scripts, use
 `apadmin policy rescue export` to export the verified selected policy and
 `apadmin policy rescue apply -` to validate, save, and sign replacement YAML from stdin.

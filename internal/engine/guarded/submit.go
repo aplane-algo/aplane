@@ -16,8 +16,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -25,16 +25,16 @@ import (
 )
 
 type guardedTarget struct {
-	Index                  int
-	Sender                 string
-	Account                string
-	SentryComponentKeyType string
-	SentryPublicKey        string
-	Flow                   string
-	BoundedMaxFee          uint64
+	Index                    int
+	Sender                   string
+	Account                  string
+	CosignerComponentKeyType string
+	CosignerPublicKey        string
+	Flow                     string
+	BoundedMaxFee            uint64
 }
 
-type sentryRequestKey struct {
+type cosignerRequestKey struct {
 	ComponentKeyType string
 	PublicKey        string
 }
@@ -48,9 +48,9 @@ const (
 	// flowRoutePlain signs through the ordinary client path. Bounded1 belongs
 	// here: it has its own transaction-aware server-side path behind /sign.
 	flowRoutePlain flowRoute = iota
-	// flowRouteGuarded routes through sentry component orchestration.
+	// flowRouteGuarded routes through cosigner component orchestration.
 	flowRouteGuarded
-	flowRouteBoundedSentry
+	flowRouteBoundedCosigner
 	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
 	// labels still enter guarded routing so guardedTargets rejects them
 	// explicitly instead of silently falling through to ordinary signing.
@@ -61,10 +61,10 @@ func routeForSigningFlow(flow string) flowRoute {
 	switch flow {
 	case "", signerapi.SigningFlowBounded1:
 		return flowRoutePlain
-	case signerapi.SigningFlowSentry1:
+	case signerapi.SigningFlowCosigner1:
 		return flowRouteGuarded
-	case signerapi.SigningFlowBoundedSentry1:
-		return flowRouteBoundedSentry
+	case signerapi.SigningFlowBoundedCosigner1:
+		return flowRouteBoundedCosigner
 	default:
 		return flowRouteUnknown
 	}
@@ -106,20 +106,20 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if len(targets) == 0 {
 		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
 	}
-	hasBoundedSentry, hasLegacyGuarded := false, false
+	hasBoundedCosigner, hasLegacyGuarded := false, false
 	for _, target := range targets {
 		switch target.Flow {
-		case signerapi.SigningFlowBoundedSentry1:
-			hasBoundedSentry = true
-		case signerapi.SigningFlowSentry1:
+		case signerapi.SigningFlowBoundedCosigner1:
+			hasBoundedCosigner = true
+		case signerapi.SigningFlowCosigner1:
 			hasLegacyGuarded = true
 		}
 	}
-	if hasBoundedSentry {
+	if hasBoundedCosigner {
 		if hasLegacyGuarded {
-			return nil, nil, fmt.Errorf("cannot mix sentry1 and bounded-sentry1 targets in one group")
+			return nil, nil, fmt.Errorf("cannot mix cosigner1 and bounded-cosigner1 targets in one group")
 		}
-		return s.signAndSubmitBoundedSentryGroup(txns, targets, opts, w)
+		return s.signAndSubmitBoundedCosignerGroup(txns, targets, opts, w)
 	}
 	guardedTargetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
@@ -144,7 +144,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if err != nil {
 		return nil, nil, err
 	}
-	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
+	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -167,18 +167,18 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		if !ok {
 			return nil, nil, fmt.Errorf("user signer returned no signature for target index %d", target.Index)
 		}
-		sentrySig, ok := sentrySignatures[target.Index]
+		cosignerSig, ok := cosignerSignatures[target.Index]
 		if !ok {
-			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
+			return nil, nil, fmt.Errorf("cosigner endpoint returned no signature for target index %d", target.Index)
 		}
 		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
-			TargetIndex:           target.Index,
-			Kind:                  signerapi.AssemblyTargetKindGuarded,
-			AuthAddress:           target.Account,
-			UserSignature:         userSig,
-			UserSourceRequestID:   userRequestIDs[target.Account],
-			SentrySignature:       sentrySig,
-			SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
+			TargetIndex:             target.Index,
+			Kind:                    signerapi.AssemblyTargetKindGuarded,
+			AuthAddress:             target.Account,
+			UserSignature:           userSig,
+			UserSourceRequestID:     userRequestIDs[target.Account],
+			CosignerSignature:       cosignerSig,
+			CosignerSourceRequestID: cosignerRequestIDs[target.requestKey()],
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
@@ -273,7 +273,7 @@ func (s *Signer) planGuardedGroupWithSigner(ctx context.Context, txns []types.Tr
 	return planned, dummies, nil
 }
 
-func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
+func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, targets []guardedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
 	targetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
@@ -339,8 +339,8 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	}
 
 	// User policy and operator approval completed before this point. Only now
-	// may the client disclose the frozen group to the sentry endpoint.
-	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
+	// may the client disclose the frozen group to the cosigner endpoint.
+	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, groupBytesHex, len(txns), targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -359,15 +359,15 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	}
 	for _, target := range targets {
 		component := components[target.Index]
-		sentrySignature, ok := sentrySignatures[target.Index]
+		cosignerSignature, ok := cosignerSignatures[target.Index]
 		if !ok {
-			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
+			return nil, nil, fmt.Errorf("cosigner endpoint returned no signature for target index %d", target.Index)
 		}
 		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AssemblyTarget{
-			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedSentry, AuthAddress: target.Account,
+			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: target.Account,
 			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: componentResp.RequestID,
-			SentrySignature: sentrySignature, SentrySourceRequestID: sentryRequestIDs[target.requestKey()],
+			CosignerSignature: cosignerSignature, CosignerSourceRequestID: cosignerRequestIDs[target.requestKey()],
 		})
 	}
 	for index, signedHex := range nonGuardedSignedHex {
@@ -378,7 +378,7 @@ func (s *Signer) signAndSubmitBoundedSentryGroup(txns []types.Transaction, targe
 	}
 	assemblyResp, err := s.conn.RequestAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
-		return nil, nil, fmt.Errorf("bounded-sentry assembly failed: %w", err)
+		return nil, nil, fmt.Errorf("bounded-cosigner assembly failed: %w", err)
 	}
 	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
 	if err != nil {
@@ -601,9 +601,9 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 
 func guardedLogicSigResourcePath(flow string) (lsigresource.AuthorizationPath, error) {
 	switch flow {
-	case "", signerapi.SigningFlowSentry1:
+	case "", signerapi.SigningFlowCosigner1:
 		return lsigresource.PathDefault, nil
-	case signerapi.SigningFlowBoundedSentry1:
+	case signerapi.SigningFlowBoundedCosigner1:
 		// Bounded component preparation admits only the pure-spend path. Carry
 		// that exact path into the later mixed-group /sign call rather than
 		// replacing it with the maximum across unrelated rekey paths.
@@ -720,24 +720,24 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		switch routeForSigningFlow(flow) {
 		case flowRoutePlain:
 			continue
-		case flowRouteGuarded, flowRouteBoundedSentry:
+		case flowRouteGuarded, flowRouteBoundedCosigner:
 		default:
 			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
 		}
-		sentryComponentKeyType, ok := s.cache.SentryComponentKeyType(account)
+		cosignerComponentKeyType, ok := s.cache.CosignerComponentKeyType(account)
 		if !ok {
-			return nil, fmt.Errorf("guarded account %s is missing sentry_component_key_type metadata; run keys refresh", account)
+			return nil, fmt.Errorf("guarded account %s is missing cosigner_component_key_type metadata; run keys refresh", account)
 		}
-		sentryPublicKey, ok := s.cache.SentryPublicKey(account)
-		if !ok || sentryPublicKey == "" {
-			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", account)
+		cosignerPublicKey, ok := s.cache.CosignerPublicKey(account)
+		if !ok || cosignerPublicKey == "" {
+			return nil, fmt.Errorf("guarded account %s is missing cosigner_public_key metadata; run keys refresh", account)
 		}
-		canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey)
+		canonicalPublicKey, err := normalizeCosignerPublicKeyHex(cosignerPublicKey)
 		if err != nil {
-			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", account, err)
+			return nil, fmt.Errorf("guarded account %s has invalid cosigner_public_key metadata: %w", account, err)
 		}
 		var boundedMaxFee uint64
-		if flow == signerapi.SigningFlowBoundedSentry1 {
+		if flow == signerapi.SigningFlowBoundedCosigner1 {
 			var found bool
 			boundedMaxFee, found = s.cache.BoundedMaxFee(account)
 			if !found {
@@ -745,51 +745,51 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 			}
 		}
 		targets = append(targets, guardedTarget{
-			Index:                  i,
-			Sender:                 sender,
-			Account:                account,
-			SentryComponentKeyType: sentryComponentKeyType,
-			SentryPublicKey:        canonicalPublicKey,
-			Flow:                   flow,
-			BoundedMaxFee:          boundedMaxFee,
+			Index:                    i,
+			Sender:                   sender,
+			Account:                  account,
+			CosignerComponentKeyType: cosignerComponentKeyType,
+			CosignerPublicKey:        canonicalPublicKey,
+			Flow:                     flow,
+			BoundedMaxFee:            boundedMaxFee,
 		})
 	}
 	return targets, nil
 }
 
-func (t guardedTarget) requestKey() sentryRequestKey {
-	return sentryRequestKey{
-		ComponentKeyType: t.SentryComponentKeyType,
-		PublicKey:        t.SentryPublicKey,
+func (t guardedTarget) requestKey() cosignerRequestKey {
+	return cosignerRequestKey{
+		ComponentKeyType: t.CosignerComponentKeyType,
+		PublicKey:        t.CosignerPublicKey,
 	}
 }
 
-// normalizeSentryPublicKeyHex canonicalizes a sentry public key as lowercase
+// normalizeCosignerPublicKeyHex canonicalizes a cosigner public key as lowercase
 // hex. Component key types and public keys are runtime metadata, so no
 // per-family size table is consulted: integrity comes from the Witness Key ID
 // selector matching the advertising endpoint and, authoritatively, from the
 // on-chain LogicSig.
-func normalizeSentryPublicKeyHex(raw string) (string, error) {
+func normalizeCosignerPublicKeyHex(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("sentry public key is required")
+		return "", fmt.Errorf("cosigner public key is required")
 	}
 	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
 	publicKey, err := hex.DecodeString(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("sentry public key must be hex: %w", err)
+		return "", fmt.Errorf("cosigner public key must be hex: %w", err)
 	}
 	if len(publicKey) == 0 {
-		return "", fmt.Errorf("sentry public key is empty")
+		return "", fmt.Errorf("cosigner public key is empty")
 	}
 	return hex.EncodeToString(publicKey), nil
 }
 
-func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (string, error) {
+func cosignerComponentSelector(componentKeyType string, cosignerPublicKey string) (string, error) {
 	if componentKeyType == "" {
-		return "", fmt.Errorf("sentry component key type is required")
+		return "", fmt.Errorf("cosigner component key type is required")
 	}
-	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey)
+	canonicalPublicKey, err := normalizeCosignerPublicKeyHex(cosignerPublicKey)
 	if err != nil {
 		return "", err
 	}
@@ -800,15 +800,15 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	return witness.DeriveID(componentKeyType, publicKey), nil
 }
 
-func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {
-	selector, err := sentryComponentSelector(componentKeyType, sentryPublicKey)
+func cosignerComponentLabel(componentKeyType, cosignerPublicKey string) string {
+	selector, err := cosignerComponentSelector(componentKeyType, cosignerPublicKey)
 	if err == nil {
 		return fmt.Sprintf("Witness Key ID %s (%s)", selector, componentKeyType)
 	}
-	return fmt.Sprintf("sentry public key %s (%s)", shortSentryPublicKeyHex(sentryPublicKey), componentKeyType)
+	return fmt.Sprintf("cosigner public key %s (%s)", shortCosignerPublicKeyHex(cosignerPublicKey), componentKeyType)
 }
 
-func shortSentryPublicKeyHex(publicKeyHex string) string {
+func shortCosignerPublicKeyHex(publicKeyHex string) string {
 	trimmed := strings.TrimSpace(publicKeyHex)
 	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
 	if len(trimmed) <= 24 {
@@ -886,52 +886,52 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[sentryRequestKey]string, error) {
-	bySentry := make(map[sentryRequestKey][]int)
+func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, groupBytesHex []string, originalCount int, targets []guardedTarget, appCallInfo []*signerapi.AppCallInfo) (map[int]string, map[cosignerRequestKey]string, error) {
+	byCosigner := make(map[cosignerRequestKey][]int)
 	for _, target := range targets {
 		key := target.requestKey()
-		bySentry[key] = append(bySentry[key], target.Index)
+		byCosigner[key] = append(byCosigner[key], target.Index)
 	}
-	required := make([]sentryRequestKey, 0, len(bySentry))
-	for key := range bySentry {
+	required := make([]cosignerRequestKey, 0, len(byCosigner))
+	for key := range byCosigner {
 		required = append(required, key)
 	}
-	snapshot, err := s.resolveSentryEndpoints(ctx, required)
+	snapshot, err := s.resolveCosignerEndpoints(ctx, required)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer snapshot.close()
-	required = distinctSortedSentryRequestKeys(required)
+	required = distinctSortedCosignerRequestKeys(required)
 	signatures := make(map[int]string, len(targets))
-	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
-	for _, sentryKey := range required {
-		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, snapshot.routes[sentryKey], groupBytesHex, originalCount, sentryKey, bySentry[sentryKey], signatures, appCallInfo)
+	requestIDs := make(map[cosignerRequestKey]string, len(byCosigner))
+	for _, cosignerKey := range required {
+		requestID, err := s.requestOneCosignerComponentSignatureSet(ctx, snapshot.routes[cosignerKey], groupBytesHex, originalCount, cosignerKey, byCosigner[cosignerKey], signatures, appCallInfo)
 		if err != nil {
 			return nil, nil, err
 		}
-		requestIDs[sentryKey] = requestID
+		requestIDs[cosignerKey] = requestID
 	}
 	return signatures, requestIDs, nil
 }
 
-// requestOneSentryComponentSignatureSet collects component signatures from a
-// sentry endpoint without verifying them cryptographically: the client treats
+// requestOneCosignerComponentSignatureSet collects component signatures from a
+// cosigner endpoint without verifying them cryptographically: the client treats
 // component signatures as opaque material. Invalid signatures are rejected by
 // the signer during guarded assembly and, authoritatively, by the guarded
 // LogicSig on-chain.
-func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, endpoint *resolvedSentryEndpoint, groupBytesHex []string, originalCount int, sentryKey sentryRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
-	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
+func (s *Signer) requestOneCosignerComponentSignatureSet(ctx context.Context, endpoint *resolvedCosignerEndpoint, groupBytesHex []string, originalCount int, cosignerKey cosignerRequestKey, indices []int, signatures map[int]string, appCallInfo []*signerapi.AppCallInfo) (string, error) {
+	componentSelector, err := cosignerComponentSelector(cosignerKey.ComponentKeyType, cosignerKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive Witness Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)
+		return "", fmt.Errorf("failed to derive Witness Key ID for cosigner public key %s: %w", shortCosignerPublicKeyHex(cosignerKey.PublicKey), err)
 	}
-	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
+	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, cosignerKey.ComponentKeyType)
 
-	resp, err := endpoint.client.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindSentry, componentSelector, appCallInfo))
+	resp, err := endpoint.client.RequestComponentsWithContext(ctx, componentRequestForIndices(groupBytesHex, originalCount, indices, signerapi.ComponentTargetKindCosigner, componentSelector, appCallInfo))
 	if err != nil {
-		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
+		return "", fmt.Errorf("cosigner component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
-	if err := collectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
-		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
+	if err := collectComponentSignatures(resp, indices, cosignerKey.ComponentKeyType, signatures); err != nil {
+		return "", fmt.Errorf("cosigner component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
 	return resp.RequestID, nil
 }

@@ -33,7 +33,7 @@ const (
 	// ErrCodeBoundedAdminRequired directs contract-admin operations to the
 	// external bounded-admin completion flow.
 	ErrCodeBoundedAdminRequired = "bounded_admin_required"
-	// ErrCodeBoundedSentryRequired directs sentry-gated bounded spends to the
+	// ErrCodeBoundedCosignerRequired directs cosigner-gated bounded spends to the
 	// bounded component and assembly flow.
-	ErrCodeBoundedSentryRequired = "bounded_sentry_required"
+	ErrCodeBoundedCosignerRequired = "bounded_cosigner_required"
 )

@@ -13,7 +13,7 @@ const (
 	ArgSourceBaseSignature = "base_signature"
 	ArgSourceDerived       = "derived"
 	ArgSourceRuntime       = "runtime"
-	ArgSourceSentry        = "sentry"
+	ArgSourceCosigner      = "cosigner"
 	ArgSourceAdmin         = "admin"
 
 	ArgRequired  = "required"
@@ -104,7 +104,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 		ArgSourceBaseSignature: 0,
 		ArgSourceDerived:       1,
 		ArgSourceRuntime:       2,
-		ArgSourceSentry:        3,
+		ArgSourceCosigner:      3,
 		ArgSourceAdmin:         4,
 	}
 	lastSource := -1
@@ -136,7 +136,7 @@ func validateArgumentLayout(metadata *Metadata) error {
 	seenDerived := make(map[string]struct{}, len(derivedNames))
 	seenRuntime := make(map[string]struct{}, len(runtimeNames))
 	adminSlots := 0
-	sentrySlots := 0
+	cosignerSlots := 0
 	for i, slot := range metadata.ArgumentLayout {
 		if slot.Index != i {
 			return fmt.Errorf("argument slot %d has non-canonical index %d", i, slot.Index)
@@ -195,11 +195,11 @@ func validateArgumentLayout(metadata *Metadata) error {
 				}
 			}
 			seenRuntime[slot.Name] = struct{}{}
-		case ArgSourceSentry:
-			sentrySlots++
-			if slot.Name != SentrySignatureSlot || metadata.Sentry == nil || slot.MaxSize != metadata.Sentry.SignatureMaxSize ||
+		case ArgSourceCosigner:
+			cosignerSlots++
+			if slot.Name != CosignerSignatureSlot || metadata.Cosigner == nil || slot.MaxSize != metadata.Cosigner.SignatureMaxSize ||
 				slot.Paths.Spend != ArgRequired || slot.Paths.SpendingRekey != ArgForbidden || slot.Paths.AdminRekey != ArgForbidden {
-				return fmt.Errorf("bounded sentry signature slot must be spend-only and match sentry metadata")
+				return fmt.Errorf("bounded cosigner signature slot must be spend-only and match cosigner metadata")
 			}
 		case ArgSourceAdmin:
 			adminSlots++
@@ -222,12 +222,12 @@ func validateArgumentLayout(metadata *Metadata) error {
 	if adminSlots != wantAdminSlots {
 		return fmt.Errorf("argument layout has %d admin slots, want %d", adminSlots, wantAdminSlots)
 	}
-	wantSentrySlots := 0
-	if metadata.Sentry != nil {
-		wantSentrySlots = 1
+	wantCosignerSlots := 0
+	if metadata.Cosigner != nil {
+		wantCosignerSlots = 1
 	}
-	if sentrySlots != wantSentrySlots {
-		return fmt.Errorf("argument layout has %d sentry slots, want %d", sentrySlots, wantSentrySlots)
+	if cosignerSlots != wantCosignerSlots {
+		return fmt.Errorf("argument layout has %d cosigner slots, want %d", cosignerSlots, wantCosignerSlots)
 	}
 	return nil
 }

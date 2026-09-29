@@ -43,7 +43,7 @@ const (
 	AuditStoreInitializeFailed            = signeraudit.AuditStoreInitializeFailed
 	AuditPassphraseChanged                = signeraudit.AuditPassphraseChanged
 	AuditPassphraseChangeFailed           = signeraudit.AuditPassphraseChangeFailed
-	AuditSentryReferenceChanged           = signeraudit.AuditSentryReferenceChanged
+	AuditCosignerReferenceChanged         = signeraudit.AuditCosignerReferenceChanged
 	AuditBackupImported                   = signeraudit.AuditBackupImported
 	AuditBackupExportStarted              = signeraudit.AuditBackupExportStarted
 	AuditGenerationQuarantineIntent       = signeraudit.AuditGenerationQuarantineIntent

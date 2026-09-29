@@ -31,9 +31,9 @@ type ObjectClass string
 const (
 	// ClassAccountKey is a managed account credential, selected by address.
 	ClassAccountKey ObjectClass = "account-key"
-	// ClassSentryCredential is a sentry witness credential, selected by
+	// ClassCosignerCredential is a cosigner witness credential, selected by
 	// Witness Key ID.
-	ClassSentryCredential ObjectClass = "sentry-credential"
+	ClassCosignerCredential ObjectClass = "cosigner-credential"
 	// ClassKeyTypeTemplate is an installed key-type template, selected by
 	// key type.
 	ClassKeyTypeTemplate ObjectClass = "keytype-template"
@@ -53,9 +53,9 @@ func AccountKeyContext(address string) ObjectContext {
 	return ObjectContext{Class: ClassAccountKey, Selector: address}
 }
 
-// SentryCredentialContext identifies a sentry witness credential.
-func SentryCredentialContext(witnessKeyID string) ObjectContext {
-	return ObjectContext{Class: ClassSentryCredential, Selector: witnessKeyID}
+// CosignerCredentialContext identifies a cosigner witness credential.
+func CosignerCredentialContext(witnessKeyID string) ObjectContext {
+	return ObjectContext{Class: ClassCosignerCredential, Selector: witnessKeyID}
 }
 
 // KeyTypeTemplateContext identifies an installed key-type template.
@@ -65,7 +65,7 @@ func KeyTypeTemplateContext(keyType string) ObjectContext {
 
 func (c ObjectContext) validate() error {
 	switch c.Class {
-	case ClassAccountKey, ClassSentryCredential, ClassKeyTypeTemplate:
+	case ClassAccountKey, ClassCosignerCredential, ClassKeyTypeTemplate:
 	case "":
 		return fmt.Errorf("object context requires a class")
 	default:

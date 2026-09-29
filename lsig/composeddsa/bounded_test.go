@@ -182,87 +182,87 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 	}
 }
 
-func TestCanonicalBoundedSentryProfileGolden(t *testing.T) {
+func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	metadata := &boundedmeta.Metadata{
 		Contract: BoundedContractV1, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
 		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
-		Sentry: profile.Sentry,
+		Cosigner: profile.Cosigner,
 		ArgumentLayout: []boundedmeta.ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.CosignerSignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
 		},
 	}
 	encoded, err := CanonicalBoundedProfile(profile, metadata)
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e800000000000000010000000773656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000001073656e7472795f7369676e61747572650000000673656e7472790000058f00000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
+	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e8000000000000000100000009636f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000058f00000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e6174757265000000040000000872657175697265640000000872657175697265640000000872657175697265640000000100000012636f7369676e65725f7369676e617475726500000008636f7369676e65720000058f00000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
 	if got := hex.EncodeToString(encoded); got != want {
-		t.Fatalf("canonical sentry profile = %s, want %s", got, want)
+		t.Fatalf("canonical cosigner profile = %s, want %s", got, want)
 	}
 }
 
-func TestBoundedAuthorizationMetadataSnapshotsSentryContract(t *testing.T) {
+func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	provider := newBoundedTestProvider(profile)
 	teal, err := provider.GenerateTEAL(
 		[]byte{0x01},
-		map[string]string{BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)},
+		map[string]string{BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)},
 	)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 	assertOrderedMarkers(t, teal,
 		boundedSpendLabel+":",
-		"// Sentry-authorized pure spend",
-		"pushbytes 0x41504c414e455f53454e5452595f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
-		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)+"\nfalcon_verify\nassert",
+		"// Cosigner-authorized pure spend",
+		"pushbytes 0x41504c414e455f434f5349474e45525f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
+		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)+"\nfalcon_verify\nassert",
 		"b "+boundedLayer3Label,
 		boundedLayer3Label+":",
 		"// LAYER3_TEST_POLICY",
 	)
-	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, "// Sentry-authorized pure spend") {
-		t.Fatalf("rekey path is not dispatched before the sentry-only spend gate:\n%s", teal)
+	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, "// Cosigner-authorized pure spend") {
+		t.Fatalf("rekey path is not dispatched before the cosigner-only spend gate:\n%s", teal)
 	}
-	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.SentrySignatureSlot) {
-		t.Fatalf("BuildArgs() error = %v, want required sentry-slot rejection", err)
+	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.CosignerSignatureSlot) {
+		t.Fatalf("BuildArgs() error = %v, want required cosigner-slot rejection", err)
 	}
-	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.SentryPublicKeySizeV1)
-	sentryPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.SentryPublicKeySizeV1)
+	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.CosignerPublicKeySizeV1)
+	cosignerPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.CosignerPublicKeySizeV1)
 	metadata, err := provider.BuildBoundedAuthorizationMetadata(
 		spendingPublicKey,
-		map[string]string{BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey)},
+		map[string]string{BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
 		bytes.Repeat([]byte{0x02}, 100),
 	)
 	if err != nil {
 		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
 	}
-	wantID, err := witness.ID(boundedmeta.SentryComponentKeyTypeV1, sentryPublicKey)
+	wantID, err := witness.ID(boundedmeta.CosignerComponentKeyTypeV1, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantID || metadata.Sentry.PublicKeyHex != hex.EncodeToString(sentryPublicKey) {
-		t.Fatalf("Sentry = %#v", metadata.Sentry)
+	if metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID != wantID || metadata.Cosigner.PublicKeyHex != hex.EncodeToString(cosignerPublicKey) {
+		t.Fatalf("Cosigner = %#v", metadata.Cosigner)
 	}
-	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
+	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.CosignerSignatureMaxSizeV1; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if _, err := provider.BuildBoundedAuthorizationMetadata(
-		sentryPublicKey,
-		map[string]string{BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey)},
+		cosignerPublicKey,
+		map[string]string{BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
 		[]byte{1},
 	); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
 		t.Fatalf("collision error = %v", err)
@@ -341,57 +341,57 @@ func TestBoundedSpendingRekeyCanRequireLayer3(t *testing.T) {
 	}
 }
 
-func TestBoundedSentryRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
+func TestBoundedCosignerRejectsSpendingKeyAuthorizedRekey(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
 		AdminOperations: []AdminOperationSpec{{
 			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
 		}},
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	provider := newBoundedTestProvider(profile)
 	_, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1),
+		BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1),
 	})
 	if err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
-		t.Fatalf("GenerateTEAL() error = %v, want bounded-sentry spending-rekey rejection", err)
+		t.Fatalf("GenerateTEAL() error = %v, want bounded-cosigner spending-rekey rejection", err)
 	}
 }
 
-func TestBoundedSentryAdminKeyUsesSlotAfterSentry(t *testing.T) {
+func TestBoundedCosignerAdminKeyUsesSlotAfterCosigner(t *testing.T) {
 	profile := &BoundedAuthorizationProfile{
 		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
 		AdminOperations: []AdminOperationSpec{{
 			Kind: AdminOperationRekey, Authorization: AdminAuthorizationAdminKey, PolicyGate: AdminPolicyGateNone,
 		}},
-		Sentry: &boundedmeta.SentryAuthorization{
-			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
-			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		Cosigner: &boundedmeta.CosignerAuthorization{
+			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.CosignerComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.CosignerSignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
 	provider := newBoundedTestProvider(profile)
-	sentryKey := strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)
+	cosignerKey := strings.Repeat("42", boundedmeta.CosignerPublicKeySizeV1)
 	adminKey := strings.Repeat("24", BoundedAdminPublicKeySize)
 	teal, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedSentryPublicKeyParameter: sentryKey,
-		BoundedAdminPublicKeyParameter:  adminKey,
+		BoundedCosignerPublicKeyParameter: cosignerKey,
+		BoundedAdminPublicKeyParameter:    adminKey,
 	})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if got := metadata.ArgumentLayout; len(got) != 3 || got[1].Source != boundedmeta.ArgSourceSentry || got[2].Source != boundedmeta.ArgSourceAdmin {
-		t.Fatalf("ArgumentLayout = %#v, want base/sentry/admin", got)
+	if got := metadata.ArgumentLayout; len(got) != 3 || got[1].Source != boundedmeta.ArgSourceCosigner || got[2].Source != boundedmeta.ArgSourceAdmin {
+		t.Fatalf("ArgumentLayout = %#v, want base/cosigner/admin", got)
 	}
-	if !strings.Contains(teal, "arg 1\npushbytes 0x"+sentryKey+"\nfalcon_verify") || !strings.Contains(teal, "arg 2\npushbytes 0x"+adminKey+"\nfalcon_verify") {
-		t.Fatalf("sentry/admin verification does not use frozen slots:\n%s", teal)
+	if !strings.Contains(teal, "arg 1\npushbytes 0x"+cosignerKey+"\nfalcon_verify") || !strings.Contains(teal, "arg 2\npushbytes 0x"+adminKey+"\nfalcon_verify") {
+		t.Fatalf("cosigner/admin verification does not use frozen slots:\n%s", teal)
 	}
 	if _, err := provider.GenerateTEAL([]byte{1}, map[string]string{
-		BoundedSentryPublicKeyParameter: adminKey,
-		BoundedAdminPublicKeyParameter:  adminKey,
+		BoundedCosignerPublicKeyParameter: adminKey,
+		BoundedAdminPublicKeyParameter:    adminKey,
 	}); err == nil || !strings.Contains(err.Error(), "must differ from the contract-admin key") {
 		t.Fatalf("GenerateTEAL() collision error = %v", err)
 	}

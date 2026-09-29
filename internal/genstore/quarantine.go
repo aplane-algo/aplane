@@ -584,8 +584,8 @@ func quarantineMemberContext(relative string) (crypto.ObjectContext, bool) {
 	switch {
 	case strings.HasSuffix(base, ".key"):
 		return crypto.AccountKeyContext(strings.TrimSuffix(base, ".key")), true
-	case strings.HasSuffix(base, ".sen"):
-		return crypto.SentryCredentialContext(strings.TrimSuffix(base, ".sen")), true
+	case strings.HasSuffix(base, ".cos"):
+		return crypto.CosignerCredentialContext(strings.TrimSuffix(base, ".cos")), true
 	case strings.HasSuffix(base, ".template"):
 		return crypto.KeyTypeTemplateContext(strings.TrimSuffix(base, ".template")), true
 	default:

@@ -64,8 +64,8 @@ func TestRequestEndpointTokenResolvesAndPersistsEndpointScope(t *testing.T) {
 		dataDir,
 		"east",
 		config.ClientEndpointConfig{
-			Role:           config.ClientEndpointRoleSentry,
-			URL:            "ssh://sentry.example:2222",
+			Role:           config.ClientEndpointRoleCosigner,
+			URL:            "ssh://cosigner.example:2222",
 			SignerPort:     9443,
 			IdentityFile:   filepath.Join(dataDir, ".ssh", "id_ed25519"),
 			KnownHostsPath: filepath.Join(dataDir, ".ssh", "known_hosts"),
@@ -80,7 +80,7 @@ func TestRequestEndpointTokenResolvesAndPersistsEndpointScope(t *testing.T) {
 	if result.Alias != "east" || result.TokenPath != client.savedPath {
 		t.Fatalf("result = %+v, saved path %q", result, client.savedPath)
 	}
-	if client.host != "sentry.example" || client.port != 2222 {
+	if client.host != "cosigner.example" || client.port != 2222 {
 		t.Fatalf("request target = %s:%d", client.host, client.port)
 	}
 	if client.approval == nil || !client.progressCalled {
@@ -95,7 +95,7 @@ func TestRequestEndpointTokenDoesNotPersistFailedRequest(t *testing.T) {
 	client := &fakeTokenClient{requestErr: errors.New("denied")}
 	_, err := RequestEndpointToken(
 		context.Background(), client, t.TempDir(), "east",
-		config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example"},
+		config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"},
 		nil, nil,
 	)
 	if err == nil {
@@ -107,7 +107,7 @@ func TestRequestEndpointTokenDoesNotPersistFailedRequest(t *testing.T) {
 }
 
 func TestRequestEndpointTokenRequiresClientAndAlias(t *testing.T) {
-	endpoint := config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "https://sentry.example"}
+	endpoint := config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "https://cosigner.example"}
 	if _, err := RequestEndpointToken(context.Background(), nil, t.TempDir(), "east", endpoint, nil, nil); err == nil {
 		t.Fatal("nil client error = nil")
 	}

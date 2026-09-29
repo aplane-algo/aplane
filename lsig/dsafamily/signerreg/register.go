@@ -40,7 +40,7 @@ type SignerRegistration struct {
 	// Generators lists the key generators the family registers.
 	Generators []GeneratorSpec
 	// Extra holds family-specific signer-side registrations that have no
-	// generic slot (e.g. sentry component generators and validators).
+	// generic slot (e.g. cosigner component generators and validators).
 	Extra []func()
 }
 

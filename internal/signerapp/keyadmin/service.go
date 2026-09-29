@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -19,8 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
@@ -116,16 +116,16 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
+		resolved, err := cosignerrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 		params = resolved
 	} else if provider := lsigprovider.Get(keyType); provider != nil {
 		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
-				resolved, err := sentryrefs.ResolveCreationParamsForComponent(
-					ir.KeyPaths(), keyType, metadata.Sentry.ComponentKeyType, params,
+			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Cosigner != nil {
+				resolved, err := cosignerrefs.ResolveCreationParamsForComponent(
+					ir.KeyPaths(), keyType, metadata.Cosigner.ComponentKeyType, params,
 				)
 				if err != nil {
 					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -144,8 +144,8 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}
 		params = normalized
 		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
-				if err := validateVisibleSentryAuthorityCollisions(ir, params[boundedmeta.SentryPublicKeyParameter]); err != nil {
+			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Cosigner != nil {
+				if err := validateVisibleCosignerAuthorityCollisions(ir, params[boundedmeta.CosignerPublicKeyParameter]); err != nil {
 					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 				}
 			}
@@ -215,17 +215,17 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 	}, nil
 }
 
-func validateVisibleSentryAuthorityCollisions(ir *productruntime.Runtime, sentryPublicKeyHex string) error {
+func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosignerPublicKeyHex string) error {
 	if ir == nil || ir.KeyStore() == nil {
 		return nil
 	}
-	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(sentryPublicKeyHex), "0x")))
+	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cosignerPublicKeyHex), "0x")))
 	if normalized == "" {
 		return nil
 	}
 	for selector, publicKeyHex := range ir.KeyStore().GetPublicKeyHexMap() {
 		if strings.ToLower(strings.TrimSpace(publicKeyHex)) == normalized {
-			return fmt.Errorf("bounded sentry public key collides with signer-managed key %s", selector)
+			return fmt.Errorf("bounded cosigner public key collides with signer-managed key %s", selector)
 		}
 	}
 	for selector, summary := range ir.KeyStore().GetSigningSummary() {
@@ -233,7 +233,7 @@ func validateVisibleSentryAuthorityCollisions(ir *productruntime.Runtime, sentry
 			continue
 		}
 		if strings.ToLower(strings.TrimSpace(summary.BoundedAuthorization.AdminPublicKeyHex)) == normalized {
-			return fmt.Errorf("bounded sentry public key collides with contract-admin authority enrolled by %s", selector)
+			return fmt.Errorf("bounded cosigner public key collides with contract-admin authority enrolled by %s", selector)
 		}
 	}
 	return nil

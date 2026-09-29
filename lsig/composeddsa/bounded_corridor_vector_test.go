@@ -48,12 +48,12 @@ func TestCorridorGoldenVector(t *testing.T) {
 	}
 	recipients := strings.Join([]string{highRecipient.String(), lowRecipient.String()}, ",")
 	spendingKey := bytes.Repeat([]byte{0x11}, falconfamily.PublicKeySize)
-	sentryKey := bytes.Repeat([]byte{0x22}, falconfamily.PublicKeySize)
+	cosignerKey := bytes.Repeat([]byte{0x22}, falconfamily.PublicKeySize)
 	adminKey := bytes.Repeat([]byte{0x33}, composeddsa.BoundedAdminPublicKeySize)
 	params := map[string]string{
 		"recipients": recipients,
-		composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryKey),
-		composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminKey),
+		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+		composeddsa.BoundedAdminPublicKeyParameter:    hex.EncodeToString(adminKey),
 	}
 
 	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingKey, params, nil)
@@ -68,40 +68,40 @@ func TestCorridorGoldenVector(t *testing.T) {
 		"0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000" +
 		"08626f756e646564310000000300000003706179000000056178666572000000" +
 		"0c61737365745f6f70745f696e0000000000002710000000010000000572656b" +
-		"65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773" +
-		"656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31" +
-		"3032342e76310000058f00000001000000057370656e64000000106d65726b6c" +
-		"655f616c6c6f776c697374000000010000058f000000010000000c6d65726b6c" +
-		"655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f" +
-		"660000000a726563697069656e74730000020000000000000000040000000000" +
-		"000010626173655f7369676e61747572655f300000000e626173655f7369676e" +
-		"61747572650000058f0000000872657175697265640000000872657175697265" +
-		"64000000087265717569726564000000010000000c6d65726b6c655f70726f6f" +
-		"66000000076465726976656400000200000000086f7074696f6e616c00000009" +
-		"666f7262696464656e00000009666f7262696464656e00000002000000107365" +
-		"6e7472795f7369676e61747572650000000673656e7472790000058f00000008" +
-		"726571756972656400000009666f7262696464656e00000009666f7262696464" +
-		"656e000000030000000f61646d696e5f7369676e61747572650000000561646d" +
-		"696e0000058f00000009666f7262696464656e00000009666f7262696464656e" +
-		"000000087265717569726564"
+		"65790000000961646d696e5f6b6579000000046e6f6e65000000010000000963" +
+		"6f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f" +
+		"6e313032342e76310000058f00000001000000057370656e64000000106d6572" +
+		"6b6c655f616c6c6f776c697374000000010000058f000000010000000c6d6572" +
+		"6b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f7072" +
+		"6f6f660000000a726563697069656e7473000002000000000000000004000000" +
+		"0000000010626173655f7369676e61747572655f300000000e626173655f7369" +
+		"676e61747572650000058f000000087265717569726564000000087265717569" +
+		"726564000000087265717569726564000000010000000c6d65726b6c655f7072" +
+		"6f6f66000000076465726976656400000200000000086f7074696f6e616c0000" +
+		"0009666f7262696464656e00000009666f7262696464656e0000000200000012" +
+		"636f7369676e65725f7369676e617475726500000008636f7369676e65720000" +
+		"058f00000008726571756972656400000009666f7262696464656e0000000966" +
+		"6f7262696464656e000000030000000f61646d696e5f7369676e617475726500" +
+		"00000561646d696e0000058f00000009666f7262696464656e00000009666f72" +
+		"62696464656e000000087265717569726564"
 	if got := hex.EncodeToString(profileEncoding); got != wantProfile {
 		t.Fatalf("canonical profile = %s, want %s", got, wantProfile)
 	}
-	if len(profileEncoding) != 588 {
-		t.Fatalf("canonical profile length = %d, want 588", len(profileEncoding))
+	if len(profileEncoding) != 594 {
+		t.Fatalf("canonical profile length = %d, want 594", len(profileEncoding))
 	}
 
 	behaviorEncoding, err := composeddsa.CanonicalBoundedBehaviorParameters(params, provider.CreationParams())
 	if err != nil {
 		t.Fatalf("CanonicalBoundedBehaviorParameters() error = %v", err)
 	}
-	const wantBehaviorSHA256 = "8291e71b954d6b4815fd82f8a7dbb93e4a5124990e265b9c1a3a3c8060a7d64a"
+	const wantBehaviorSHA256 = "4a0cdabbc396ab903886966dc92bbdb69d15ada898ca3e92671183550ff389d4"
 	behaviorHash := sha256.Sum256(behaviorEncoding)
 	if got := hex.EncodeToString(behaviorHash[:]); got != wantBehaviorSHA256 {
 		t.Fatalf("canonical behavior SHA-256 = %s, want %s", got, wantBehaviorSHA256)
 	}
-	if len(behaviorEncoding) != 1979 {
-		t.Fatalf("canonical behavior length = %d, want 1979", len(behaviorEncoding))
+	if len(behaviorEncoding) != 1981 {
+		t.Fatalf("canonical behavior length = %d, want 1981", len(behaviorEncoding))
 	}
 
 	wantSlots := []boundedmeta.ArgumentSlot{
@@ -114,7 +114,7 @@ func TestCorridorGoldenVector(t *testing.T) {
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		},
 		{
-			Index: 2, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: falconfamily.MaxSignatureSize,
+			Index: 2, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: falconfamily.MaxSignatureSize,
 			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
 		},
 		{
@@ -127,17 +127,17 @@ func TestCorridorGoldenVector(t *testing.T) {
 	}
 
 	const (
-		wantSentryKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
-		wantAdminKeyID  = "WCM6OW66SGGHSCTSAYDHOUGOPEXJLK2YPFQVUSWX6UASKCWRC4DQ"
-		wantRoot        = "ea4421efa4bc1d9d5bfaf9d578e25655591bd27af8658bf94eee1687ec9c5d8d"
-		wantBinding     = "fea0a4e58434a64714bcde9762f19d674e98808192e1280b1fb85b6acd76eb0c"
-		wantAdminMsg    = "076546841ec805465aa8bf90a201014b157be5775288b6958688267af2174a8f"
+		wantCosignerKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
+		wantAdminKeyID    = "WCM6OW66SGGHSCTSAYDHOUGOPEXJLK2YPFQVUSWX6UASKCWRC4DQ"
+		wantRoot          = "ea4421efa4bc1d9d5bfaf9d578e25655591bd27af8658bf94eee1687ec9c5d8d"
+		wantBinding       = "fc255393a13decc49cec2a6d77141a3cec51973469f55a262f2c5b6fdb1f212f"
+		wantAdminMsg      = "2630a15f3cda2716df0e180a6d78d56b1a4df700cf2ac16b93e15a611b655ea8"
 	)
-	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantSentryKeyID {
-		t.Fatalf("sentry key ID = %#v, want %s", metadata.Sentry, wantSentryKeyID)
+	if metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID != wantCosignerKeyID {
+		t.Fatalf("cosigner key ID = %#v, want %s", metadata.Cosigner, wantCosignerKeyID)
 	}
-	if metadata.Sentry.PublicKeyHex != hex.EncodeToString(sentryKey) {
-		t.Fatalf("resolved sentry public key does not match the vector input")
+	if metadata.Cosigner.PublicKeyHex != hex.EncodeToString(cosignerKey) {
+		t.Fatalf("resolved cosigner public key does not match the vector input")
 	}
 	if metadata.AdminKeyID != wantAdminKeyID {
 		t.Fatalf("admin key ID = %s, want %s", metadata.AdminKeyID, wantAdminKeyID)
@@ -206,7 +206,7 @@ func TestCorridorGoldenVector(t *testing.T) {
 		ProfileHex:       wantProfile,
 		BehaviorHex:      hex.EncodeToString(behaviorEncoding),
 		BehaviorSHA256:   wantBehaviorSHA256,
-		SentryKeyID:      wantSentryKeyID,
+		CosignerKeyID:    wantCosignerKeyID,
 		AdminKeyID:       wantAdminKeyID,
 		MerkleRoot:       wantRoot,
 		MerkleProof:      wantProof,
@@ -221,7 +221,7 @@ type corridorGoldenDocumentation struct {
 	ProfileHex       string
 	BehaviorHex      string
 	BehaviorSHA256   string
-	SentryKeyID      string
+	CosignerKeyID    string
 	AdminKeyID       string
 	MerkleRoot       string
 	MerkleProof      string
@@ -239,12 +239,12 @@ func assertCorridorGoldenDocumentation(t *testing.T, vector corridorGoldenDocume
 	}
 	normalized := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "", "`", "").Replace(string(data))
 	expected := map[string]string{
-		"corridor_canonical_bounded_profile_length":     "588",
+		"corridor_canonical_bounded_profile_length":     "594",
 		"corridor_canonical_bounded_profile_hex":        vector.ProfileHex,
-		"corridor_canonical_behavior_parameters_length": "1979",
+		"corridor_canonical_behavior_parameters_length": "1981",
 		"corridor_canonical_behavior_parameters_hex":    vector.BehaviorHex,
 		"corridor_canonical_behavior_parameters_sha256": vector.BehaviorSHA256,
-		"corridor_sentry_key_id":                        vector.SentryKeyID,
+		"corridor_cosigner_key_id":                      vector.CosignerKeyID,
 		"corridor_contract_admin_key_id":                vector.AdminKeyID,
 		"corridor_merkle_root":                          vector.MerkleRoot,
 		"corridor_merkle_proof_hex":                     vector.MerkleProof,
@@ -261,7 +261,7 @@ func assertCorridorGoldenDocumentation(t *testing.T, vector corridorGoldenDocume
 	for _, row := range []string{
 		"|0|base_signature_0|base_signature|1423|required|required|required|",
 		"|1|merkle_proof|derived|512|optional|forbidden|forbidden|",
-		"|2|sentry_signature|sentry|1423|required|forbidden|forbidden|",
+		"|2|cosigner_signature|cosigner|1423|required|forbidden|forbidden|",
 		"|3|admin_signature|admin|1423|forbidden|forbidden|required|",
 	} {
 		if !strings.Contains(normalized, row) {

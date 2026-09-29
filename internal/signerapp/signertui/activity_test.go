@@ -286,7 +286,7 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	assertActivityStateCleared(t, got)
 }
 
-func TestConnectionBoundariesClearSentryWorkflowState(t *testing.T) {
+func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 	tests := []struct {
 		name string
 		msg  tea.Msg
@@ -299,14 +299,14 @@ func TestConnectionBoundariesClearSentryWorkflowState(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			m := activityReadyModel()
-			m.sentry = sentryState{
-				references:            []SentryReferenceInfo{{Name: "old"}},
+			m.cosigner = cosignerState{
+				references:            []CosignerReferenceInfo{{Name: "old"}},
 				loaded:                true,
-				choices:               []sentryChoice{{WitnessKeyID: "old"}},
-				paramName:             "sentry",
+				choices:               []cosignerChoice{{WitnessKeyID: "old"}},
+				paramName:             "cosigner",
 				returnView:            ViewGenerateParams,
 				envelopeJSON:          "public-envelope",
-				previewEndpoint:       &endpointrefs.Envelope{URL: "ssh://sentry.example"},
+				previewEndpoint:       &endpointrefs.Envelope{URL: "ssh://cosigner.example"},
 				pendingKeyType:        "guarded.v1",
 				pendingWitnessID:      "old-id",
 				managerStatus:         "old status",
@@ -323,18 +323,18 @@ func TestConnectionBoundariesClearSentryWorkflowState(t *testing.T) {
 			}
 
 			got, _ := updateForTest(t, m, test.msg)
-			if got.sentry.loaded || len(got.sentry.references) != 0 || len(got.sentry.choices) != 0 ||
-				got.sentry.paramName != "" || got.sentry.envelopeJSON != "" ||
-				got.sentry.previewEndpoint != nil ||
-				got.sentry.pendingKeyType != "" || got.sentry.pendingWitnessID != "" ||
-				got.sentry.managerStatus != "" || len(got.sentry.generateTypeIndices) != 0 ||
-				got.sentry.generateFromManager || got.sentry.exportWitnessID != "" ||
-				got.sentry.exportPath != "" ||
-				got.sentry.exportEndpoint != nil || got.sentry.exportIncludeEndpoint ||
-				got.sentry.exportEndpointError != "" ||
-				got.sentry.exportWrittenPath != "" || got.sentry.exportReturnView != ViewKeyDetails ||
-				got.sentry.exportShowJSON {
-				t.Fatalf("sentry workflow state not cleared: %+v", got.sentry)
+			if got.cosigner.loaded || len(got.cosigner.references) != 0 || len(got.cosigner.choices) != 0 ||
+				got.cosigner.paramName != "" || got.cosigner.envelopeJSON != "" ||
+				got.cosigner.previewEndpoint != nil ||
+				got.cosigner.pendingKeyType != "" || got.cosigner.pendingWitnessID != "" ||
+				got.cosigner.managerStatus != "" || len(got.cosigner.generateTypeIndices) != 0 ||
+				got.cosigner.generateFromManager || got.cosigner.exportWitnessID != "" ||
+				got.cosigner.exportPath != "" ||
+				got.cosigner.exportEndpoint != nil || got.cosigner.exportIncludeEndpoint ||
+				got.cosigner.exportEndpointError != "" ||
+				got.cosigner.exportWrittenPath != "" || got.cosigner.exportReturnView != ViewKeyDetails ||
+				got.cosigner.exportShowJSON {
+				t.Fatalf("cosigner workflow state not cleared: %+v", got.cosigner)
 			}
 		})
 	}

@@ -347,7 +347,7 @@ sends those exact bytes to the client-configured algod simulation endpoint.
 The signer cannot tell whether released signatures will be simulated or
 submitted. Guarded simulation similarly completes ordinary component signing
 and `/sign/assemble` before the client routes the assembled group to algod.
-Bounded-sentry simulation completes bounded-base and sentry
+Bounded-cosigner simulation completes bounded-base and cosigner
 `/sign/component` calls and `/sign/assemble` over the same frozen group.
 
 ---
@@ -803,7 +803,7 @@ The following runtime and policy settings affect server behavior:
 | `max_algo_payments` | selected generation `policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
 | `review_asa_amounts` | selected generation `policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
 | `max_asa_amounts` | selected generation `policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `key_overrides` | selected generation `policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Witness Key ID. Unset fields inherit the product policy, and nested overrides are rejected. |
+| `key_overrides` | selected generation `policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; cosigner-domain overrides are keyed by Witness Key ID. Unset fields inherit the product policy, and nested overrides are rejected. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If
 they require additional resource dummies or fees, the request is rejected.
@@ -904,20 +904,20 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 ---
 
-## Bounded-Sentry Spend Flow
+## Bounded-Cosigner Spend Flow
 
-For inventory rows with `signing_flow: bounded-sentry1`, the client must:
+For inventory rows with `signing_flow: bounded-cosigner1`, the client must:
 
 1. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
    group and applies signer policy/operator approval before returning base args
    and the assembly receipt;
-2. request the sentry-role signature over those exact finalized bytes with
+2. request the cosigner-role signature over those exact finalized bytes with
    `POST /sign/component`;
 3. call `POST /sign/assemble` on the user signer with both components;
 4. submit or simulate the exact returned signed group.
 
 Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
-flow and never contacts the sentry.
+flow and never contacts the cosigner.
 
 ## Bounded Contract-Admin Rekey Flow
 
@@ -958,8 +958,8 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 Bounded LogicSig DSA is the transaction-aware case: pure spends and
 spending-key rekeys use their declared base, derived, and runtime argument
 slots, while an admin-key rekey uses a signer partial plus an externally
-completed Falcon contract-admin slot. A sentry-enabled bounded spend inserts
-the sentry source between Layer-3 and admin slots and uses the user-first
+completed Falcon contract-admin slot. A cosigner-enabled bounded spend inserts
+the cosigner source between Layer-3 and admin slots and uses the user-first
 bounded component choreography above.
 
 ---

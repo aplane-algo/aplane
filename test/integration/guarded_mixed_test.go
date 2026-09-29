@@ -24,13 +24,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/enrollment"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -45,9 +45,9 @@ import (
 //
 // The real apsigner process holds both the guarded account and the non-guarded
 // falcon account, and performs the user-role component signature, the
-// non-guarded /sign, and the final /sign/assemble. The sentry role is served by
-// an in-process mock endpoint that holds the test-generated sentry key — the
-// sentry's only job is to produce a valid sentry-role signature over the key
+// non-guarded /sign, and the final /sign/assemble. The cosigner role is served by
+// an in-process mock endpoint that holds the test-generated cosigner key — the
+// cosigner's only job is to produce a valid cosigner-role signature over the key
 // embedded in the guarded account at generation time, so a test-held key is
 // faithful to the on-chain assembly and verification path.
 //
@@ -85,65 +85,65 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	t.Cleanup(apadmin.StopUnlockBackground)
 
-	// Test-held sentry key. The "sentry node" is the mock endpoint below; the
+	// Test-held cosigner key. The "cosigner node" is the mock endpoint below; the
 	// guarded account embeds this public key at generation time.
-	sentrySeed := make([]byte, 64)
-	if _, err := cryptorand.Read(sentrySeed); err != nil {
-		t.Fatalf("Failed to generate sentry seed: %v", err)
+	cosignerSeed := make([]byte, 64)
+	if _, err := cryptorand.Read(cosignerSeed); err != nil {
+		t.Fatalf("Failed to generate cosigner seed: %v", err)
 	}
-	sentryPub, sentryPriv, err := signerops.New(nil).GenerateKeypair(sentrySeed)
+	cosignerPub, cosignerPriv, err := signerops.New(nil).GenerateKeypair(cosignerSeed)
 	if err != nil {
-		t.Fatalf("Failed to generate sentry key: %v", err)
+		t.Fatalf("Failed to generate cosigner key: %v", err)
 	}
-	sentryPubHex := hex.EncodeToString(sentryPub)
-	const sentryToken = "mixed-guarded-sentry-token"
-	var sentryDiscoveryCalls atomic.Int32
-	sentry := startMockSentryEndpoint(t, sentryPub, sentryPriv, sentryToken, &sentryDiscoveryCalls)
-	t.Cleanup(sentry.Close)
-	sentryID, err := witness.ID(witness.Falcon1024V1, sentryPub)
+	cosignerPubHex := hex.EncodeToString(cosignerPub)
+	const cosignerToken = "mixed-guarded-cosigner-token"
+	var cosignerDiscoveryCalls atomic.Int32
+	cosigner := startMockCosignerEndpoint(t, cosignerPub, cosignerPriv, cosignerToken, &cosignerDiscoveryCalls)
+	t.Cleanup(cosigner.Close)
+	cosignerID, err := witness.ID(witness.Falcon1024V1, cosignerPub)
 	if err != nil {
-		t.Fatalf("Failed to derive sentry Witness Key ID: %v", err)
+		t.Fatalf("Failed to derive cosigner Witness Key ID: %v", err)
 	}
-	reference, err := witness.NewPublicReference(witness.Falcon1024V1, sentryID, sentryPubHex)
+	reference, err := witness.NewPublicReference(witness.Falcon1024V1, cosignerID, cosignerPubHex)
 	if err != nil {
-		t.Fatalf("Failed to build sentry public reference: %v", err)
+		t.Fatalf("Failed to build cosigner public reference: %v", err)
 	}
 	bundle, err := enrollment.Marshal(enrollment.Envelope{
 		Schema:  enrollment.Schema,
 		Witness: reference,
 		Endpoint: &endpointrefs.Envelope{
 			Schema: endpointrefs.Schema,
-			URL:    sentry.URL,
+			URL:    cosigner.URL,
 		},
 	})
 	if err != nil {
-		t.Fatalf("Failed to compose sentry enrollment bundle: %v", err)
+		t.Fatalf("Failed to compose cosigner enrollment bundle: %v", err)
 	}
-	bundlePath := filepath.Join(t.TempDir(), "integration-sentry.aplane-sentry.json")
+	bundlePath := filepath.Join(t.TempDir(), "integration-cosigner.aplane-cosigner.json")
 	if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
-		t.Fatalf("Failed to write sentry enrollment bundle: %v", err)
+		t.Fatalf("Failed to write cosigner enrollment bundle: %v", err)
 	}
 	clientDataDir := t.TempDir()
-	const sentryReferenceName = "integration-sentry"
-	const sentryEndpointAlias = "integration-sentry-route"
+	const cosignerReferenceName = "integration-cosigner"
+	const cosignerEndpointAlias = "integration-cosigner-route"
 	passphrase := os.Getenv("TEST_PASSPHRASE")
 	if passphrase == "" {
-		t.Fatal("TEST_PASSPHRASE is required for sentry enrollment import")
+		t.Fatal("TEST_PASSPHRASE is required for cosigner enrollment import")
 	}
 	importOutput, err := apadmin.RunWithInput(
 		passphrase+"\n",
-		"sentry", "enrollment", "import", bundlePath,
-		"--name", sentryReferenceName,
+		"cosigner", "enrollment", "import", bundlePath,
+		"--name", cosignerReferenceName,
 	)
 	if err != nil {
-		t.Fatalf("Failed to import sentry enrollment bundle: %v", err)
+		t.Fatalf("Failed to import cosigner enrollment bundle: %v", err)
 	}
-	var importResult apadminapp.SentryEnrollmentImportResult
+	var importResult apadminapp.CosignerEnrollmentImportResult
 	if err := json.NewDecoder(strings.NewReader(importOutput)).Decode(&importResult); err != nil {
-		t.Fatalf("Failed to decode sentry enrollment import result: %v\nOutput: %s", err, importOutput)
+		t.Fatalf("Failed to decode cosigner enrollment import result: %v\nOutput: %s", err, importOutput)
 	}
 	if importResult.ReferenceImport.Status != "imported" || importResult.EndpointImport.Status != "not_requested" {
-		t.Fatalf("Unexpected sentry enrollment import result: %+v", importResult)
+		t.Fatalf("Unexpected cosigner enrollment import result: %+v", importResult)
 	}
 	if _, err := os.Stat(config.GetClientEndpointsPath(clientDataDir)); !os.IsNotExist(err) {
 		t.Fatalf("apadmin changed client routing: %v", err)
@@ -153,50 +153,50 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	clientApp := apshellapp.New(clientEngine, config.DefaultConfig(), clientDataDir)
-	if _, err := clientApp.EndpointCreateSentry(context.Background(), apshellapp.EndpointCreateSentryRequest{
-		Alias: sentryEndpointAlias, URL: sentry.URL, SentryPort: 11270,
+	if _, err := clientApp.EndpointCreateCosigner(context.Background(), apshellapp.EndpointCreateCosignerRequest{
+		Alias: cosignerEndpointAlias, URL: cosigner.URL, CosignerPort: 11270,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	endpointRegistry, err := config.LoadClientEndpointRegistry(clientDataDir)
 	if err != nil {
-		t.Fatalf("Failed to load imported sentry endpoint: %v", err)
+		t.Fatalf("Failed to load imported cosigner endpoint: %v", err)
 	}
-	importedEndpoint, ok := endpointRegistry.Endpoints[sentryEndpointAlias]
+	importedEndpoint, ok := endpointRegistry.Endpoints[cosignerEndpointAlias]
 	if !ok {
-		t.Fatalf("Imported sentry endpoint %q is missing", sentryEndpointAlias)
+		t.Fatalf("Imported cosigner endpoint %q is missing", cosignerEndpointAlias)
 	}
 	if err := os.MkdirAll(filepath.Dir(importedEndpoint.TokenFile), 0o700); err != nil {
-		t.Fatalf("Failed to create sentry token directory: %v", err)
+		t.Fatalf("Failed to create cosigner token directory: %v", err)
 	}
-	if err := tokenfile.WriteToken(importedEndpoint.TokenFile, sentryToken); err != nil {
-		t.Fatalf("Failed to enroll sentry endpoint token: %v", err)
+	if err := tokenfile.WriteToken(importedEndpoint.TokenFile, cosignerToken); err != nil {
+		t.Fatalf("Failed to enroll cosigner endpoint token: %v", err)
 	}
-	discovered, err := clientApp.EndpointDiscoverSentries(context.Background(), apshellapp.EndpointDiscoverSentriesRequest{})
+	discovered, err := clientApp.EndpointDiscoverCosigners(context.Background(), apshellapp.EndpointDiscoverCosignersRequest{})
 	if err != nil {
-		t.Fatalf("Client sentry discovery: %v", err)
+		t.Fatalf("Client cosigner discovery: %v", err)
 	}
 	if discovered.PublicKeyCount != 1 || len(discovered.Endpoints) != 1 || len(discovered.Endpoints[0].Keys) != 1 {
 		t.Fatalf("Unexpected client discovery: %+v", discovered)
 	}
 	discoveredKey := discovered.Endpoints[0].Keys[0]
-	if discoveredKey.ComponentKey != sentryID || discoveredKey.PublicKey != reference.PublicKeyHex || discoveredKey.KeyType != reference.KeyType {
+	if discoveredKey.ComponentKey != cosignerID || discoveredKey.PublicKey != reference.PublicKeyHex || discoveredKey.KeyType != reference.KeyType {
 		t.Fatalf("Client discovery differs from enrolled reference: %+v", discoveredKey)
 	}
-	discoveryCallsAfterVerification := sentryDiscoveryCalls.Load()
+	discoveryCallsAfterVerification := cosignerDiscoveryCalls.Load()
 
 	// Generate the guarded account through the imported friendly selector (the
-	// signer resolves it to the exact sentry public key) and a plain
+	// signer resolves it to the exact cosigner public key) and a plain
 	// non-guarded falcon account on the real signer. Guarded account key types
 	// are library-gated (AvailabilityLibrary), so activate it for this identity
 	// before generation; the non-guarded falcon type is default-enabled.
 	t.Log("Generating guarded account and non-guarded falcon account...")
-	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024Sentry1024V1); err != nil {
+	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024Cosigner1024V1); err != nil {
 		t.Fatalf("Failed to activate guarded key type: %v", err)
 	}
 	guardedAddr, err := apadmin.GenerateKeyWithTypeAndParams(
-		keytypes.GuardedFalcon1024Sentry1024V1,
-		map[string]string{sentryrefs.ParamSentryName: sentryReferenceName},
+		keytypes.GuardedFalcon1024Cosigner1024V1,
+		map[string]string{cosignerrefs.ParamCosignerName: cosignerReferenceName},
 	)
 	if err != nil {
 		t.Fatalf("Failed to generate guarded account: %v", err)
@@ -225,14 +225,14 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 			continue
 		}
 		guardedMetadataFound = true
-		if key.SentryComponentKeyType != reference.KeyType {
-			t.Fatalf("Guarded key sentry component type = %q, want %q", key.SentryComponentKeyType, reference.KeyType)
+		if key.CosignerComponentKeyType != reference.KeyType {
+			t.Fatalf("Guarded key cosigner component type = %q, want %q", key.CosignerComponentKeyType, reference.KeyType)
 		}
-		if key.Parameters[keytypes.ParameterSentryPublicKey] != reference.PublicKeyHex {
-			t.Fatalf("Guarded key did not persist the exact enrolled sentry verifier")
+		if key.Parameters[keytypes.ParameterCosignerPublicKey] != reference.PublicKeyHex {
+			t.Fatalf("Guarded key did not persist the exact enrolled cosigner verifier")
 		}
-		if _, hasAlias := key.Parameters[sentryrefs.ParamSentryName]; hasAlias {
-			t.Fatalf("Guarded key durably retained sentry alias instead of resolved verifier: %+v", key.Parameters)
+		if _, hasAlias := key.Parameters[cosignerrefs.ParamCosignerName]; hasAlias {
+			t.Fatalf("Guarded key durably retained cosigner alias instead of resolved verifier: %+v", key.Parameters)
 		}
 		break
 	}
@@ -241,7 +241,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 
 	// In-process engine wired to the real signer (user component sign,
-	// non-guarded /sign, assemble), the mock sentry (sentry component sign), and
+	// non-guarded /sign, assemble), the mock cosigner (cosigner component sign), and
 	// real algod (submission). IsConnected() is satisfied by setting SignerClient.
 	eng, err := engine.NewEngine(
 		harness.IntegrationNetwork(),
@@ -287,7 +287,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 
 	// Submit the mixed group through the engine. This routes through
 	// signAndSubmitGuardedGroup's mixed path: plan (budget over both LogicSigs)
-	// → user/sentry component signatures for the guarded position → non-guarded
+	// → user/cosigner component signatures for the guarded position → non-guarded
 	// /sign for the falcon position → /sign/assemble → submit.
 	t.Log("Submitting mixed guarded+falcon atomic group...")
 	result, err := eng.SignAndSubmitTransactions(
@@ -304,8 +304,8 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if !result.Confirmed {
 		t.Fatalf("Mixed guarded group was not confirmed: %s", result.Output)
 	}
-	if calls := sentryDiscoveryCalls.Load(); calls <= discoveryCallsAfterVerification {
-		t.Fatalf("guarded routing did not perform a fresh sentry discovery after verification (calls before=%d after=%d)", discoveryCallsAfterVerification, calls)
+	if calls := cosignerDiscoveryCalls.Load(); calls <= discoveryCallsAfterVerification {
+		t.Fatalf("guarded routing did not perform a fresh cosigner discovery after verification (calls before=%d after=%d)", discoveryCallsAfterVerification, calls)
 	}
 	if _, err := testnet.WaitForConfirmation(result.TxIDs[0], 10); err != nil {
 		t.Fatalf("Mixed guarded group failed to confirm on-chain: %v", err)
@@ -342,11 +342,11 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 	t.Logf("cleanup: closed %s to funding account", from)
 }
 
-// startMockSentryEndpoint stands up an HTTP endpoint that behaves like a sentry
-// node for one sentry key: it advertises the Witness Key ID on /keys (so the
-// client's endpoint-advertisement check passes) and produces real sentry-role
+// startMockCosignerEndpoint stands up an HTTP endpoint that behaves like a cosigner
+// node for one cosigner key: it advertises the Witness Key ID on /keys (so the
+// client's endpoint-advertisement check passes) and produces real cosigner-role
 // component signatures on /sign/component using the test-held private key.
-func startMockSentryEndpoint(
+func startMockCosignerEndpoint(
 	t *testing.T,
 	publicKey, privateKey []byte,
 	token string,
@@ -390,7 +390,7 @@ func startMockSentryEndpoint(
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TargetKind() != signerapi.ComponentTargetKindSentry || len(req.Targets) == 0 || req.Targets[0].ComponentKey != componentSelector {
+		if req.TargetKind() != signerapi.ComponentTargetKindCosigner || len(req.Targets) == 0 || req.Targets[0].ComponentKey != componentSelector {
 			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
@@ -409,7 +409,7 @@ func startMockSentryEndpoint(
 				http.Error(w, "target index out of range", http.StatusBadRequest)
 				return
 			}
-			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+			msg := message.ComponentMessage(message.RoleCosigner, group.Entries[index].TxID)
 			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -417,7 +417,7 @@ func startMockSentryEndpoint(
 			}
 			resp.Components = append(resp.Components, signerapi.Component{
 				TargetIndex:     index,
-				Kind:            signerapi.ComponentTargetKindSentry,
+				Kind:            signerapi.ComponentTargetKindCosigner,
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})

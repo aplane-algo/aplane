@@ -2,13 +2,13 @@
 # install.sh - Install aplane binaries and configure the system
 #
 # Local mode (default, rootless, no systemd):
-#   ./install.sh [--role signer|sentry] [path]
+#   ./install.sh [--role signer|cosigner] [path]
 #
 # Client-only mode (apshell only, no signer):
 #   ./install.sh --client [path]
 #
 # Systemd mode (systemd service):
-#   sudo ./install.sh --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+#   sudo ./install.sh --systemd [--role signer|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 #
 # Arguments (local mode):
 #   path      Parent directory for apsigner/ and apclient/ (default: ~/aplane)
@@ -28,10 +28,10 @@
 # BASH_SOURCE[0] is empty when the supported `curl ... | bash` form is used.
 if (return 0 2>/dev/null); then
     echo "Error: this script must be executed, not sourced." >&2
-    echo "Usage: $0 [--role signer|sentry] [path]" >&2
+    echo "Usage: $0 [--role signer|cosigner] [path]" >&2
     echo "       $0 --client [path]" >&2
     if [ "$(uname -s)" = "Linux" ]; then
-        echo "       sudo $0 --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+        echo "       sudo $0 --systemd [--role signer|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     fi
     return 1
 fi
@@ -88,12 +88,12 @@ is_linux() {
 print_usage() {
     cat <<'EOF'
 Usage:
-  ./install.sh [-f|--force] [--role signer|sentry] [path]
+  ./install.sh [-f|--force] [--role signer|cosigner] [path]
   ./install.sh --client [-f|--force] [path]
 EOF
     if is_linux; then
         cat <<'EOF'
-  sudo ./install.sh --systemd [-f|--force] [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+  sudo ./install.sh --systemd [-f|--force] [--role signer|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 EOF
     fi
 
@@ -108,7 +108,7 @@ EOF
                     Optional operator-root defaults to the installing user's ~/aplane.
 
 Options:
-  --role <role>     Initialize the signer data root as signer or sentry (default: signer).
+  --role <role>     Initialize the signer data root as signer or cosigner (default: signer).
   --bindir <path>   Binary directory for --systemd (default: /usr/local/bin).
   -f, --force       Override the in-place upgrade version check.
   --no-enable       Do not run systemctl enable in --systemd mode.
@@ -118,7 +118,7 @@ EOF
         cat <<'EOF'
 
 Options:
-  --role <role>     Initialize the signer data root as signer or sentry (default: signer).
+  --role <role>     Initialize the signer data root as signer or cosigner (default: signer).
   -f, --force       Override the in-place upgrade version check.
 EOF
     fi
@@ -171,16 +171,16 @@ while [ $# -gt 0 ]; do
             ;;
         --role)
             if [ $# -lt 2 ]; then
-                echo "Error: --role requires signer or sentry." >&2
+                echo "Error: --role requires signer or cosigner." >&2
                 exit 2
             fi
             case "$2" in
-                signer|sentry)
+                signer|cosigner)
                     NODE_ROLE="$2"
                     NODE_ROLE_FLAG=1
                     ;;
                 *)
-                    echo "Error: invalid --role '$2' (expected signer or sentry)." >&2
+                    echo "Error: invalid --role '$2' (expected signer or cosigner)." >&2
                     exit 2
                     ;;
             esac
@@ -1182,7 +1182,7 @@ endpoints:
 EOF
 }
 
-write_apshell_sentry_endpoint_registry() {
+write_apshell_cosigner_endpoint_registry() {
     local target="$1"
     local host="${2:-127.0.0.1}"
     local signer_port="${3:-11270}"
@@ -1193,13 +1193,13 @@ write_apshell_sentry_endpoint_registry() {
 
 schema_version: 2
 endpoints:
-  local-sentry:
-    role: sentry
+  local-cosigner:
+    role: cosigner
     url: ssh://$host:$ssh_port
     signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-sentry.token
+    token_file: tokens/local-cosigner.token
 EOF
 }
 
@@ -1213,8 +1213,8 @@ write_apshell_endpoint_registry_for_role() {
         signer)
             write_apshell_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
-        sentry)
-            write_apshell_sentry_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+        cosigner)
+            write_apshell_cosigner_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
         *)
             echo "Error: unsupported endpoint registry role: $role" >&2
@@ -2051,7 +2051,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     fi
     if [ ${#POSITIONAL[@]} -gt 1 ]; then
         echo "Error: local mode accepts at most one optional path argument." >&2
-        echo "Usage: $0 [-f|--force] [--role signer|sentry] [path]" >&2
+        echo "Usage: $0 [-f|--force] [--role signer|cosigner] [path]" >&2
         exit 2
     fi
 
@@ -2292,8 +2292,8 @@ STARTEOF
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; after unlocking the sentry, run"
-        echo "'request-token --endpoint local-sentry' from apshell in another terminal."
+        echo "Token setup uses SSH provisioning; after unlocking the cosigner, run"
+        echo "'request-token --endpoint local-cosigner' from apshell in another terminal."
     fi
 
     # Offer to add apenv.sh to shell rc
@@ -2325,10 +2325,10 @@ STARTEOF
         echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
         echo "and approve the request in the signer pane."
     else
-        echo "On first launch, unlock the sentry admin pane. Then open another terminal,"
+        echo "On first launch, unlock the cosigner admin pane. Then open another terminal,"
         echo "source $(shell_quote "$ENV_SH"), start apshell, and run"
-        echo "  request-token --endpoint local-sentry"
-        echo "Approve the request in the sentry admin pane."
+        echo "  request-token --endpoint local-cosigner"
+        echo "Approve the request in the cosigner admin pane."
     fi
     echo ""
     echo "To uninstall: $(shell_quote "$LOCAL_PATH/uninstall.sh")"
@@ -2347,7 +2347,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ${#POSITIONAL[@]} -gt 1 ]; then
-    echo "Usage: sudo $0 --systemd [-f|--force] [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+    echo "Usage: sudo $0 --systemd [-f|--force] [--role signer|cosigner] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     exit 2
 fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"
@@ -2577,8 +2577,8 @@ if [ -n "$SUDO_USER" ]; then
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; after unlocking the sentry, run"
-        echo "'request-token --endpoint local-sentry' from apshell."
+        echo "Token setup uses SSH provisioning; after unlocking the cosigner, run"
+        echo "'request-token --endpoint local-cosigner' from apshell."
     fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
@@ -2701,7 +2701,7 @@ fi
 if [ "$NODE_ROLE" = "signer" ]; then
     echo "The signer is running but locked. To unlock and manage keys:"
 else
-    echo "The sentry is running but locked. To unlock and manage component keys:"
+    echo "The cosigner is running but locked. To unlock and manage component keys:"
 fi
 echo "  apadmin"
 echo ""
@@ -2717,10 +2717,10 @@ echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/aplane/apclient}."
 if [ "$NODE_ROLE" = "signer" ]; then
     echo "Use 'request-token' in apshell to obtain an API token via SSH provisioning."
 else
-    echo "Use 'request-token --endpoint local-sentry' in apshell to obtain a sentry API token via SSH provisioning."
+    echo "Use 'request-token --endpoint local-cosigner' in apshell to obtain a cosigner API token via SSH provisioning."
 fi
 if [ "$NODE_ROLE" = "signer" ]; then
     echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."
 else
-    echo "After token enrollment has written tokens/local-sentry.token and known_hosts, use apconsole for the unified secure-machine console."
+    echo "After token enrollment has written tokens/local-cosigner.token and known_hosts, use apconsole for the unified secure-machine console."
 fi

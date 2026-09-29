@@ -7,23 +7,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
 // NewSignerCache creates an empty SignerCache
 func NewSignerCache() SignerCache {
 	cache := SignerCache{
-		SchemaVersion:           signerCachePayloadSchemaVersion,
-		Keys:                    make(map[string]string),
-		GenericLsigs:            make(map[string]bool),
-		LogicSigResources:       make(map[string]lsigresource.Profile),
-		SigningArgs:             make(map[string][]SigningArgInfo),
-		SigningFlows:            make(map[string]string),
-		SentryComponentKeyTypes: make(map[string]string),
-		SentryPublicKeys:        make(map[string]string),
-		BoundedMaxFees:          make(map[string]uint64),
+		SchemaVersion:             signerCachePayloadSchemaVersion,
+		Keys:                      make(map[string]string),
+		GenericLsigs:              make(map[string]bool),
+		LogicSigResources:         make(map[string]lsigresource.Profile),
+		SigningArgs:               make(map[string][]SigningArgInfo),
+		SigningFlows:              make(map[string]string),
+		CosignerComponentKeyTypes: make(map[string]string),
+		CosignerPublicKeys:        make(map[string]string),
+		BoundedMaxFees:            make(map[string]uint64),
 	}
 	return cache
 }
@@ -73,8 +73,8 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.LogicSigResources, address)
 	delete(cache.SigningArgs, address)
 	delete(cache.SigningFlows, address)
-	delete(cache.SentryComponentKeyTypes, address)
-	delete(cache.SentryPublicKeys, address)
+	delete(cache.CosignerComponentKeyTypes, address)
+	delete(cache.CosignerPublicKeys, address)
 	delete(cache.BoundedMaxFees, address)
 }
 
@@ -125,7 +125,7 @@ func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsi
 }
 
 // SigningFlowForAddress returns the signing choreography label the signer
-// inventory reported for an address (e.g. "sentry1"). Empty means the
+// inventory reported for an address (e.g. "cosigner1"). Empty means the
 // ordinary /sign path.
 func (cache *SignerCache) SigningFlowForAddress(address string) string {
 	if cache.SigningFlows == nil {
@@ -160,62 +160,62 @@ func (cache *SignerCache) GuardedSigningMetadataNeedsRefresh(address string) boo
 	if flow == "" {
 		return true
 	}
-	if flow != signerapi.SigningFlowSentry1 {
+	if flow != signerapi.SigningFlowCosigner1 {
 		return false
 	}
-	if _, ok := cache.SentryComponentKeyTypeForAddress(address); !ok {
+	if _, ok := cache.CosignerComponentKeyTypeForAddress(address); !ok {
 		return true
 	}
-	if _, ok := cache.SentryPublicKeyForAddress(address); !ok {
+	if _, ok := cache.CosignerPublicKeyForAddress(address); !ok {
 		return true
 	}
 	return false
 }
 
-// SentryComponentKeyTypeForAddress returns the sentry component key type the
+// CosignerComponentKeyTypeForAddress returns the cosigner component key type the
 // signer inventory reported for a guarded account.
-func (cache *SignerCache) SentryComponentKeyTypeForAddress(address string) (string, bool) {
-	if cache.SentryComponentKeyTypes == nil {
+func (cache *SignerCache) CosignerComponentKeyTypeForAddress(address string) (string, bool) {
+	if cache.CosignerComponentKeyTypes == nil {
 		return "", false
 	}
-	value, ok := cache.SentryComponentKeyTypes[address]
+	value, ok := cache.CosignerComponentKeyTypes[address]
 	return value, ok && value != ""
 }
 
-// SetSentryComponentKeyTypeForAddress stores or clears the sentry component
+// SetCosignerComponentKeyTypeForAddress stores or clears the cosigner component
 // key type for a guarded account.
-func (cache *SignerCache) SetSentryComponentKeyTypeForAddress(address, componentKeyType string) {
-	if cache.SentryComponentKeyTypes == nil {
-		cache.SentryComponentKeyTypes = make(map[string]string)
+func (cache *SignerCache) SetCosignerComponentKeyTypeForAddress(address, componentKeyType string) {
+	if cache.CosignerComponentKeyTypes == nil {
+		cache.CosignerComponentKeyTypes = make(map[string]string)
 	}
 	if componentKeyType == "" {
-		delete(cache.SentryComponentKeyTypes, address)
+		delete(cache.CosignerComponentKeyTypes, address)
 		return
 	}
-	cache.SentryComponentKeyTypes[address] = componentKeyType
+	cache.CosignerComponentKeyTypes[address] = componentKeyType
 }
 
-// SentryPublicKeyForAddress returns the sentry public key embedded in a
+// CosignerPublicKeyForAddress returns the cosigner public key embedded in a
 // guarded account LogicSig, when signer inventory exposed it.
-func (cache *SignerCache) SentryPublicKeyForAddress(address string) (string, bool) {
-	if cache.SentryPublicKeys == nil {
+func (cache *SignerCache) CosignerPublicKeyForAddress(address string) (string, bool) {
+	if cache.CosignerPublicKeys == nil {
 		return "", false
 	}
-	value, ok := cache.SentryPublicKeys[address]
+	value, ok := cache.CosignerPublicKeys[address]
 	return value, ok && value != ""
 }
 
-// SetSentryPublicKeyForAddress stores or clears the embedded sentry public
+// SetCosignerPublicKeyForAddress stores or clears the embedded cosigner public
 // key for a guarded account.
-func (cache *SignerCache) SetSentryPublicKeyForAddress(address, publicKeyHex string) {
-	if cache.SentryPublicKeys == nil {
-		cache.SentryPublicKeys = make(map[string]string)
+func (cache *SignerCache) SetCosignerPublicKeyForAddress(address, publicKeyHex string) {
+	if cache.CosignerPublicKeys == nil {
+		cache.CosignerPublicKeys = make(map[string]string)
 	}
 	if publicKeyHex == "" {
-		delete(cache.SentryPublicKeys, address)
+		delete(cache.CosignerPublicKeys, address)
 		return
 	}
-	cache.SentryPublicKeys[address] = publicKeyHex
+	cache.CosignerPublicKeys[address] = publicKeyHex
 }
 
 // BoundedMaxFeeForAddress returns the on-chain fee ceiling advertised for a

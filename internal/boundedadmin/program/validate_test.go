@@ -10,7 +10,7 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
+	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
 )
 
 type testProgramBuilder struct {
@@ -133,27 +133,27 @@ func testExpectedProgramWithAdminArg(t *testing.T, adminArgIndex int, layer3 fun
 	return testExpectedProgramWithOptions(t, adminArgIndex, false, layer3)
 }
 
-func testExpectedSentryProgram(t *testing.T) ([]byte, Expected) {
+func testExpectedCosignerProgram(t *testing.T) ([]byte, Expected) {
 	return testExpectedProgramWithOptions(t, 2, true, func(b *testProgramBuilder) {
 		b.pushInt(1)
 		b.branch(0x42, "accept")
 	})
 }
 
-func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withSentry bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
-	return testExpectedProgramWithBranchEncoding(t, adminArgIndex, withSentry, true, layer3)
+func testExpectedProgramWithOptions(t *testing.T, adminArgIndex int, withCosigner bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
+	return testExpectedProgramWithBranchEncoding(t, adminArgIndex, withCosigner, true, layer3)
 }
 
-func testExpectedProgramWithBranchEncoding(t *testing.T, adminArgIndex int, withSentry, varintBranches bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
+func testExpectedProgramWithBranchEncoding(t *testing.T, adminArgIndex int, withCosigner, varintBranches bool, layer3 func(*testProgramBuilder)) ([]byte, Expected) {
 	t.Helper()
 	spendingKey := make([]byte, 1793)
 	adminKey := make([]byte, 1793)
-	sentryKey := make([]byte, 1793)
+	cosignerKey := make([]byte, 1793)
 	binding := make([]byte, 32)
 	for i := range spendingKey {
 		spendingKey[i] = 0x11
 		adminKey[i] = 0x22
-		sentryKey[i] = 0x44
+		cosignerKey[i] = 0x44
 	}
 	for i := range binding {
 		binding[i] = 0x33
@@ -254,26 +254,26 @@ func testExpectedProgramWithBranchEncoding(t *testing.T, adminArgIndex int, with
 	b.branch(0x42, "accept")
 	// Opaque Layer 3 has no return and reaches the shared accept block.
 	b.label("spend")
-	if withSentry {
-		sentryArgIndex := adminArgIndex - 1
-		b.arg(sentryArgIndex)
+	if withCosigner {
+		cosignerArgIndex := adminArgIndex - 1
+		b.arg(cosignerArgIndex)
 		b.op(0x15)
 		b.pushInt(0)
 		b.op(0x0d)
 		b.op(0x44)
-		b.arg(sentryArgIndex)
+		b.arg(cosignerArgIndex)
 		b.op(0x15)
-		b.pushInt(uint64(boundedmeta.SentrySignatureMaxSizeV1))
+		b.pushInt(uint64(boundedmeta.CosignerSignatureMaxSizeV1))
 		b.op(0x0e)
 		b.op(0x44)
-		b.pushBytes([]byte(sentrymessage.DomainTagV1))
-		b.pushBytes([]byte{byte(sentrymessage.RoleSentry)})
+		b.pushBytes([]byte(cosignermessage.DomainTagV1))
+		b.pushBytes([]byte{byte(cosignermessage.RoleCosigner)})
 		b.op(0x50)
 		b.op(0x31, 23)
 		b.op(0x50)
 		b.op(0x03)
-		b.arg(sentryArgIndex)
-		b.pushBytes(sentryKey)
+		b.arg(cosignerArgIndex)
+		b.pushBytes(cosignerKey)
 		b.op(0x85)
 		b.op(0x44)
 		b.branch(0x42, "layer3")
@@ -293,9 +293,9 @@ func testExpectedProgramWithBranchEncoding(t *testing.T, adminArgIndex int, with
 		MaxFee:            10_000,
 		SpendEffects:      []string{"pay", "axfer", "asset_opt_in"},
 	}
-	if withSentry {
-		expected.SentryPublicKey = sentryKey
-		expected.SentryArgIndex = adminArgIndex - 1
+	if withCosigner {
+		expected.CosignerPublicKey = cosignerKey
+		expected.CosignerArgIndex = adminArgIndex - 1
 	}
 	return b.finish(t), expected
 }
@@ -401,28 +401,28 @@ func TestDecodeProgramUnambiguouslyRejectsDivergentV13BranchInterpretations(t *t
 	}
 }
 
-func TestValidateAcceptsFrozenSentryStructure(t *testing.T) {
-	program, expected := testExpectedSentryProgram(t)
+func TestValidateAcceptsFrozenCosignerStructure(t *testing.T) {
+	program, expected := testExpectedCosignerProgram(t)
 	if err := Validate(program, expected); err != nil {
-		t.Fatalf("Validate() rejected bounded sentry structure: %v", err)
+		t.Fatalf("Validate() rejected bounded cosigner structure: %v", err)
 	}
 
 	wrongKey := expected
-	wrongKey.SentryPublicKey = append([]byte(nil), expected.SentryPublicKey...)
-	wrongKey.SentryPublicKey[0] ^= 0xff
-	if err := Validate(program, wrongKey); err == nil || !strings.Contains(err.Error(), "sentry verification region") {
-		t.Fatalf("Validate() error = %v, want sentry-key rejection", err)
+	wrongKey.CosignerPublicKey = append([]byte(nil), expected.CosignerPublicKey...)
+	wrongKey.CosignerPublicKey[0] ^= 0xff
+	if err := Validate(program, wrongKey); err == nil || !strings.Contains(err.Error(), "cosigner verification region") {
+		t.Fatalf("Validate() error = %v, want cosigner-key rejection", err)
 	}
 }
 
-func TestValidateRejectsUnreportedSentryStructure(t *testing.T) {
-	program, expected := testExpectedSentryProgram(t)
-	expected.SentryPublicKey = nil
-	expected.SentryArgIndex = 0
+func TestValidateRejectsUnreportedCosignerStructure(t *testing.T) {
+	program, expected := testExpectedCosignerProgram(t)
+	expected.CosignerPublicKey = nil
+	expected.CosignerArgIndex = 0
 
 	err := Validate(program, expected)
-	if err == nil || !strings.Contains(err.Error(), "present without sentry metadata") {
-		t.Fatalf("Validate() error = %v, want unreported sentry rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "present without cosigner metadata") {
+		t.Fatalf("Validate() error = %v, want unreported cosigner rejection", err)
 	}
 }
 

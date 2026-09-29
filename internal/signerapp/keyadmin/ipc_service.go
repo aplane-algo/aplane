@@ -69,10 +69,10 @@ func (s IPCService) logGenerateKey(genResult *GenerateResult) {
 	}
 	if genResult.IsWitnessKey {
 		s.logf(
-			"generated sentry witness credential via IPC: %s (stored as %s%s)",
+			"generated cosigner witness credential via IPC: %s (stored as %s%s)",
 			genResult.Address,
 			genResult.Address,
-			keys.SentryCredentialExtension,
+			keys.CosignerCredentialExtension,
 		)
 		return
 	}

@@ -26,7 +26,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
-		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
+		Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner,
 		Path: writeEndpointEnvelope(t, dataDir), DryRun: true,
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
-		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry,
+		Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner,
 		Path: writeEndpointEnvelope(t, dataDir),
 	})
 	if err != nil {
@@ -54,18 +54,18 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_sentries") {
+	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_cosigners") {
 		t.Fatalf("endpoints.yaml = %q, want v2 connection profile only", data)
 	}
 	if result.LocalPort != 0 || strings.Contains(string(data), "local_port") {
-		t.Fatalf("import retained sentry local port: result = %#v, endpoints.yaml = %q", result, data)
+		t.Fatalf("import retained cosigner local port: result = %#v, endpoints.yaml = %q", result, data)
 	}
-	if _, ok := app.eng.EndpointRegistry.Endpoint("sentry-local"); !ok {
+	if _, ok := app.eng.EndpointRegistry.Endpoint("cosigner-local"); !ok {
 		t.Fatal("live engine endpoint registry was not refreshed")
 	}
 }
 
-func TestEndpointImportRejectsLocalPortForSentryRole(t *testing.T) {
+func TestEndpointImportRejectsLocalPortForCosignerRole(t *testing.T) {
 	dataDir := t.TempDir()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
 		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270, LocalPort: 12271,
@@ -73,27 +73,27 @@ func TestEndpointImportRejectsLocalPortForSentryRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dataDir, "sentry-with-local-port.endpoint.json")
+	path := filepath.Join(dataDir, "cosigner-with-local-port.endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err = newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
-		Alias: "sentry-local", Role: config.ClientEndpointRoleSentry, Path: path,
+		Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner, Path: path,
 	})
-	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
-		t.Fatalf("EndpointImport() error = %v, want sentry local_port rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for cosigner endpoints") {
+		t.Fatalf("EndpointImport() error = %v, want cosigner local_port rejection", err)
 	}
 	if _, statErr := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(statErr) {
 		t.Fatalf("endpoints.yaml stat error = %v, want absent", statErr)
 	}
 }
 
-func TestEndpointCreateSentryAndListContainNoCachedInventory(t *testing.T) {
+func TestEndpointCreateCosignerAndListContainNoCachedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	_, err := app.EndpointCreateSentry(t.Context(), EndpointCreateSentryRequest{
-		Alias: "sentry-local", URL: "ssh://127.0.0.1:2223", SentryPort: 11270,
+	_, err := app.EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{
+		Alias: "cosigner-local", URL: "ssh://127.0.0.1:2223", CosignerPort: 11270,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,29 +102,29 @@ func TestEndpointCreateSentryAndListContainNoCachedInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Endpoints) != 1 || list.Endpoints[0].Alias != "sentry-local" || list.Endpoints[0].Role != config.ClientEndpointRoleSentry {
+	if len(list.Endpoints) != 1 || list.Endpoints[0].Alias != "cosigner-local" || list.Endpoints[0].Role != config.ClientEndpointRoleCosigner {
 		t.Fatalf("endpoints = %#v", list.Endpoints)
 	}
-	show, err := app.EndpointShow(t.Context(), "sentry-local")
+	show, err := app.EndpointShow(t.Context(), "cosigner-local")
 	if err != nil || show.Endpoint.URL != "ssh://127.0.0.1:2223" {
 		t.Fatalf("EndpointShow() = %#v, %v", show, err)
 	}
 }
 
-func TestEndpointDiscoverSentriesIsReadOnly(t *testing.T) {
+func TestEndpointDiscoverCosignersIsReadOnly(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKey := testSentryPublicKeyHex()
+	publicKey := testCosignerPublicKeyHex()
 	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
-	server := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
+	server := newEndpointKeysServer(t, "cosigner-token", []signerapi.KeyInfo{{
 		Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true,
 	}})
-	writeLiveSentryEndpoint(t, dataDir, "sentry-local", server.URL, "sentry-token")
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server.URL, "cosigner-token")
 	before, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
 	if err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
-	result, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+	result, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,27 +141,27 @@ func TestEndpointDiscoverSentriesIsReadOnly(t *testing.T) {
 	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKey, componentKey)
 }
 
-func TestEndpointDiscoverSentriesRejectsDuplicatePublication(t *testing.T) {
+func TestEndpointDiscoverCosignersRejectsDuplicatePublication(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKey := testSentryPublicKeyHex()
+	publicKey := testCosignerPublicKeyHex()
 	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
 	keys := []signerapi.KeyInfo{{Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}
 	first := newEndpointKeysServer(t, "token-a", keys)
 	second := newEndpointKeysServer(t, "token-b", keys)
-	writeLiveSentryEndpoint(t, dataDir, "sentry-a", first.URL, "token-a")
-	writeLiveSentryEndpoint(t, dataDir, "sentry-b", second.URL, "token-b")
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-a", first.URL, "token-a")
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-b", second.URL, "token-b")
 	app := newEndpointTestApp(t, dataDir)
-	_, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+	_, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 	if err == nil || !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
-		t.Fatalf("EndpointDiscoverSentries() error = %v, want duplicate rejection", err)
+		t.Fatalf("EndpointDiscoverCosigners() error = %v, want duplicate rejection", err)
 	}
 }
 
-func TestEndpointDiscoverSentriesReportsUnavailableEndpoint(t *testing.T) {
+func TestEndpointDiscoverCosignersReportsUnavailableEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
-	writeLiveSentryEndpoint(t, dataDir, "sentry-offline", "http://127.0.0.1:1", "token")
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-offline", "http://127.0.0.1:1", "token")
 	app := newEndpointTestApp(t, dataDir)
-	result, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+	result, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestEndpointDiscoverSentriesReportsUnavailableEndpoint(t *testing.T) {
 	}
 }
 
-func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *testing.T) {
+func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *testing.T) {
 	tests := []struct {
 		name    string
 		server  func(*testing.T) *httptest.Server
@@ -190,18 +190,18 @@ func TestEndpointDiscoverSentriesRejectsAuthenticationAndMalformedMetadata(t *te
 					Address: "INVALID", PublicKeyHex: "zz", KeyType: witness.Falcon1024V1, IsWitnessKey: true,
 				}})
 			},
-			wantErr: "invalid sentry discovery metadata",
+			wantErr: "invalid cosigner discovery metadata",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dataDir := t.TempDir()
 			server := tt.server(t)
-			writeLiveSentryEndpoint(t, dataDir, "sentry-local", server.URL, "token")
+			writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server.URL, "token")
 			app := newEndpointTestApp(t, dataDir)
-			_, err := app.EndpointDiscoverSentries(t.Context(), EndpointDiscoverSentriesRequest{})
+			_, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("EndpointDiscoverSentries() error = %v, want %q", err, tt.wantErr)
+				t.Fatalf("EndpointDiscoverCosigners() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -212,7 +212,7 @@ func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSentry, URL: "ssh://sentry.example"}, true); err != nil {
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "secondary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"}, true); err != nil {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
@@ -238,7 +238,7 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 		app   *App
 		alias string
 		url   string
-	}{{appA, "sentry-a", "ssh://a.example"}, {appB, "sentry-b", "ssh://b.example"}} {
+	}{{appA, "cosigner-a", "ssh://a.example"}, {appB, "cosigner-b", "ssh://b.example"}} {
 		wg.Add(1)
 		go func(item struct {
 			app   *App
@@ -247,8 +247,8 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 		}) {
 			defer wg.Done()
 			<-start
-			_, err := item.app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
-				Alias: item.alias, URL: item.url, SentryPort: 11270,
+			_, err := item.app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
+				Alias: item.alias, URL: item.url, CosignerPort: 11270,
 			})
 			errs <- err
 		}(item)
@@ -265,7 +265,7 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, alias := range []string{"sentry-a", "sentry-b"} {
+	for _, alias := range []string{"cosigner-a", "cosigner-b"} {
 		if _, ok := registry.Endpoint(alias); !ok {
 			t.Fatalf("concurrent endpoint %q was lost: %#v", alias, registry.Endpoints)
 		}
@@ -281,7 +281,7 @@ func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
 	}
 
 	start := make(chan struct{})
-	results := make(chan *EndpointCreateSentryResult, workers)
+	results := make(chan *EndpointCreateCosignerResult, workers)
 	errs := make(chan error, workers)
 	var wg sync.WaitGroup
 	for _, app := range apps {
@@ -289,8 +289,8 @@ func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
 		go func(app *App) {
 			defer wg.Done()
 			<-start
-			result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
-				Alias: "shared", URL: "ssh://sentry.example:2223", SentryPort: 11270,
+			result, err := app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
+				Alias: "shared", URL: "ssh://cosigner.example:2223", CosignerPort: 11270,
 			})
 			if err != nil {
 				errs <- err
@@ -338,17 +338,17 @@ func writeEndpointEnvelope(t *testing.T, dir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "sentry-local.endpoint.json")
+	path := filepath.Join(dir, "cosigner-local.endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func writeLiveSentryEndpoint(t *testing.T, dir, alias, rawURL, token string) {
+func writeLiveCosignerEndpoint(t *testing.T, dir, alias, rawURL, token string) {
 	t.Helper()
 	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleSentry, URL: rawURL,
+		Role: config.ClientEndpointRoleCosigner, URL: rawURL,
 	}, true); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func writeLiveSentryEndpoint(t *testing.T, dir, alias, rawURL, token string) {
 	}
 }
 
-func testSentryPublicKeyHex() string {
+func testCosignerPublicKeyHex() string {
 	return strings.Repeat("ab", witness.Falcon1024PublicKeySize)
 }
 
@@ -385,7 +385,7 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 		t.Fatalf("endpoint output = %q, want Witness Key ID %s", output, componentID)
 	}
 	if strings.Contains(output, publicKeyHex) || strings.Contains(output, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("endpoint output leaked raw sentry public key: %q", output)
+		t.Fatalf("endpoint output leaked raw cosigner public key: %q", output)
 	}
 }
 

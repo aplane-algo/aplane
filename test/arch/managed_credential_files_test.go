@@ -15,7 +15,7 @@ import (
 )
 
 // TestManagedCredentialExtensionsHaveOneOwner prevents filesystem consumers
-// from recreating the account/sentry extension table outside internal/keys.
+// from recreating the account/cosigner extension table outside internal/keys.
 func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 	root := filepath.Join("..", "..")
 	extensions := map[string]bool{

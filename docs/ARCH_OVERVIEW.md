@@ -55,7 +55,7 @@ a key.
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
 | **aprekey** | External witness custody and bounded contract-admin rekey/unrekey orchestration, including separated ceremonies | Client orchestration + Bounded Admin + Witness Artifact |
 | **apadmin** | Signer admin TUI and batch client over IPC or SSH, owning all general live administration | UI (TUI/CLI) + admin protocol + Providers |
-| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local sentry nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
+| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local cosigner nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Stopped-daemon keystore bootstrap, policy integrity, external backup verification, rebuild rescue, permission migration, and generation pruning | Providers (KeyGen) + Crypto + Store Mutation |
@@ -75,7 +75,7 @@ The durable namespace is `identities/default/`, with managed archives under
 `backups/default/`. `default` is the fixed on-disk directory name, not a runtime
 ID or authorization principal. `internal/storepaths.Paths` constructs these
 paths without accepting a selector. The same fixed layout applies to signer-role
-and sentry-role data roots.
+and cosigner-role data roots.
 
 At startup, a no-follow layout-integrity check rejects any direct entry under
 `identities/` other than a real directory named `default`; it fails closed
@@ -213,14 +213,14 @@ aplane/
 │   ├── lsigprovider/              # Unified LogicSig provider registry
 │   ├── logicsigdsa/               # LogicSig DSA interface and registry
 │   ├── lsigsalt/                  # Shared off-curve LogicSig salting
-│   ├── sentry/                    # Sentry/guarded component protocol (keytypes, messages, canonical hashing, verification)
+│   ├── cosigner/                    # Cosigner/guarded component protocol (keytypes, messages, canonical hashing, verification)
 │   ├── mnemonic/                  # Mnemonic handlers
 │   ├── jsapi/, scripting/         # JavaScript bindings and Goja runtime
 │   ├── plugin/                    # Plugin discovery, manifest, RPC, integrity, sandbox
 │   ├── config/                    # Client and server config loading
 │   ├── serverconfig/              # apsigner server configuration loading and validation
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
-│   ├── policy/                    # Signer and sentry policy configuration
+│   ├── policy/                    # Signer and cosigner policy configuration
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
 │   └── fsutil/, theme/, tokenfile/, cmdlog/, ...   # Focused support packages
 │
@@ -229,7 +229,7 @@ aplane/
 │   ├── falcon1024/                # Falcon-1024 DSA provider
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
-│   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + sentry) LogicSig provider
+│   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + cosigner) LogicSig provider
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
@@ -266,7 +266,7 @@ Applications read from `config.yaml` in their data directory:
 - apsigner: `$APSIGNER_DATA/config.yaml` or `-d <path>`
 
 apshell uses `config.yaml` for network, theme, and polling defaults. Signer and
-sentry endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
+cosigner endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
 client `ssh:` signer routing is not supported by managed startup in this
 endpoint-routed client model.
 
@@ -309,12 +309,12 @@ ordinary signing policy, approval, and audit behavior.
   signing.
 - Component flow: `POST /plan` freezes groups, `POST /sign/component` produces
   guarded or bounded components, and `POST /sign/assemble` assembles guarded or
-  bounded-sentry signed groups.
+  bounded-cosigner signed groups.
 - Bounded administration: `POST /sign/bounded-admin` prepares external
   contract-admin partials outside the ordinary send path.
 
 See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the full REST inventory and wire
-contracts, [ARCH_SENTRY.md](ARCH_SENTRY.md) for guarded choreography, and
+contracts, [ARCH_COSIGNER.md](ARCH_COSIGNER.md) for guarded choreography, and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) for bounded choreography.
 
 **Multi-party signing:** Transactions can be marked as **foreign**
@@ -422,9 +422,9 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configurati
 - [ARCH_MCP.md](ARCH_MCP.md) - apshell MCP server and tool surface
 - [ARCH_TUI.md](ARCH_TUI.md) - signer admin TUI (apadmin)
 - [ARCH_ENGINE.md](ARCH_ENGINE.md) - Engine layer details
-- [ARCH_SENTRY.md](ARCH_SENTRY.md) - Guarded signing and sentry node architecture
+- [ARCH_COSIGNER.md](ARCH_COSIGNER.md) - Guarded signing and cosigner node architecture
 - [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and external contract-admin ceremonies
-- [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) - Corridor v1 bounded-sentry composition and lifecycle
+- [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) - Corridor v1 bounded-cosigner composition and lifecycle
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) - Transaction signing flow details
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Provider layer details (DSA algorithms)
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md) - key type and LogicSig template development guide

@@ -20,13 +20,13 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -42,27 +42,27 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	references := []sentryrefs.Record{{ComponentKey: witnessKeyID, PublicKeyHex: publicKeyHex}}
-	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, references, nil); err == nil || !strings.Contains(err.Error(), "sentry role") {
+	references := []cosignerrefs.Record{{ComponentKey: witnessKeyID, PublicKeyHex: publicKeyHex}}
+	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, references, nil); err == nil || !strings.Contains(err.Error(), "cosigner role") {
 		t.Fatalf("admin reference collision error = %v", err)
 	}
 	localWitnesses := map[string]keys.KeyScanInfo{
 		witnessKeyID: {KeyType: witness.Falcon1024V1, PublicKeyHex: publicKeyHex},
 	}
-	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localWitnesses); err == nil || !strings.Contains(err.Error(), "sentry custody") {
+	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, nil, localWitnesses); err == nil || !strings.Contains(err.Error(), "cosigner custody") {
 		t.Fatalf("admin local-custody collision error = %v", err)
 	}
 	localSpendingKeys := map[string]keys.KeyScanInfo{
 		"ACCOUNT": {KeyType: "aplane.falcon1024.v1", PublicKeyHex: publicKeyHex},
 	}
-	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localSpendingKeys); err != nil {
+	if err := rejectAdminWitnessKnownAsCosigner(publicKeyHex, nil, localSpendingKeys); err != nil {
 		t.Fatalf("admin non-witness collision error = %v, want nil", err)
 	}
 	scanned := map[string]keys.KeyScanInfo{
 		"ACCOUNT": {BoundedAuthorization: &boundedmeta.Metadata{AdminPublicKeyHex: publicKeyHex}},
 	}
-	if err := rejectSentryWitnessKnownAsAdmin(publicKeyHex, witnessKeyID, scanned); err == nil || !strings.Contains(err.Error(), "contract admin") {
-		t.Fatalf("sentry collision error = %v", err)
+	if err := rejectCosignerWitnessKnownAsAdmin(publicKeyHex, witnessKeyID, scanned); err == nil || !strings.Contains(err.Error(), "contract admin") {
+		t.Fatalf("cosigner collision error = %v", err)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
 	err = validateKnownWitnessRoleExclusivity(paths, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
 		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
 	}, cryptotest.Keyring(t, masterKey))
-	if err == nil || !strings.Contains(err.Error(), "sentry custody") {
-		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local sentry-custody collision", err)
+	if err == nil || !strings.Contains(err.Error(), "cosigner custody") {
+		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local cosigner-custody collision", err)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 	}
 }
 
-func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
+func TestValidKeyTypesIncludeCosignerComponentKey(t *testing.T) {
 	if !containsKeyType(GetValidKeyTypes(), witness.Falcon1024V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", witness.Falcon1024V1)
 	}
@@ -269,7 +269,7 @@ func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 	}
 }
 
-func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
+func TestGenerateKeyFalcon1024GuardedRequiresCosignerPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
 	paths = genstoretest.MintFirst(t, paths)
@@ -281,8 +281,8 @@ func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, keyType, cryptotest.Keyring(t, masterKey), nil, []string{keyType})
-			if err == nil || !strings.Contains(err.Error(), "missing required parameter: sentry_public_key") {
-				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing sentry_public_key", err)
+			if err == nil || !strings.Contains(err.Error(), "missing required parameter: cosigner_public_key") {
+				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing cosigner_public_key", err)
 			}
 		})
 	}
@@ -292,12 +292,12 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	configureGuardedCompileMock(t)
 
 	tests := []struct {
-		keyType         string
-		sentryPublicKey string
+		keyType           string
+		cosignerPublicKey string
 	}{
 		{
-			keyType:         falcon1024guarded.KeyTypeV1,
-			sentryPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
+			keyType:           falcon1024guarded.KeyTypeV1,
+			cosignerPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
 
@@ -315,7 +315,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 				tt.keyType,
 				cryptotest.Keyring(t, masterKey),
 				map[string]string{
-					falcon1024guarded.ParamSentryPublicKey: tt.sentryPublicKey,
+					falcon1024guarded.ParamCosignerPublicKey: tt.cosignerPublicKey,
 				},
 				[]string{tt.keyType},
 			)
@@ -352,8 +352,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if payload.BaseKeyType != falcon1024guarded.BaseKeyType {
 				t.Fatalf("BaseKeyType = %q, want %s", payload.BaseKeyType, falcon1024guarded.BaseKeyType)
 			}
-			if payload.Parameters[falcon1024guarded.ParamSentryPublicKey] != tt.sentryPublicKey {
-				t.Fatalf("sentry public key param = %q, want %q", payload.Parameters[falcon1024guarded.ParamSentryPublicKey], tt.sentryPublicKey)
+			if payload.Parameters[falcon1024guarded.ParamCosignerPublicKey] != tt.cosignerPublicKey {
+				t.Fatalf("cosigner public key param = %q, want %q", payload.Parameters[falcon1024guarded.ParamCosignerPublicKey], tt.cosignerPublicKey)
 			}
 			if len(payload.LogicSigBytecode) == 0 {
 				t.Fatal("LogicSigBytecode is empty")
@@ -371,7 +371,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	}
 }
 
-func TestGenerateKeySentryComponent(t *testing.T) {
+func TestGenerateKeyCosignerComponent(t *testing.T) {
 	for _, keyType := range []string{
 		witness.Falcon1024V1,
 		witness.Falcon1024V1,
@@ -565,11 +565,11 @@ func TestDeleteKey(t *testing.T) {
 	}
 }
 
-func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
+func TestDeleteKeyPreservesCosignerCredentialClass(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
 	selector := "WITNESSID"
-	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), selector+keys.SentryCredentialExtension)
+	keyFile := filepath.Join(activeKeysDirForKeymgmtTest(t, paths), selector+keys.CosignerCredentialExtension)
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -582,12 +582,12 @@ func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	want := filepath.Join(deletedKeysDir, selector+keys.SentryCredentialExtension)
+	want := filepath.Join(deletedKeysDir, selector+keys.CosignerCredentialExtension)
 	if result.DeletedPath != want {
 		t.Fatalf("DeletedPath = %q, want %q", result.DeletedPath, want)
 	}
 	if _, err := os.Stat(want); err != nil {
-		t.Fatalf("deleted sentry credential missing: %v", err)
+		t.Fatalf("deleted cosigner credential missing: %v", err)
 	}
 }
 

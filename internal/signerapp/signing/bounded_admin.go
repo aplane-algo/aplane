@@ -15,9 +15,9 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -152,20 +152,20 @@ func buildBoundedAdminResult(plan *PlanResult, requestCount, targetIndex int, it
 		SpendEffects:           append([]string(nil), metadata.SpendEffects...),
 		MaxFee:                 metadata.MaxFee,
 	}
-	if metadata.Sentry != nil {
+	if metadata.Cosigner != nil {
 		for _, slot := range metadata.ArgumentLayout {
-			if slot.Source == boundedmeta.ArgSourceSentry {
-				authorization.Sentry = &signerapi.BoundedAdminSentryMetadata{
-					ComponentKeyType:  metadata.Sentry.ComponentKeyType,
-					PublicKeyHex:      metadata.Sentry.PublicKeyHex,
-					ComponentKeyID:    metadata.Sentry.ComponentKeyID,
+			if slot.Source == boundedmeta.ArgSourceCosigner {
+				authorization.Cosigner = &signerapi.BoundedAdminCosignerMetadata{
+					ComponentKeyType:  metadata.Cosigner.ComponentKeyType,
+					PublicKeyHex:      metadata.Cosigner.PublicKeyHex,
+					ComponentKeyID:    metadata.Cosigner.ComponentKeyID,
 					SignatureArgIndex: slot.Index,
 				}
 				break
 			}
 		}
-		if authorization.Sentry == nil {
-			return nil, internal("stored bounded sentry argument slot is missing")
+		if authorization.Cosigner == nil {
+			return nil, internal("stored bounded cosigner argument slot is missing")
 		}
 	}
 	return &BoundedAdminResult{

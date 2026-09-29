@@ -10,8 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -36,23 +36,23 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 	}
 }
 
-func TestBuildDetailsParameterLinesGuardedShowsSentrySelector(t *testing.T) {
+func TestBuildDetailsParameterLinesGuardedShowsCosignerSelector(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     keytypes.GuardedFalcon1024Sentry1024V1,
-		DisplayName: "Falcon Sentry",
+		KeyType:     keytypes.GuardedFalcon1024Cosigner1024V1,
+		DisplayName: "Falcon Cosigner",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:  keytypes.ParameterSentryPublicKey,
-			Label: "Sentry public key",
+			Name:  keytypes.ParameterCosignerPublicKey,
+			Label: "Cosigner public key",
 			Type:  "bytes",
 		}},
 	}})
 
-	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
-		"Sentry":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
-		keytypes.ParameterSentryPublicKey: "aabbccdd",
+	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024Cosigner1024V1, map[string]string{
+		"Cosigner":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+		keytypes.ParameterCosignerPublicKey: "aabbccdd",
 	})
-	want := []string{"Sentry: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
+	want := []string{"Cosigner: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildDetailsParameterLines(guarded) = %#v, want %#v", got, want)
 	}
@@ -141,19 +141,19 @@ func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 		admin:  adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Cosigner (1)") {
 		t.Fatalf("signer node rendered tab controls:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "SIGNINGADDR") {
 		t.Fatalf("signer node missing signing key:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "SENTRYKEY") {
-		t.Fatalf("signer node showed sentry key:\n%s", rendered)
+	if strings.Contains(rendered, "COSIGNERKEY") {
+		t.Fatalf("signer node showed cosigner key:\n%s", rendered)
 	}
 }
 
@@ -165,70 +165,70 @@ func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Cosigner (1)") {
 		t.Fatalf("signing mode rendered tab controls:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "SIGNINGADDR") {
 		t.Fatalf("signing mode missing signing key:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "SENTRYKEY") {
-		t.Fatalf("signing mode showed sentry key:\n%s", rendered)
+	if strings.Contains(rendered, "COSIGNERKEY") {
+		t.Fatalf("signing mode showed cosigner key:\n%s", rendered)
 	}
 	if strings.Contains(m.viewFooterText(), "Switch tab") {
 		t.Fatalf("signing mode footer advertised tab switching: %q", m.viewFooterText())
 	}
 }
 
-func TestRenderKeyListViewUsesSentryNodeWithoutTabs(t *testing.T) {
+func TestRenderKeyListViewUsesCosignerNodeWithoutTabs(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
 		width:     120,
 		height:    24,
-		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
-		t.Fatalf("sentry node rendered tab controls:\n%s", rendered)
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Cosigner (1)") {
+		t.Fatalf("cosigner node rendered tab controls:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "SENTRYKEY") {
-		t.Fatalf("sentry node missing sentry key:\n%s", rendered)
+	if !strings.Contains(rendered, "COSIGNERKEY") {
+		t.Fatalf("cosigner node missing cosigner key:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "SIGNINGADDR") {
-		t.Fatalf("sentry node showed signing key:\n%s", rendered)
+		t.Fatalf("cosigner node showed signing key:\n%s", rendered)
 	}
 	if strings.Contains(m.viewFooterText(), "Switch tab") {
-		t.Fatalf("sentry node footer advertised tab switching: %q", m.viewFooterText())
+		t.Fatalf("cosigner node footer advertised tab switching: %q", m.viewFooterText())
 	}
 }
 
-func TestHandleKeyListKeysIgnoresTabOnSentryNode(t *testing.T) {
+func TestHandleKeyListKeysIgnoresTabOnCosignerNode(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
-		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := nextModel.(Model)
-	if next.effectiveKeyListTab() != keyListTabSentry {
-		t.Fatalf("effectiveKeyListTab after tab = %v, want sentry", next.effectiveKeyListTab())
+	if next.effectiveKeyListTab() != keyListTabCosigner {
+		t.Fatalf("effectiveKeyListTab after tab = %v, want cosigner", next.effectiveKeyListTab())
 	}
 	keys := next.filteredKeys()
-	if len(keys) != 1 || keys[0].Address != "SENTRYKEY" {
-		t.Fatalf("sentry filtered keys = %#v, want sentry key", keys)
+	if len(keys) != 1 || keys[0].Address != "COSIGNERKEY" {
+		t.Fatalf("cosigner filtered keys = %#v, want cosigner key", keys)
 	}
 }
 
@@ -238,7 +238,7 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -253,20 +253,20 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 	}
 }
 
-func TestSelectKeyByAddressSwitchesToSentryTab(t *testing.T) {
-	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+func TestSelectKeyByAddressSwitchesToCosignerTab(t *testing.T) {
+	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
+			{Address: "COSIGNERKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
-	m.selectKeyByAddress("SENTRYKEY")
-	if m.keylist.tab != keyListTabSentry {
-		t.Fatalf("keyListTab = %v, want sentry", m.keylist.tab)
+	m.selectKeyByAddress("COSIGNERKEY")
+	if m.keylist.tab != keyListTabCosigner {
+		t.Fatalf("keyListTab = %v, want cosigner", m.keylist.tab)
 	}
 	if m.keylist.selectedKey != 0 {
-		t.Fatalf("selectedKey = %d, want first sentry tab row", m.keylist.selectedKey)
+		t.Fatalf("selectedKey = %d, want first cosigner tab row", m.keylist.selectedKey)
 	}
 }
 
@@ -281,37 +281,37 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 	}
 }
 
-func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
+func TestRenderKeyDetailsShowsCosignerPublicKey(t *testing.T) {
 	rendered := stripANSI(Model{details: keyDetailsState{address: "aabbccdd", keyType: witness.Falcon1024V1, publicKeyHex: "aabbccdd"}, height: 30}.renderKeyDetails())
 
-	if !strings.Contains(rendered, "Sentry public key: aabbccdd") {
-		t.Fatalf("renderKeyDetails() missing sentry public key:\n%s", rendered)
+	if !strings.Contains(rendered, "Cosigner public key: aabbccdd") {
+		t.Fatalf("renderKeyDetails() missing cosigner public key:\n%s", rendered)
 	}
 }
 
 func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
 	const publicKey = "0123456789abcdef0123456789abcdef0123456789abcdef"
-	rendered := stripANSI(Model{details: keyDetailsState{address: "SENTRYKEY", keyType: witness.Falcon1024V1, publicKeyHex: publicKey}, height: 30}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "COSIGNERKEY", keyType: witness.Falcon1024V1, publicKeyHex: publicKey}, height: 30}.renderKeyDetails())
 
-	if !strings.Contains(rendered, "Sentry public key: 0123456789abcdef0123...") {
-		t.Fatalf("renderKeyDetails() missing truncated sentry public key:\n%s", rendered)
+	if !strings.Contains(rendered, "Cosigner public key: 0123456789abcdef0123...") {
+		t.Fatalf("renderKeyDetails() missing truncated cosigner public key:\n%s", rendered)
 	}
 	if strings.Contains(rendered, publicKey) {
-		t.Fatalf("renderKeyDetails() rendered full sentry public key:\n%s", rendered)
+		t.Fatalf("renderKeyDetails() rendered full cosigner public key:\n%s", rendered)
 	}
 }
 
-func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
+func TestRenderKeyDetailsLabelsCosignerKey(t *testing.T) {
 	rendered := stripANSI(Model{
-		initialNodeRole: "sentry",
-		details:         keyDetailsState{address: "SENTRYKEY", keyType: witness.Falcon1024V1}, height: 30,
+		initialNodeRole: "cosigner",
+		details:         keyDetailsState{address: "COSIGNERKEY", keyType: witness.Falcon1024V1}, height: 30,
 	}.renderKeyDetails())
 
-	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
-		t.Fatalf("renderKeyDetails() missing sentry key label:\n%s", rendered)
+	if !strings.Contains(rendered, "Cosigner Key: COSIGNERKEY") {
+		t.Fatalf("renderKeyDetails() missing cosigner key label:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "Address: SENTRYKEY") {
-		t.Fatalf("renderKeyDetails() used address label in sentry mode:\n%s", rendered)
+	if strings.Contains(rendered, "Address: COSIGNERKEY") {
+		t.Fatalf("renderKeyDetails() used address label in cosigner mode:\n%s", rendered)
 	}
 }
 

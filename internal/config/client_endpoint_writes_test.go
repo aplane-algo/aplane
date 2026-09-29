@@ -13,8 +13,8 @@ import (
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
-	registry, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role:       ClientEndpointRoleSentry,
+	registry, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role:       ClientEndpointRoleCosigner,
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11270,
 	}, false)
@@ -32,11 +32,11 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); ok || alias != "" {
 		t.Fatalf("DefaultEndpoint() = %q/%v, want none", alias, ok)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
+	endpoint, ok := cfg.Endpoints.Endpoint("cosigner-local")
 	if !ok {
-		t.Fatal("sentry-local endpoint missing after LoadConfig")
+		t.Fatal("cosigner-local endpoint missing after LoadConfig")
 	}
-	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
+	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "cosigner-local.token") {
 		t.Fatalf("TokenFile = %q, want resolved default token path", endpoint.TokenFile)
 	}
 }
@@ -44,10 +44,10 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 func TestStoredClientEndpointLocalPortIsSignerOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	_, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry, URL: "ssh://sentry.example", LocalPort: 12271,
+		Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", LocalPort: 12271,
 	}, false)
-	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for sentry endpoints") {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry local_port) error = %v, want role error", err)
+	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for cosigner endpoints") {
+		t.Fatalf("UpsertStoredClientEndpoint(cosigner local_port) error = %v, want role error", err)
 	}
 
 	if _, err := UpsertStoredClientEndpoint(dataDir, "primary", ClientEndpointConfig{
@@ -57,17 +57,17 @@ func TestStoredClientEndpointLocalPortIsSignerOnly(t *testing.T) {
 	}
 }
 
-func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *testing.T) {
+func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForCosigner(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
-	registry, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role:       ClientEndpointRoleSentry,
+	registry, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role:       ClientEndpointRoleCosigner,
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11271,
 	}, false)
 	if err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(cosigner) error = %v", err)
 	}
 	if registry.Default != "" {
 		t.Fatalf("Default = %q, want empty", registry.Default)
@@ -75,8 +75,8 @@ func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *t
 	if _, ok := registry.Endpoints[DefaultClientEndpointName]; ok {
 		t.Fatal("primary endpoint was materialized from legacy config")
 	}
-	if _, ok := registry.Endpoints["sentry-local"]; !ok {
-		t.Fatal("sentry-local endpoint missing")
+	if _, ok := registry.Endpoints["cosigner-local"]; !ok {
+		t.Fatal("cosigner-local endpoint missing")
 	}
 
 	stored, exists, err := LoadStoredClientEndpointRegistry(dataDir)
@@ -93,14 +93,14 @@ func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *t
 
 func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
+	if _, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
-	_, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
+	_, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2224",
 	}, false)
 	if err == nil {
@@ -113,22 +113,22 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if got := registry.Endpoints["sentry-local"].URL; got != "ssh://127.0.0.1:2223" {
+	if got := registry.Endpoints["cosigner-local"].URL; got != "ssh://127.0.0.1:2223" {
 		t.Fatalf("stored URL = %q, want original URL", got)
 	}
 }
 
 func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
+	if _, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223/",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 
-	_, err := UpsertStoredClientEndpoint(dataDir, "sentry-copy", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
+	_, err := UpsertStoredClientEndpoint(dataDir, "cosigner-copy", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true)
 	if err == nil {
@@ -142,8 +142,8 @@ func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if _, ok := registry.Endpoints["sentry-copy"]; ok {
-		t.Fatal("sentry-copy endpoint was written despite duplicate URL conflict")
+	if _, ok := registry.Endpoints["cosigner-copy"]; ok {
+		t.Fatal("cosigner-copy endpoint was written despite duplicate URL conflict")
 	}
 }
 
@@ -155,11 +155,11 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(signer) error = %v", err)
 	}
-	if _, err := UpsertStoredClientEndpoint(dataDir, "local-sentry", ClientEndpointConfig{
-		Role: ClientEndpointRoleSentry,
+	if _, err := UpsertStoredClientEndpoint(dataDir, "local-cosigner", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(sentry same URL) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(cosigner same URL) error = %v", err)
 	}
 }
 
@@ -168,10 +168,10 @@ func TestStoredClientEndpointV1ReadDropsPublishedInventoryAndWritesV2(t *testing
 	path := GetClientEndpointsPath(dataDir)
 	legacy := `schema_version: 1
 endpoints:
-  sentry-local:
-    role: sentry
+  cosigner-local:
+    role: cosigner
     url: ssh://127.0.0.1:2223
-    published_sentries:
+    published_cosigners:
       deadbeef:
         component_key: LEGACY
         key_type: legacy
@@ -193,7 +193,7 @@ endpoints:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(written), "published_sentries") || !strings.Contains(string(written), "schema_version: 2") {
+	if strings.Contains(string(written), "published_cosigners") || !strings.Contains(string(written), "schema_version: 2") {
 		t.Fatalf("rewritten endpoints.yaml = %q, want v2 without retired inventory", written)
 	}
 }
@@ -202,53 +202,53 @@ func TestStoredClientEndpointV2RejectsPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	data := `schema_version: 2
 endpoints:
-  sentry-local:
-    role: sentry
-    url: ssh://sentry.example
-    published_sentries: {}
+  cosigner-local:
+    role: cosigner
+    url: ssh://cosigner.example
+    published_cosigners: {}
 `
 	if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err == nil || !strings.Contains(err.Error(), "field published_sentries not found") {
+	if err == nil || !strings.Contains(err.Error(), "field published_cosigners not found") {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v, want strict v2 rejection", err)
 	}
 }
 
-func TestStoredClientEndpointSentryLimit(t *testing.T) {
+func TestStoredClientEndpointCosignerLimit(t *testing.T) {
 	registry := emptyClientEndpointRegistry()
-	for i := 0; i < MaxClientSentryEndpoints; i++ {
-		alias := fmt.Sprintf("sentry-%02d", i)
-		registry.Endpoints[alias] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: fmt.Sprintf("ssh://sentry-%02d.example", i)}
+	for i := 0; i < MaxClientCosignerEndpoints; i++ {
+		alias := fmt.Sprintf("cosigner-%02d", i)
+		registry.Endpoints[alias] = ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: fmt.Sprintf("ssh://cosigner-%02d.example", i)}
 	}
 	if err := SaveStoredClientEndpointRegistry(t.TempDir(), registry); err != nil {
 		t.Fatalf("SaveStoredClientEndpointRegistry(12) error = %v", err)
 	}
-	registry.Endpoints["sentry-overflow"] = ClientEndpointConfig{Role: ClientEndpointRoleSentry, URL: "ssh://sentry-overflow.example"}
+	registry.Endpoints["cosigner-overflow"] = ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner-overflow.example"}
 	err := SaveStoredClientEndpointRegistry(t.TempDir(), registry)
-	if err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12") {
+	if err == nil || !strings.Contains(err.Error(), "configures 13 cosigner endpoints; maximum is 12") {
 		t.Fatalf("SaveStoredClientEndpointRegistry(13) error = %v, want explicit limit", err)
 	}
 }
 
-func TestLoadClientEndpointRegistrySentryLimit(t *testing.T) {
-	for count := MaxClientSentryEndpoints; count <= MaxClientSentryEndpoints+1; count++ {
+func TestLoadClientEndpointRegistryCosignerLimit(t *testing.T) {
+	for count := MaxClientCosignerEndpoints; count <= MaxClientCosignerEndpoints+1; count++ {
 		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
 			dataDir := t.TempDir()
 			var contents strings.Builder
 			contents.WriteString("schema_version: 2\nendpoints:\n")
 			for i := 0; i < count; i++ {
-				fmt.Fprintf(&contents, "  sentry-%02d:\n    role: sentry\n    url: ssh://sentry-%02d.example\n", i, i)
+				fmt.Fprintf(&contents, "  cosigner-%02d:\n    role: cosigner\n    url: ssh://cosigner-%02d.example\n", i, i)
 			}
 			if err := os.WriteFile(GetClientEndpointsPath(dataDir), []byte(contents.String()), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := LoadClientEndpointRegistry(dataDir)
-			if count == MaxClientSentryEndpoints && err != nil {
+			if count == MaxClientCosignerEndpoints && err != nil {
 				t.Fatalf("LoadClientEndpointRegistry(%d) error = %v", count, err)
 			}
-			if count > MaxClientSentryEndpoints && (err == nil || !strings.Contains(err.Error(), "configures 13 sentry endpoints; maximum is 12")) {
+			if count > MaxClientCosignerEndpoints && (err == nil || !strings.Contains(err.Error(), "configures 13 cosigner endpoints; maximum is 12")) {
 				t.Fatalf("LoadClientEndpointRegistry(%d) error = %v, want explicit limit", count, err)
 			}
 		})
@@ -256,7 +256,7 @@ func TestLoadClientEndpointRegistrySentryLimit(t *testing.T) {
 }
 
 func TestStoredClientEndpointRejectsSelfForEveryRole(t *testing.T) {
-	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleSentry} {
+	for _, role := range []string{ClientEndpointRoleSigner, ClientEndpointRoleCosigner} {
 		t.Run(role, func(t *testing.T) {
 			dataDir := t.TempDir()
 			_, err := UpsertStoredClientEndpoint(dataDir, role, ClientEndpointConfig{

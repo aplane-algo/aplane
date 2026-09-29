@@ -21,14 +21,14 @@ the retired `CURRENT` plus `keyring.enc` layout.
     unlock.yaml
     aplane.token
     passphrase | passphrase.cred
-    sentries/<name>.json
+    cosigners/<name>.json
     quarantine/generations/<gen-id>/
     generations/<gen-id>/
       manifest.json
       seal.json
-      keys/*.key|*.sen|*.wit.json
+      keys/*.key|*.cos|*.wit.json
       keytypes/*.json|*.template
-      deleted/keys/*.key|*.sen
+      deleted/keys/*.key|*.cos
       deleted/keytypes/*.template
       policy.yaml
       policy.yaml.hmac
@@ -37,7 +37,7 @@ the retired `CURRENT` plus `keyring.enc` layout.
 
 The generation boundary includes all mutable state whose confidentiality or
 integrity depends on a keyring term. Process and product configuration, tokens,
-unlock helpers, SSH state, sentry references, backups, the plaintext template
+unlock helpers, SSH state, cosigner references, backups, the plaintext template
 library, and the root node-role document are not generational.
 
 `quarantine/` is non-authoritative. Normal resolution, signing, historical
@@ -234,7 +234,7 @@ validation, mint, and passphrase change until pruned.
 
 `apadmin archive list` reports exact usage and the reserve warning.
 `apadmin archive prune --confirm <deleted/path>...` accepts only canonical
-`deleted/keys/*.key|*.sen` and `deleted/keytypes/*.template` selections. It
+`deleted/keys/*.key|*.cos` and `deleted/keytypes/*.template` selections. It
 requires `identity.archive.prune`, a recovery-capable authenticated runtime,
 and durable intent audit before mutation. It changes only the selected
 generation; retained copies disappear only with retained-generation pruning.

@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// StoredRekeyPolicy is the YAML representation of sentry rekey authorization.
+// StoredRekeyPolicy is the YAML representation of cosigner rekey authorization.
 // It is intentionally narrow: every allowed edge names a sender address or
 // flat address set and a list of allowed rekey target addresses or flat sets.
 type StoredRekeyPolicy struct {
@@ -82,7 +82,7 @@ func (r *StoredRekeyRule) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// RekeyPolicy is the compiled effective sentry rekey policy.
+// RekeyPolicy is the compiled effective cosigner rekey policy.
 type RekeyPolicy struct {
 	Allowed []CompiledRekeyRule
 }

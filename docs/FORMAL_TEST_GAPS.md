@@ -30,7 +30,7 @@ implemented and unit-tested but not yet modeled:
 - user-role `/sign/component` runs the signer-domain approval gates (hard
   rejection, always-review, operator approval) before component signing
   (`internal/signerapp/signing/component_gate.go`),
-- guarded simulation runs ordinary user and sentry component signing plus
+- guarded simulation runs ordinary user and cosigner component signing plus
   `/sign/assemble`, then sends the released executable group from the client to
   algod simulation (`internal/engine/guarded/submit.go`).
 
@@ -39,11 +39,11 @@ signature requirements); they under-approximate the gate sequence and the
 post-assembly client route. A future audit pass should extend the guarded
 signing model with the gate states and assert that every released guarded group
 passed the same user gate regardless of whether the client submits or
-simulates it. This gap is limited to the legacy `sentry1` choreography;
-`bounded-sentry1` user-first ordering and assembly are covered by
-[formal/bounded_sentry.tla](formal/bounded_sentry.tla). Its simulation route is
+simulates it. This gap is limited to the legacy `cosigner1` choreography;
+`bounded-cosigner1` user-first ordering and assembly are covered by
+[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla). Its simulation route is
 covered by the concrete Go test
-`TestBoundedSentrySimulateUsesUserFirstChoreography`; the TLA+ model does not
+`TestBoundedCosignerSimulateUsesUserFirstChoreography`; the TLA+ model does not
 represent client submission or simulation transport.
 
 **Model drift: SSH authentication boundary.**
@@ -100,7 +100,7 @@ current v5 surface. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
 `internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
 passphrase and binds the session runtime but never authorizes or invokes
-`identity.unlock`; `apadmin`'s read-only sentry, generation-inventory, and
+`identity.unlock`; `apadmin`'s read-only cosigner, generation-inventory, and
 endpoint-settings reads use it. `session_ownership.tla`'s `AuthSucceed`
 couples authentication to `unlocked' = TRUE`, so it now models the `auth`
 message only.
@@ -127,8 +127,8 @@ approval fail-all, and session-ownership contracts are covered by their Go
 race tests and AP/SO formal invariants.
 
 The former bounded DSA planning/argument-assembly drift entry is closed by
-[formal/bounded_sentry.tla](formal/bounded_sentry.tla): its BS1-BS7 transition
-system covers finalized classification, signer gates, user-first sentry
+[formal/bounded_cosigner.tla](formal/bounded_cosigner.tla): its BS1-BS7 transition
+system covers finalized classification, signer gates, user-first cosigner
 routing, exact target coverage, source/path-mask assembly, canonical bytes,
 the external-admin bypass, and atomic failure. Concrete effect classification,
 slot encodings, Merkle derivation, and TEAL remain verified by Go/compiler tests
@@ -143,7 +143,7 @@ audit cover:
 - passthrough signed-transaction txid mismatch rejection during
   `/sign/assemble`,
 - direct `/sign` rejection for all guarded account key types,
-- malformed component-sign response rejection before local sentry signature
+- malformed component-sign response rejection before local cosigner signature
   verification.
 
 ## Deferred until design decision

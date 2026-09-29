@@ -7,7 +7,7 @@ publisher: aplane
 family: corridor
 version: 1
 display_name: "Corridor"
-description: "Bounded Falcon-1024 account with sentry authorization and a Merkle recipient allowlist."
+description: "Bounded Falcon-1024 account with cosigner authorization and a Merkle recipient allowlist."
 max_opcode_cost: 20000
 
 bounded:
@@ -18,8 +18,8 @@ bounded:
     - kind: rekey
       authorization: admin_key
       policy_gate: none
-  sentry:
-    contract: sentry1
+  cosigner:
+    contract: cosigner1
     required_on: [spend]
   layer3:
     policy: merkle_allowlist

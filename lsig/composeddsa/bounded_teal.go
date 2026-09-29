@@ -10,7 +10,7 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
+	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
@@ -91,8 +91,8 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			b.WriteString(adminTEAL)
 		}
 		if operation.PolicyGate == AdminPolicyGateLayer3 {
-			if profile.Sentry != nil {
-				return "", fmt.Errorf("sentry-enabled bounded profiles cannot gate rekey through Layer 3")
+			if profile.Cosigner != nil {
+				return "", fmt.Errorf("cosigner-enabled bounded profiles cannot gate rekey through Layer 3")
 			}
 			b.WriteString("b " + boundedSpendLabel + "\n\n")
 		} else {
@@ -101,37 +101,37 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	}
 
 	b.WriteString(boundedSpendLabel + ":\n")
-	if profile.Sentry != nil {
-		sentryTEAL, err := c.renderSentryAuthorization(publicKey, params, metadata)
+	if profile.Cosigner != nil {
+		cosignerTEAL, err := c.renderCosignerAuthorization(publicKey, params, metadata)
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(sentryTEAL)
+		b.WriteString(cosignerTEAL)
 		b.WriteString("b " + boundedLayer3Label + "\n\n")
 		b.WriteString(boundedLayer3Label + ":\n")
 	}
 	return b.String(), nil
 }
 
-func (c *ComposedDSA) renderSentryAuthorization(publicKey []byte, params map[string]string, metadata *boundedmeta.Metadata) (string, error) {
-	if metadata == nil || metadata.Sentry == nil {
-		return "", fmt.Errorf("bounded sentry metadata is required")
+func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[string]string, metadata *boundedmeta.Metadata) (string, error) {
+	if metadata == nil || metadata.Cosigner == nil {
+		return "", fmt.Errorf("bounded cosigner metadata is required")
 	}
-	sentryPublicKey, err := c.validatedSentryPublicKey(publicKey, params)
+	cosignerPublicKey, err := c.validatedCosignerPublicKey(publicKey, params)
 	if err != nil {
 		return "", err
 	}
-	sentryArgIndex := -1
+	cosignerArgIndex := -1
 	for _, slot := range metadata.ArgumentLayout {
-		if slot.Source == boundedmeta.ArgSourceSentry {
-			sentryArgIndex = slot.Index
+		if slot.Source == boundedmeta.ArgSourceCosigner {
+			cosignerArgIndex = slot.Index
 			break
 		}
 	}
-	if sentryArgIndex < 0 {
-		return "", fmt.Errorf("bounded sentry argument slot is missing")
+	if cosignerArgIndex < 0 {
+		return "", fmt.Errorf("bounded cosigner argument slot is missing")
 	}
-	return fmt.Sprintf(`// Sentry-authorized pure spend
+	return fmt.Sprintf(`// Cosigner-authorized pure spend
 arg %d
 len
 pushint 0
@@ -152,9 +152,9 @@ arg %d
 pushbytes 0x%s
 falcon_verify
 assert
-`, sentryArgIndex, sentryArgIndex, metadata.Sentry.SignatureMaxSize,
-		hex.EncodeToString([]byte(sentrymessage.DomainTagV1)), byte(sentrymessage.RoleSentry),
-		sentryArgIndex, hex.EncodeToString(sentryPublicKey)), nil
+`, cosignerArgIndex, cosignerArgIndex, metadata.Cosigner.SignatureMaxSize,
+		hex.EncodeToString([]byte(cosignermessage.DomainTagV1)), byte(cosignermessage.RoleCosigner),
+		cosignerArgIndex, hex.EncodeToString(cosignerPublicKey)), nil
 }
 
 func writeSpendEffectDecision(b *strings.Builder, allowed bool) {

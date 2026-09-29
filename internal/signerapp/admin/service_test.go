@@ -126,15 +126,15 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *productruntime.
 			return err
 		}
 		switch target {
-		case adminproto.PolicyTargetSentry:
-			if err := policy.SaveStoredSentryConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
+		case adminproto.PolicyTargetCosigner:
+			if err := policy.SaveStoredCosignerConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedSentryWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedCosignerWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
 			if err != nil {
 				return err
 			}
-			ir.SetSentryPolicyState(verified, effective)
+			ir.SetCosignerPolicyState(verified, effective)
 		default:
 			if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
 				return err
@@ -423,81 +423,81 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	}
 }
 
-func TestBuildSentryPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	stored := storedSentryPolicyForAdminTest(t, "allow_initial")
-	effective, err := policyruntime.ApplySentryStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
+func TestBuildCosignerPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
+	stored := storedCosignerPolicyForAdminTest(t, "allow_initial")
+	effective, err := policyruntime.ApplyCosignerStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
 	if err != nil {
-		t.Fatalf("ApplySentryStoredConfig(): %v", err)
+		t.Fatalf("ApplyCosignerStoredConfig(): %v", err)
 	}
-	ir.SetSentryPolicyState(stored, effective)
+	ir.SetCosignerPolicyState(stored, effective)
 
-	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSentry)
+	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetCosigner)
 	if !snapshot.Success {
-		t.Fatalf("BuildPolicySnapshot(sentry) success = false, code %q error %q", snapshot.Code, snapshot.Error)
+		t.Fatalf("BuildPolicySnapshot(cosigner) success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
-	if snapshot.Target != adminproto.PolicyTargetSentry {
-		t.Fatalf("Target = %q, want sentry", snapshot.Target)
+	if snapshot.Target != adminproto.PolicyTargetCosigner {
+		t.Fatalf("Target = %q, want cosigner", snapshot.Target)
 	}
 	if !snapshot.Canonical {
 		t.Fatal("Canonical = false, want true")
 	}
-	if strings.Contains(snapshot.PolicyYAML, "sentry:") {
-		t.Fatalf("sentry snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
+	if strings.Contains(snapshot.PolicyYAML, "cosigner:") {
+		t.Fatalf("cosigner snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
 	}
 	if !strings.Contains(snapshot.PolicyYAML, "allow_initial") ||
 		!strings.Contains(snapshot.PolicyYAML, "transfer_policy:") {
-		t.Fatalf("PolicyYAML missing expected sentry policy fields:\n%s", snapshot.PolicyYAML)
+		t.Fatalf("PolicyYAML missing expected cosigner policy fields:\n%s", snapshot.PolicyYAML)
 	}
 }
 
 func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
-	sentryYAML := sentryPolicyYAMLForAdminTest("allow_validate")
+	cosignerYAML := cosignerPolicyYAMLForAdminTest("allow_validate")
 	result := svc.ValidatePolicy(adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetSentry,
-		PolicyYAML: sentryYAML,
+		Target:     adminproto.PolicyTargetCosigner,
+		PolicyYAML: cosignerYAML,
 	})
 	if result.Success {
-		t.Fatalf("ValidatePolicy(sentry on signer) success = true, want false")
+		t.Fatalf("ValidatePolicy(cosigner on signer) success = true, want false")
 	}
 	if result.Code != "policy_target_not_allowed_for_node_role" {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
 	}
 
-	sentrySvc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	result = sentrySvc.ValidatePolicy(adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetSentry,
-		PolicyYAML: sentryYAML,
+	cosignerSvc, _, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
+	result = cosignerSvc.ValidatePolicy(adminproto.ValidatePolicyRequest{
+		Target:     adminproto.PolicyTargetCosigner,
+		PolicyYAML: cosignerYAML,
 	})
 	if !result.Success {
-		t.Fatalf("ValidatePolicy(sentry) success = false, code %q error %q", result.Code, result.Error)
+		t.Fatalf("ValidatePolicy(cosigner) success = false, code %q error %q", result.Code, result.Error)
 	}
-	if result.Target != adminproto.PolicyTargetSentry {
-		t.Fatalf("Target = %q, want sentry", result.Target)
+	if result.Target != adminproto.PolicyTargetCosigner {
+		t.Fatalf("Target = %q, want cosigner", result.Target)
 	}
 }
 
-func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	initial := storedSentryPolicyForAdminTest(t, "allow_initial")
-	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetSentry, initial)
-	initialSnapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSentry)
+func TestReplaceCosignerPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
+	initial := storedCosignerPolicyForAdminTest(t, "allow_initial")
+	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetCosigner, initial)
+	initialSnapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetCosigner)
 	if !initialSnapshot.Success {
 		t.Fatalf("initial snapshot success = false, code %q error %q", initialSnapshot.Code, initialSnapshot.Error)
 	}
 
-	updatedYAML := sentryPolicyYAMLForAdminTest("allow_updated")
+	updatedYAML := cosignerPolicyYAMLForAdminTest("allow_updated")
 	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
-		Target:                adminproto.PolicyTargetSentry,
+		Target:                adminproto.PolicyTargetCosigner,
 		PolicyYAML:            updatedYAML,
 		ExpectedCurrentSHA256: initialSnapshot.PolicySHA256,
 	})
 	if !result.Success {
-		t.Fatalf("ReplacePolicy(sentry) success = false, code %q error %q", result.Code, result.Error)
+		t.Fatalf("ReplacePolicy(cosigner) success = false, code %q error %q", result.Code, result.Error)
 	}
-	if result.Target != adminproto.PolicyTargetSentry {
-		t.Fatalf("Target = %q, want sentry", result.Target)
+	if result.Target != adminproto.PolicyTargetCosigner {
+		t.Fatalf("Target = %q, want cosigner", result.Target)
 	}
 	if !strings.Contains(result.PolicyYAML, "allow_updated") {
 		t.Fatalf("result PolicyYAML missing updated route:\n%s", result.PolicyYAML)
@@ -509,51 +509,51 @@ func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		loaded, loadErr := policy.LoadVerifiedSentryConfigActive(active, masterKey)
+		loaded, loadErr := policy.LoadVerifiedCosignerConfigActive(active, masterKey)
 		verified = loaded
 		return loadErr
 	})
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithKeyring(): %v", err)
+		t.Fatalf("LoadVerifiedCosignerConfigWithKeyring(): %v", err)
 	}
-	verifiedData, err := policy.MarshalStoredSentryConfig(verified)
+	verifiedData, err := policy.MarshalStoredCosignerConfig(verified)
 	if err != nil {
-		t.Fatalf("MarshalStoredSentryConfig(): %v", err)
+		t.Fatalf("MarshalStoredCosignerConfig(): %v", err)
 	}
 	if !strings.Contains(string(verifiedData), "allow_updated") {
-		t.Fatalf("verified sentry policy missing updated route:\n%s", verifiedData)
+		t.Fatalf("verified cosigner policy missing updated route:\n%s", verifiedData)
 	}
-	stored, _ := ir.SentryPolicySnapshot()
+	stored, _ := ir.CosignerPolicySnapshot()
 	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) != 1 ||
 		stored.TransferPolicy.Routes[0].ID != "allow_updated" {
-		t.Fatalf("runtime stored sentry policy = %+v, want allow_updated route", stored)
+		t.Fatalf("runtime stored cosigner policy = %+v, want allow_updated route", stored)
 	}
 }
 
 func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
-	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
+	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
 	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
 		Target:     adminproto.PolicyTargetSigner,
 		PolicyYAML: "reject_foreign_rekey: true\n",
 	})
 	if result.Success {
-		t.Fatal("ReplacePolicy(signer target on sentry) success = true, want false")
+		t.Fatal("ReplacePolicy(signer target on cosigner) success = true, want false")
 	}
 	if result.Code != "policy_target_not_allowed_for_node_role" {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
 	}
 }
 
-func storedSentryPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
+func storedCosignerPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
 	t.Helper()
-	stored, err := policy.ParseStoredSentryConfig([]byte(sentryPolicyYAMLForAdminTest(routeID)))
+	stored, err := policy.ParseStoredCosignerConfig([]byte(cosignerPolicyYAMLForAdminTest(routeID)))
 	if err != nil {
-		t.Fatalf("ParseStoredSentryConfig(): %v", err)
+		t.Fatalf("ParseStoredCosignerConfig(): %v", err)
 	}
 	return stored
 }
 
-func sentryPolicyYAMLForAdminTest(routeID string) string {
+func cosignerPolicyYAMLForAdminTest(routeID string) string {
 	return fmt.Sprintf(`transfer_policy:
   schema_version: 1
   enabled: true

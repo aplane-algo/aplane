@@ -58,7 +58,7 @@ identifies the current screen. The enum has families for:
 - Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
 - Approval popups (`ViewSigningPopup`, `ViewTokenProvisioningPopup`)
 - Generate / import flows (form, params, loading, display)
-- Signer-side public sentry-reference management (`ViewSentryReferences`,
+- Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress)
 - Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
 - Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
@@ -78,9 +78,9 @@ See `internal/signerapp/signertui/model.go` for the authoritative enum values an
 one-line comments that document each screen's purpose. Compatibility-only
 policy view states in the enum are not active `apadmin` entry points.
 
-## Sentry Reference Manager
+## Cosigner Reference Manager
 
-On signer nodes, `e` from the key list opens the public sentry-reference
+On signer nodes, `e` from the key list opens the public cosigner-reference
 manager. Rows are alias-first and show a compact Witness Key ID; the details
 screen shows the complete grouped ID, witness key type, public-key digest,
 import time, and all aliases for the same authority. It deliberately does not
@@ -89,18 +89,18 @@ return to the manager when they were started there. Removing a reference is an
 explicit alias-scoped mutation whose confirmation defaults to Cancel.
 
 From reference details, `Generate account` filters the signer-advertised key
-types by `sentry_component_key_type`. A sole compatible type proceeds directly
+types by `cosigner_component_key_type`. A sole compatible type proceeds directly
 to its parameter view with the stable Witness Key ID selected; multiple types
 use a dedicated filtered chooser. Canceling returns to the reference details
 instead of losing the manager context.
 
-The manager is role-gated and is not offered on sentry nodes. It communicates
-through the existing list/import/remove sentry-reference admin messages, so
+The manager is role-gated and is not offered on cosigner nodes. It communicates
+through the existing list/import/remove cosigner-reference admin messages, so
 the signer remains responsible for authorization, lock-state enforcement,
 store serialization, and audit emission.
 
-On sentry nodes, witness-key details and the successful witness-generation
-screen offer `Export enrollment`. The sentry returns the existing public
+On cosigner nodes, witness-key details and the successful witness-generation
+screen offer `Export enrollment`. The cosigner returns the existing public
 witness envelope over the admin protocol, while the operator-side `apadmin`
 process either writes it to the chosen local path or displays full JSON directly
 in the terminal. `SHOW JSON` releases the terminal through Bubble Tea's execution lifecycle and writes
@@ -110,17 +110,17 @@ sequences are emitted. File export or batch stdout also preserves the original
 JSON bytes. Files are written on the machine running `apadmin`. Ordinary account keys do not expose
 this action. The output path is directly editable and does not rename the
 witness credential or add an authority claim to the public envelope. Imports
-recognize the `.aplane-sentry.json` suffix and may prefill an editable alias
+recognize the `.aplane-cosigner.json` suffix and may prefill an editable alias
 from its sanitized filename stem.
 
-When the sentry advertises a portable endpoint, the export review offers an
+When the cosigner advertises a portable endpoint, the export review offers an
 explicit, default-on `Include advertised endpoint` choice. The operator-side
 TUI composes the daemon-verified witness envelope and the validated endpoint
-into `aplane.sentry-enrollment.v1`; opting out or lacking an advertised
+into `aplane.cosigner-enrollment.v1`; opting out or lacking an advertised
 endpoint retains the compatible witness-only file. Composition never adds a
 token, host trust, client alias, or private material.
 
-The import form also accepts a combined `aplane.sentry-enrollment.v1` bundle.
+The import form also accepts a combined `aplane.cosigner-enrollment.v1` bundle.
 The complete artifact is validated, and only the public witness reference is
 imported into the signer. Bundled endpoint metadata is informational; configure
 transaction-client routing separately in apshell. apadmin never reads or writes
@@ -157,12 +157,12 @@ signer settings and status:
 
 `apadmin` embeds `internal/signerapp/policytui` for online policy editing. The TUI
 requests the active signer-owned snapshot over the admin protocol, selects
-`policy.yaml` on signer nodes or sentry-domain `policy.yaml` on sentry nodes, and
+`policy.yaml` on signer nodes or cosigner-domain `policy.yaml` on cosigner nodes, and
 applies edits as whole-document replacements guarded by
 `expected_current_sha256`. The signer validates draft YAML in the selected
 policy domain, writes the YAML plus a fresh sidecar, and returns a canonical
 snapshot after a successful apply. `apadmin policy rescue` uses the same editor
-offline for store-locked edits, scriptable save/check/export, and signing-to-sentry
+offline for store-locked edits, scriptable save/check/export, and signing-to-cosigner
 conversion.
 
 ## Local Activity And Idle Locking

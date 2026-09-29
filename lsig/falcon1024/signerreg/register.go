@@ -46,7 +46,7 @@ func RegisterSigner() {
 				func() {
 					keytypecatalog.Register(keytypecatalog.Entry{
 						KeyType:      witness.Falcon1024V1,
-						Family:       "sentry-falcon1024",
+						Family:       "cosigner-falcon1024",
 						Availability: keytypecatalog.AvailabilityDefaultEnabled,
 					})
 				},

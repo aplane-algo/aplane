@@ -183,10 +183,10 @@ func scaleFeeFactor(base, usage uint64) (uint64, bool) {
 	return quotient, false
 }
 
-func (e *Core) signerCacheSentryPublicKey(address string) (string, bool) {
+func (e *Core) signerCacheCosignerPublicKey(address string) (string, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.SentryPublicKeyForAddress(address)
+	return e.SignerCache.CosignerPublicKeyForAddress(address)
 }
 
 func (e *Core) signerCacheBoundedMaxFee(address string) (uint64, bool) {
@@ -207,10 +207,10 @@ func (e *Core) signerCacheGuardedSigningMetadataNeedsRefresh(address string) boo
 	return e.SignerCache.GuardedSigningMetadataNeedsRefresh(address)
 }
 
-func (e *Core) signerCacheSentryComponentKeyType(address string) (string, bool) {
+func (e *Core) signerCacheCosignerComponentKeyType(address string) (string, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.SentryComponentKeyTypeForAddress(address)
+	return e.SignerCache.CosignerComponentKeyTypeForAddress(address)
 }
 
 func (e *Core) signerCacheIsGenericLsig(address string) bool {

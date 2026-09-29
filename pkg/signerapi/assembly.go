@@ -9,8 +9,8 @@ import "fmt"
 type AssemblyTargetKind string
 
 const (
-	AssemblyTargetKindGuarded       AssemblyTargetKind = "guarded"
-	AssemblyTargetKindBoundedSentry AssemblyTargetKind = "bounded-sentry"
+	AssemblyTargetKindGuarded         AssemblyTargetKind = "guarded"
+	AssemblyTargetKindBoundedCosigner AssemblyTargetKind = "bounded-cosigner"
 )
 
 // AssemblyRequest is the shared request payload for POST /sign/assemble.
@@ -38,8 +38,8 @@ type AssemblyTarget struct {
 	AssemblyReceipt     string            `json:"assembly_receipt,omitempty"`
 	BaseSourceRequestID string            `json:"base_source_request_id,omitempty"`
 
-	SentrySignature       string `json:"sentry_signature"`
-	SentrySourceRequestID string `json:"sentry_source_request_id,omitempty"`
+	CosignerSignature       string `json:"cosigner_signature"`
+	CosignerSourceRequestID string `json:"cosigner_source_request_id,omitempty"`
 }
 
 // AssemblyPassthroughItem carries an already-signed group position unchanged.
@@ -96,11 +96,11 @@ func (t AssemblyTarget) validate() error {
 	if t.AuthAddress == "" {
 		return fmt.Errorf("auth_address is required")
 	}
-	if t.SentrySignature == "" {
-		return fmt.Errorf("sentry_signature is required")
+	if t.CosignerSignature == "" {
+		return fmt.Errorf("cosigner_signature is required")
 	}
-	if err := validateOptionalSourceRequestID(t.SentrySourceRequestID); err != nil {
-		return fmt.Errorf("sentry_source_request_id: %w", err)
+	if err := validateOptionalSourceRequestID(t.CosignerSourceRequestID); err != nil {
+		return fmt.Errorf("cosigner_source_request_id: %w", err)
 	}
 	switch t.Kind {
 	case AssemblyTargetKindGuarded:
@@ -113,18 +113,18 @@ func (t AssemblyTarget) validate() error {
 		if err := validateOptionalSourceRequestID(t.UserSourceRequestID); err != nil {
 			return fmt.Errorf("user_source_request_id: %w", err)
 		}
-	case AssemblyTargetKindBoundedSentry:
+	case AssemblyTargetKindBoundedCosigner:
 		if len(t.BaseSignatures) == 0 || t.AssemblyReceipt == "" {
-			return fmt.Errorf("base_signatures and assembly_receipt are required for bounded-sentry target")
+			return fmt.Errorf("base_signatures and assembly_receipt are required for bounded-cosigner target")
 		}
 		if t.UserSignature != "" || t.UserSourceRequestID != "" || len(t.GuardedRuntimeArgs) != 0 {
-			return fmt.Errorf("guarded authorization material is forbidden for bounded-sentry target")
+			return fmt.Errorf("guarded authorization material is forbidden for bounded-cosigner target")
 		}
 		if err := validateOptionalSourceRequestID(t.BaseSourceRequestID); err != nil {
 			return fmt.Errorf("base_source_request_id: %w", err)
 		}
 	default:
-		return fmt.Errorf("kind must be %q or %q", AssemblyTargetKindGuarded, AssemblyTargetKindBoundedSentry)
+		return fmt.Errorf("kind must be %q or %q", AssemblyTargetKindGuarded, AssemblyTargetKindBoundedCosigner)
 	}
 	return nil
 }

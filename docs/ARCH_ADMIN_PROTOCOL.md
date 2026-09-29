@@ -225,15 +225,15 @@ Server to Client:
 - `validate_policy_result`
 - `replace_policy_result`
 
-### Sentry References And Store Inventory
+### Cosigner References And Store Inventory
 
 Client to Server:
 
-- `list_sentry_references`
-- `get_sentry_reference`
-- `import_sentry_reference`
-- `remove_sentry_reference`
-- `export_sentry_public`
+- `list_cosigner_references`
+- `get_cosigner_reference`
+- `import_cosigner_reference`
+- `remove_cosigner_reference`
+- `export_cosigner_public`
 - `list_generations`
 - `prune_generation_quarantine`
 - `list_deleted_archive`
@@ -241,11 +241,11 @@ Client to Server:
 
 Server to Client:
 
-- `sentry_references_list`
-- `sentry_reference`
-- `import_sentry_reference_result`
-- `remove_sentry_reference_result`
-- `export_sentry_public_result`
+- `cosigner_references_list`
+- `cosigner_reference`
+- `import_cosigner_reference_result`
+- `remove_cosigner_reference_result`
+- `export_cosigner_public_result`
 - `generations_list`
 - `prune_generation_quarantine_result`
 - `deleted_archive_list`
@@ -291,7 +291,7 @@ of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
 occupy or replace the active admin-owner slot and cannot receive approval
 notifications or trigger disconnect cleanup. The server permits only
-`get_admin_settings`, sentry-reference list/get/public-export, and generation
+`get_admin_settings`, cosigner-reference list/get/public-export, and generation
 inventory requests; those requests still pass through their ordinary grant
 checks and locked/unlocked/recovery-state interlocks.
 
@@ -303,7 +303,7 @@ checks and locked/unlocked/recovery-state interlocks.
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
 - `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, `display_teal`, `code`, `error`
-- `key_details.parameters` for guarded account keys projects the embedded sentry verifier as `Sentry: <Witness Key ID>` and does not expose the raw `sentry_public_key` parameter
+- `key_details.parameters` for guarded account keys projects the embedded cosigner verifier as `Cosigner: <Witness Key ID>` and does not expose the raw `cosigner_public_key` parameter
 - `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational, version-aware comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing. The fingerprint is behavior-only and versioned, so only a same-version, different-hash pair is a `conflict`; a different-version or malformed comparison is `unavailable` (benign), never a `conflict`
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`
@@ -329,7 +329,7 @@ checks and locked/unlocked/recovery-state interlocks.
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC or SSH admin transport
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
-- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `sentry_component_key_type` so `apadmin` can filter enrolled public sentry references for guarded-account generation without changing the public HTTP/SDK DTO
+- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `cosigner_component_key_type` so `apadmin` can filter enrolled public cosigner references for guarded-account generation without changing the public HTTP/SDK DTO
 
 ### Signing Approval and Tokens
 
@@ -420,11 +420,11 @@ checks and locked/unlocked/recovery-state interlocks.
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
+- `get_policy_snapshot`: optional `target` (`signer` or `cosigner`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
 - `policy_snapshot`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
-- `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
+- `validate_policy`: optional `target` (`signer` or `cosigner`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
 - `validate_policy_result`: `success`, optional `target`, optional `code`, optional `error`
-- `replace_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
+- `replace_policy`: optional `target` (`signer` or `cosigner`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
 - `replace_policy_result`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
 
 ## Writable Settings
@@ -459,13 +459,13 @@ Policy has no scalar admin setting surface. Read, validation, and mutation use
 `get_policy_snapshot`, `validate_policy`, and `replace_policy` with the complete
 canonical YAML document.
 
-### Sentry References And Generation Inventory
+### Cosigner References And Generation Inventory
 
-- `list_sentry_references` -> `sentry_references_list`: `references[]`, optional `code`, `error`; returns product-store public sentry-reference records. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
-- `get_sentry_reference`: `name` -> `sentry_reference`: `success`, optional `reference`, `code`, `error`
-- `import_sentry_reference`: `name`, `envelope_json` -> `import_sentry_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
-- `remove_sentry_reference`: `name` -> `remove_sentry_reference_result`: `success`, `name`, `removed`, `code`, `error`
-- `export_sentry_public`: `witness_key_id` -> `export_sentry_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
+- `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
+- `get_cosigner_reference`: `name` -> `cosigner_reference`: `success`, optional `reference`, `code`, `error`
+- `import_cosigner_reference`: `name`, `envelope_json` -> `import_cosigner_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
+- `remove_cosigner_reference`: `name` -> `remove_cosigner_reference_result`: `success`, `name`, `removed`, `code`, `error`
+- `export_cosigner_public`: `witness_key_id` -> `export_cosigner_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
 - `list_generations` -> `generations_list`: current generation, sealed priors,
   bounded non-authoritative `quarantined[]` metadata, pending staging, retained
   unsealed parent, `code`, `error`; this is read-only inspection and never
@@ -488,8 +488,8 @@ canonical YAML document.
   `error`. Each result carries `path`, `encoded_bytes`, and optional
   `already_absent`, so interrupted explicit selections are safely retryable.
 
-Sentry-reference reads/exports require `sentries.view`; imports/removals require
-`sentries.manage`, an unlocked signer store, and emit mutation audit events. A
+Cosigner-reference reads/exports require `cosigners.view`; imports/removals require
+`cosigners.manage`, an unlocked signer store, and emit mutation audit events. A
 reference alias selects the witness public key embedded during guarded-key
 generation, so public visibility does not make catalog mutation
 security-neutral. Import is idempotent for an identical reference and rejects
@@ -518,11 +518,11 @@ Key-type override semantics:
 - override blocks inherit unset fields from the product-wide effective policy
 - nested `key_overrides` are rejected at policy load
 - normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
-- sentry component signing selects an override by the request `component_key` Witness Key ID
+- cosigner component signing selects an override by the request `component_key` Witness Key ID
 - overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
 - `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
 - `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
-- `policy.yaml` and sentry-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound product runtime on unlock/reload; policy-mutation admin IPC requires an unlocked signer store and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- `policy.yaml` and cosigner-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound product runtime on unlock/reload; policy-mutation admin IPC requires an unlocked signer store and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 

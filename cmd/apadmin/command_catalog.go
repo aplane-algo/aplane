@@ -10,7 +10,7 @@ const (
 	changePassSubcommand  = "changepass"
 	templateSubcommand    = "template"
 	keyTypeSubcommand     = "keytype"
-	sentrySubcommand      = "sentry"
+	cosignerSubcommand    = "cosigner"
 	endpointSubcommand    = "endpoint"
 	generationsSubcommand = "generations"
 
@@ -38,7 +38,7 @@ var productionSubcommands = map[string]productionCommandKind{
 	changePassSubcommand:  productionStore,
 	templateSubcommand:    productionCatalog,
 	keyTypeSubcommand:     productionCatalog,
-	sentrySubcommand:      productionCatalog,
+	cosignerSubcommand:    productionCatalog,
 	endpointSubcommand:    productionCatalog,
 	generationsSubcommand: productionCatalog,
 }

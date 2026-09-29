@@ -193,7 +193,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	svc := &stubServices{
 		policySnapshotResult: adminproto.PolicySnapshot{
 			Success:      true,
-			Target:       adminproto.PolicyTargetSentry,
+			Target:       adminproto.PolicyTargetCosigner,
 			PolicyYAML:   "reject_foreign_rekey: true\n",
 			PolicySHA256: "abc123",
 			Canonical:    true,
@@ -210,14 +210,14 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 
 	session.HandleGetPolicySnapshot(&protocol.GetPolicySnapshotMessage{
 		BaseMessage: protocol.BaseMessage{ID: "snapshot-1", Type: protocol.MsgTypeGetPolicySnapshot},
-		Target:      "sentry",
+		Target:      "cosigner",
 	})
 
 	if svc.policySnapshotCalls != 1 {
 		t.Fatalf("BuildPolicySnapshot calls = %d, want 1", svc.policySnapshotCalls)
 	}
-	if svc.lastPolicySnapshot != adminproto.PolicyTargetSentry {
-		t.Fatalf("BuildPolicySnapshot target = %q, want sentry", svc.lastPolicySnapshot)
+	if svc.lastPolicySnapshot != adminproto.PolicyTargetCosigner {
+		t.Fatalf("BuildPolicySnapshot target = %q, want cosigner", svc.lastPolicySnapshot)
 	}
 	if authorizer.got.action != auth.ActionPolicyView {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
@@ -233,7 +233,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	if msgs[0].Type != protocol.MsgTypePolicySnapshot || msgs[0].ID != "snapshot-1" {
 		t.Fatalf("response = %+v, want policy_snapshot snapshot-1", msgs[0])
 	}
-	if !msgs[0].Success || msgs[0].Target != "sentry" ||
+	if !msgs[0].Success || msgs[0].Target != "cosigner" ||
 		msgs[0].PolicyYAML != "reject_foreign_rekey: true\n" || !msgs[0].Canonical {
 		t.Fatalf("policy snapshot response = %+v, want successful canonical YAML", msgs[0])
 	}
@@ -262,7 +262,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 
 	session.HandleReplacePolicy(&protocol.ReplacePolicyMessage{
 		BaseMessage:           protocol.BaseMessage{ID: "replace-1", Type: protocol.MsgTypeReplacePolicy},
-		Target:                "sentry",
+		Target:                "cosigner",
 		PolicyYAML:            "reject_foreign_rekey: false\n",
 		ExpectedCurrentSHA256: "abc123",
 	})
@@ -272,7 +272,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	}
 	if svc.lastReplacePolicy.PolicyYAML != "reject_foreign_rekey: false\n" ||
 		svc.lastReplacePolicy.ExpectedCurrentSHA256 != "abc123" ||
-		svc.lastReplacePolicy.Target != adminproto.PolicyTargetSentry {
+		svc.lastReplacePolicy.Target != adminproto.PolicyTargetCosigner {
 		t.Fatalf("ReplacePolicy request = %+v, want YAML and expected SHA", svc.lastReplacePolicy)
 	}
 	if authorizer.got.action != auth.ActionPolicyUpdate {
@@ -303,7 +303,7 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	svc := &stubServices{
 		validatePolicyResult: adminproto.ValidatePolicyResult{
 			Success: true,
-			Target:  adminproto.PolicyTargetSentry,
+			Target:  adminproto.PolicyTargetCosigner,
 		},
 	}
 	authorizer := &recordingAuthorizer{}
@@ -317,16 +317,16 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 
 	session.HandleValidatePolicy(&protocol.ValidatePolicyMessage{
 		BaseMessage: protocol.BaseMessage{ID: "validate-1", Type: protocol.MsgTypeValidatePolicy},
-		Target:      "sentry",
-		PolicyYAML:  "sentry:\n  transfer_policy:\n    schema_version: 1\n",
+		Target:      "cosigner",
+		PolicyYAML:  "cosigner:\n  transfer_policy:\n    schema_version: 1\n",
 	})
 
 	if svc.validatePolicyCalls != 1 {
 		t.Fatalf("ValidatePolicy calls = %d, want 1", svc.validatePolicyCalls)
 	}
-	if svc.lastValidatePolicy.Target != adminproto.PolicyTargetSentry ||
-		svc.lastValidatePolicy.PolicyYAML != "sentry:\n  transfer_policy:\n    schema_version: 1\n" {
-		t.Fatalf("ValidatePolicy request = %+v, want sentry YAML", svc.lastValidatePolicy)
+	if svc.lastValidatePolicy.Target != adminproto.PolicyTargetCosigner ||
+		svc.lastValidatePolicy.PolicyYAML != "cosigner:\n  transfer_policy:\n    schema_version: 1\n" {
+		t.Fatalf("ValidatePolicy request = %+v, want cosigner YAML", svc.lastValidatePolicy)
 	}
 	if authorizer.got.action != auth.ActionPolicyView {
 		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
@@ -342,7 +342,7 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	if msgs[0].Type != protocol.MsgTypeValidatePolicyResult || msgs[0].ID != "validate-1" {
 		t.Fatalf("response = %+v, want validate_policy_result validate-1", msgs[0])
 	}
-	if !msgs[0].Success || msgs[0].Target != "sentry" {
-		t.Fatalf("validate policy response = %+v, want successful sentry result", msgs[0])
+	if !msgs[0].Success || msgs[0].Target != "cosigner" {
+		t.Fatalf("validate policy response = %+v, want successful cosigner result", msgs[0])
 	}
 }

@@ -17,13 +17,13 @@ func (m Model) nodeRole() string {
 	return strings.ToLower(strings.TrimSpace(role))
 }
 
-func (m Model) isSentryNode() bool {
-	return m.nodeRole() == "sentry"
+func (m Model) isCosignerNode() bool {
+	return m.nodeRole() == "cosigner"
 }
 
 func (m Model) nodeRoleNoun() string {
-	if m.isSentryNode() {
-		return "Sentry"
+	if m.isCosignerNode() {
+		return "Cosigner"
 	}
 	return "Signer"
 }
@@ -33,8 +33,8 @@ func (m Model) rolePortLabel() string {
 }
 
 func (m Model) keyIdentifierLabel(keyType string) string {
-	if m.isSentryNode() || witness.IsKeyType(keyType) {
-		return "Sentry Key"
+	if m.isCosignerNode() || witness.IsKeyType(keyType) {
+		return "Cosigner Key"
 	}
 	return "Address"
 }

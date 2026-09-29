@@ -19,7 +19,7 @@ import (
 
 func cmdRebuild(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
+		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
 	}
 	source := args[0]
 	var addresses []string
@@ -29,13 +29,13 @@ func cmdRebuild(args []string) error {
 		switch args[i] {
 		case "--address":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
 			}
 			addresses = append(addresses, args[i+1])
 			i++
 		case "--role":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]")
 			}
 			parsed, err := noderole.ParseRole(args[i+1])
 			if err != nil {
@@ -151,8 +151,8 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 				return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 			}
 			var policyErr error
-			if nodeRole == noderole.RoleSentry {
-				policyErr = policy.SaveStoredSentryConfigActiveWithKeyring(
+			if nodeRole == noderole.RoleCosigner {
+				policyErr = policy.SaveStoredCosignerConfigActiveWithKeyring(
 					staged,
 					&policy.StoredConfig{},
 					kr,

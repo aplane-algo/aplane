@@ -22,12 +22,12 @@ import (
 type Verb string
 
 const (
-	VerbEdit     Verb = "edit"
-	VerbCheck    Verb = "check"
-	VerbExport   Verb = "export"
-	VerbDigest   Verb = "digest"
-	VerbApply    Verb = "apply"
-	VerbToSentry Verb = "to-sentry"
+	VerbEdit       Verb = "edit"
+	VerbCheck      Verb = "check"
+	VerbExport     Verb = "export"
+	VerbDigest     Verb = "digest"
+	VerbApply      Verb = "apply"
+	VerbToCosigner Verb = "to-cosigner"
 )
 
 var ProductionVerbs = []Verb{
@@ -36,7 +36,7 @@ var ProductionVerbs = []Verb{
 	VerbExport,
 	VerbDigest,
 	VerbApply,
-	VerbToSentry,
+	VerbToCosigner,
 }
 
 func ParseVerb(raw string) (Verb, error) {
@@ -75,8 +75,8 @@ func (c Command) Validate() error {
 	if c.Verb != VerbApply && c.Source == "-" {
 		return fmt.Errorf("policy %s does not read YAML from stdin; provide a file", c.Verb)
 	}
-	if c.Verb == VerbToSentry && c.Target == policyeditor.TargetSentry {
-		return fmt.Errorf("policy to-sentry requires signer-policy input; --target sentry is invalid")
+	if c.Verb == VerbToCosigner && c.Target == policyeditor.TargetCosigner {
+		return fmt.Errorf("policy to-cosigner requires signer-policy input; --target cosigner is invalid")
 	}
 	return nil
 }

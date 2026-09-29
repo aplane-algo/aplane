@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// TestFormalTraceabilityPinsLiveSentryResolverAnchors prevents the guarded
+// TestFormalTraceabilityPinsLiveCosignerResolverAnchors prevents the guarded
 // routing traceability row from silently retaining renamed or removed tests.
-func TestFormalTraceabilityPinsLiveSentryResolverAnchors(t *testing.T) {
+func TestFormalTraceabilityPinsLiveCosignerResolverAnchors(t *testing.T) {
 	doc, err := os.ReadFile("../../docs/FORMAL_TRACEABILITY.md")
 	if err != nil {
 		t.Fatal(err)
@@ -32,9 +32,9 @@ func TestFormalTraceabilityPinsLiveSentryResolverAnchors(t *testing.T) {
 		t.Fatal("FORMAL_TRACEABILITY.md has no A9 row")
 	}
 	for _, testName := range []string{
-		"TestLiveSentryResolverRemovesImplicitPrimarySignerFallback",
-		"TestLiveSentryResolverRejectsDuplicateAdvertisers",
-		"TestLiveSentryResolverHostKeyMismatchAbortsGlobalSearch",
+		"TestLiveCosignerResolverRemovesImplicitPrimarySignerFallback",
+		"TestLiveCosignerResolverRejectsDuplicateAdvertisers",
+		"TestLiveCosignerResolverHostKeyMismatchAbortsGlobalSearch",
 	} {
 		if !strings.Contains(row, testName) {
 			t.Errorf("A9 traceability row does not cite %s", testName)

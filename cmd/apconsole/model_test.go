@@ -125,7 +125,7 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 	if strings.Contains(got, "Shell") {
 		t.Fatalf("shell pane rendered while disabled:\n%s", got)
 	}
-	signerPos := strings.Index(got, "Sentry Admin")
+	signerPos := strings.Index(got, "Cosigner Admin")
 	daemonPos := strings.Index(got, "Daemon")
 	if signerPos < 0 || daemonPos < 0 {
 		t.Fatalf("rendered view missing pane headers: signer=%d daemon=%d\n%s", signerPos, daemonPos, got)
@@ -142,14 +142,14 @@ func TestPendingShellRoleFailsClosedAndEnablesOnlyForSigner(t *testing.T) {
 		return m
 	}
 
-	sentry := newPending()
-	if !sentry.shellRolePending || sentry.shellEnabled() {
-		t.Fatal("pending sentry role did not start with shell disabled")
+	cosigner := newPending()
+	if !cosigner.shellRolePending || cosigner.shellEnabled() {
+		t.Fatal("pending cosigner role did not start with shell disabled")
 	}
-	updated, _ := sentry.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "sentry"}})
-	sentry = updated.(model)
-	if sentry.shellRolePending || sentry.shellEnabled() {
-		t.Fatal("sentry settings enabled the shell")
+	updated, _ := cosigner.Update(tui.AdminSettingsMsg{Settings: tui.AdminSettings{NodeRole: "cosigner"}})
+	cosigner = updated.(model)
+	if cosigner.shellRolePending || cosigner.shellEnabled() {
+		t.Fatal("cosigner settings enabled the shell")
 	}
 
 	signer := newPending()
@@ -182,8 +182,8 @@ func TestUnavailableShellDoesNotBecomeRolePendingThroughTypedNil(t *testing.T) {
 
 func TestRenderPaneWithMetaKeepsHeaderWithinPanelWidth(t *testing.T) {
 	got := renderPaneWithMeta(
-		"Sentry Admin",
-		"Sentry Port: 11270  Endpoint: ssh://very-long-sentry-hostname.example.test:1127",
+		"Cosigner Admin",
+		"Cosigner Port: 11270  Endpoint: ssh://very-long-cosigner-hostname.example.test:1127",
 		true,
 		"body",
 		54,
@@ -199,7 +199,7 @@ func TestRenderPaneWithMetaKeepsHeaderWithinPanelWidth(t *testing.T) {
 		}
 	}
 	clean := strings.Join(rows, "\n")
-	if !strings.Contains(clean, "Sentry Admin") || !strings.Contains(clean, "Sentry Port") {
+	if !strings.Contains(clean, "Cosigner Admin") || !strings.Contains(clean, "Cosigner Port") {
 		t.Fatalf("pane header missing title or metadata:\n%s", clean)
 	}
 }
@@ -450,7 +450,7 @@ func TestShellDisabledTabsAndTitleOmitShell(t *testing.T) {
 	if strings.Contains(tabs, "Shell") {
 		t.Fatalf("tabs include shell while disabled: %q", tabs)
 	}
-	if !strings.Contains(tabs, "F1 Sentry Admin") || !strings.Contains(tabs, "F2 Daemon") {
+	if !strings.Contains(tabs, "F1 Cosigner Admin") || !strings.Contains(tabs, "F2 Daemon") {
 		t.Fatalf("tabs missing signer/daemon controls: %q", tabs)
 	}
 	if !strings.Contains(tabs, "Shift ↑ ↓ navigate") {

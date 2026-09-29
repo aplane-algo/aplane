@@ -120,7 +120,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewGenerateForm
 		return m, tea.Batch(
 			m.sendListKeyTypesCmd(),
-			m.sendListSentryReferencesCmd(),
+			m.sendListCosignerReferencesCmd(),
 			m.sendListLibraryTemplatesCmd(),
 			m.waitForMessageCmd(),
 		)
@@ -147,7 +147,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openManualLockConfirm()
 
 	case "e", "E":
-		return m.openSentryReferenceManager()
+		return m.openCosignerReferenceManager()
 
 	case "s", "S":
 		// Open settings panel
@@ -210,7 +210,7 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "e":
-		return m.openSentryExport()
+		return m.openCosignerExport()
 
 	case "d":
 		// Delete selected key - show confirmation dialog

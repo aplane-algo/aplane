@@ -26,75 +26,75 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type sentryComponentClient interface {
+type cosignerComponentClient interface {
 	GetKeysWithContext(context.Context) (*signerapi.KeysResult, error)
 	RequestComponentsWithContext(context.Context, signerapi.ComponentRequest) (*signerapi.ComponentResponse, error)
 }
 
 var (
-	// ErrSentryDiscoveryInvalidMetadata marks malformed sentry-key
+	// ErrCosignerDiscoveryInvalidMetadata marks malformed cosigner-key
 	// metadata returned by an endpoint's /keys response.
-	ErrSentryDiscoveryInvalidMetadata = errors.New("invalid sentry discovery metadata")
+	ErrCosignerDiscoveryInvalidMetadata = errors.New("invalid cosigner discovery metadata")
 
-	// ErrSentryDiscoveryUnavailable marks a temporary failure to query an
+	// ErrCosignerDiscoveryUnavailable marks a temporary failure to query an
 	// endpoint, such as a network outage, timeout, or server-side 5xx response.
-	ErrSentryDiscoveryUnavailable = errors.New("sentry endpoint unavailable")
+	ErrCosignerDiscoveryUnavailable = errors.New("cosigner endpoint unavailable")
 
-	// ErrSentryDiscoveryLocked marks an endpoint whose signer is reachable but
+	// ErrCosignerDiscoveryLocked marks an endpoint whose signer is reachable but
 	// locked, so its /keys inventory cannot currently be queried.
-	ErrSentryDiscoveryLocked = errors.New("sentry endpoint signer locked")
+	ErrCosignerDiscoveryLocked = errors.New("cosigner endpoint signer locked")
 
-	// ErrSentryDiscoveryAuth marks missing, rejected, or invalid endpoint
+	// ErrCosignerDiscoveryAuth marks missing, rejected, or invalid endpoint
 	// credentials.
-	ErrSentryDiscoveryAuth = errors.New("sentry endpoint authentication failed")
+	ErrCosignerDiscoveryAuth = errors.New("cosigner endpoint authentication failed")
 
-	// ErrSentryDiscoveryConfig marks endpoint configuration that is invalid or
-	// incompatible with sentry discovery.
-	ErrSentryDiscoveryConfig = errors.New("sentry endpoint configuration invalid")
+	// ErrCosignerDiscoveryConfig marks endpoint configuration that is invalid or
+	// incompatible with cosigner discovery.
+	ErrCosignerDiscoveryConfig = errors.New("cosigner endpoint configuration invalid")
 
-	// errSentryDiscoveryDuplicateRoute marks a required witness key advertised
-	// by more than one live sentry endpoint. Guarded routing requires one
+	// errCosignerDiscoveryDuplicateRoute marks a required witness key advertised
+	// by more than one live cosigner endpoint. Guarded routing requires one
 	// unambiguous live endpoint per witness.
-	errSentryDiscoveryDuplicateRoute = errors.New("duplicate live sentry route")
+	errCosignerDiscoveryDuplicateRoute = errors.New("duplicate live cosigner route")
 
-	// errSentryDiscoveryHostKeyMismatch marks an SSH endpoint whose host key
+	// errCosignerDiscoveryHostKeyMismatch marks an SSH endpoint whose host key
 	// differs from the client's existing pin. Discovery aborts globally when
 	// this error is observed.
-	errSentryDiscoveryHostKeyMismatch = errors.New("sentry endpoint SSH host key mismatch")
+	errCosignerDiscoveryHostKeyMismatch = errors.New("cosigner endpoint SSH host key mismatch")
 
-	errSentryEndpointAuth   = errors.New("sentry endpoint auth")
-	errSentryEndpointConfig = errors.New("sentry endpoint config")
+	errCosignerEndpointAuth   = errors.New("cosigner endpoint auth")
+	errCosignerEndpointConfig = errors.New("cosigner endpoint config")
 )
 
 const (
-	sentryDiscoveryTotalTimeout    = 30 * time.Second
-	sentryDiscoveryEndpointTimeout = 10 * time.Second
-	sentryDiscoveryWorkers         = 4
-	maxSentryDiscoveryEndpoints    = 12
+	cosignerDiscoveryTotalTimeout    = 30 * time.Second
+	cosignerDiscoveryEndpointTimeout = 10 * time.Second
+	cosignerDiscoveryWorkers         = 4
+	maxCosignerDiscoveryEndpoints    = 12
 )
 
-type resolvedSentryEndpoint struct {
-	client  sentryComponentClient
+type resolvedCosignerEndpoint struct {
+	client  cosignerComponentClient
 	source  string
 	cleanup func()
 }
 
-type sentryEndpointProbe func(context.Context, string, config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error)
+type cosignerEndpointProbe func(context.Context, string, config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error)
 
-type sentryEndpointProbeResult struct {
+type cosignerEndpointProbeResult struct {
 	index    int
 	alias    string
-	endpoint *resolvedSentryEndpoint
-	keys     []DiscoveredSentryComponentKey
+	endpoint *resolvedCosignerEndpoint
+	keys     []DiscoveredCosignerComponentKey
 	err      error
 }
 
-type sentryEndpointSnapshot struct {
-	routes    map[sentryRequestKey]*resolvedSentryEndpoint
-	endpoints []*resolvedSentryEndpoint
+type cosignerEndpointSnapshot struct {
+	routes    map[cosignerRequestKey]*resolvedCosignerEndpoint
+	endpoints []*resolvedCosignerEndpoint
 }
 
-func (s *sentryEndpointSnapshot) close() {
+func (s *cosignerEndpointSnapshot) close() {
 	if s == nil {
 		return
 	}
@@ -103,45 +103,45 @@ func (s *sentryEndpointSnapshot) close() {
 	}
 }
 
-// DiscoveredSentryComponentKey is public sentry-key metadata
+// DiscoveredCosignerComponentKey is public cosigner-key metadata
 // advertised by a signer endpoint through /keys.
-type DiscoveredSentryComponentKey struct {
+type DiscoveredCosignerComponentKey struct {
 	PublicKey    string
 	ComponentKey string
 	KeyType      string
 }
 
-func (r *resolvedSentryEndpoint) close() {
+func (r *resolvedCosignerEndpoint) close() {
 	if r != nil && r.cleanup != nil {
 		r.cleanup()
 	}
 }
 
-func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRequestKey) (*sentryEndpointSnapshot, error) {
-	required = distinctSortedSentryRequestKeys(required)
+func (s *Signer) resolveCosignerEndpoints(ctx context.Context, required []cosignerRequestKey) (*cosignerEndpointSnapshot, error) {
+	required = distinctSortedCosignerRequestKeys(required)
 	if len(required) == 0 {
-		return &sentryEndpointSnapshot{routes: map[sentryRequestKey]*resolvedSentryEndpoint{}}, nil
+		return &cosignerEndpointSnapshot{routes: map[cosignerRequestKey]*resolvedCosignerEndpoint{}}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	aliases, states, err := s.probeSentryEndpoints(ctx)
+	aliases, states, err := s.probeCosignerEndpoints(ctx)
 	if err != nil {
 		closeProbeResults(states, nil)
 		return nil, err
 	}
-	selected, resolvedAll, err := uniqueSentrySelections(required, states)
+	selected, resolvedAll, err := uniqueCosignerSelections(required, states)
 	if err != nil {
 		closeProbeResults(states, nil)
 		return nil, err
 	}
 	if !resolvedAll {
 		closeProbeResults(states, nil)
-		return nil, unresolvedSentryDiscoveryError(required, selected, aliases, states, ctx.Err())
+		return nil, unresolvedCosignerDiscoveryError(required, selected, aliases, states, ctx.Err())
 	}
 
-	keep := map[*resolvedSentryEndpoint]bool{}
-	snapshot := &sentryEndpointSnapshot{routes: make(map[sentryRequestKey]*resolvedSentryEndpoint, len(selected))}
+	keep := map[*resolvedCosignerEndpoint]bool{}
+	snapshot := &cosignerEndpointSnapshot{routes: make(map[cosignerRequestKey]*resolvedCosignerEndpoint, len(selected))}
 	for key, index := range selected {
 		endpoint := states[index].endpoint
 		snapshot.routes[key] = endpoint
@@ -151,51 +151,51 @@ func (s *Signer) resolveSentryEndpoints(ctx context.Context, required []sentryRe
 		}
 	}
 	closeProbeResults(states, keep)
-	s.warnSkippedSentryEndpoints(states)
+	s.warnSkippedCosignerEndpoints(states)
 	return snapshot, nil
 }
 
-// probeSentryEndpoints owns the bounded sweep shared by signing and diagnostics.
+// probeCosignerEndpoints owns the bounded sweep shared by signing and diagnostics.
 // Callers own every returned connection, including when the sweep fails.
-func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryEndpointProbeResult, error) {
+func (s *Signer) probeCosignerEndpoints(ctx context.Context) ([]string, []*cosignerEndpointProbeResult, error) {
 	aliases := make([]string, 0, len(s.endpointRegistry.Endpoints))
 	for alias, endpoint := range s.endpointRegistry.Endpoints {
-		if endpoint.Role == config.ClientEndpointRoleSentry {
+		if endpoint.Role == config.ClientEndpointRoleCosigner {
 			aliases = append(aliases, alias)
 		}
 	}
 	sort.Strings(aliases)
-	if len(aliases) > maxSentryDiscoveryEndpoints {
-		return aliases, nil, fmt.Errorf("%w: configured %d sentry endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrSentryDiscoveryConfig, len(aliases), maxSentryDiscoveryEndpoints)
+	if len(aliases) > maxCosignerDiscoveryEndpoints {
+		return aliases, nil, fmt.Errorf("%w: configured %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ErrCosignerDiscoveryConfig, len(aliases), maxCosignerDiscoveryEndpoints)
 	}
 	if len(aliases) == 0 {
-		return aliases, nil, fmt.Errorf("%w: no sentry endpoints configured; add a role %q endpoint for the sentry process", ErrSentryDiscoveryConfig, config.ClientEndpointRoleSentry)
+		return aliases, nil, fmt.Errorf("%w: no cosigner endpoints configured; add a role %q endpoint for the cosigner process", ErrCosignerDiscoveryConfig, config.ClientEndpointRoleCosigner)
 	}
 
 	if err := ctx.Err(); err != nil {
 		return aliases, nil, err
 	}
-	discoveryCtx, cancel := context.WithTimeout(ctx, sentryDiscoveryTotalTimeout)
+	discoveryCtx, cancel := context.WithTimeout(ctx, cosignerDiscoveryTotalTimeout)
 	defer cancel()
 	jobs := make(chan int)
-	results := make(chan sentryEndpointProbeResult, len(aliases))
+	results := make(chan cosignerEndpointProbeResult, len(aliases))
 	probe := s.probeEndpoint
 	if probe == nil {
-		probe = s.probeConfiguredSentryEndpoint
+		probe = s.probeConfiguredCosignerEndpoint
 	}
 
 	var workers sync.WaitGroup
-	workerCount := min(sentryDiscoveryWorkers, len(aliases))
+	workerCount := min(cosignerDiscoveryWorkers, len(aliases))
 	workers.Add(workerCount)
 	for range workerCount {
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
 				alias := aliases[index]
-				endpointCtx, endpointCancel := context.WithTimeout(discoveryCtx, sentryDiscoveryEndpointTimeout)
+				endpointCtx, endpointCancel := context.WithTimeout(discoveryCtx, cosignerDiscoveryEndpointTimeout)
 				resolved, keys, err := probe(endpointCtx, alias, s.endpointRegistry.Endpoints[alias])
 				endpointCancel()
-				results <- sentryEndpointProbeResult{index: index, alias: alias, endpoint: resolved, keys: keys, err: err}
+				results <- cosignerEndpointProbeResult{index: index, alias: alias, endpoint: resolved, keys: keys, err: err}
 			}
 		}()
 	}
@@ -214,13 +214,13 @@ func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryE
 		close(results)
 	}()
 
-	states := make([]*sentryEndpointProbeResult, len(aliases))
+	states := make([]*cosignerEndpointProbeResult, len(aliases))
 	var hostKeyMismatch error
 	for result := range results {
 		result := result
 		states[result.index] = &result
 		if errors.Is(result.err, connect.ErrSSHHostKeyMismatch) {
-			hostKeyMismatch = fmt.Errorf("%w at endpoint %q", errSentryDiscoveryHostKeyMismatch, result.alias)
+			hostKeyMismatch = fmt.Errorf("%w at endpoint %q", errCosignerDiscoveryHostKeyMismatch, result.alias)
 			cancel()
 		}
 	}
@@ -228,11 +228,11 @@ func (s *Signer) probeSentryEndpoints(ctx context.Context) ([]string, []*sentryE
 	if hostKeyMismatch != nil {
 		return aliases, states, hostKeyMismatch
 	}
-	return aliases, states, completedSentrySweepError(ctx, aliases, states, discoveryCtx.Err())
+	return aliases, states, completedCosignerSweepError(ctx, aliases, states, discoveryCtx.Err())
 }
 
-func completedSentrySweepError(ctx context.Context, aliases []string, states []*sentryEndpointProbeResult, discoveryErr error) error {
-	if err := incompleteSentryDiscoveryError(aliases, states, discoveryErr); err != nil {
+func completedCosignerSweepError(ctx context.Context, aliases []string, states []*cosignerEndpointProbeResult, discoveryErr error) error {
+	if err := incompleteCosignerDiscoveryError(aliases, states, discoveryErr); err != nil {
 		return err
 	}
 	// A completed sweep remains usable even if its internal deadline expired
@@ -240,7 +240,7 @@ func completedSentrySweepError(ctx context.Context, aliases []string, states []*
 	return ctx.Err()
 }
 
-func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointProbeResult, cause error) error {
+func incompleteCosignerDiscoveryError(aliases []string, states []*cosignerEndpointProbeResult, cause error) error {
 	unprobed := make([]string, 0)
 	for index, state := range states {
 		if state == nil {
@@ -251,23 +251,23 @@ func incompleteSentryDiscoveryError(aliases []string, states []*sentryEndpointPr
 		return nil
 	}
 	if cause == nil {
-		cause = ErrSentryDiscoveryUnavailable
+		cause = ErrCosignerDiscoveryUnavailable
 	}
 	return fmt.Errorf(
-		"sentry discovery ended before every configured endpoint could be checked (not probed: %s): %w",
+		"cosigner discovery ended before every configured endpoint could be checked (not probed: %s): %w",
 		strings.Join(unprobed, ", "),
 		cause,
 	)
 }
 
-func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
-	token, err := readSentryEndpointToken(endpoint.TokenFile)
+func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
+	token, err := readCosignerEndpointToken(endpoint.TokenFile)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errSentryEndpointConfig, err)
+		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errCosignerEndpointConfig, err)
 	}
 
 	switch parsed.Scheme {
@@ -278,7 +278,7 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 		if parsed.Port() != "" {
 			port, err := strconv.Atoi(parsed.Port())
 			if err != nil || port <= 0 || port > 65535 {
-				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errSentryEndpointConfig, parsed.Port())
+				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errCosignerEndpointConfig, parsed.Port())
 			}
 			sshPort = port
 		}
@@ -287,7 +287,7 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 			signerPort = config.DefaultRESTPort
 		}
 		progressOut := s.signerProgressWriter()
-		client, cleanup, err := connect.ConnectSentryWithSSH(ctx, connect.SentrySSHConfig{
+		client, cleanup, err := connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
 			SignerPort:      signerPort,
@@ -302,26 +302,26 @@ func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 		}
 		return client, cleanup, endpoint.URL, nil
 	default:
-		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errSentryEndpointConfig, parsed.Scheme)
+		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errCosignerEndpointConfig, parsed.Scheme)
 	}
 }
 
-func (s *Signer) probeConfiguredSentryEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedSentryEndpoint, []DiscoveredSentryComponentKey, error) {
-	client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
+func (s *Signer) probeConfiguredCosignerEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
+	client, cleanup, source, err := s.connectConfiguredCosignerEndpoint(ctx, endpoint)
 	if err != nil {
-		return nil, nil, classifySentryDiscoveryConnectError(err)
+		return nil, nil, classifyCosignerDiscoveryConnectError(err)
 	}
-	resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
+	resolved := &resolvedCosignerEndpoint{client: client, source: source, cleanup: cleanup}
 	keys, err := resolved.client.GetKeysWithContext(ctx)
 	if err != nil {
 		resolved.close()
-		return nil, nil, classifySentryDiscoveryQueryError(err)
+		return nil, nil, classifyCosignerDiscoveryQueryError(err)
 	}
 	if keys.Locked {
 		resolved.close()
-		return nil, nil, fmt.Errorf("%w", ErrSentryDiscoveryLocked)
+		return nil, nil, fmt.Errorf("%w", ErrCosignerDiscoveryLocked)
 	}
-	discovered, err := discoverSentryComponentKeys(keys.Keys)
+	discovered, err := discoverCosignerComponentKeys(keys.Keys)
 	if err != nil {
 		resolved.close()
 		return nil, nil, err
@@ -329,19 +329,19 @@ func (s *Signer) probeConfiguredSentryEndpoint(ctx context.Context, alias string
 	return resolved, discovered, nil
 }
 
-// DiscoverSentryComponentKeys queries one endpoint and returns
-// sentry component public keys that can be mapped for guarded signing.
-func (s *Signer) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
-	resolved, keys, err := s.probeConfiguredSentryEndpoint(ctx, "requested endpoint", endpoint)
+// DiscoverCosignerComponentKeys queries one endpoint and returns
+// cosigner component public keys that can be mapped for guarded signing.
+func (s *Signer) DiscoverCosignerComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredCosignerComponentKey, error) {
+	resolved, keys, err := s.probeConfiguredCosignerEndpoint(ctx, "requested endpoint", endpoint)
 	if resolved != nil {
 		defer resolved.close()
 	}
 	return keys, err
 }
 
-func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryRequestKey {
-	seen := make(map[sentryRequestKey]bool, len(required))
-	out := make([]sentryRequestKey, 0, len(required))
+func distinctSortedCosignerRequestKeys(required []cosignerRequestKey) []cosignerRequestKey {
+	seen := make(map[cosignerRequestKey]bool, len(required))
+	out := make([]cosignerRequestKey, 0, len(required))
 	for _, key := range required {
 		if !seen[key] {
 			seen[key] = true
@@ -357,10 +357,10 @@ func distinctSortedSentryRequestKeys(required []sentryRequestKey) []sentryReques
 	return out
 }
 
-func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpointProbeResult) (map[sentryRequestKey]int, bool, error) {
-	selected := make(map[sentryRequestKey]int, len(required))
+func uniqueCosignerSelections(required []cosignerRequestKey, states []*cosignerEndpointProbeResult) (map[cosignerRequestKey]int, bool, error) {
+	selected := make(map[cosignerRequestKey]int, len(required))
 	for _, key := range required {
-		matches := matchingSentryEndpointIndices(key, states)
+		matches := matchingCosignerEndpointIndices(key, states)
 		switch len(matches) {
 		case 0:
 			continue
@@ -371,13 +371,13 @@ func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpoin
 			for _, index := range matches {
 				aliases = append(aliases, states[index].alias)
 			}
-			selector, err := sentryComponentSelector(key.ComponentKeyType, key.PublicKey)
+			selector, err := cosignerComponentSelector(key.ComponentKeyType, key.PublicKey)
 			if err != nil {
 				selector = "invalid"
 			}
 			return selected, false, fmt.Errorf(
 				"%w: Witness Key ID %s (%s) is advertised by endpoints %s; remove duplicate endpoint profiles so each witness has exactly one live route",
-				errSentryDiscoveryDuplicateRoute,
+				errCosignerDiscoveryDuplicateRoute,
 				selector,
 				key.ComponentKeyType,
 				`"`+strings.Join(aliases, `", "`)+`"`,
@@ -387,17 +387,17 @@ func uniqueSentrySelections(required []sentryRequestKey, states []*sentryEndpoin
 	return selected, len(selected) == len(required), nil
 }
 
-func matchingSentryEndpointIndices(required sentryRequestKey, states []*sentryEndpointProbeResult) []int {
+func matchingCosignerEndpointIndices(required cosignerRequestKey, states []*cosignerEndpointProbeResult) []int {
 	matches := make([]int, 0, 1)
 	for index, state := range states {
-		if state != nil && state.err == nil && discoveredSentryKeysContain(state.keys, required) {
+		if state != nil && state.err == nil && discoveredCosignerKeysContain(state.keys, required) {
 			matches = append(matches, index)
 		}
 	}
 	return matches
 }
 
-func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required sentryRequestKey) bool {
+func discoveredCosignerKeysContain(keys []DiscoveredCosignerComponentKey, required cosignerRequestKey) bool {
 	for _, key := range keys {
 		if key.PublicKey == required.PublicKey && key.KeyType == required.ComponentKeyType {
 			return true
@@ -406,8 +406,8 @@ func discoveredSentryKeysContain(keys []DiscoveredSentryComponentKey, required s
 	return false
 }
 
-func closeProbeResults(states []*sentryEndpointProbeResult, keep map[*resolvedSentryEndpoint]bool) {
-	closed := map[*resolvedSentryEndpoint]bool{}
+func closeProbeResults(states []*cosignerEndpointProbeResult, keep map[*resolvedCosignerEndpoint]bool) {
+	closed := map[*resolvedCosignerEndpoint]bool{}
 	for _, state := range states {
 		if state == nil || state.endpoint == nil || keep[state.endpoint] || closed[state.endpoint] {
 			continue
@@ -417,13 +417,13 @@ func closeProbeResults(states []*sentryEndpointProbeResult, keep map[*resolvedSe
 	}
 }
 
-func unresolvedSentryDiscoveryError(required []sentryRequestKey, selected map[sentryRequestKey]int, aliases []string, states []*sentryEndpointProbeResult, cause error) error {
+func unresolvedCosignerDiscoveryError(required []cosignerRequestKey, selected map[cosignerRequestKey]int, aliases []string, states []*cosignerEndpointProbeResult, cause error) error {
 	missing := make([]string, 0, len(required))
 	for _, key := range required {
 		if _, ok := selected[key]; ok {
 			continue
 		}
-		selector, err := sentryComponentSelector(key.ComponentKeyType, key.PublicKey)
+		selector, err := cosignerComponentSelector(key.ComponentKeyType, key.PublicKey)
 		if err != nil {
 			selector = "invalid"
 		}
@@ -440,20 +440,20 @@ func unresolvedSentryDiscoveryError(required []sentryRequestKey, selected map[se
 		case state == nil:
 			summary = append(summary, alias+": not probed")
 		case state.err != nil:
-			summary = append(summary, alias+": "+sentryDiscoveryFailureLabel(state.err))
+			summary = append(summary, alias+": "+cosignerDiscoveryFailureLabel(state.err))
 			causes = append(causes, state.err)
 		default:
 			summary = append(summary, alias+": no matching key")
 		}
 	}
-	message := fmt.Sprintf("no live sentry route for %s; endpoint results: %s; configure a role %q endpoint for the sentry process that advertises the required Witness Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleSentry)
+	message := fmt.Sprintf("no live cosigner route for %s; endpoint results: %s; configure a role %q endpoint for the cosigner process that advertises the required Witness Key ID", strings.Join(missing, ", "), strings.Join(summary, "; "), config.ClientEndpointRoleCosigner)
 	if len(causes) > 0 {
 		return fmt.Errorf("%s: %w", message, errors.Join(causes...))
 	}
 	return errors.New(message)
 }
 
-func sentryDiscoveryFailureLabel(err error) string {
+func cosignerDiscoveryFailureLabel(err error) string {
 	switch {
 	case errors.Is(err, connect.ErrSSHHostKeyMismatch):
 		return "SSH host-key mismatch"
@@ -461,24 +461,24 @@ func sentryDiscoveryFailureLabel(err error) string {
 		return "SSH host is not enrolled"
 	case errors.Is(err, connect.ErrSSHKnownHostsFile):
 		return "invalid known_hosts configuration"
-	case errors.Is(err, ErrSentryDiscoveryLocked):
+	case errors.Is(err, ErrCosignerDiscoveryLocked):
 		return "signer locked"
-	case errors.Is(err, ErrSentryDiscoveryAuth):
+	case errors.Is(err, ErrCosignerDiscoveryAuth):
 		return "authentication failed"
-	case errors.Is(err, ErrSentryDiscoveryInvalidMetadata):
+	case errors.Is(err, ErrCosignerDiscoveryInvalidMetadata):
 		return "invalid /keys metadata"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timed out"
 	case errors.Is(err, context.Canceled):
 		return "canceled"
-	case errors.Is(err, ErrSentryDiscoveryUnavailable):
+	case errors.Is(err, ErrCosignerDiscoveryUnavailable):
 		return "unavailable"
 	default:
 		return "invalid endpoint configuration"
 	}
 }
 
-func (s *Signer) warnSkippedSentryEndpoints(states []*sentryEndpointProbeResult) {
+func (s *Signer) warnSkippedCosignerEndpoints(states []*cosignerEndpointProbeResult) {
 	w := s.signerProgressWriter()
 	if w == nil {
 		return
@@ -487,78 +487,78 @@ func (s *Signer) warnSkippedSentryEndpoints(states []*sentryEndpointProbeResult)
 		if state == nil || state.err == nil || errors.Is(state.err, context.Canceled) {
 			continue
 		}
-		_, _ = fmt.Fprintf(w, "[sentry discovery] skipped endpoint %s: %s\n", state.alias, sentryDiscoveryFailureLabel(state.err))
+		_, _ = fmt.Fprintf(w, "[cosigner discovery] skipped endpoint %s: %s\n", state.alias, cosignerDiscoveryFailureLabel(state.err))
 	}
 }
 
-func readSentryEndpointToken(path string) (string, error) {
+func readCosignerEndpointToken(path string) (string, error) {
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
-		return "", fmt.Errorf("%w: failed to read sentry token file %s: %v", errSentryEndpointAuth, path, err)
+		return "", fmt.Errorf("%w: failed to read cosigner token file %s: %v", errCosignerEndpointAuth, path, err)
 	}
 	if token == "" {
-		return "", fmt.Errorf("%w: sentry token file %s is empty", errSentryEndpointAuth, path)
+		return "", fmt.Errorf("%w: cosigner token file %s is empty", errCosignerEndpointAuth, path)
 	}
 	return token, nil
 }
 
-func classifySentryDiscoveryConnectError(err error) error {
+func classifyCosignerDiscoveryConnectError(err error) error {
 	switch {
-	case errors.Is(err, errSentryEndpointAuth):
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
-	case errors.Is(err, errSentryEndpointConfig):
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+	case errors.Is(err, errCosignerEndpointAuth):
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
+	case errors.Is(err, errCosignerEndpointConfig):
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 	case isNetworkUnavailableError(err):
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)
 	}
 
 	var sshAuthErr *ssh.ServerAuthError
 	if errors.As(err, &sshAuthErr) {
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	}
-	return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+	return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 }
 
-func classifySentryDiscoveryQueryError(err error) error {
+func classifyCosignerDiscoveryQueryError(err error) error {
 	if errors.Is(err, signerclient.ErrInvalidResponse) {
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryInvalidMetadata, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryInvalidMetadata, err)
 	}
 
 	var statusErr *signerclient.HTTPStatusError
 	if errors.As(err, &statusErr) {
-		if classified := classifySentryDiscoveryQueryCode(statusErr.Code, err); classified != nil {
+		if classified := classifyCosignerDiscoveryQueryCode(statusErr.Code, err); classified != nil {
 			return classified
 		}
 		switch {
 		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
-			return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
+			return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 		case statusErr.StatusCode == http.StatusRequestTimeout ||
 			statusErr.StatusCode == http.StatusTooManyRequests ||
 			statusErr.StatusCode >= http.StatusInternalServerError:
-			return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
+			return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)
 		default:
-			return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+			return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 		}
 	}
 
 	if isNetworkUnavailableError(err) {
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)
 	}
-	return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+	return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 }
 
-func classifySentryDiscoveryQueryCode(code string, err error) error {
+func classifyCosignerDiscoveryQueryCode(code string, err error) error {
 	switch code {
 	case "":
 		return nil
 	case signerapi.ErrCodeLocked:
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryLocked, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryLocked, err)
 	case signerapi.ErrCodeUnauthorized, signerapi.ErrCodeForbidden, signerapi.ErrCodeInvalidPassphrase:
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	case signerapi.ErrCodeUnavailable, signerapi.ErrCodeCacheRefresh, signerapi.ErrCodeInternal:
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)
 	case signerapi.ErrCodeBadRequest, signerapi.ErrCodeNotFound:
-		return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 	default:
 		return nil
 	}
@@ -576,8 +576,8 @@ func isNetworkUnavailableError(err error) bool {
 	return errors.As(err, &urlErr)
 }
 
-func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryComponentKey, error) {
-	discovered := make([]DiscoveredSentryComponentKey, 0)
+func discoverCosignerComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredCosignerComponentKey, error) {
+	discovered := make([]DiscoveredCosignerComponentKey, 0)
 	seen := map[string]struct{}{}
 	for _, key := range keys {
 		// Component key types are runtime metadata: any advertised component
@@ -587,26 +587,26 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		if !key.IsWitnessKey || key.KeyType == "" {
 			continue
 		}
-		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
+		publicKey, err := normalizeCosignerPublicKeyHex(key.PublicKeyHex)
 		if err != nil {
-			return nil, fmt.Errorf("%w: Witness Key ID %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: Witness Key ID %q has invalid public_key_hex: %v", ErrCosignerDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := witness.NormalizeID(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Witness Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Witness Key ID %q: %v", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
-		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
+		expectedSelector, err := cosignerComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive Witness Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
+			return nil, fmt.Errorf("%w: failed to derive Witness Key ID for cosigner public key %s: %v", ErrCosignerDiscoveryInvalidMetadata, shortCosignerPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
+			return nil, fmt.Errorf("%w: cosigner component %s advertised selector %s, want %s", ErrCosignerDiscoveryInvalidMetadata, cosignerComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue
 		}
 		seen[publicKey] = struct{}{}
-		discovered = append(discovered, DiscoveredSentryComponentKey{
+		discovered = append(discovered, DiscoveredCosignerComponentKey{
 			PublicKey:    publicKey,
 			ComponentKey: selector,
 			KeyType:      key.KeyType,

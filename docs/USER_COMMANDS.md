@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `sentry add`, `sentry status`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `cosigner add`, `cosigner status`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -654,9 +654,9 @@ request-token --endpoint main
 
 **Note:** An operator using local `apadmin` must approve the request on the server.
 After approval, `apshell` saves the new token. It immediately attempts to
-connect only when the selected endpoint is the default signer; sentry
+connect only when the selected endpoint is the default signer; cosigner
 access provisioning leaves the primary signer connection unchanged. For normal
-sentry setup, use [sentry add](#sentry-add), which obtains access as part of setup.
+cosigner setup, use [cosigner add](#cosigner-add), which obtains access as part of setup.
 
 The positional one-off host form is no longer supported. Import or configure
 the endpoint first, then request its token:
@@ -675,23 +675,23 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ---
 
-### Guided sentry setup
+### Guided cosigner setup
 
-Use the same public sentry key file in two places:
+Use the same public cosigner key file in two places:
 
-1. **On the sentry:** generate a sentry key and choose **Export Sentry Key**.
+1. **On the cosigner:** generate a cosigner key and choose **Export Cosigner Key**.
    Include the advertised endpoint when available. Use **SHOW JSON** to copy
    the complete document instead of saving a file.
-2. **On the primary signer:** open **Sentries** in apadmin and **Import Sentry
+2. **On the primary signer:** open **Cosigners** in apadmin and **Import Cosigner
    Key**, using the file or pasted JSON. Review the proposed reference name and
-   compare the complete Witness Key ID with the sentry.
-3. **In apshell:** run `sentry add <file> --alias <connection-name>`, or
-   `sentry add` to paste JSON. Review the endpoint and Witness Key ID.
-4. **On the sentry:** approve the **Client Access Request** in apadmin after
+   compare the complete Witness Key ID with the cosigner.
+3. **In apshell:** run `cosigner add <file> --alias <connection-name>`, or
+   `cosigner add` to paste JSON. Review the endpoint and Witness Key ID.
+4. **On the cosigner:** approve the **Client Access Request** in apadmin after
    comparing the full client SSH key fingerprint with apshell.
 5. **On the primary signer:** select the imported key and **Generate account**.
-   In apshell, connect to the primary signer and run `sentry status` to inspect
-   the resulting account's sentry route.
+   In apshell, connect to the primary signer and run `cosigner status` to inspect
+   the resulting account's cosigner route.
 
 The signer reference name and client connection name are independent. apadmin
 stores the public key; apshell configures and checks the connection. A route
@@ -700,48 +700,48 @@ validity.
 
 ---
 
-### sentry add
+### cosigner add
 
-Configure client access to a sentry from its public sentry key JSON, obtain a
+Configure client access to a cosigner from its public cosigner key JSON, obtain a
 token when needed, and verify the exact witness advertised by that endpoint.
 
 ```text
-sentry add
-sentry add <public-json> --alias <alias> [--endpoint <url>]
-  [--sentry-port <port>] [--replace] [--dry-run]
+cosigner add
+cosigner add <public-json> --alias <alias> [--endpoint <url>]
+  [--cosigner-port <port>] [--replace] [--dry-run]
 ```
 
 The document may be a standalone `aplane.witness-key-public.v1` reference or a
-combined `aplane.sentry-enrollment.v1` handoff. The combined form can supply the
+combined `aplane.cosigner-enrollment.v1` handoff. The combined form can supply the
 endpoint URL and remote REST port. A bundled local tunnel port is rejected
-because sentry SSH connections do not use local listeners.
+because cosigner SSH connections do not use local listeners.
 Explicit command options override bundled values. With
 no file, apshell enters a bounded multiline paste prompt; it stops as soon as
 one complete JSON document has been received.
 
 The interactive review shows the client-local alias, effective endpoint, any
 route change, and the complete grouped Witness Key ID. After confirmation,
-apshell writes a `role: sentry` endpoint, confirms first-use SSH host trust,
+apshell writes a `role: cosigner` endpoint, confirms first-use SSH host trust,
 requests endpoint access if no token has been configured, and queries
 that endpoint for the exact witness. Approve a new access request in apadmin on
-the sentry node. This setup does not disconnect the primary signer connection.
+the cosigner node. This setup does not disconnect the primary signer connection.
 The host-key trust prompt displays `Timeout 60 seconds` for the connection
 attempt. If more time is needed to verify the fingerprint, retry the connection.
 
-An existing unchanged sentry alias reuses its custom REST port and credential paths.
+An existing unchanged cosigner alias reuses its custom REST port and credential paths.
 Changing the route requires interactive replacement consent and obtains new SSH
 access rather than silently using the previous destination's token. Direct
 HTTPS and loopback HTTP endpoints work when their endpoint token file already
 contains a valid token; automatic token enrollment requires SSH.
 
-SSH sentry requests open HTTP connections directly as channels on the
+SSH cosigner requests open HTTP connections directly as channels on the
 authenticated SSH session. They do not bind a transient local forwarding port.
 
 `--dry-run` validates the public JSON and reports the proposed route without
 writing files, changing host trust, requesting a token, or contacting the
-sentry. File-based script use requires all values and an already trusted SSH
-host; it may wait for normal sentry-side token approval. Paste, first-use trust,
-and conflicting replacements require an interactive shell. `sentry add` is not
+cosigner. File-based script use requires all values and an already trusted SSH
+host; it may wait for normal cosigner-side token approval. Paste, first-use trust,
+and conflicting replacements require an interactive shell. `cosigner add` is not
 available through MCP.
 
 This command configures only the transaction client. Import the same public
@@ -750,19 +750,19 @@ reference in signer-side apadmin before generating a guarded account.
 **Examples:**
 
 ```text
-sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
-sentry add witness.json --alias sentry-lab --endpoint ssh://sentry.example:1127 --sentry-port 11270
-sentry add lab-sentry.aplane-sentry.json --alias sentry-lab --dry-run
+cosigner add lab-cosigner.aplane-cosigner.json --alias cosigner-lab
+cosigner add witness.json --alias cosigner-lab --endpoint ssh://cosigner.example:1127 --cosigner-port 11270
+cosigner add lab-cosigner.aplane-cosigner.json --alias cosigner-lab --dry-run
 ```
 
 ---
 
-### sentry status
+### cosigner status
 
-Run `sentry status` in apshell to inspect current sentry connections and the
+Run `cosigner status` in apshell to inspect current cosigner connections and the
 primary signer's guarded-account requirements. It queries configured endpoints
 without changing client configuration, credentials, SSH trust, or cached keys.
-Unknown SSH hosts require separate interactive setup with `sentry add`.
+Unknown SSH hosts require separate interactive setup with `cosigner add`.
 
 Connections show authenticated reachability, advertised Witness Key IDs, and
 individual errors. Account requirements show available, missing, or duplicate
@@ -774,23 +774,23 @@ conclusion. Duplicate advertisements are also shown without a connected signer.
 This is a point-in-time route check. It does not confirm transaction policy,
 operator approval, private-key possession, or on-chain validity. It does not
 perform signing. The command uses the normal structured command-result output;
-like `sentry add`, it is not exposed through MCP.
+like `cosigner add`, it is not exposed through MCP.
 
 ---
 
 ### endpoints
 
-Manage client-local signer and sentry endpoint profiles. For guided sentry
-setup and route checks, use `sentry add` and `sentry status`.
+Manage client-local signer and cosigner endpoint profiles. For guided cosigner
+setup and route checks, use `cosigner add` and `cosigner status`.
 
 #### Advanced: manual endpoint configuration and discovery
 
 ```
 endpoints list
 endpoints show <alias>
-endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
-endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
-endpoints discover-sentries
+endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]
+endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>
+endpoints discover-cosigners
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -798,7 +798,7 @@ endpoints delete <alias>
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
 `apadmin endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
-and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
+and `role: cosigner` for cosigner endpoints. Import does not copy tokens or SSH
 host trust. On the signer side, `apadmin endpoint export` can derive the URL
 from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
@@ -806,71 +806,71 @@ admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
 Re-importing with the same alias replaces that alias's endpoint data.
 
-`endpoints create` manually writes a `role: sentry` endpoint profile without an
+`endpoints create` manually writes a `role: cosigner` endpoint profile without an
 exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
-usually `ssh://host[:ssh-port]`; `--sentryport` is the sentry node REST port
+usually `ssh://host[:ssh-port]`; `--cosignerport` is the cosigner node REST port
 behind that endpoint. It writes routing only. Tokens are still obtained with
 `request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
 flow.
 
-`endpoints discover-sentries` is a read-only diagnostic. It queries configured
-sentry endpoints using their endpoint token files, validates the advertised
+`endpoints discover-cosigners` is a read-only diagnostic. It queries configured
+cosigner endpoints using their endpoint token files, validates the advertised
 Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
-or the connected signer's generation catalog. Guarded and bounded-sentry
+or the connected signer's generation catalog. Guarded and bounded-cosigner
 operations perform this discovery automatically for the keys they require.
 
 **Examples:**
 ```
 endpoints import --alias main --role signer signer.endpoint.json
-endpoints import --alias local-sentry --role sentry sentry.endpoint.json
+endpoints import --alias local-cosigner --role cosigner cosigner.endpoint.json
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
-endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
+endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223 --cosignerport 12270
 request-token --endpoint main
-request-token --endpoint local-sentry
+request-token --endpoint local-cosigner
 connect main
-endpoints discover-sentries
+endpoints discover-cosigners
 endpoints list
 endpoints show main
 endpoints default main
 endpoints delete old-signer
 ```
 
-`endpoints delete` refuses to remove the signer endpoint. Sentry routing has no
+`endpoints delete` refuses to remove the signer endpoint. Cosigner routing has no
 persisted key inventory to retain.
 
 ---
 
-### apadmin sentry
+### apadmin cosigner
 
-Manage public sentry witness references used by guarded-account generation:
+Manage public cosigner witness references used by guarded-account generation:
 
 ```text
-apadmin sentry export <witness-key-id> [output-json]
-apadmin sentry import <public-json|-> <name>
-apadmin sentry list
-apadmin sentry show <name>
-apadmin sentry remove <name>
+apadmin cosigner export <witness-key-id> [output-json]
+apadmin cosigner import <public-json|-> <name>
+apadmin cosigner list
+apadmin cosigner show <name>
+apadmin cosigner remove <name>
 ```
 
-Run `export` against the sentry node. It asks the daemon to verify and return
+Run `export` against the cosigner node. It asks the daemon to verify and return
 the canonical `aplane.witness-key-public.v1` envelope. With an output path,
 the `apadmin` process writes the public file on the machine where it runs. Without a path, the JSON is written to stdout.
 
-Interactive export always uses the combined sentry key document, with optional
+Interactive export always uses the combined cosigner key document, with optional
 endpoint information. Both import command forms accept standalone and combined
 documents.
 
 Run `import` against the primary signer and choose a local alias such as
-`lab-sentry`. The signer validates the key type, public key, and derived
+`lab-cosigner`. The signer validates the key type, public key, and derived
 Witness Key ID before storing the public reference. Compare the complete
-Witness Key ID displayed by the sentry and signer before accepting it.
+Witness Key ID displayed by the cosigner and signer before accepting it.
 
 When the source is `-`, stdin is reserved for the bounded JSON envelope:
 
 ```bash
-cat lab-sentry.aplane-sentry.json | \
+cat lab-cosigner.aplane-cosigner.json | \
   APSIGNER_PASSPHRASE="$APSIGNER_PASSPHRASE" \
-  apadmin -d "$SIGNER_DATA" sentry import - lab-sentry
+  apadmin -d "$SIGNER_DATA" cosigner import - lab-cosigner
 ```
 
 `stdin` import obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
@@ -878,27 +878,27 @@ controlling terminal. Headless combinations that cannot keep the document and
 passphrase separate fail before authentication.
 
 The interactive signer-side `apadmin` TUI provides the same public-reference
-catalog under `e: Sentries`. It uses aliases for navigation, shows the complete
+catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
-compatible guarded or bounded-sentry account without exposing a raw Falcon
-public-key input. On a sentry node, **Export Sentry Key** offers the configured
+compatible guarded or bounded-cosigner account without exposing a raw Falcon
+public-key input. On a cosigner node, **Export Cosigner Key** offers the configured
 advertised endpoint as an explicit public-metadata option. A combined bundle
 review on the signer imports only the public reference. Any endpoint metadata
-is ignored by apadmin; use `sentry add` in apshell to consume it as
+is ignored by apadmin; use `cosigner add` in apshell to consume it as
 client-owned routing metadata.
 
-On a sentry node, open a witness key and choose `e: Export sentry key`, then
+On a cosigner node, open a witness key and choose `e: Export cosigner key`, then
 select **SHOW JSON** for full JSON in the terminal: the console temporarily
 suspends and prints the complete document without inserting line breaks into
 long values. Select the JSON using the terminal's normal copy controls and
 scrollback, then press Enter to return to the export screen.
 File export and batch stdout also preserve the original JSON bytes.
 
-To import copied JSON, press `p: Paste JSON` in the Sentry References manager.
+To import copied JSON, press `p: Paste JSON` in the Cosigner References manager.
 Use your terminal's paste shortcut in the JSON field, then Tab to review or
 edit the reference name suggested from the file or Witness Key ID. Continue
 to review. The field accepts a complete multiline public witness document or
-combined sentry key document, up to 64 KiB. Pasting
+combined cosigner key document, up to 64 KiB. Pasting
 again replaces the document; Backspace/Delete clears it. Compare the full
 Witness Key ID on the shared import review screen before importing. A bundled
 endpoint is informational and does not change client configuration.
@@ -908,47 +908,47 @@ endpoint is informational and does not change client configuration.
 These commands remain available for automation and compatibility:
 
 ```text
-apadmin sentry enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
-apadmin sentry enrollment import <file|-> --name <reference-name> [--dry-run]
+apadmin cosigner enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
+apadmin cosigner enrollment import <file|-> --name <reference-name> [--dry-run]
 ```
 
-The simple `apadmin sentry export` emits standalone public-key JSON; both
-`apadmin sentry import` and `apadmin sentry enrollment import` accept standalone
+The simple `apadmin cosigner export` emits standalone public-key JSON; both
+`apadmin cosigner import` and `apadmin cosigner enrollment import` accept standalone
 and combined documents.
 
-The `sentry enrollment` commands use the combined
-`aplane.sentry-enrollment.v1` handoff. Export always includes the verified
+The `cosigner enrollment` commands use the combined
+`aplane.cosigner-enrollment.v1` handoff. Export always includes the verified
 public witness reference. An explicit URL/host includes a portable endpoint;
 `--include-endpoint` uses configured `endpoint.advertise_url`. It never
 includes a token, host trust, client-local alias, policy, or private witness
 material.
 
-Import accepts either a combined sentry key file or the standalone public
+Import accepts either a combined cosigner key file or the standalone public
 witness file. `--name` chooses the signer-local reference alias. `--dry-run`
 validates the complete document and previews the reference import without
 changing the signer.
 
 ```bash
-apadmin -d "$SENTRY_DATA" sentry enrollment export "$WITNESS_KEY_ID" \
-  --host sentry.example --out lab-sentry.aplane-sentry.json
-apadmin -d "$SIGNER_DATA" sentry enrollment import lab-sentry.aplane-sentry.json \
-  --name lab-sentry
+apadmin -d "$COSIGNER_DATA" cosigner enrollment export "$WITNESS_KEY_ID" \
+  --host cosigner.example --out lab-cosigner.aplane-cosigner.json
+apadmin -d "$SIGNER_DATA" cosigner enrollment import lab-cosigner.aplane-cosigner.json \
+  --name lab-cosigner
 ```
 
 Then configure and verify the transaction client in apshell:
 
 ```text
-sentry add lab-sentry.aplane-sentry.json --alias sentry-lab
+cosigner add lab-cosigner.aplane-cosigner.json --alias cosigner-lab
 ```
 
 If the exported document omitted an endpoint, add
-`--endpoint ssh://sentry.example:1127 --sentry-port 11270`. Approve any **Client
-Access Request** in apadmin on the sentry node. Compare the complete client
+`--endpoint ssh://cosigner.example:1127 --cosigner-port 11270`. Approve any **Client
+Access Request** in apadmin on the cosigner node. Compare the complete client
 SSH key fingerprint shown by apshell with the fingerprint in that request.
 This identifies the client key, not a unique request; concurrent requests using
 the same key have the same fingerprint. The command verifies the
-expected witness before it succeeds. `endpoints discover-sentries` remains
-available as a read-only diagnostic across every configured sentry route.
+expected witness before it succeeds. `endpoints discover-cosigners` remains
+available as a read-only diagnostic across every configured cosigner route.
 apadmin does not configure or verify client routes.
 
 ---
@@ -1155,7 +1155,7 @@ App budget: 150 consumed / 700 added
 
 Execution traces require algod to support the simulate trace endpoint (AVM v9+). If the node does not support traces, the trace sections are omitted and all other sections still display normally.
 
-Guarded simulation follows the same user and sentry component approval flow as
+Guarded simulation follows the same user and cosigner component approval flow as
 guarded submission. Without user auto-approval, a connected admin client must
 approve the request.
 
@@ -1389,13 +1389,13 @@ endpoints:
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
-  local-sentry:
-    role: sentry
+  local-cosigner:
+    role: cosigner
     url: ssh://192.168.1.101:1127
     signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-sentry.token
+    token_file: tokens/local-cosigner.token
 ```
 
 See `docs/USER_CONFIG.md` for full configuration options.

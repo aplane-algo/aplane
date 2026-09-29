@@ -60,7 +60,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"connect":       command.StructuredAutomation,
 	"disconnect":    command.StructuredAutomation,
 	"endpoints":     command.StructuredAutomation,
-	"sentry":        command.BlockedAutomation("sentry add and sentry status are unavailable through MCP; use apshell directly"),
+	"cosigner":      command.BlockedAutomation("cosigner add and cosigner status are unavailable through MCP; use apshell directly"),
 	"help":          command.BlockedAutomation("use the mcp_reference MCP tool instead"),
 	"config":        command.BlockedAutomation("use the safe status command instead"),
 	"script":        command.BlockedAutomation("issue commands individually or use the js MCP tool"),
@@ -408,17 +408,17 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	mustRegister(registry, &command.Command{
 		Name:        "endpoints",
 		Usage:       endpointsUsage,
-		Description: "Manage client-local signer and sentry endpoint profiles",
+		Description: "Manage client-local signer and cosigner endpoint profiles",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdEndpoints),
 	})
 
 	mustRegister(registry, &command.Command{
-		Name:        "sentry",
-		Usage:       sentryUsage,
-		Description: "Add sentry connections or inspect current sentry routes",
+		Name:        "cosigner",
+		Usage:       cosignerUsage,
+		Description: "Add cosigner connections or inspect current cosigner routes",
 		Category:    command.CategoryRemote,
-		Handler:     command.NewInternalHandler(r.cmdSentry),
+		Handler:     command.NewInternalHandler(r.cmdCosigner),
 	})
 
 	// Terminal

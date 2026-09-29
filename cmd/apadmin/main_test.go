@@ -18,7 +18,7 @@ import (
 func TestCatalogPassphraseKeepsEnvelopeStdinReserved(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestCatalogPassphraseKeepsEnrollmentBundleStdinReserved(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
 	prompt := newAdminBatchPrompt(strings.NewReader("enrollment-bundle"), io.Discard)
 	secret, closer, err := catalogPassphrase(
-		"sentry", []string{"enrollment", "import", "-", "--name", "lab"}, prompt, io.Discard,
+		"cosigner", []string{"enrollment", "import", "-", "--name", "lab"}, prompt, io.Discard,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestCatalogPassphraseUsesControllingTerminalForLocalStdinImport(t *testing.
 	t.Cleanup(func() { openControllingTerminal = originalOpen })
 
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCatalogPassphraseRejectsHeadlessLocalStdinImport(t *testing.T) {
 	t.Cleanup(func() { openControllingTerminal = originalOpen })
 
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("sentry", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "APSIGNER_PASSPHRASE or a controlling terminal") {
 		t.Fatalf("error = %v", err)
 	}

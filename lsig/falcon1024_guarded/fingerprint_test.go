@@ -27,7 +27,7 @@ func TestGuardedFingerprintShapeExcludesIdentity(t *testing.T) {
 		BasePrimitive: "falcon1024-v1",
 		SaltStyle:     string(lsigsalt.StyleAlgodAutoSalt),
 		Arg0:          "user_falcon1024_component_signature",
-		Arg1:          "sentry_falcon1024_component_signature",
+		Arg1:          "cosigner_falcon1024_component_signature",
 	})
 	got := NewProviderV1().CompatibilityFingerprint()
 	if got != want {

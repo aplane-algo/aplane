@@ -37,7 +37,7 @@ type AccountRouteObservation struct {
 // InspectRoutes uses the signing resolver's sweep and uniqueness rules, then
 // closes all connections. It never caches inventories or asks for host trust.
 func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) RouteStatus {
-	aliases, states, sweepErr := s.probeSentryEndpoints(ctx)
+	aliases, states, sweepErr := s.probeCosignerEndpoints(ctx)
 	defer closeProbeResults(states, nil)
 	result := RouteStatus{Connections: []ConnectionObservation{}, Accounts: []AccountRouteObservation{}}
 	if sweepErr != nil {
@@ -48,7 +48,7 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 		if i < len(states) && states[i] != nil {
 			state := states[i]
 			if state.err != nil {
-				row.State = sentryDiscoveryFailureLabel(state.err)
+				row.State = cosignerDiscoveryFailureLabel(state.err)
 				row.Error = state.err.Error()
 			} else {
 				row.State = "reachable; authenticated"
@@ -80,27 +80,27 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			continue
 		}
 		row := AccountRouteObservation{Address: key.Address, Routes: []string{}, State: "invalid metadata"}
-		if route != flowRouteGuarded && route != flowRouteBoundedSentry {
+		if route != flowRouteGuarded && route != flowRouteBoundedCosigner {
 			row.Error = "unsupported signing flow: " + key.SigningFlow
 			result.Accounts = append(result.Accounts, row)
 			continue
 		}
-		publicKey := key.Parameters["sentry_public_key"]
-		if publicKey == "" && key.BoundedAuthorization != nil && key.BoundedAuthorization.Sentry != nil {
-			publicKey = key.BoundedAuthorization.Sentry.PublicKeyHex
+		publicKey := key.Parameters["cosigner_public_key"]
+		if publicKey == "" && key.BoundedAuthorization != nil && key.BoundedAuthorization.Cosigner != nil {
+			publicKey = key.BoundedAuthorization.Cosigner.PublicKeyHex
 		}
-		canonical, err := normalizeSentryPublicKeyHex(publicKey)
+		canonical, err := normalizeCosignerPublicKeyHex(publicKey)
 		if err == nil {
-			row.WitnessKeyID, err = sentryComponentSelector(key.SentryComponentKeyType, canonical)
+			row.WitnessKeyID, err = cosignerComponentSelector(key.CosignerComponentKeyType, canonical)
 		}
 		if err != nil {
 			row.Error = err.Error()
 		} else {
-			required := sentryRequestKey{ComponentKeyType: key.SentryComponentKeyType, PublicKey: canonical}
-			for _, index := range matchingSentryEndpointIndices(required, states) {
+			required := cosignerRequestKey{ComponentKeyType: key.CosignerComponentKeyType, PublicKey: canonical}
+			for _, index := range matchingCosignerEndpointIndices(required, states) {
 				row.Routes = append(row.Routes, states[index].alias)
 			}
-			_, matched, selectionErr := uniqueSentrySelections([]sentryRequestKey{required}, states)
+			_, matched, selectionErr := uniqueCosignerSelections([]cosignerRequestKey{required}, states)
 			switch {
 			case sweepErr != nil:
 				row.State = "route check incomplete"
@@ -109,7 +109,7 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 				row.State = "duplicate witness route"
 				row.Error = selectionErr.Error()
 			case matched:
-				row.State = "sentry route available"
+				row.State = "cosigner route available"
 			default:
 				row.State = "no matching live route observed"
 			}

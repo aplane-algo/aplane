@@ -40,7 +40,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		assetIDs[i] = fmt.Sprintf("%d", i+1)
 	}
 	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
-	sentryKey := bytes.Repeat([]byte{0x41}, boundedmeta.SentryPublicKeySizeV1)
+	cosignerKey := bytes.Repeat([]byte{0x41}, boundedmeta.CosignerPublicKeySizeV1)
 	tests := []struct {
 		name       string
 		publicKey  []byte
@@ -63,9 +63,9 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		}, bytecode: 5285, spendArgs: 1423, adminArgs: 2846, spendGroup: 2, adminGroup: 3, spendFee: 2330, adminFee: 3230},
 		{name: "aplane.corridor.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
 			"recipients": recipients[0],
-			composeddsa.BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryKey),
-			composeddsa.BoundedAdminPublicKeyParameter:  hex.EncodeToString(adminKey),
-		}, bytecode: 5924, spendArgs: 3358, adminArgs: 2846, spendGroup: 4, adminGroup: 3, spendFee: 4195, adminFee: 3294},
+			composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+			composeddsa.BoundedAdminPublicKeyParameter:    hex.EncodeToString(adminKey),
+		}, bytecode: 5926, spendArgs: 3358, adminArgs: 2846, spendGroup: 4, adminGroup: 3, spendFee: 4195, adminFee: 3294},
 	}
 	profile, err := lsigresource.CurrentConsensus()
 	if err != nil {

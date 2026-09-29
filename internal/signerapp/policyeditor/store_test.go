@@ -53,21 +53,21 @@ func TestOfflineStoreLoadVerifiedYAMLReturnsAuthenticatedExactBytes(t *testing.T
 	}
 }
 
-func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
-	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
+func TestOfflineStoreLoadVerifiesCosignerTarget(t *testing.T) {
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleCosigner)
 	store := OfflineStore{
 		DataDir:    dataDir,
-		Target:     TargetSentry,
+		Target:     TargetCosigner,
 		Passphrase: passphrase,
 	}
-	sentryBytes := []byte("reject_rekey: true\n")
-	if err := store.SaveYAML(context.Background(), sentryBytes); err != nil {
-		t.Fatalf("SaveYAML(sentry target) error = %v", err)
+	cosignerBytes := []byte("reject_rekey: true\n")
+	if err := store.SaveYAML(context.Background(), cosignerBytes); err != nil {
+		t.Fatalf("SaveYAML(cosigner target) error = %v", err)
 	}
 
 	stored, err := store.Load(context.Background())
 	if err != nil {
-		t.Fatalf("Load(sentry target) error = %v", err)
+		t.Fatalf("Load(cosigner target) error = %v", err)
 	}
 	if stored.RejectRekey == nil || !*stored.RejectRekey {
 		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)
@@ -76,13 +76,13 @@ func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
 
 func TestResolveTargetUsesNodeRole(t *testing.T) {
 	signerDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSigner)
-	sentryDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
+	cosignerDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleCosigner)
 
 	if got, err := ResolveTarget(signerDir, TargetAuto); err != nil || got != TargetSigner {
 		t.Fatalf("ResolveTarget(signer) = %q, %v; want %q", got, err, TargetSigner)
 	}
-	if got, err := ResolveTarget(sentryDir, TargetAuto); err != nil || got != TargetSentry {
-		t.Fatalf("ResolveTarget(sentry) = %q, %v; want %q", got, err, TargetSentry)
+	if got, err := ResolveTarget(cosignerDir, TargetAuto); err != nil || got != TargetCosigner {
+		t.Fatalf("ResolveTarget(cosigner) = %q, %v; want %q", got, err, TargetCosigner)
 	}
 }
 
@@ -93,8 +93,8 @@ func TestOfflineStoreRejectsPolicyTargetForWrongNodeRole(t *testing.T) {
 		target     Target
 		roleString string
 	}{
-		{name: "sentry policy on signer", role: noderole.RoleSigner, target: TargetSentry, roleString: "signer"},
-		{name: "signer policy on sentry", role: noderole.RoleSentry, target: TargetSigner, roleString: "sentry"},
+		{name: "cosigner policy on signer", role: noderole.RoleSigner, target: TargetCosigner, roleString: "signer"},
+		{name: "signer policy on cosigner", role: noderole.RoleCosigner, target: TargetSigner, roleString: "cosigner"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -209,9 +209,9 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	}
 }
 
-func TestOfflineStoreSaveSentryYAMLPreservesPolicyBytes(t *testing.T) {
-	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
-	sentryBytes := []byte(`# replacement sentry
+func TestOfflineStoreSaveCosignerYAMLPreservesPolicyBytes(t *testing.T) {
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleCosigner)
+	cosignerBytes := []byte(`# replacement cosigner
 reject_rekey: true
 transfer_policy:
   schema_version: 1
@@ -228,15 +228,15 @@ transfer_policy:
 		Passphrase: passphrase,
 	}
 
-	if err := store.SaveSentryYAML(context.Background(), sentryBytes); err != nil {
-		t.Fatalf("SaveSentryYAML() error = %v", err)
+	if err := store.SaveCosignerYAML(context.Background(), cosignerBytes); err != nil {
+		t.Fatalf("SaveCosignerYAML() error = %v", err)
 	}
 	gotBytes, err := os.ReadFile(activePolicyPath(t, dataDir, passphrase))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
-	if string(gotBytes) != string(sentryBytes) {
-		t.Fatalf("sentry bytes changed during SaveSentryYAML:\ngot:\n%s\nwant:\n%s", gotBytes, sentryBytes)
+	if string(gotBytes) != string(cosignerBytes) {
+		t.Fatalf("cosigner bytes changed during SaveCosignerYAML:\ngot:\n%s\nwant:\n%s", gotBytes, cosignerBytes)
 	}
 	masterKey, clear, err := store.unlock(context.Background())
 	if err != nil {
@@ -248,9 +248,9 @@ transfer_policy:
 		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer keyring.Zero()
-	stored, err := policy.LoadVerifiedSentryConfigActive(active, masterKey)
+	stored, err := policy.LoadVerifiedCosignerConfigActive(active, masterKey)
 	if err != nil {
-		t.Fatalf("LoadVerifiedSentryConfigWithKeyring() after SaveSentryYAML() error = %v", err)
+		t.Fatalf("LoadVerifiedCosignerConfigWithKeyring() after SaveCosignerYAML() error = %v", err)
 	}
 	if stored.RejectRekey == nil || !*stored.RejectRekey {
 		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)

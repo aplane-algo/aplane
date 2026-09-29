@@ -11,9 +11,9 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -86,7 +86,7 @@ func GetGenerator(keyType string) (Generator, error) {
 		return generator, nil
 	}
 
-	if keytypes.IsSentryKeyType(keyType) {
+	if keytypes.IsCosignerKeyType(keyType) {
 		return nil, fmt.Errorf("no exact key generator registered for key type: %s", keyType)
 	}
 

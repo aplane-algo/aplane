@@ -93,17 +93,17 @@ func TestWindowFooterWrapsAbovePinnedStatus(t *testing.T) {
 	}
 }
 
-func TestAdminTitleUsesSentryNodeRole(t *testing.T) {
+func TestAdminTitleUsesCosignerNodeRole(t *testing.T) {
 	if got := (Model{}).AdminTitle(); got != "Signer Admin" {
 		t.Fatalf("default AdminTitle() = %q, want Signer Admin", got)
 	}
-	m := Model{initialNodeRole: "sentry"}
-	if got := m.AdminTitle(); got != "Sentry Admin" {
-		t.Fatalf("initial sentry AdminTitle() = %q, want Sentry Admin", got)
+	m := Model{initialNodeRole: "cosigner"}
+	if got := m.AdminTitle(); got != "Cosigner Admin" {
+		t.Fatalf("initial cosigner AdminTitle() = %q, want Cosigner Admin", got)
 	}
-	m = Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}}}
-	if got := m.AdminTitle(); got != "Sentry Admin" {
-		t.Fatalf("sentry AdminTitle() = %q, want Sentry Admin", got)
+	m = Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}}}
+	if got := m.AdminTitle(); got != "Cosigner Admin" {
+		t.Fatalf("cosigner AdminTitle() = %q, want Cosigner Admin", got)
 	}
 }
 
@@ -111,19 +111,19 @@ func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 	m := Model{
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
-			NodeRole:             "sentry",
+			NodeRole:             "cosigner",
 			SSHEnabled:           true,
 			SSHPort:              1127,
 			SignerPort:           11270,
-			EndpointAdvertiseURL: "ssh://sentry.example.test:1127",
+			EndpointAdvertiseURL: "ssh://cosigner.example.test:1127",
 		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
 	for _, want := range []string{
-		"Sentry Admin",
-		"Sentry Port: 11270",
-		"Endpoint: ssh://sentry.example.test:1127",
+		"Cosigner Admin",
+		"Cosigner Port: 11270",
+		"Endpoint: ssh://cosigner.example.test:1127",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)

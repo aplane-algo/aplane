@@ -79,10 +79,10 @@ func (d loadedDocument) run() error {
 			digest = policy.PolicySHA256(d.exactYAML)
 		}
 		_, _ = fmt.Fprintln(d.streams.Stdout, digest)
-	case VerbToSentry:
-		converted, err := policy.ConvertSigningPolicyToSentryYAML(d.exactYAML)
+	case VerbToCosigner:
+		converted, err := policy.ConvertSigningPolicyToCosignerYAML(d.exactYAML)
 		if err != nil {
-			return fmt.Errorf("failed to convert policy to sentry policy: %w", err)
+			return fmt.Errorf("failed to convert policy to cosigner policy: %w", err)
 		}
 		_, _ = d.streams.Stdout.Write(converted)
 	default:

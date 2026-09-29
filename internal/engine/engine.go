@@ -65,7 +65,7 @@ func WithDataDir(dataDir string) EngineOption {
 	}
 }
 
-// WithEndpointRegistry sets the client-local signer and sentry connection
+// WithEndpointRegistry sets the client-local signer and cosigner connection
 // profiles used by live endpoint discovery.
 func WithEndpointRegistry(registry config.ClientEndpointRegistry) EngineOption {
 	return func(e *Engine) error {

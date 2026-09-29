@@ -10,13 +10,13 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -89,7 +89,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 	return result, nil
 }
 
-const keyDetailsSentryLabel = "Sentry"
+const keyDetailsCosignerLabel = "Cosigner"
 
 func keyDetailsParameters(keyType string, parameters map[string]string) map[string]string {
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
@@ -98,23 +98,23 @@ func keyDetailsParameters(keyType string, parameters map[string]string) map[stri
 
 	projected := make(map[string]string)
 	for key, value := range parameters {
-		if key == keytypes.ParameterSentryPublicKey {
+		if key == keytypes.ParameterCosignerPublicKey {
 			continue
 		}
 		projected[key] = value
 	}
 
-	componentKey, err := sentryComponentSelectorForDetails(keyType, parameters[keytypes.ParameterSentryPublicKey])
+	componentKey, err := cosignerComponentSelectorForDetails(keyType, parameters[keytypes.ParameterCosignerPublicKey])
 	if err != nil {
-		projected[keyDetailsSentryLabel] = fmt.Sprintf("invalid sentry public key (%v)", err)
+		projected[keyDetailsCosignerLabel] = fmt.Sprintf("invalid cosigner public key (%v)", err)
 		return projected
 	}
-	projected[keyDetailsSentryLabel] = componentKey
+	projected[keyDetailsCosignerLabel] = componentKey
 	return projected
 }
 
-func sentryComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
-	componentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
+func cosignerComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
+	componentKeyType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
 		return "", fmt.Errorf("unknown guarded account key type %q", keyType)
 	}

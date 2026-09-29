@@ -33,8 +33,8 @@ func TestGeneratedReferenceUsesConnectionOnlyEndpointRegistry(t *testing.T) {
 			t.Fatalf("generated reference missing %q", want)
 		}
 	}
-	if strings.Contains(doc, "published_sentries") {
-		t.Fatal("generated reference contains retired sentry inventory field")
+	if strings.Contains(doc, "published_cosigners") {
+		t.Fatal("generated reference contains retired cosigner inventory field")
 	}
 }
 

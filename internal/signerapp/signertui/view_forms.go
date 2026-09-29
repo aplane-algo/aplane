@@ -272,7 +272,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	for i := startIdx; i < endIdx; i++ {
 		paramDef := params[i]
 		isFieldFocused := m.forms.generateFocus == i
-		isSentrySelector := m.isSentrySelectorParam(keyType, paramDef)
+		isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
 		isAdminReference := isContractAdminReferenceParam(paramDef)
 
 		// Determine label - use input mode label if multiple modes exist
@@ -294,7 +294,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 				modeHint = fmt.Sprintf("  [</> to switch: %d/%d]", modeIdx+1, len(paramDef.InputModes))
 			}
 		}
-		if isSentrySelector && isFieldFocused {
+		if isCosignerSelector && isFieldFocused {
 			modeHint = "  [Enter to choose]"
 		} else if len(paramDef.Options) > 0 && isFieldFocused {
 			optionIdx := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
@@ -325,7 +325,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if len(paramDef.Options) > 0 {
 			fieldWidth = optionFieldWidth(paramDef.Options)
 		}
-		if isSentrySelector {
+		if isCosignerSelector {
 			fieldWidth = 50
 		}
 		if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
@@ -355,8 +355,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 				value = getPlaceholderForType(paramDef.Type)
 			}
 		}
-		if isSentrySelector {
-			value = m.sentrySelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
+		if isCosignerSelector {
+			value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
 		}
 		if isAdminReference && !isFieldFocused {
 			value = middleEllipsize(value, fieldWidth)
@@ -368,8 +368,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 			if currentValue == "" && len(paramDef.Options) > 0 {
 				currentValue = defaultParamValue(paramDef)
 			}
-			if isSentrySelector {
-				currentValue = m.sentrySelectionDisplay(currentValue)
+			if isCosignerSelector {
+				currentValue = m.cosignerSelectionDisplay(currentValue)
 			}
 			if isAdminReference {
 				currentRunes := []rune(currentValue)

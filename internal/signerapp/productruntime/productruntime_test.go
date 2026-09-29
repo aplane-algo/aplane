@@ -375,7 +375,7 @@ func TestStoredConfigApplyRejectsMode(t *testing.T) {
 		t.Fatalf("default effective config = %#v, want zero-valued overlays", effective)
 	}
 
-	if _, err := (&StoredConfig{Mode: "sentry"}).Apply(ConfigDefaults{}); err == nil {
+	if _, err := (&StoredConfig{Mode: "cosigner"}).Apply(ConfigDefaults{}); err == nil {
 		t.Fatal("Apply(mode) error = nil")
 	} else if !strings.Contains(err.Error(), "runtime config mode is unsupported") {
 		t.Fatalf("Apply(mode) error = %q, want unsupported mode", err.Error())

@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -343,14 +343,14 @@ func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "Falcon sentry key",
+			name:    "Falcon cosigner key",
 			keyType: witness.Falcon1024V1,
-			want:    sentryComponentSignRejectMessage,
+			want:    cosignerComponentSignRejectMessage,
 		},
 		{
-			name:    "falcon sentry key",
+			name:    "falcon cosigner key",
 			keyType: witness.Falcon1024V1,
-			want:    sentryComponentSignRejectMessage,
+			want:    cosignerComponentSignRejectMessage,
 		},
 	}
 
@@ -371,7 +371,7 @@ func TestVerifySignableKeysRejectsWitnessKeyTypes(t *testing.T) {
 				t.Fatalf("verifySignableKeys() count = %d, want 0", count)
 			}
 			if err == nil {
-				t.Fatal("verifySignableKeys() error = nil, want sentry key type rejection")
+				t.Fatal("verifySignableKeys() error = nil, want cosigner key type rejection")
 				return
 			}
 			if err.Kind != ErrorBadRequest {
@@ -392,7 +392,7 @@ func TestVerifySignableKeysAllowsGuardedAccountPlanning(t *testing.T) {
 	}}
 	snapshot := PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
-		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Sentry1024V1},
+		KeyTypes: map[string]string{addr: keytypes.GuardedFalcon1024Cosigner1024V1},
 	}
 
 	count, err := verifySignableKeys(nil, snapshot, requests, map[int]bool{}, map[int]bool{})

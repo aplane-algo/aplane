@@ -112,13 +112,13 @@ func (p Paths) BackupsRootDir() string {
 	return filepath.Join(p.root, "backups")
 }
 
-func (p Paths) SentryRefsDir() string {
-	return filepath.Join(p.ProductDir(), "sentries")
+func (p Paths) CosignerRefsDir() string {
+	return filepath.Join(p.ProductDir(), "cosigners")
 }
 
-func (p Paths) SentryRefPath(name string) string {
-	validatePathComponent("sentry reference name", name)
-	return filepath.Join(p.SentryRefsDir(), name+".json")
+func (p Paths) CosignerRefPath(name string) string {
+	validatePathComponent("cosigner reference name", name)
+	return filepath.Join(p.CosignerRefsDir(), name+".json")
 }
 
 func (p Paths) KeystoreMetadataDir() string {

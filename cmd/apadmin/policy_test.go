@@ -26,12 +26,12 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 	}{
 		{name: "policy aliases edit", wantVerb: policycmd.VerbEdit, wantTarget: policyeditor.TargetAuto},
 		{name: "online check file", args: []string{"check", "draft.yaml"}, wantVerb: policycmd.VerbCheck, wantTarget: policyeditor.TargetAuto, wantSource: "draft.yaml"},
-		{name: "targeted rescue", args: []string{"rescue", "export", "--target", "sentry", "draft.yaml"}, wantVerb: policycmd.VerbExport, wantTarget: policyeditor.TargetSentry, wantSource: "draft.yaml", wantRescue: true},
+		{name: "targeted rescue", args: []string{"rescue", "export", "--target", "cosigner", "draft.yaml"}, wantVerb: policycmd.VerbExport, wantTarget: policyeditor.TargetCosigner, wantSource: "draft.yaml", wantRescue: true},
 		{name: "apply stdin", args: []string{"apply", "-"}, wantVerb: policycmd.VerbApply, wantTarget: policyeditor.TargetAuto, wantSource: "-"},
 		{name: "apply requires source", args: []string{"apply"}, wantErr: "requires a YAML file"},
 		{name: "retired flag", args: []string{"--check"}, wantErr: "is retired"},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
-		{name: "to-sentry rejects sentry target", args: []string{"to-sentry", "--target", "sentry"}, wantErr: "requires signer-policy input"},
+		{name: "to-cosigner rejects cosigner target", args: []string{"to-cosigner", "--target", "cosigner"}, wantErr: "requires signer-policy input"},
 		{name: "too many sources", args: []string{"check", "one.yaml", "two.yaml"}, wantErr: "at most one"},
 	}
 	for _, tt := range tests {

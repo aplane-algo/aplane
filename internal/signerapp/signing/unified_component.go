@@ -6,8 +6,8 @@ package signing
 import (
 	"context"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -26,7 +26,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 		return nil, err
 	}
 	switch req.TargetKind() {
-	case signerapi.ComponentTargetKindUser, signerapi.ComponentTargetKindSentry:
+	case signerapi.ComponentTargetKindUser, signerapi.ComponentTargetKindCosigner:
 		planReq := componentPlanRequest{
 			RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex,
 			Requests: req.GroupSignRequest().Requests,
@@ -37,7 +37,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 				planReq.Role = signerapi.ComponentSignRoleUser
 				planReq.ComponentKey = target.AuthAddress
 			} else {
-				planReq.Role = signerapi.ComponentSignRoleSentry
+				planReq.Role = signerapi.ComponentSignRoleCosigner
 				planReq.ComponentKey = target.ComponentKey
 			}
 		}

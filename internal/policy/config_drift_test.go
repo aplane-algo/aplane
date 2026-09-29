@@ -12,7 +12,7 @@ import (
 // role-domain block; they intentionally do not recurse into StoredRoleConfig.
 var storedConfigOnlyFields = map[string]bool{
 	"ClientSigning": true,
-	"Sentry":        true,
+	"Cosigner":      true,
 	"KeyOverrides":  true,
 }
 

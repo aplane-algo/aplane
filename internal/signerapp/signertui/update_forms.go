@@ -14,8 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -90,7 +90,7 @@ func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "e":
-		return m.openGeneratedSentryExport()
+		return m.openGeneratedCosignerExport()
 	case "q", "esc", "enter", " ":
 		m.selectKeyByAddress(m.forms.generatedAddress)
 		m.forms.generatedAddress = ""
@@ -368,10 +368,10 @@ func (m Model) findLibraryTemplateForKeyType(keyType string) (LibraryTemplateInf
 
 // handleGenerateParamsKeys handles keyboard input on parameter input modal for generate.
 func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "esc" && m.sentry.generateFromManager {
-		m.sentry.generateFromManager = false
+	if msg.String() == "esc" && m.cosigner.generateFromManager {
+		m.cosigner.generateFromManager = false
 		m.forms.generateError = ""
-		m.viewState = ViewSentryReferenceDetails
+		m.viewState = ViewCosignerReferenceDetails
 		return m, nil
 	}
 	submitFn := func(keyType string, params map[string]string) tea.Cmd {
@@ -411,10 +411,10 @@ func (m Model) handleParamModalKeys(
 			m = m.appendToCurrentParam(string(msg.Runes), params)
 			return m, nil, ""
 		}
-		if m.isSentrySelectorParam(keyType, param) {
+		if m.isCosignerSelectorParam(keyType, param) {
 			switch msg.String() {
 			case "enter", " ":
-				next, errText := m.openSentryPicker(keyType, param.Name)
+				next, errText := m.openCosignerPicker(keyType, param.Name)
 				return next, nil, errText
 			case "left", "right", "<", ">", "backspace", "delete", "insert":
 				return m, nil, ""
@@ -532,8 +532,8 @@ func (m Model) handleParamModalKeys(
 		}
 		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
 			for _, param := range params {
-				if m.isSentrySelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
-					return m, nil, "Choose a sentry before continuing"
+				if m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
+					return m, nil, "Choose a cosigner before continuing"
 				}
 			}
 			transformedParams, err := m.applyInputModeTransforms(params)
@@ -778,7 +778,7 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 }
 
 func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
-	if paramDef.Name == sentryrefs.ParamSentryName && len(paramDef.Options) > 1 {
+	if paramDef.Name == cosignerrefs.ParamCosignerName && len(paramDef.Options) > 1 {
 		return ""
 	}
 	if paramDef.Default != "" {

@@ -91,7 +91,7 @@ var familyImportExceptions = map[string]string{
 // the production edge points strictly lsig -> internal. Template
 // infrastructure (generictemplate, composeddsa) is exempt; spec-frozen size
 // literals with test-only cross-checks are the sanctioned pattern for
-// vocabulary packages (see internal/sentry/keytypes).
+// vocabulary packages (see internal/cosigner/keytypes).
 func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
 	imports := moduleImports(t)
 

@@ -489,7 +489,7 @@ func ApplyCredentialEntry(
 		destPath = canonical
 		otherExt := keys.AccountKeyExtension
 		if filepath.Ext(destPath) == keys.AccountKeyExtension {
-			otherExt = keys.SentryCredentialExtension
+			otherExt = keys.CosignerCredentialExtension
 		}
 		if err := fsutil.RemoveDurable(filepath.Join(active.KeysDir(), entry.Selector+otherExt)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove contradictory managed credential: %w", err)

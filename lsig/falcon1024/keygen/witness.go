@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"

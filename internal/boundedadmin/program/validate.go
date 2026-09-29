@@ -14,7 +14,7 @@ import (
 
 	boundedmessage "github.com/aplane-algo/aplane/internal/boundedadmin/message"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	sentrymessage "github.com/aplane-algo/aplane/internal/sentry/message"
+	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
@@ -63,11 +63,11 @@ var globalFields = map[byte]string{3: "ZeroAddress"}
 // authentication and contract-admin verification sites.
 type Expected struct {
 	SpendingPublicKey []byte
-	SentryPublicKey   []byte
+	CosignerPublicKey []byte
 	AdminPublicKey    []byte
 	ProgramBinding    []byte
 	BaseArgCount      int
-	SentryArgIndex    int
+	CosignerArgIndex  int
 	AdminArgIndex     int
 	MaxFee            uint64
 	SpendEffects      []string
@@ -209,25 +209,25 @@ func validateDecoded(parsed disassembly, expected Expected) error {
 		return fmt.Errorf("bounded1 pure-spend boundary is invalid")
 	}
 	layer3At := spendAt
-	if len(expected.SentryPublicKey) != 0 {
-		sentryGate := []pattern{
-			exact("arg", strconv.Itoa(expected.SentryArgIndex)), exact("len"), intValue(0), exact(">"), exact("assert"),
-			exact("arg", strconv.Itoa(expected.SentryArgIndex)), exact("len"), intValue(uint64(boundedmeta.SentrySignatureMaxSizeV1)), exact("<="), exact("assert"),
-			bytesValue([]byte(sentrymessage.DomainTagV1)), bytesValue([]byte{byte(sentrymessage.RoleSentry)}), exact("concat"),
+	if len(expected.CosignerPublicKey) != 0 {
+		cosignerGate := []pattern{
+			exact("arg", strconv.Itoa(expected.CosignerArgIndex)), exact("len"), intValue(0), exact(">"), exact("assert"),
+			exact("arg", strconv.Itoa(expected.CosignerArgIndex)), exact("len"), intValue(uint64(boundedmeta.CosignerSignatureMaxSizeV1)), exact("<="), exact("assert"),
+			bytesValue([]byte(cosignermessage.DomainTagV1)), bytesValue([]byte{byte(cosignermessage.RoleCosigner)}), exact("concat"),
 			exact("txn", "TxID"), exact("concat"), exact("sha512_256"),
-			exact("arg", strconv.Itoa(expected.SentryArgIndex)), bytesValue(expected.SentryPublicKey),
+			exact("arg", strconv.Itoa(expected.CosignerArgIndex)), bytesValue(expected.CosignerPublicKey),
 			exact("falcon_verify"), exact("assert"), branch("b"),
 		}
-		if !matchesAt(parsed.instructions, spendAt, sentryGate) {
-			return fmt.Errorf("bounded1 sentry verification region does not match the frozen structure")
+		if !matchesAt(parsed.instructions, spendAt, cosignerGate) {
+			return fmt.Errorf("bounded1 cosigner verification region does not match the frozen structure")
 		}
 		var targetOK bool
-		layer3At, targetOK = branchTarget(parsed, spendAt+len(sentryGate)-1)
-		if !targetOK || layer3At != spendAt+len(sentryGate) || layer3At >= acceptAt {
-			return fmt.Errorf("bounded1 sentry verification does not reach the Layer-3 boundary")
+		layer3At, targetOK = branchTarget(parsed, spendAt+len(cosignerGate)-1)
+		if !targetOK || layer3At != spendAt+len(cosignerGate) || layer3At >= acceptAt {
+			return fmt.Errorf("bounded1 cosigner verification does not reach the Layer-3 boundary")
 		}
-	} else if matchesFrameworkSentryGateAt(parsed.instructions, spendAt) {
-		return fmt.Errorf("bounded1 sentry verification region is present without sentry metadata")
+	} else if matchesFrameworkCosignerGateAt(parsed.instructions, spendAt) {
+		return fmt.Errorf("bounded1 cosigner verification region is present without cosigner metadata")
 	}
 	if err := validateLayer3ControlFlow(parsed, layer3At, acceptAt); err != nil {
 		return fmt.Errorf("bounded1 Layer-3 control flow is invalid: %w", err)
@@ -251,19 +251,19 @@ func validateExpected(expected Expected) error {
 	if expected.AdminArgIndex < expected.BaseArgCount || expected.AdminArgIndex > 255 {
 		return fmt.Errorf("bounded1 contract-admin argument index %d invalid", expected.AdminArgIndex)
 	}
-	if len(expected.SentryPublicKey) == 0 {
-		if expected.SentryArgIndex != 0 {
-			return fmt.Errorf("bounded1 sentry argument index is present without a sentry public key")
+	if len(expected.CosignerPublicKey) == 0 {
+		if expected.CosignerArgIndex != 0 {
+			return fmt.Errorf("bounded1 cosigner argument index is present without a cosigner public key")
 		}
 	} else {
-		if len(expected.SentryPublicKey) != boundedmeta.SentryPublicKeySizeV1 {
-			return fmt.Errorf("bounded1 sentry public key length %d invalid", len(expected.SentryPublicKey))
+		if len(expected.CosignerPublicKey) != boundedmeta.CosignerPublicKeySizeV1 {
+			return fmt.Errorf("bounded1 cosigner public key length %d invalid", len(expected.CosignerPublicKey))
 		}
-		if expected.SentryArgIndex < expected.BaseArgCount || expected.SentryArgIndex >= expected.AdminArgIndex {
-			return fmt.Errorf("bounded1 sentry argument index %d invalid", expected.SentryArgIndex)
+		if expected.CosignerArgIndex < expected.BaseArgCount || expected.CosignerArgIndex >= expected.AdminArgIndex {
+			return fmt.Errorf("bounded1 cosigner argument index %d invalid", expected.CosignerArgIndex)
 		}
-		if bytes.Equal(expected.SentryPublicKey, expected.SpendingPublicKey) || bytes.Equal(expected.SentryPublicKey, expected.AdminPublicKey) {
-			return fmt.Errorf("bounded1 sentry public key collides with another authority")
+		if bytes.Equal(expected.CosignerPublicKey, expected.SpendingPublicKey) || bytes.Equal(expected.CosignerPublicKey, expected.AdminPublicKey) {
+			return fmt.Errorf("bounded1 cosigner public key collides with another authority")
 		}
 	}
 	if expected.MaxFee > boundedmeta.MaximumProfileFee {
@@ -733,7 +733,7 @@ func bytesValue(value []byte) pattern {
 	}
 }
 
-func matchesFrameworkSentryGateAt(instructions []instruction, at int) bool {
+func matchesFrameworkCosignerGateAt(instructions []instruction, at int) bool {
 	anyArg := func(inst instruction) bool {
 		return inst.name == "arg" && len(inst.args) == 1
 	}
@@ -742,8 +742,8 @@ func matchesFrameworkSentryGateAt(instructions []instruction, at int) bool {
 	}
 	gate := []pattern{
 		anyArg, exact("len"), intValue(0), exact(">"), exact("assert"),
-		anyArg, exact("len"), intValue(uint64(boundedmeta.SentrySignatureMaxSizeV1)), exact("<="), exact("assert"),
-		bytesValue([]byte(sentrymessage.DomainTagV1)), bytesValue([]byte{byte(sentrymessage.RoleSentry)}), exact("concat"),
+		anyArg, exact("len"), intValue(uint64(boundedmeta.CosignerSignatureMaxSizeV1)), exact("<="), exact("assert"),
+		bytesValue([]byte(cosignermessage.DomainTagV1)), bytesValue([]byte{byte(cosignermessage.RoleCosigner)}), exact("concat"),
 		exact("txn", "TxID"), exact("concat"), exact("sha512_256"),
 		anyArg, anyBytes, exact("falcon_verify"), exact("assert"), branch("b"),
 	}
@@ -756,7 +756,7 @@ func matchesFrameworkSentryGateAt(instructions []instruction, at int) bool {
 	}
 	rawKey := strings.TrimPrefix(strings.ToLower(instructions[at+17].args[0]), "0x")
 	key, err := hex.DecodeString(rawKey)
-	return err == nil && len(key) == boundedmeta.SentryPublicKeySizeV1
+	return err == nil && len(key) == boundedmeta.CosignerPublicKeySizeV1
 }
 
 func matchesAt(instructions []instruction, at int, patterns []pattern) bool {

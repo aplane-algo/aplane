@@ -299,9 +299,9 @@ type ReconcileStoreResult struct {
 	Error        string
 }
 
-// SentryReferenceInfo is the admin-domain projection of a stored public
-// sentry reference. It never contains private witness material.
-type SentryReferenceInfo struct {
+// CosignerReferenceInfo is the admin-domain projection of a stored public
+// cosigner reference. It never contains private witness material.
+type CosignerReferenceInfo struct {
 	Schema            string
 	Name              string
 	ComponentKey      string
@@ -314,40 +314,40 @@ type SentryReferenceInfo struct {
 	MigrationOrigin   string
 }
 
-type ListSentryReferencesResult struct {
-	References []SentryReferenceInfo
+type ListCosignerReferencesResult struct {
+	References []CosignerReferenceInfo
 	Code       string
 	Error      string
 }
 
-type GetSentryReferenceRequest struct {
+type GetCosignerReferenceRequest struct {
 	Name string
 }
 
-type GetSentryReferenceResult struct {
+type GetCosignerReferenceResult struct {
 	Success   bool
-	Reference SentryReferenceInfo
+	Reference CosignerReferenceInfo
 	Code      string
 	Error     string
 }
 
-type ImportSentryReferenceRequest struct {
+type ImportCosignerReferenceRequest struct {
 	Name         string
 	EnvelopeJSON string
 }
 
-type ImportSentryReferenceResult struct {
+type ImportCosignerReferenceResult struct {
 	Success   bool
-	Reference SentryReferenceInfo
+	Reference CosignerReferenceInfo
 	Code      string
 	Error     string
 }
 
-type RemoveSentryReferenceRequest struct {
+type RemoveCosignerReferenceRequest struct {
 	Name string
 }
 
-type RemoveSentryReferenceResult struct {
+type RemoveCosignerReferenceResult struct {
 	Success      bool
 	Name         string
 	ComponentKey string
@@ -356,11 +356,11 @@ type RemoveSentryReferenceResult struct {
 	Error        string
 }
 
-type ExportSentryPublicRequest struct {
+type ExportCosignerPublicRequest struct {
 	WitnessKeyID string
 }
 
-type ExportSentryPublicResult struct {
+type ExportCosignerPublicResult struct {
 	Success      bool
 	WitnessKeyID string
 	EnvelopeJSON string
@@ -460,8 +460,8 @@ type UpdateAdminSettingRequest struct {
 type PolicyTarget string
 
 const (
-	PolicyTargetSigner PolicyTarget = "signer"
-	PolicyTargetSentry PolicyTarget = "sentry"
+	PolicyTargetSigner   PolicyTarget = "signer"
+	PolicyTargetCosigner PolicyTarget = "cosigner"
 )
 
 // NormalizePolicyTarget maps the legacy omitted target to signer and trims the

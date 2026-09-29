@@ -15,7 +15,7 @@ closed product authorizer requires exact membership in its explicit action
 allowlist. See
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped signing policy in `policy.yaml` and sentry component policy in sentry-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped signing policy in `policy.yaml` and cosigner component policy in cosigner-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
 
 **Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
@@ -97,7 +97,7 @@ Clients receiving the token should:
 - `POST /sign` - Submit signing requests
 - `POST /sign/bounded-admin` - Prepare an external contract-admin partial
 - `POST /sign/component` - Produce guarded or bounded, kind-tagged components
-- `POST /sign/assemble` - Assemble guarded or bounded-sentry signed groups
+- `POST /sign/assemble` - Assemble guarded or bounded-cosigner signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /plan` - Preview group building (dummies, fees, group ID) without signing
 - `GET /status` - Return signer status, keyset revision, and approval timing metadata
@@ -762,8 +762,8 @@ it can disagree with the keyring.
 
 | Version | Use | Description |
 |---------|-----|-------------|
-| 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` `.apb` files, not by in-keystore `.key` or `.sen` files |
-| 3 | In-keystore managed objects | Term envelope for account `.key`, sentry witness `.sen`, and templates; records the term that sealed it and binds the term plus the object's class and canonical selector into the AEAD's authenticated data |
+| 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` `.apb` files, not by in-keystore `.key` or `.cos` files |
+| 3 | In-keystore managed objects | Term envelope for account `.key`, cosigner witness `.cos`, and templates; records the term that sealed it and binds the term plus the object's class and canonical selector into the AEAD's authenticated data |
 
 **Memory Protection:**
 
@@ -1058,9 +1058,9 @@ structurally unable to perform admin-key operations when external custody is
 unavailable. A compromised unlocked signer can still make policy-permitted
 spends and request a partial, but cannot complete the on-chain admin gate.
 
-The same witness key form is used for signer-custodied sentry authority, but
+The same witness key form is used for signer-custodied cosigner authority, but
 the custodian capabilities are disjoint: the networked signer produces only
-`APLANE_SENTRY_V1` component-domain signatures, while the offline ceremony
+`APLANE_COSIGNER_V1` component-domain signatures, while the offline ceremony
 produces only `APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One keypair should
 serve one role for life. Known local collisions are rejected during account
 generation; out-of-band reuse remains an operator responsibility and

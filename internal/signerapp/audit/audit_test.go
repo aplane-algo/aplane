@@ -73,13 +73,13 @@ func TestCredentialRestoreDurabilityUnknownHasDistinctEvent(t *testing.T) {
 	}
 }
 
-func TestSentryReferenceAuditIncludesWitnessKeyIDAndMigrationOrigin(t *testing.T) {
+func TestCosignerReferenceAuditIncludesWitnessKeyIDAndMigrationOrigin(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a, err := NewAuditLogger(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.LogSentryReferenceChangedContext(adminserver.SessionContext{}, "import", "prod-sentry", "WITNESSKEYID", "v1_client_discovery", true)
+	a.LogCosignerReferenceChangedContext(adminserver.SessionContext{}, "import", "prod-cosigner", "WITNESSKEYID", "v1_client_discovery", true)
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestSentryReferenceAuditIncludesWitnessKeyIDAndMigrationOrigin(t *testing.T
 	if err := json.Unmarshal(data, &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.Event != AuditSentryReferenceChanged || entry.WitnessKeyID != "WITNESSKEYID" ||
+	if entry.Event != AuditCosignerReferenceChanged || entry.WitnessKeyID != "WITNESSKEYID" ||
 		entry.Outcome != "import" || entry.MigrationOrigin != "v1_client_discovery" {
 		t.Fatalf("audit entry = %+v", entry)
 	}

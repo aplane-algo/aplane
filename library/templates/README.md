@@ -45,7 +45,7 @@ apadmin template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 | `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Bounded1 Falcon spending with a fixed-depth Merkle recipient allowlist. Pure rekey requires the spending key and no proof. | `recipients` (`address[]`, 1-65536) | None; signer generates the optional 512-byte spend proof |
 | `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock.v1.yaml` | Framework-owned bounded1 ALGO/ASA allowlist with optional asset-ID and per-type amount limits; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), optional `asset_ids` (`uint64[]`, 1-30), optional `max_payment_amount`, optional `max_asset_amount`, framework-injected `bounded_admin_public_key` | None |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both requiring `FirstValid >= unlock_round`. | `unlock_round` | None |
-| `aplane.corridor.v1` | `aplane.corridor.v1.yaml` | Bounded1 Falcon spending with a framework Merkle recipient allowlist and sentry authorization; pure rekey requires a separate external Falcon contract-admin witness. | `recipients` (`address[]`, 1-65536), framework-resolved `sentry_public_key`, framework-injected `bounded_admin_public_key` | None; signer generates the 512-byte spend proof and bounded assembly supplies the sentry slot |
+| `aplane.corridor.v1` | `aplane.corridor.v1.yaml` | Bounded1 Falcon spending with a framework Merkle recipient allowlist and cosigner authorization; pure rekey requires a separate external Falcon contract-admin witness. | `recipients` (`address[]`, 1-65536), framework-resolved `cosigner_public_key`, framework-injected `bounded_admin_public_key` | None; signer generates the 512-byte spend proof and bounded assembly supplies the cosigner slot |
 
 ## Notes
 
@@ -82,8 +82,8 @@ fixed-depth 16 Merkle tree derived from that list:
    for the receiver address and appends them as a 512-byte LogicSig argument.
 
 The caller does not supply this proof. Self transfers and ASA opt-ins are
-allowed without a proof. Corridor additionally requires its sentry signature
-on every spend; its external-admin rekey forbids both proof and sentry slots.
+allowed without a proof. Corridor additionally requires its cosigner signature
+on every spend; its external-admin rekey forbids both proof and cosigner slots.
 
 ## Authoring rules: rekey and close-remainder
 

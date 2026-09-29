@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -201,13 +201,13 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 	}
 }
 
-func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
+func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
 	}{
-		{name: "Falcon guarded Falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1},
-		{name: "falcon guarded falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1},
+		{name: "Falcon guarded Falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1},
+		{name: "falcon guarded falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1},
 	}
 
 	for _, tt := range tests {
@@ -228,7 +228,7 @@ func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 
 			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, nil)
 			if err == nil {
-				t.Fatal("ExecuteGroupSigning() error = nil, want sentry key type rejection")
+				t.Fatal("ExecuteGroupSigning() error = nil, want cosigner key type rejection")
 				return
 			}
 			if err.Kind != ErrorBadRequest {
@@ -241,16 +241,16 @@ func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 	}
 }
 
-func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testing.T) {
+func TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
 		want    string
 	}{
-		{name: "ed25519 component", keyType: witness.Falcon1024V1, want: sentryComponentSignRejectMessage},
-		{name: "falcon component", keyType: witness.Falcon1024V1, want: sentryComponentSignRejectMessage},
-		{name: "guarded Falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
-		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
+		{name: "ed25519 component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
+		{name: "falcon component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
+		{name: "guarded Falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1, want: guardedAccountSignRejectMessage},
+		{name: "guarded falcon cosigner", keyType: keytypes.GuardedFalcon1024Cosigner1024V1, want: guardedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {
@@ -271,7 +271,7 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 				keyMaterial,
 			)
 			if err == nil {
-				t.Fatal("signCryptoKey() error = nil, want sentry key type rejection")
+				t.Fatal("signCryptoKey() error = nil, want cosigner key type rejection")
 				return
 			}
 			if keyType != tt.keyType {

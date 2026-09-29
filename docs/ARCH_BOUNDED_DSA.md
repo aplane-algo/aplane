@@ -20,7 +20,7 @@ defines the complete transaction envelope accepted for an account. Its
 contract admin key is a separately custodied witness key that co-authorizes a
 named administrative operation with the base spending key. It is not an
 independent spending-key recovery key, Algorand Governance, the `apadmin`
-client, or an ASA manager key. The key form is shared with sentry witnesses,
+client, or an ASA manager key. The key form is shared with cosigner witnesses,
 but an individual keypair should never be enrolled in both roles.
 
 `bounded1` has three ordered regions:
@@ -32,10 +32,10 @@ but an individual keypair should never be enrolled in both roles.
    pure spend, and for a spending-key rekey only when its operation declares
    `policy_gate: layer3`.
 
-Sentry-enabled bounded1 profiles are spend-gated profiles and may not declare
+Cosigner-enabled bounded1 profiles are spend-gated profiles and may not declare
 a spending-key-authorized rekey. V1 rejects that combination during template,
 profile, and durable-metadata validation. Escaping a failed or compromised
-sentry therefore uses an external contract-admin rekey, which still requires
+cosigner therefore uses an external contract-admin rekey, which still requires
 the base spending signature. Loss of the spending key is not recoverable
 through the contract-admin path.
 
@@ -73,8 +73,8 @@ is a complete value-spending policy.
 | Signer-derived primitive | fixed-depth Merkle allowlist proof (512 bytes) |
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist` |
 | Inline recipient/asset maximum | 30 entries per list |
-| Flow labels | `bounded1` without a sentry; `bounded-sentry1` with a spend sentry |
-| Online sentry endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
+| Flow labels | `bounded1` without a cosigner; `bounded-cosigner1` with a spend cosigner |
+| Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Admin endpoint | `POST /sign/bounded-admin` |
 | Bundled composed templates | five schema-v2 profiles listed below |
 
@@ -124,7 +124,7 @@ effect surface:
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
 | `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
-| `aplane.corridor.v1` | framework Merkle recipient allowlist plus sentry spend gate | external Falcon admin key | Merkle proof, sentry signature, trailing admin signature |
+| `aplane.corridor.v1` | framework Merkle recipient allowlist plus cosigner spend gate | external Falcon admin key | Merkle proof, cosigner signature, trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
 The timelock intentionally prevents emergency spending-key rekey until its
@@ -231,8 +231,8 @@ canonical_bounded_profile =
   u32(count(admin_operations)) ||
     field(operation_0.kind) || field(operation_0.authorization) ||
     field(operation_0.policy_gate) || ... ||
-  u32(sentry_present) ||
-    if present: field("sentry1") ||
+  u32(cosigner_present) ||
+    if present: field("cosigner1") ||
       field("aplane.witness-falcon1024.v1") || u32(1423) ||
       u32(1) || field("spend") ||
   field(layer3_policy) ||
@@ -248,8 +248,8 @@ use frozen order `rekey`. Duplicates are invalid. Empty spend sets are invalid.
 authorized independently from `axfer`. `max_fee` must be present and no greater
 than 10,000. The Layer 3 identity, argument declarations, maximum sizes, frozen
 indexes, sources, and path masks are security-bearing and therefore part of
-the canonical profile. `sentry_present` is exactly zero or one. The initial
-optional sentry contract has the single ordered path list `[spend]`.
+the canonical profile. `cosigner_present` is exactly zero or one. The initial
+optional cosigner contract has the single ordered path list `[spend]`.
 
 ### Canonical behavior parameters
 
@@ -263,9 +263,9 @@ canonical_behavior_parameters =
 ```
 
 Only behavior-bearing account-creation values are included, in parameter
-definition order. A sentry-enabled profile includes the framework-injected
-`sentry_public_key`; the program binding must therefore commit to the resolved
-sentry key. The framework-injected `bounded_admin_public_key` is excluded
+definition order. A cosigner-enabled profile includes the framework-injected
+`cosigner_public_key`; the program binding must therefore commit to the resolved
+cosigner key. The framework-injected `bounded_admin_public_key` is excluded
 because the program binding carries it separately. Display metadata, file
 paths, runtime values, and policy provenance are excluded.
 
@@ -406,13 +406,13 @@ full_key_type: aplane.corridor.v1
 base_key_type: aplane.falcon1024.v1
 teal_version: 12
 spending_public_key: 1,793 bytes of 0x11
-sentry_public_key: 1,793 bytes of 0x22
+cosigner_public_key: 1,793 bytes of 0x22
 falcon_admin_public_key: 1,793 bytes of 0x33
 recipient input order:
   EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
   CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM
 transaction_id: 32 bytes of 0x44
-sentry_present: 1
+cosigner_present: 1
 corridor_selected_proof_recipient:
   EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI
 corridor_canonical_first_recipient:
@@ -427,42 +427,42 @@ frozen argument layout is:
 |---:|---|---|---:|---|---|---|
 | 0 | `base_signature_0` | `base_signature` | 1423 | `required` | `required` | `required` |
 | 1 | `merkle_proof` | `derived` | 512 | `optional` | `forbidden` | `forbidden` |
-| 2 | `sentry_signature` | `sentry` | 1423 | `required` | `forbidden` | `forbidden` |
+| 2 | `cosigner_signature` | `cosigner` | 1423 | `required` | `forbidden` | `forbidden` |
 | 3 | `admin_signature` | `admin` | 1423 | `forbidden` | `forbidden` | `required` |
 
 Expected canonical encodings:
 
 ```text
-corridor_canonical_bounded_profile_length: 588
+corridor_canonical_bounded_profile_length: 594
 corridor_canonical_bounded_profile_hex:
   0000001941504c414e455f424f554e4445445f50524f46494c455f5631000000
   08626f756e646564310000000300000003706179000000056178666572000000
   0c61737365745f6f70745f696e0000000000002710000000010000000572656b
-  65790000000961646d696e5f6b6579000000046e6f6e65000000010000000773
-  656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e31
-  3032342e76310000058f00000001000000057370656e64000000106d65726b6c
-  655f616c6c6f776c697374000000010000058f000000010000000c6d65726b6c
-  655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f70726f6f
-  660000000a726563697069656e74730000020000000000000000040000000000
-  000010626173655f7369676e61747572655f300000000e626173655f7369676e
-  61747572650000058f0000000872657175697265640000000872657175697265
-  64000000087265717569726564000000010000000c6d65726b6c655f70726f6f
-  66000000076465726976656400000200000000086f7074696f6e616c00000009
-  666f7262696464656e00000009666f7262696464656e00000002000000107365
-  6e7472795f7369676e61747572650000000673656e7472790000058f00000008
-  726571756972656400000009666f7262696464656e00000009666f7262696464
-  656e000000030000000f61646d696e5f7369676e61747572650000000561646d
-  696e0000058f00000009666f7262696464656e00000009666f7262696464656e
-  000000087265717569726564
+  65790000000961646d696e5f6b6579000000046e6f6e65000000010000000963
+  6f7369676e6572310000001c61706c616e652e7769746e6573732d66616c636f
+  6e313032342e76310000058f00000001000000057370656e64000000106d6572
+  6b6c655f616c6c6f776c697374000000010000058f000000010000000c6d6572
+  6b6c655f70726f6f66000000166d65726b6c655f616c6c6f776c6973745f7072
+  6f6f660000000a726563697069656e7473000002000000000000000004000000
+  0000000010626173655f7369676e61747572655f300000000e626173655f7369
+  676e61747572650000058f000000087265717569726564000000087265717569
+  726564000000087265717569726564000000010000000c6d65726b6c655f7072
+  6f6f66000000076465726976656400000200000000086f7074696f6e616c0000
+  0009666f7262696464656e00000009666f7262696464656e0000000200000012
+  636f7369676e65725f7369676e617475726500000008636f7369676e65720000
+  058f00000008726571756972656400000009666f7262696464656e0000000966
+  6f7262696464656e000000030000000f61646d696e5f7369676e617475726500
+  00000561646d696e0000058f00000009666f7262696464656e00000009666f72
+  62696464656e000000087265717569726564
 
-corridor_canonical_behavior_parameters_length: 1979
+corridor_canonical_behavior_parameters_length: 1981
 corridor_canonical_behavior_parameters_hex:
   0000002541504c414e455f424f554e4445445f4245484156494f525f50415241
   4d45544552535f5631000000020000000a726563697069656e74730000000961
   6464726573735b5d0000004c0000000200000020111111111111111111111111
   1111111111111111111111111111111111111111000000202222222222222222
-  2222222222222222222222222222222222222222222222220000001173656e74
-  72795f7075626c69635f6b657900000005627974657300000701222222222222
+  22222222222222222222222222222222222222222222222200000013636f7369
+  676e65725f7075626c69635f6b65790000000562797465730000070122222222
   2222222222222222222222222222222222222222222222222222222222222222
   2222222222222222222222222222222222222222222222222222222222222222
   2222222222222222222222222222222222222222222222222222222222222222
@@ -518,16 +518,16 @@ corridor_canonical_behavior_parameters_hex:
   2222222222222222222222222222222222222222222222222222222222222222
   2222222222222222222222222222222222222222222222222222222222222222
   2222222222222222222222222222222222222222222222222222222222222222
-  222222222222222222222222222222222222222222222222222222
+  2222222222222222222222222222222222222222222222222222222222
 
 corridor_canonical_behavior_parameters_sha256:
-  8291e71b954d6b4815fd82f8a7dbb93e4a5124990e265b9c1a3a3c8060a7d64a
+  4a0cdabbc396ab903886966dc92bbdb69d15ada898ca3e92671183550ff389d4
 ```
 
 Expected authority, Merkle, binding, and transcript values:
 
 ```text
-corridor_sentry_key_id:
+corridor_cosigner_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 corridor_contract_admin_key_id:
@@ -555,10 +555,10 @@ corridor_merkle_proof_hex:
   48c12a8dd675e9dcd3c63141fbfde6d11056c392b4379c3bbdc79a8511d0e65b
 
 corridor_bounded_program_binding:
-  fea0a4e58434a64714bcde9762f19d674e98808192e1280b1fb85b6acd76eb0c
+  fc255393a13decc49cec2a6d77141a3cec51973469f55a262f2c5b6fdb1f212f
 
 corridor_admin_message:
-  076546841ec805465aa8bf90a201014b157be5775288b6958688267af2174a8f
+  2630a15f3cda2716df0e180a6d78d56b1a4df700cf2ac16b93e15a611b655ea8
 ```
 
 Whitespace and line wrapping are presentation only.
@@ -682,7 +682,7 @@ composer-owned pure-spend boundary.
 ## Signature Arguments and Durable Metadata
 
 The static slot order is base signatures, signer-derived Layer 3 arguments,
-caller runtime Layer 3 arguments, an optional sentry signature, then an
+caller runtime Layer 3 arguments, an optional cosigner signature, then an
 optional external admin signature.
 Every slot stores an index, source, maximum size, and required/optional/
 forbidden rule for spend, spending-key rekey, and admin-key rekey paths.
@@ -717,24 +717,24 @@ consulting the installed template.
 ## Routing and Approval
 
 `/keys` and `/keytypes` advertise `signing_flow: bounded1` for profiles without
-a sentry and `signing_flow: bounded-sentry1` for profiles whose durable
-metadata contains `sentry.contract: sentry1`. Both expose the same typed
+a cosigner and `signing_flow: bounded-cosigner1` for profiles whose durable
+metadata contains `cosigner.contract: cosigner1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
 instance Contract Admin Key ID, program binding, and structured selected-path
 LogicSig resource profile. Clients route:
 
-- non-sentry pure spend to ordinary `/sign`;
-- sentry-gated pure spend through the first-party client's user-first
-  `/plan`, kind-tagged signer and sentry `/sign/component`, then signer
+- non-cosigner pure spend to ordinary `/sign`;
+- cosigner-gated pure spend through the first-party client's user-first
+  `/plan`, kind-tagged signer and cosigner `/sign/component`, then signer
   `/sign/assemble` choreography;
 - spending-key rekey to ordinary `/sign` with forced review;
 - Falcon-admin rekey to `POST /sign/bounded-admin` and external completion; and
 - malformed, hybrid, disabled, or unknown effects to local rejection.
 
-Ordinary `/sign` rejects a sentry-gated bounded spend because it cannot finish
-that flow alone. First-party clients do not support combining `sentry1` and
-`bounded-sentry1` targets in one group because their assembly contracts differ;
+Ordinary `/sign` rejects a cosigner-gated bounded spend because it cannot finish
+that flow alone. First-party clients do not support combining `cosigner1` and
+`bounded-cosigner1` targets in one group because their assembly contracts differ;
 this is a client orchestration limit, not a signer-side whole-group flow
 invariant. Signer-side classification remains authoritative for each target it
 signs or assembles. Unknown flow labels fail closed.

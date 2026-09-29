@@ -3,7 +3,7 @@
 
 package engine
 
-// Engine-side adapter for the isolated guarded (sentry) signing package.
+// Engine-side adapter for the isolated guarded (cosigner) signing package.
 // internal/engine/guarded owns the orchestration and has no dependency on the
 // engine; this file wires the engine's live connection, caches, and signer key
 // cache into a guarded.Signer, and re-exports the guarded discovery types and
@@ -18,18 +18,18 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
-// DiscoveredSentryComponentKey is public sentry-key metadata advertised by a
+// DiscoveredCosignerComponentKey is public cosigner-key metadata advertised by a
 // signer endpoint through /keys.
-type DiscoveredSentryComponentKey = guarded.DiscoveredSentryComponentKey
+type DiscoveredCosignerComponentKey = guarded.DiscoveredCosignerComponentKey
 
-// Sentry discovery error sentinels, re-exported from the guarded package so
+// Cosigner discovery error sentinels, re-exported from the guarded package so
 // callers can classify failures via errors.Is without importing guarded.
 var (
-	ErrSentryDiscoveryInvalidMetadata = guarded.ErrSentryDiscoveryInvalidMetadata
-	ErrSentryDiscoveryUnavailable     = guarded.ErrSentryDiscoveryUnavailable
-	ErrSentryDiscoveryLocked          = guarded.ErrSentryDiscoveryLocked
-	ErrSentryDiscoveryAuth            = guarded.ErrSentryDiscoveryAuth
-	ErrSentryDiscoveryConfig          = guarded.ErrSentryDiscoveryConfig
+	ErrCosignerDiscoveryInvalidMetadata = guarded.ErrCosignerDiscoveryInvalidMetadata
+	ErrCosignerDiscoveryUnavailable     = guarded.ErrCosignerDiscoveryUnavailable
+	ErrCosignerDiscoveryLocked          = guarded.ErrCosignerDiscoveryLocked
+	ErrCosignerDiscoveryAuth            = guarded.ErrCosignerDiscoveryAuth
+	ErrCosignerDiscoveryConfig          = guarded.ErrCosignerDiscoveryConfig
 )
 
 // guardedSignerCacheView adapts the engine's concurrency-guarded signer key
@@ -48,12 +48,12 @@ func (v guardedSignerCacheView) SigningFlow(address string) string {
 	return v.core.signerCacheSigningFlow(address)
 }
 
-func (v guardedSignerCacheView) SentryComponentKeyType(address string) (string, bool) {
-	return v.core.signerCacheSentryComponentKeyType(address)
+func (v guardedSignerCacheView) CosignerComponentKeyType(address string) (string, bool) {
+	return v.core.signerCacheCosignerComponentKeyType(address)
 }
 
-func (v guardedSignerCacheView) SentryPublicKey(address string) (string, bool) {
-	return v.core.signerCacheSentryPublicKey(address)
+func (v guardedSignerCacheView) CosignerPublicKey(address string) (string, bool) {
+	return v.core.signerCacheCosignerPublicKey(address)
 }
 
 func (v guardedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
@@ -65,7 +65,7 @@ func (v guardedSignerCacheView) LogicSigResourceProfile(address string) (lsigres
 }
 
 // guardedSigner builds a guarded.Signer bound to the engine's live connection,
-// auth cache, algod client, sentry endpoints, and signer key cache. Construct
+// auth cache, algod client, cosigner endpoints, and signer key cache. Construct
 // one per operation; it holds no independent state.
 func (e *Engine) guardedSigner() *guarded.Signer {
 	return e.guardedSignerWithHostKeyApproval(nil)
@@ -82,15 +82,15 @@ func (e *Engine) guardedSignerWithHostKeyApproval(approve sshtunnel.HostKeyAppro
 	})
 }
 
-// DiscoverSentryComponentKeys queries one endpoint and returns sentry component
+// DiscoverCosignerComponentKeys queries one endpoint and returns cosigner component
 // public keys that can be mapped for guarded signing.
-func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
-	return e.guardedSigner().DiscoverSentryComponentKeys(ctx, endpoint)
+func (e *Engine) DiscoverCosignerComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredCosignerComponentKey, error) {
+	return e.guardedSigner().DiscoverCosignerComponentKeys(ctx, endpoint)
 }
 
-// DiscoverSentryComponentKeysWithHostKeyApproval performs one explicit setup
+// DiscoverCosignerComponentKeysWithHostKeyApproval performs one explicit setup
 // probe that may confirm an unknown SSH host. Normal background discovery does
 // not install this callback and remains noninteractive.
-func (e *Engine) DiscoverSentryComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredSentryComponentKey, error) {
-	return e.guardedSignerWithHostKeyApproval(approve).DiscoverSentryComponentKeys(ctx, endpoint)
+func (e *Engine) DiscoverCosignerComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredCosignerComponentKey, error) {
+	return e.guardedSignerWithHostKeyApproval(approve).DiscoverCosignerComponentKeys(ctx, endpoint)
 }

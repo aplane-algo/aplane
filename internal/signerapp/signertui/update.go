@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,7 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
 		m.clearRestorePassphrase()
-		m.clearSentryWorkflowState()
+		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
@@ -128,7 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DisconnectedMsg:
 		m.clearRestorePassphrase()
-		m.clearSentryWorkflowState()
+		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
 		m.connectionState = ConnectionDisconnected
@@ -139,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case localIdleDisconnectedMsg:
 		m.clearRestorePassphrase()
-		m.clearSentryWorkflowState()
+		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
 		m.connectionState = ConnectionConnecting
@@ -158,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// If signer is already unlocked, request key list
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListSentryReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListCosignerReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		case signerRuntimeRecovery:
 			// Signing is blocked by store damage or an unresolved generation
 			// transition; open the general recovery screen.
@@ -187,7 +187,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerUnlockedState(msg.KeyCount)
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListSentryReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListCosignerReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		} else {
 			m.auth.passphraseError = msg.Error
 			if isSeriousUnlockError(msg.Code, msg.Error) {
@@ -257,19 +257,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ErrorMsg:
-		if m.viewState == ViewSentryImporting {
-			m.sentry.importError = msg.Error.Error()
-			m.viewState = ViewSentryImportReview
+		if m.viewState == ViewCosignerImporting {
+			m.cosigner.importError = msg.Error.Error()
+			m.viewState = ViewCosignerImportReview
 			return m, m.waitForMessageCmd()
 		}
-		if m.viewState == ViewSentryRemoving {
-			m.sentry.importError = msg.Error.Error()
-			m.viewState = ViewSentryRemoveConfirm
+		if m.viewState == ViewCosignerRemoving {
+			m.cosigner.importError = msg.Error.Error()
+			m.viewState = ViewCosignerRemoveConfirm
 			return m, m.waitForMessageCmd()
 		}
-		if m.viewState == ViewSentryExporting {
-			m.sentry.exportError = msg.Error.Error()
-			m.viewState = ViewSentryExportPath
+		if m.viewState == ViewCosignerExporting {
+			m.cosigner.exportError = msg.Error.Error()
+			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
@@ -300,7 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ReconnectingMsg:
 		m.clearRestorePassphrase()
-		m.clearSentryWorkflowState()
+		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.connectionState = ConnectionConnecting
 		// Continue listening for messages
@@ -309,7 +309,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case GenerateResultMsg:
 		if msg.Success {
 			m.lastError = ""
-			m.sentry.generateFromManager = false
+			m.cosigner.generateFromManager = false
 			m.forms.generatedAddress = msg.Address
 			m.forms.generatedKeyType = msg.KeyType
 			m.viewState = ViewGenerateDisplay
@@ -716,144 +716,144 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			resumeEnrollment := false
 			for _, info := range msg.KeyTypes {
-				if info.KeyType != m.sentry.pendingKeyType {
+				if info.KeyType != m.cosigner.pendingKeyType {
 					continue
 				}
 				for _, param := range info.CreationParams {
-					if param.Name == sentryrefs.ParamSentryName {
+					if param.Name == cosignerrefs.ParamCosignerName {
 						resumeEnrollment = true
 						break
 					}
 				}
 				break
 			}
-			if m.sentry.pendingWitnessID != "" && m.sentry.pendingKeyType != "" && resumeEnrollment {
+			if m.cosigner.pendingWitnessID != "" && m.cosigner.pendingKeyType != "" && resumeEnrollment {
 				oldParams := m.forms.genericLSigParams
-				m = m.initGenericLSigParamsForKeyType(m.sentry.pendingKeyType)
+				m = m.initGenericLSigParamsForKeyType(m.cosigner.pendingKeyType)
 				for name, value := range oldParams {
 					if _, ok := m.forms.genericLSigParams[name]; ok {
 						m.forms.genericLSigParams[name] = value
 					}
 				}
-				if _, ok := m.forms.genericLSigParams[sentryrefs.ParamSentryName]; ok {
-					m.forms.genericLSigParams[sentryrefs.ParamSentryName] = m.sentry.pendingWitnessID
+				if _, ok := m.forms.genericLSigParams[cosignerrefs.ParamCosignerName]; ok {
+					m.forms.genericLSigParams[cosignerrefs.ParamCosignerName] = m.cosigner.pendingWitnessID
 					for index, name := range m.forms.genericLSigParamOrder {
-						if name == sentryrefs.ParamSentryName {
+						if name == cosignerrefs.ParamCosignerName {
 							m.forms.generateFocus = index
 							break
 						}
 					}
 				}
-				m.sentry.pendingKeyType = ""
-				m.sentry.pendingWitnessID = ""
-				m.sentry.requiredKeyType = ""
+				m.cosigner.pendingKeyType = ""
+				m.cosigner.pendingWitnessID = ""
+				m.cosigner.requiredKeyType = ""
 			}
 		}
 		return m, m.waitForMessageCmd()
 
-	case SentryReferencesMsg:
-		m.sentry.loaded = true
+	case CosignerReferencesMsg:
+		m.cosigner.loaded = true
 		if msg.Error != "" {
 			m.lastError = msg.Error
 		} else {
-			m.sentry.references = append([]SentryReferenceInfo(nil), msg.References...)
-			m.clampSentryManagerScroll(len(msg.References))
-			if m.viewState == ViewSentryReferences && m.sentry.managerStatus == "Refreshing..." {
-				m.sentry.managerStatus = ""
+			m.cosigner.references = append([]CosignerReferenceInfo(nil), msg.References...)
+			m.clampCosignerManagerScroll(len(msg.References))
+			if m.viewState == ViewCosignerReferences && m.cosigner.managerStatus == "Refreshing..." {
+				m.cosigner.managerStatus = ""
 			}
 		}
 		return m, m.waitForMessageCmd()
 
-	case SentryImportResultMsg:
+	case CosignerImportResultMsg:
 		if !msg.Success {
-			m.clearSentryImportEnvelope()
-			m.sentry.importError = msg.Error
-			if m.sentry.importError == "" {
-				m.sentry.importError = "Sentry key import failed"
+			m.clearCosignerImportEnvelope()
+			m.cosigner.importError = msg.Error
+			if m.cosigner.importError == "" {
+				m.cosigner.importError = "Cosigner key import failed"
 			}
-			m.viewState = ViewSentryImportForm
+			m.viewState = ViewCosignerImportForm
 			return m, m.waitForMessageCmd()
 		}
-		return m.completeSentryImport(msg.Reference)
+		return m.completeCosignerImport(msg.Reference)
 
-	case SentryRemoveResultMsg:
+	case CosignerRemoveResultMsg:
 		if !msg.Success {
-			m.sentry.importError = msg.Error
-			if m.sentry.importError == "" {
-				m.sentry.importError = "Sentry reference removal failed"
+			m.cosigner.importError = msg.Error
+			if m.cosigner.importError == "" {
+				m.cosigner.importError = "Cosigner reference removal failed"
 			}
-			m.viewState = ViewSentryRemoveConfirm
+			m.viewState = ViewCosignerRemoveConfirm
 			return m, m.waitForMessageCmd()
 		}
-		m.sentry.importError = ""
+		m.cosigner.importError = ""
 		if msg.Removed {
-			m.sentry.managerStatus = "Removed " + msg.Name
+			m.cosigner.managerStatus = "Removed " + msg.Name
 		} else {
-			m.sentry.managerStatus = msg.Name + " was already absent"
+			m.cosigner.managerStatus = msg.Name + " was already absent"
 		}
-		m.viewState = ViewSentryReferences
+		m.viewState = ViewCosignerReferences
 		return m, tea.Batch(
 			m.waitForMessageCmd(),
-			m.sendListSentryReferencesCmd(),
+			m.sendListCosignerReferencesCmd(),
 			m.sendListKeyTypesCmd(),
 		)
 
-	case SentryExportResultMsg:
+	case CosignerExportResultMsg:
 		if !msg.Success {
-			m.sentry.exportError = msg.Error
-			if m.sentry.exportError == "" {
-				m.sentry.exportError = "Sentry key export failed"
+			m.cosigner.exportError = msg.Error
+			if m.cosigner.exportError == "" {
+				m.cosigner.exportError = "Cosigner key export failed"
 			}
-			m.viewState = ViewSentryExportPath
+			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
-		if msg.WitnessKeyID != m.sentry.exportWitnessID || msg.EnvelopeJSON == "" {
-			m.sentry.exportError = "Signer returned inconsistent sentry key metadata"
-			m.viewState = ViewSentryExportPath
+		if msg.WitnessKeyID != m.cosigner.exportWitnessID || msg.EnvelopeJSON == "" {
+			m.cosigner.exportError = "Signer returned inconsistent cosigner key metadata"
+			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
-		artifactJSON, err := composeSentryExportArtifact(
+		artifactJSON, err := composeCosignerExportArtifact(
 			msg.EnvelopeJSON,
-			m.sentry.exportEndpoint,
-			m.sentry.exportIncludeEndpoint,
+			m.cosigner.exportEndpoint,
+			m.cosigner.exportIncludeEndpoint,
 		)
 		if err != nil {
-			m.sentry.exportError = "Cannot compose sentry key JSON: " + err.Error()
-			m.viewState = ViewSentryExportPath
+			m.cosigner.exportError = "Cannot compose cosigner key JSON: " + err.Error()
+			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
-		if m.sentry.exportShowJSON {
-			m.sentry.exportError = ""
-			m.viewState = ViewSentryExportJSON
-			return m, tea.Exec(&sentryJSONTerminalDisplay{document: artifactJSON}, func(err error) tea.Msg {
-				return sentryJSONTerminalClosedMsg{err: err}
+		if m.cosigner.exportShowJSON {
+			m.cosigner.exportError = ""
+			m.viewState = ViewCosignerExportJSON
+			return m, tea.Exec(&cosignerJSONTerminalDisplay{document: artifactJSON}, func(err error) tea.Msg {
+				return cosignerJSONTerminalClosedMsg{err: err}
 			})
 		}
 		return m, tea.Batch(
 			m.waitForMessageCmd(),
-			writeSentryPublicEnvelopeCmd(m.sentry.exportPath, artifactJSON),
+			writeCosignerPublicEnvelopeCmd(m.cosigner.exportPath, artifactJSON),
 		)
 
-	case sentryJSONTerminalClosedMsg:
-		if m.viewState != ViewSentryExportJSON {
+	case cosignerJSONTerminalClosedMsg:
+		if m.viewState != ViewCosignerExportJSON {
 			return m, nil
 		}
-		m.sentry.exportShowJSON = false
-		m.viewState = ViewSentryExportPath
+		m.cosigner.exportShowJSON = false
+		m.viewState = ViewCosignerExportPath
 		if msg.err != nil {
-			m.sentry.exportError = fmt.Sprintf("Cannot display JSON in terminal: %v", msg.err)
+			m.cosigner.exportError = fmt.Sprintf("Cannot display JSON in terminal: %v", msg.err)
 		}
 		return m, m.waitForMessageCmd()
 
-	case SentryExportWrittenMsg:
+	case CosignerExportWrittenMsg:
 		if msg.Error != nil {
-			m.sentry.exportError = msg.Error.Error()
-			m.viewState = ViewSentryExportPath
+			m.cosigner.exportError = msg.Error.Error()
+			m.viewState = ViewCosignerExportPath
 			return m, nil
 		}
-		m.sentry.exportError = ""
-		m.sentry.exportWrittenPath = msg.Path
-		m.viewState = ViewSentryExportResult
+		m.cosigner.exportError = ""
+		m.cosigner.exportWrittenPath = msg.Path
+		m.viewState = ViewCosignerExportResult
 		return m, nil
 
 	}
@@ -867,7 +867,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input based on current view
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewSentryImporting || m.viewState == ViewSentryRemoving || m.viewState == ViewSentryExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
+	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewCosignerImporting || m.viewState == ViewCosignerRemoving || m.viewState == ViewCosignerExporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
 		return m, tea.Quit
 	}
 	if m.usesSharedPopupViewport() {
@@ -935,24 +935,24 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleGenerateFormKeys(msg)
 	case ViewGenerateParams:
 		return m.handleGenerateParamsKeys(msg)
-	case ViewSentryPicker:
-		return m.handleSentryPickerKeys(msg)
-	case ViewSentryImportForm:
-		return m.handleSentryImportFormKeys(msg)
-	case ViewSentryImportReview:
-		return m.handleSentryImportReviewKeys(msg)
-	case ViewSentryReferences:
-		return m.handleSentryReferencesKeys(msg)
-	case ViewSentryReferenceDetails:
-		return m.handleSentryReferenceDetailsKeys(msg)
-	case ViewSentryRemoveConfirm:
-		return m.handleSentryRemoveConfirmKeys(msg)
-	case ViewSentryGenerateType:
-		return m.handleSentryGenerateTypeKeys(msg)
-	case ViewSentryExportPath:
-		return m.handleSentryExportPathKeys(msg)
-	case ViewSentryExportResult:
-		return m.handleSentryExportResultKeys(msg)
+	case ViewCosignerPicker:
+		return m.handleCosignerPickerKeys(msg)
+	case ViewCosignerImportForm:
+		return m.handleCosignerImportFormKeys(msg)
+	case ViewCosignerImportReview:
+		return m.handleCosignerImportReviewKeys(msg)
+	case ViewCosignerReferences:
+		return m.handleCosignerReferencesKeys(msg)
+	case ViewCosignerReferenceDetails:
+		return m.handleCosignerReferenceDetailsKeys(msg)
+	case ViewCosignerRemoveConfirm:
+		return m.handleCosignerRemoveConfirmKeys(msg)
+	case ViewCosignerGenerateType:
+		return m.handleCosignerGenerateTypeKeys(msg)
+	case ViewCosignerExportPath:
+		return m.handleCosignerExportPathKeys(msg)
+	case ViewCosignerExportResult:
+		return m.handleCosignerExportResultKeys(msg)
 	case ViewImportParams:
 		return m.handleImportParamsKeys(msg)
 	case ViewDeleteConfirm:
@@ -977,7 +977,7 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTemplateInstallConfirmKeys(msg)
 	case ViewLibraryTemplateDetails:
 		return m.handleLibraryTemplateDetailsKeys(msg)
-	case ViewGenerating, ViewImporting, ViewSentryImporting, ViewSentryRemoving, ViewSentryExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
+	case ViewGenerating, ViewImporting, ViewCosignerImporting, ViewCosignerRemoving, ViewCosignerExporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
 		if msg.String() == "esc" {
 			m.lastError = "Operation in progress; wait for completion or press q to quit"
 		}
@@ -994,17 +994,17 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewTokenProvisioningPopup,
 		ViewGenerateForm,
 		ViewGenerateParams,
-		ViewSentryPicker,
-		ViewSentryImportForm,
-		ViewSentryImportReview,
-		ViewSentryImporting,
-		ViewSentryReferenceDetails,
-		ViewSentryRemoveConfirm,
-		ViewSentryRemoving,
-		ViewSentryGenerateType,
-		ViewSentryExportPath,
-		ViewSentryExporting,
-		ViewSentryExportResult,
+		ViewCosignerPicker,
+		ViewCosignerImportForm,
+		ViewCosignerImportReview,
+		ViewCosignerImporting,
+		ViewCosignerReferenceDetails,
+		ViewCosignerRemoveConfirm,
+		ViewCosignerRemoving,
+		ViewCosignerGenerateType,
+		ViewCosignerExportPath,
+		ViewCosignerExporting,
+		ViewCosignerExportResult,
 		ViewGenerating,
 		ViewGenerateDisplay,
 		ViewImportForm,

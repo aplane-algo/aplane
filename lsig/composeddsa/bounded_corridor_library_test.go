@@ -38,7 +38,7 @@ func TestBundledCorridorV1Contract(t *testing.T) {
 	}
 
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Contract != boundedmeta.ContractV1 || metadata.Sentry == nil || metadata.Sentry.Contract != boundedmeta.SentryContractV1 {
+	if metadata == nil || metadata.Contract != boundedmeta.ContractV1 || metadata.Cosigner == nil || metadata.Cosigner.Contract != boundedmeta.CosignerContractV1 {
 		t.Fatalf("Corridor metadata = %#v", metadata)
 	}
 	if metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || len(metadata.DerivedArgs) != 1 || len(metadata.ArgumentLayout) != 4 {
@@ -47,7 +47,7 @@ func TestBundledCorridorV1Contract(t *testing.T) {
 	wantSlots := []struct{ name, source string }{
 		{"base_signature_0", boundedmeta.ArgSourceBaseSignature},
 		{"merkle_proof", boundedmeta.ArgSourceDerived},
-		{boundedmeta.SentrySignatureSlot, boundedmeta.ArgSourceSentry},
+		{boundedmeta.CosignerSignatureSlot, boundedmeta.ArgSourceCosigner},
 		{"admin_signature", boundedmeta.ArgSourceAdmin},
 	}
 	for i, want := range wantSlots {
@@ -59,7 +59,7 @@ func TestBundledCorridorV1Contract(t *testing.T) {
 
 	params := map[string]string{
 		"recipients":               types.Address{1}.String(),
-		"sentry_public_key":        hex.EncodeToString(bytes.Repeat([]byte{0x22}, falconfamily.PublicKeySize)),
+		"cosigner_public_key":      hex.EncodeToString(bytes.Repeat([]byte{0x22}, falconfamily.PublicKeySize)),
 		"bounded_admin_public_key": hex.EncodeToString(bytes.Repeat([]byte{0x33}, boundedmeta.FalconAdminPublicKeySize)),
 	}
 	if err := provider.ValidateCreationParams(params); err != nil {
@@ -82,7 +82,7 @@ func TestBundledCorridorV1Contract(t *testing.T) {
 	hash := sha256.Sum256([]byte(teal))
 	gotHash := hex.EncodeToString(hash[:])
 	gotFingerprint := provider.CompatibilityFingerprint()
-	if gotFingerprint != "1:3dfda4de78223ea2c1dde50f33e14cf527f0acbc795a68a7d3d4f59e04265131" || gotHash != "94812b576a1f729e1f1fa063730288476a2fe9c29b733ca4be1b87028a9ec3a6" {
+	if gotFingerprint != "1:f24a1b55bf4939ade58058063f207bf1e818c06f16a1ba0aaffbd75fc84fbbda" || gotHash != "c21019a9a4840dc695085e84aaeba1566159c036bf37660cf22c8b53b01feb10" {
 		t.Fatalf("Corridor goldens: fingerprint %q; TEAL SHA-256 %q", gotFingerprint, gotHash)
 	}
 }

@@ -32,17 +32,17 @@ type AliasCache struct {
 // SignerCache stores addresses that Signer has private keys for (can sign remotely)
 // Maps: address -> key type ("aplane.falcon1024.v1" or "ed25519")
 type SignerCache struct {
-	SchemaVersion           int                             `json:"schema_version,omitempty"`
-	Keys                    map[string]string               `json:"keys"`          // address -> key type
-	GenericLsigs            map[string]bool                 `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
-	LogicSigResources       map[string]lsigresource.Profile `json:"logic_sig_resources,omitempty"`
-	SigningArgs             map[string][]SigningArgInfo     `json:"signing_args"`                         // address -> key-file signing arg schema for LogicSigs
-	SigningFlows            map[string]string               `json:"signing_flows,omitempty"`              // address -> signing choreography label (e.g. "sentry1"); empty = plain /sign
-	SentryComponentKeyTypes map[string]string               `json:"sentry_component_key_types,omitempty"` // address -> sentry component key type for signing_flow "sentry1"
-	SentryPublicKeys        map[string]string               `json:"sentry_public_keys,omitempty"`         // address -> embedded sentry public key hex
-	BoundedMaxFees          map[string]uint64               `json:"bounded_max_fees,omitempty"`           // address -> bounded authorization max_fee
-	Locked                  bool                            `json:"-"`                                    // True if signer reported 403 (locked) on last /keys check
-	store                   *Store
+	SchemaVersion             int                             `json:"schema_version,omitempty"`
+	Keys                      map[string]string               `json:"keys"`          // address -> key type
+	GenericLsigs              map[string]bool                 `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
+	LogicSigResources         map[string]lsigresource.Profile `json:"logic_sig_resources,omitempty"`
+	SigningArgs               map[string][]SigningArgInfo     `json:"signing_args"`                           // address -> key-file signing arg schema for LogicSigs
+	SigningFlows              map[string]string               `json:"signing_flows,omitempty"`                // address -> signing choreography label (e.g. "cosigner1"); empty = plain /sign
+	CosignerComponentKeyTypes map[string]string               `json:"cosigner_component_key_types,omitempty"` // address -> cosigner component key type for signing_flow "cosigner1"
+	CosignerPublicKeys        map[string]string               `json:"cosigner_public_keys,omitempty"`         // address -> embedded cosigner public key hex
+	BoundedMaxFees            map[string]uint64               `json:"bounded_max_fees,omitempty"`             // address -> bounded authorization max_fee
+	Locked                    bool                            `json:"-"`                                      // True if signer reported 403 (locked) on last /keys check
+	store                     *Store
 }
 
 // AuthAddressCache stores cached auth addresses to avoid repeated blockchain queries

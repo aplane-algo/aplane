@@ -267,8 +267,8 @@ func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto
 	if target != "" {
 		return target
 	}
-	if role == noderole.RoleSentry {
-		return adminproto.PolicyTargetSentry
+	if role == noderole.RoleCosigner {
+		return adminproto.PolicyTargetCosigner
 	}
 	return adminproto.PolicyTargetSigner
 }
@@ -320,18 +320,18 @@ func (s Service) policyTargetOps(target adminproto.PolicyTarget) (policyTargetOp
 				ir.SetPolicyState(stored, effective)
 			},
 		}, nil
-	case adminproto.PolicyTargetSentry:
+	case adminproto.PolicyTargetCosigner:
 		return policyTargetOps{
-			snapshotUnavailableCode: "sentry_policy_snapshot_unavailable",
-			snapshotUnavailableErr:  "active stored sentry policy snapshot is unavailable; reload or unlock the identity",
-			marshal:                 policy.MarshalStoredSentryConfig,
-			parse:                   policy.ParseStoredSentryConfig,
-			loadVerified:            policy.LoadVerifiedSentryConfigActive,
-			saveBytes:               policy.SaveSentryBytesActiveWithKeyring,
-			apply:                   policyruntime.ApplySentryStoredConfig,
-			activeSnapshot:          (*productruntime.Runtime).SentryPolicySnapshot,
+			snapshotUnavailableCode: "cosigner_policy_snapshot_unavailable",
+			snapshotUnavailableErr:  "active stored cosigner policy snapshot is unavailable; reload or unlock the identity",
+			marshal:                 policy.MarshalStoredCosignerConfig,
+			parse:                   policy.ParseStoredCosignerConfig,
+			loadVerified:            policy.LoadVerifiedCosignerConfigActive,
+			saveBytes:               policy.SaveCosignerBytesActiveWithKeyring,
+			apply:                   policyruntime.ApplyCosignerStoredConfig,
+			activeSnapshot:          (*productruntime.Runtime).CosignerPolicySnapshot,
 			setState: func(ir *productruntime.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
-				ir.SetSentryPolicyState(stored, effective)
+				ir.SetCosignerPolicyState(stored, effective)
 			},
 		}, nil
 	default:
@@ -348,8 +348,8 @@ func validatePolicyTargetForNodeRole(role noderole.Role, target adminproto.Polic
 		if role == "" || role == noderole.RoleSigner {
 			return nil
 		}
-	case adminproto.PolicyTargetSentry:
-		if role == noderole.RoleSentry {
+	case adminproto.PolicyTargetCosigner:
+		if role == noderole.RoleCosigner {
 			return nil
 		}
 	default:

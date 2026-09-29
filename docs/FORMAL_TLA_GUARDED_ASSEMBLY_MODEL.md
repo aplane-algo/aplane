@@ -18,7 +18,7 @@ The spec lives at [formal/guarded_assembly.tla](formal/guarded_assembly.tla).
 |---|---|---|
 | A1: role domain separation | FORMAL_GUARDED_SIGNING_MODEL.md | `A1_RoleDomainSeparation` |
 | A6: user signature verified against stored user key | FORMAL_GUARDED_SIGNING_MODEL.md | `A6_UserSignatureVerified` |
-| A7: sentry signature verified against embedded sentry key | FORMAL_GUARDED_SIGNING_MODEL.md | `A7_SentrySignatureVerified` |
+| A7: cosigner signature verified against embedded cosigner key | FORMAL_GUARDED_SIGNING_MODEL.md | `A7_CosignerSignatureVerified` |
 | A8: passthrough transaction-ID binding | FORMAL_GUARDED_SIGNING_MODEL.md | `A8_PassthroughTxidBound` |
 | A14: assembled txn preserves canonical txid + sender/AuthAddr binding | FORMAL_GUARDED_SIGNING_MODEL.md | `A14_AssembledTxnBound` |
 | abort-on-first-failure | `assembleDecoded` | `NoPartialOutput` |
@@ -33,7 +33,7 @@ of scope here.
 ## What TLC actually verifies
 
 A one-shot enumeration in the `sign_boundary.tla` style: `Init` enumerates
-groups of 1..2 entries, each a **target** (presented user and sentry
+groups of 1..2 entries, each a **target** (presented user and cosigner
 component signatures with right/wrong key, role domain, and txid binding,
 plus address / sender / post-sign-txid check outcomes) or a **passthrough**
 (decoded-txid binding, signature presence, locally-guarded-sender flag).
@@ -55,14 +55,14 @@ The restored spec passes.
 
 ## Honest gaps (mirrored from the code, not claimed by the model)
 
-- **Parameter↔bytecode consistency is trusted**: the sentry public key
+- **Parameter↔bytecode consistency is trusted**: the cosigner public key
   verified at assembly comes from the stored `Parameters`; the chain
   enforces the key compiled into the bytecode. Generation binds them; the
   assembly does not re-check (explicit assumption in the prose model).
 - Passthrough signatures are presence-checked only; the chain verifies.
 - No group-level semantics (fees, dummy budget); no replay protection for
   identical component signatures (txid-bound, so re-assembly reproduces the
-  same transaction); sentry policy runs at component-sign time (A4), not at
+  same transaction); cosigner policy runs at component-sign time (A4), not at
   assembly.
 - The user-side verify is hardcoded Falcon-1024 in the code; the model
   reflects that as a single abstract key check, not a scheme parameter.
@@ -89,16 +89,16 @@ abstraction (token equality standing in for Falcon/ed25519 verification) and
 the mapping to the Go code are code-review responsibilities, anchored by the
 Go tests in the traceability A rows
 (`TestAssembleDecodedGuardedRejectsWrongUserSignature`,
-`...RejectsWrongSentrySignature`, `...RejectsMismatchedPassthrough`,
+`...RejectsWrongCosignerSignature`, `...RejectsMismatchedPassthrough`,
 `...VerifiesAndBuildsSignedGroup`,
-`TestPrepareComponentSigningUsesSentryRoleDomain`).
+`TestPrepareComponentSigningUsesCosignerRoleDomain`).
 
 ## Linking back
 
 - Prose model: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
   (A-series definitions and the full assembly check order).
 - Component-sign-time invariants (A3-A5) and endpoint routing (A9, A12,
-  A15) remain prose + Go tests; a sentry-sign-time module is the natural
+  A15) remain prose + Go tests; a cosigner-sign-time module is the natural
   next step if one is ever needed.
 - Traceability rows: A1, A6, A7, A8, A14 in
   [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) (now marked

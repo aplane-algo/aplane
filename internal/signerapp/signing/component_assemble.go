@@ -11,13 +11,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	cosignerverify "github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
-	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -31,7 +31,7 @@ import (
 // (see docs/ARCH_KEYTYPE_AXES.md): assembly resolves the provider for a key type,
 // then type-asserts it to ask it to behave — no switch on key type.
 type ComponentPacker interface {
-	PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error)
+	PackComponentSignatures(userSignature, cosignerSignature []byte) ([]byte, error)
 }
 
 func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *canonical.Group, session componentKeyGetter) (*AssemblyResult, *ServiceError) {
@@ -62,7 +62,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		switch target.Kind {
 		case signerapi.AssemblyTargetKindGuarded:
 			signedTxnHex, err = assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
-		case signerapi.AssemblyTargetKindBoundedSentry:
+		case signerapi.AssemblyTargetKindBoundedCosigner:
 			signedTxnHex, err = assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		default:
 			return nil, badRequest("unsupported assembly target kind")
@@ -102,11 +102,11 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if len(keyMaterial.PublicKey) != family.PublicKeySize {
 		return "", internal(fmt.Sprintf("loaded guarded account key has public key length %d", len(keyMaterial.PublicKey)))
 	}
-	sentryComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyMaterial.Type)
+	cosignerComponentKeyType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyMaterial.Type)
 	if !ok {
-		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no sentry key type", keyMaterial.Type))
+		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no cosigner key type", keyMaterial.Type))
 	}
-	sentryPublicKey, err := guardedAccountSentryPublicKey(keyMaterial.Parameters, sentryComponentKeyType)
+	cosignerPublicKey, err := guardedAccountCosignerPublicKey(keyMaterial.Parameters, cosignerComponentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -116,19 +116,19 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 		return "", err
 	}
 	defer crypto.ZeroBytes(userSignature)
-	sentrySignature, err := decodeAssemblySignatureHex(target.SentrySignature, "sentry_signature")
+	cosignerSignature, err := decodeAssemblySignatureHex(target.CosignerSignature, "cosigner_signature")
 	if err != nil {
 		return "", err
 	}
-	defer crypto.ZeroBytes(sentrySignature)
+	defer crypto.ZeroBytes(cosignerSignature)
 
 	userMessage := message.ComponentMessage(message.RoleUser, entry.TxID)
-	if verifyErr := sentryverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
+	if verifyErr := cosignerverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
-	sentryMessage := message.ComponentMessage(message.RoleSentry, entry.TxID)
-	if verifyErr := verifySentryAssemblySignature(sentryComponentKeyType, sentryPublicKey, sentryMessage[:], sentrySignature); verifyErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d sentry_signature invalid: %v", target.TargetIndex, verifyErr))
+	cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
+	if verifyErr := verifyCosignerAssemblySignature(cosignerComponentKeyType, cosignerPublicKey, cosignerMessage[:], cosignerSignature); verifyErr != nil {
+		return "", badRequest(fmt.Sprintf("target index %d cosigner_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
 	signatureProvider := lsigprovider.Get(keyMaterial.Type)
@@ -139,7 +139,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if !ok {
 		return "", internal(fmt.Sprintf("provider for guarded account key type %s cannot pack component signatures", keyMaterial.Type))
 	}
-	packedSignature, packErr := packer.PackComponentSignatures(userSignature, sentrySignature)
+	packedSignature, packErr := packer.PackComponentSignatures(userSignature, cosignerSignature)
 	if packErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
 	}
@@ -216,7 +216,7 @@ func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.Assem
 		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction does not match group transaction", passthrough.TargetIndex))
 	}
 	// A guarded account this signer holds must be authorized through the
-	// component+assembly flow (user + sentry signatures), never slipped in as a
+	// component+assembly flow (user + cosigner signatures), never slipped in as a
 	// passthrough that bypasses that verification. Reject if the passthrough's
 	// effective signer is a locally-held guarded account.
 	if err := rejectLocalGuardedPassthrough(ctx, stxn, passthrough.TargetIndex, session); err != nil {
@@ -270,9 +270,9 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
 		isGuarded := keytypes.IsGuardedAccountKeyType(km.Type)
-		isBoundedSentry := km.BoundedAuthorization != nil && km.BoundedAuthorization.Sentry != nil
+		isBoundedCosigner := km.BoundedAuthorization != nil && km.BoundedAuthorization.Cosigner != nil
 		zeroLoadedKeyMaterial(km)
-		if isGuarded || isBoundedSentry {
+		if isGuarded || isBoundedCosigner {
 			return badRequest(fmt.Sprintf("passthrough index %d requires component assembly and cannot be supplied as passthrough", targetIndex))
 		}
 	}
@@ -298,28 +298,28 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 	return false
 }
 
-func verifySentryAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
+func verifyCosignerAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
 	case witness.Falcon1024V1:
-		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
+		return cosignerverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
-		return fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
+		return fmt.Errorf("key type %q is not a cosigner key type", componentKeyType)
 	}
 }
 
-func guardedAccountSentryPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
+func guardedAccountCosignerPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
 	if parameters == nil {
 		return nil, internal("loaded guarded account key is missing creation parameters")
 	}
-	value := parameters[keytypes.ParameterSentryPublicKey]
+	value := parameters[keytypes.ParameterCosignerPublicKey]
 	if strings.TrimSpace(value) == "" {
-		return nil, internal("loaded guarded account key is missing sentry_public_key parameter")
+		return nil, internal("loaded guarded account key is missing cosigner_public_key parameter")
 	}
 	publicKeySize, ok := witness.PublicKeySize(componentKeyType)
 	if !ok {
-		return nil, internal(fmt.Sprintf("key type %q is not a sentry key type", componentKeyType))
+		return nil, internal(fmt.Sprintf("key type %q is not a cosigner key type", componentKeyType))
 	}
-	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterSentryPublicKey)
+	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterCosignerPublicKey)
 	if err != nil {
 		return nil, internal(err.Error())
 	}

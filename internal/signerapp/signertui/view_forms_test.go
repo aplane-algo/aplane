@@ -10,16 +10,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-func TestRenderGenerateDisplayLabelsSentryKey(t *testing.T) {
+func TestRenderGenerateDisplayLabelsCosignerKey(t *testing.T) {
 	rendered := stripANSI(Model{
-		initialNodeRole: "sentry",
-		forms:           formsState{generatedAddress: "SENTRYKEY", generatedKeyType: witness.Falcon1024V1},
+		initialNodeRole: "cosigner",
+		forms:           formsState{generatedAddress: "COSIGNERKEY", generatedKeyType: witness.Falcon1024V1},
 	}.renderGenerateDisplay())
-	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
-		t.Fatalf("renderGenerateDisplay() missing sentry key label:\n%s", rendered)
+	if !strings.Contains(rendered, "Cosigner Key: COSIGNERKEY") {
+		t.Fatalf("renderGenerateDisplay() missing cosigner key label:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "Address: SENTRYKEY") {
-		t.Fatalf("renderGenerateDisplay() used address label in sentry mode:\n%s", rendered)
+	if strings.Contains(rendered, "Address: COSIGNERKEY") {
+		t.Fatalf("renderGenerateDisplay() used address label in cosigner mode:\n%s", rendered)
 	}
 }
 

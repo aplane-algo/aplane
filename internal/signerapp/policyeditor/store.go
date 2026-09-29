@@ -152,9 +152,9 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 		return err
 	}
 	switch s.target() {
-	case TargetSentry:
-		if _, err := policyruntime.ApplySentryStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-			return fmt.Errorf("invalid sentry policy: %w", err)
+	case TargetCosigner:
+		if _, err := policyruntime.ApplyCosignerStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
+			return fmt.Errorf("invalid cosigner policy: %w", err)
 		}
 	default:
 		if _, err := policyruntime.ApplyStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
@@ -193,12 +193,12 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 		return err
 	}
 	switch s.target() {
-	case TargetSentry:
+	case TargetCosigner:
 		active, err := genstore.ResolveStoreRootWithKeyring(storepaths.NewPaths(s.DataDir), kr)
 		if err != nil {
 			return err
 		}
-		if _, err := policyruntime.SaveStoredSentryConfigActiveWithKeyring(
+		if _, err := policyruntime.SaveStoredCosignerConfigActiveWithKeyring(
 			s.DataDir,
 			&serverCfg,
 			active,
@@ -270,11 +270,11 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	return nil
 }
 
-// SaveSentryYAML verifies the current on-disk sentry policy first,
+// SaveCosignerYAML verifies the current on-disk cosigner policy first,
 // parses and validates the requested replacement, then writes the exact YAML
 // bytes to policy.yaml plus a fresh sidecar.
-func (s OfflineStore) SaveSentryYAML(ctx context.Context, data []byte) error {
-	s.Target = TargetSentry
+func (s OfflineStore) SaveCosignerYAML(ctx context.Context, data []byte) error {
+	s.Target = TargetCosigner
 	return s.SaveYAML(ctx, data)
 }
 
@@ -429,8 +429,8 @@ func (s OfflineStore) loadVerifiedYAMLWithKeyring(kr *apcrypto.Keyring) (*policy
 		return nil, nil, err
 	}
 	switch s.target() {
-	case TargetSentry:
-		return policy.LoadVerifiedSentryConfigDocumentActive(active, kr)
+	case TargetCosigner:
+		return policy.LoadVerifiedCosignerConfigDocumentActive(active, kr)
 	default:
 		return policy.LoadVerifiedStoredConfigDocumentActive(active, kr)
 	}
@@ -442,8 +442,8 @@ func (s OfflineStore) saveBytesWithKeyring(data []byte, kr *apcrypto.Keyring) er
 		return err
 	}
 	switch s.target() {
-	case TargetSentry:
-		return policy.SaveSentryBytesActiveWithKeyring(active, data, kr, s.now())
+	case TargetCosigner:
+		return policy.SaveCosignerBytesActiveWithKeyring(active, data, kr, s.now())
 	default:
 		return policy.SavePolicyBytesActiveWithKeyring(active, data, kr, s.now())
 	}

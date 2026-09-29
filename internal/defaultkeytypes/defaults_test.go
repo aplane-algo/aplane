@@ -66,18 +66,18 @@ func TestInstallForNewStoreInstallsDefaultAllowlistTemplatesForSigner(t *testing
 
 }
 
-func TestInstallForNewStoreSkipsSentryRole(t *testing.T) {
+func TestInstallForNewStoreSkipsCosignerRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
 	masterKey := bytes.Repeat([]byte{2}, 32)
 
-	if err := InstallForNewStore(paths, noderole.RoleSentry, cryptotest.Keyring(t, masterKey), nil); err != nil {
+	if err := InstallForNewStore(paths, noderole.RoleCosigner, cryptotest.Keyring(t, masterKey), nil); err != nil {
 		t.Fatalf("InstallForNewStore() error = %v", err)
 	}
 	if rec, ok, err := keytypestate.Get(paths, Falcon1024AllowlistKeyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
-		t.Fatalf("sentry role installed signer default key type: %+v", rec)
+		t.Fatalf("cosigner role installed signer default key type: %+v", rec)
 	}
 }
 

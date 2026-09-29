@@ -13,7 +13,7 @@ the three axes below (Resolve). This document is the cross-cutting view.
 ## The three axes
 
 A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
-`aplane.falcon1024-sentry1024.v1`) is asked three different *kinds* of
+`aplane.falcon1024-cosigner1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
@@ -30,12 +30,12 @@ another merely because two dimensions currently use the same string.
 | **Authorization contract** | Which reusable, versioned on-chain envelope and metadata vocabulary constrain this LogicSig? | `bounded1` | Template `bounded.contract` and durable `bounded_authorization.contract` |
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, timelock, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which private signing primitive produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
-| **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | sentry witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
-| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `sentry1`, `bounded-sentry1` | Signer-advertised `signing_flow` |
+| **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness, external contract-admin witness | Embedded public key, durable metadata, and custody-specific message contract |
+| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigner1`, `bounded-cosigner1` | Signer-advertised `signing_flow` |
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
-| **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, sentry policy | Node role, `policy.yaml`, and the selected policy key |
+| **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, `policy.yaml`, and the selected policy key |
 | **Network context** | Which configured network and network-scoped policy apply to the transaction? | `mainnet`, `voi_mainnet`, `localnet` | Transaction `GenesisHash` resolved to a network context token |
 
 The terms are related, but none is a synonym for another:
@@ -70,22 +70,22 @@ The word **contract** has three related but distinct uses in APlane:
 - A **wire or storage contract** is a compatibility-bearing DTO, file shape, or
   behavioral guarantee documented in `ARCH_CONTRACTS.md`.
 - A **message or transcript contract** is an exact cryptographic encoding and
-  domain, such as `APLANE_SENTRY_V1` or `APLANE_BOUNDED_ADMIN_AUTH_V1`.
+  domain, such as `APLANE_COSIGNER_V1` or `APLANE_BOUNDED_ADMIN_AUTH_V1`.
 
 Likewise, account authorization is distinct from principal authorization and
 signer policy. The account key and LogicSig determine what can authorize the
 Algorand account; the fixed product principal and closed action allowlist
-determine whether the caller may invoke an APlane endpoint; signer or sentry
+determine whether the caller may invoke an APlane endpoint; signer or cosigner
 policy determines whether that permitted call may release a signature for the
 particular transaction.
 
 `bounded1` is always the bounded authorization-contract identifier and is also
-the signing-flow label for bounded profiles that need no online sentry. A
-sentry-enabled bounded profile keeps `contract: bounded1` but advertises the
-distinct `bounded-sentry1` choreography. The contract identifier selects
+the signing-flow label for bounded profiles that need no online cosigner. A
+cosigner-enabled bounded profile keeps `contract: bounded1` but advertises the
+distinct `bounded-cosigner1` choreography. The contract identifier selects
 canonical on-chain and durable metadata semantics; the flow label tells the
-client how to route a request. Likewise, `sentry1` is a signing-flow label and
-an embedded bounded sentry contract value, while `APLANE_SENTRY_V1` is the
+client how to route a request. Likewise, `cosigner1` is a signing-flow label and
+an embedded bounded cosigner contract value, while `APLANE_COSIGNER_V1` is the
 cryptographic component-message domain used by that flow. Neither is a key
 type.
 
@@ -122,7 +122,7 @@ Runtime selection follows these rules:
 4. Transaction classification may choose a path-specific choreography inside
    the flow, such as bounded spend versus external-admin rekey.
 5. HTTP principal authorization decides whether the caller may invoke the
-   endpoint. Signer or sentry policy independently decides whether the specific
+   endpoint. Signer or cosigner policy independently decides whether the specific
    transaction may receive a signature.
 6. Assembly verifies signatures, argument placement, canonical transaction
    bytes, and the effective authorizer. The LogicSig program remains the final
@@ -142,8 +142,8 @@ from the presence of a witness key alone.
 | `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
-| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon sentry witness | `sentry1`; user `/sign/component`, sentry `/sign/component`, then `/sign/assemble` |
-| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon sentry on spend; distinct external Falcon admin on rekey | `bounded-sentry1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
+| `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated guarded verifier | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner witness | `cosigner1`; user `/sign/component`, cosigner `/sign/component`, then `/sign/assemble` |
+| `aplane.corridor.v1` | DSA LogicSig | bounded `bounded1`; framework Merkle recipient allowlist | `aplane.falcon1024.v1` | signer-custodied Falcon cosigner on spend; distinct external Falcon admin on rekey | `bounded-cosigner1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL HTLC policy | none | none | empty flow; ordinary LogicSig assembly through `/sign` |
 
 The examples describe the currently implemented architecture. A future change
@@ -203,7 +203,7 @@ DSA LogicSig policy categories are:
 - **Custom DSA policy**: schema-v1 composed policy authored directly as TEAL.
 - **Dedicated compiled policy**: provider-owned LogicSig policy outside the
   composed-template schema, such as the legacy
-  `aplane.falcon1024-sentry1024.v1` guarded verifier.
+  `aplane.falcon1024-cosigner1024.v1` guarded verifier.
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
@@ -218,10 +218,10 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Witness key, sentry enrollment** | Stored as a sentry-managed `.sen` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
+| **Witness key, cosigner enrollment** | Stored as a cosigner-managed `.cos` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 | **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.wit` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
 
-The current authority overlays are therefore **unguarded**, **sentry guarded**,
+The current authority overlays are therefore **unguarded**, **cosigner guarded**,
 and **contract-admin-authorized operation**. Contract-admin authority is
 operation-specific: the spending key still authenticates every bounded path,
 and the external admin key currently authorizes only a pure rekey.
@@ -229,11 +229,11 @@ and the external admin key currently authorizes only a pure rekey.
 Witness **form**, **custody**, and **enrollment** are separate dimensions. The
 key record carries no role field: the program that embeds the public key names
 the role, and the custodian controls which message domain can be signed. A
-networked signer may produce only `APLANE_SENTRY_V1` component-domain
+networked signer may produce only `APLANE_COSIGNER_V1` component-domain
 signatures; the offline ceremony may produce only
 `APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One witness keypair should serve one
 role for its entire life. The software rejects collisions visible in local
-stores and sentry references, but cannot detect out-of-band key copying.
+stores and cosigner references, but cannot detect out-of-band key copying.
 
 Examples of the composed ontology:
 
@@ -243,8 +243,8 @@ Examples of the composed ontology:
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
-| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as sentry |
-| `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon sentry on spend plus external Falcon contract admin on rekey |
+| `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
+| `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 
 ## Resolution, classification, and behavior
@@ -252,7 +252,7 @@ Examples of the composed ontology:
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |
-| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/sentry/keytypes`, `internal/witness` |
+| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness` |
 | **Behave** | do the operation (pack signatures, build assembly args, derive, sign) | provider-capability interfaces, queried from the resolved provider | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa` |
 
 **The governing rule:** *do not unify mechanisms across axes that have different
@@ -312,10 +312,10 @@ to the Falcon LogicSig base.
 
 **Mechanism:** pure string switches in neutral leaf packages. Witness form and
 identity live in `internal/witness`; guarded-account role mapping lives in
-`internal/sentry/keytypes`. Examples:
+`internal/cosigner/keytypes`. Examples:
 
 - `IsGuardedAccountKeyType(keyType)`
-- `SentryComponentKeyTypeForGuardedAccount(keyType)`
+- `CosignerComponentKeyTypeForGuardedAccount(keyType)`
 - `witness.IsKeyType(keyType)`
 - `witness.PublicKeySize(keyType)` / `witness.PrivateKeySize(keyType)`
 
@@ -345,7 +345,7 @@ is the right shape here.
   (`internal/logicsigdsa/dsa.go`).
 - Dedicated guarded-account assembly hook
   (`internal/signerapp/signing/component_assemble.go`):
-  - `ComponentPacker.PackComponentSignatures(user, sentry)` — pack the verified
+  - `ComponentPacker.PackComponentSignatures(user, cosigner)` — pack the verified
     component signatures into the opaque blob.
 
 The assembler resolves the provider, then asks it to behave — no `switch` on key
@@ -358,7 +358,7 @@ if !ok { /* fail closed */ }
 packed, _ := packer.PackComponentSignatures(u, s)     // Behave: call
 ```
 
-Bounded-sentry assembly does not use a key-type-specific capability hook. It
+Bounded-cosigner assembly does not use a key-type-specific capability hook. It
 reads the durable bounded argument-source contract and dispatches derived
 arguments by the closed `kind` vocabulary; Corridor's Merkle proof is therefore
 a `bounded1` behavior, not a Corridor provider method.
@@ -372,7 +372,7 @@ information they do not have.
 
 **1. Do not route by `BaseKeyType` instead of `RoutingFamily()`.** Resolve cannot
 key off the `BaseKeyType` edge because that breaks on
-guarded/sentry accounts: a guarded provider's `BaseKeyType` is
+guarded/cosigner accounts: a guarded provider's `BaseKeyType` is
 `aplane.falcon1024.v1`, but that is its *component-signing primitive*, not its
 routing authority — the guarded account owns its own keygen, mnemonic-handler
 registration, and metadata under its own family (this is internal handler
@@ -383,7 +383,7 @@ guarded keys. `BaseKeyType` cannot express the delegate-vs-self distinction;
 `RoutingFamily()` can. **Route by `RoutingFamily()`.**
 
 **2. Do not classify by provider capability instead of string switches.** A
-provider declaration such as "I am a guarded account, my sentry component is
+provider declaration such as "I am a guarded account, my cosigner component is
 X" cannot serve every
 classification call site that has no provider: the client config, the keystore,
 the cache. Those run in binaries that may not register guarded providers at all.
@@ -421,10 +421,10 @@ axis, not a separate resolution mechanism.
   profile, metadata, and path semantics.
 - `docs/ARCH_AUTHORIZATION.md` — product-principal and closed-action
   authorization for API and admin operations.
-- `docs/ARCH_POLICY.md` — signer and sentry policy domains that gate signature
+- `docs/ARCH_POLICY.md` — signer and cosigner policy domains that gate signature
   release.
 - `docs/ARCH_NETWORKS.md` — network context and genesis-hash resolution.
 - `docs/ARCH_LSIG_PROVIDER.md` — the Resolve-axis registry, in detail.
-- `docs/ARCH_SENTRY.md` — the guarded/sentry account choreography.
+- `docs/ARCH_COSIGNER.md` — the guarded/cosigner account choreography.
 - `docs/DEV_KEYTYPES.md` — how to add a key type (where these axes become
   concrete decisions).

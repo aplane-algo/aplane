@@ -116,13 +116,13 @@ Built-in and bundled key types include:
 - native `ed25519`
 - native `falcon1024` (top-level protocol `PQsig`, 25-word recovery)
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
-- the Falcon-only dedicated sentry account `aplane.falcon1024-sentry1024.v1`
+- the Falcon-only dedicated cosigner account `aplane.falcon1024-cosigner1024.v1`
 - the Falcon witness key `aplane.witness-falcon1024.v1`, used under separate
-  sentry and contract-admin custody capabilities
+  cosigner and contract-admin custody capabilities
 - the generic `aplane.htlc.v1` template
 - bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and
-  `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-sentry
+  `aplane.falcon1024-allowlist-alock.v1`, plus the bounded-cosigner
   `aplane.corridor.v1`
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
@@ -162,7 +162,7 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 | Key type | Key-type family | Availability |
 |---|---|---|
 | `aplane.falcon1024.v1` | `falcon1024` | default-enabled |
-| `aplane.falcon1024-sentry1024.v1` | `falcon1024-sentry1024` | library-visible |
+| `aplane.falcon1024-cosigner1024.v1` | `falcon1024-cosigner1024` | library-visible |
 | `aplane.ed25519.v1` | `aplane.ed25519` | library-visible |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
@@ -184,7 +184,7 @@ installation and reload/unlock by the signer.
 
 All newly generated APlane LogicSig accounts are kept off the Ed25519 curve at
 generation time by the TEAL v13 compiler's auto-salting assembler. Straight
-Falcon, Ed25519 LogicSig, guarded sentry, composed DSA, and explicit
+Falcon, Ed25519 LogicSig, guarded cosigner, composed DSA, and explicit
 `derivation_version: 3` template paths compile through algod, accept the final
 compiler-produced bytecode only when the reported address matches it, and
 reject an on-curve result. The key file records
@@ -253,7 +253,7 @@ Product-store key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 the selected generation's `keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
-library-visible providers such as `aplane.falcon1024-sentry1024.v1` and
+library-visible providers such as `aplane.falcon1024-cosigner1024.v1` and
 `aplane.ed25519.v1` available to that identity for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.
@@ -363,11 +363,11 @@ encoding creates short-lived immutable string copies during root seal/open;
 they do not persist for a session. Eliminating those copies would require a
 binary root payload.
 
-### `.key` and `.sen`
+### `.key` and `.cos`
 
 Encrypted `.key` files hold Algorand account authority: native keys,
-DSA-backed LogicSig keys, and generic LogicSig instances. Encrypted `.sen`
-files hold sentry-custodied witness authority. Both use the same keystore
+DSA-backed LogicSig keys, and generic LogicSig instances. Encrypted `.cos`
+files hold cosigner-custodied witness authority. Both use the same keystore
 term envelope and canonical payload codec; category determines the sole valid
 extension. Compatibility is split across:
 
@@ -408,7 +408,7 @@ object's logical identity: a class and a canonical selector.
 | Class | Selector |
 | --- | --- |
 | `account-key` | Algorand address |
-| `sentry-credential` | Witness Key ID |
+| `cosigner-credential` | Witness Key ID |
 | `keytype-template` | key type |
 Historical generation authority is deliberately separate from ordinary
 current-state opening. `VerifyHistoricalGenerationSealIntegrity` verifies only

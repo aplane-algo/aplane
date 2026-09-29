@@ -138,17 +138,17 @@ const (
 	MsgTypeValidatePolicy           = "validate_policy"             // Client → server: validate policy YAML without writing
 	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
 
-	// Signer-owned sentry reference and generation inventory messages.
-	MsgTypeListSentryReferences              = "list_sentry_references"
-	MsgTypeSentryReferencesList              = "sentry_references_list"
-	MsgTypeGetSentryReference                = "get_sentry_reference"
-	MsgTypeSentryReference                   = "sentry_reference"
-	MsgTypeImportSentryReference             = "import_sentry_reference"
-	MsgTypeImportSentryReferenceResult       = "import_sentry_reference_result"
-	MsgTypeRemoveSentryReference             = "remove_sentry_reference"
-	MsgTypeRemoveSentryReferenceResult       = "remove_sentry_reference_result"
-	MsgTypeExportSentryPublic                = "export_sentry_public"
-	MsgTypeExportSentryPublicResult          = "export_sentry_public_result"
+	// Signer-owned cosigner reference and generation inventory messages.
+	MsgTypeListCosignerReferences            = "list_cosigner_references"
+	MsgTypeCosignerReferencesList            = "cosigner_references_list"
+	MsgTypeGetCosignerReference              = "get_cosigner_reference"
+	MsgTypeCosignerReference                 = "cosigner_reference"
+	MsgTypeImportCosignerReference           = "import_cosigner_reference"
+	MsgTypeImportCosignerReferenceResult     = "import_cosigner_reference_result"
+	MsgTypeRemoveCosignerReference           = "remove_cosigner_reference"
+	MsgTypeRemoveCosignerReferenceResult     = "remove_cosigner_reference_result"
+	MsgTypeExportCosignerPublic              = "export_cosigner_public"
+	MsgTypeExportCosignerPublicResult        = "export_cosigner_public_result"
 	MsgTypeListGenerations                   = "list_generations"
 	MsgTypeGenerationsList                   = "generations_list"
 	MsgTypePruneGenerationQuarantine         = "prune_generation_quarantine"
@@ -886,18 +886,18 @@ type DeactivateKeyTypeResultMessage struct {
 }
 
 type KeyTypeInfo struct {
-	KeyType                string              `json:"key_type"`
-	Family                 string              `json:"family"`
-	DisplayName            string              `json:"display_name"`
-	Description            string              `json:"description"`
-	AuthorizationKind      string              `json:"authorization_kind,omitempty"`
-	RequiresLogicSig       bool                `json:"requires_logicsig"`
-	MnemonicWordCount      int                 `json:"mnemonic_word_count"`
-	MnemonicImport         bool                `json:"mnemonic_import"`
-	MnemonicScheme         string              `json:"mnemonic_scheme"`
-	SentryComponentKeyType string              `json:"sentry_component_key_type,omitempty"`
-	CreationParams         []TemplateParamInfo `json:"creation_params"`
-	RuntimeArgs            []TemplateArgInfo   `json:"runtime_args"`
+	KeyType                  string              `json:"key_type"`
+	Family                   string              `json:"family"`
+	DisplayName              string              `json:"display_name"`
+	Description              string              `json:"description"`
+	AuthorizationKind        string              `json:"authorization_kind,omitempty"`
+	RequiresLogicSig         bool                `json:"requires_logicsig"`
+	MnemonicWordCount        int                 `json:"mnemonic_word_count"`
+	MnemonicImport           bool                `json:"mnemonic_import"`
+	MnemonicScheme           string              `json:"mnemonic_scheme"`
+	CosignerComponentKeyType string              `json:"cosigner_component_key_type,omitempty"`
+	CreationParams           []TemplateParamInfo `json:"creation_params"`
+	RuntimeArgs              []TemplateArgInfo   `json:"runtime_args"`
 }
 
 type ListKeyTypesMessage struct {
@@ -1028,7 +1028,7 @@ type ValidatePolicyResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-type SentryReferenceInfo struct {
+type CosignerReferenceInfo struct {
 	Schema            string `json:"schema"`
 	Name              string `json:"name"`
 	ComponentKey      string `json:"component_key"`
@@ -1041,42 +1041,42 @@ type SentryReferenceInfo struct {
 	MigrationOrigin   string `json:"migration_origin,omitempty"`
 }
 
-type ListSentryReferencesMessage struct{ BaseMessage }
+type ListCosignerReferencesMessage struct{ BaseMessage }
 
-type SentryReferencesListMessage struct {
+type CosignerReferencesListMessage struct {
 	BaseMessage
-	References []SentryReferenceInfo `json:"references"`
-	Code       string                `json:"code,omitempty"`
-	Error      string                `json:"error,omitempty"`
+	References []CosignerReferenceInfo `json:"references"`
+	Code       string                  `json:"code,omitempty"`
+	Error      string                  `json:"error,omitempty"`
 }
 
-type GetSentryReferenceMessage struct {
+type GetCosignerReferenceMessage struct {
 	BaseMessage
 	Name string `json:"name"`
 }
 
-type SentryReferenceMessage struct {
+type CosignerReferenceMessage struct {
 	BaseMessage
-	Success   bool                `json:"success"`
-	Reference SentryReferenceInfo `json:"reference,omitempty"`
-	Code      string              `json:"code,omitempty"`
-	Error     string              `json:"error,omitempty"`
+	Success   bool                  `json:"success"`
+	Reference CosignerReferenceInfo `json:"reference,omitempty"`
+	Code      string                `json:"code,omitempty"`
+	Error     string                `json:"error,omitempty"`
 }
 
-type ImportSentryReferenceMessage struct {
+type ImportCosignerReferenceMessage struct {
 	BaseMessage
 	Name         string `json:"name"`
 	EnvelopeJSON string `json:"envelope_json"`
 }
 
-type ImportSentryReferenceResultMessage = SentryReferenceMessage
+type ImportCosignerReferenceResultMessage = CosignerReferenceMessage
 
-type RemoveSentryReferenceMessage struct {
+type RemoveCosignerReferenceMessage struct {
 	BaseMessage
 	Name string `json:"name"`
 }
 
-type RemoveSentryReferenceResultMessage struct {
+type RemoveCosignerReferenceResultMessage struct {
 	BaseMessage
 	Success bool   `json:"success"`
 	Name    string `json:"name,omitempty"`
@@ -1085,12 +1085,12 @@ type RemoveSentryReferenceResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-type ExportSentryPublicMessage struct {
+type ExportCosignerPublicMessage struct {
 	BaseMessage
 	WitnessKeyID string `json:"witness_key_id"`
 }
 
-type ExportSentryPublicResultMessage struct {
+type ExportCosignerPublicResultMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
 	WitnessKeyID string `json:"witness_key_id,omitempty"`

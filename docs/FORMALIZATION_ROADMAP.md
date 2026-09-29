@@ -15,7 +15,7 @@ contracts; these models cover narrower security-critical transitions.
 | `session_ownership.tla` | scalar pending/active admin ownership |
 | `guarded_assembly.tla` | guarded component assembly |
 | `plugin_signing.tla` | plugin signing trust boundary |
-| `bounded_sentry.tla` | bounded-sentry composition |
+| `bounded_cosigner.tla` | bounded-cosigner composition |
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 
 The single-product runtime has no decommission state or operation lease, so the
@@ -48,7 +48,7 @@ operator choices.
    runtime-destruction ordering changes.
 3. Extend key-generation crash models only when new durable transitions are
    introduced.
-4. Keep native signing authority and bounded-sentry refinements aligned with
+4. Keep native signing authority and bounded-cosigner refinements aligned with
    their architecture contracts.
 
 ## Gates
@@ -96,7 +96,7 @@ guard verified against current code and HOLDS: approval fail-all triggers
 delivery-turn release and post-turn rechecks, ApprovalWait defaulting (three
 independent floors), SO2 disconnect-cleanup condition, PromoteToActive atomic
 swap, displacement-after-promotion ordering, guarded assembly check order and
-abort-on-first-failure, bounded-sentry gate order, sign-boundary mode
+abort-on-first-failure, bounded-cosigner gate order, sign-boundary mode
 trichotomy and foreign/passthrough output rules, policy verdict precedence
 ladder, plugin digest recomputation / fail-closed pregrouped review / plan
 preservation / mode-dispatch totality, and the full `store_root_commit`
@@ -115,7 +115,7 @@ its model doc, the `session_ownership.tla` `cleanupRuntime` comment, and the
 plugin model's `external_plugins_test.go` test anchor. Flagged, not fixed
 (model-extension / bookkeeping candidates, out of scope here): (1) the
 bounded assembly receipt is a real acceptance guard in code but unmodeled in
-`bounded_sentry.tla` — a limits note was added to its model doc; (2)
+`bounded_cosigner.tla` — a limits note was added to its model doc; (2)
 `store_root_commit` is missing its prose companion doc, header code anchors,
 and a deep configuration/`metrics_deep.json` entry required by the working
 rules; (3) `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` lacks the status-header
@@ -124,7 +124,7 @@ displacement is offered before auth reveals a newcomer is `auth_only`, so an
 owner can confirm displacement and never be displaced.
 
 Follow-up (2026-08-27, same day): flagged items (1)-(3) addressed. The
-bounded assembly receipt is now modeled in `bounded_sentry.tla` as an
+bounded assembly receipt is now modeled in `bounded_cosigner.tla` as an
 abstract `receipt` input consumed by `AssembleStep` and required by
 `BS3_SpendAuthoritiesVerified` (199,168 distinct states at depth 4, metrics
 updated; removing the receipt check from assembly now violates BS3).
@@ -132,7 +132,7 @@ updated; removing the receipt check from assembly now violates BS3).
 `FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md`. The working rules now state that a
 model whose normal configuration exhausts its full finite state space needs
 no deep configuration and records that in its prose companion, which
-resolves the deep-config gap for `store_root_commit` and `bounded_sentry`
+resolves the deep-config gap for `store_root_commit` and `bounded_cosigner`
 truthfully rather than with duplicate runs.
 `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` gained the standard status
 header quoting its four recorded runs.

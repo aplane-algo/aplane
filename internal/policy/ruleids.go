@@ -48,11 +48,11 @@ const (
 	TransferRoutingCloseRejectedRuleID      = "transfer_policy:close_rejected"
 	TransferRoutingClawbackRejectedRuleID   = "transfer_policy:clawback_rejected"
 
-	SentryPolicyMissingRuleID          = "sentry_policy:missing"
-	SentryTransferPolicyRequiredRuleID = "sentry_policy:transfer_policy_required"
-	SentryDeterministicRoutingRuleID   = "sentry_policy:deterministic_routing_required"
-	SentryNonTransferRuleID            = "sentry_policy:non_transfer"
-	SentryRekeyRuleID                  = "sentry_policy:reject_rekey"
+	CosignerPolicyMissingRuleID          = "cosigner_policy:missing"
+	CosignerTransferPolicyRequiredRuleID = "cosigner_policy:transfer_policy_required"
+	CosignerDeterministicRoutingRuleID   = "cosigner_policy:deterministic_routing_required"
+	CosignerNonTransferRuleID            = "cosigner_policy:non_transfer"
+	CosignerRekeyRuleID                  = "cosigner_policy:reject_rekey"
 )
 
 const (

@@ -41,7 +41,7 @@ GENERATED_DOCS_DIR = internal/docassets/generated/docs
 CURATED_DOCS = \
 	ARCH_OVERVIEW ARCH_MCP ARCH_REPL ARCH_AUTHORIZATION ARCH_NETWORKS \
 	ARCH_CRYPTO ARCH_KEY_LIFECYCLE ARCH_LSIG_PROVIDER ARCH_TXNFLOW ARCH_POLICY \
-	ARCH_SENTRY ARCH_PLUGINS ARCH_APP_INTERACTION \
+	ARCH_COSIGNER ARCH_PLUGINS ARCH_APP_INTERACTION \
 	USER_COMMANDS USER_JSAPI USER_KEYTYPES USER_POLICY USER_CONFIG \
 	USER_CONFIG_REFERENCE USER_LOGGING USER_QUICKSTART USER_QUICKSTART_LOCALNET \
 	USER_TRANSFER_ROUTING USER_LOGICSIG_GUIDELINES USER_STORE_MGMT \
@@ -478,10 +478,10 @@ deadcode-check: compile-docassets
 docker-systemd-test:
 	@./scripts/docker-systemd-smoke.sh $(ARGS)
 
-# End-to-end local install test. Builds a release tarball, boots signer, sentry,
+# End-to-end local install test. Builds a release tarball, boots signer, cosigner,
 # client/admin, and LocalNet algod containers on one Docker network, then
 # verifies SSH token provisioning, shared LocalNet reachability, the complete
-# remote apadmin ID-first sentry enrollment ceremony, guarded signing, corridor
+# remote apadmin ID-first cosigner enrollment ceremony, guarded signing, corridor
 # allowlist enforcement, and local Python SDK guarded signing across the Docker
 # network.
 # Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.

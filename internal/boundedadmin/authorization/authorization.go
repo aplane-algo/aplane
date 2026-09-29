@@ -20,8 +20,8 @@ import (
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -261,29 +261,29 @@ func validateAuthorizationMetadata(metadata signerapi.BoundedAdminMetadata, txn 
 	if metadata.MessageHex != hex.EncodeToString(message[:]) {
 		return nil, nil, binding, message, fmt.Errorf("contract-admin message does not match recomputed transcript")
 	}
-	var sentryPublicKey []byte
-	sentryArgIndex := 0
-	if metadata.Sentry != nil {
-		if metadata.Sentry.ComponentKeyType != witness.Falcon1024V1 {
-			return nil, nil, binding, message, fmt.Errorf("bounded sentry component key type is invalid")
+	var cosignerPublicKey []byte
+	cosignerArgIndex := 0
+	if metadata.Cosigner != nil {
+		if metadata.Cosigner.ComponentKeyType != witness.Falcon1024V1 {
+			return nil, nil, binding, message, fmt.Errorf("bounded cosigner component key type is invalid")
 		}
-		sentryPublicKey, err = boundedmeta.DecodeCanonicalHex("bounded sentry public key", metadata.Sentry.PublicKeyHex, boundedmeta.SentryPublicKeySizeV1, boundedmeta.SentryPublicKeySizeV1)
+		cosignerPublicKey, err = boundedmeta.DecodeCanonicalHex("bounded cosigner public key", metadata.Cosigner.PublicKeyHex, boundedmeta.CosignerPublicKeySizeV1, boundedmeta.CosignerPublicKeySizeV1)
 		if err != nil {
 			return nil, nil, binding, message, err
 		}
-		wantSentryID, err := witness.ID(metadata.Sentry.ComponentKeyType, sentryPublicKey)
-		if err != nil || wantSentryID != metadata.Sentry.ComponentKeyID {
-			return nil, nil, binding, message, fmt.Errorf("bounded sentry public identity is invalid")
+		wantCosignerID, err := witness.ID(metadata.Cosigner.ComponentKeyType, cosignerPublicKey)
+		if err != nil || wantCosignerID != metadata.Cosigner.ComponentKeyID {
+			return nil, nil, binding, message, fmt.Errorf("bounded cosigner public identity is invalid")
 		}
-		sentryArgIndex = metadata.Sentry.SignatureArgIndex
+		cosignerArgIndex = metadata.Cosigner.SignatureArgIndex
 	}
 	if err := boundedprogram.Validate(partial.Lsig.Logic, boundedprogram.Expected{
 		SpendingPublicKey: spendingKey,
-		SentryPublicKey:   sentryPublicKey,
+		CosignerPublicKey: cosignerPublicKey,
 		AdminPublicKey:    publicKey,
 		ProgramBinding:    binding[:],
 		BaseArgCount:      metadata.BaseSignatureArgCount,
-		SentryArgIndex:    sentryArgIndex,
+		CosignerArgIndex:  cosignerArgIndex,
 		AdminArgIndex:     metadata.AdminSignatureArgIndex,
 		MaxFee:            metadata.MaxFee,
 		SpendEffects:      metadata.SpendEffects,

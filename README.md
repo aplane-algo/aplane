@@ -10,7 +10,7 @@ native Ed25519 and protocol-native Falcon-1024 accounts.
 
 It also supports generic LogicSig templates and composed
 signature-plus-LogicSig authorization policies such as bounded allowlists,
-timelocks, HTLCs, sentry-gated accounts, and custom templates.
+timelocks, HTLCs, cosigner-gated accounts, and custom templates.
 
 It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure.
 
@@ -34,7 +34,7 @@ contract and will continue to track the published protocol standards.
 - **Post-Quantum Ready**: Supports protocol-native Falcon-1024 accounts and
   top-level `PQsig` authorization on consensus v42+
 - **General LogicSig Capability**: Supports built-in bounded allowlists,
-  timelocks, HTLCs, sentry-gated policies, and user-defined custom LogicSigs
+  timelocks, HTLCs, cosigner-gated policies, and user-defined custom LogicSigs
 - **Enables key isolation**: Signing operations (and private keys) can be kept on dedicated purpose-built machines with restrictive firewalls and single-port exposure
 - **Supports App Interaction Primitives**: Read Algorand app state, call contracts via raw or ARC-4/ABI methods, 
 deploy apps from TEAL source or compiled AVM bytecode, execute grouped flows such as companion-payment app calls
@@ -131,7 +131,7 @@ patterns. See [ARCH_SECURITY.md](docs/ARCH_SECURITY.md) for details.
 
 apshell and apadmin can connect to apsigner over an SSH tunnel, allowing the
 signer host to expose only a single SSH port. The tunnel carries both the HTTP
-signing API and the admin transport. Client signer and sentry connection
+signing API and the admin transport. Client signer and cosigner connection
 profiles are configured in `$APCLIENT_DATA/endpoints.yaml`; network and other
 client settings remain in `config.yaml`. See
 [USER_CONFIG.md](docs/USER_CONFIG.md) for setup details.
@@ -149,7 +149,7 @@ client settings remain in `config.yaml`. See
 - **ed25519**: Native Algorand keys
 - **falcon1024**: Protocol-native post-quantum signatures on consensus v42+
 - **generic LogicSigs**: HTLCs and user-loaded custom TEAL
-- **bounded/composed LogicSigs**: allowlists, timelocks, sentry-gated Corridor,
+- **bounded/composed LogicSigs**: allowlists, timelocks, cosigner-gated Corridor,
   amount/asset bounds, and external contract-admin rekey controls
 
 ### Automation & Integration
@@ -208,7 +208,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_TUI.md](docs/ARCH_TUI.md) - signer admin TUI (apadmin)
 - [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - External plugin system
 - [ARCH_APP_INTERACTION.md](docs/ARCH_APP_INTERACTION.md) - Application interaction (read state, call contracts, deploy)
-- [ARCH_SENTRY.md](docs/ARCH_SENTRY.md) - Guarded signing and sentry node architecture
+- [ARCH_COSIGNER.md](docs/ARCH_COSIGNER.md) - Guarded signing and cosigner node architecture
 - [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and external contract-admin ceremonies
 - [ARCH_CORRIDOR.md](docs/ARCH_CORRIDOR.md) - Corridor v1 composition, custody, and choreography
 - [ARCH_STORE_OWNERSHIP.md](docs/ARCH_STORE_OWNERSHIP.md) - Private signer-store ownership and offline maintenance boundary
@@ -230,7 +230,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](docs/FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md) - Second machine-checkable TLA+ artifact (policy precedence, including real I9)
 - [FORMAL_TLA_COMPOSITION_MODEL.md](docs/FORMAL_TLA_COMPOSITION_MODEL.md) - Third machine-checkable TLA+ artifact (joins sign boundary + policy precedence)
 - [FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](docs/FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md) - Machine-checked single-admin ownership and displacement model
-- [FORMAL_TLA_BOUNDED_SENTRY_MODEL.md](docs/FORMAL_TLA_BOUNDED_SENTRY_MODEL.md) - Machine-checked bounded-sentry choreography model
+- [FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md](docs/FORMAL_TLA_BOUNDED_COSIGNER_MODEL.md) - Machine-checked bounded-cosigner choreography model
 - [FORMAL_TLA_PLUGIN_SIGNING_MODEL.md](docs/FORMAL_TLA_PLUGIN_SIGNING_MODEL.md) - Machine-checked plugin signing model
 
 ### User Guides

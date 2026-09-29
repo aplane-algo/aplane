@@ -17,7 +17,7 @@ func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *si
 	switch role {
 	case noderole.RoleSigner:
 		return nil
-	case noderole.RoleSentry:
+	case noderole.RoleCosigner:
 		return &signersigning.ServiceError{
 			Kind:    signersigning.ErrorForbidden,
 			Message: fmt.Sprintf("node role %q does not allow %s", role, operation),
@@ -33,26 +33,26 @@ func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *si
 func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
 	switch role {
-	case signerapi.ComponentSignRoleSentry:
+	case signerapi.ComponentSignRoleCosigner:
 		switch nodeRole {
-		case noderole.RoleSentry:
+		case noderole.RoleCosigner:
 			return nil
 		case noderole.RoleSigner:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("node role %q does not allow sentry component signing", nodeRole),
+				Message: fmt.Sprintf("node role %q does not allow cosigner component signing", nodeRole),
 			}
 		default:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("unknown node role %q does not allow sentry component signing", nodeRole),
+				Message: fmt.Sprintf("unknown node role %q does not allow cosigner component signing", nodeRole),
 			}
 		}
 	case signerapi.ComponentSignRoleUser:
 		switch nodeRole {
 		case noderole.RoleSigner:
 			return nil
-		case noderole.RoleSentry:
+		case noderole.RoleCosigner:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
 				Message: fmt.Sprintf("node role %q does not allow user component signing", nodeRole),
@@ -72,8 +72,8 @@ func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.Compone
 }
 
 func requireComponentTargetNodeRole(ir *productruntime.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
-	if kind == signerapi.ComponentTargetKindSentry {
-		return requireComponentNodeRole(ir, signerapi.ComponentSignRoleSentry)
+	if kind == signerapi.ComponentTargetKindCosigner {
+		return requireComponentNodeRole(ir, signerapi.ComponentSignRoleCosigner)
 	}
 	if kind == signerapi.ComponentTargetKindUser || kind == signerapi.ComponentTargetKindBoundedBase {
 		return requireAccountSigningRole(ir, "account component signing")

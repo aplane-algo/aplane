@@ -87,7 +87,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 
 		txnSender := txns[i].Sender.String()
 		if i < len(plan.AuthKeyTypes) {
-			if msg, ok := sentrySignRejectMessage(plan.AuthKeyTypes[i]); ok {
+			if msg, ok := cosignerSignRejectMessage(plan.AuthKeyTypes[i]); ok {
 				return nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
 			}
 		}
@@ -145,7 +145,7 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, "", canceledSignRequest(err)
 	}
-	if err := rejectSentrySignKeyType(keyMaterial.Type); err != nil {
+	if err := rejectCosignerSignKeyType(keyMaterial.Type); err != nil {
 		keyType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
@@ -155,10 +155,10 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
 	}
-	if keyMaterial.BoundedAuthorization != nil && keyMaterial.BoundedAuthorization.Sentry != nil {
+	if keyMaterial.BoundedAuthorization != nil && keyMaterial.BoundedAuthorization.Cosigner != nil {
 		keyType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, keyType, boundedSentryRequired()
+		return nil, keyType, boundedCosignerRequired()
 	}
 
 	if isGenericKeyMaterial(keyMaterial) {
@@ -246,7 +246,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
 
-	if err := rejectSentrySignKeyType(keyType); err != nil {
+	if err := rejectCosignerSignKeyType(keyType); err != nil {
 		defer zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
 	}
@@ -530,10 +530,10 @@ func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMater
 }
 
 func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte) ([][]byte, *ServiceError) {
-	return assembleBoundedArgsWithSentry(metadata, item, baseArgs, derivedArgs, nil)
+	return assembleBoundedArgsWithCosigner(metadata, item, baseArgs, derivedArgs, nil)
 }
 
-func assembleBoundedArgsWithSentry(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte, sentrySignature []byte) ([][]byte, *ServiceError) {
+func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte, cosignerSignature []byte) ([][]byte, *ServiceError) {
 	args := make([][]byte, len(metadata.ArgumentLayout))
 	baseIndex, derivedIndex := 0, 0
 	for _, slot := range metadata.ArgumentLayout {
@@ -553,8 +553,8 @@ func assembleBoundedArgsWithSentry(metadata *boundedmeta.Metadata, item *bounded
 			derivedIndex++
 		case boundedmeta.ArgSourceRuntime:
 			value = item.RuntimeArgs[slot.Name]
-		case boundedmeta.ArgSourceSentry:
-			value = sentrySignature
+		case boundedmeta.ArgSourceCosigner:
+			value = cosignerSignature
 		case boundedmeta.ArgSourceAdmin:
 			value = nil
 		default:

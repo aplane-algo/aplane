@@ -180,7 +180,7 @@ func (v *ApAdminHarness) GenerateKeyWithType(keyType string) (string, error) {
 // GenerateKeyWithTypeAndParams generates a key of the specified type with
 // creation parameters over the admin IPC protocol. This is required for key
 // types that need generation inputs, such as a guarded account that embeds a
-// sentry_public_key. Returns the generated address and tracks it for cleanup.
+// cosigner_public_key. Returns the generated address and tracks it for cleanup.
 func (v *ApAdminHarness) GenerateKeyWithTypeAndParams(keyType string, params map[string]string) (string, error) {
 	response, err := v.ipcRequest(protocol.GenerateKeyMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -483,7 +483,7 @@ func (v *ApAdminHarness) removeKeyFile(addr string) bool {
 	keysDir := active.KeysDir()
 	candidates := []string{
 		filepath.Join(keysDir, addr+apkeys.AccountKeyExtension),
-		filepath.Join(keysDir, addr+apkeys.SentryCredentialExtension),
+		filepath.Join(keysDir, addr+apkeys.CosignerCredentialExtension),
 	}
 	for _, path := range candidates {
 		if err := os.Remove(path); err == nil {

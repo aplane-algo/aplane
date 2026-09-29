@@ -20,7 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	sentrywitness "github.com/aplane-algo/aplane/internal/witness"
+	cosignerwitness "github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -373,7 +373,7 @@ func (p *Payload) Validate() error {
 		}
 		return validateNoLogicSigFields(p)
 	case CategoryWitness:
-		if !sentrywitness.IsKeyType(p.KeyType) {
+		if !cosignerwitness.IsKeyType(p.KeyType) {
 			return incompatibleKeyFormat("witness category requires a witness key type, got %q", p.KeyType)
 		}
 		if err := validateWitnessPayload(p); err != nil {
@@ -437,7 +437,7 @@ func (p *Payload) Selector() (string, error) {
 		}
 		return address.String(), nil
 	case CategoryWitness:
-		return sentrywitness.ID(p.KeyType, p.PublicKey)
+		return cosignerwitness.ID(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
 		if len(p.LogicSigBytecode) == 0 {
 			return "", incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
@@ -630,11 +630,11 @@ func validateNoNativePQFields(p *Payload) error {
 }
 
 func validateWitnessPayload(p *Payload) error {
-	publicSize, ok := sentrywitness.PublicKeySize(p.KeyType)
+	publicSize, ok := cosignerwitness.PublicKeySize(p.KeyType)
 	if !ok {
 		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
 	}
-	privateSize, ok := sentrywitness.PrivateKeySize(p.KeyType)
+	privateSize, ok := cosignerwitness.PrivateKeySize(p.KeyType)
 	if !ok {
 		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
 	}
@@ -644,7 +644,7 @@ func validateWitnessPayload(p *Payload) error {
 	if len(p.PrivateKey) != privateSize {
 		return incompatibleKeyFormat("witness private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
 	}
-	if err := sentrywitness.ValidatePair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
+	if err := cosignerwitness.ValidatePair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
 		return incompatibleKeyFormat("invalid witness key pair: %v", err)
 	}
 	return nil
@@ -709,22 +709,22 @@ func validateLogicSigFields(p *Payload) error {
 				return incompatibleKeyFormat("bounded_authorization admin public key does not match parameters.%s", boundedmeta.AdminPublicKeyParameter)
 			}
 		}
-		if p.BoundedAuthorization.Sentry != nil {
-			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.SentryPublicKeyParameter, p.Parameters[boundedmeta.SentryPublicKeyParameter])
+		if p.BoundedAuthorization.Cosigner != nil {
+			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
 			if err != nil {
 				return err
 			}
 			metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
-				"bounded sentry public key",
-				p.BoundedAuthorization.Sentry.PublicKeyHex,
-				boundedmeta.SentryPublicKeySizeV1,
-				boundedmeta.SentryPublicKeySizeV1,
+				"bounded cosigner public key",
+				p.BoundedAuthorization.Cosigner.PublicKeyHex,
+				boundedmeta.CosignerPublicKeySizeV1,
+				boundedmeta.CosignerPublicKeySizeV1,
 			)
 			if err != nil {
 				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
 			}
 			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
-				return incompatibleKeyFormat("bounded_authorization sentry public key does not match parameters.%s", boundedmeta.SentryPublicKeyParameter)
+				return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
 			}
 		}
 		if len(p.SigningArgs) != 0 {

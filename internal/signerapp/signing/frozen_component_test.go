@@ -76,18 +76,18 @@ func frozenBoundedTestService(t *testing.T, programBytes uint64) (*Service, stri
 		t.Fatal(err)
 	}
 	authorizer := types.Address{1}.String()
-	metadata := boundedSentryTestMetadata(t, bytes.Repeat([]byte{0x51}, boundedmeta.SentryPublicKeySizeV1))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x51}, boundedmeta.CosignerPublicKeySizeV1))
 	profile := &lsigresource.Profile{
 		ProgramBytes: programBytes,
 		Spend: &lsigresource.PathProfile{
-			ArgumentBytes: uint64(2 * boundedmeta.SentrySignatureMaxSizeV1),
+			ArgumentBytes: uint64(2 * boundedmeta.CosignerSignatureMaxSizeV1),
 			MaxOpcodeCost: 1,
 		},
-		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.SentrySignatureMaxSizeV1), MaxOpcodeCost: 1},
-		AdminRekey:    &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.SentrySignatureMaxSizeV1), MaxOpcodeCost: 1},
+		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
+		AdminRekey:    &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.CosignerSignatureMaxSizeV1), MaxOpcodeCost: 1},
 	}
 	planner := NewPlanner(stubPlannerDeps{
-		keyTypes: map[string]string{authorizer: "aplane.test-bounded-sentry.v1"},
+		keyTypes: map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"},
 		keyMetadata: map[string]PlannerKeyMetadata{authorizer: {
 			Category: "dsa_lsig", PublicKeyHex: "aabb",
 			BoundedAuthorization: metadata, LogicSigResources: profile,
@@ -195,14 +195,14 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 
 	for _, kind := range []signerapi.ComponentTargetKind{
 		signerapi.ComponentTargetKindUser,
-		signerapi.ComponentTargetKindSentry,
+		signerapi.ComponentTargetKindCosigner,
 		signerapi.ComponentTargetKindBoundedBase,
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			target := signerapi.ComponentTarget{TargetIndex: 0, Kind: kind}
 			switch kind {
-			case signerapi.ComponentTargetKindSentry:
-				target.ComponentKey = "sentry-component"
+			case signerapi.ComponentTargetKindCosigner:
+				target.ComponentKey = "cosigner-component"
 			default:
 				target.AuthAddress = authorizer
 			}

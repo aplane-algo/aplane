@@ -3,7 +3,7 @@
 > Status: This whitepaper is design framing, not the shipped product contract.
 > In particular, its generic reconfiguration model and pseudocode must not be
 > used as a description of any one bundled key type.
-> See [ARCH_SENTRY.md](ARCH_SENTRY.md),
+> See [ARCH_COSIGNER.md](ARCH_COSIGNER.md),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
@@ -18,7 +18,7 @@ and permits spending-key-authorized pure rekey; v2 uses a fixed-depth Merkle
 root with signer-derived proofs and the same pure-rekey authority;
 `aplane.falcon1024-allowlist-alock.v1` adds a distinct external contract-admin
 authority for pure rekey; and `aplane.corridor.v1` additionally requires a
-Falcon sentry for spends. Their closed effect sets reject close, clawback,
+Falcon cosigner for spends. Their closed effect sets reject close, clawback,
 hybrid rekey-and-spend, and unsupported transaction forms.
 
 Choose a concrete key type from `keytypes` and review its documented effect and

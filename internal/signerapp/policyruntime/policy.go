@@ -46,15 +46,15 @@ func ApplyStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, sto
 	return effectivePolicy, nil
 }
 
-// ApplySentryStoredConfig resolves a stored sentry policy overlay into
-// an effective sentry component policy using the runtime defaults for this
+// ApplyCosignerStoredConfig resolves a stored cosigner policy overlay into
+// an effective cosigner component policy using the runtime defaults for this
 // process.
-func ApplySentryStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
+func ApplyCosignerStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
 	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
 	if err != nil {
 		return nil, err
 	}
-	effectivePolicy, err := stored.ApplySentry(defaultPolicy)
+	effectivePolicy, err := stored.ApplyCosigner(defaultPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -97,30 +97,30 @@ func LoadVerifiedWithStoredActive(dataDir string, serverCfg *serverconfig.Server
 	return stored, effective, nil
 }
 
-// LoadVerifiedSentryWithStored loads policy.yaml for a sentry node only
+// LoadVerifiedCosignerWithStored loads policy.yaml for a cosigner node only
 // after verifying its integrity sidecar with the identity keyring, then
-// returns both the stored policy snapshot and the applied runtime sentry
+// returns both the stored policy snapshot and the applied runtime cosigner
 // policy.
-func LoadVerifiedSentryWithStored(dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedSentryConfigWithKeyring(dataDir, kr)
+func LoadVerifiedCosignerWithStored(dataDir string, serverCfg *serverconfig.ServerConfig, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
+	stored, err := policy.LoadVerifiedCosignerConfigWithKeyring(dataDir, kr)
 	if err != nil {
 		return nil, nil, err
 	}
-	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
+	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, nil, err
 	}
 	return stored, effective, nil
 }
 
-// LoadVerifiedSentryWithStoredActive loads and applies a sentry policy from
+// LoadVerifiedCosignerWithStoredActive loads and applies a cosigner policy from
 // one already-resolved generation.
-func LoadVerifiedSentryWithStoredActive(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedSentryConfigActive(active, kr)
+func LoadVerifiedCosignerWithStoredActive(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
+	stored, err := policy.LoadVerifiedCosignerConfigActive(active, kr)
 	if err != nil {
 		return nil, nil, err
 	}
-	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
+	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,8 +135,8 @@ func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir string, serve
 		role = noderole.DefaultRole()
 	}
 	switch role {
-	case noderole.RoleSentry:
-		return LoadVerifiedSentryWithStored(dataDir, serverCfg, kr)
+	case noderole.RoleCosigner:
+		return LoadVerifiedCosignerWithStored(dataDir, serverCfg, kr)
 	case noderole.RoleSigner:
 		return LoadVerifiedWithStored(dataDir, serverCfg, kr)
 	default:
@@ -151,8 +151,8 @@ func LoadVerifiedForNodeRoleWithStoredActive(role noderole.Role, dataDir string,
 		role = noderole.DefaultRole()
 	}
 	switch role {
-	case noderole.RoleSentry:
-		return LoadVerifiedSentryWithStoredActive(dataDir, serverCfg, active, kr)
+	case noderole.RoleCosigner:
+		return LoadVerifiedCosignerWithStoredActive(dataDir, serverCfg, active, kr)
 	case noderole.RoleSigner:
 		return LoadVerifiedWithStoredActive(dataDir, serverCfg, active, kr)
 	default:
@@ -186,28 +186,28 @@ func SaveStoredConfigActiveWithKeyring(dataDir string, serverCfg *serverconfig.S
 	return effective, nil
 }
 
-// SaveStoredSentryConfigWithKeyring writes policy.yaml plus
-// policy.yaml.hmac and returns the effective runtime sentry policy for the
+// SaveStoredCosignerConfigWithKeyring writes policy.yaml plus
+// policy.yaml.hmac and returns the effective runtime cosigner policy for the
 // stored content.
-func SaveStoredSentryConfigWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
-	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
+func SaveStoredCosignerConfigWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
+	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err
 	}
-	if err := policy.SaveStoredSentryConfigWithKeyring(dataDir, stored, kr, signedAt); err != nil {
+	if err := policy.SaveStoredCosignerConfigWithKeyring(dataDir, stored, kr, signedAt); err != nil {
 		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
 	}
 	return effective, nil
 }
 
-// SaveStoredSentryConfigActiveWithKeyring validates and writes a sentry policy
+// SaveStoredCosignerConfigActiveWithKeyring validates and writes a cosigner policy
 // into one already-resolved generation.
-func SaveStoredSentryConfigActiveWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
-	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
+func SaveStoredCosignerConfigActiveWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
+	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err
 	}
-	if err := policy.SaveStoredSentryConfigActiveWithKeyring(active, stored, kr, signedAt); err != nil {
+	if err := policy.SaveStoredCosignerConfigActiveWithKeyring(active, stored, kr, signedAt); err != nil {
 		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
 	}
 	return effective, nil

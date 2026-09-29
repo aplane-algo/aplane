@@ -329,22 +329,22 @@ func (r BoundedAdminRequest) Validate() error {
 // BoundedAdminMetadata identifies the external authority, durable base layout,
 // and exact transcript that must complete a bounded-admin partial.
 type BoundedAdminMetadata struct {
-	ContractAdminKeyID     string                      `json:"contract_admin_key_id"`
-	PublicKeyHex           string                      `json:"public_key_hex"`
-	SpendingPublicKeyHex   string                      `json:"spending_public_key_hex"`
-	ProgramBindingHex      string                      `json:"program_binding_hex"`
-	TransactionID          string                      `json:"transaction_id"`
-	MessageHex             string                      `json:"message_hex"`
-	BaseSignatureArgCount  int                         `json:"base_signature_arg_count"`
-	AdminSignatureArgIndex int                         `json:"admin_signature_arg_index"`
-	SpendEffects           []string                    `json:"spend_effects"`
-	MaxFee                 uint64                      `json:"max_fee"`
-	Sentry                 *BoundedAdminSentryMetadata `json:"sentry,omitempty"`
+	ContractAdminKeyID     string                        `json:"contract_admin_key_id"`
+	PublicKeyHex           string                        `json:"public_key_hex"`
+	SpendingPublicKeyHex   string                        `json:"spending_public_key_hex"`
+	ProgramBindingHex      string                        `json:"program_binding_hex"`
+	TransactionID          string                        `json:"transaction_id"`
+	MessageHex             string                        `json:"message_hex"`
+	BaseSignatureArgCount  int                           `json:"base_signature_arg_count"`
+	AdminSignatureArgIndex int                           `json:"admin_signature_arg_index"`
+	SpendEffects           []string                      `json:"spend_effects"`
+	MaxFee                 uint64                        `json:"max_fee"`
+	Cosigner               *BoundedAdminCosignerMetadata `json:"cosigner,omitempty"`
 }
 
-// BoundedAdminSentryMetadata lets an external contract-admin verifier prove
-// the framework-owned sentry region while completing a rekey that bypasses it.
-type BoundedAdminSentryMetadata struct {
+// BoundedAdminCosignerMetadata lets an external contract-admin verifier prove
+// the framework-owned cosigner region while completing a rekey that bypasses it.
+type BoundedAdminCosignerMetadata struct {
 	ComponentKeyType  string `json:"component_key_type"`
 	PublicKeyHex      string `json:"public_key_hex"`
 	ComponentKeyID    string `json:"component_key_id"`
@@ -425,16 +425,16 @@ type StatusResponse struct {
 	Warnings            []string        `json:"warnings,omitempty"`
 }
 
-// SigningFlowSentry1 names the sentry co-signed component signing
+// SigningFlowCosigner1 names the cosigner co-signed component signing
 // choreography: canonical TX-prefixed group transport, role-tagged component
-// messages, exactly one user plus one sentry component signature per target,
+// messages, exactly one user plus one cosigner component signature per target,
 // Witness Key ID selectors, and assembly via /sign/assemble with arg 0 = user
-// signature and arg 1 = sentry signature. The label is frozen: any change to
-// that choreography mints a new label (sentry2, ...), and unrelated future
+// signature and arg 1 = cosigner signature. The label is frozen: any change to
+// that choreography mints a new label (cosigner2, ...), and unrelated future
 // mechanisms get their own label family. Clients route on this field and must
 // fail fast on flow labels they do not implement; an empty signing_flow means
 // the ordinary /sign path.
-const SigningFlowSentry1 = "sentry1"
+const SigningFlowCosigner1 = "cosigner1"
 
 // SigningFlowBounded1 names the transaction-aware LogicSig choreography. The
 // signer remains authoritative for classification and assembly; clients use
@@ -442,11 +442,11 @@ const SigningFlowSentry1 = "sentry1"
 // unknown labels.
 const SigningFlowBounded1 = "bounded1"
 
-// SigningFlowBoundedSentry1 names the combined bounded spend choreography:
-// signer-owned bounded base component release, sentry-role component signing,
+// SigningFlowBoundedCosigner1 names the combined bounded spend choreography:
+// signer-owned bounded base component release, cosigner-role component signing,
 // and source-aware bounded assembly. Contract-admin rekeys remain on the
-// bounded1 admin endpoint and do not contact the sentry.
-const SigningFlowBoundedSentry1 = "bounded-sentry1"
+// bounded1 admin endpoint and do not contact the cosigner.
+const SigningFlowBoundedCosigner1 = "bounded-cosigner1"
 
 // BoundedSignatureArgLayout describes the stored maximum spending-signature
 // argument shape.
@@ -483,9 +483,9 @@ type BoundedArgumentSlotInfo struct {
 	Paths   BoundedArgumentPathMask `json:"paths"`
 }
 
-// BoundedSentryAuthorizationInfo is the public non-secret projection of the
-// optional sentry authority embedded in a bounded account.
-type BoundedSentryAuthorizationInfo struct {
+// BoundedCosignerAuthorizationInfo is the public non-secret projection of the
+// optional cosigner authority embedded in a bounded account.
+type BoundedCosignerAuthorizationInfo struct {
 	Contract         string   `json:"contract"`
 	ComponentKeyType string   `json:"component_key_type"`
 	PublicKeyHex     string   `json:"public_key_hex,omitempty"`
@@ -498,36 +498,36 @@ type BoundedSentryAuthorizationInfo struct {
 // projection shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
 type BoundedAuthorizationInfo struct {
-	Contract               string                          `json:"contract"`
-	BaseSignatureArgLayout BoundedSignatureArgLayout       `json:"base_signature_arg_layout"`
-	SpendEffects           []string                        `json:"spend_effects"`
-	MaxFee                 uint64                          `json:"max_fee"`
-	AdminOperations        []BoundedAdminOperationInfo     `json:"admin_operations"`
-	Sentry                 *BoundedSentryAuthorizationInfo `json:"sentry,omitempty"`
-	RuntimeArgs            []RuntimeArgInfo                `json:"runtime_args"`
-	DerivedArgs            []BoundedDerivedArgInfo         `json:"derived_args"`
-	ArgumentLayout         []BoundedArgumentSlotInfo       `json:"argument_layout"`
-	Layer3Policy           string                          `json:"layer3_policy"`
-	AdminKeyID             string                          `json:"admin_key_id,omitempty"`
-	ProgramBindingHex      string                          `json:"program_binding,omitempty"`
+	Contract               string                            `json:"contract"`
+	BaseSignatureArgLayout BoundedSignatureArgLayout         `json:"base_signature_arg_layout"`
+	SpendEffects           []string                          `json:"spend_effects"`
+	MaxFee                 uint64                            `json:"max_fee"`
+	AdminOperations        []BoundedAdminOperationInfo       `json:"admin_operations"`
+	Cosigner               *BoundedCosignerAuthorizationInfo `json:"cosigner,omitempty"`
+	RuntimeArgs            []RuntimeArgInfo                  `json:"runtime_args"`
+	DerivedArgs            []BoundedDerivedArgInfo           `json:"derived_args"`
+	ArgumentLayout         []BoundedArgumentSlotInfo         `json:"argument_layout"`
+	Layer3Policy           string                            `json:"layer3_policy"`
+	AdminKeyID             string                            `json:"admin_key_id,omitempty"`
+	ProgramBindingHex      string                            `json:"program_binding,omitempty"`
 }
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.
 type KeyTypeInfo struct {
-	KeyType                string                    `json:"key_type"`
-	Family                 string                    `json:"family"`
-	DisplayName            string                    `json:"display_name"`
-	Description            string                    `json:"description"`
-	AuthorizationKind      string                    `json:"authorization_kind,omitempty"`
-	RequiresLogicSig       bool                      `json:"requires_logicsig"`
-	MnemonicWordCount      int                       `json:"mnemonic_word_count"`
-	MnemonicImport         bool                      `json:"mnemonic_import"`
-	MnemonicScheme         string                    `json:"mnemonic_scheme"`
-	SigningFlow            string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
-	SentryComponentKeyType string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
-	BoundedAuthorization   *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
-	CreationParams         []CreationParamInfo       `json:"creation_params"`
-	RuntimeArgs            []RuntimeArgInfo          `json:"runtime_args"`
+	KeyType                  string                    `json:"key_type"`
+	Family                   string                    `json:"family"`
+	DisplayName              string                    `json:"display_name"`
+	Description              string                    `json:"description"`
+	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
+	RequiresLogicSig         bool                      `json:"requires_logicsig"`
+	MnemonicWordCount        int                       `json:"mnemonic_word_count"`
+	MnemonicImport           bool                      `json:"mnemonic_import"`
+	MnemonicScheme           string                    `json:"mnemonic_scheme"`
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "bounded-cosigner1"); empty = plain /sign
+	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
+	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
+	CreationParams           []CreationParamInfo       `json:"creation_params"`
+	RuntimeArgs              []RuntimeArgInfo          `json:"runtime_args"`
 }
 
 // CreationParamInfo describes a parameter required to generate a key of a given type.
@@ -591,8 +591,8 @@ type KeyInfo struct {
 	PublicKeyHex             string                    `json:"public_key_hex"`
 	KeyType                  string                    `json:"key_type"`
 	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`              // signing choreography label (for example "sentry1" or "bounded-sentry1"); empty = plain /sign
-	SentryComponentKeyType   string                    `json:"sentry_component_key_type,omitempty"` // sentry component key type for sentry-backed signing flows
+	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigner1" or "bounded-cosigner1"); empty = plain /sign
+	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`

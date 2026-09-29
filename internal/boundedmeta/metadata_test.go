@@ -116,9 +116,9 @@ func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	}
 }
 
-func TestMetadataValidateSentryAuthorization(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x6b}, SentryPublicKeySizeV1)
-	componentKeyID, err := witness.ID(SentryComponentKeyTypeV1, publicKey)
+func TestMetadataValidateCosignerAuthorization(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x6b}, CosignerPublicKeySizeV1)
+	componentKeyID, err := witness.ID(CosignerComponentKeyTypeV1, publicKey)
 	if err != nil {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
@@ -128,20 +128,20 @@ func TestMetadataValidateSentryAuthorization(t *testing.T) {
 		SpendEffects:           []string{SpendEffectPay},
 		MaxFee:                 1_000,
 		Layer3Policy:           Layer3PolicyCustom,
-		Sentry: &SentryAuthorization{
-			Contract: SentryContractV1, ComponentKeyType: SentryComponentKeyTypeV1,
+		Cosigner: &CosignerAuthorization{
+			Contract: CosignerContractV1, ComponentKeyType: CosignerComponentKeyTypeV1,
 			PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: SentrySignatureMaxSizeV1, RequiredOn: []string{PathSpend},
+			SignatureMaxSize: CosignerSignatureMaxSizeV1, RequiredOn: []string{PathSpend},
 		},
 		ArgumentLayout: []ArgumentSlot{
 			{Index: 0, Name: "base_signature_0", Source: ArgSourceBaseSignature, MaxSize: 1280, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgRequired, AdminRekey: ArgRequired}},
-			{Index: 1, Name: SentrySignatureSlot, Source: ArgSourceSentry, MaxSize: SentrySignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
+			{Index: 1, Name: CosignerSignatureSlot, Source: ArgSourceCosigner, MaxSize: CosignerSignatureMaxSizeV1, Paths: ArgumentPathMask{Spend: ArgRequired, SpendingRekey: ArgForbidden, AdminRekey: ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if got, want := metadata.ArgumentBytesForPath(PathSpend), 1280+SentrySignatureMaxSizeV1; got != want {
+	if got, want := metadata.ArgumentBytesForPath(PathSpend), 1280+CosignerSignatureMaxSizeV1; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 	if got, want := metadata.ArgumentBytesForPath(PathSpendingRekey), 1280; got != want {
@@ -149,21 +149,21 @@ func TestMetadataValidateSentryAuthorization(t *testing.T) {
 	}
 
 	cloned := Clone(metadata)
-	if !metadata.Equal(cloned) || cloned.Sentry == metadata.Sentry {
-		t.Fatalf("Clone() did not deep-copy sentry metadata: %#v", cloned.Sentry)
+	if !metadata.Equal(cloned) || cloned.Cosigner == metadata.Cosigner {
+		t.Fatalf("Clone() did not deep-copy cosigner metadata: %#v", cloned.Cosigner)
 	}
-	cloned.Sentry.RequiredOn[0] = PathAdminRekey
+	cloned.Cosigner.RequiredOn[0] = PathAdminRekey
 	if metadata.Equal(cloned) {
-		t.Fatal("sentry RequiredOn change not detected")
+		t.Fatal("cosigner RequiredOn change not detected")
 	}
 
 	badID := Clone(metadata)
-	badID.Sentry.ComponentKeyID = strings.Repeat("A", len(componentKeyID))
+	badID.Cosigner.ComponentKeyID = strings.Repeat("A", len(componentKeyID))
 	if err := badID.Validate(); err == nil || !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("Validate() error = %v, want sentry key-ID mismatch", err)
+		t.Fatalf("Validate() error = %v, want cosigner key-ID mismatch", err)
 	}
 	badPath := Clone(metadata)
-	badPath.Sentry.RequiredOn = []string{PathSpendingRekey}
+	badPath.Cosigner.RequiredOn = []string{PathSpendingRekey}
 	if err := badPath.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "exactly [spend]") {
 		t.Fatalf("ValidateProfile() error = %v, want path rejection", err)
 	}
@@ -172,7 +172,7 @@ func TestMetadataValidateSentryAuthorization(t *testing.T) {
 		Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpend, PolicyGate: PolicyGateLayer3,
 	}}
 	if err := spendingRekey.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "do not support spending-key-authorized rekey") {
-		t.Fatalf("ValidateProfile() error = %v, want bounded-sentry spending-rekey rejection", err)
+		t.Fatalf("ValidateProfile() error = %v, want bounded-cosigner spending-rekey rejection", err)
 	}
 }
 

@@ -32,7 +32,7 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			}
 			return func() {}, nil
 		},
-		Policy:       ir.Policy(),
-		SentryPolicy: ir.SentryPolicy(),
+		Policy:         ir.Policy(),
+		CosignerPolicy: ir.CosignerPolicy(),
 	}
 }

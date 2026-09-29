@@ -12,13 +12,13 @@ import (
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -104,13 +104,13 @@ func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 }
 
-func TestPrepareComponentSigningUsesSentryRoleDomain(t *testing.T) {
+func TestPrepareComponentSigningUsesCosignerRoleDomain(t *testing.T) {
 	sender := types.Address{3}.String()
 	receiver := types.Address{4}.String()
 	txn := paymentTransaction(t, sender, receiver, 7)
 
 	req := componentPlanRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -120,18 +120,18 @@ func TestPrepareComponentSigningUsesSentryRoleDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if plan.MessageRole != message.RoleSentry {
-		t.Fatalf("MessageRole = %v, want sentry", plan.MessageRole)
+	if plan.MessageRole != message.RoleCosigner {
+		t.Fatalf("MessageRole = %v, want cosigner", plan.MessageRole)
 	}
 	userMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[0].TxID)
 	if bytes.Equal(plan.Targets[0].Message[:], userMsg[:]) {
-		t.Fatal("sentry component message matched user-role message")
+		t.Fatal("cosigner component message matched user-role message")
 	}
 }
 
 func TestPrepareComponentSigningRejectsMalformedGroupBytes(t *testing.T) {
 	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
+		Role:          signerapi.ComponentSignRoleCosigner,
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})
@@ -150,7 +150,7 @@ func TestPrepareComponentSigningRejectsDivergentGroup(t *testing.T) {
 	txns[1].Group = types.Digest{9}
 
 	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
+		Role:          signerapi.ComponentSignRoleCosigner,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
 		TargetIndices: []int{0},
 	})
@@ -182,7 +182,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 10)
 
 	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
-		Role:          signerapi.ComponentSignRoleSentry,
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -190,8 +190,8 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing sentry policy", err.Message)
+	if !strings.Contains(err.Message, policy.CosignerPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
 	}
 
 	_, err = (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
@@ -204,14 +204,14 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	}
 }
 
-func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
 	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-no-policy",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner-no-policy",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -219,23 +219,23 @@ func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing sentry policy", err.Message)
+	if !strings.Contains(err.Message, policy.CosignerPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
 	}
 }
 
-func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
-	cfg := sentryPolicyConfigForSigningTest(t, `{}`)
+func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
+	cfg := cosignerPolicyConfigForSigningTest(t, `{}`)
 	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-no-routing",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-no-routing",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -243,7 +243,7 @@ func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryTransferPolicyRequiredRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerTransferPolicyRequiredRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want transfer policy required", err.Message)
 	}
 	if store.calls != 0 {
@@ -251,9 +251,9 @@ func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	source := types.Address{24}
-	cfg := wildcardSentryPolicy(t)
+	cfg := wildcardCosignerPolicy(t)
 	txn := types.Transaction{
 		Type: types.ApplicationCallTx,
 		Header: types.Header{
@@ -266,9 +266,9 @@ func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-appl",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-appl",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -276,7 +276,7 @@ func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryNonTransferRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerNonTransferRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want non-transfer rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -284,17 +284,17 @@ func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSignComponentSentryRejectsRouteMissBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	source := types.Address{25}.String()
 	allowed := types.Address{26}.String()
 	blocked := types.Address{27}.String()
-	cfg := sentryRoutePolicy(t, source, allowed)
+	cfg := cosignerRoutePolicy(t, source, allowed)
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-route-miss",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-route-miss",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -310,13 +310,13 @@ func TestSignComponentSentryRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSentryComponentPolicyUsesComponentKeyOverride(t *testing.T) {
+func TestCosignerComponentPolicyUsesComponentKeyOverride(t *testing.T) {
 	source := types.Address{25}.String()
 	baseDest := types.Address{26}.String()
 	overrideDest := types.Address{27}.String()
 	componentKey := testFalconComponentSelector(t, 0xab)
 	otherComponentKey := testFalconComponentSelector(t, 0xcd)
-	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -340,8 +340,8 @@ key_overrides:
 `, source, baseDest, componentKey, source, overrideDest))
 	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
 	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-sentry-key-override",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner-key-override",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -349,19 +349,19 @@ key_overrides:
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy(plan); signErr != nil {
-		t.Fatalf("evaluateSentryComponentPolicy() error = %v", signErr)
+	if signErr := (&Service{CosignerPolicy: cfg}).evaluateCosignerComponentPolicy(plan); signErr != nil {
+		t.Fatalf("evaluateCosignerComponentPolicy() error = %v", signErr)
 	}
 
 	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy(plan)
+	signErr := (&Service{CosignerPolicy: cfg}).evaluateCosignerComponentPolicy(plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
-		t.Fatalf("evaluateSentryComponentPolicy(other key) error = %#v, want route miss", signErr)
+		t.Fatalf("evaluateCosignerComponentPolicy(other key) error = %#v, want route miss", signErr)
 	}
 }
 
-func TestSignComponentSentryRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
-	cfg := sentryPolicyConfigForSigningTest(t, `
+func TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
+	cfg := cosignerPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -371,9 +371,9 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-review-route-miss",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-review-route-miss",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -381,7 +381,7 @@ transfer_policy:
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryDeterministicRoutingRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerDeterministicRoutingRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want deterministic routing rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -389,7 +389,7 @@ transfer_policy:
 	}
 }
 
-func TestSignComponentSentryRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
 	source := types.Address{35}.String()
 	dest := types.Address{36}.String()
 	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
@@ -409,9 +409,9 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-review-above",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-review-above",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -427,7 +427,7 @@ transfer_policy:
 	}
 }
 
-func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	source := types.Address{28}.String()
 	dest := types.Address{29}.String()
 	txn := testnetPaymentTransaction(t, source, dest, 1)
@@ -436,11 +436,11 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	_, err := (&Service{
-		SentryPolicy: sentryRoutePolicy(t, source, dest),
-		AuditLog:     audit,
+		CosignerPolicy: cosignerRoutePolicy(t, source, dest),
+		AuditLog:       audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-rekey",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner-rekey",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -448,7 +448,7 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryRekeyRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerRekeyRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want rekey rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -457,12 +457,12 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	if len(audit.rejected) != 1 {
 		t.Fatalf("rejected audit entries = %#v, want one", audit.rejected)
 	}
-	if got := audit.rejected[0].policyRule; got != policy.SentryRekeyRuleID {
-		t.Fatalf("audit policyRule = %q, want %q", got, policy.SentryRekeyRuleID)
+	if got := audit.rejected[0].policyRule; got != policy.CosignerRekeyRuleID {
+		t.Fatalf("audit policyRule = %q, want %q", got, policy.CosignerRekeyRuleID)
 	}
 }
 
-func TestSignComponentSentryAllowsExplicitRekeyPolicy(t *testing.T) {
+func TestSignComponentCosignerAllowsExplicitRekeyPolicy(t *testing.T) {
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x62)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -471,7 +471,7 @@ func TestSignComponentSentryAllowsExplicitRekeyPolicy(t *testing.T) {
 
 	source := types.Address{68}
 	target := types.Address{69}
-	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -494,9 +494,9 @@ rekey_policy:
 	}
 	store := &componentKeyStore{key: keyMaterial}
 
-	result, signErr := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-rekey-allow",
-		Role:          signerapi.ComponentSignRoleSentry,
+	result, signErr := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-rekey-allow",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -512,11 +512,11 @@ rekey_policy:
 	}
 }
 
-func TestSignComponentSentryRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing.T) {
 	source := types.Address{70}
 	allowedTarget := types.Address{71}
 	blockedTarget := types.Address{72}
-	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -530,9 +530,9 @@ rekey_policy:
 	txn.RekeyTo = blockedTarget
 	store := &componentKeyStore{}
 
-	_, err := (&Service{SentryPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-rekey-deny",
-		Role:          signerapi.ComponentSignRoleSentry,
+	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-rekey-deny",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xbb),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -540,7 +540,7 @@ rekey_policy:
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.SentryRekeyRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerRekeyRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want rekey rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -548,7 +548,7 @@ rekey_policy:
 	}
 }
 
-func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
+func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x61)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -571,11 +571,11 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	result, signErr := (&Service{
-		SentryPolicy: sentryRoutePolicy(t, source, dest),
-		AuditLog:     audit,
+		CosignerPolicy: cosignerRoutePolicy(t, source, dest),
+		AuditLog:       audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID:     "cmp-sentry-policy-pass",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner-policy-pass",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -594,8 +594,8 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 		t.Fatalf("DecodeString(signature) error = %v", err)
 	}
 	plan, prepErr := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-sentry-policy-pass",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner-policy-pass",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -604,7 +604,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 		t.Fatalf("prepareComponentSigning() error = %v", prepErr)
 	}
 	if err := verify.VerifyFalcon1024(publicKey, plan.Targets[0].Message[:], sigBytes); err != nil {
-		t.Fatal("sentry signature does not verify over component message")
+		t.Fatal("cosigner signature does not verify over component message")
 	}
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
 		t.Fatalf("approved audit entries = %#v, want one component approval", audit.approved)
@@ -631,7 +631,7 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:        keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x03},
@@ -702,7 +702,7 @@ func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) 
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:        keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x04},
@@ -742,10 +742,10 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:     0,
-			AuthAddress:     "ADDR",
-			UserSignature:   "aa",
-			SentrySignature: "bb",
+			TargetIndex:       0,
+			AuthAddress:       "ADDR",
+			UserSignature:     "aa",
+			CosignerSignature: "bb",
 		}},
 	}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
@@ -762,7 +762,7 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 }
 
 func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
-	sentryPublicKey, sentryPrivateKey := testFalconComponentKeypair(t, 0x52)
+	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x52)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x53}, 64))
 	if err != nil {
@@ -784,20 +784,20 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
+	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
 	if err != nil {
-		t.Fatalf("Sign(sentry) error = %v", err)
+		t.Fatalf("Sign(cosigner) error = %v", err)
 	}
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
@@ -809,10 +809,10 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 		RequestID:     "asm-live",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:     0,
-			AuthAddress:     guardedAccount,
-			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(sentrySignature),
+			TargetIndex:       0,
+			AuthAddress:       guardedAccount,
+			UserSignature:     hex.EncodeToString(userSignature),
+			CosignerSignature: hex.EncodeToString(cosignerSignature),
 		}},
 		Passthrough: []signerapi.AssemblyPassthroughItem{{
 			TargetIndex:  1,
@@ -862,8 +862,8 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
 		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
+	if !bytes.Equal(signedTarget.Lsig.Args[1], cosignerSignature) {
+		t.Fatalf("LogicSig arg 1 = %x, want cosigner signature %x", signedTarget.Lsig.Args[1], cosignerSignature)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
@@ -894,10 +894,10 @@ func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testing.T) {
-	sentryPublicKey, sentryPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x54}, 64))
+func TestAssembleDecodedGuardedVerifiesFalconCosignerAndBuildsSignedGroup(t *testing.T) {
+	cosignerPublicKey, cosignerPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x54}, 64))
 	if err != nil {
-		t.Fatalf("GenerateKeypair(sentry) error = %v", err)
+		t.Fatalf("GenerateKeypair(cosigner) error = %v", err)
 	}
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x55}, 64))
 	if err != nil {
@@ -917,32 +917,32 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
+	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
 	if err != nil {
-		t.Fatalf("Sign(sentry) error = %v", err)
+		t.Fatalf("Sign(cosigner) error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
 	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
-		RequestID:     "asm-falcon-sentry",
+		RequestID:     "asm-falcon-cosigner",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:     0,
-			AuthAddress:     guardedAccount,
-			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(sentrySignature),
+			TargetIndex:       0,
+			AuthAddress:       guardedAccount,
+			UserSignature:     hex.EncodeToString(userSignature),
+			CosignerSignature: hex.EncodeToString(cosignerSignature),
 		}},
 	}, group, session)
 	if signErr != nil {
@@ -965,16 +965,16 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
 		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
+	if !bytes.Equal(signedTarget.Lsig.Args[1], cosignerSignature) {
+		t.Fatalf("LogicSig arg 1 = %x, want cosigner signature %x", signedTarget.Lsig.Args[1], cosignerSignature)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
 	}
 }
 
-func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
-	sentryPublicKey, _ := testFalconComponentKeypair(t, 0x54)
+func TestAssembleDecodedGuardedRejectsWrongCosignerSignature(t *testing.T) {
+	cosignerPublicKey, _ := testFalconComponentKeypair(t, 0x54)
 	_, wrongPrivateKey := testFalconComponentKeypair(t, 0x55)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x56}, 64))
@@ -995,32 +995,32 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	wrongSignature, err := signerops.New(nil).Sign(wrongPrivateKey, sentryMsg[:])
+	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
+	wrongSignature, err := signerops.New(nil).Sign(wrongPrivateKey, cosignerMsg[:])
 	if err != nil {
-		t.Fatalf("Sign(wrong sentry) error = %v", err)
+		t.Fatalf("Sign(wrong cosigner) error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
 	result, signErr := assembleDecoded(context.Background(), signerapi.AssemblyRequest{
-		RequestID:     "asm-bad-sentry",
+		RequestID:     "asm-bad-cosigner",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:     0,
-			AuthAddress:     guardedAccount,
-			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(wrongSignature),
+			TargetIndex:       0,
+			AuthAddress:       guardedAccount,
+			UserSignature:     hex.EncodeToString(userSignature),
+			CosignerSignature: hex.EncodeToString(wrongSignature),
 		}},
 	}, group, session)
 	if result != nil {
@@ -1029,13 +1029,13 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 	if signErr == nil || signErr.Kind != ErrorBadRequest {
 		t.Fatalf("assembleDecoded() error = %#v, want bad request", signErr)
 	}
-	if !strings.Contains(signErr.Message, "sentry_signature invalid") {
-		t.Fatalf("assembleDecoded() error = %q, want sentry_signature invalid", signErr.Message)
+	if !strings.Contains(signErr.Message, "cosigner_signature invalid") {
+		t.Fatalf("assembleDecoded() error = %q, want cosigner_signature invalid", signErr.Message)
 	}
 }
 
 func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
-	sentryPublicKey, sentryPrivateKey := testFalconComponentKeypair(t, 0x57)
+	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x57)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x58}, 64))
 	if err != nil {
@@ -1059,19 +1059,19 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(wrong user) error = %v", err)
 	}
-	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	cosignerMsg := message.ComponentMessage(message.RoleCosigner, group.Entries[0].TxID)
+	cosignerSignature, err := signerops.New(nil).Sign(cosignerPrivateKey, cosignerMsg[:])
 	if err != nil {
-		t.Fatalf("Sign(sentry) error = %v", err)
+		t.Fatalf("Sign(cosigner) error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
+		Type:                   keytypes.GuardedFalcon1024Cosigner1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
@@ -1081,10 +1081,10 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 		RequestID:     "asm-bad-user",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindGuarded,
-			TargetIndex:     0,
-			AuthAddress:     guardedAccount,
-			UserSignature:   hex.EncodeToString(wrongUserSignature),
-			SentrySignature: hex.EncodeToString(sentrySignature),
+			TargetIndex:       0,
+			AuthAddress:       guardedAccount,
+			UserSignature:     hex.EncodeToString(wrongUserSignature),
+			CosignerSignature: hex.EncodeToString(cosignerSignature),
 		}},
 	}, group, session)
 	if result != nil {
@@ -1128,7 +1128,7 @@ func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
 	}
 }
 
-func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
+func TestSignPreparedCosignerComponentsSignsFalconMessages(t *testing.T) {
 	falconkeygen.RegisterWitnessKeygen()
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x42)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
@@ -1146,11 +1146,11 @@ func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
 		},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
-	plan := preparedSentryComponentPlan(t, componentKey)
+	plan := preparedCosignerComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
+	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
 	if signErr != nil {
-		t.Fatalf("signPreparedSentryComponents() error = %v", signErr)
+		t.Fatalf("signPreparedCosignerComponents() error = %v", signErr)
 	}
 	if session.calls != 1 || session.gotAddress != componentKey {
 		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
@@ -1181,7 +1181,7 @@ func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
+func TestSignPreparedCosignerComponentsSignsFalcon1024Messages(t *testing.T) {
 	falconkeygen.RegisterWitnessKeygen()
 
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
@@ -1206,11 +1206,11 @@ func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
 		},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
-	plan := preparedSentryComponentPlan(t, componentKey)
+	plan := preparedCosignerComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
+	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
 	if signErr != nil {
-		t.Fatalf("signPreparedSentryComponents() error = %v", signErr)
+		t.Fatalf("signPreparedCosignerComponents() error = %v", signErr)
 	}
 	if session.calls != 1 || session.gotAddress != componentKey {
 		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
@@ -1241,7 +1241,7 @@ func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedSentryComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
+func TestSignPreparedCosignerComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
 	sender := types.Address{9}.String()
 	receiver := types.Address{10}.String()
 	txn := paymentTransaction(t, sender, receiver, 11)
@@ -1257,25 +1257,25 @@ func TestSignPreparedSentryComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) 
 	}
 	session := &componentKeyTestSession{}
 
-	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
+	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
 	}
 	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedSentryComponents() error = %#v, want bad request", signErr)
+		t.Fatalf("signPreparedCosignerComponents() error = %#v, want bad request", signErr)
 	}
 	if session.calls != 0 {
 		t.Fatalf("session calls = %d, want 0 before role rejection", session.calls)
 	}
 }
 
-func TestSignPreparedSentryComponentsRejectsWrongKeyType(t *testing.T) {
-	plan := preparedSentryComponentPlan(t, testFalconComponentSelector(t, 0x11))
+func TestSignPreparedCosignerComponentsRejectsWrongKeyType(t *testing.T) {
+	plan := preparedCosignerComponentPlan(t, testFalconComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
 
-	_, err := signPreparedSentryComponents(context.Background(), plan, session)
+	_, err := signPreparedCosignerComponents(context.Background(), plan, session)
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedSentryComponents() error = %#v, want bad request", err)
+		t.Fatalf("signPreparedCosignerComponents() error = %#v, want bad request", err)
 	}
 }
 
@@ -1323,9 +1323,9 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 	return txn
 }
 
-func wildcardSentryPolicy(t *testing.T) *policy.Config {
+func wildcardCosignerPolicy(t *testing.T) *policy.Config {
 	t.Helper()
-	return sentryPolicyConfigForSigningTest(t, `
+	return cosignerPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -1338,9 +1338,9 @@ transfer_policy:
 `)
 }
 
-func sentryRoutePolicy(t *testing.T, source, destination string) *policy.Config {
+func cosignerRoutePolicy(t *testing.T, source, destination string) *policy.Config {
 	t.Helper()
-	return sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	return cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -1365,14 +1365,14 @@ func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
 	return address.String()
 }
 
-func preparedSentryComponentPlan(t *testing.T, componentKey string) *ComponentSignPlan {
+func preparedCosignerComponentPlan(t *testing.T, componentKey string) *ComponentSignPlan {
 	t.Helper()
 	sender := types.Address{11}.String()
 	receiver := types.Address{12}.String()
 	txn := paymentTransaction(t, sender, receiver, 12)
 	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-sentry",
-		Role:          signerapi.ComponentSignRoleSentry,
+		RequestID:     "cmp-cosigner",
+		Role:          signerapi.ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -1501,15 +1501,15 @@ func (p *componentUserTestProvider) ZeroKey(key *coresigning.KeyMaterial) {
 	key.Value = nil
 }
 
-func TestLoadSentryComponentKeyMapsMissingKey(t *testing.T) {
+func TestLoadCosignerComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
-	_, _, err := loadSentryComponentKey(context.Background(), session, testFalconComponentSelector(t, 0x22))
+	_, _, err := loadCosignerComponentKey(context.Background(), session, testFalconComponentSelector(t, 0x22))
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("loadSentryComponentKey() error = %#v, want bad request", err)
+		t.Fatalf("loadCosignerComponentKey() error = %#v, want bad request", err)
 	}
 }
 
-func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
+func TestLoadCosignerComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	_, privateKey := testFalconComponentKeypair(t, 0x44)
 	wrongPublicKey, _ := testFalconComponentKeypair(t, 0x45)
 	componentKey, err := witness.ID(witness.Falcon1024V1, wrongPublicKey)
@@ -1528,9 +1528,9 @@ func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	_, _, loadErr := loadSentryComponentKey(context.Background(), session, componentKey)
+	_, _, loadErr := loadCosignerComponentKey(context.Background(), session, componentKey)
 	if loadErr == nil || loadErr.Kind != ErrorInternal {
-		t.Fatalf("loadSentryComponentKey() error = %#v, want internal", loadErr)
+		t.Fatalf("loadCosignerComponentKey() error = %#v, want internal", loadErr)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil {
 		t.Fatalf("key material was not zeroed after mismatch: %#v", keyMaterial)
@@ -1565,7 +1565,7 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	// A passthrough whose sender is a locally-held guarded account is rejected:
 	// it must go through component assembly, not passthrough.
 	guardedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		sender: {Type: keytypes.GuardedFalcon1024Sentry1024V1},
+		sender: {Type: keytypes.GuardedFalcon1024Cosigner1024V1},
 	}}
 	if _, err := validateGuardedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
 		t.Fatal("guarded-account passthrough: expected rejection, got nil")

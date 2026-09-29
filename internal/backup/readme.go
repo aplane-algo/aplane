@@ -84,7 +84,7 @@ current policy and configuration. Use ` + "`--replace-existing`" + ` only when
 you explicitly intend to replace conflicting destination credentials. For
 replacement-keystore rescue when no identity directory exists, use
 ` + "`apstore rebuild /path/to/this/backup.tar.gz`" + `, adding
-` + "`--role sentry`" + ` when rebuilding a sentry store; rebuild verifies
+` + "`--role cosigner`" + ` when rebuilding a cosigner store; rebuild verifies
 that the requested destination role matches the archive's authenticated source role.
 
 ### Manual Decryption

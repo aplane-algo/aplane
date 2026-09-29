@@ -45,9 +45,9 @@ func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privat
 	return marshal(t, payload, "dsa_lsig")
 }
 
-// SentryComponentFalcon1024KeyJSON returns a deterministic canonical Falcon
-// sentry component payload and its Witness Key ID selector.
-func SentryComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
+// CosignerComponentFalcon1024KeyJSON returns a deterministic canonical Falcon
+// cosigner component payload and its Witness Key ID selector.
+func CosignerComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
 	t.Helper()
 	registerFalconComponentValidator.Do(func() {
 		witness.RegisterPairValidator(witness.Falcon1024V1, validateFalconComponentPair)
@@ -89,7 +89,7 @@ func validateFalconComponentPair(publicKey, privateKey []byte) error {
 		return err
 	}
 	if err := falcongo.Verify(message, signature, keyPair.PublicKey); err != nil {
-		return fmt.Errorf("sentry public key does not match private key")
+		return fmt.Errorf("cosigner public key does not match private key")
 	}
 	return nil
 }

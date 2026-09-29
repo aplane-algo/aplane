@@ -15,15 +15,15 @@ const (
 	CustodianNetworkedSigner Custodian = "networked_signer"
 	CustodianOfflineCeremony Custodian = "offline_ceremony"
 
-	DomainSentryComponent MessageDomain = "APLANE_SENTRY_V1"
-	DomainBoundedAdmin    MessageDomain = "APLANE_BOUNDED_ADMIN_AUTH_V1"
+	DomainCosignerComponent MessageDomain = "APLANE_COSIGNER_V1"
+	DomainBoundedAdmin      MessageDomain = "APLANE_BOUNDED_ADMIN_AUTH_V1"
 )
 
 // Allows reports whether a custodian may produce signatures for a domain.
 func Allows(custodian Custodian, domain MessageDomain) bool {
 	switch custodian {
 	case CustodianNetworkedSigner:
-		return domain == DomainSentryComponent
+		return domain == DomainCosignerComponent
 	case CustodianOfflineCeremony:
 		return domain == DomainBoundedAdmin
 	default:

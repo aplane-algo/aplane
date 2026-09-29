@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -34,35 +34,35 @@ func WitnessPublicMetadataPathActive(active storepaths.ActivePaths, witnessKeyID
 
 // ReadWitnessPublicMetadata reads and validates a witness public metadata
 // sidecar. The boolean is false when the sidecar is absent.
-func ReadWitnessPublicMetadata(paths storepaths.Paths, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
+func ReadWitnessPublicMetadata(paths storepaths.Paths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
 	active, err := genstore.ResolveActive(paths)
 	if err != nil {
-		return sentryrefs.ExportEnvelope{}, false, err
+		return cosignerrefs.ExportEnvelope{}, false, err
 	}
 	return ReadWitnessPublicMetadataActive(active, witnessKeyID)
 }
 
 // ReadWitnessPublicMetadataActive is ReadWitnessPublicMetadata against
 // resolved active-store paths.
-func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID string) (sentryrefs.ExportEnvelope, bool, error) {
+func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
 	witnessKeyID, err := witness.NormalizeID(witnessKeyID)
 	if err != nil {
-		return sentryrefs.ExportEnvelope{}, false, err
+		return cosignerrefs.ExportEnvelope{}, false, err
 	}
 	path := WitnessPublicMetadataPathActive(active, witnessKeyID)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return sentryrefs.ExportEnvelope{}, false, nil
+			return cosignerrefs.ExportEnvelope{}, false, nil
 		}
-		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read witness public metadata %s: %w", path, err)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read witness public metadata %s: %w", path, err)
 	}
 	normalized, err := witness.ParsePublicReference(data)
 	if err != nil {
-		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("invalid witness public metadata %s: %w", path, err)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("invalid witness public metadata %s: %w", path, err)
 	}
 	if normalized.WitnessKeyID != witnessKeyID {
-		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("witness public metadata %s ID %q does not match %q", path, normalized.WitnessKeyID, witnessKeyID)
+		return cosignerrefs.ExportEnvelope{}, false, fmt.Errorf("witness public metadata %s ID %q does not match %q", path, normalized.WitnessKeyID, witnessKeyID)
 	}
 	return normalized, true, nil
 }
@@ -122,7 +122,7 @@ func writeWitnessPublicMetadataFromPayload(active storepaths.ActivePaths, select
 	if err != nil {
 		return err
 	}
-	env, err := sentryrefs.NewExportEnvelope(witnessKeyID, payload.KeyType, hex.EncodeToString(payload.PublicKey))
+	env, err := cosignerrefs.NewExportEnvelope(witnessKeyID, payload.KeyType, hex.EncodeToString(payload.PublicKey))
 	if err != nil {
 		return fmt.Errorf("failed to build witness public metadata: %w", err)
 	}

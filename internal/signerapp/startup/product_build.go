@@ -186,12 +186,12 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 				return fmt.Errorf("policy verification failed for product store: %w", err)
 			}
 			switch ir.NodeRole() {
-			case noderole.RoleSentry:
+			case noderole.RoleCosigner:
 				ir.SetPolicyState(nil, nil)
-				ir.SetSentryPolicyState(storedPolicy, effectivePolicy)
+				ir.SetCosignerPolicyState(storedPolicy, effectivePolicy)
 			default:
 				ir.SetPolicyState(storedPolicy, effectivePolicy)
-				ir.SetSentryPolicyState(nil, nil)
+				ir.SetCosignerPolicyState(nil, nil)
 			}
 			return nil
 		},

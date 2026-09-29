@@ -123,15 +123,15 @@ transfer_policy:
 	})
 }
 
-func TestCmdPolicyCheckRejectsInvalidSentryReviewPolicy(t *testing.T) {
-	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, passphrase []byte) {
+func TestCmdPolicyCheckRejectsInvalidCosignerReviewPolicy(t *testing.T) {
+	withPolicyCommandStoreWithRole(t, noderole.RoleCosigner, func(root string, passphrase []byte) {
 		raw := []byte("always_review_warnings: true\n")
 		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "sentry.always_review_warnings") {
-			t.Fatalf("cmdPolicy(check) error = %v, want sentry review rejection", err)
+		if err == nil || !strings.Contains(err.Error(), "cosigner.always_review_warnings") {
+			t.Fatalf("cmdPolicy(check) error = %v, want cosigner review rejection", err)
 		}
 	})
 }

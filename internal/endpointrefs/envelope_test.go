@@ -59,12 +59,12 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 		},
 		{
 			name:    "stale role field",
-			data:    strings.Replace(valid, `"url":`, `"role": "sentry", "url":`, 1),
+			data:    strings.Replace(valid, `"url":`, `"role": "cosigner", "url":`, 1),
 			wantErr: "unknown field",
 		},
 		{
-			name:    "stale sentry keys field",
-			data:    strings.Replace(valid, `"url":`, `"sentry_public_keys": [], "url":`, 1),
+			name:    "stale cosigner keys field",
+			data:    strings.Replace(valid, `"url":`, `"cosigner_public_keys": [], "url":`, 1),
 			wantErr: "unknown field",
 		},
 		{

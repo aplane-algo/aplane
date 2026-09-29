@@ -51,7 +51,7 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 	}
 
 	target := command.Target
-	if command.Verb == VerbToSentry {
+	if command.Verb == VerbToCosigner {
 		target = policyeditor.TargetSigner
 	} else if target == "" || target == policyeditor.TargetAuto {
 		target, err = onlineTarget(r.Session)
@@ -95,7 +95,7 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 
 func (r OnlineRunner) runDraft(ctx context.Context, command Command, streams Streams, store *policyeditor.AdminStore, target policyeditor.Target) error {
 	parseTarget := target
-	if command.Verb == VerbToSentry {
+	if command.Verb == VerbToCosigner {
 		parseTarget = policyeditor.TargetSigner
 	}
 	validator := &policyeditor.AdminStore{Client: store.Client, Target: parseTarget}
@@ -172,8 +172,8 @@ func onlineTarget(requester interface {
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		return "", err
 	}
-	if strings.EqualFold(strings.TrimSpace(settings.NodeRole), "sentry") {
-		return policyeditor.TargetSentry, nil
+	if strings.EqualFold(strings.TrimSpace(settings.NodeRole), "cosigner") {
+		return policyeditor.TargetCosigner, nil
 	}
 	return policyeditor.TargetSigner, nil
 }

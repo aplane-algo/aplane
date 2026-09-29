@@ -20,9 +20,9 @@ import (
 
 const endpointsUsage = "endpoints list | " +
 	"endpoints show <alias> | " +
-	"endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | " +
-	"endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | " +
-	"endpoints discover-sentries | " +
+	"endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run] | " +
+	"endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json> | " +
+	"endpoints discover-cosigners | " +
 	"endpoints default <alias> | " +
 	"endpoints delete <alias>"
 
@@ -137,12 +137,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() { r.renderEndpointShow(result) })
 		}, projectEndpointEntry(result.Endpoint))
-	case "create", "create-sentry":
-		req, err := parseEndpointCreateSentryArgs(args[1:])
+	case "create", "create-cosigner":
+		req, err := parseEndpointCreateCosignerArgs(args[1:])
 		if err != nil {
 			return nil, err
 		}
-		result, err := r.app().EndpointCreateSentry(r.commandContext(), req)
+		result, err := r.app().EndpointCreateCosigner(r.commandContext(), req)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 			})
 		}, endpointMutationProjection{
 			Mode: "create", Alias: result.Alias, Role: result.Role, URL: result.URL,
-			Port: result.SentryPort, DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
+			Port: result.CosignerPort, DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
 		})
 	case "import":
 		req, err := parseEndpointImportArgs(args[1:])
@@ -194,12 +194,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 			Port: result.SignerPort, DryRun: result.DryRun, Created: result.Created,
 			Updated: result.Updated, DefaultChanged: result.DefaultChanged,
 		})
-	case "discover-sentries":
-		req, err := parseEndpointDiscoverSentriesArgs(args[1:])
+	case "discover-cosigners":
+		req, err := parseEndpointDiscoverCosignersArgs(args[1:])
 		if err != nil {
 			return nil, err
 		}
-		result, err := r.app().EndpointDiscoverSentries(r.commandContext(), req)
+		result, err := r.app().EndpointDiscoverCosigners(r.commandContext(), req)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +280,7 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) (command.Result, error)
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
 	var req apshellapp.EndpointImportRequest
-	const usage = "usage: endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>"
+	const usage = "usage: endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
@@ -320,9 +320,9 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 	return req, nil
 }
 
-func parseEndpointCreateSentryArgs(args []string) (apshellapp.EndpointCreateSentryRequest, error) {
-	var req apshellapp.EndpointCreateSentryRequest
-	const usage = "usage: endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]"
+func parseEndpointCreateCosignerArgs(args []string) (apshellapp.EndpointCreateCosignerRequest, error) {
+	var req apshellapp.EndpointCreateCosignerRequest
+	const usage = "usage: endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
@@ -349,8 +349,8 @@ func parseEndpointCreateSentryArgs(args []string) (apshellapp.EndpointCreateSent
 				return req, errors.New(usage)
 			}
 			req.URL = args[i]
-		case "--sentryport", "--sentry-port":
-			if req.SentryPort != 0 {
+		case "--cosignerport", "--cosigner-port":
+			if req.CosignerPort != 0 {
 				return req, errors.New(usage)
 			}
 			i++
@@ -361,21 +361,21 @@ func parseEndpointCreateSentryArgs(args []string) (apshellapp.EndpointCreateSent
 			if err != nil || port <= 0 || port > 65535 {
 				return req, errors.New(usage)
 			}
-			req.SentryPort = port
+			req.CosignerPort = port
 		default:
 			return req, errors.New(usage)
 		}
 	}
-	if req.Alias == "" || req.URL == "" || req.SentryPort == 0 {
+	if req.Alias == "" || req.URL == "" || req.CosignerPort == 0 {
 		return req, errors.New(usage)
 	}
 	return req, nil
 }
 
-func parseEndpointDiscoverSentriesArgs(args []string) (apshellapp.EndpointDiscoverSentriesRequest, error) {
-	var req apshellapp.EndpointDiscoverSentriesRequest
+func parseEndpointDiscoverCosignersArgs(args []string) (apshellapp.EndpointDiscoverCosignersRequest, error) {
+	var req apshellapp.EndpointDiscoverCosignersRequest
 	if len(args) != 0 {
-		return req, errors.New("usage: endpoints discover-sentries")
+		return req, errors.New("usage: endpoints discover-cosigners")
 	}
 	return req, nil
 }

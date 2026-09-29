@@ -73,7 +73,7 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 	if policyYAML == "" {
 		policyYAML = "reject_foreign_rekey: true\n"
 	}
-	if target == "sentry" {
+	if target == "cosigner" {
 		policyYAML = "reject_rekey: true\n"
 	}
 	policySHA := f.snapshotSHA
@@ -122,10 +122,10 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 	}
 }
 
-func TestOnlineReadOnlyAutoTargetsSentryWithoutReplacement(t *testing.T) {
+func TestOnlineReadOnlyAutoTargetsCosignerWithoutReplacement(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "secret")
-	session := &fakeOnlineSession{status: "unlocked", nodeRole: "sentry"}
+	session := &fakeOnlineSession{status: "unlocked", nodeRole: "cosigner"}
 	var stdout bytes.Buffer
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
 		Verb: VerbCheck, Target: policyeditor.TargetAuto,
@@ -136,7 +136,7 @@ func TestOnlineReadOnlyAutoTargetsSentryWithoutReplacement(t *testing.T) {
 	if session.unlockPassphrase != "" || session.replaceCalls != 0 {
 		t.Fatalf("read-only command unlocked or replaced: unlock=%q replacements=%d", session.unlockPassphrase, session.replaceCalls)
 	}
-	if !strings.Contains(stdout.String(), "sentry policy OK online") {
+	if !strings.Contains(stdout.String(), "cosigner policy OK online") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -282,7 +282,7 @@ func TestOnlineDigestUsesDaemonSnapshotSHA(t *testing.T) {
 	}
 }
 
-func TestOnlineToSentryReportsUnrepresentablePolicy(t *testing.T) {
+func TestOnlineToCosignerReportsUnrepresentablePolicy(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "secret")
 	path := filepath.Join(t.TempDir(), "policy.yaml")
@@ -293,10 +293,10 @@ func TestOnlineToSentryReportsUnrepresentablePolicy(t *testing.T) {
 	session := &fakeOnlineSession{}
 	var stdout bytes.Buffer
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbToSentry, Target: policyeditor.TargetSigner, Source: path,
+		Verb: VerbToCosigner, Target: policyeditor.TargetSigner, Source: path,
 	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "cannot be converted to deterministic sentry policy") {
-		t.Fatalf("Run(to-sentry) error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "cannot be converted to deterministic cosigner policy") {
+		t.Fatalf("Run(to-cosigner) error = %v", err)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("failed conversion emitted partial YAML: %q", stdout.String())

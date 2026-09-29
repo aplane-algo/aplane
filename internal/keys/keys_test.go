@@ -19,10 +19,10 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -249,7 +249,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 	})
 
-	t.Run("canonical sentry credential", func(t *testing.T) {
+	t.Run("canonical cosigner credential", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)
@@ -264,7 +264,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("MarshalPayload() error = %v", err)
 		}
-		writeManagedCredentialFile(t, paths, selector+SentryCredentialExtension, keyJSON, masterKey)
+		writeManagedCredentialFile(t, paths, selector+CosignerCredentialExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
 		if err != nil {
@@ -275,10 +275,10 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		info, ok := report.Keys[selector]
 		if !ok {
-			t.Fatalf("sentry credential %s not loaded", selector)
+			t.Fatalf("cosigner credential %s not loaded", selector)
 		}
-		if info.Category != CategoryWitness || info.KeyFile != SentryCredentialFilePath(paths, selector) {
-			t.Fatalf("loaded sentry credential = %#v", info)
+		if info.Category != CategoryWitness || info.KeyFile != CosignerCredentialFilePath(paths, selector) {
+			t.Fatalf("loaded cosigner credential = %#v", info)
 		}
 	})
 
@@ -310,19 +310,19 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if warning.Code != KeyScanWarningFilenameClassMismatch {
 			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameClassMismatch)
 		}
-		for _, want := range []string{legacyPath, SentryCredentialExtension, "Stop apsigner", ".apb", "prior build"} {
+		for _, want := range []string{legacyPath, CosignerCredentialExtension, "Stop apsigner", ".apb", "prior build"} {
 			if !contains(warning.Message(), want) {
 				t.Fatalf("warning message = %q, want %q", warning.Message(), want)
 			}
 		}
 	})
 
-	t.Run("account payload in sentry class is rejected", func(t *testing.T) {
+	t.Run("account payload in cosigner class is rejected", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)
 		keyJSON, address := testEd25519Key(t)
-		writeManagedCredentialFile(t, paths, address+SentryCredentialExtension, keyJSON, masterKey)
+		writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
 		if err != nil {
@@ -347,7 +347,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("witness.ID() error = %v", err)
 		}
-		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		envelope, err := cosignerrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
 		if err != nil {
 			t.Fatalf("NewExportEnvelope() error = %v", err)
 		}
@@ -410,7 +410,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("witness.ID() error = %v", err)
 		}
-		envelope, err := sentryrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
+		envelope, err := cosignerrefs.NewExportEnvelope(witnessKeyID, witness.Falcon1024V1, hex.EncodeToString(publicKey))
 		if err != nil {
 			t.Fatalf("NewExportEnvelope() error = %v", err)
 		}

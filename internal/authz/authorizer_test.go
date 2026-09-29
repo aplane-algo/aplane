@@ -65,14 +65,14 @@ func TestProductAllowedActionsReturnsDefensiveSlice(t *testing.T) {
 	}
 }
 
-func TestRetiredSentrySyncActionIsUnknownAndNotAllowed(t *testing.T) {
-	retired := auth.Action("sentries.sync")
+func TestRetiredCosignerSyncActionIsUnknownAndNotAllowed(t *testing.T) {
+	retired := auth.Action("cosigners.sync")
 	if auth.IsKnownAction(retired) {
-		t.Fatal("retired sentries.sync action remains known")
+		t.Fatal("retired cosigners.sync action remains known")
 	}
 	for _, action := range ProductAllowedActions() {
 		if action == retired {
-			t.Fatal("retired sentries.sync action remains product-allowed")
+			t.Fatal("retired cosigners.sync action remains product-allowed")
 		}
 	}
 }
@@ -102,8 +102,8 @@ func TestProductAllowedActionsCoverAuthenticatedHandlerActions(t *testing.T) {
 		auth.ActionKeysView,
 		auth.ActionPolicyUpdate,
 		auth.ActionPolicyView,
-		auth.ActionSentriesManage,
-		auth.ActionSentriesView,
+		auth.ActionCosignersManage,
+		auth.ActionCosignersView,
 		auth.ActionSettingsUpdate,
 		auth.ActionSettingsView,
 		auth.ActionSignApprove,

@@ -210,7 +210,7 @@ func TestRequireAuthForbidden(t *testing.T) {
 	}
 }
 
-func TestHTTPRouteAdminSentrySyncIsNotRegistered(t *testing.T) {
+func TestHTTPRouteAdminCosignerSyncIsNotRegistered(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
@@ -218,7 +218,7 @@ func TestHTTPRouteAdminSentrySyncIsNotRegistered(t *testing.T) {
 	server.authorizer = authz
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/admin/sentries/sync", nil)
+	r := httptest.NewRequest(http.MethodPost, "/admin/cosigners/sync", nil)
 	r.Header.Set("Authorization", "aplane test-token")
 	buildHTTPServer(server, 0).Handler.ServeHTTP(w, r)
 

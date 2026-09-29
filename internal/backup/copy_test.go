@@ -22,15 +22,15 @@ import (
 
 var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 
-func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
+func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
+	selector, keyJSON := testCosignerComponentBackupKeyJSON(t)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.CosignerCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := keys.SentryCredentialFilePath(paths, selector)
+	source := keys.CosignerCredentialFilePath(paths, selector)
 	if err := os.WriteFile(source, encrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +50,8 @@ func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
 func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
-	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
-	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.SentryCredentialContext(selector))
+	selector, keyJSON := testCosignerComponentBackupKeyJSON(t)
+	encrypted, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.CosignerCredentialContext(selector))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, extension := range []string{keys.AccountKeyExtension, keys.SentryCredentialExtension} {
+	for _, extension := range []string{keys.AccountKeyExtension, keys.CosignerCredentialExtension} {
 		if err := os.WriteFile(filepath.Join(active.KeysDir(), selector+extension), encrypted, 0o600); err != nil {
 			t.Fatal(err)
 		}

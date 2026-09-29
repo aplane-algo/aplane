@@ -78,17 +78,17 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 	}
 }
 
-func TestAdminRowsUseSentryPortLabelForSentryNodes(t *testing.T) {
+func TestAdminRowsUseCosignerPortLabelForCosignerNodes(t *testing.T) {
 	m := Model{admin: adminPanelState{settings: &AdminSettings{
-		NodeRole:         "sentry",
+		NodeRole:         "cosigner",
 		PassphraseMethod: "none",
 		SignerPort:       11270,
 	}},
 	}
 
 	rows := m.adminRows()
-	if rows[7].label != "Sentry Port" || rows[7].value != "11270" {
-		t.Fatalf("port row = %q/%q, want Sentry Port/11270", rows[7].label, rows[7].value)
+	if rows[7].label != "Cosigner Port" || rows[7].value != "11270" {
+		t.Fatalf("port row = %q/%q, want Cosigner Port/11270", rows[7].label, rows[7].value)
 	}
 }
 
@@ -168,11 +168,11 @@ func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 	}
 }
 
-func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
+func TestPolicyEditorTargetsCosignerOnCosignerNode(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
 		admin: adminPanelState{settings: &AdminSettings{
-			NodeRole: "sentry",
+			NodeRole: "cosigner",
 		}},
 	}
 
@@ -181,8 +181,8 @@ func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
 	if got.viewState != ViewPolicyEditor {
 		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
-	if got.policyEd.target != "sentry" {
-		t.Fatalf("policyEditorTarget = %q, want sentry", got.policyEd.target)
+	if got.policyEd.target != "cosigner" {
+		t.Fatalf("policyEditorTarget = %q, want cosigner", got.policyEd.target)
 	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want policy editor load command")

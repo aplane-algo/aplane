@@ -11,9 +11,9 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
 - `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
-- `docs/ARCH_SENTRY.md`: guarded signing and sentry node architecture, sentry keys, endpoint routing, and assembly invariants
+- `docs/ARCH_COSIGNER.md`: guarded signing and cosigner node architecture, cosigner keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
-- `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-sentry choreography, close behavior, and compiler budgets
+- `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-cosigner choreography, close behavior, and compiler budgets
 - `docs/ARCH_STORE_OWNERSHIP.md`: private signer-store ownership, runtime IPC boundary, offline maintenance, and permission migration
 
 Before generating or modifying key types or LogicSig templates, also read:
@@ -78,7 +78,7 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_SPEC.md
   - `signerops/`: Signer-side signing operations
   - `signerreg/`: Signer registration
 - `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519.v1`)
-- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-sentry1024.v1` key type
+- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-cosigner1024.v1` key type
 - `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
 - `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs
@@ -253,7 +253,7 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Falcon-1024 for post-quantum signatures
 
 ### Managed Credential File Format
-Managed credential files (`.key` account authority and `.sen` sentry witness
+Managed credential files (`.key` account authority and `.cos` cosigner witness
 authority) use the same layered versioning:
 - `envelope_version`: Encryption envelope format (AES-GCM parameters, salt/nonce encoding)
 - `format_version`: Decrypted payload schema (key fields, structure)
@@ -293,7 +293,7 @@ gofmt -s -w .         # Format code
 ### Key Files
 - `aplane.token`: API token for HTTP authentication (mode 0600)
 - `identities/default/keys/*.key`: Encrypted account-authority records (mode 0600)
-- `identities/default/keys/*.sen`: Encrypted sentry witness credentials (mode 0600)
+- `identities/default/keys/*.cos`: Encrypted cosigner witness credentials (mode 0600)
 - `identities/default/.keystore`: Keystore metadata (master salt, passphrase verification)
 - `config.yaml`: Process-global server configuration
 - `identities/default/config.yaml`: Product runtime settings
@@ -323,8 +323,8 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 - `ARCH_AUTHORIZATION.md`: Principal/group/grant authorization architecture
 - `ARCH_POLICY.md`: Current signer policy verdict model and rule inventory
 - `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
-- `ARCH_SENTRY.md`: Guarded signing and sentry node architecture
-- `ARCH_CORRIDOR.md`: Corridor v1 bounded-sentry profile architecture
+- `ARCH_COSIGNER.md`: Guarded signing and cosigner node architecture
+- `ARCH_CORRIDOR.md`: Corridor v1 bounded-cosigner profile architecture
 - `ARCH_APP_INTERACTION.md`: App interaction, app-local vs signer-managed action boundaries, and token/caller model
 - `ARCH_LSIG_PROVIDER.md`: LogicSig provider, template, salting, and registration architecture
 - `ARCH_PLUGINS.md`: Plugin system architecture
