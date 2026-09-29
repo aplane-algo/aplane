@@ -15,7 +15,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] permissions <preflight|audit|migrate|prepare-managed-root --uid UID --gid GID|convert-managed --uid UID --gid GID>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] rebuild <archive-path> [--role signer|cosigner] [--address ADDRESS ...]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-dir|archive-path>\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] generations prune [--all-priors]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] generations prune [--all-priors] [--yes]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy check\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy verify\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy sign\n")
