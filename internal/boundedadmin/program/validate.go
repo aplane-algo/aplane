@@ -589,6 +589,11 @@ func decodeIntBlock(program []byte, pc int) (int, []uint64, error) {
 		return 0, nil, err
 	}
 	offset := pc + 1 + used
+	// Every constant occupies at least one byte, so a count beyond the
+	// remaining program is malformed and must not size an allocation.
+	if count > uint64(len(program)-offset) {
+		return 0, nil, fmt.Errorf("invalid int constant block at pc %d", pc)
+	}
 	values := make([]uint64, 0, count)
 	for range count {
 		value, n, err := readUvarint(program, offset)
@@ -607,6 +612,11 @@ func decodeByteBlock(program []byte, pc int) (int, [][]byte, error) {
 		return 0, nil, err
 	}
 	offset := pc + 1 + used
+	// Every constant has at least a one-byte length prefix, so a count beyond
+	// the remaining program is malformed and must not size an allocation.
+	if count > uint64(len(program)-offset) {
+		return 0, nil, fmt.Errorf("invalid byte constant block at pc %d", pc)
+	}
 	values := make([][]byte, 0, count)
 	for range count {
 		length, n, err := readUvarint(program, offset)
@@ -793,6 +803,12 @@ func isBranchInstruction(name string) bool {
 	}
 }
 
+// maxLayer3CallDepth bounds the return stacks tracked per control-flow state.
+// Every validation state keys on its full return stack, so without a small
+// constant bound a recursive Layer 3 could make validation memory quadratic in
+// program size. Composed and bundled Layer 3 code nests at most two calls.
+const maxLayer3CallDepth = 16
+
 type controlFlowState struct {
 	at      int
 	returns string
@@ -864,8 +880,8 @@ func validateLayer3ControlFlow(parsed disassembly, start, acceptAt int) error {
 				}
 				return fmt.Errorf("callsub at pc %d has invalid targets", inst.pc)
 			}
-			if len(state.returns) >= len(parsed.instructions) {
-				return fmt.Errorf("callsub depth exceeds program size")
+			if len(state.returns) >= maxLayer3CallDepth {
+				return fmt.Errorf("callsub at pc %d exceeds Layer 3 call depth %d", inst.pc, maxLayer3CallDepth)
 			}
 			stack := append(append([]int(nil), state.returns...), next)
 			enqueue(resolved[0], stack)

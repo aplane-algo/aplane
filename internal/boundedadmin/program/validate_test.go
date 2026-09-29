@@ -5,6 +5,7 @@ package program
 
 import (
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -318,6 +319,22 @@ func TestDecodeVariableVectorRejectsBranchOpcodes(t *testing.T) {
 	}
 }
 
+func TestDecodeProgramRejectsOversizedConstantBlockCounts(t *testing.T) {
+	// A misaligned decoding pass can land on a constant-block opcode followed
+	// by arbitrary bytes; the count must be rejected before it sizes an
+	// allocation.
+	hugeCount := binary.AppendUvarint(nil, 1<<40)
+	for _, opcode := range []byte{0x20, 0x26} {
+		for _, encoding := range []branchEncoding{branchEncodingFixed, branchEncodingVarint} {
+			program := append([]byte{13, opcode}, hugeCount...)
+			if _, err := decodeProgram(program, encoding); err == nil ||
+				!strings.Contains(err.Error(), "constant block") {
+				t.Fatalf("decodeProgram(opcode 0x%02x, %s) error = %v, want constant block rejection", opcode, encoding, err)
+			}
+		}
+	}
+}
+
 func TestValidateRejectsLayer3ControlFlowEscapes(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -361,6 +378,46 @@ func TestValidateRejectsLayer3ControlFlowEscapes(t *testing.T) {
 				t.Fatalf("Validate() error = %v, want Layer-3 escape rejection", err)
 			}
 		})
+	}
+}
+
+func TestValidateBoundsLayer3CallDepth(t *testing.T) {
+	nested := func(depth int) func(*testProgramBuilder) {
+		return func(b *testProgramBuilder) {
+			b.branch(0x88, "sub0")
+			b.branch(0x42, "accept")
+			for i := range depth {
+				b.label(fmt.Sprintf("sub%d", i))
+				if i+1 < depth {
+					b.branch(0x88, fmt.Sprintf("sub%d", i+1))
+				}
+				b.op(0x89)
+			}
+		}
+	}
+	program, expected := testExpectedProgramWithLayer3(t, nested(maxLayer3CallDepth))
+	if err := Validate(program, expected); err != nil {
+		t.Fatalf("Validate(depth %d) error = %v", maxLayer3CallDepth, err)
+	}
+	program, expected = testExpectedProgramWithLayer3(t, nested(maxLayer3CallDepth+1))
+	err := Validate(program, expected)
+	if err == nil || !strings.Contains(err.Error(), "exceeds Layer 3 call depth") {
+		t.Fatalf("Validate(depth %d) error = %v, want Layer-3 call depth rejection", maxLayer3CallDepth+1, err)
+	}
+}
+
+func TestValidateAcceptsNestedLayer3Subroutines(t *testing.T) {
+	program, expected := testExpectedProgramWithLayer3(t, func(b *testProgramBuilder) {
+		b.branch(0x88, "outer")
+		b.branch(0x42, "accept")
+		b.label("outer")
+		b.branch(0x88, "inner")
+		b.op(0x89)
+		b.label("inner")
+		b.op(0x89)
+	})
+	if err := Validate(program, expected); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 
