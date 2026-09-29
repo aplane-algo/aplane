@@ -38,8 +38,9 @@ func (m Model) selectedCosignerReference() (CosignerReferenceInfo, bool) {
 }
 
 func (m Model) openCosignerReferenceManager() (tea.Model, tea.Cmd) {
+	// Cosigner nodes export public references; they never import them, so
+	// the manager is not offered there and the key binding is inert.
 	if m.isCosignerNode() {
-		m.lastError = "Public cosigner references are managed on signer nodes"
 		return m, nil
 	}
 	m.cosigner.managerSelected = 0

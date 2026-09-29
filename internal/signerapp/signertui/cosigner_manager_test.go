@@ -62,8 +62,8 @@ func TestKeyListCosignerShortcutOpensManagerOnlyOnSigner(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("cosigner node unexpectedly requested signer reference data")
 	}
-	if !strings.Contains(next.lastError, "managed on signer nodes") {
-		t.Fatalf("cosigner error = %q", next.lastError)
+	if next.lastError != "" {
+		t.Fatalf("cosigner error = %q, want none", next.lastError)
 	}
 }
 
