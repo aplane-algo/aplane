@@ -41,6 +41,7 @@ ALGOD_URL="http://algod:8080"
 KMD_URL="http://algod:7833"
 ACCOUNT_FUND_AMOUNT=100000000
 ALGOD_CONFIG_DIR=""
+RELEASE_CACHE_DIR=""
 LOCALNET_GENESIS_HASH=""
 NETWORK_TOKEN="localnet"
 FALCON_ADDRESS=""
@@ -198,6 +199,9 @@ docker_exec_as_tester() {
 }
 
 cleanup() {
+    if [ -n "$RELEASE_CACHE_DIR" ]; then
+        rm -rf "$RELEASE_CACHE_DIR"
+    fi
     if [ "$KEEP_CONTAINER" = "1" ]; then
         printf '\nKept containers for debugging:\n'
         printf '  %s\n' "$ALGOD_CONTAINER"
@@ -414,26 +418,42 @@ stage_release() {
     local container="$1"
     if [ "$RELEASE_INSTALL" = "1" ]; then
         [ -n "$ARCH" ] || die "release architecture is not set"
+        # Download the release once; later nodes reuse the first node's copy
+        # instead of each fetching the full archive from GitHub.
+        if [ -z "$RELEASE_CACHE_DIR" ]; then
+            docker_exec_as_tester "$container" "set -e
+                tag='$APLANE_RELEASE_VERSION'
+                if [ \"\$tag\" = latest ]; then
+                    tag=\$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/aplane-algo/aplane/releases/latest | sed -n 's/.*\"tag_name\":[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)
+                    [ -n \"\$tag\" ] || { echo 'failed to resolve latest APlane release tag' >&2; exit 1; }
+                fi
+                case \"\$tag\" in v*) ;; *) tag=\"v\$tag\" ;; esac
+                version=\"\${tag#v}\"
+                base_url=\"https://github.com/aplane-algo/aplane/releases/download/\$tag\"
+                archive=\"aplane_\${version}_linux_$ARCH.tar.gz\"
+                mkdir -p /tmp/aplane-release
+                echo \"Downloading APlane release archive \$archive from \$base_url/\$archive\"
+                curl -fsSL \"\$base_url/\$archive\" -o /tmp/aplane-release/aplane.tar.gz
+                echo \"Downloading APlane release checksums from \$base_url/checksums.txt\"
+                curl -fsSL \"\$base_url/checksums.txt\" -o /tmp/aplane-release/checksums.txt
+                printf '%s\\n' \"\$archive\" > /tmp/aplane-release/archive-name"
+            RELEASE_CACHE_DIR="$(mktemp -d)"
+            docker cp "$container:/tmp/aplane-release/." "$RELEASE_CACHE_DIR/"
+        else
+            log "Reusing downloaded APlane release archive for $container"
+            docker_exec "$container" mkdir -p /tmp/aplane-release
+            docker cp "$RELEASE_CACHE_DIR/." "$container:/tmp/aplane-release/"
+            docker_exec "$container" chown -R "$TEST_USER:$TEST_USER" /tmp/aplane-release
+        fi
+        # Every node verifies the archive it extracts, including reused copies.
         docker_exec_as_tester "$container" "set -e
-            tag='$APLANE_RELEASE_VERSION'
-            if [ \"\$tag\" = latest ]; then
-                tag=\$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/aplane-algo/aplane/releases/latest | sed -n 's/.*\"tag_name\":[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)
-                [ -n \"\$tag\" ] || { echo 'failed to resolve latest APlane release tag' >&2; exit 1; }
-            fi
-            case \"\$tag\" in v*) ;; *) tag=\"v\$tag\" ;; esac
-            version=\"\${tag#v}\"
-            base_url=\"https://github.com/aplane-algo/aplane/releases/download/\$tag\"
-            archive=\"aplane_\${version}_linux_$ARCH.tar.gz\"
-            mkdir -p /home/$TEST_USER/src /tmp/aplane-release
-            echo \"Downloading APlane release archive \$archive from \$base_url/\$archive\"
-            curl -fsSL \"\$base_url/\$archive\" -o /tmp/aplane-release/aplane.tar.gz
-            echo \"Downloading APlane release checksums from \$base_url/checksums.txt\"
-            curl -fsSL \"\$base_url/checksums.txt\" -o /tmp/aplane-release/checksums.txt
+            archive=\$(cat /tmp/aplane-release/archive-name)
             expected=\$(awk -v f=\"\$archive\" '\$2 == f { print \$1; exit }' /tmp/aplane-release/checksums.txt)
             [ -n \"\$expected\" ] || { echo \"missing checksum for \$archive\" >&2; exit 1; }
             actual=\$(sha256sum /tmp/aplane-release/aplane.tar.gz | awk '{ print \$1 }')
             [ \"\$expected\" = \"\$actual\" ] || { echo \"checksum mismatch for \$archive\" >&2; exit 1; }
             echo \"Verified checksum for \$archive\"
+            mkdir -p /home/$TEST_USER/src
             tar -xzf /tmp/aplane-release/aplane.tar.gz -C /home/$TEST_USER/src"
         return
     fi
