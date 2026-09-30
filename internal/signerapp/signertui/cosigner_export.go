@@ -5,10 +5,15 @@ package tui
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -59,10 +64,11 @@ func (m Model) openCosignerExportFor(rawWitnessKeyID, keyType string, returnView
 	m.cosigner.exportPath = suggestedCosignerExportPath(witnessKeyID)
 	m.cosigner.exportError = ""
 	m.cosigner.exportEndpoint = nil
-	m.cosigner.exportIncludeEndpoint = false
 	m.cosigner.exportEndpointError = ""
+	m.cosigner.exportHost = ""
 	if m.admin.settings != nil && strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL) != "" {
-		endpoint, endpointErr := apadminapp.BuildAdvertisedEndpointEnvelope(
+		endpoint, endpointErr := apadminapp.BuildCosignerEndpointEnvelope(
+			"",
 			m.admin.settings.EndpointAdvertiseURL,
 			m.admin.settings.SSHPort,
 			m.admin.settings.SignerPort,
@@ -71,7 +77,6 @@ func (m Model) openCosignerExportFor(rawWitnessKeyID, keyType string, returnView
 			m.cosigner.exportEndpointError = endpointErr.Error()
 		} else {
 			m.cosigner.exportEndpoint = &endpoint
-			m.cosigner.exportIncludeEndpoint = true
 		}
 	}
 	m.cosigner.exportWrittenPath = ""
@@ -96,26 +101,30 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.cosigner.exportFocus = (m.cosigner.exportFocus + focusCount - 1) % focusCount
 		return m, nil
 	case "backspace":
-		if m.cosigner.exportFocus == 0 {
+		switch {
+		case m.cosigner.exportFocus == 0:
 			m.cosigner.exportPath = trimLastRune(m.cosigner.exportPath)
+		case m.cosignerExportHasHostField() && m.cosigner.exportFocus == 1:
+			m.cosigner.exportHost = trimLastRune(m.cosigner.exportHost)
 		}
 		m.cosigner.exportError = ""
 		return m, nil
 	case "enter":
-		if m.cosigner.exportEndpoint != nil && m.cosigner.exportFocus == 1 {
-			m.cosigner.exportIncludeEndpoint = !m.cosigner.exportIncludeEndpoint
-			return m, nil
-		}
 		fileFocus := m.cosignerExportButtonFocus()
 		if m.cosigner.exportFocus < fileFocus {
 			m.cosigner.exportFocus++
 			return m, nil
 		}
-		m.cosigner.exportShowJSON = m.cosigner.exportFocus == m.cosignerExportJSONButtonFocus()
-		if !m.cosigner.exportShowJSON && strings.TrimSpace(m.cosigner.exportPath) == "" {
+		showJSON := m.cosigner.exportFocus == m.cosignerExportJSONButtonFocus()
+		if !showJSON && strings.TrimSpace(m.cosigner.exportPath) == "" {
 			m.cosigner.exportError = "Output path is required"
 			return m, nil
 		}
+		if _, err := m.cosignerExportEndpoint(); err != nil {
+			m.cosigner.exportError = "Endpoint: " + err.Error()
+			return m, nil
+		}
+		m.cosigner.exportShowJSON = showJSON
 		if !m.cosigner.exportShowJSON {
 			m.cosigner.exportPath = strings.TrimSpace(m.cosigner.exportPath)
 		}
@@ -126,15 +135,73 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m.waitForMessageCmd(),
 		)
 	}
-	if msg.Type == tea.KeyRunes && m.cosigner.exportFocus == 0 {
-		m.cosigner.exportPath += string(msg.Runes)
+	if msg.Type == tea.KeyRunes {
+		switch {
+		case m.cosigner.exportFocus == 0:
+			m.cosigner.exportPath += string(msg.Runes)
+		case m.cosignerExportHasHostField() && m.cosigner.exportFocus == 1:
+			m.cosigner.exportHost += string(msg.Runes)
+		}
 		m.cosigner.exportError = ""
 	}
 	return m, nil
 }
 
-func (m Model) cosignerExportButtonFocus() int {
+// cosignerExportHasHostField reports whether the operator must supply the
+// client-reachable host because no valid advertise_url is configured.
+func (m Model) cosignerExportHasHostField() bool {
+	return m.cosigner.exportEndpoint == nil
+}
+
+// cosignerExportEndpoint resolves the endpoint every cosigner key export
+// carries, so clients never need to reconstruct it by hand.
+func (m Model) cosignerExportEndpoint() (*endpointrefs.Envelope, error) {
 	if m.cosigner.exportEndpoint != nil {
+		return m.cosigner.exportEndpoint, nil
+	}
+	host := strings.TrimSpace(m.cosigner.exportHost)
+	if host == "" {
+		return nil, errors.New("client-reachable host is required")
+	}
+	var sshPort, signerPort int
+	if m.admin.settings != nil {
+		sshPort, signerPort = m.admin.settings.SSHPort, m.admin.settings.SignerPort
+	}
+	endpoint, err := apadminapp.BuildCosignerEndpointEnvelope(host, "", sshPort, signerPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid host: %w", err)
+	}
+	return &endpoint, nil
+}
+
+// cosignerExportListenWarning flags an endpoint that remote clients cannot
+// reach because the SSH listener is bound to loopback.
+func (m Model) cosignerExportListenWarning(endpoint *endpointrefs.Envelope) string {
+	if endpoint == nil || m.admin.settings == nil {
+		return ""
+	}
+	listen := strings.TrimSpace(m.admin.settings.SSHListenAddress)
+	if listen == "" {
+		listen = apconfig.DefaultSSHListenAddress
+	}
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil || !isLoopbackHost(listen) || isLoopbackHost(parsed.Hostname()) {
+		return ""
+	}
+	return "SSH listens on " + listen + " only; remote clients cannot connect until " +
+		"endpoint.ssh.listen_address is changed and apsigner is restarted."
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func (m Model) cosignerExportButtonFocus() int {
+	if m.cosignerExportHasHostField() {
 		return 2
 	}
 	return 1
@@ -155,14 +222,7 @@ func writeCosignerPublicEnvelopeCmd(path, envelopeJSON string) tea.Cmd {
 	}
 }
 
-func composeCosignerExportArtifact(
-	witnessJSON string,
-	endpoint *endpointrefs.Envelope,
-	includeEndpoint bool,
-) (string, error) {
-	if !includeEndpoint {
-		endpoint = nil
-	}
+func composeCosignerExportArtifact(witnessJSON string, endpoint *endpointrefs.Envelope) (string, error) {
 	reference, err := witness.ParsePublicReference([]byte(witnessJSON))
 	if err != nil {
 		return "", err
@@ -205,21 +265,26 @@ func (m Model) renderCosignerExportPath() string {
 		pathStyle = inputActiveStyle
 	}
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.exportPath))
-	if endpoint := m.cosigner.exportEndpoint; endpoint != nil {
-		body.WriteString("\n\n")
-		checkbox := "[ ] Include advertised endpoint"
-		if m.cosigner.exportIncludeEndpoint {
-			checkbox = "[x] Include advertised endpoint"
-		}
+	if m.cosignerExportHasHostField() {
+		body.WriteString("\n\nClient-reachable host (DNS name or IP):\n")
+		hostStyle := inputInactiveStyle
 		if m.cosigner.exportFocus == 1 {
-			body.WriteString(selectedStyle.Render(checkbox))
-		} else {
-			body.WriteString(checkbox)
+			hostStyle = inputActiveStyle
 		}
-		body.WriteString("\n" + endpoint.URL)
-		body.WriteString("\n" + helpStyle.Render("Public routing metadata only; no token or host trust."))
-	} else if m.cosigner.exportEndpointError != "" {
-		body.WriteString("\n\n" + warningStyle.Render("Endpoint omitted: "+m.cosigner.exportEndpointError))
+		body.WriteString(hostStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.exportHost))
+		if m.cosigner.exportEndpointError != "" {
+			body.WriteString("\n" + warningStyle.Render("Ignoring invalid advertise_url: "+m.cosigner.exportEndpointError))
+		} else {
+			body.WriteString("\n" + helpStyle.Render("Set endpoint.advertise_url to skip this field."))
+		}
+	} else {
+		body.WriteString("\n\nEndpoint:\n" + m.cosigner.exportEndpoint.URL)
+	}
+	body.WriteString("\n" + helpStyle.Render("Public routing metadata only; no token or host trust."))
+	if endpoint, err := m.cosignerExportEndpoint(); err == nil {
+		if warning := m.cosignerExportListenWarning(endpoint); warning != "" {
+			body.WriteString("\n" + warningStyle.Render(warning))
+		}
 	}
 	body.WriteString("\n\n")
 	button := buttonInactiveStyle.Render("EXPORT COSIGNER KEY")
@@ -255,10 +320,8 @@ func (m Model) renderCosignerExportResult() string {
 	body.WriteString(m.cosigner.exportWrittenPath)
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
-	if m.cosigner.exportEndpoint != nil && m.cosigner.exportIncludeEndpoint {
-		body.WriteString("\n\nIncluded endpoint: " + m.cosigner.exportEndpoint.URL)
-	} else {
-		body.WriteString("\n\nEndpoint: not included")
+	if endpoint, err := m.cosignerExportEndpoint(); err == nil {
+		body.WriteString("\n\nIncluded endpoint: " + endpoint.URL)
 	}
 	body.WriteString("\n")
 	body.WriteString("\nNext: import this file in primary-signer apadmin, then use cosigner add in apshell.\n")

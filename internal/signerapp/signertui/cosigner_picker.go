@@ -147,8 +147,8 @@ func (m *Model) clearCosignerWorkflowState() {
 	m.cosigner.exportPath = ""
 	m.cosigner.exportError = ""
 	m.cosigner.exportEndpoint = nil
-	m.cosigner.exportIncludeEndpoint = false
 	m.cosigner.exportEndpointError = ""
+	m.cosigner.exportHost = ""
 	m.cosigner.exportWrittenPath = ""
 	m.cosigner.exportReturnView = ViewKeyDetails
 	m.cosigner.exportFocus = 0

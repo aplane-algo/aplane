@@ -162,8 +162,8 @@ primary signer's apadmin, press `e` for **Cosigners**, then `i` to import the fi
 or `p` to paste JSON. Compare the full Witness Key ID before accepting the
 reference, then select **Generate account**.
 
-In apshell, run `cosigner add <cosigner-key-json> --alias <alias>`. Supply
-`--endpoint <url>` when the exported document has no address. Review the full
+In apshell, run `cosigner add <cosigner-key-json> --alias <alias>`. The TUI
+export carries the cosigner's address, so no endpoint flags are needed. Review the full
 Witness Key ID, then compare the full client SSH key fingerprint displayed in
 apshell and the **Client Access Request** in cosigner-side apadmin before approving.
 The command configures the client route, obtains access, and verifies the

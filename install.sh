@@ -600,6 +600,79 @@ prompt_linux_memory_lock() {
     [ "$answer" = "y" ] || [ "$answer" = "Y" ]
 }
 
+# Cosigners are normally reached by apshell on another machine. Ask once so
+# cosigner key exports carry a usable endpoint and the SSH listener accepts
+# remote clients. Sets COSIGNER_ADVERTISE_HOST (empty = this machine only).
+prompt_cosigner_advertise_host() {
+    local answer
+    COSIGNER_ADVERTISE_HOST=""
+    echo ""
+    echo "Remote apshell clients reach this cosigner over SSH. Enter the DNS name or IP"
+    echo "address they should use, or leave blank if apshell runs only on this machine."
+    while true; do
+        read -rp "Client-reachable cosigner address (blank = this machine only): " answer </dev/tty
+        answer="${answer#\[}"
+        answer="${answer%\]}"
+        case "$answer" in
+            "")
+                return 0
+                ;;
+            *://*|*/*|*[[:space:]]*)
+                echo "Enter only a host name or IP address, without scheme, path, or port."
+                continue
+                ;;
+        esac
+        if [[ "$answer" == *:* && "$answer" != *:*:* ]]; then
+            echo "Enter only a host name or IP address, without a port."
+            continue
+        fi
+        COSIGNER_ADVERTISE_HOST="$answer"
+        return 0
+    done
+}
+
+is_loopback_host() {
+    case "$1" in
+        localhost|127.*|::1) return 0 ;;
+    esac
+    return 1
+}
+
+# Prints the advertise URL for host and SSH port (IPv6 literals bracketed).
+cosigner_advertise_url() {
+    local host="$1"
+    local ssh_port="$2"
+    if [[ "$host" == *:* ]]; then
+        host="[$host]"
+    fi
+    printf 'ssh://%s:%s\n' "$host" "$ssh_port"
+}
+
+# Prints the SSH listen address that makes host reachable. Loopback stays
+# private; any other address must listen on all interfaces of its family.
+cosigner_listen_address() {
+    local host="$1"
+    if [ "$host" = "::1" ]; then
+        echo "::1"
+    elif [ -z "$host" ] || is_loopback_host "$host"; then
+        echo "127.0.0.1"
+    elif [[ "$host" == *:* ]]; then
+        echo "::"
+    else
+        echo "0.0.0.0"
+    fi
+}
+
+print_cosigner_endpoint_summary() {
+    local advertise_url="$1"
+    local listen_address="$2"
+    [ -n "$advertise_url" ] || return 0
+    echo "  Cosigner endpoint: $advertise_url (included in cosigner key exports)"
+    if [ "$listen_address" != "127.0.0.1" ]; then
+        echo "  SSH listens on $listen_address so remote clients can connect."
+    fi
+}
+
 enable_binary_memory_lock() {
     local binary="$1"
     if ! command -v setcap >/dev/null 2>&1; then
@@ -1084,18 +1157,24 @@ write_signer_config() {
     local signer_port="${2:-11270}"
     local ssh_port="${3:-1127}"
     local require_memory_protection="${4:-false}"
+    local advertise_url="${5:-}"
+    local listen_address="${6:-127.0.0.1}"
+    local advertise_line="  # advertise_url: ssh://signer.example.com:$ssh_port"
+    if [ -n "$advertise_url" ]; then
+        advertise_line="  advertise_url: \"$advertise_url\""
+    fi
     cat > "$target" <<EOF
 # apsigner configuration
 # See docs/USER_CONFIG.md for full documentation.
 
 # Signer endpoint exposure settings.
 endpoint:
-  # Optional client-reachable URL used by "apadmin endpoint export" when --host/--url are omitted.
+  # Client-reachable URL used by endpoint and cosigner key exports when --host/--url are omitted.
   # Set this to a real DNS name or IP clients can reach.
-  # advertise_url: ssh://signer.example.com:$ssh_port
+$advertise_line
   signer_port: $signer_port
   ssh:
-    listen_address: 127.0.0.1
+    listen_address: "$listen_address"
     port: $ssh_port
     host_key_path: .ssh/ssh_host_key
     authorized_keys_path: .ssh/authorized_keys
@@ -2103,6 +2182,15 @@ if [ "$LOCAL_MODE" = "1" ]; then
     if prompt_linux_memory_lock; then
         MEMORY_LOCK_REQUESTED=1
     fi
+    COSIGNER_ADVERTISE_HOST=""
+    if [ "$NODE_ROLE" = "cosigner" ] && [ ! -f "$DATA_DIR/config.yaml" ]; then
+        prompt_cosigner_advertise_host
+    fi
+    SIGNER_ADVERTISE_URL=""
+    if [ -n "$COSIGNER_ADVERTISE_HOST" ]; then
+        SIGNER_ADVERTISE_URL="$(cosigner_advertise_url "$COSIGNER_ADVERTISE_HOST" "$SSH_PORT")"
+    fi
+    SIGNER_LISTEN_ADDRESS="$(cosigner_listen_address "$COSIGNER_ADVERTISE_HOST")"
     echo ""
 
     # Resolve/build bundled plugin payloads before replacing binaries.
@@ -2169,7 +2257,9 @@ if [ "$LOCAL_MODE" = "1" ]; then
         fi
     else
         echo "Writing $CONFIG_PATH..."
-        write_signer_config "$CONFIG_PATH" "$SIGNER_PORT" "$SSH_PORT" "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)"
+        write_signer_config "$CONFIG_PATH" "$SIGNER_PORT" "$SSH_PORT" "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)" \
+            "$SIGNER_ADVERTISE_URL" "$SIGNER_LISTEN_ADDRESS"
+        print_cosigner_endpoint_summary "$SIGNER_ADVERTISE_URL" "$SIGNER_LISTEN_ADDRESS"
     fi
 
     # Write apenv.sh at the parent level
@@ -2512,7 +2602,10 @@ CONFIG_PATH="$DATA_DIR/config.yaml"
 echo ""
 write_prod_signer_config() {
     local target="$1"
-    write_signer_config "$target" 11270 1127 "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)"
+    local advertise_url="${2:-}"
+    local listen_address="${3:-127.0.0.1}"
+    write_signer_config "$target" 11270 1127 "$([ "$MEMORY_LOCK_ENABLED" = "1" ] && echo true || echo false)" \
+        "$advertise_url" "$listen_address"
     chown "$SVC_USER:$SVC_GROUP" "$target"
     chmod 600 "$target"
 }
@@ -2529,8 +2622,18 @@ if [ -f "$CONFIG_PATH" ]; then
         chmod 600 "$CONFIG_PATH"
     fi
 else
+    COSIGNER_ADVERTISE_HOST=""
+    if [ "$NODE_ROLE" = "cosigner" ] && [ -r /dev/tty ]; then
+        prompt_cosigner_advertise_host
+    fi
+    SIGNER_ADVERTISE_URL=""
+    if [ -n "$COSIGNER_ADVERTISE_HOST" ]; then
+        SIGNER_ADVERTISE_URL="$(cosigner_advertise_url "$COSIGNER_ADVERTISE_HOST" 1127)"
+    fi
+    SIGNER_LISTEN_ADDRESS="$(cosigner_listen_address "$COSIGNER_ADVERTISE_HOST")"
     echo "Writing $CONFIG_PATH..."
-    write_prod_signer_config "$CONFIG_PATH"
+    write_prod_signer_config "$CONFIG_PATH" "$SIGNER_ADVERTISE_URL" "$SIGNER_LISTEN_ADDRESS"
+    print_cosigner_endpoint_summary "$SIGNER_ADVERTISE_URL" "$SIGNER_LISTEN_ADDRESS"
 fi
 
 # Step 6: Initialize keystore (before systemd starts the service)

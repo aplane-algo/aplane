@@ -76,6 +76,7 @@ func TestCosignerEnrollmentExportShowsJSONWithoutPath(t *testing.T) {
 		cosigner: cosignerState{
 			exportWitnessID:  reference.WitnessKeyID,
 			exportReturnView: ViewKeyDetails,
+			exportHost:       "cosigner.example",
 		},
 	}
 	m.cosigner.exportFocus = m.cosignerExportJSONButtonFocus()
@@ -124,15 +125,90 @@ func TestCosignerExportOffersConfiguredAdvertisedEndpoint(t *testing.T) {
 	}
 	nextModel, _ := m.openCosignerExportFor(testWitnessID1, witness.Falcon1024V1, ViewKeyDetails)
 	next := nextModel.(Model)
-	if next.cosigner.exportEndpoint == nil || !next.cosigner.exportIncludeEndpoint || next.cosignerExportButtonFocus() != 2 {
-		t.Fatalf("endpoint export state = endpoint=%#v include=%t button=%d", next.cosigner.exportEndpoint, next.cosigner.exportIncludeEndpoint, next.cosignerExportButtonFocus())
+	if next.cosigner.exportEndpoint == nil || next.cosignerExportHasHostField() || next.cosignerExportButtonFocus() != 1 {
+		t.Fatalf("endpoint export state = endpoint=%#v button=%d", next.cosigner.exportEndpoint, next.cosignerExportButtonFocus())
 	}
 	if next.cosigner.exportEndpoint.URL != "ssh://cosigner.example:2223" || next.cosigner.exportEndpoint.SignerPort != 11270 {
 		t.Fatalf("endpoint = %#v", next.cosigner.exportEndpoint)
 	}
 	view := stripANSI(next.renderCosignerExportPath())
-	if !strings.Contains(view, "[x] Include advertised endpoint") || !strings.Contains(view, "no token or host trust") {
+	if !strings.Contains(view, "ssh://cosigner.example:2223") || !strings.Contains(view, "no token or host trust") ||
+		strings.Contains(view, "Client-reachable host") {
 		t.Fatalf("export review missing endpoint boundary:\n%s", view)
+	}
+}
+
+func TestCosignerExportRequiresHostWithoutAdvertisedEndpoint(t *testing.T) {
+	m := Model{
+		admin: adminPanelState{settings: &AdminSettings{
+			NodeRole: "cosigner", SSHListenAddress: "0.0.0.0", SSHPort: 2223, SignerPort: 11271,
+		}},
+	}
+	nextModel, _ := m.openCosignerExportFor(testWitnessID1, witness.Falcon1024V1, ViewKeyDetails)
+	next := nextModel.(Model)
+	if !next.cosignerExportHasHostField() || next.cosignerExportButtonFocus() != 2 {
+		t.Fatalf("host field missing: button=%d", next.cosignerExportButtonFocus())
+	}
+	if !strings.Contains(stripANSI(next.renderCosignerExportPath()), "Client-reachable host") {
+		t.Fatal("export view does not ask for the client-reachable host")
+	}
+
+	next.cosigner.exportFocus = next.cosignerExportButtonFocus()
+	nextModel, cmd := next.handleCosignerExportPathKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	blocked := nextModel.(Model)
+	if cmd != nil || blocked.viewState != ViewCosignerExportPath || !strings.Contains(blocked.cosigner.exportError, "host is required") {
+		t.Fatalf("empty host export = view %v error %q cmd %v", blocked.viewState, blocked.cosigner.exportError, cmd)
+	}
+
+	next.cosigner.exportFocus = 1
+	for _, r := range "cosigner.example" {
+		nextModel, _ = next.handleCosignerExportPathKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		next = nextModel.(Model)
+	}
+	if next.cosigner.exportPath == "" || strings.Contains(next.cosigner.exportPath, "cosigner.example") {
+		t.Fatalf("host typing leaked into output path: %q", next.cosigner.exportPath)
+	}
+	endpoint, err := next.cosignerExportEndpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.URL != "ssh://cosigner.example:2223" || endpoint.SignerPort != 11271 {
+		t.Fatalf("endpoint = %#v", endpoint)
+	}
+	next.cosigner.exportFocus = next.cosignerExportButtonFocus()
+	nextModel, cmd = next.handleCosignerExportPathKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if started := nextModel.(Model); cmd == nil || started.viewState != ViewCosignerExporting {
+		t.Fatalf("export with host did not start: view %v", started.viewState)
+	}
+}
+
+func TestCosignerExportRejectsHostWithPort(t *testing.T) {
+	m := Model{cosigner: cosignerState{exportHost: "cosigner.example:2223"}}
+	if _, err := m.cosignerExportEndpoint(); err == nil || !strings.Contains(err.Error(), "invalid host") {
+		t.Fatalf("err = %v, want invalid host", err)
+	}
+}
+
+func TestCosignerExportWarnsWhenSSHListensOnLoopback(t *testing.T) {
+	remote := &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:2223"}
+	local := &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223"}
+	for _, test := range []struct {
+		name     string
+		listen   string
+		endpoint *endpointrefs.Envelope
+		warn     bool
+	}{
+		{"default loopback remote", "", remote, true},
+		{"loopback remote", "127.0.0.1", remote, true},
+		{"loopback local", "127.0.0.1", local, false},
+		{"all interfaces remote", "0.0.0.0", remote, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := Model{admin: adminPanelState{settings: &AdminSettings{SSHListenAddress: test.listen}}}
+			if got := m.cosignerExportListenWarning(test.endpoint) != ""; got != test.warn {
+				t.Fatalf("warning = %t, want %t", got, test.warn)
+			}
+		})
 	}
 }
 
@@ -146,7 +222,7 @@ func TestComposeCosignerExportArtifactAlwaysBuildsCombinedBundle(t *testing.T) {
 		Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:2223", SignerPort: 11270,
 	}
 
-	combined, err := composeCosignerExportArtifact(string(witnessJSON), endpoint, true)
+	combined, err := composeCosignerExportArtifact(string(witnessJSON), endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,18 +232,6 @@ func TestComposeCosignerExportArtifactAlwaysBuildsCombinedBundle(t *testing.T) {
 	}
 	if artifact.Endpoint == nil || artifact.Endpoint.URL != endpoint.URL || artifact.Witness.WitnessKeyID != reference.WitnessKeyID {
 		t.Fatalf("artifact = %+v", artifact)
-	}
-
-	witnessOnly, err := composeCosignerExportArtifact(string(witnessJSON), endpoint, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed, err := enrollment.Parse([]byte(witnessOnly))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if parsed.Endpoint != nil || parsed.Witness != reference {
-		t.Fatal("endpoint opt-out lost witness or retained endpoint")
 	}
 }
 
