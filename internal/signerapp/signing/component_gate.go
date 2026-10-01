@@ -72,7 +72,6 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, plan *ComponentS
 		AllTxns:        allTxns,
 		EvalCount:      evalCount,
 		ForeignIndices: foreignIndices,
-		IsGroup:        len(allTxns) > 1,
 		AuthKeys:       authKeys,
 		KnownAddresses: s.knownAddresses(nil),
 		LogRejection: func(reason string) {

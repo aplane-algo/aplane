@@ -304,7 +304,6 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		EvalCount:            len(req.Requests),
 		PassthroughIndices:   plan.PassthroughIndices,
 		ForeignIndices:       plan.ForeignIndices,
-		IsGroup:              isGroup,
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(plan),
 		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),

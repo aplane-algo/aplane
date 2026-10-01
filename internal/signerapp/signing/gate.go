@@ -23,7 +23,6 @@ type gateInput struct {
 	// foreign-slot always-review warnings instead.
 	PassthroughIndices map[int]bool
 	ForeignIndices     map[int]bool
-	IsGroup            bool
 	// AuthKeys[i] selects the policy key override for position i ("" or short
 	// slice selects the product-wide config).
 	AuthKeys             []string
@@ -48,7 +47,7 @@ type gateInput struct {
 // always-review rule ID for approval audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
-	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, in.IsGroup, s.Policy, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
+	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.Policy, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
 		if in.LogRejection != nil {
 			in.LogRejection(err.Error())
 		}

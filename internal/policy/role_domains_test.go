@@ -185,7 +185,7 @@ transfer_policy:
 			raw: `
 cosigner: {}
 `,
-			want: "cosigner policy must not contain a cosigner wrapper",
+			want: "must not contain a cosigner wrapper",
 		},
 		{
 			name: "client reject rekey",

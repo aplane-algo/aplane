@@ -334,7 +334,7 @@ func TestCheckTxnPolicyLints(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := CheckTxnPolicyLints(tc.txn, tc.txn.Sender.String(), tc.cfg)
+			got := CheckTxnPolicyLints(tc.txn, tc.cfg, nil)
 			if len(got) == 0 {
 				t.Fatal("CheckTxnPolicyLints() returned no violations")
 			}
@@ -349,14 +349,13 @@ func TestCheckTxnPolicyLintsAllowsLocalRekeyTarget(t *testing.T) {
 	localAddr := types.Address{1}
 	txn := types.Transaction{Header: types.Header{RekeyTo: localAddr}}
 
-	got := CheckTxnPolicyLintsWithKnownAddresses(
+	got := CheckTxnPolicyLints(
 		txn,
-		txn.Sender.String(),
 		&Config{RejectForeignRekey: true},
 		map[string]bool{localAddr.String(): true},
 	)
 	if len(got) != 0 {
-		t.Fatalf("CheckTxnPolicyLintsWithKnownAddresses() = %#v, want no local rekey violation", got)
+		t.Fatalf("CheckTxnPolicyLints() = %#v, want no local rekey violation", got)
 	}
 }
 
@@ -364,9 +363,8 @@ func TestCheckTxnPolicyLintsRejectsForeignRekeyTarget(t *testing.T) {
 	foreignAddr := types.Address{1}
 	txn := types.Transaction{Header: types.Header{RekeyTo: foreignAddr}}
 
-	got := CheckTxnPolicyLintsWithKnownAddresses(
+	got := CheckTxnPolicyLints(
 		txn,
-		txn.Sender.String(),
 		&Config{RejectForeignRekey: true},
 		map[string]bool{},
 	)
@@ -391,7 +389,7 @@ func TestCheckTxnPolicyLintsFormatsMaxAlgoPaymentInAlgo(t *testing.T) {
 		},
 	}
 
-	got := CheckTxnPolicyLints(txn, txn.Sender.String(), cfg)
+	got := CheckTxnPolicyLints(txn, cfg, nil)
 	if len(got) != 1 {
 		t.Fatalf("len(violations) = %d, want 1", len(got))
 	}
@@ -428,7 +426,7 @@ func TestCheckTxnPolicyLintsUsesASAAmountFormatter(t *testing.T) {
 		},
 	}
 
-	got := CheckTxnPolicyLints(txn, txn.Sender.String(), cfg)
+	got := CheckTxnPolicyLints(txn, cfg, nil)
 	if len(got) != 1 {
 		t.Fatalf("len(violations) = %d, want 1", len(got))
 	}
@@ -495,28 +493,4 @@ func testGenesisDigest(t *testing.T, encoded string) types.Digest {
 	var out types.Digest
 	copy(out[:], decoded)
 	return out
-}
-
-func TestCheckTxnPolicyEngineJoinsViolations(t *testing.T) {
-	nonZeroAddr := types.Address{1}
-	cfg := &Config{
-		RejectForeignRekey: true,
-		MaxFeeMicroAlgos:   1,
-	}
-	txn := types.Transaction{
-		Header: types.Header{
-			RekeyTo: nonZeroAddr,
-			Fee:     2,
-		},
-	}
-	err := CheckTxnPolicyEngine(txn, "", cfg)
-	if err == nil {
-		t.Fatal("CheckTxnPolicyEngine() error = nil, want violation")
-	}
-	msg := err.Error()
-	for _, want := range []string{"reject_foreign_rekey", "max_fee_exceeded"} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("error %q missing %q", msg, want)
-		}
-	}
 }

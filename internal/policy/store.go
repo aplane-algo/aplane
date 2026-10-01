@@ -67,7 +67,7 @@ func LoadVerifiedCosignerConfig(dataRoot string, kr *crypto.Keyring) (*StoredCon
 // cosigner-domain policy.yaml, returning the exact verified document bytes.
 func LoadVerifiedCosignerConfigDocument(dataRoot string, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
 	return loadVerifiedStoredConfigAtPath(
-		CosignerPath(dataRoot),
+		PolicyPath(dataRoot),
 		kr,
 		ParseStoredCosignerConfig,
 		"cosigner policy",
@@ -224,7 +224,7 @@ func SavePolicyBytesWithIntegrity(dataRoot string, policyBytes []byte, kr *crypt
 // policy.yaml plus policy.yaml.hmac. The caller owns parsing and runtime
 // validation before calling this lower-level primitive.
 func SaveCosignerBytesWithIntegrity(dataRoot string, cosignerBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(CosignerPath(dataRoot), cosignerBytes, kr, signedAt, "cosigner policy config", "policy integrity sidecar")
+	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot), cosignerBytes, kr, signedAt, "cosigner policy config", "policy integrity sidecar")
 }
 
 func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time, configLabel, sidecarLabel string) error {

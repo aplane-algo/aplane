@@ -284,13 +284,9 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 // used to pick a key override from policyCfg.KeyOverrides; an empty string or a
 // nil slice selects the product-wide config. knownAddresses is the signer-local
 // address set used to distinguish local rekeys from foreign rekeys.
-func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, isGroup bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
+func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
 	console = consoleOf(console)
 	var violations []policy.LintViolation
-
-	if isGroup {
-		violations = append(violations, policy.CheckGroupPolicyLints(allTxns, policyCfg)...)
-	}
 
 	limit := requestCount
 	if limit > len(allTxns) {
@@ -305,7 +301,7 @@ func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, p
 		if policyCfg != nil && i < len(authKeys) && authKeys[i] != "" {
 			cfg = policyCfg.ForKey(authKeys[i])
 		}
-		txnViolations := policy.CheckTxnPolicyLintsWithKnownAddresses(txn, txn.Sender.String(), cfg, knownAddresses)
+		txnViolations := policy.CheckTxnPolicyLints(txn, cfg, knownAddresses)
 		txnViolations = append(txnViolations, policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, routingExemptIndices[i])...)
 		for j := range txnViolations {
 			txnViolations[j].TxnIndex = i
