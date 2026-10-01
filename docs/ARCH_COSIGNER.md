@@ -499,7 +499,9 @@ Mixed guarded/non-guarded groups use one canonical group and preserve full
 approval context:
 
 - guarded targets receive user and cosigner component signatures,
-- non-guarded signer targets use ordinary `/sign`,
+- non-guarded signer targets use ordinary `/sign`, which completes before the
+  cosigner is asked, so the user-first choreography covers the whole group and
+  a rejected non-guarded position never reaches the cosigner,
 - resource-dummy transactions are included consistently for LogicSig argument
   and opcode capacity,
 - signer-side `/sign` sees the complete group context for non-guarded approval
