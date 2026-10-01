@@ -110,47 +110,7 @@ func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string,
 		})
 	}
 
-	if len(cfg.MaxAlgoPayments) > 0 && txn.Type == types.PaymentTx {
-		network := networkFromGenesisHash(txn.GenesisHash, cfg.GenesisHashResolver)
-		if network == "" {
-			violations = append(violations, LintViolation{
-				RuleID:   UnknownGenesisHashRuleID,
-				Scope:    "txn",
-				TxnIndex: -1,
-				Message:  fmt.Sprintf("cannot evaluate ALGO payment policy limit for unknown genesis hash %x", txn.GenesisHash[:]),
-			})
-		} else if maxAmount := cfg.MaxAlgoPayments[network]; maxAmount > 0 && txn.Amount > types.MicroAlgos(maxAmount) {
-			violations = append(violations, LintViolation{
-				RuleID:   MaxAlgoPaymentExceededRuleID,
-				Scope:    "txn",
-				TxnIndex: -1,
-				Message:  fmt.Sprintf("payment amount %s exceeds policy max %s on %s", formatAlgoAmount(uint64(txn.Amount)), formatAlgoAmount(maxAmount), network),
-			})
-		}
-	}
-
-	if len(cfg.MaxASAAmounts) > 0 && txn.Type == types.AssetTransferTx {
-		network := networkFromGenesisHash(txn.GenesisHash, cfg.GenesisHashResolver)
-		if network == "" {
-			violations = append(violations, LintViolation{
-				RuleID:   UnknownGenesisHashRuleID,
-				Scope:    "txn",
-				TxnIndex: -1,
-				Message:  fmt.Sprintf("cannot evaluate ASA policy limits for unknown genesis hash %x", txn.GenesisHash[:]),
-			})
-		} else if limits := cfg.MaxASAAmounts[network]; len(limits) > 0 {
-			if maxAmount, ok := limits[uint64(txn.XferAsset)]; ok && txn.AssetAmount > maxAmount {
-				actualDisplay := formatASALimitAmount(cfg, network, uint64(txn.XferAsset), txn.AssetAmount)
-				maxDisplay := formatASALimitAmount(cfg, network, uint64(txn.XferAsset), maxAmount)
-				violations = append(violations, LintViolation{
-					RuleID:   MaxASAAmountExceededRuleID,
-					Scope:    "txn",
-					TxnIndex: -1,
-					Message:  fmt.Sprintf("asset transfer amount %s exceeds policy max %s on %s", actualDisplay, maxDisplay, network),
-				})
-			}
-		}
-	}
+	violations = append(violations, maxAmountThresholds(cfg).check(txn, cfg)...)
 
 	return violations
 }
