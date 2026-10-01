@@ -611,20 +611,39 @@ prompt_cosigner_advertise_host() {
     echo "address they should use, or leave blank if apshell runs only on this machine."
     while true; do
         read -rp "Client-reachable cosigner address (blank = this machine only): " answer </dev/tty
-        answer="${answer#\[}"
-        answer="${answer%\]}"
+        # Accept a bracketed IPv6 literal, but only when the brackets enclose
+        # the whole answer; "[v6]:port" must not slip past the port check.
+        if [[ "$answer" == \[* ]]; then
+            if [[ "$answer" != *\] ]]; then
+                echo "Enter only a host name or IP address, without a port."
+                continue
+            fi
+            answer="${answer#\[}"
+            answer="${answer%\]}"
+        fi
         case "$answer" in
             "")
                 return 0
                 ;;
-            *://*|*/*|*[[:space:]]*)
+            *://*|*/*)
                 echo "Enter only a host name or IP address, without scheme, path, or port."
+                continue
+                ;;
+            # Host names and IP literals need nothing else, and the answer is
+            # written into a double-quoted YAML string.
+            *[![:alnum:].:-]*)
+                echo "Enter only a host name or IP address (letters, digits, '.', '-', ':')."
                 continue
                 ;;
         esac
         if [[ "$answer" == *:* && "$answer" != *:*:* ]]; then
             echo "Enter only a host name or IP address, without a port."
             continue
+        fi
+        # The installer registers the local endpoint as 127.0.0.1, so an IPv6
+        # loopback answer must not move the SSH listener off IPv4.
+        if [ "$answer" = "::1" ]; then
+            answer="127.0.0.1"
         fi
         COSIGNER_ADVERTISE_HOST="$answer"
         return 0
@@ -652,9 +671,7 @@ cosigner_advertise_url() {
 # private; any other address must listen on all interfaces of its family.
 cosigner_listen_address() {
     local host="$1"
-    if [ "$host" = "::1" ]; then
-        echo "::1"
-    elif [ -z "$host" ] || is_loopback_host "$host"; then
+    if [ -z "$host" ] || is_loopback_host "$host"; then
         echo "127.0.0.1"
     elif [[ "$host" == *:* ]]; then
         echo "::"
