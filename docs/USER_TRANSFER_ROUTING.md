@@ -899,60 +899,40 @@ routing had no opinion. Attempts to send to X, Y, or Z are still Always Deny.
 Close-out and clawback misses still use `close_on_no_route` and
 `clawback_on_no_route`.
 
-## Key Overrides
+## Per-Account Routing
 
-`key_overrides` can provide sparse routing policy for one concrete signing key.
-Use an Algorand auth address as the override key:
+Signer `key_overrides` cannot carry `transfer_policy`; a signer document that
+puts routing inside an override is rejected. Express per-account routing in the
+product-wide route list with route `sources`, typically through address sets:
 
 ```yaml
 transfer_policy:
   schema_version: 1
   enabled: true
   on_no_route: reject
-  blocked_destinations:
-    - BLOCKEDFORALL...
   address_sets:
     treasury:
       - TREASURY...
     ops:
       - OPS...
   routes:
-    - id: default_treasury_route
+    - id: treasury_to_ops_algo
       networks: [mainnet]
       sources: ["@treasury"]
       assets: ["algo"]
       destinations: ["@ops"]
-
-key_overrides:
-  SIGNINGAUTHADDRESS...:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      blocked_destinations:
-        - BLOCKEDFORFALCON...
-      routes:
-        - id: falcon_allowlist_asa_route
-          networks: [mainnet]
-          sources: ["@treasury"]
-          assets: [31566704]
-          destinations: ["@ops"]
+    - id: ops_usdc_payouts
+      networks: [mainnet]
+      sources: ["@ops"]
+      assets: [31566704]
+      destinations: ["*"]
+      limits:
+        reject_above: 1000000000
 ```
 
-Inheritance rules:
-
-- `enabled` must be explicit in every `transfer_policy` block,
-- unset scalar fields such as `on_no_route`, `close_on_no_route`, and
-  `clawback_on_no_route` inherit,
-- `blocked_destinations` inherit and are unioned; overrides may add blocked
-  destinations but cannot remove product-wide blocked destinations,
-- `address_sets` and `asset_sets` inherit by name,
-- override set names replace inherited set names with the same name,
-- `routes`, when present in the override, replaces the inherited route list,
-- `routes`, when absent, inherits the product route list,
-- nested `key_overrides` are rejected.
-
-The effective override is selected by the auth address that will actually
-sign, not necessarily by the transaction sender.
+Routes match on the transaction sender, so each account is governed by the
+routes whose `sources` include it, and every route is validated against the
+same sets it is evaluated with.
 
 ## Validation Rules
 
@@ -1106,7 +1086,3 @@ If the hash cannot be resolved, routing emits
 - `review` forces review,
 - `operator_default` produces no routing verdict.
 
-### A Key Override Removed My Base Routes
-
-If an override contains a `routes` field, that list replaces inherited routes
-for that key. Omit `routes` to inherit the product-wide route list.

@@ -160,61 +160,6 @@ transfer_policy:
 	}
 }
 
-func TestEvaluateAlwaysReviewRulesUsesTransferRoutingKeyOverride(t *testing.T) {
-	source := types.Address{1}
-	dest := types.Address{2}
-	authKey := types.Address{9}.String()
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: operator_default
-  routes: []
-key_overrides:
-  `+authKey+`:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      on_no_route: reject
-      routes:
-        - id: override_review
-          networks: [testnet]
-          sources: ["`+source.String()+`"]
-          assets: ["algo"]
-          destinations: ["`+dest.String()+`"]
-          limits:
-            review_above: 10
-`)
-	txn := types.Transaction{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      source,
-			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: dest,
-			Amount:   11,
-		},
-	}
-
-	ruleID, review := EvaluateAlwaysReviewRules(
-		[]types.Transaction{txn},
-		1,
-		map[int]bool{},
-		map[int]bool{},
-		cfg,
-		[]string{authKey},
-		nil,
-		nil,
-	)
-	if !review {
-		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
-	}
-	if ruleID != "transfer_policy:override_review:review_above" {
-		t.Fatalf("ruleID = %q, want key override routing review threshold", ruleID)
-	}
-}
-
 func TestEvaluateAlwaysReviewRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}

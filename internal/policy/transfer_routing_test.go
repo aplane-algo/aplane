@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"gopkg.in/yaml.v3"
 )
 
 func TestStoredTransferPolicyApplyCompilesRoute(t *testing.T) {
@@ -783,181 +782,6 @@ transfer_policy:
 	}
 }
 
-func TestStoredTransferPolicyKeyOverrideInheritsRoutesWhenAbsent(t *testing.T) {
-	baseDest := types.Address{1}.String()
-	overrideBlocked := types.Address{2}.String()
-	overrideKey := types.Address{10}.String()
-	stored := parsePolicyYAML(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  close_on_no_route: review
-  clawback_on_no_route: operator_default
-  routes:
-    - id: base_route
-      networks: [mainnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["`+baseDest+`"]
-key_overrides:
-  `+overrideKey+`:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      blocked_destinations:
-        - `+overrideBlocked+`
-`)
-	cfg, err := stored.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
-	override := cfg.ForKey(overrideKey).TransferPolicy
-	if override == nil {
-		t.Fatal("override TransferPolicy = nil")
-		return
-	}
-	if got := override.OnNoRoute; got != TransferOnNoRouteReject {
-		t.Fatalf("override OnNoRoute = %q, want %q", got, TransferOnNoRouteReject)
-	}
-	if got := override.CloseOnNoRoute; got != TransferOnNoRouteReview {
-		t.Fatalf("override CloseOnNoRoute = %q, want %q", got, TransferOnNoRouteReview)
-	}
-	if got := override.ClawbackOnNoRoute; got != TransferOnNoRouteOperatorDefault {
-		t.Fatalf("override ClawbackOnNoRoute = %q, want %q", got, TransferOnNoRouteOperatorDefault)
-	}
-	if got := len(override.Routes); got != 1 || override.Routes[0].ID != "base_route" {
-		t.Fatalf("override routes = %+v, want inherited base_route", override.Routes)
-	}
-	if _, ok := override.BlockedDestinations[types.Address{2}]; !ok {
-		t.Fatal("override did not add blocked destination")
-	}
-}
-
-func TestStoredTransferPolicyKeyOverrideMergesSetsAndReplacesRoutes(t *testing.T) {
-	treasury := types.Address{1}.String()
-	ops := types.Address{2}.String()
-	vendors := types.Address{3}.String()
-	baseBlocked := types.Address{4}.String()
-	overrideBlocked := types.Address{5}.String()
-	overrideKey := types.Address{10}.String()
-	stored := parsePolicyYAML(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  blocked_destinations:
-    - `+baseBlocked+`
-  address_sets:
-    treasury:
-      - `+treasury+`
-    ops:
-      - `+ops+`
-  routes:
-    - id: base_route
-      networks: [mainnet]
-      sources: ["@treasury"]
-      assets: ["algo"]
-      destinations: ["@ops"]
-key_overrides:
-  `+overrideKey+`:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      blocked_destinations:
-        - `+overrideBlocked+`
-      address_sets:
-        vendors:
-          - `+vendors+`
-      routes:
-        - id: override_route
-          networks: [mainnet]
-          sources: ["@treasury"]
-          assets: ["algo"]
-          destinations: ["@vendors"]
-`)
-	cfg, err := stored.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
-	base := cfg.TransferPolicy
-	if got := len(base.Routes); got != 1 || base.Routes[0].ID != "base_route" {
-		t.Fatalf("base routes = %+v", base.Routes)
-	}
-	if _, ok := base.BlockedDestinations[types.Address{4}]; !ok {
-		t.Fatal("base blocked destinations missing base entry")
-	}
-	if _, ok := base.BlockedDestinations[types.Address{5}]; ok {
-		t.Fatal("base blocked destinations unexpectedly include override entry")
-	}
-	override := cfg.ForKey(overrideKey).TransferPolicy
-	if override == nil {
-		t.Fatal("override TransferPolicy = nil")
-		return
-	}
-	if got := len(override.Routes); got != 1 || override.Routes[0].ID != "override_route" {
-		t.Fatalf("override routes = %+v", override.Routes)
-	}
-	if _, ok := override.AddressSets["treasury"]; !ok {
-		t.Fatal("override did not inherit treasury address set")
-	}
-	if _, ok := override.AddressSets["vendors"]; !ok {
-		t.Fatal("override did not add vendors address set")
-	}
-	if _, ok := override.BlockedDestinations[types.Address{4}]; !ok {
-		t.Fatal("override did not inherit base blocked destination")
-	}
-	if _, ok := override.BlockedDestinations[types.Address{5}]; !ok {
-		t.Fatal("override did not add blocked destination")
-	}
-}
-
-func TestStoredTransferPolicyKeyOverrideEmptyRoutesRoundTrips(t *testing.T) {
-	baseDest := types.Address{1}.String()
-	overrideKey := types.Address{10}.String()
-	stored := parsePolicyYAML(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: base_route
-      networks: [mainnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["`+baseDest+`"]
-key_overrides:
-  `+overrideKey+`:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      routes: []
-`)
-	assertOverrideRoutesCleared := func(t *testing.T, stored *StoredConfig) {
-		t.Helper()
-		cfg, err := stored.Apply(DefaultConfig())
-		if err != nil {
-			t.Fatalf("Apply() error = %v", err)
-		}
-		override := cfg.ForKey(overrideKey).TransferPolicy
-		if override == nil {
-			t.Fatal("override TransferPolicy = nil")
-			return
-		}
-		if got := len(override.Routes); got != 0 {
-			t.Fatalf("override routes len = %d, want explicit clear", got)
-		}
-	}
-	assertOverrideRoutesCleared(t, stored)
-
-	roundTrip, err := yaml.Marshal(stored)
-	if err != nil {
-		t.Fatalf("yaml.Marshal() error = %v", err)
-	}
-	reloaded := parsePolicyYAML(t, string(roundTrip))
-	assertOverrideRoutesCleared(t, reloaded)
-}
-
 func parsePolicyYAML(t *testing.T, raw string) *StoredConfig {
 	t.Helper()
 	cfg, err := ParseStoredConfig([]byte(raw))
@@ -965,4 +789,55 @@ func parsePolicyYAML(t *testing.T, raw string) *StoredConfig {
 		t.Fatalf("ParseStoredConfig() error = %v", err)
 	}
 	return cfg
+}
+
+func TestParseStoredConfigRejectsKeyOverrideTransferPolicy(t *testing.T) {
+	overrideKey := types.Address{10}.String()
+	_, err := ParseStoredConfig([]byte(`
+key_overrides:
+  ` + overrideKey + `:
+    transfer_policy:
+      schema_version: 1
+      enabled: false
+`))
+	if err == nil || !strings.Contains(err.Error(), "transfer_policy is not supported in signer policy") {
+		t.Fatalf("ParseStoredConfig() error = %v, want key override transfer_policy rejection", err)
+	}
+}
+
+// TestApplyCosignerRevalidatesInheritedRouteLimits covers a key override that
+// redefines an asset set without restating routes: inherited routes resolve
+// the set by name when evaluated, so their amount-limit rules must hold
+// against the override's contents too.
+func TestApplyCosignerRevalidatesInheritedRouteLimits(t *testing.T) {
+	const cosignerKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	stored, err := ParseStoredCosignerConfig([]byte(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  asset_sets:
+    usd: {testnet: [1]}
+  routes:
+    - id: usd-limit
+      networks: [testnet]
+      sources: ["*"]
+      assets: ["@usd"]
+      destinations: ["*"]
+      limits: {reject_above: 100}
+key_overrides:
+  ` + cosignerKeyID + `:
+    transfer_policy:
+      schema_version: 1
+      enabled: true
+      asset_sets:
+        usd: {testnet: [1, 2]}
+`))
+	if err != nil {
+		t.Fatalf("ParseStoredCosignerConfig() error = %v", err)
+	}
+	_, err = stored.ApplyCosigner(DefaultConfig())
+	if err == nil || !strings.Contains(err.Error(), `inherited route "usd-limit"`) ||
+		!strings.Contains(err.Error(), "one asset unit per network") {
+		t.Fatalf("ApplyCosigner() error = %v, want inherited route limit rejection", err)
+	}
 }

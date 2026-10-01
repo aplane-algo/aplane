@@ -350,7 +350,7 @@ non-uniform `limits_by_network`, clawback `asset_sources` /
 `key_overrides` is an advanced YAML-only feature. The guided editor does not
 edit overrides.
 
-Overrides let one concrete signing key use tighter or looser policy than the
+Overrides let one concrete signing key use tighter or looser settings than the
 product-wide policy. The override is selected by the auth address that will
 actually sign, not necessarily by the transaction sender.
 
@@ -359,17 +359,7 @@ Example:
 ```yaml
 reject_foreign_rekey: true
 reject_asset_close: false
-
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: base_algo_ops
-      networks: [mainnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["OPSADDRESS..."]
+max_fee_microalgos: 10000
 
 key_overrides:
   SIGNINGAUTHADDRESS...:
@@ -377,15 +367,8 @@ key_overrides:
 
   OTHERAUTHADDRESS...:
     max_fee_microalgos: 5000
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      routes:
-        - id: falcon_usdc_ops
-          networks: [mainnet]
-          sources: ["*"]
-          assets: [31566704]
-          destinations: ["OPSADDRESS..."]
+    review_algo_payments:
+      mainnet: 50000000
 ```
 
 Override rules:
@@ -393,29 +376,19 @@ Override rules:
 | Field kind | If omitted in override | If present in override |
 |------------|------------------------|------------------------|
 | Scalar fields | Inherit product-wide value | Replace product-wide value |
-| `transfer_policy.enabled` | Invalid if `transfer_policy` is present | Required explicit `true` or `false` |
-| `transfer_policy.on_no_route` | Inherit product-wide value | Replace product-wide value |
-| `transfer_policy.close_on_no_route` | Inherit product-wide value | Replace product-wide value |
-| `transfer_policy.clawback_on_no_route` | Inherit product-wide value | Replace product-wide value |
-| `transfer_policy.routes` | Inherit product-wide routes | Replace the entire route list |
-| `transfer_policy.routes: []` | Not applicable | Clear all inherited routes for that key |
-| `address_sets` and `asset_sets` | Inherit by name | Add new names or replace matching names |
-| `blocked_destinations` | Inherit product-wide list | Add to the inherited list |
+| Per-network maps (`review_*`, `max_*`) | Inherit product-wide map | Replace the product-wide map |
+| `transfer_policy` | Inherit product-wide routing | Rejected |
+| `reject_rekey`, `rekey_policy` | Not applicable | Rejected (cosigner-only fields) |
 | Nested `key_overrides` | Not applicable | Rejected |
 
-The sharp edge is inheritance. If an override omits `routes`, it still uses the
-product-wide routes. If it sets `routes`, the listed routes are a replacement,
-not an append. If it sets `routes: []` while inheriting `on_no_route: reject`,
-then covered transfer movements for that key have no matching routes and
-are rejected, except for routing-exempt self no-op shapes.
+Overrides never carry transfer routing. Express per-account routing in the
+product-wide `transfer_policy` with route `sources`, for example a route whose
+`sources` is `["@treasury"]`. Every key is then routed by the same, fully
+validated route list.
 
-`blocked_destinations` can only become stricter in an override. An override can
-add blocked destinations but cannot remove product-wide blocked destinations.
-
-Use overrides when one key has materially different signing constraints, such
-as a LogicSig account whose TEAL enforces a separate allowlist. Avoid overrides
-when normal product-wide routes can express the rule; simpler policy is easier
-to audit.
+Use overrides when one key has materially different signing settings, such as
+a stricter fee cap. Avoid overrides when product-wide policy can express the
+rule; simpler policy is easier to audit.
 
 ## Validation Checklist
 

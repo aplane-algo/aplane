@@ -639,6 +639,9 @@ func validateSigningDocument(c *StoredConfig) error {
 		if override.RekeyPolicy != nil {
 			return fmt.Errorf("key_overrides for %q: rekey_policy is not supported in signer policy; use cosigner policy", key)
 		}
+		if override.TransferPolicy != nil {
+			return fmt.Errorf("key_overrides for %q: transfer_policy is not supported in signer policy; route per account with route sources", key)
+		}
 	}
 	return nil
 }

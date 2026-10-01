@@ -936,9 +936,8 @@ For normative implementation details, see
 `key_overrides` lets the product policy relax or tighten specific guards for one
 concrete signing key without changing the product-wide defaults. Map keys are
 Algorand auth addresses. Fields left unset in an override inherit from the
-product-wide settings. Overrides do not nest. If an override includes a
-`transfer_policy` block, that block still requires `schema_version` and an
-explicit `enabled: true` or `enabled: false`.
+product-wide settings. Overrides do not nest, and they cannot carry
+`transfer_policy`; express per-account routing with route `sources` instead.
 
 When a transaction is linted, the signer picks the override block for the auth
 address that will actually sign it and applies that block on top of the
