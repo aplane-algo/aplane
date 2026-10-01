@@ -134,8 +134,8 @@ func newFreshStoreEnv(t *testing.T, passphrase string) *storeEnv {
 			t.Fatalf("create fresh store directory: %v", err)
 		}
 	}
-	port := reservePort(t)
-	sshPort := reservePort(t)
+	ports := reservePorts(t, 2)
+	port, sshPort := ports[0], ports[1]
 	_, hostPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate signer SSH host key: %v", err)
@@ -176,14 +176,21 @@ require_memory_protection: false
 	return env
 }
 
-func reservePort(t *testing.T) int {
+// reservePorts returns count distinct free ports. Every listener stays open
+// until all ports are chosen; closing each one first lets the kernel hand the
+// same port out twice.
+func reservePorts(t *testing.T, count int) []int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve signer port: %v", err)
+	ports := make([]int, 0, count)
+	for range count {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("reserve signer port: %v", err)
+		}
+		defer func() { _ = listener.Close() }()
+		ports = append(ports, listener.Addr().(*net.TCPAddr).Port)
 	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
+	return ports
 }
 
 func (e *storeEnv) initialize() {
