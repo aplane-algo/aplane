@@ -19,6 +19,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -38,6 +40,10 @@ type guardedSimulationCapture struct {
 	cosignerRoleCalls atomic.Int32
 	assembleCalls     atomic.Int32
 	signerSimulateHit atomic.Int32
+
+	// rejectSign makes /sign refuse the request, as a signer policy or
+	// operator denial would. Set before the server starts; read-only after.
+	rejectSign bool
 
 	mu             sync.Mutex
 	assembly       signerapi.AssemblyRequest
@@ -118,6 +124,17 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 		case signerapi.ComponentTargetKindUser:
 			capture.userRoleCalls.Add(1)
 			capture.record("user")
+		case signerapi.ComponentTargetKindBoundedBase:
+			capture.record("base")
+			resp := signerapi.ComponentResponse{RequestID: req.RequestID}
+			for _, target := range req.Targets {
+				resp.Components = append(resp.Components, signerapi.Component{
+					TargetIndex: target.TargetIndex, Kind: target.Kind, AuthAddress: target.AuthAddress,
+					BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
+				})
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
 		case signerapi.ComponentTargetKindCosigner:
 			capture.cosignerRoleCalls.Add(1)
 			capture.record("cosigner")
@@ -136,6 +153,31 @@ func newGuardedExecutableTestServer(t *testing.T, publicKeyHex string, capture *
 				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString([]byte{byte(target.TargetIndex + 1)}),
 			})
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/sign", func(w http.ResponseWriter, r *http.Request) {
+		capture.record("sign")
+		if capture.rejectSign {
+			http.Error(w, "rejected by signer policy", http.StatusForbidden)
+			return
+		}
+		var req signerapi.GroupSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := signerapi.GroupSignResponse{Signed: make([]string, len(req.Requests))}
+		for i, request := range req.Requests {
+			if mode, err := request.Mode(); err != nil || mode != signerapi.RequestModeSign {
+				continue
+			}
+			txn, err := txnutil.DecodePrefixedHex(request.TxnBytesHex)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			resp.Signed[i] = hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
@@ -369,6 +411,76 @@ func TestBoundedCosignerSimulateUsesUserFirstChoreography(t *testing.T) {
 	defer mu.Unlock()
 	if strings.Join(events, ",") != "base,keys,cosigner,assemble" {
 		t.Fatalf("bounded-cosigner event order = %v, want base, keys, cosigner, assemble", events)
+	}
+}
+
+// TestMixedGroupsFinishUserSideBeforeCosigner pins the user-first
+// choreography in ARCH_COSIGNER.md for mixed groups: the user signer signs the
+// non-guarded positions before the cosigner sees the group, so a /sign
+// rejection never reaches the cosigner.
+func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		bounded    bool
+		rejectSign bool
+		wantEvents string
+	}{
+		{name: "cosigner1", wantEvents: "user,sign,keys,cosigner,assemble"},
+		{name: "cosigner1 sign rejected", rejectSign: true, wantEvents: "user,sign"},
+		{name: "bounded-cosigner1", bounded: true, wantEvents: "base,sign,keys,cosigner,assemble"},
+		{name: "bounded-cosigner1 sign rejected", bounded: true, rejectSign: true, wantEvents: "base,sign"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			publicKey, _ := testFalconCosignerKeypair(t, 0x73)
+			cosignerHex := hex.EncodeToString(publicKey)
+			txns := []types.Transaction{
+				testPaymentTxn(t, testAddress(1), testAddress(2), "guarded"),
+				testPaymentTxn(t, testAddress(3), testAddress(2), "ordinary"),
+			}
+			groupID, err := crypto.ComputeGroupID(txns)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range txns {
+				txns[i].Group = groupID
+			}
+
+			capture := &guardedSimulationCapture{rejectSign: tc.rejectSign}
+			server := newGuardedExecutableTestServer(t, cosignerHex, capture)
+			defer server.Close()
+			var simulateReq models.SimulateRequest
+			algodClient, closeAlgod := newGuardedAlgodSimulationClient(t, "", &simulateReq)
+			defer closeAlgod()
+
+			guarded := txns[0].Sender.String()
+			s, _ := newGuardedTestSigner(t, guarded, 1500, cosignerHex)
+			if tc.bounded {
+				s, _ = newTestSigner(t, func(c *cache.SignerCache) {
+					c.AddAddress(guarded, "test.bounded-cosigner.v1")
+					c.SetSigningFlowForAddress(guarded, signerapi.SigningFlowBoundedCosigner1)
+					c.SetCosignerComponentKeyTypeForAddress(guarded, witness.Falcon1024V1)
+					c.SetCosignerPublicKeyForAddress(guarded, cosignerHex)
+					c.SetBoundedMaxFeeForAddress(guarded, 10_000)
+					c.SetLogicSigResourceProfile(guarded, lsigresource.Profile{
+						ProgramBytes: 4_000,
+						Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
+					})
+				})
+			}
+			s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+			s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", config.ClientEndpointConfig{
+				URL: server.URL, TokenFile: writeCosignerTokenFile(t, "cosigner-token"),
+			})
+			s.algod = algodClient
+
+			_, _, err = s.SignAndSubmitGroup(txns, clientsign.SubmitOptions{Ctx: t.Context(), Simulate: true, Out: io.Discard})
+			if tc.rejectSign != (err != nil) {
+				t.Fatalf("SignAndSubmitGroup() error = %v, want error %v", err, tc.rejectSign)
+			}
+			if got := strings.Join(capture.eventSnapshot(), ","); got != tc.wantEvents {
+				t.Fatalf("event order = %s, want %s", got, tc.wantEvents)
+			}
+		})
 	}
 }
 

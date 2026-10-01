@@ -160,11 +160,13 @@ func (s *Signer) signAndSubmitCosignerGroup(txns []types.Transaction, targets []
 	if err != nil {
 		return nil, nil, err
 	}
-	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
+	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
 	if err != nil {
 		return nil, nil, err
 	}
-	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
+	// The user side is complete, including any non-guarded positions. Only
+	// now may the client disclose the frozen group to the cosigner endpoint.
+	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,13 +213,13 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 		return nil, nil, err
 	}
 
-	// User policy and operator approval completed before this point. Only now
-	// may the client disclose the frozen group to the cosigner endpoint.
-	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
+	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
 	if err != nil {
 		return nil, nil, err
 	}
-	passthrough, err := s.signContextPositions(opts.Ctx, group, targetsByIndex, opts, w)
+	// The user side is complete, including any non-guarded positions. Only
+	// now may the client disclose the frozen group to the cosigner endpoint.
+	cosignerSignatures, cosignerRequestIDs, err := s.requestCosignerComponentSignatures(opts.Ctx, group.BytesHex, group.OriginalCount, targets, opts.AppCallInfo)
 	if err != nil {
 		return nil, nil, err
 	}
