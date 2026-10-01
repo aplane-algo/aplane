@@ -38,7 +38,6 @@ type IntegritySidecar struct {
 	integritysidecar.Header
 	NodeSHA256   string `json:"node_sha256,omitempty"`
 	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
-	NodeMTimeNS  int64  `json:"node_mtime_ns,omitempty"`
 }
 
 func Load(paths storepaths.Paths) (Document, []byte, error) {
@@ -79,19 +78,15 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 
 // SaveGenerationSidecarWithKeyring authenticates the immutable data-root node
 // role into one already-resolved generation.
-func SaveGenerationSidecarWithKeyring(paths storepaths.Paths, active storepaths.ActivePaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
-	return saveSidecarAtPath(paths, active.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
+func SaveGenerationSidecarWithKeyring(active storepaths.ActivePaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	return saveSidecarAtPath(active.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
 }
 
-func saveSidecarAtPath(paths storepaths.Paths, sidecarPath string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
 	if _, err := ParseDocument(roleBytes); err != nil {
 		return err
 	}
-	info, err := os.Stat(paths.NodeRolePath())
-	if err != nil {
-		return fmt.Errorf("failed to stat node role %s: %w", paths.NodeRolePath(), err)
-	}
-	sidecar, err := Sign(roleBytes, kr, signedAt, info.ModTime().UnixNano())
+	sidecar, err := Sign(roleBytes, kr, signedAt)
 	if err != nil {
 		return err
 	}
@@ -129,7 +124,7 @@ func loadAndVerifyAtPath(paths storepaths.Paths, sidecarPath string, kr *apcrypt
 	return doc, nil
 }
 
-func Sign(roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time, nodeMTimeNS int64) (*IntegritySidecar, error) {
+func Sign(roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) (*IntegritySidecar, error) {
 	header, err := nodeRoleSidecar.Sign(roleBytes, kr)
 	if err != nil {
 		return nil, err
@@ -142,7 +137,6 @@ func Sign(roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time, nodeMTimeN
 		Header:       header,
 		NodeSHA256:   hex.EncodeToString(sum[:]),
 		SignedAtUnix: signedAt.UTC().Unix(),
-		NodeMTimeNS:  nodeMTimeNS,
 	}, nil
 }
 

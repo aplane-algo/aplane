@@ -116,7 +116,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			Integrity:         keyring,
 			Apply: func(staged storepaths.GenPaths) error {
 				if err := noderole.SaveGenerationSidecarWithKeyring(
-					opts.Paths,
 					staged,
 					roleBytes,
 					keyring,

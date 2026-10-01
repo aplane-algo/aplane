@@ -1443,14 +1443,11 @@ Sidecar JSON fields:
 - `hmac`: hex HMAC-SHA256 over the exact policy document bytes
 - `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
-- `policy_mtime_ns`: accepted legacy diagnostic policy-file mtime. Current
-  writers omit it; readers retain the field solely for strict-schema
-  compatibility with existing sidecars.
 
 Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
 security fields. Sidecar JSON is strict: unknown fields, trailing documents,
 and non-canonical MAC encodings are rejected.
-`policy_sha256`, `signed_at_unix`, and `policy_mtime_ns` are diagnostic
+`policy_sha256` and `signed_at_unix` are diagnostic
 metadata; tampering with those fields does not affect the policy integrity
 decision.
 

@@ -142,7 +142,6 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		Integrity:         kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			if err := noderole.SaveGenerationSidecarWithKeyring(
-				keystorePaths(),
 				staged,
 				roleBytes,
 				kr,

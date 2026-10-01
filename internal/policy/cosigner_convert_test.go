@@ -78,44 +78,6 @@ transfer_policy:
 	}
 }
 
-func TestConvertSigningPolicyToCosignerUsesClientSigningOverlay(t *testing.T) {
-	raw := `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: review
-  routes:
-    - id: inherited
-      networks: [testnet]
-      sources: ["*"]
-      assets: [algo]
-      destinations: ["*"]
-client_signing:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    on_no_route: reject
-    routes:
-      - id: client_only
-        networks: [testnet]
-        sources: ["*"]
-        assets: [algo]
-        destinations: ["*"]
-`
-	stored, err := ParseStoredConfig([]byte(raw))
-	if err != nil {
-		t.Fatalf("ParseStoredConfig() error = %v", err)
-	}
-
-	converted, err := ConvertSigningPolicyToCosigner(stored)
-	if err != nil {
-		t.Fatalf("ConvertSigningPolicyToCosigner() error = %v", err)
-	}
-	if got := converted.TransferPolicy.Routes[0].ID; got != "client_only" {
-		t.Fatalf("converted route ID = %q, want client_only", got)
-	}
-}
-
 func TestConvertSigningPolicyToCosignerRejectsUnrepresentableRouteMiss(t *testing.T) {
 	raw := `
 transfer_policy:

@@ -27,7 +27,7 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	if doc.Role != RoleSigner {
 		t.Fatalf("Role = %q, want %q", doc.Role, RoleSigner)
 	}
-	if err := SaveGenerationSidecarWithKeyring(paths, active, roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
+	if err := SaveGenerationSidecarWithKeyring(active, roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
 		t.Fatalf("SaveGenerationSidecarWithKeyring() error = %v", err)
 	}
 	sidecar, err := LoadSidecar(active.NodeRoleIntegritySidecar())
@@ -66,7 +66,7 @@ func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveGenerationSidecarWithKeyring(paths, active, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := SaveGenerationSidecarWithKeyring(active, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("SaveGenerationSidecarWithKeyring() error = %v", err)
 	}
 	if err := os.WriteFile(paths.NodeRolePath(), []byte("schema_version: 1\nrole: cosigner\n"), 0o660); err != nil {
@@ -89,7 +89,7 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	if err := SaveGenerationSidecarWithKeyring(paths, active, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
+	if err := SaveGenerationSidecarWithKeyring(active, roleBytes, cryptotest.Keyring(t, masterKey), time.Now()); err != nil {
 		t.Fatalf("SaveGenerationSidecarWithKeyring() error = %v", err)
 	}
 	_, err = LoadAndVerifyGenerationWithKeyring(paths, active, cryptotest.Keyring(t, wrongKey))
@@ -101,7 +101,7 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 func TestVerifyRejectsUnauthorizedIntegrityTerm(t *testing.T) {
 	kr := cryptotest.Keyring(t, []byte("01234567890123456789012345678901"))
 	roleBytes := []byte("schema_version: 1\nrole: signer\n")
-	sidecar, err := Sign(roleBytes, kr, time.Now(), 0)
+	sidecar, err := Sign(roleBytes, kr, time.Now())
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}

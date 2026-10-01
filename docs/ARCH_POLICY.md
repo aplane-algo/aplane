@@ -52,9 +52,8 @@ identities/default/generations/<selected-generation>/policy.yaml.hmac
 ```
 
 The HMAC covers the exact YAML bytes for the document and uses a key derived
-from the product store's current term key. Sidecar metadata such as signing time,
-policy SHA-256, and legacy file mtime is diagnostic; current writers omit the
-mtime and the HMAC is the security check. After
+from the product store's current term key. Sidecar metadata such as signing time
+and policy SHA-256 is diagnostic; the HMAC is the security check. After
 the signed baseline exists, a missing or mismatched sidecar fails closed
 instead of loading defaults. On reload failure, the previous in-memory policy
 remains active.
@@ -172,20 +171,16 @@ Policy has two document domains.
 
 ```yaml
 reject_foreign_rekey: true
+auto_approve_self_noop_transfer: true
+always_review_warnings: true
 max_fee_microalgos: 1000
+review_algo_payments:
+  mainnet: 100000000
 transfer_policy:
   schema_version: 1
   enabled: true
   on_no_route: reject
   routes: [...]
-
-client_signing:
-  auto_approve_self_noop_transfer: true
-  always_review_warnings: true
-  review_algo_payments:
-    mainnet: 100000000
-  # client_signing may nest transfer_policy / amount guards that override
-  # top-level client-signing values.
 ```
 
 Cosigner-node `policy.yaml` is the cosigner component policy document:
@@ -204,24 +199,26 @@ rekey_policy:
 ```
 
 On signer nodes, the accepted top-level keys in `policy.yaml` are the
-client-signing field set, `client_signing`, and `key_overrides`.
-Signer-domain `policy.yaml` rejects `cosigner:` and top-level `reject_rekey` or
-`rekey_policy`; those belong to the cosigner policy domain.
+client-signing field set and `key_overrides`. Signer-domain `policy.yaml`
+rejects top-level `reject_rekey` and `rekey_policy`; those belong to the
+cosigner policy domain.
 
 On cosigner nodes, the accepted top-level keys in `policy.yaml` are the
-cosigner field set and `key_overrides`. Cosigner-domain `policy.yaml` rejects
-`client_signing:` and `cosigner:` wrappers. Unknown top-level keys fail
-validation in both domains.
+cosigner field set and `key_overrides`.
+
+Neither domain has a wrapper block: the node role selects the domain, and each
+document carries its fields at top level. Unknown top-level keys, including
+`client_signing:` and `cosigner:`, fail validation in both domains.
 
 Client-signing semantics:
 
-- Top-level client-signing fields apply to normal account signing.
-- **`client_signing:`** holds fields whose semantics reference "this signer
-  owns the account" (`reject_foreign_rekey`, `auto_approve_self_noop_transfer`)
-  or whose verdict only makes sense with an operator above the signer
-  (`always_review_warnings`, `review_*` thresholds, route `review_above`,
-  `on_no_route: review`). It may also nest its own `transfer_policy:` /
-  amount-guard maps that override common values for client-signing evaluation.
+- Top-level fields in signer-domain `policy.yaml` are the client-signing
+  policy.
+- Some fields are valid only here because their semantics reference "this
+  signer owns the account" (`reject_foreign_rekey`,
+  `auto_approve_self_noop_transfer`) or their verdict only makes sense with an
+  operator above the signer (`always_review_warnings`, `review_*` thresholds,
+  route `review_above`, `on_no_route: review`).
 
 Cosigner semantics:
 
@@ -242,12 +239,7 @@ Both policy domains are validated by schema, not by the product runtime's curren
 inventory. A cosigner node can carry cosigner-domain `policy.yaml` before an
 cosigner key is installed.
 
-For compatibility, the loader treats top-level
-`reject_foreign_rekey`, `auto_approve_self_noop_transfer`,
-`always_review_warnings`, and `review_*` fields as an implicit
-`client_signing:` block. The explicit `client_signing:` form has the same
-semantics. A top-level `transfer_policy` that
-contains review-producing behavior (`on_no_route: review`, `review_above`,
+A signer-domain `transfer_policy` that contains review-producing behavior (`on_no_route: review`, `review_above`,
 and similar fields) is valid for client signing, but it is not a complete
 cosigner allow-list; a cosigner request that would need those review
 outcomes fails closed unless cosigner-domain `policy.yaml` supplies a
@@ -298,7 +290,7 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
-| `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
+| `reject_foreign_rekey` | signer | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
 | `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
 | `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
@@ -360,13 +352,13 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
-| `always_review_warnings` | client_signing | Require operator review when warning analysis finds risk markers |
-| `review_algo_payments` | client_signing | Per-network raw microAlgo thresholds that require review for ALGO payments |
-| `review_asa_amounts` | client_signing | Per-network raw unit thresholds that require review for ASA transfers |
-| `transfer_policy.on_no_route: review` | client_signing | Forces ordinary route misses to review for client signing |
-| `transfer_policy.close_on_no_route: review` | client_signing | Forces close-out route misses to review for client signing |
-| `transfer_policy.clawback_on_no_route: review` | client_signing | Forces clawback route misses to review for client signing |
-| `transfer_policy` `review_above` | client_signing | Route-level review threshold |
+| `always_review_warnings` | signer | Require operator review when warning analysis finds risk markers |
+| `review_algo_payments` | signer | Per-network raw microAlgo thresholds that require review for ALGO payments |
+| `review_asa_amounts` | signer | Per-network raw unit thresholds that require review for ASA transfers |
+| `transfer_policy.on_no_route: review` | signer | Forces ordinary route misses to review for client signing |
+| `transfer_policy.close_on_no_route: review` | signer | Forces close-out route misses to review for client signing |
+| `transfer_policy.clawback_on_no_route: review` | signer | Forces clawback route misses to review for client signing |
+| `transfer_policy` `review_above` | signer | Route-level review threshold |
 
 `review_algo_payments` and `review_asa_amounts` are the review side of transfer
 guards. They are evaluated after Always Deny. For example, an ASA transfer above
@@ -405,7 +397,7 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
-| `auto_approve_self_noop_transfer` | client_signing | Auto-approve a tightly constrained self no-op transfer |
+| `auto_approve_self_noop_transfer` | signer | Auto-approve a tightly constrained self no-op transfer |
 
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
@@ -485,10 +477,10 @@ allow-list success. A route match cannot rescue a target rejected by rekey,
 close-out, clawback, fee, amount, blocked-destination, or unsupported-shape
 rules.
 
-In `policy.yaml`, a `transfer_policy:` block may also be nested inside
-`client_signing:` to override the top-level client-signing routes. In
-cosigner-domain `policy.yaml`, the top-level `transfer_policy:` is the cosigner
-allow-list. These blocks follow the same schema, validation, and overlay rules
+In signer-domain `policy.yaml`, the top-level `transfer_policy:` holds the
+client-signing routes. In cosigner-domain `policy.yaml`, the top-level
+`transfer_policy:` is the cosigner allow-list. These blocks follow the same
+schema, validation, and overlay rules
 except for cosigner route-miss boilerplate. In cosigner-domain `policy.yaml`,
 route-miss behavior is not configurable:
 `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` may be omitted
@@ -544,12 +536,12 @@ Routing's shape is deliberately conservative:
 Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` block is present, `schema_version: 1` and an explicit
 `enabled: true` or `enabled: false` are required. Unknown fields under
-`transfer_policy` or route entries fail validation. For top-level and
-`client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
+`transfer_policy` or route entries fail validation. For signer-domain
+`transfer_policy` blocks, `on_no_route` must be explicit when
 routing is enabled unless the block is a key override that inherits an
 product-wide `on_no_route` value. cosigner-domain `policy.yaml` omits that choice and
-treats route misses as `reject`. For top-level and
-`client_signing.transfer_policy` blocks, `close_on_no_route` and
+treats route misses as `reject`. For signer-domain `transfer_policy` blocks,
+`close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
 document or override the stricter close-out and clawback route-miss behavior.
 For cosigner-domain `policy.yaml` transfer policy, those values are implicit `reject` as

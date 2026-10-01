@@ -22,10 +22,6 @@ func ConvertSigningPolicyToCosigner(stored *StoredConfig) (*StoredConfig, error)
 
 	effective := stored.Clone()
 	effective.KeyOverrides = nil
-	if effective.ClientSigning != nil {
-		effective = mergeStoredRoleConfig(effective, effective.ClientSigning)
-	}
-	effective.ClientSigning = nil
 
 	if effective.TransferPolicy == nil {
 		return nil, fmt.Errorf("policy has no transfer_policy to convert")
@@ -54,108 +50,6 @@ func ConvertSigningPolicyToCosignerYAML(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return MarshalStoredCosignerConfig(converted)
-}
-
-func mergeStoredRoleConfig(base *StoredConfig, role *StoredRoleConfig) *StoredConfig {
-	if base == nil {
-		base = &StoredConfig{}
-	}
-	out := base.Clone()
-	out.ClientSigning = nil
-	if role == nil {
-		return out
-	}
-	if role.RejectForeignRekey != nil {
-		out.RejectForeignRekey = cloneBoolPtr(role.RejectForeignRekey)
-	}
-	if role.RejectCloseRemainder != nil {
-		out.RejectCloseRemainder = cloneBoolPtr(role.RejectCloseRemainder)
-	}
-	if role.RejectAssetClose != nil {
-		out.RejectAssetClose = cloneBoolPtr(role.RejectAssetClose)
-	}
-	if role.RejectClawback != nil {
-		out.RejectClawback = cloneBoolPtr(role.RejectClawback)
-	}
-	if role.AlwaysReviewWarnings != nil {
-		out.AlwaysReviewWarnings = cloneBoolPtr(role.AlwaysReviewWarnings)
-	}
-	if role.AutoApproveSelfNoOpTransfer != nil {
-		out.AutoApproveSelfNoOpTransfer = cloneBoolPtr(role.AutoApproveSelfNoOpTransfer)
-	}
-	if role.MaxFeeMicroAlgos != nil {
-		out.MaxFeeMicroAlgos = cloneUint64Ptr(role.MaxFeeMicroAlgos)
-	}
-	if role.ReviewAlgoPayments != nil {
-		out.ReviewAlgoPayments = cloneUintMap(role.ReviewAlgoPayments)
-	}
-	if role.MaxAlgoPayments != nil {
-		out.MaxAlgoPayments = cloneUintMap(role.MaxAlgoPayments)
-	}
-	if role.ReviewASAAmounts != nil {
-		out.ReviewASAAmounts = cloneStoredASAAmounts(role.ReviewASAAmounts)
-	}
-	if role.MaxASAAmounts != nil {
-		out.MaxASAAmounts = cloneStoredASAAmounts(role.MaxASAAmounts)
-	}
-	if role.TransferPolicy != nil {
-		out.TransferPolicy = mergeStoredTransferPolicy(out.TransferPolicy, role.TransferPolicy)
-	}
-	if role.RekeyPolicy != nil {
-		out.RekeyPolicy = role.RekeyPolicy.Clone()
-	}
-	return out
-}
-
-func mergeStoredTransferPolicy(base, overlay *StoredTransferPolicy) *StoredTransferPolicy {
-	if overlay == nil {
-		return base.Clone()
-	}
-	var out *StoredTransferPolicy
-	if base != nil {
-		out = base.Clone()
-	} else {
-		out = &StoredTransferPolicy{}
-	}
-	if overlay.SchemaVersion != 0 {
-		out.SchemaVersion = overlay.SchemaVersion
-	}
-	if overlay.Enabled != nil {
-		out.Enabled = cloneBoolPtr(overlay.Enabled)
-	}
-	if overlay.OnNoRoute != nil {
-		out.OnNoRoute = cloneStringPtr(overlay.OnNoRoute)
-	}
-	if overlay.CloseOnNoRoute != nil {
-		out.CloseOnNoRoute = cloneStringPtr(overlay.CloseOnNoRoute)
-	}
-	if overlay.ClawbackOnNoRoute != nil {
-		out.ClawbackOnNoRoute = cloneStringPtr(overlay.ClawbackOnNoRoute)
-	}
-	if len(overlay.BlockedDestinations) > 0 {
-		out.BlockedDestinations = append(out.BlockedDestinations, overlay.BlockedDestinations...)
-	}
-	if overlay.AddressSets != nil {
-		if out.AddressSets == nil {
-			out.AddressSets = make(map[string]StoredAddressSet, len(overlay.AddressSets))
-		}
-		for name, set := range overlay.AddressSets {
-			out.AddressSets[name] = set.Clone()
-		}
-	}
-	if overlay.AssetSets != nil {
-		if out.AssetSets == nil {
-			out.AssetSets = make(map[string]StoredAssetSet, len(overlay.AssetSets))
-		}
-		for name, set := range overlay.AssetSets {
-			out.AssetSets[name] = set.Clone()
-		}
-	}
-	if overlay.RoutesSet {
-		out.Routes = cloneStoredTransferRoutes(overlay.Routes)
-		out.RoutesSet = true
-	}
-	return out
 }
 
 func convertTransferPolicyToCosigner(tp *StoredTransferPolicy) *StoredTransferPolicy {

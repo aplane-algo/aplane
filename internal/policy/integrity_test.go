@@ -4,7 +4,6 @@
 package policy
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -46,9 +45,6 @@ func TestPolicyIntegrityRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalPolicyIntegritySidecar() error = %v", err)
 	}
-	if bytes.Contains(encoded, []byte("policy_mtime_ns")) {
-		t.Fatalf("new sidecar contains legacy policy_mtime_ns: %s", encoded)
-	}
 	parsed, err := ParsePolicyIntegritySidecar(encoded)
 	if err != nil {
 		t.Fatalf("ParsePolicyIntegritySidecar() error = %v", err)
@@ -84,7 +80,6 @@ func TestPolicyIntegrityDiagnosticFieldsAreNotTrusted(t *testing.T) {
 
 	sidecar.PolicySHA256 = "not-the-policy-sha"
 	sidecar.SignedAtUnix = 1
-	sidecar.PolicyMTimeNS = 2
 	if err := VerifyPolicyIntegrity(policyBytes, sidecar, key); err != nil {
 		t.Fatalf("VerifyPolicyIntegrity() error = %v", err)
 	}

@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestMarshalPolicyIntegritySidecarFormat(t *testing.T) {
 			Version: PolicyIntegritySidecarVersion, Algorithm: PolicyIntegrityAlgorithm, KeyID: PolicyIntegrityKeyID,
 			IntegrityTerm: 3, HMAC: mac,
 		},
-		PolicySHA256: "deadbeef", SignedAtUnix: 1700000000, PolicyMTimeNS: 42,
+		PolicySHA256: "deadbeef", SignedAtUnix: 1700000000,
 	}
 	got, err := MarshalPolicyIntegritySidecar(sidecar)
 	if err != nil {
@@ -32,8 +33,7 @@ func TestMarshalPolicyIntegritySidecarFormat(t *testing.T) {
   "integrity_term": 3,
   "hmac": "` + mac + `",
   "policy_sha256": "deadbeef",
-  "signed_at_unix": 1700000000,
-  "policy_mtime_ns": 42
+  "signed_at_unix": 1700000000
 }
 `
 	if string(got) != want {
@@ -42,5 +42,11 @@ func TestMarshalPolicyIntegritySidecarFormat(t *testing.T) {
 	parsed, err := ParsePolicyIntegritySidecar(got)
 	if err != nil || *parsed != *sidecar {
 		t.Fatalf("ParsePolicyIntegritySidecar() = %+v, %v; want %+v", parsed, err, sidecar)
+	}
+
+	// The pre-v1 mtime diagnostic is not part of the format.
+	withMTime := strings.Replace(string(got), `"signed_at_unix": 1700000000`, `"signed_at_unix": 1700000000, "policy_mtime_ns": 42`, 1)
+	if _, err := ParsePolicyIntegritySidecar([]byte(withMTime)); !errors.Is(err, ErrPolicyIntegrityBadSidecar) {
+		t.Fatalf("ParsePolicyIntegritySidecar(with policy_mtime_ns) error = %v, want bad sidecar", err)
 	}
 }
