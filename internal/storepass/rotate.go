@@ -352,7 +352,7 @@ func reencryptSealedGeneration(
 	if err := noderole.Verify(nodeBytes, nodeSidecar, oldKeyring); err != nil {
 		return counts, fmt.Errorf("verify outgoing node role sidecar: %w", err)
 	}
-	newNodeSidecar, err := noderole.Sign(nodeBytes, successorKeyring, now, nodeSidecar.NodeMTimeNS)
+	newNodeSidecar, err := noderole.Sign(nodeBytes, successorKeyring, now)
 	if err != nil {
 		return counts, err
 	}

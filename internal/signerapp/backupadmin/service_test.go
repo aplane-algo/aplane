@@ -200,7 +200,7 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 				return err
 			}
 			if err := noderole.SaveGenerationSidecarWithKeyring(
-				paths, staged, roleBytes, kr, time.Unix(1_700_000_000, 0),
+				staged, roleBytes, kr, time.Unix(1_700_000_000, 0),
 			); err != nil {
 				return err
 			}

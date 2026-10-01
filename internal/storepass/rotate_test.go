@@ -56,7 +56,7 @@ func newRotateFixture(t *testing.T) rotateFixture {
 		OperationID:       "init-" + rotateFirstGeneration,
 		CreatedAt:         time.Unix(1_785_200_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
-			if err := noderole.SaveGenerationSidecarWithKeyring(paths, staged, roleBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
+			if err := noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err
 			}
 			if err := policy.SaveStoredConfigActiveWithKeyring(staged, &policy.StoredConfig{}, kr, time.Unix(1_785_200_000, 0)); err != nil {

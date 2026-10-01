@@ -49,9 +49,8 @@ var policySidecar = integritysidecar.Spec{
 // security header are diagnostic.
 type IntegritySidecar struct {
 	integritysidecar.Header
-	PolicySHA256  string `json:"policy_sha256,omitempty"`
-	SignedAtUnix  int64  `json:"signed_at_unix,omitempty"`
-	PolicyMTimeNS int64  `json:"policy_mtime_ns,omitempty"`
+	PolicySHA256 string `json:"policy_sha256,omitempty"`
+	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
 }
 
 // PolicyIntegritySidecarPath returns the sidecar path for a policy file path.
@@ -77,7 +76,7 @@ func SignPolicyIntegrity(policyBytes []byte, kr *apcrypto.Keyring, signedAt time
 }
 
 // VerifyPolicyIntegrity verifies sidecar security fields and HMAC against
-// policyBytes. Diagnostic metadata such as PolicySHA256 and PolicyMTimeNS is
+// policyBytes. Diagnostic metadata such as PolicySHA256 and SignedAtUnix is
 // not trusted and does not affect the verification decision.
 func VerifyPolicyIntegrity(policyBytes []byte, sidecar *IntegritySidecar, kr *apcrypto.Keyring) error {
 	var header *integritysidecar.Header

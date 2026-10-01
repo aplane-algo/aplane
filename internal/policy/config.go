@@ -56,20 +56,12 @@ type Config struct {
 type StoredConfig struct {
 	StoredPolicyCore `yaml:",inline"`
 
-	ClientSigning *StoredRoleConfig        `yaml:"client_signing,omitempty"`
-	KeyOverrides  map[string]*StoredConfig `yaml:"key_overrides,omitempty"`
+	KeyOverrides map[string]*StoredConfig `yaml:"key_overrides,omitempty"`
 }
 
-// StoredRoleConfig is a sparse role-domain policy block nested under
-// client_signing:. It intentionally does not recurse into role blocks or
-// key_overrides.
-type StoredRoleConfig struct {
-	StoredPolicyCore `yaml:",inline"`
-}
-
-// StoredPolicyCore is the policy field block shared by StoredConfig and
-// StoredRoleConfig. Adding a field here extends both the product-wide document
-// and the role-domain blocks in one place.
+// StoredPolicyCore is the policy field block of a document or key override.
+// The node role decides which fields are valid: signer documents reject the
+// cosigner-only fields and cosigner documents reject the review fields.
 type StoredPolicyCore struct {
 	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
@@ -142,7 +134,6 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	}
 	cp := *c
 	cp.StoredPolicyCore = *c.StoredPolicyCore.Clone()
-	cp.ClientSigning = c.ClientSigning.Clone()
 	if c.KeyOverrides != nil {
 		cp.KeyOverrides = make(map[string]*StoredConfig, len(c.KeyOverrides))
 		for key, override := range c.KeyOverrides {
@@ -152,18 +143,11 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	return &cp
 }
 
-func (c *StoredRoleConfig) Clone() *StoredRoleConfig {
-	if c == nil {
-		return nil
-	}
-	return &StoredRoleConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
-}
-
 func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("policy config must be a mapping")
 	}
-	allowed := allowedFieldSet("client_signing", "key_overrides")
+	allowed := allowedFieldSet("key_overrides")
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		if key == "cosigner" {
@@ -179,62 +163,29 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = StoredConfig(raw)
-	return validateRoleConfig("client_signing", c.ClientSigning)
-}
-
-func (c *StoredRoleConfig) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("policy role config must be a mapping")
-	}
-	allowed := allowedFieldSet()
-	for i := 0; i < len(value.Content); i += 2 {
-		key := value.Content[i].Value
-		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("unknown policy role field %q", key)
-		}
-	}
-	type rawRoleConfig StoredRoleConfig
-	var raw rawRoleConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = StoredRoleConfig(raw)
 	return nil
 }
 
-func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
-	if cfg == nil {
-		return nil
+// validateCosignerFields rejects the fields cosigner policy cannot honor:
+// those that produce review verdicts or assume an operator above the signer.
+func validateCosignerFields(cfg *StoredPolicyCore) error {
+	if cfg.RejectForeignRekey != nil {
+		return fmt.Errorf("cosigner.reject_foreign_rekey is not supported; use cosigner.reject_rekey")
 	}
-	switch role {
-	case "client_signing":
-		if cfg.RejectRekey != nil {
-			return fmt.Errorf("client_signing.reject_rekey is not supported; reject_rekey is cosigner-only")
-		}
-		if cfg.RekeyPolicy != nil {
-			return fmt.Errorf("client_signing.rekey_policy is not supported; rekey_policy is cosigner-only")
-		}
-	case "cosigner":
-		if cfg.RejectForeignRekey != nil {
-			return fmt.Errorf("cosigner.reject_foreign_rekey is not supported; use cosigner.reject_rekey")
-		}
-		if cfg.AlwaysReviewWarnings != nil {
-			return fmt.Errorf("cosigner.always_review_warnings is not supported; cosigner policy cannot produce review verdicts")
-		}
-		if cfg.AutoApproveSelfNoOpTransfer != nil {
-			return fmt.Errorf("cosigner.auto_approve_self_noop_transfer is not supported; cosigner has no operator default")
-		}
-		if len(cfg.ReviewAlgoPayments) > 0 {
-			return fmt.Errorf("cosigner.review_algo_payments is not supported; cosigner policy cannot produce review verdicts")
-		}
-		if len(cfg.ReviewASAAmounts) > 0 {
-			return fmt.Errorf("cosigner.review_asa_amounts is not supported; cosigner policy cannot produce review verdicts")
-		}
-		if err := validateCosignerTransferPolicy(cfg.TransferPolicy); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown policy role %q", role)
+	if cfg.AlwaysReviewWarnings != nil {
+		return fmt.Errorf("cosigner.always_review_warnings is not supported; cosigner policy cannot produce review verdicts")
+	}
+	if cfg.AutoApproveSelfNoOpTransfer != nil {
+		return fmt.Errorf("cosigner.auto_approve_self_noop_transfer is not supported; cosigner has no operator default")
+	}
+	if len(cfg.ReviewAlgoPayments) > 0 {
+		return fmt.Errorf("cosigner.review_algo_payments is not supported; cosigner policy cannot produce review verdicts")
+	}
+	if len(cfg.ReviewASAAmounts) > 0 {
+		return fmt.Errorf("cosigner.review_asa_amounts is not supported; cosigner policy cannot produce review verdicts")
+	}
+	if err := validateCosignerTransferPolicy(cfg.TransferPolicy); err != nil {
+		return err
 	}
 	return nil
 }
@@ -696,10 +647,7 @@ func validateCosignerDocument(c *StoredConfig) error {
 	if c == nil {
 		return nil
 	}
-	if c.ClientSigning != nil {
-		return fmt.Errorf("cosigner policy client_signing is not supported")
-	}
-	if err := validateRoleConfig("cosigner", c.toStoredRoleConfig()); err != nil {
+	if err := validateCosignerFields(&c.StoredPolicyCore); err != nil {
 		return err
 	}
 	for key, override := range c.KeyOverrides {
@@ -709,13 +657,10 @@ func validateCosignerDocument(c *StoredConfig) error {
 		if override == nil {
 			continue
 		}
-		if override.ClientSigning != nil {
-			return fmt.Errorf("key_overrides for %q: client_signing is not supported in cosigner policy", key)
-		}
 		if len(override.KeyOverrides) > 0 {
 			return fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", key)
 		}
-		if err := validateRoleConfig("cosigner", override.toStoredRoleConfig()); err != nil {
+		if err := validateCosignerFields(&override.StoredPolicyCore); err != nil {
 			return fmt.Errorf("key_overrides for %q: %w", key, err)
 		}
 	}
@@ -738,7 +683,6 @@ func applyDirectCosignerConfig(stored *StoredConfig, defaults *Config) (*Config,
 		stored = &StoredConfig{}
 	}
 	direct := stored.Clone()
-	direct.ClientSigning = nil
 	direct.KeyOverrides = nil
 	direct.TransferPolicy = normalizeCosignerTransferPolicy(direct.TransferPolicy)
 	cfg, err := direct.Apply(defaults)
@@ -774,10 +718,6 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		}
 		return effective, nil
 	}
-	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
-		return nil, err
-	}
-
 	if c.RejectRekey != nil {
 		effective.RejectRekey = *c.RejectRekey
 	}
@@ -845,14 +785,6 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		effective.RekeyPolicy = compiled
 	}
 
-	if c.ClientSigning != nil {
-		clientSigningCfg, err := c.ClientSigning.toStoredConfig().Apply(effective)
-		if err != nil {
-			return nil, fmt.Errorf("client_signing: %w", err)
-		}
-		effective = clientSigningCfg
-	}
-
 	if len(c.KeyOverrides) > 0 {
 		overrides, err := applyKeyOverrides(c.KeyOverrides, effective, NormalizeSigningKeyOverrideKey, (*StoredConfig).Apply)
 		if err != nil {
@@ -873,20 +805,6 @@ func addressSetsForRekeyPolicy(tp *TransferPolicy) map[string]compiledAddressSet
 		return nil
 	}
 	return tp.AddressSets
-}
-
-func (c *StoredRoleConfig) toStoredConfig() *StoredConfig {
-	if c == nil {
-		return &StoredConfig{}
-	}
-	return &StoredConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
-}
-
-func (c *StoredConfig) toStoredRoleConfig() *StoredRoleConfig {
-	if c == nil {
-		return nil
-	}
-	return &StoredRoleConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
 }
 
 func normalizeCosignerTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {

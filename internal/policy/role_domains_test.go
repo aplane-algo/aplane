@@ -23,8 +23,8 @@ func TestRoleDomainsFixtureParsesAndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseStoredConfig(role fixture) error = %v", err)
 	}
-	if stored.ClientSigning == nil {
-		t.Fatal("ClientSigning = nil, want populated role block")
+	if stored.RejectForeignRekey == nil || !*stored.RejectForeignRekey || stored.TransferPolicy == nil {
+		t.Fatalf("fixture = %#v, want top-level client-signing fields", stored)
 	}
 
 	encoded, err := MarshalStoredConfig(stored)
@@ -35,22 +35,9 @@ func TestRoleDomainsFixtureParsesAndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseStoredConfig(round trip) error = %v\nyaml:\n%s", err, encoded)
 	}
-	if roundTrip.ClientSigning == nil {
-		t.Fatalf("round-tripped client role = %#v", roundTrip.ClientSigning)
-	}
-}
-
-func TestStoredConfigApplyClientSigningRoleOverridesLegacyTopLevel(t *testing.T) {
-	topReject := true
-	clientReject := false
-	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &topReject}, ClientSigning: &StoredRoleConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &clientReject}}}
-
-	cfg, err := stored.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
-	if cfg.RejectForeignRekey {
-		t.Fatal("RejectForeignRekey = true, want client_signing override false")
+	if roundTrip.RejectForeignRekey == nil || roundTrip.TransferPolicy == nil ||
+		len(roundTrip.TransferPolicy.Routes) != 1 || roundTrip.TransferPolicy.Routes[0].ID != "client-mainnet-ops" {
+		t.Fatalf("round-tripped fixture = %#v", roundTrip)
 	}
 }
 
@@ -120,6 +107,7 @@ rekey_policy:
 
 func TestParseStoredConfigRejectsCosignerPolicyFields(t *testing.T) {
 	for _, raw := range []string{
+		"client_signing: {}\n",
 		"cosigner: {}\n",
 		"reject_rekey: true\n",
 		"rekey_policy: {}\n",
@@ -188,11 +176,11 @@ cosigner: {}
 			want: "must not contain a cosigner wrapper",
 		},
 		{
-			name: "client reject rekey",
+			name: "client signing block",
 			raw: `
 client_signing: {}
 `,
-			want: "cosigner policy client_signing",
+			want: `unknown policy field "client_signing"`,
 		},
 	}
 
@@ -215,5 +203,5 @@ func roleDomainFixturePath(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_cosigner.yaml")
+	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_signer.yaml")
 }

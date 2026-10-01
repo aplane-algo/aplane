@@ -82,7 +82,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 			if err := policy.SaveStoredConfigActiveWithKeyring(staged, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
 				return err
 			}
-			return noderole.SaveGenerationSidecarWithKeyring(keyPaths, staged, roleBytes, masterKeyRing, time.Now())
+			return noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, masterKeyRing, time.Now())
 		},
 	})
 	if err != nil {
