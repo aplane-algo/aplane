@@ -7,9 +7,9 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *signersigning.ServiceError {
@@ -30,10 +30,10 @@ func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *si
 	}
 }
 
-func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
+func requireComponentNodeRole(ir *productruntime.Runtime, role signersigning.ComponentSignRole) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
 	switch role {
-	case signerapi.ComponentSignRoleCosigner:
+	case signersigning.ComponentSignRoleCosigner:
 		switch nodeRole {
 		case noderole.RoleCosigner:
 			return nil
@@ -48,7 +48,7 @@ func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.Compone
 				Message: fmt.Sprintf("unknown node role %q does not allow cosigner component signing", nodeRole),
 			}
 		}
-	case signerapi.ComponentSignRoleUser:
+	case signersigning.ComponentSignRoleUser:
 		switch nodeRole {
 		case noderole.RoleSigner:
 			return nil
@@ -73,7 +73,7 @@ func requireComponentNodeRole(ir *productruntime.Runtime, role signerapi.Compone
 
 func requireComponentTargetNodeRole(ir *productruntime.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
 	if kind == signerapi.ComponentTargetKindCosigner {
-		return requireComponentNodeRole(ir, signerapi.ComponentSignRoleCosigner)
+		return requireComponentNodeRole(ir, signersigning.ComponentSignRoleCosigner)
 	}
 	if kind == signerapi.ComponentTargetKindUser || kind == signerapi.ComponentTargetKindBoundedBase {
 		return requireAccountSigningRole(ir, "account component signing")

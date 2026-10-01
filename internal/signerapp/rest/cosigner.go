@@ -6,9 +6,9 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (s Service) SignComponents(ctx context.Context, ir *productruntime.Runtime, req signerapi.ComponentRequest) (*signerapi.ComponentResponse, *signersigning.ServiceError) {

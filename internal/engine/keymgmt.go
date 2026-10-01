@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (e *Engine) ListKeyTypes(ctx context.Context) ([]signerapi.KeyTypeInfo, error) {

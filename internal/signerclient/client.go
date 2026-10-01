@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // Client is an HTTP client for the Signer signing service.
@@ -38,7 +38,13 @@ type Client struct {
 	approvalWaitKnown bool
 }
 
-type KeysResult = signerapi.KeysResult
+// KeysResult is an internal client wrapper around the /keys wire response.
+// Locked is local connection state derived from a locked-signer HTTP error and
+// is never part of the /keys JSON payload.
+type KeysResult struct {
+	signerapi.KeysResponse
+	Locked bool
+}
 
 // ErrInvalidResponse marks a syntactically invalid response from a signer
 // endpoint after the HTTP request itself succeeded.

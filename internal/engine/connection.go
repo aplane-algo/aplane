@@ -9,8 +9,9 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // ConnectWithTunnel establishes an SSH tunnel connection using 2FA: API token + public key.
@@ -76,7 +77,7 @@ func (e *Core) RequestTokenWithContext(ctx context.Context, host string, sshPort
 	return e.Connection.RequestTokenWithContext(ctx, host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
 }
 
-func (e *Core) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult, error) {
+func (e *Core) GetKeysWithContext(ctx context.Context) (*signerclient.KeysResult, error) {
 	return e.Connection.GetKeysWithContext(ctx)
 }
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"

@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (s *ConnectionState) signerClient() (*signerclient.Client, error) {
@@ -24,11 +24,11 @@ func (s *ConnectionState) signerClient() (*signerclient.Client, error) {
 }
 
 // GetKeys fetches the current signer key inventory.
-func (s *ConnectionState) GetKeys() (*signerapi.KeysResult, error) {
+func (s *ConnectionState) GetKeys() (*signerclient.KeysResult, error) {
 	return s.GetKeysWithContext(context.Background())
 }
 
-func (s *ConnectionState) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult, error) {
+func (s *ConnectionState) GetKeysWithContext(ctx context.Context) (*signerclient.KeysResult, error) {
 	client, err := s.signerClient()
 	if err != nil {
 		return nil, err

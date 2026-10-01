@@ -18,8 +18,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/protocol"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func consensusTestAlgod(t *testing.T, version string, unexpectedCalls *atomic.Int32) (*algod.Client, *httptest.Server) {

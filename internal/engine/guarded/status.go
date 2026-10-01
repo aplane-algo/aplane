@@ -7,7 +7,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // RouteStatus is a point-in-time observation, not permission to sign.

@@ -18,9 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 type BoundedAdminResult struct {

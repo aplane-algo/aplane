@@ -10,8 +10,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {

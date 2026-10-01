@@ -167,7 +167,7 @@ Documentation notes:
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
-| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
+| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
@@ -389,9 +389,9 @@ The repo includes:
 The Go, TypeScript, and Python SDKs live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. This repo owns the signer HTTP API DTOs in
 `pkg/signerapi` and the golden fixtures in `test/contracts/signerapi/` that the
-SDK repo consumes for compatibility testing. `internal/signerapi` is an
-in-repo alias layer over the public DTO types in `pkg/signerapi` (not error
-codes); `pkg/signerapi/error_codes.go` remains the sole error-code source.
+SDK repo consumes for compatibility testing. In-repo callers import
+`pkg/signerapi` directly; there is no internal alias layer.
+`pkg/signerapi/error_codes.go` remains the sole error-code source.
 The SDK shape is native-client first: `SignerClient` wrappers expose APlane's
 HTTP signing, planning, inventory, status, and cancellation APIs
 directly, and the SDK-native prep layer mirrors apshell's core client-side
@@ -749,7 +749,7 @@ registry.
 | Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
 | Product runtime aggregate, config, token, SSH enrollment, lifecycle | `internal/signerapp/productruntime` |
-| HTTP contract types (request/response DTOs) | `pkg/signerapi` with `internal/signerapi` aliases |
+| HTTP contract types (request/response DTOs) | `pkg/signerapi` |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
 | Cache paths | `cache.Store` value types |

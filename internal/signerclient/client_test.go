@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestRequestGroupSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {

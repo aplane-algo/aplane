@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // SignerStatusSyncResult describes the effect of comparing /status with

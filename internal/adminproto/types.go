@@ -6,7 +6,7 @@ package adminproto
 import (
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // KeyInfo is the admin-domain view of a key listed over the admin protocol.

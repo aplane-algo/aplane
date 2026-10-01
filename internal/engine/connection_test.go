@@ -13,9 +13,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	engconnect "github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {

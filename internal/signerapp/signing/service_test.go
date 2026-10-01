@@ -17,9 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func userAutoApproveDefault(v bool) *bool {

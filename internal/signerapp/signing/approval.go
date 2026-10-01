@@ -14,10 +14,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 type AuditRejectLogger interface {

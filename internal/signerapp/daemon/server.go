@@ -25,9 +25,6 @@ import (
 // 16-txn Falcon group is ~300KB hex-encoded) while still blocking multi-GB abuse.
 const maxRequestBodyBytes = 5 * 1024 * 1024
 
-// Signer HTTP contract types live in pkg/signerapi and are re-exported
-// internally via internal/signerapi.
-
 // encodeTxnToHex encodes a transaction to TX-prefixed hex string (same format as TxnBytesHex)
 func encodeTxnToHex(txn types.Transaction) string {
 	return txnutil.EncodeWithPrefixHex(txn)

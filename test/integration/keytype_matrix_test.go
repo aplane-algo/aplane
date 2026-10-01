@@ -21,7 +21,6 @@ import (
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -34,6 +33,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falconlsigv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	sdkalgod "github.com/algorand/go-algorand-sdk/v2/client/v2/algod"

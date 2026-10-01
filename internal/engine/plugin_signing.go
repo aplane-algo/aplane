@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // PluginSubmitResult is the engine-owned result for plugin transaction submission.

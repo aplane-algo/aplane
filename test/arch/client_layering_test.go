@@ -89,12 +89,12 @@ var guardedAllowedImports = map[string]bool{
 	modulePrefix + "/internal/engine/connect":     true,
 	modulePrefix + "/internal/lsigresource":       true,
 	modulePrefix + "/internal/cosigner/canonical": true,
-	modulePrefix + "/internal/signerapi":          true,
 	modulePrefix + "/internal/signerclient":       true,
 	modulePrefix + "/internal/signing":            true,
 	modulePrefix + "/internal/tokenfile":          true,
 	modulePrefix + "/internal/txnutil":            true,
 	modulePrefix + "/internal/witness":            true,
+	modulePrefix + "/pkg/signerapi":               true,
 }
 
 // TestGuardedPackageStaysIsolated pins the guarded package's dependency

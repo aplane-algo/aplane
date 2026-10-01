@@ -6,9 +6,9 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (s Service) SignGroup(ctx context.Context, ir *productruntime.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupSignResponse, *signersigning.ServiceError) {

@@ -14,7 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // setupTestEngine creates an engine with in-memory caches for testing

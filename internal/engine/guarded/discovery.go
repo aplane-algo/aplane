@@ -19,15 +19,15 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"golang.org/x/crypto/ssh"
 )
 
 type cosignerComponentClient interface {
-	GetKeysWithContext(context.Context) (*signerapi.KeysResult, error)
+	GetKeysWithContext(context.Context) (*signerclient.KeysResult, error)
 	RequestComponentsWithContext(context.Context, signerapi.ComponentRequest) (*signerapi.ComponentResponse, error)
 }
 

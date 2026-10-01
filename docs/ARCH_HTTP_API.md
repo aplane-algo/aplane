@@ -112,7 +112,7 @@ Fixed runtime binding:
 ## Request/Response Shapes
 
 `/sign` and `/plan` share request type `signerapi.GroupSignRequest`
-from `pkg/signerapi/types.go` (re-exported internally via `internal/signerapi/types.go`):
+from `pkg/signerapi/types.go`:
 
 - top-level fields: optional `request_id`, `requests[]`
 - each entry is one of:

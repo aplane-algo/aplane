@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {

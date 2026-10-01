@@ -17,8 +17,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {

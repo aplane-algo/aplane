@@ -14,8 +14,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // State owns client-side caches and other APCLIENT_DATA-scoped runtime state.

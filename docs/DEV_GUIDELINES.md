@@ -53,7 +53,7 @@ contract tests, integration tests, and a clean-tree check.
 - Shell command behavior belongs in `internal/apshellapp` with typed request/result APIs and behavior tests.
 - Reusable client mechanics belong in `internal/engine`, `internal/clientstate`, and `internal/engine/connect`.
 - Signer runtime, approval, identity, key management, and template lifecycle belong under `internal/signerapp`.
-- Compatibility-bearing signer API DTOs live in `pkg/signerapi`; internal aliases live under `internal/signerapi`.
+- Compatibility-bearing signer API DTOs live in `pkg/signerapi`; in-repo callers import it directly.
 - Avoid catch-all helpers; keep helpers in the owning package or an existing focused package.
 
 ## Error Handling
