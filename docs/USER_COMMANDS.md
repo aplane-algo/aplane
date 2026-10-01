@@ -680,7 +680,8 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 Use the same public cosigner key file in two places:
 
 1. **On the cosigner:** generate a cosigner key and choose **Export Cosigner Key**.
-   Include the advertised endpoint when available. Use **SHOW JSON** to copy
+   The export always includes the endpoint; enter the client-reachable host if
+   `endpoint.advertise_url` is not configured. Use **SHOW JSON** to copy
    the complete document instead of saving a file.
 2. **On the primary signer:** open **Cosigners** in apadmin and **Import Cosigner
    Key**, using the file or pasted JSON. Review the proposed reference name and
@@ -881,8 +882,10 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible guarded or bounded-cosigner account without exposing a raw Falcon
-public-key input. On a cosigner node, **Export Cosigner Key** offers the configured
-advertised endpoint as an explicit public-metadata option. A combined bundle
+public-key input. On a cosigner node, **Export Cosigner Key** always includes an
+endpoint as public metadata: the configured `endpoint.advertise_url`, or a
+required client-reachable host field when none is configured. The screen warns
+when that endpoint is remote but SSH still listens only on loopback. A combined bundle
 review on the signer imports only the public reference. Any endpoint metadata
 is ignored by apadmin; use `cosigner add` in apshell to consume it as
 client-owned routing metadata.
@@ -941,7 +944,7 @@ Then configure and verify the transaction client in apshell:
 cosigner add lab-cosigner.aplane-cosigner.json --alias cosigner-lab
 ```
 
-If the exported document omitted an endpoint, add
+If a batch-exported document omitted an endpoint, add
 `--endpoint ssh://cosigner.example:1127 --cosigner-port 11270`. Approve any **Client
 Access Request** in apadmin on the cosigner node. Compare the complete client
 SSH key fingerprint shown by apshell with the fingerprint in that request.

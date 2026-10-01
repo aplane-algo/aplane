@@ -812,11 +812,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
-		artifactJSON, err := composeCosignerExportArtifact(
-			msg.EnvelopeJSON,
-			m.cosigner.exportEndpoint,
-			m.cosigner.exportIncludeEndpoint,
-		)
+		endpoint, err := m.cosignerExportEndpoint()
+		if err != nil {
+			m.cosigner.exportError = "Endpoint: " + err.Error()
+			m.viewState = ViewCosignerExportPath
+			return m, m.waitForMessageCmd()
+		}
+		artifactJSON, err := composeCosignerExportArtifact(msg.EnvelopeJSON, endpoint)
 		if err != nil {
 			m.cosigner.exportError = "Cannot compose cosigner key JSON: " + err.Error()
 			m.viewState = ViewCosignerExportPath

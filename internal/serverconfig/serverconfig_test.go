@@ -579,6 +579,8 @@ func TestServerConfigExamplesUseKnownFields(t *testing.T) {
 				"$signer_port", "11270",
 				"$ssh_port", "1127",
 				"$require_memory_protection", "false",
+				"$advertise_line", `  advertise_url: "ssh://cosigner.example:1127"`,
+				"$listen_address", "0.0.0.0",
 			).Replace(extractInstallHereDocAfter(
 				t,
 				string(installer),

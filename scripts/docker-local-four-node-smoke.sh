@@ -466,6 +466,7 @@ stage_release() {
 run_node_installer() {
     local container="$1"
     local role="$2"
+    local advertised_host="${3:-}"
 
     stage_release "$container"
     docker_exec_as_tester "$container" "cd /home/$TEST_USER/src/aplane && expect <<'EXPECT'
@@ -481,6 +482,7 @@ expect {
   timeout { exit 12 }
 }
 expect {
+  \"Client-reachable cosigner address*\" { send \"$advertised_host\r\"; exp_continue }
   \"Enter passphrase:\" { send \"$TEST_PASSPHRASE\r\" }
   timeout { exit 14 }
 }
@@ -555,7 +557,7 @@ configure_node_network() {
     [ -n "$ssh_port" ] || die "could not read SSH port for $container"
 
     docker_exec_as_tester "$container" "sed -i \
-        -e 's/listen_address: 127\\.0\\.0\\.1/listen_address: 0.0.0.0/' \
+        -e 's/listen_address: \"\\?127\\.0\\.0\\.1\"\\?/listen_address: 0.0.0.0/' \
         -e '/# advertise_url:/a\\  advertise_url: ssh://$advertised_host:$ssh_port' \
         '$config_path'"
 }
@@ -1281,7 +1283,7 @@ enroll_cosigner_reference_to_signer() {
     local public_file out
     public_file="$(mktemp)"
     if ! docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner export '$COSIGNER_COMPONENT_KEY' /tmp/cosigner-public.json"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner enrollment export '$COSIGNER_COMPONENT_KEY' --include-endpoint --out /tmp/cosigner-public.json"; then
         die "failed to export cosigner public reference over local IPC"
     fi
     docker cp "$COSIGNER_CONTAINER:/tmp/cosigner-public.json" "$public_file"
@@ -1302,16 +1304,15 @@ enroll_cosigner_reference_to_signer() {
 }
 
 verify_guided_cosigner_setup() {
-    local cosigner_ssh_port cosigner_port out
-    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
-    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
-    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
+    local out
 
+    # The installer-recorded advertise_url travels in the export, so the client
+    # supplies no endpoint or port.
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-cosigner\n' > /tmp/delete-cosigner-endpoint.script && \
         . /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
         rm -f /home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token && \
-        printf 'cosigner add /tmp/cosigner-public.json --alias local-cosigner --endpoint ssh://cosigner:%s --cosigner-port %s\n' '$cosigner_ssh_port' '$cosigner_port' > /tmp/add-cosigner.script"
+        echo 'cosigner add /tmp/cosigner-public.json --alias local-cosigner' > /tmp/add-cosigner.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/add-cosigner.script 2>&1")"; then
         printf '%s\n' "$out" >&2
@@ -1727,7 +1728,7 @@ main() {
     run_node_installer "$SIGNER_CONTAINER" signer
 
     log "Installing cosigner node"
-    run_node_installer "$COSIGNER_CONTAINER" cosigner
+    run_node_installer "$COSIGNER_CONTAINER" cosigner cosigner
 
     log "Installing client/admin node"
     run_client_installer
@@ -1735,9 +1736,8 @@ main() {
     log "Preparing $NETWORK_TOKEN network profile"
     prepare_selected_network
 
-    log "Configuring signer and cosigner network listeners"
+    log "Configuring signer network listener"
     configure_node_network "$SIGNER_CONTAINER" signer
-    configure_node_network "$COSIGNER_CONTAINER" cosigner
 
     log "Configuring signer, cosigner, and client for $NETWORK_TOKEN"
     configure_selected_network

@@ -289,16 +289,16 @@ type cosignerState struct {
 	generateTypeSelected int
 	generateFromManager  bool
 
-	exportWitnessID       string
-	exportPath            string
-	exportError           string
-	exportEndpoint        *endpointrefs.Envelope
-	exportIncludeEndpoint bool
-	exportEndpointError   string
-	exportWrittenPath     string
-	exportReturnView      ViewState
-	exportFocus           int
-	exportShowJSON        bool
+	exportWitnessID     string
+	exportPath          string
+	exportError         string
+	exportEndpoint      *endpointrefs.Envelope // valid advertise_url, if configured
+	exportEndpointError string
+	exportHost          string // operator-entered host when exportEndpoint is nil
+	exportWrittenPath   string
+	exportReturnView    ViewState
+	exportFocus         int
+	exportShowJSON      bool
 }
 
 // deleteConfirmState is the key-deletion confirmation dialog.

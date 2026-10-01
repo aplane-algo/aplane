@@ -129,6 +129,14 @@ For `--role cosigner`, the selected ports are written into `apsigner/config.yaml
 and an `apclient/endpoints.yaml` `local-cosigner` endpoint. The generated
 endpoint registry intentionally has no default signer endpoint.
 
+When it writes a new cosigner config, local and systemd installs ask for the
+DNS name or IP address that remote apshell clients use to reach the cosigner.
+The answer sets `endpoint.advertise_url`, so every **Export Cosigner Key**
+document carries the endpoint. A non-loopback address also sets
+`endpoint.ssh.listen_address` to `0.0.0.0` (`::` for IPv6) so remote clients
+can connect. Leave it blank when apshell runs only on the cosigner machine; the
+listener then stays on `127.0.0.1` and exports ask for a host instead.
+
 ### Confirmation prompt
 
 Before creating any files, the installer displays a summary and asks for confirmation:
@@ -232,8 +240,9 @@ Witness trust, endpoint routing, and transport credentials are deliberately
 separate. Complete them in this order:
 
 1. On the cosigner node, generate an `aplane.witness-falcon1024.v1` key and choose
-   **Export Cosigner Key** from its success or key-details screen. Include the
-   advertised endpoint when one is available.
+   **Export Cosigner Key** from its success or key-details screen. The export
+   always carries the endpoint: the configured `endpoint.advertise_url`, or a
+   client-reachable host that you enter on the export screen.
 2. On the primary signer, press `e` in `apadmin`, choose **Import Cosigner Key**,
    import the public file, review or edit its proposed reference name, and
    compare the complete Witness Key ID with the value shown on the cosigner.

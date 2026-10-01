@@ -265,11 +265,12 @@ func buildEndpointExportEnvelope(
 	})
 }
 
-// BuildAdvertisedEndpointEnvelope constructs the portable endpoint portion of
-// an enrollment bundle from signer-advertised settings. Batch and TUI export
-// share this helper so URL and port precedence cannot drift.
-func BuildAdvertisedEndpointEnvelope(advertiseURL string, sshPort, signerPort int) (endpointrefs.Envelope, error) {
-	return buildEndpointExportEnvelope("", "", 0, 0, endpointExportSettings{
+// BuildCosignerEndpointEnvelope constructs the portable endpoint portion of
+// an enrollment bundle from an operator-supplied host or, when host is empty,
+// the signer-advertised URL. Batch and TUI export share this helper so URL and
+// port precedence cannot drift.
+func BuildCosignerEndpointEnvelope(host, advertiseURL string, sshPort, signerPort int) (endpointrefs.Envelope, error) {
+	return buildEndpointExportEnvelope(host, "", 0, 0, endpointExportSettings{
 		AdvertiseURL: advertiseURL,
 		SSHPort:      sshPort,
 		SignerPort:   signerPort,

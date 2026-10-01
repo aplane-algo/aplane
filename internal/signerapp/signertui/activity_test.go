@@ -300,26 +300,26 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			m := activityReadyModel()
 			m.cosigner = cosignerState{
-				references:            []CosignerReferenceInfo{{Name: "old"}},
-				loaded:                true,
-				choices:               []cosignerChoice{{WitnessKeyID: "old"}},
-				paramName:             "cosigner",
-				returnView:            ViewGenerateParams,
-				envelopeJSON:          "public-envelope",
-				previewEndpoint:       &endpointrefs.Envelope{URL: "ssh://cosigner.example"},
-				pendingKeyType:        "guarded.v1",
-				pendingWitnessID:      "old-id",
-				managerStatus:         "old status",
-				generateTypeIndices:   []int{1},
-				generateFromManager:   true,
-				exportWitnessID:       "old-id",
-				exportPath:            "old.json",
-				exportEndpoint:        &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://old.example"},
-				exportIncludeEndpoint: true,
-				exportEndpointError:   "old endpoint error",
-				exportWrittenPath:     "old.json",
-				exportReturnView:      ViewGenerateDisplay,
-				exportShowJSON:        true,
+				references:          []CosignerReferenceInfo{{Name: "old"}},
+				loaded:              true,
+				choices:             []cosignerChoice{{WitnessKeyID: "old"}},
+				paramName:           "cosigner",
+				returnView:          ViewGenerateParams,
+				envelopeJSON:        "public-envelope",
+				previewEndpoint:     &endpointrefs.Envelope{URL: "ssh://cosigner.example"},
+				pendingKeyType:      "guarded.v1",
+				pendingWitnessID:    "old-id",
+				managerStatus:       "old status",
+				generateTypeIndices: []int{1},
+				generateFromManager: true,
+				exportWitnessID:     "old-id",
+				exportPath:          "old.json",
+				exportEndpoint:      &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://old.example"},
+				exportEndpointError: "old endpoint error",
+				exportHost:          "old.example",
+				exportWrittenPath:   "old.json",
+				exportReturnView:    ViewGenerateDisplay,
+				exportShowJSON:      true,
 			}
 
 			got, _ := updateForTest(t, m, test.msg)
@@ -330,7 +330,7 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 				got.cosigner.managerStatus != "" || len(got.cosigner.generateTypeIndices) != 0 ||
 				got.cosigner.generateFromManager || got.cosigner.exportWitnessID != "" ||
 				got.cosigner.exportPath != "" ||
-				got.cosigner.exportEndpoint != nil || got.cosigner.exportIncludeEndpoint ||
+				got.cosigner.exportEndpoint != nil || got.cosigner.exportHost != "" ||
 				got.cosigner.exportEndpointError != "" ||
 				got.cosigner.exportWrittenPath != "" || got.cosigner.exportReturnView != ViewKeyDetails ||
 				got.cosigner.exportShowJSON {
