@@ -1,0 +1,10 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "transfer_policy": {
+        "enabled": false
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "description": "Treasury cosigner",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": false,
+  "max_fee_microalgos": "5000",
+  "limits": {
+    "mainnet": {
+      "asa:31566704": {
+        "reject_above": "10000000000"
+      },
+      "algo": {
+        "reject_above": "2000000000"
+      }
+    }
+  },
+  "address_sets": {
+    "treasury": [
+      "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+    ],
+    "exchange": {
+      "mainnet": [
+        "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+      ]
+    },
+    "new_auth": [
+      "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA"
+    ]
+  },
+  "asset_sets": {
+    "usd": {
+      "mainnet": [
+        "asa:31566704"
+      ]
+    }
+  },
+  "transfer_policy": {
+    "blocked_destinations": [
+      "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"
+    ],
+    "routes": [
+      {
+        "id": "treasury-to-exchange",
+        "networks": [
+          "mainnet"
+        ],
+        "sources": [
+          "@treasury"
+        ],
+        "assets": [
+          "@usd",
+          "algo"
+        ],
+        "destinations": [
+          "@exchange"
+        ],
+        "limits": {
+          "mainnet": {
+            "asa:31566704": {
+              "reject_above": "1000000000"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rekey_policy": {
+    "allowed": [
+      {
+        "sender": "@treasury",
+        "targets": [
+          "@new_auth"
+        ]
+      }
+    ]
+  }
+}

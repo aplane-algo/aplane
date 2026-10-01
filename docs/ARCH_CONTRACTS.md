@@ -1422,6 +1422,11 @@ template, or deleted-archive authority.
 
 ### Policy File (`policy.yaml`)
 
+`policy.yaml` is being replaced by the v1 JSON policy documents specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md) (`policy.json` on signer nodes,
+`policies/<WitnessKeyID>.json` per cosigner key). Until that lands, the contract
+below is what the system reads.
+
 The product-store active policy is stored at
 `identities/default/generations/<selected-generation>/policy.yaml`. Signer nodes parse that file as
 client-signing policy. Cosigner nodes parse that same file as direct cosigner
