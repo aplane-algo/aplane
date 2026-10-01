@@ -10,6 +10,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_CONTRACTS.md`: compatibility-bearing HTTP/IPC behavior, on-disk formats, config contracts, SDK/plugin/MCP contracts
 - `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
 - `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
+- `docs/ARCH_POLICY_FORMAT.md`: v1 JSON policy document format, storage, and acceptance rules (specified; replacing `policy.yaml`)
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `docs/ARCH_COSIGNER.md`: guarded signing and cosigner node architecture, cosigner keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
@@ -322,6 +323,7 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 - `ARCH_SECURITY.md`: Authentication and security architecture
 - `ARCH_AUTHORIZATION.md`: Principal/group/grant authorization architecture
 - `ARCH_POLICY.md`: Current signer policy verdict model and rule inventory
+- `ARCH_POLICY_FORMAT.md`: v1 JSON policy document format and acceptance rules
 - `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
 - `ARCH_COSIGNER.md`: Guarded signing and cosigner node architecture
 - `ARCH_CORRIDOR.md`: Corridor v1 bounded-cosigner profile architecture

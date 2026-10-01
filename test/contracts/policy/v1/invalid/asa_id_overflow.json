@@ -1,0 +1,10 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "asset_sets": {
+    "edge": {
+      "mainnet": [
+        "asa:18446744073709551616"
+      ]
+    }
+  }
+}

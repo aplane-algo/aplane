@@ -1,0 +1,6 @@
+{
+  "format": "aplane.cosigner-policy.v1",
+  "transfer_policy": {
+    "routes": []
+  }
+}

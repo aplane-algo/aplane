@@ -1,0 +1,24 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "r",
+        "networks": [
+          "mainnet"
+        ],
+        "sources": [
+          "*"
+        ],
+        "assets": [
+          "31566704"
+        ],
+        "destinations": [
+          "*"
+        ]
+      }
+    ]
+  }
+}

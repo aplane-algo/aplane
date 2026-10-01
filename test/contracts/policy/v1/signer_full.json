@@ -1,0 +1,156 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "description": "Operations signer",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": true,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "10000",
+  "limits": {
+    "mainnet": {
+      "algo": {
+        "review_above": "100000000",
+        "reject_above": "1000000000"
+      },
+      "asa:31566704": {
+        "reject_above": "5000000000"
+      }
+    }
+  },
+  "address_sets": {
+    "treasury": [
+      "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+    ],
+    "ops": {
+      "mainnet": [
+        "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+      ],
+      "testnet": [
+        "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA"
+      ]
+    }
+  },
+  "asset_sets": {
+    "usd": {
+      "mainnet": [
+        "asa:31566704"
+      ],
+      "testnet": [
+        "asa:10458941"
+      ]
+    }
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "close_on_no_route": "review",
+    "clawback_on_no_route": "reject",
+    "blocked_destinations": [
+      "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"
+    ],
+    "routes": [
+      {
+        "id": "treasury-to-ops",
+        "description": "Treasury tops up ops in ALGO",
+        "networks": [
+          "mainnet"
+        ],
+        "sources": [
+          "@treasury"
+        ],
+        "assets": [
+          "algo"
+        ],
+        "destinations": [
+          "@ops"
+        ],
+        "limits": {
+          "mainnet": {
+            "algo": {
+              "review_above": "500000000"
+            }
+          }
+        }
+      },
+      {
+        "id": "ops-usd-payouts",
+        "networks": [
+          "mainnet",
+          "testnet"
+        ],
+        "sources": [
+          "@ops"
+        ],
+        "assets": [
+          "@usd"
+        ],
+        "destinations": [
+          "*"
+        ],
+        "limits": {
+          "mainnet": {
+            "asa:31566704": {
+              "reject_above": "1000000000"
+            }
+          },
+          "testnet": {
+            "asa:10458941": {
+              "reject_above": "1000000000"
+            }
+          }
+        }
+      },
+      {
+        "id": "ops-self-close",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "@ops"
+        ],
+        "assets": [
+          "algo"
+        ],
+        "destinations": [
+          "self"
+        ],
+        "allow_close": true
+      },
+      {
+        "id": "usd-recovery",
+        "networks": [
+          "mainnet"
+        ],
+        "sources": [
+          "@treasury"
+        ],
+        "assets": [
+          "@usd"
+        ],
+        "destinations": [
+          "@treasury"
+        ],
+        "asset_sources": [
+          "IRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCNZMCIQI"
+        ],
+        "allow_clawback": true
+      }
+    ]
+  },
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "description": "Treasury key: tighter fees",
+      "max_fee_microalgos": "2000",
+      "reject_asset_close": true,
+      "limits": {
+        "mainnet": {
+          "algo": {
+            "review_above": "50000000"
+          }
+        }
+      }
+    }
+  }
+}

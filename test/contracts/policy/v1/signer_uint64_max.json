@@ -1,0 +1,18 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "max_fee_microalgos": "18446744073709551615",
+  "limits": {
+    "mainnet": {
+      "asa:18446744073709551615": {
+        "reject_above": "18446744073709551615"
+      }
+    }
+  },
+  "asset_sets": {
+    "edge": {
+      "mainnet": [
+        "asa:18446744073709551615"
+      ]
+    }
+  }
+}

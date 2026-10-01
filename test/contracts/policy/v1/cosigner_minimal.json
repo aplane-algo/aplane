@@ -1,0 +1,7 @@
+{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "transfer_policy": {
+    "routes": []
+  }
+}
