@@ -181,7 +181,7 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 		testPaymentTxn(t, testAddress(2), testAddress(3), "plain"),
 	}
 	targets, err := s.guardedTargets(txns)
-	if err != nil || len(targets) != 1 || targets[0].Flow != signerapi.SigningFlowBoundedCosigner1 {
+	if err != nil || len(targets) != 1 || targets[0].Route != flowRouteBoundedCosigner {
 		t.Fatalf("guardedTargets() = %#v, %v", targets, err)
 	}
 	if targets[0].BoundedMaxFee != 10_000 {
@@ -647,6 +647,7 @@ func guardedTargetForTest(account, cosignerHex string) guardedTarget {
 		Account:                  account,
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CosignerPublicKey:        cosignerHex,
+		Route:                    flowRouteGuarded,
 	}
 }
 
@@ -771,7 +772,7 @@ func TestVerifyAssembledAgainstFrozen(t *testing.T) {
 	}
 }
 
-func TestValidateBoundedComponentPlan(t *testing.T) {
+func TestValidatePlannedGroup(t *testing.T) {
 	original := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
 	plannedOriginal := original
 	plannedOriginal.Fee += 1_000
@@ -787,21 +788,21 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 		TotalFeesDelta: 1_000, OriginalCount: 1, FinalCount: 2,
 	}
 
-	if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, mutations); err != nil {
+	if err := validatePlannedGroup([]types.Transaction{original}, planned, mutations); err != nil {
 		t.Fatalf("valid plan: unexpected error %v", err)
 	}
 
 	t.Run("wrong counts", func(t *testing.T) {
 		bad := *mutations
 		bad.OriginalCount = 2
-		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "original_count") {
+		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "original_count") {
 			t.Fatalf("error = %v, want original_count rejection", err)
 		}
 	})
 	t.Run("unreported original mutation", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[0].Receiver = testAddress(3)
-		if err := validateBoundedComponentPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "unreported fields") {
 			t.Fatalf("error = %v, want original mutation rejection", err)
 		}
 	})
@@ -809,21 +810,21 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 		bad := *mutations
 		bad.FeesModified = nil
 		bad.TotalFeesDelta = 0
-		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "unreported fields") {
+		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "unreported fields") {
 			t.Fatalf("error = %v, want fee mutation rejection", err)
 		}
 	})
 	t.Run("wrong fee delta", func(t *testing.T) {
 		bad := *mutations
 		bad.TotalFeesDelta++
-		if err := validateBoundedComponentPlan([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "total_fees_delta") {
+		if err := validatePlannedGroup([]types.Transaction{original}, planned, &bad); err == nil || !strings.Contains(err.Error(), "total_fees_delta") {
 			t.Fatalf("error = %v, want fee delta rejection", err)
 		}
 	})
 	t.Run("non-dummy appended transaction", func(t *testing.T) {
 		badPlanned := append([]types.Transaction(nil), planned...)
 		badPlanned[1].Amount = 1
-		if err := validateBoundedComponentPlan([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
+		if err := validatePlannedGroup([]types.Transaction{original}, badPlanned, mutations); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
 			t.Fatalf("error = %v, want dummy-shape rejection", err)
 		}
 		if _, err := signGuardedDummies(badPlanned[1:]); err == nil || !strings.Contains(err.Error(), "canonical guarded budget dummy") {
@@ -838,8 +839,8 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 		report := &signerapi.MutationReport{
 			GroupIDChanged: true, OriginalCount: 1, FinalCount: 1,
 		}
-		if err := validateBoundedComponentPlan([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
-			!strings.Contains(err.Error(), "existing bounded group ID") {
+		if err := validatePlannedGroup([]types.Transaction{grouped}, []types.Transaction{regrouped}, report); err == nil ||
+			!strings.Contains(err.Error(), "existing group ID") {
 			t.Fatalf("error = %v, want gratuitous regrouping rejection", err)
 		}
 	})
@@ -851,4 +852,15 @@ func TestValidateBoundedComponentPlan(t *testing.T) {
 			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
 	})
+}
+
+func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {
+	return types.SuggestedParams{
+		Fee:             txn.Fee,
+		FirstRoundValid: txn.FirstValid,
+		LastRoundValid:  txn.LastValid,
+		GenesisID:       txn.GenesisID,
+		GenesisHash:     txn.GenesisHash[:],
+		FlatFee:         true,
+	}
 }
