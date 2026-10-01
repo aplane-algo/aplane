@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -43,7 +44,6 @@ type Config struct {
 	TransferPolicy              *TransferPolicy
 	RekeyPolicy                 *RekeyPolicy
 	KeyOverrides                map[string]*Config
-	Cosigner                    *Config
 	GenesisHashResolver         apconfig.GenesisHashNetworkResolver
 	FormatASAAmount             func(network string, assetID uint64, raw uint64) (string, bool)
 }
@@ -57,21 +57,19 @@ type StoredConfig struct {
 	StoredPolicyCore `yaml:",inline"`
 
 	ClientSigning *StoredRoleConfig        `yaml:"client_signing,omitempty"`
-	Cosigner      *StoredRoleConfig        `yaml:"cosigner,omitempty"`
 	KeyOverrides  map[string]*StoredConfig `yaml:"key_overrides,omitempty"`
 }
 
 // StoredRoleConfig is a sparse role-domain policy block nested under
-// client_signing: or cosigner:. It intentionally does not recurse into role
-// blocks or key_overrides.
+// client_signing:. It intentionally does not recurse into role blocks or
+// key_overrides.
 type StoredRoleConfig struct {
 	StoredPolicyCore `yaml:",inline"`
 }
 
 // StoredPolicyCore is the policy field block shared by StoredConfig and
-// StoredRoleConfig. Adding a field here (plus storedPolicyCoreFields below)
-// extends both the product-wide document and the role-domain blocks in one
-// place.
+// StoredRoleConfig. Adding a field here extends both the product-wide document
+// and the role-domain blocks in one place.
 type StoredPolicyCore struct {
 	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
@@ -90,22 +88,17 @@ type StoredPolicyCore struct {
 }
 
 // storedPolicyCoreFields lists the YAML keys of StoredPolicyCore for the
-// unmarshal allow-lists. Keep in sync with the struct tags above.
-var storedPolicyCoreFields = []string{
-	"reject_rekey",
-	"reject_foreign_rekey",
-	"reject_close_remainder",
-	"reject_asset_close",
-	"reject_clawback",
-	"always_review_warnings",
-	"auto_approve_self_noop_transfer",
-	"max_fee_microalgos",
-	"review_algo_payments",
-	"max_algo_payments",
-	"review_asa_amounts",
-	"max_asa_amounts",
-	"transfer_policy",
-	"rekey_policy",
+// unmarshal allow-lists. It is derived from the struct tags so the allow-lists
+// cannot drift from the struct.
+var storedPolicyCoreFields = yamlFieldNames(reflect.TypeOf(StoredPolicyCore{}))
+
+func yamlFieldNames(t reflect.Type) []string {
+	names := make([]string, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("yaml"), ",")
+		names = append(names, name)
+	}
+	return names
 }
 
 func allowedFieldSet(fields ...string) map[string]struct{} {
@@ -150,7 +143,6 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	cp := *c
 	cp.StoredPolicyCore = *c.StoredPolicyCore.Clone()
 	cp.ClientSigning = c.ClientSigning.Clone()
-	cp.Cosigner = c.Cosigner.Clone()
 	if c.KeyOverrides != nil {
 		cp.KeyOverrides = make(map[string]*StoredConfig, len(c.KeyOverrides))
 		for key, override := range c.KeyOverrides {
@@ -171,9 +163,12 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("policy config must be a mapping")
 	}
-	allowed := allowedFieldSet("client_signing", "cosigner", "key_overrides")
+	allowed := allowedFieldSet("client_signing", "key_overrides")
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
+		if key == "cosigner" {
+			return fmt.Errorf("policy must not contain a cosigner wrapper; cosigner policy is a cosigner node's policy.yaml with fields at top level")
+		}
 		if _, ok := allowed[key]; !ok {
 			return fmt.Errorf("unknown policy field %q", key)
 		}
@@ -184,13 +179,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*c = StoredConfig(raw)
-	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
-		return err
-	}
-	if err := validateRoleConfig("cosigner", c.Cosigner); err != nil {
-		return err
-	}
-	return nil
+	return validateRoleConfig("client_signing", c.ClientSigning)
 }
 
 func (c *StoredRoleConfig) UnmarshalYAML(value *yaml.Node) error {
@@ -338,12 +327,6 @@ func (c *Config) Clone() *Config {
 	}
 	if c.RekeyPolicy != nil {
 		cp.RekeyPolicy = c.RekeyPolicy.Clone()
-	}
-	if c.Cosigner != nil {
-		cp.Cosigner = c.Cosigner.Clone()
-		if cp.Cosigner != nil {
-			cp.Cosigner.Cosigner = nil
-		}
 	}
 	return &cp
 }
@@ -538,14 +521,6 @@ func PolicyPath(dataRoot string) string {
 	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "policy.yaml")
 }
 
-// CosignerPath returns the path to the policy file used by cosigner nodes.
-// Single-mode nodes store the active role policy in policy.yaml; this helper is
-// retained so cosigner-domain callers can keep using the cosigner parser and
-// validator without carrying a separate filename.
-func CosignerPath(dataRoot string) string {
-	return PolicyPath(dataRoot)
-}
-
 // SaveStoredConfig writes the fixed product policy file atomically.
 func SaveStoredConfig(dataRoot string, cfg *StoredConfig) error {
 	path := PolicyPath(dataRoot)
@@ -581,7 +556,7 @@ func ParseStoredConfig(data []byte) (*StoredConfig, error) {
 
 // ParseStoredCosignerConfig parses policy.yaml bytes for a cosigner node
 // without performing any integrity verification. The document is direct
-// cosigner policy; it must not contain a cosigner: wrapper.
+// cosigner policy, with its fields at top level.
 func ParseStoredCosignerConfig(data []byte) (*StoredConfig, error) {
 	cfg, err := parseStoredConfig(data)
 	if err != nil {
@@ -630,12 +605,7 @@ func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
 	if err := validateSigningDocument(c); err != nil {
 		return nil, err
 	}
-	effective, err := c.Apply(defaults)
-	if err != nil {
-		return nil, err
-	}
-	effective.Cosigner = nil
-	return effective, nil
+	return c.Apply(defaults)
 }
 
 // ApplyCosigner overlays cosigner-node policy.yaml values onto cosigner
@@ -651,29 +621,48 @@ func (c *StoredConfig) ApplyCosigner(defaults *Config) (*Config, error) {
 		return nil, err
 	}
 	if c != nil && len(c.KeyOverrides) > 0 {
-		overrideBase := effective.Clone()
-		overrideBase.KeyOverrides = nil
-		effective.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
-		for key, overrideStored := range c.KeyOverrides {
-			if overrideStored == nil {
-				continue
-			}
-			canonicalKey, normalizeErr := NormalizeCosignerKeyOverrideKey(key)
-			if normalizeErr != nil {
-				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
-			}
-			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
-				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
-			}
-			overrideCfg, err := applyDirectCosignerConfig(overrideStored, overrideBase)
-			if err != nil {
-				return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
-			}
-			overrideCfg.KeyOverrides = nil
-			effective.KeyOverrides[canonicalKey] = overrideCfg
+		effective.KeyOverrides, err = applyKeyOverrides(c.KeyOverrides, effective, NormalizeCosignerKeyOverrideKey, applyDirectCosignerConfig)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return effective, nil
+}
+
+// applyKeyOverrides resolves each stored key override over a detached copy of
+// base, so an override sees only its own fields plus the identity base, never
+// other overrides. normalize canonicalizes the document role's selector.
+func applyKeyOverrides(
+	overrides map[string]*StoredConfig,
+	base *Config,
+	normalize func(string) (string, error),
+	apply func(*StoredConfig, *Config) (*Config, error),
+) (map[string]*Config, error) {
+	overrideBase := base.Clone()
+	overrideBase.KeyOverrides = nil
+	resolved := make(map[string]*Config, len(overrides))
+	for key, overrideStored := range overrides {
+		canonicalKey, err := normalize(key)
+		if err != nil {
+			return nil, fmt.Errorf("key_overrides for %q: %w", key, err)
+		}
+		if overrideStored == nil {
+			continue
+		}
+		if _, exists := resolved[canonicalKey]; exists {
+			return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
+		}
+		if len(overrideStored.KeyOverrides) > 0 {
+			return nil, fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", canonicalKey)
+		}
+		overrideCfg, err := apply(overrideStored, overrideBase)
+		if err != nil {
+			return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
+		}
+		overrideCfg.KeyOverrides = nil
+		resolved[canonicalKey] = overrideCfg
+	}
+	return resolved, nil
 }
 
 func validateSigningDocument(c *StoredConfig) error {
@@ -685,9 +674,6 @@ func validateSigningDocument(c *StoredConfig) error {
 	}
 	if c.RekeyPolicy != nil {
 		return fmt.Errorf("signer policy rekey_policy is not supported; use cosigner policy")
-	}
-	if c.Cosigner != nil {
-		return fmt.Errorf("signer policy cosigner is not supported; use cosigner policy")
 	}
 	for key, override := range c.KeyOverrides {
 		if _, err := NormalizeSigningKeyOverrideKey(key); err != nil {
@@ -702,9 +688,6 @@ func validateSigningDocument(c *StoredConfig) error {
 		if override.RekeyPolicy != nil {
 			return fmt.Errorf("key_overrides for %q: rekey_policy is not supported in signer policy; use cosigner policy", key)
 		}
-		if override.Cosigner != nil {
-			return fmt.Errorf("key_overrides for %q: cosigner is not supported in signer policy; use cosigner policy", key)
-		}
 	}
 	return nil
 }
@@ -715,9 +698,6 @@ func validateCosignerDocument(c *StoredConfig) error {
 	}
 	if c.ClientSigning != nil {
 		return fmt.Errorf("cosigner policy client_signing is not supported")
-	}
-	if c.Cosigner != nil {
-		return fmt.Errorf("cosigner policy must not contain a cosigner wrapper; put cosigner policy fields at top level")
 	}
 	if err := validateRoleConfig("cosigner", c.toStoredRoleConfig()); err != nil {
 		return err
@@ -731,9 +711,6 @@ func validateCosignerDocument(c *StoredConfig) error {
 		}
 		if override.ClientSigning != nil {
 			return fmt.Errorf("key_overrides for %q: client_signing is not supported in cosigner policy", key)
-		}
-		if override.Cosigner != nil {
-			return fmt.Errorf("key_overrides for %q: cosigner wrapper is not supported in cosigner policy", key)
 		}
 		if len(override.KeyOverrides) > 0 {
 			return fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", key)
@@ -762,14 +739,12 @@ func applyDirectCosignerConfig(stored *StoredConfig, defaults *Config) (*Config,
 	}
 	direct := stored.Clone()
 	direct.ClientSigning = nil
-	direct.Cosigner = nil
 	direct.KeyOverrides = nil
 	direct.TransferPolicy = normalizeCosignerTransferPolicy(direct.TransferPolicy)
 	cfg, err := direct.Apply(defaults)
 	if err != nil {
 		return nil, err
 	}
-	cfg.Cosigner = nil
 	cfg.KeyOverrides = nil
 	return cfg, nil
 }
@@ -800,9 +775,6 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		return effective, nil
 	}
 	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
-		return nil, err
-	}
-	if err := validateRoleConfig("cosigner", c.Cosigner); err != nil {
 		return nil, err
 	}
 
@@ -881,40 +853,12 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		effective = clientSigningCfg
 	}
 
-	cosignerCfg, err := c.applyCosigner(effective)
-	if err != nil {
-		return nil, err
-	}
-	effective.Cosigner = cosignerCfg
-
 	if len(c.KeyOverrides) > 0 {
-		// Use a detached copy of the resolved base as the "defaults" for each
-		// override so overrides only see their own fields plus the identity
-		// base, never other overrides.
-		overrideBase := effective.Clone()
-		overrideBase.KeyOverrides = nil
-		effective.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
-		for key, overrideStored := range c.KeyOverrides {
-			canonicalKey, normalizeErr := NormalizeSigningKeyOverrideKey(key)
-			if normalizeErr != nil {
-				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
-			}
-			if overrideStored == nil {
-				continue
-			}
-			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
-				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
-			}
-			if len(overrideStored.KeyOverrides) > 0 {
-				return nil, fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", canonicalKey)
-			}
-			overrideCfg, err := overrideStored.Apply(overrideBase)
-			if err != nil {
-				return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
-			}
-			overrideCfg.KeyOverrides = nil
-			effective.KeyOverrides[canonicalKey] = overrideCfg
+		overrides, err := applyKeyOverrides(c.KeyOverrides, effective, NormalizeSigningKeyOverrideKey, (*StoredConfig).Apply)
+		if err != nil {
+			return nil, err
 		}
+		effective.KeyOverrides = overrides
 	}
 
 	if err := ValidateTransferGuards(effective); err != nil {
@@ -922,54 +866,6 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 	}
 
 	return effective, nil
-}
-
-func (c *StoredConfig) applyCosigner(clientEffective *Config) (*Config, error) {
-	if c == nil || c.Cosigner == nil {
-		if clientEffective != nil && clientEffective.Cosigner != nil {
-			return clientEffective.Cosigner.Clone(), nil
-		}
-		return nil, nil
-	}
-	var base *Config
-	if clientEffective.Cosigner != nil {
-		base = clientEffective.Cosigner.Clone()
-	} else {
-		base = DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
-		base.FormatASAAmount = clientEffective.FormatASAAmount
-		base.RejectRekey = false
-	}
-	common := c.commonStoredConfig()
-	cfg, err := common.Apply(base)
-	if err != nil {
-		return nil, fmt.Errorf("cosigner common policy: %w", err)
-	}
-	roleStored := c.Cosigner.toStoredConfig()
-	if roleStored.TransferPolicy != nil {
-		roleStored.TransferPolicy = normalizeCosignerTransferPolicy(roleStored.TransferPolicy)
-	}
-	cfg, err = roleStored.Apply(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("cosigner: %w", err)
-	}
-	cfg.KeyOverrides = nil
-	cfg.Cosigner = nil
-	return cfg, nil
-}
-
-func (c *StoredConfig) commonStoredConfig() *StoredConfig {
-	if c == nil {
-		return &StoredConfig{}
-	}
-	return &StoredConfig{StoredPolicyCore: StoredPolicyCore{
-		RejectCloseRemainder: c.RejectCloseRemainder,
-		RejectAssetClose:     c.RejectAssetClose,
-		RejectClawback:       c.RejectClawback,
-		MaxFeeMicroAlgos:     c.MaxFeeMicroAlgos,
-		MaxAlgoPayments:      cloneUintMap(c.MaxAlgoPayments),
-		MaxASAAmounts:        cloneStoredASAAmounts(c.MaxASAAmounts),
-		TransferPolicy:       normalizeCosignerTransferPolicy(c.TransferPolicy),
-	}}
 }
 
 func addressSetsForRekeyPolicy(tp *TransferPolicy) map[string]compiledAddressSet {

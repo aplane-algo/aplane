@@ -96,7 +96,7 @@ func cosignerTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 	commonLintCfg.RejectForeignRekey = false
 	commonLintCfg.RejectRekey = false
 	violations = append(violations, withTargetIndex(
-		policy.CheckTxnPolicyLintsWithKnownAddresses(txn, txn.Sender.String(), commonLintCfg, nil),
+		policy.CheckTxnPolicyLints(txn, commonLintCfg, nil),
 		targetIndex,
 	)...)
 	if isRekey {

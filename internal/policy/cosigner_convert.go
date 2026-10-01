@@ -26,7 +26,6 @@ func ConvertSigningPolicyToCosigner(stored *StoredConfig) (*StoredConfig, error)
 		effective = mergeStoredRoleConfig(effective, effective.ClientSigning)
 	}
 	effective.ClientSigning = nil
-	effective.Cosigner = nil
 
 	if effective.TransferPolicy == nil {
 		return nil, fmt.Errorf("policy has no transfer_policy to convert")
@@ -63,7 +62,6 @@ func mergeStoredRoleConfig(base *StoredConfig, role *StoredRoleConfig) *StoredCo
 	}
 	out := base.Clone()
 	out.ClientSigning = nil
-	out.Cosigner = nil
 	if role == nil {
 		return out
 	}

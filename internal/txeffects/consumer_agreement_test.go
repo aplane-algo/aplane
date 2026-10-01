@@ -53,7 +53,7 @@ func TestWarningAndLintConsumersObserveManifestDangerFields(t *testing.T) {
 			if len(warnings) != 1 || warnings[0].Field != tt.warningField {
 				t.Fatalf("warnings = %#v, want one %s warning", warnings, tt.warningField)
 			}
-			lints := policy.CheckTxnPolicyLintsWithKnownAddresses(tt.txn, tt.txn.Sender.String(), tt.config, nil)
+			lints := policy.CheckTxnPolicyLints(tt.txn, tt.config, nil)
 			if len(lints) != 1 {
 				t.Fatalf("lints = %#v, want one violation", lints)
 			}
@@ -76,7 +76,7 @@ func TestPolicyClawbackExceptionCannotWeakenBoundedClassification(t *testing.T) 
 	if warnings := approvalpolicy.CheckDecodedTxnWarnings(txn, nil); len(warnings) != 0 {
 		t.Fatalf("warnings = %#v, want policy-specific same-sender exception", warnings)
 	}
-	if lints := policy.CheckTxnPolicyLints(txn, txn.Sender.String(), &policy.Config{RejectClawback: true}); len(lints) != 0 {
+	if lints := policy.CheckTxnPolicyLints(txn, &policy.Config{RejectClawback: true}, nil); len(lints) != 0 {
 		t.Fatalf("lints = %#v, want policy-specific same-sender exception", lints)
 	}
 }

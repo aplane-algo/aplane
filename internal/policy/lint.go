@@ -41,23 +41,10 @@ func JoinLintViolations(vs []LintViolation) string {
 	return strings.Join(parts, "; ")
 }
 
-// CheckGroupPolicyLints evaluates hard group-level policy rules.
-func CheckGroupPolicyLints(txns []types.Transaction, cfg *Config) []LintViolation {
-	_ = txns
-	_ = cfg
-	return nil
-}
-
-// CheckTxnPolicyLints evaluates hard transaction-level policy rules.
-func CheckTxnPolicyLints(txn types.Transaction, sender string, cfg *Config) []LintViolation {
-	return CheckTxnPolicyLintsWithKnownAddresses(txn, sender, cfg, nil)
-}
-
-// CheckTxnPolicyLintsWithKnownAddresses evaluates hard transaction-level
-// policy rules with signer-local key awareness. knownAddresses is the set of
-// addresses held by the current signer identity.
-func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string, cfg *Config, knownAddresses map[string]bool) []LintViolation {
-	_ = sender
+// CheckTxnPolicyLints evaluates hard transaction-level policy rules with
+// signer-local key awareness. knownAddresses is the set of addresses held by
+// the current signer identity; nil treats every rekey target as foreign.
+func CheckTxnPolicyLints(txn types.Transaction, cfg *Config, knownAddresses map[string]bool) []LintViolation {
 	if cfg == nil {
 		return nil
 	}
@@ -183,13 +170,4 @@ func networkFromGenesisHash(genesisHash types.Digest, resolver apconfig.GenesisH
 		return ""
 	}
 	return network
-}
-
-// CheckTxnPolicyEngine collapses structured transaction violations into one error.
-func CheckTxnPolicyEngine(txn types.Transaction, sender string, cfg *Config) error {
-	violations := CheckTxnPolicyLints(txn, sender, cfg)
-	if len(violations) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s", JoinLintViolations(violations))
 }

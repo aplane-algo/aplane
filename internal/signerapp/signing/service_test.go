@@ -67,7 +67,7 @@ func TestEvaluateAutoRejectionRulesStampsTxnIndexes(t *testing.T) {
 		{Header: types.Header{Fee: 2}},
 	}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, true, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, &policy.Config{
 		RejectForeignRekey: true,
 		MaxFeeMicroAlgos:   1,
 	}, nil, nil, nil, nil)
@@ -88,7 +88,7 @@ func TestEvaluateAutoRejectionRulesSkipsForeignAndDummyTransactions(t *testing.T
 		{Header: types.Header{RekeyTo: nonZeroAddr}}, // dummy slot beyond requestCount, should be skipped
 	}
 
-	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, true, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, &policy.Config{
 		RejectForeignRekey: true,
 	}, nil, nil, nil, nil)
 	if err != nil {
@@ -102,7 +102,7 @@ func TestEvaluateAutoRejectionRulesAllowsRekeyToLocalAddress(t *testing.T) {
 		{Header: types.Header{RekeyTo: localAddr}},
 	}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, false, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, &policy.Config{
 		RejectForeignRekey: true,
 	}, nil, map[string]bool{localAddr.String(): true}, nil, nil)
 	if err != nil {
@@ -162,7 +162,7 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, false, tt.cfg, nil, nil, nil, nil)
+			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, tt.cfg, nil, nil, nil, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection")
@@ -198,7 +198,7 @@ func TestEvaluateAutoRejectionRulesAppliesKeyOverrides(t *testing.T) {
 	}
 	authKeys := []string{overrideKey, baseKey}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, true, cfg, authKeys, nil, nil, nil)
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, cfg, authKeys, nil, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for non-overridden txn")
 	}
@@ -239,7 +239,7 @@ transfer_policy:
 		},
 	}
 
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, false, cfg, nil, nil, nil, nil)
+	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, cfg, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want routing rejection")
 	}
@@ -269,7 +269,7 @@ transfer_policy:
 		},
 	}
 
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, false, cfg, nil, nil, map[int]bool{0: true}, nil)
+	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, cfg, nil, nil, map[int]bool{0: true}, nil)
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil for routing-exempt index", err)
 	}
@@ -315,7 +315,6 @@ key_overrides:
 		2,
 		map[int]bool{},
 		map[int]bool{},
-		true,
 		cfg,
 		[]string{overrideKey, baseKey},
 		nil,
@@ -361,7 +360,6 @@ transfer_policy:
 		3,
 		map[int]bool{0: true},
 		map[int]bool{1: true},
-		true,
 		cfg,
 		nil,
 		nil,
