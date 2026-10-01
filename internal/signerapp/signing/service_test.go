@@ -275,64 +275,6 @@ transfer_policy:
 	}
 }
 
-func TestEvaluateAutoRejectionRulesUsesTransferRoutingKeyOverrides(t *testing.T) {
-	source := types.Address{1}
-	dest := types.Address{2}
-	overrideKey := types.Address{10}.String()
-	baseKey := types.Address{11}.String()
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes: []
-key_overrides:
-  `+overrideKey+`:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      routes:
-        - id: override_allowed
-          networks: [testnet]
-          sources: ["`+source.String()+`"]
-          assets: ["algo"]
-          destinations: ["`+dest.String()+`"]
-`)
-	txn := types.Transaction{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      source,
-			GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: dest,
-			Amount:   1,
-		},
-	}
-
-	err := EvaluateAutoRejectionRules(
-		[]types.Transaction{txn, txn},
-		2,
-		map[int]bool{},
-		map[int]bool{},
-		cfg,
-		[]string{overrideKey, baseKey},
-		nil,
-		nil,
-		nil,
-	)
-	if err == nil {
-		t.Fatal("EvaluateAutoRejectionRules() error = nil, want base-policy route miss on second txn")
-	}
-	got := err.Error()
-	if strings.Contains(got, "txn 1:") {
-		t.Fatalf("override-routed txn was rejected: %q", got)
-	}
-	if !strings.Contains(got, "txn 2: ["+policy.TransferRoutingRouteMissRuleID+"]") {
-		t.Fatalf("EvaluateAutoRejectionRules() error = %q, want txn 2 route miss", got)
-	}
-}
-
 func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForPassthroughForeignAndDummySlots(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}

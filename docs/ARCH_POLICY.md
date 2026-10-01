@@ -737,10 +737,15 @@ component signing, the effective policy is selected by the request
 `component_key` Witness Key ID.
 
 At the stored-policy level, overrides are sparse: unset fields inherit from the
-product-wide policy. Nested overrides are rejected. If an override includes a
-`transfer_policy` block, that block still requires `schema_version` and
-explicit `enabled`; the remaining transfer routing fields use the overlay rules
-described in [Transfer Routing](#transfer-routing).
+product-wide policy. Nested overrides are rejected. Signer-domain overrides
+cannot carry `transfer_policy`; per-account routing is expressed with route
+`sources` in the product-wide route list. In cosigner-domain `policy.yaml`, an
+override `transfer_policy` block still requires `schema_version` and explicit
+`enabled`; the remaining transfer routing fields use the overlay rules
+described in [Transfer Routing](#transfer-routing). Because inherited routes
+resolve named sets when evaluated, an override that redefines a set without
+restating `routes` is rejected if any inherited route's amount limits would no
+longer hold against the redefined set.
 
 If no matching selector exists, the product-wide effective policy for that
 document applies. Override blocks in cosigner-domain `policy.yaml` are direct sparse

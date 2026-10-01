@@ -160,8 +160,8 @@ func (p StoredRoutePermission) Clone() StoredRoutePermission {
 }
 
 // TransferPolicy is the compiled effective routing policy attached to a policy
-// Config. The unexported set maps are retained so key_overrides can layer
-// sparse transfer_policy blocks over product-wide policy.
+// Config. The set maps are retained so cosigner key_overrides can layer sparse
+// transfer_policy blocks over product-wide policy.
 type TransferPolicy struct {
 	Enabled             bool
 	OnNoRoute           TransferOnNoRoute
@@ -535,6 +535,14 @@ func (p *StoredTransferPolicy) Apply(base *TransferPolicy) (*TransferPolicy, err
 			return nil, err
 		}
 		effective.Routes = routes
+	} else {
+		// Inherited routes resolve sets by name when evaluated, so a block that
+		// redefines a set must still satisfy their set-dependent limit rules.
+		for _, route := range effective.Routes {
+			if err := validateRouteLimits(route, effective.AssetSets); err != nil {
+				return nil, fmt.Errorf("inherited route %q: %w", route.ID, err)
+			}
+		}
 	}
 	effective.routeIDIndex = make(map[string]struct{}, len(effective.Routes))
 	for _, route := range effective.Routes {

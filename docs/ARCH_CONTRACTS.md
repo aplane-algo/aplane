@@ -758,8 +758,8 @@ mixed pair, which verification rejects fail-closed and requires explicit
 repair.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-cosigner overrides are keyed by Witness Key ID. These overrides apply to
-policy phases and can be changed through authenticated full-document
+cosigner overrides are keyed by Witness Key ID. Client-signing overrides cannot
+carry `transfer_policy`. These overrides apply to policy phases and can be changed through authenticated full-document
 `replace_policy`, or by direct/offline YAML editing followed by
 `apadmin policy rescue apply` or `apstore policy sign` before the signer will
 trust the edited document.
