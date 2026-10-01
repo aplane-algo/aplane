@@ -35,8 +35,10 @@ Consequences:
 
 The machine-readable schema is
 [`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json)
-(JSON Schema 2020-12). Valid and invalid examples are in
-[`test/contracts/policy/v1/`](../test/contracts/policy/v1/).
+(JSON Schema 2020-12). Examples are in
+[`test/contracts/policy/v1/`](../test/contracts/policy/v1/): valid documents at
+the top level, schema-invalid documents in `invalid/`, and documents the schema
+accepts but the node's semantic rules reject in `semantic_invalid/`.
 
 ## Files
 
@@ -72,8 +74,11 @@ Cosigner rules:
   `aplane.signer-policy.v1` or `aplane.cosigner-policy.v1`. A node rejects a
   document whose type does not match its role.
 - Amounts are decimal strings in base units (microAlgos for ALGO, base units
-  for an ASA), e.g. `"5000000"`. They must fit in uint64. JSON numbers are
-  rejected because many producers lose precision above 2^53.
+  for an ASA), e.g. `"5000000"`, from `0` through `18446744073709551615`
+  (uint64). ASA IDs in `asa:<id>` share that range, starting at `1`. JSON
+  numbers are rejected because many producers lose precision above 2^53. The
+  schema enforces the exact range, so producers catch overflow before the node
+  does.
 
 ## Terms
 
@@ -120,8 +125,31 @@ Bare numeric ASA IDs are not accepted; write `asa:<id>`.
 | `routes` | routes | The allow-list |
 
 A key override may set any scalar field above plus `limits`, and nothing
-else: no sets, no `transfer_policy`, no nesting. Unset fields inherit from the
-document. Per-account routing is expressed with route `sources`.
+else: no sets, no `transfer_policy`, no nesting. Per-account routing is
+expressed with route `sources`.
+
+### Key Override Inheritance
+
+The node resolves each override into one effective policy for its key:
+
+- **Scalar fields** (`reject_*`, `always_review_warnings`,
+  `auto_approve_self_noop_transfer`, `max_fee_microalgos`): an override value
+  replaces the document value; an omitted field inherits it.
+- **`limits`** merge per network, per asset, and per threshold. A threshold
+  value in the override replaces the inherited value for exactly that
+  `(network, asset, review_above|reject_above)`. Every threshold the override
+  does not mention is inherited. A `null` threshold removes the inherited one;
+  `null` is valid only in overrides. Loosening therefore always appears
+  explicitly in the override and in `diff`.
+- **Validation runs on the merged result.** Each key's effective `limits` must
+  satisfy `review_above` ≤ `reject_above`, even when the two values come from
+  different levels.
+
+Example: the document caps ALGO at `reject_above: "1000000000"` and ASA
+`31566704` at `reject_above: "5000000000"`. An override that sets only
+`mainnet/algo/review_above: "50000000"` keeps both caps and tightens review; an
+override that sets `mainnet/asa:31566704/reject_above: null` removes that one
+cap for its key.
 
 ## Cosigner Document
 
@@ -173,14 +201,21 @@ not shared between keys.
 
 Limits are keyed by network, then by asset, so a threshold always applies to
 exactly one asset in its own base units. The same shape is used at document
-level, in signer key overrides, and on routes. An asset a route covers but its
-`limits` does not mention has no route-level threshold.
+level, in signer key overrides (where thresholds merge as described in
+[Key Override Inheritance](#key-override-inheritance)), and on routes.
+
+Document-level and route-level limits are separate checks and both apply: a
+movement is rejected or sent to review if it exceeds the document's threshold
+for its asset or the strictest threshold among its matching routes. An asset a
+route covers but its `limits` does not mention has no route-level threshold;
+document-level limits still apply to it.
 
 ## Semantic Rules
 
 Checked at acceptance in addition to the schema:
 
-1. Every address checksum is valid; every amount fits in uint64.
+1. Every address checksum is valid; every amount and ASA ID is within the
+   uint64 range (also enforced by the schema).
 2. Every `@name` reference resolves to a set of the matching kind in the same
    document.
 3. Route IDs are unique.
@@ -194,6 +229,8 @@ Checked at acceptance in addition to the schema:
 8. `blocked_destinations` holds addresses only (no sets, `self`, or `*`).
 9. A cosigner document's `key` equals its file name, and the node role
    matches `format`.
+10. For every signer key override, the merged effective `limits` satisfy
+    rule 4 (see [Key Override Inheritance](#key-override-inheritance)).
 
 Errors report the JSON Pointer of the failing value, for example
 `/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.
@@ -214,4 +251,5 @@ Errors report the JSON Pointer of the failing value, for example
 | Cosigner `transfer_policy.enabled` | Removed; a cosigner document always enforces its routes |
 | One cosigner `policy.yaml` + `key_overrides` by Witness Key ID | One self-contained document per key |
 | Signer `key_overrides` with routing | Scalar settings and `limits` only |
+| Override per-network maps replace the whole inherited map | Override `limits` merge per threshold; `null` removes one |
 | Sidecar `policy_mtime_ns` | Removed (already gone) |

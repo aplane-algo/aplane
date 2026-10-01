@@ -1,0 +1,22 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "description": "Merged result for the override key has review_above 2000 ALGO above the inherited reject_above 1000 ALGO.",
+  "limits": {
+    "mainnet": {
+      "algo": {
+        "reject_above": "1000000000"
+      }
+    }
+  },
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "limits": {
+        "mainnet": {
+          "algo": {
+            "review_above": "2000000000"
+          }
+        }
+      }
+    }
+  }
+}

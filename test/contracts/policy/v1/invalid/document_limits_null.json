@@ -1,0 +1,10 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "limits": {
+    "mainnet": {
+      "algo": {
+        "reject_above": null
+      }
+    }
+  }
+}

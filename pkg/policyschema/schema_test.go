@@ -35,7 +35,7 @@ func TestSchemaV1IsWellFormed(t *testing.T) {
 // validator once it exists.
 func TestContractFixturesV1AreWellFormed(t *testing.T) {
 	dir := filepath.Join("..", "..", "test", "contracts", "policy", "v1")
-	for _, pattern := range []string{"*.json", filepath.Join("invalid", "*.json")} {
+	for _, pattern := range []string{"*.json", filepath.Join("invalid", "*.json"), filepath.Join("semantic_invalid", "*.json")} {
 		files, err := filepath.Glob(filepath.Join(dir, pattern))
 		if err != nil || len(files) == 0 {
 			t.Fatalf("no fixtures matched %s: %v", pattern, err)
@@ -52,7 +52,7 @@ func TestContractFixturesV1AreWellFormed(t *testing.T) {
 				t.Errorf("%s: not valid JSON: %v", file, err)
 				continue
 			}
-			if strings.Contains(file, string(filepath.Separator)+"invalid"+string(filepath.Separator)) {
+			if base := filepath.Base(filepath.Dir(file)); base == "invalid" || base == "semantic_invalid" {
 				continue
 			}
 			base := filepath.Base(file)

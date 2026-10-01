@@ -4,33 +4,75 @@
   "title": "APlane policy document v1",
   "description": "Signer policy (policy.json) or one cosigner key's policy (policies/<WitnessKeyID>.json). The document is the signer/cosigner boundary: whatever produces it, the node validates, signs, and enforces only what this schema and the node's semantic checks accept. Amounts are decimal strings in base units (microAlgos or ASA base units).",
   "oneOf": [
-    { "$ref": "#/$defs/signerPolicy" },
-    { "$ref": "#/$defs/cosignerPolicy" }
+    {
+      "$ref": "#/$defs/signerPolicy"
+    },
+    {
+      "$ref": "#/$defs/cosignerPolicy"
+    }
   ],
   "$defs": {
     "signerPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format"],
+      "required": [
+        "format"
+      ],
       "properties": {
-        "format": { "const": "aplane.signer-policy.v1" },
-        "description": { "$ref": "#/$defs/description" },
-        "reject_foreign_rekey": { "type": "boolean", "description": "Reject a non-zero RekeyTo whose target this signer does not hold. Default true." },
-        "reject_close_remainder": { "type": "boolean", "description": "Reject ALGO close-outs. Default false." },
-        "reject_asset_close": { "type": "boolean", "description": "Reject ASA close-outs. Default false." },
-        "reject_clawback": { "type": "boolean", "description": "Reject ASA clawbacks. Default false." },
-        "always_review_warnings": { "type": "boolean", "description": "Send transactions with warning findings to operator review. Default false." },
-        "auto_approve_self_noop_transfer": { "type": "boolean", "description": "Auto-approve a tightly constrained self no-op transfer. Default false." },
-        "max_fee_microalgos": { "$ref": "#/$defs/amount" },
-        "limits": { "$ref": "#/$defs/signerLimits" },
-        "address_sets": { "$ref": "#/$defs/addressSets" },
-        "asset_sets": { "$ref": "#/$defs/assetSets" },
-        "transfer_policy": { "$ref": "#/$defs/signerTransferPolicy" },
+        "format": {
+          "const": "aplane.signer-policy.v1"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "reject_foreign_rekey": {
+          "type": "boolean",
+          "description": "Reject a non-zero RekeyTo whose target this signer does not hold. Default true."
+        },
+        "reject_close_remainder": {
+          "type": "boolean",
+          "description": "Reject ALGO close-outs. Default false."
+        },
+        "reject_asset_close": {
+          "type": "boolean",
+          "description": "Reject ASA close-outs. Default false."
+        },
+        "reject_clawback": {
+          "type": "boolean",
+          "description": "Reject ASA clawbacks. Default false."
+        },
+        "always_review_warnings": {
+          "type": "boolean",
+          "description": "Send transactions with warning findings to operator review. Default false."
+        },
+        "auto_approve_self_noop_transfer": {
+          "type": "boolean",
+          "description": "Auto-approve a tightly constrained self no-op transfer. Default false."
+        },
+        "max_fee_microalgos": {
+          "$ref": "#/$defs/amount"
+        },
+        "limits": {
+          "$ref": "#/$defs/signerLimits"
+        },
+        "address_sets": {
+          "$ref": "#/$defs/addressSets"
+        },
+        "asset_sets": {
+          "$ref": "#/$defs/assetSets"
+        },
+        "transfer_policy": {
+          "$ref": "#/$defs/signerTransferPolicy"
+        },
         "key_overrides": {
           "type": "object",
           "description": "Per-key settings keyed by the Algorand auth address that signs. Unset fields inherit; overrides never carry routing.",
-          "propertyNames": { "$ref": "#/$defs/address" },
-          "additionalProperties": { "$ref": "#/$defs/signerKeyOverride" }
+          "propertyNames": {
+            "$ref": "#/$defs/address"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/signerKeyOverride"
+          }
         }
       }
     },
@@ -39,112 +81,277 @@
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
-        "description": { "$ref": "#/$defs/description" },
-        "reject_foreign_rekey": { "type": "boolean" },
-        "reject_close_remainder": { "type": "boolean" },
-        "reject_asset_close": { "type": "boolean" },
-        "reject_clawback": { "type": "boolean" },
-        "always_review_warnings": { "type": "boolean" },
-        "auto_approve_self_noop_transfer": { "type": "boolean" },
-        "max_fee_microalgos": { "$ref": "#/$defs/amount" },
-        "limits": { "$ref": "#/$defs/signerLimits" }
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "reject_foreign_rekey": {
+          "type": "boolean"
+        },
+        "reject_close_remainder": {
+          "type": "boolean"
+        },
+        "reject_asset_close": {
+          "type": "boolean"
+        },
+        "reject_clawback": {
+          "type": "boolean"
+        },
+        "always_review_warnings": {
+          "type": "boolean"
+        },
+        "auto_approve_self_noop_transfer": {
+          "type": "boolean"
+        },
+        "max_fee_microalgos": {
+          "$ref": "#/$defs/amount"
+        },
+        "limits": {
+          "$ref": "#/$defs/signerOverrideLimits"
+        }
       }
     },
     "signerTransferPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled"],
+      "required": [
+        "enabled"
+      ],
       "properties": {
-        "enabled": { "type": "boolean" },
-        "on_no_route": { "$ref": "#/$defs/routeMissAction", "description": "Verdict for a movement that matches no route. Required when enabled." },
-        "close_on_no_route": { "$ref": "#/$defs/routeMissAction", "description": "Verdict for a close-out no route allows. Default reject." },
-        "clawback_on_no_route": { "$ref": "#/$defs/routeMissAction", "description": "Verdict for a clawback no route allows. Default reject." },
-        "blocked_destinations": { "$ref": "#/$defs/blockedDestinations" },
-        "routes": { "type": "array", "items": { "$ref": "#/$defs/signerRoute" } }
+        "enabled": {
+          "type": "boolean"
+        },
+        "on_no_route": {
+          "$ref": "#/$defs/routeMissAction",
+          "description": "Verdict for a movement that matches no route. Required when enabled."
+        },
+        "close_on_no_route": {
+          "$ref": "#/$defs/routeMissAction",
+          "description": "Verdict for a close-out no route allows. Default reject."
+        },
+        "clawback_on_no_route": {
+          "$ref": "#/$defs/routeMissAction",
+          "description": "Verdict for a clawback no route allows. Default reject."
+        },
+        "blocked_destinations": {
+          "$ref": "#/$defs/blockedDestinations"
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/signerRoute"
+          }
+        }
       },
-      "if": { "properties": { "enabled": { "const": true } } },
-      "then": { "required": ["on_no_route"] }
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "on_no_route"
+        ]
+      }
     },
     "signerRoute": {
-      "allOf": [ { "$ref": "#/$defs/routeShape" } ],
-      "properties": { "limits": { "$ref": "#/$defs/signerLimits" } },
+      "allOf": [
+        {
+          "$ref": "#/$defs/routeShape"
+        }
+      ],
+      "properties": {
+        "limits": {
+          "$ref": "#/$defs/signerLimits"
+        }
+      },
       "unevaluatedProperties": false
     },
     "signerLimits": {
       "type": "object",
       "description": "Per-network, per-asset amount thresholds in base units.",
-      "propertyNames": { "$ref": "#/$defs/network" },
+      "propertyNames": {
+        "$ref": "#/$defs/network"
+      },
       "additionalProperties": {
         "type": "object",
         "minProperties": 1,
-        "propertyNames": { "$ref": "#/$defs/assetRef" },
+        "propertyNames": {
+          "$ref": "#/$defs/assetRef"
+        },
         "additionalProperties": {
           "type": "object",
           "additionalProperties": false,
           "minProperties": 1,
           "properties": {
-            "review_above": { "$ref": "#/$defs/amount" },
-            "reject_above": { "$ref": "#/$defs/amount" }
+            "review_above": {
+              "$ref": "#/$defs/amount"
+            },
+            "reject_above": {
+              "$ref": "#/$defs/amount"
+            }
           }
         }
       }
     },
-
+    "signerOverrideLimits": {
+      "type": "object",
+      "description": "Merged into the document's limits per network, asset, and threshold: a value replaces the inherited threshold, null removes it, and anything unmentioned is inherited.",
+      "propertyNames": {
+        "$ref": "#/$defs/network"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {
+          "$ref": "#/$defs/assetRef"
+        },
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "review_above": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/amount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reject_above": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/amount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
     "cosignerPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format", "key", "transfer_policy"],
+      "required": [
+        "format",
+        "key",
+        "transfer_policy"
+      ],
       "properties": {
-        "format": { "const": "aplane.cosigner-policy.v1" },
-        "key": { "$ref": "#/$defs/witnessKeyID", "description": "The Witness Key ID this policy governs. Must equal the file name policies/<key>.json." },
-        "description": { "$ref": "#/$defs/description" },
-        "reject_close_remainder": { "type": "boolean" },
-        "reject_asset_close": { "type": "boolean" },
-        "reject_clawback": { "type": "boolean" },
-        "reject_rekey": { "type": "boolean", "description": "Reject every non-zero RekeyTo. When false or absent, rekey_policy decides." },
-        "max_fee_microalgos": { "$ref": "#/$defs/amount" },
-        "limits": { "$ref": "#/$defs/cosignerLimits" },
-        "address_sets": { "$ref": "#/$defs/addressSets" },
-        "asset_sets": { "$ref": "#/$defs/assetSets" },
-        "transfer_policy": { "$ref": "#/$defs/cosignerTransferPolicy" },
-        "rekey_policy": { "$ref": "#/$defs/rekeyPolicy" }
+        "format": {
+          "const": "aplane.cosigner-policy.v1"
+        },
+        "key": {
+          "$ref": "#/$defs/witnessKeyID",
+          "description": "The Witness Key ID this policy governs. Must equal the file name policies/<key>.json."
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "reject_close_remainder": {
+          "type": "boolean"
+        },
+        "reject_asset_close": {
+          "type": "boolean"
+        },
+        "reject_clawback": {
+          "type": "boolean"
+        },
+        "reject_rekey": {
+          "type": "boolean",
+          "description": "Reject every non-zero RekeyTo. When false or absent, rekey_policy decides."
+        },
+        "max_fee_microalgos": {
+          "$ref": "#/$defs/amount"
+        },
+        "limits": {
+          "$ref": "#/$defs/cosignerLimits"
+        },
+        "address_sets": {
+          "$ref": "#/$defs/addressSets"
+        },
+        "asset_sets": {
+          "$ref": "#/$defs/assetSets"
+        },
+        "transfer_policy": {
+          "$ref": "#/$defs/cosignerTransferPolicy"
+        },
+        "rekey_policy": {
+          "$ref": "#/$defs/rekeyPolicy"
+        }
       }
     },
     "cosignerTransferPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["routes"],
+      "required": [
+        "routes"
+      ],
       "description": "The cosigner allow-list. Any movement no route allows is rejected; there are no review outcomes.",
       "properties": {
-        "blocked_destinations": { "$ref": "#/$defs/blockedDestinations" },
-        "routes": { "type": "array", "items": { "$ref": "#/$defs/cosignerRoute" } }
+        "blocked_destinations": {
+          "$ref": "#/$defs/blockedDestinations"
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cosignerRoute"
+          }
+        }
       }
     },
     "cosignerRoute": {
-      "allOf": [ { "$ref": "#/$defs/routeShape" } ],
-      "properties": { "limits": { "$ref": "#/$defs/cosignerLimits" } },
+      "allOf": [
+        {
+          "$ref": "#/$defs/routeShape"
+        }
+      ],
+      "properties": {
+        "limits": {
+          "$ref": "#/$defs/cosignerLimits"
+        }
+      },
       "unevaluatedProperties": false
     },
     "cosignerLimits": {
       "type": "object",
       "description": "Per-network, per-asset reject thresholds in base units. Cosigner policy cannot produce review verdicts.",
-      "propertyNames": { "$ref": "#/$defs/network" },
+      "propertyNames": {
+        "$ref": "#/$defs/network"
+      },
       "additionalProperties": {
         "type": "object",
         "minProperties": 1,
-        "propertyNames": { "$ref": "#/$defs/assetRef" },
+        "propertyNames": {
+          "$ref": "#/$defs/assetRef"
+        },
         "additionalProperties": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["reject_above"],
-          "properties": { "reject_above": { "$ref": "#/$defs/amount" } }
+          "required": [
+            "reject_above"
+          ],
+          "properties": {
+            "reject_above": {
+              "$ref": "#/$defs/amount"
+            }
+          }
         }
       }
     },
     "rekeyPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowed"],
+      "required": [
+        "allowed"
+      ],
       "description": "Authorizes pure 0-ALGO self-payment rekeys whose sender and target match an allowed edge.",
       "properties": {
         "allowed": {
@@ -152,84 +359,248 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sender", "targets"],
+            "required": [
+              "sender",
+              "targets"
+            ],
             "properties": {
-              "sender": { "$ref": "#/$defs/addressOrSet" },
-              "targets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/addressOrSet" } }
+              "sender": {
+                "$ref": "#/$defs/addressOrSet"
+              },
+              "targets": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/addressOrSet"
+                }
+              }
             }
           }
         }
       }
     },
-
     "routeShape": {
       "type": "object",
-      "required": ["id", "networks", "sources", "assets", "destinations"],
+      "required": [
+        "id",
+        "networks",
+        "sources",
+        "assets",
+        "destinations"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$", "maxLength": 64 },
-        "description": { "$ref": "#/$defs/description" },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "maxLength": 64
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
         "networks": {
           "oneOf": [
-            { "type": "array", "const": ["*"] },
-            { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/network" } }
+            {
+              "type": "array",
+              "const": [
+                "*"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/network"
+              }
+            }
           ]
         },
-        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/addressTerm" } },
-        "assets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/assetTerm" } },
-        "destinations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/destinationTerm" } },
-        "allow_close": { "type": "boolean", "description": "Allow close-outs to this route's destinations. Not allowed with wildcard destinations." },
-        "allow_clawback": { "type": "boolean", "description": "Allow clawbacks; requires asset_sources." },
-        "asset_sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/addressTerm" }, "description": "Accounts assets may be clawed back from; only with allow_clawback." }
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/addressTerm"
+          }
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/assetTerm"
+          }
+        },
+        "destinations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/destinationTerm"
+          }
+        },
+        "allow_close": {
+          "type": "boolean",
+          "description": "Allow close-outs to this route's destinations. Not allowed with wildcard destinations."
+        },
+        "allow_clawback": {
+          "type": "boolean",
+          "description": "Allow clawbacks; requires asset_sources."
+        },
+        "asset_sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/addressTerm"
+          },
+          "description": "Accounts assets may be clawed back from; only with allow_clawback."
+        }
       }
     },
-
     "addressSets": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/setName" },
+      "propertyNames": {
+        "$ref": "#/$defs/setName"
+      },
       "additionalProperties": {
         "oneOf": [
-          { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/address" } },
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/address"
+            }
+          },
           {
             "type": "object",
             "minProperties": 1,
-            "propertyNames": { "$ref": "#/$defs/network" },
-            "additionalProperties": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/address" } }
+            "propertyNames": {
+              "$ref": "#/$defs/network"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/address"
+              }
+            }
           }
         ]
       }
     },
     "assetSets": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/setName" },
+      "propertyNames": {
+        "$ref": "#/$defs/setName"
+      },
       "additionalProperties": {
         "type": "object",
         "minProperties": 1,
-        "propertyNames": { "$ref": "#/$defs/network" },
-        "additionalProperties": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/assetRef" } }
+        "propertyNames": {
+          "$ref": "#/$defs/network"
+        },
+        "additionalProperties": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/assetRef"
+          }
+        }
       }
     },
-    "blockedDestinations": { "type": "array", "items": { "$ref": "#/$defs/address" }, "uniqueItems": true },
-    "routeMissAction": { "enum": ["reject", "review", "operator_default"] },
-
+    "blockedDestinations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/address"
+      },
+      "uniqueItems": true
+    },
+    "routeMissAction": {
+      "enum": [
+        "reject",
+        "review",
+        "operator_default"
+      ]
+    },
     "addressTerm": {
-      "anyOf": [ { "$ref": "#/$defs/address" }, { "$ref": "#/$defs/setRef" }, { "const": "*" } ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/address"
+        },
+        {
+          "$ref": "#/$defs/setRef"
+        },
+        {
+          "const": "*"
+        }
+      ]
     },
     "destinationTerm": {
-      "anyOf": [ { "$ref": "#/$defs/addressTerm" }, { "const": "self" } ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/addressTerm"
+        },
+        {
+          "const": "self"
+        }
+      ]
     },
     "addressOrSet": {
-      "anyOf": [ { "$ref": "#/$defs/address" }, { "$ref": "#/$defs/setRef" } ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/address"
+        },
+        {
+          "$ref": "#/$defs/setRef"
+        }
+      ]
     },
     "assetTerm": {
-      "anyOf": [ { "$ref": "#/$defs/assetRef" }, { "$ref": "#/$defs/setRef" }, { "const": "*" } ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/assetRef"
+        },
+        {
+          "$ref": "#/$defs/setRef"
+        },
+        {
+          "const": "*"
+        }
+      ]
     },
-    "assetRef": { "type": "string", "pattern": "^(algo|asa:[1-9][0-9]{0,19})$" },
-    "setRef": { "type": "string", "pattern": "^@[a-z0-9_-]+$" },
-    "setName": { "type": "string", "pattern": "^[a-z0-9_-]+$", "maxLength": 64 },
-    "address": { "type": "string", "pattern": "^[A-Z2-7]{58}$" },
-    "witnessKeyID": { "type": "string", "pattern": "^[A-Z2-7]{52}$" },
-    "network": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$", "maxLength": 64 },
-    "amount": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$", "description": "Unsigned decimal in base units; must fit in uint64." },
-    "description": { "type": "string", "maxLength": 1024 }
+    "assetRef": {
+      "type": "string",
+      "pattern": "^(?:algo|asa:(?:[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
+      "description": "\"algo\" or \"asa:<id>\" with an ASA ID from 1 through 18446744073709551615 (uint64)."
+    },
+    "setRef": {
+      "type": "string",
+      "pattern": "^@[a-z0-9_-]+$"
+    },
+    "setName": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "maxLength": 64
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^[A-Z2-7]{58}$"
+    },
+    "witnessKeyID": {
+      "type": "string",
+      "pattern": "^[A-Z2-7]{52}$"
+    },
+    "network": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "maxLength": 64
+    },
+    "amount": {
+      "type": "string",
+      "pattern": "^(?:0|(?:[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615))$",
+      "description": "Unsigned decimal in base units, 0 through 18446744073709551615 (uint64)."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1024
+    }
   }
 }

@@ -1,0 +1,36 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "limits": {
+    "mainnet": {
+      "algo": {
+        "review_above": "100000000",
+        "reject_above": "1000000000"
+      },
+      "asa:31566704": {
+        "reject_above": "5000000000"
+      }
+    }
+  },
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "description": "Tightens ALGO review only; inherits both reject caps",
+      "limits": {
+        "mainnet": {
+          "algo": {
+            "review_above": "50000000"
+          }
+        }
+      }
+    },
+    "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI": {
+      "description": "Explicitly removes the inherited USDC reject cap",
+      "limits": {
+        "mainnet": {
+          "asa:31566704": {
+            "reject_above": null
+          }
+        }
+      }
+    }
+  }
+}
