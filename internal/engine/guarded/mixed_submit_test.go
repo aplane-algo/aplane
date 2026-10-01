@@ -168,6 +168,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 			Account:                  guardedAuthorizer,
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			CosignerPublicKey:        cosignerHex,
+			Route:                    flowRouteGuarded,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -216,7 +217,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		len(txns),
 		map[int]guardedTarget{0: {
 			Index: 0, Sender: guarded, Account: guarded,
-			Flow: signerapi.SigningFlowBoundedCosigner1, CosignerPublicKey: cosignerHex,
+			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex,
 		}},
 		clientsign.SubmitOptions{},
 	)
