@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/version"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (s Service) Health(ir *productruntime.Runtime, sshEnabled, ipcEnabled bool) *signerapi.HealthResponse {

@@ -11,9 +11,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (e *Core) signerCacheCount() int {

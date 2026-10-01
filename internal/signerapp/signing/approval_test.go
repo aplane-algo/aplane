@@ -17,9 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestDescribeTxnForApprovalAddsAppCallMetadata(t *testing.T) {

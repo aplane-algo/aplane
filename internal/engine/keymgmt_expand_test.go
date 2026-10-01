@@ -13,8 +13,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	engconnect "github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // TestEngineGenerateKeyExpandsAddressListParams locks in the fix for the JS/MCP

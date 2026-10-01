@@ -10,7 +10,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // PreparedGroup is the canonical engine-owned representation of a grouped

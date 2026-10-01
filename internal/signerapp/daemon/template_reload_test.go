@@ -15,9 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestReloadKeysKeepsOriginalGenericTemplateDefinition(t *testing.T) {

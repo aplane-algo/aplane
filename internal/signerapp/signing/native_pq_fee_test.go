@@ -13,8 +13,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestApplyGroupFeesNativePQ(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // Warning is a structured user-visible warning emitted by application use-cases.

@@ -7,10 +7,10 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

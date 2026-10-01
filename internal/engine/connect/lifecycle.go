@@ -10,9 +10,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // ErrAlreadyConnected indicates a connect attempt while a connection to a

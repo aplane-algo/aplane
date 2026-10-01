@@ -16,11 +16,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	falconsignerops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"

@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // TransactionPrepResult contains the prepared transaction and context

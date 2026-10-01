@@ -6,7 +6,7 @@ package daemon
 import (
 	"net/http"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // handleAdminGenerate handles POST /admin/generate for key generation via REST.

@@ -6,8 +6,8 @@ package daemon
 import (
 	"net/http"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // handleSign handles the /sign endpoint for signing transactions.

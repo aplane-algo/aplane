@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // addressListResolver resolves alias/@set inputs to concrete addresses.

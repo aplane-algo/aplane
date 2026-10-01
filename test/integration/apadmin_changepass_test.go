@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 

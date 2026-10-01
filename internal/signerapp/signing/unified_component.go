@@ -8,7 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // SignComponentsWithContext dispatches one validated, discriminated component
@@ -34,10 +34,10 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 		for _, target := range req.Targets {
 			planReq.TargetIndices = append(planReq.TargetIndices, target.TargetIndex)
 			if target.Kind == signerapi.ComponentTargetKindUser {
-				planReq.Role = signerapi.ComponentSignRoleUser
+				planReq.Role = ComponentSignRoleUser
 				planReq.ComponentKey = target.AuthAddress
 			} else {
-				planReq.Role = signerapi.ComponentSignRoleCosigner
+				planReq.Role = ComponentSignRoleCosigner
 				planReq.ComponentKey = target.ComponentKey
 			}
 		}

@@ -165,8 +165,8 @@ Terminology:
 ## HTTP API Contract
 
 See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shapes, status codes, fixed runtime binding, and cancellation semantics.
-The DTO and error-code source of truth is `pkg/signerapi`; `internal/signerapi`
-contains aliases for in-repo callers, not an independent schema.
+The DTO and error-code source of truth is `pkg/signerapi`, which in-repo
+callers import directly.
 
 ### Cosigner Component Message Contract
 

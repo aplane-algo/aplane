@@ -5,8 +5,8 @@ package daemon
 
 import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (fs *Signer) newPlannerWithAudit(auditLog signersigning.AuditLogger) *signersigning.Planner {

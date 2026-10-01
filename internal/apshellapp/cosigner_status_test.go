@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {

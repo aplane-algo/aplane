@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestClassifyCosignerDiscoveryQueryErrorUsesWireCodeBeforeStatus(t *testing.T) {

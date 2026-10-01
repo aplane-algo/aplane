@@ -18,7 +18,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // jsValidate validates signing capability by sending 0 ALGO to self.

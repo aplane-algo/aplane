@@ -8,8 +8,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func ProtocolStatusMessage(state string, keyCount int) protocol.StatusMessage {

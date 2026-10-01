@@ -12,9 +12,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // BoundedAdminPreparation is the frozen signer-approved authority fragment

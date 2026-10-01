@@ -6,9 +6,9 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, req signerapi.AdminGenerateRequest) (signerapi.AdminGenerateResponse, *svcerr.Error) {

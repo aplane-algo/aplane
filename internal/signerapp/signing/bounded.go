@@ -11,8 +11,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 type boundedPath string

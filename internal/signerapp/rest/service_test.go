@@ -33,7 +33,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -49,6 +48,7 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

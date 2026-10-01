@@ -14,10 +14,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -172,7 +172,7 @@ func userComponentGateRequest(t *testing.T, sender string, txns []types.Transact
 	}
 	return componentPlanRequest{
 		RequestID:     "cmp-gate-test",
-		Role:          signerapi.ComponentSignRoleUser,
+		Role:          ComponentSignRoleUser,
 		ComponentKey:  sender,
 		GroupBytesHex: groupBytesHex,
 		TargetIndices: targetIndices,

@@ -17,11 +17,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestValidateBoundedComponentPlanRequiresCosignerSpend(t *testing.T) {

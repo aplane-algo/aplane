@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -165,7 +165,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		return nil, lockedError()
 	}
 	switch plan.Role {
-	case signerapi.ComponentSignRoleUser:
+	case ComponentSignRoleUser:
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
@@ -187,7 +187,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		}
 		s.logUserComponentApproved(plan, reviewRuleID)
 		return result, nil
-	case signerapi.ComponentSignRoleCosigner:
+	case ComponentSignRoleCosigner:
 		if err := s.evaluateCosignerComponentPolicy(plan); err != nil {
 			return nil, err
 		}

@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

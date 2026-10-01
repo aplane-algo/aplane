@@ -29,12 +29,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestGuardedTargetsNormalizeCosignerPublicKey(t *testing.T) {

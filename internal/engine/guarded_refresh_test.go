@@ -19,8 +19,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func testCosignerPublicKeyHex(prefix byte) string {
