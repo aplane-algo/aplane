@@ -263,29 +263,11 @@ func SaveStoredCosignerConfigWithKeyring(dataRoot string, cfg *StoredConfig, kr 
 	return SaveStoredCosignerConfigWithIntegrity(dataRoot, cfg, kr, signedAt)
 }
 
-// SavePolicyBytesWithKeyring writes exact policy.yaml bytes plus
-// policy.yaml.hmac with the identity keyring.
-func SavePolicyBytesWithKeyring(dataRoot string, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return SavePolicyBytesWithIntegrity(dataRoot, policyBytes, kr, signedAt)
-}
-
-// SaveCosignerBytesWithKeyring writes exact cosigner-policy bytes plus
-// policy.yaml.hmac with the identity keyring.
-func SaveCosignerBytesWithKeyring(dataRoot string, cosignerBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return SaveCosignerBytesWithIntegrity(dataRoot, cosignerBytes, kr, signedAt)
-}
-
 // SignPolicyFileIntegrity writes policy.yaml.hmac for the current policy.yaml
 // bytes. It preserves the YAML exactly as edited and rejects malformed policy
 // before creating a trusted sidecar.
 func SignPolicyFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
 	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot), kr, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
-}
-
-// SignCosignerFileIntegrity writes policy.yaml.hmac for the current
-// cosigner-policy bytes in policy.yaml.
-func SignCosignerFileIntegrity(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(CosignerPath(dataRoot), kr, signedAt, ParseStoredCosignerConfig, "cosigner policy", "cosigner policy config", "policy integrity sidecar")
 }
 
 func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt time.Time, parser storedConfigParser, docLabel, configLabel, sidecarLabel string) error {
@@ -312,18 +294,6 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
 	return nil
-}
-
-// SignPolicyFileIntegrityWithKeyring signs the current policy.yaml bytes with
-// the identity keyring.
-func SignPolicyFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
-	return SignPolicyFileIntegrity(dataRoot, kr, signedAt)
-}
-
-// SignCosignerFileIntegrityWithKeyring signs the current cosigner-policy bytes in
-// policy.yaml with the identity keyring.
-func SignCosignerFileIntegrityWithKeyring(dataRoot string, kr *crypto.Keyring, signedAt time.Time) error {
-	return SignCosignerFileIntegrity(dataRoot, kr, signedAt)
 }
 
 // SignPolicyFileIntegrityActiveWithKeyring signs the current signer-policy

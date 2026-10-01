@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-capacity-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup store-lifecycle-test store-capacity-test store-crash-test store-release-drill soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check print-deadcode-version smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -449,14 +449,24 @@ mod-tidy-check:
 #
 # We install deadcode to a temp GOBIN rather than 'go run' so its module cache
 # side-effects don't pollute this module's go.mod/go.sum and so download noise
-# doesn't get captured as analysis output.
+# doesn't get captured as analysis output. The tool version is pinned so CI
+# results change only when this line does; it must support the go directive in
+# go.mod, or `go install` switches toolchains. Set DEADCODE_BIN_DIR to keep the
+# binary in a persistent directory (CI caches it) and reuse it across runs; the
+# directory must be specific to DEADCODE_VERSION, since an existing binary is
+# reused as-is.
+DEADCODE_VERSION ?= v0.49.0
+DEADCODE_BIN_DIR ?=
 deadcode-check: compile-docassets
 	@echo "Running deadcode analysis..."
-	@tmpbin=$$(mktemp -d); \
-	GOBIN=$$tmpbin go install golang.org/x/tools/cmd/deadcode@latest >/dev/null 2>&1 || { \
-		echo "✗ failed to install deadcode tool"; rm -rf $$tmpbin; exit 1; \
-	}; \
-	out=$$($$tmpbin/deadcode -test -tags=testmode ./... 2>&1); \
+	@if [ -n "$(DEADCODE_BIN_DIR)" ]; then bindir="$(DEADCODE_BIN_DIR)"; tmpbin=; \
+	else tmpbin=$$(mktemp -d); bindir=$$tmpbin; fi; \
+	if [ ! -x "$$bindir/deadcode" ]; then \
+		GOBIN=$$bindir go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION) >/dev/null 2>&1 || { \
+			echo "✗ failed to install deadcode tool"; rm -rf $$tmpbin; exit 1; \
+		}; \
+	fi; \
+	out=$$($$bindir/deadcode -test -tags=testmode ./... 2>&1); \
 	rc=$$?; \
 	rm -rf $$tmpbin; \
 	if [ $$rc -ne 0 ]; then \
@@ -468,6 +478,9 @@ deadcode-check: compile-docassets
 		exit 1; \
 	fi
 	@echo "✓ no dead code"
+
+print-deadcode-version:
+	@echo $(DEADCODE_VERSION)
 
 # End-to-end Systemd install test. Builds a release tarball, boots a
 # fresh Ubuntu 24.04 systemd container, runs install.sh --systemd, verifies

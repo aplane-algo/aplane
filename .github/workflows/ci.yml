@@ -40,6 +40,23 @@ jobs:
       - name: Run golangci-lint
         run: make lint
 
+      # deadcode is not in go.sum, so setup-go's cache never holds it. Cache
+      # the built binary keyed on its pinned version and the Go toolchain.
+      - name: Resolve deadcode version
+        id: deadcode
+        run: |
+          echo "version=$(make -s print-deadcode-version)" >> "$GITHUB_OUTPUT"
+          echo "go=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache deadcode binary
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/aplane-deadcode/${{ steps.deadcode.outputs.version }}
+          key: deadcode-${{ runner.os }}-${{ steps.deadcode.outputs.version }}-${{ steps.deadcode.outputs.go }}
+
+      - name: Check for dead code
+        run: make deadcode-check DEADCODE_BIN_DIR="$HOME/.cache/aplane-deadcode/${{ steps.deadcode.outputs.version }}"
+
   test:
     name: Test
     needs: lint
