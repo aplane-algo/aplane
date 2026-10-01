@@ -11,6 +11,7 @@ import (
 
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/integritysidecar"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -33,8 +34,8 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSidecar() error = %v", err)
 	}
-	if sidecar.Version != IntegritySidecarVersion || sidecar.IntegrityTerm != 1 {
-		t.Fatalf("sidecar version/term = %d/%d, want %d/1", sidecar.Version, sidecar.IntegrityTerm, IntegritySidecarVersion)
+	if sidecar.Version != integritysidecar.Version || sidecar.IntegrityTerm != 1 {
+		t.Fatalf("sidecar version/term = %d/%d, want %d/1", sidecar.Version, sidecar.IntegrityTerm, integritysidecar.Version)
 	}
 	verified, err := LoadAndVerifyGenerationWithKeyring(paths, active, cryptotest.Keyring(t, masterKey))
 	if err != nil {
