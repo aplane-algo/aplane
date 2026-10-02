@@ -255,14 +255,14 @@ func evaluateTransferMovement(movement TransferMovement, tp *TransferPolicy) (tr
 		}, true
 	}
 	if movement.AmountKnown {
-		if route, threshold, ok := aggregatedRejectThreshold(matches, movement.Network); ok && movement.Amount > threshold {
+		if route, threshold, ok := aggregatedRejectThreshold(matches, movement.Network, movement.Asset); ok && movement.Amount > threshold {
 			return transferRoutingVerdict{
 				Tier:   transferRoutingDeny,
 				RuleID: TransferRoutingRouteRuleID(route.ID, TransferRoutingRejectAboveOutcome),
 				Msg:    fmt.Sprintf("transfer routing amount %d exceeds reject threshold %d", movement.Amount, threshold),
 			}, true
 		}
-		if route, threshold, ok := aggregatedReviewThreshold(matches, movement.Network); ok && movement.Amount > threshold {
+		if route, threshold, ok := aggregatedReviewThreshold(matches, movement.Network, movement.Asset); ok && movement.Amount > threshold {
 			return transferRoutingVerdict{
 				Tier:   transferRoutingReview,
 				RuleID: TransferRoutingRouteRuleID(route.ID, TransferRoutingReviewAboveOutcome),
@@ -368,7 +368,15 @@ func assetTermsMatch(terms compiledAssetTerms, sets map[string]compiledAssetSet,
 		return true
 	}
 	if candidate.Algo {
-		return terms.Algo
+		if terms.Algo {
+			return true
+		}
+		for _, setName := range terms.Sets {
+			if _, ok := sets[setName].AlgoNetworks[network]; ok {
+				return true
+			}
+		}
+		return false
 	}
 	for _, id := range terms.ASAIDs {
 		if candidate.ASAID == id {
@@ -403,20 +411,20 @@ func anyRouteAllowsClawback(routes []CompiledTransferRoute) bool {
 	return false
 }
 
-func aggregatedRejectThreshold(routes []CompiledTransferRoute, network string) (CompiledTransferRoute, uint64, bool) {
-	return aggregateThreshold(routes, network, func(limits AmountLimits) *uint64 { return limits.RejectAbove })
+func aggregatedRejectThreshold(routes []CompiledTransferRoute, network string, asset TransferAssetRef) (CompiledTransferRoute, uint64, bool) {
+	return aggregateThreshold(routes, network, asset, func(limits AmountLimits) *uint64 { return limits.RejectAbove })
 }
 
-func aggregatedReviewThreshold(routes []CompiledTransferRoute, network string) (CompiledTransferRoute, uint64, bool) {
-	return aggregateThreshold(routes, network, func(limits AmountLimits) *uint64 { return limits.ReviewAbove })
+func aggregatedReviewThreshold(routes []CompiledTransferRoute, network string, asset TransferAssetRef) (CompiledTransferRoute, uint64, bool) {
+	return aggregateThreshold(routes, network, asset, func(limits AmountLimits) *uint64 { return limits.ReviewAbove })
 }
 
-func aggregateThreshold(routes []CompiledTransferRoute, network string, pick func(AmountLimits) *uint64) (CompiledTransferRoute, uint64, bool) {
+func aggregateThreshold(routes []CompiledTransferRoute, network string, asset TransferAssetRef, pick func(AmountLimits) *uint64) (CompiledTransferRoute, uint64, bool) {
 	var selected CompiledTransferRoute
 	var selectedThreshold uint64
 	found := false
 	for _, route := range routes {
-		limits, ok := effectiveRouteLimits(route, network)
+		limits, ok := effectiveRouteLimits(route, network, asset)
 		if !ok {
 			continue
 		}
@@ -433,7 +441,11 @@ func aggregateThreshold(routes []CompiledTransferRoute, network string, pick fun
 	return selected, selectedThreshold, found
 }
 
-func effectiveRouteLimits(route CompiledTransferRoute, network string) (AmountLimits, bool) {
+func effectiveRouteLimits(route CompiledTransferRoute, network string, asset TransferAssetRef) (AmountLimits, bool) {
+	if route.AssetLimits != nil {
+		limits, ok := route.AssetLimits[network][asset]
+		return limits, ok
+	}
 	if limits, ok := route.LimitsByNetwork[network]; ok {
 		return limits, true
 	}

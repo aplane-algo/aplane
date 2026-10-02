@@ -2,9 +2,12 @@
 
 ## Status
 
-Specified, not yet implemented. This document defines the v1 policy document
-format that replaces `policy.yaml`. Until the implementation lands, the
-running system still reads `policy.yaml` as described in
+Decoder implemented; storage not yet switched. This document defines the v1
+policy document format that replaces `policy.yaml`. The decoder, semantic
+validation, and compiler live in `internal/policy` (`jsontree.go`,
+`doc_v1.go`, `doc_v1_compile.go`), and every contract fixture is checked
+against both the JSON Schema and the decoder. Nodes still store and read
+`policy.yaml` as described in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-file-policyyaml) and
 [ARCH_POLICY.md](ARCH_POLICY.md). The system is unreleased, so v1 does not
 read or migrate `policy.yaml`.
