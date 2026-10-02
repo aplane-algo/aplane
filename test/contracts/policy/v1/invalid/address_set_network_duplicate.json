@@ -1,0 +1,8 @@
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "ops": {
+      "testnet": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM", "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"]
+    }
+  }
+}

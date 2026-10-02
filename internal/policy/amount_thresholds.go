@@ -62,7 +62,7 @@ func (t amountThresholds) check(txn types.Transaction, cfg *Config) []LintViolat
 		network := networkFromGenesisHash(txn.GenesisHash, cfg.GenesisHashResolver)
 		if network == "" {
 			add(t.unknownGenesisRuleID, fmt.Sprintf("cannot evaluate %s for unknown genesis hash %x", t.algoUnknownSubject, txn.GenesisHash[:]))
-		} else if limit := t.algo[network]; limit > 0 && txn.Amount > types.MicroAlgos(limit) {
+		} else if limit, ok := t.algo[network]; ok && txn.Amount > types.MicroAlgos(limit) {
 			add(t.algoExceededRuleID, fmt.Sprintf("payment amount %s exceeds %s %s on %s",
 				formatAlgoAmount(uint64(txn.Amount)), t.limitLabel, formatAlgoAmount(limit), network))
 		}

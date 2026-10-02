@@ -186,8 +186,12 @@ type CompiledTransferRoute struct {
 	Destinations    compiledAddressTerms
 	Limits          *AmountLimits
 	LimitsByNetwork map[string]AmountLimits
-	AllowClose      bool
-	AllowClawback   bool
+	// AssetLimits holds format-v1 route limits keyed by network and asset.
+	// When non-nil it replaces Limits and LimitsByNetwork, which only
+	// policy.yaml routes use.
+	AssetLimits   map[string]map[TransferAssetRef]AmountLimits
+	AllowClose    bool
+	AllowClawback bool
 }
 
 type AmountLimits struct {
@@ -202,6 +206,9 @@ type compiledAddressSet struct {
 
 type compiledAssetSet struct {
 	ByNetwork map[string][]uint64
+	// AlgoNetworks lists networks on which the set includes ALGO; only
+	// format-v1 sets can include ALGO.
+	AlgoNetworks map[string]struct{}
 }
 
 type compiledAddressTerms struct {
@@ -961,6 +968,9 @@ func routeAssetsForNetwork(terms compiledAssetTerms, assetSets map[string]compil
 		seen[assetUnit{ASA: id}] = struct{}{}
 	}
 	for _, setName := range terms.Sets {
+		if _, ok := assetSets[setName].AlgoNetworks[network]; ok {
+			seen[assetUnit{Algo: true}] = struct{}{}
+		}
 		for _, id := range assetSets[setName].ByNetwork[network] {
 			seen[assetUnit{ASA: id}] = struct{}{}
 		}
@@ -1131,7 +1141,7 @@ func cloneCompiledAssetSets(in map[string]compiledAssetSet) map[string]compiledA
 	}
 	out := make(map[string]compiledAssetSet, len(in))
 	for name, set := range in {
-		out[name] = compiledAssetSet{ByNetwork: cloneUintNetworkMap(set.ByNetwork)}
+		out[name] = compiledAssetSet{ByNetwork: cloneUintNetworkMap(set.ByNetwork), AlgoNetworks: cloneStringSet(set.AlgoNetworks)}
 	}
 	return out
 }
@@ -1150,6 +1160,21 @@ func cloneCompiledRoutes(in []CompiledTransferRoute) []CompiledTransferRoute {
 		out[i].Destinations = cloneAddressTerms(route.Destinations)
 		out[i].Limits = cloneAmountLimits(route.Limits)
 		out[i].LimitsByNetwork = cloneLimitsByNetwork(route.LimitsByNetwork)
+		out[i].AssetLimits = cloneAssetLimits(route.AssetLimits)
+	}
+	return out
+}
+
+func cloneAssetLimits(in map[string]map[TransferAssetRef]AmountLimits) map[string]map[TransferAssetRef]AmountLimits {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]map[TransferAssetRef]AmountLimits, len(in))
+	for network, assets := range in {
+		out[network] = make(map[TransferAssetRef]AmountLimits, len(assets))
+		for asset, limits := range assets {
+			out[network][asset] = *cloneAmountLimits(&limits)
+		}
 	}
 	return out
 }

@@ -464,6 +464,7 @@
           {
             "type": "array",
             "minItems": 1,
+            "uniqueItems": true,
             "items": {
               "$ref": "#/$defs/address"
             }
@@ -477,6 +478,7 @@
             "additionalProperties": {
               "type": "array",
               "minItems": 1,
+              "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/address"
               }
