@@ -372,24 +372,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 }
 
 func ProtocolPolicyMessage(id string, view adminproto.PolicyView) protocol.PolicyMessage {
-	msg := protocol.PolicyMessage{
-		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: id},
-		Success:         view.Success,
-		NodeRole:        view.NodeRole,
-		PolicySetSHA256: view.PolicySetSHA256,
-		GenerationID:    view.GenerationID,
-		Code:            view.Code,
-		Error:           view.Error,
-	}
-	for _, doc := range view.Documents {
-		msg.Documents = append(msg.Documents, protocol.PolicyDocumentWire{
-			Key: doc.Key, Document: doc.Document, SHA256: doc.SHA256, SignedAtUnix: doc.SignedAtUnix,
-		})
-	}
-	for _, key := range view.Keys {
-		msg.Keys = append(msg.Keys, protocol.PolicyKeyStatusWire{Key: key.Key, Status: key.Status})
-	}
-	return msg
+	return view.Wire(id)
 }
 
 func ProtocolCheckPolicyResultMessage(id string, result adminproto.CheckPolicyResult) protocol.CheckPolicyResultMessage {

@@ -7,7 +7,6 @@
 package policyapply
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -33,31 +32,34 @@ import (
 // Operation is the generation manifest operation for a policy apply.
 const Operation = "policy-apply"
 
-// MaxPolicySetWireBytes bounds a node's encoded policy documents so the
-// get_policy and apply_policy responses, which carry all of them, fit in one
-// admin frame. The remainder of the frame covers the envelope, digests, and
-// cosigner key status.
-const MaxPolicySetWireBytes = protocol.MaxAdminMessageBytes - 256<<10
+// MaxPolicyResponseBytes bounds the encoded apply_policy response, the
+// largest message that carries a node's whole policy, so it and get_policy fit
+// in one admin frame. The remainder of the frame covers the request ID.
+const MaxPolicyResponseBytes = protocol.MaxAdminMessageBytes - 4<<10
 
-// encodedDocumentsSize returns the JSON size of docs as the admin protocol
-// carries them, including string escaping.
-func encodedDocumentsSize(docs []policy.StoredDocument) int {
-	type wireDoc struct {
-		Key          string `json:"key,omitempty"`
-		Document     string `json:"document"`
-		SHA256       string `json:"sha256"`
-		SignedAtUnix int64  `json:"signed_at_unix"`
+// policyResponseSize returns the encoded size of the apply_policy response
+// that would carry docs, including every cosigner key status.
+func policyResponseSize(env Env, docs []policy.StoredDocument) int {
+	stamped := make([]policy.StoredDocument, len(docs))
+	for i, doc := range docs {
+		stamped[i] = policy.StoredDocument{Key: doc.Key, Bytes: doc.Bytes, SignedAtUnix: time.Now().Unix()}
 	}
-	wire := make([]wireDoc, 0, len(docs))
-	for _, doc := range docs {
-		wire = append(wire, wireDoc{Key: doc.Key, Document: string(doc.Bytes), SHA256: doc.SHA256(), SignedAtUnix: time.Now().Unix()})
-	}
-	encoded, err := json.Marshal(wire)
+	np := &policyruntime.NodePolicy{Role: env.Role, Documents: stamped}
+	view := View(np, env.HeldKeys, generationIDPlaceholder)
+	wire := view.Wire("")
+	encoded, err := protocol.MarshalAdminMessage(protocol.ApplyPolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicyResult},
+		Success:     true,
+		Policy:      &wire,
+	})
 	if err != nil {
 		return math.MaxInt
 	}
 	return len(encoded)
 }
+
+// generationIDPlaceholder has the length of a generation ID.
+const generationIDPlaceholder = "gen-0000000000-00000000"
 
 // Env is the node context a policy change is checked and committed in.
 type Env struct {
@@ -134,10 +136,10 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 		return nil, nil, Error{"policy_unavailable", fmt.Sprintf("unsupported node role %q", env.Role)}
 	}
 
-	if size := encodedDocumentsSize(resulting); size > MaxPolicySetWireBytes {
+	if size := policyResponseSize(env, resulting); size > MaxPolicyResponseBytes {
 		return nil, nil, Error{"policy_set_too_large", fmt.Sprintf(
-			"the resulting policy documents encode to %d bytes; the node returns them in one admin message, which allows %d",
-			size, MaxPolicySetWireBytes)}
+			"the resulting policy would make a %d-byte policy response; one admin message allows %d",
+			size, MaxPolicyResponseBytes)}
 	}
 
 	var problems []adminproto.PolicyProblem

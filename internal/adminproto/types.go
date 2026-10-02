@@ -4,6 +4,7 @@
 package adminproto
 
 import (
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -495,6 +496,28 @@ type PolicyView struct {
 	GenerationID    string
 	Code            string
 	Error           string
+}
+
+// Wire projects the view onto the admin protocol's policy message.
+func (v PolicyView) Wire(id string) protocol.PolicyMessage {
+	msg := protocol.PolicyMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: id},
+		Success:         v.Success,
+		NodeRole:        v.NodeRole,
+		PolicySetSHA256: v.PolicySetSHA256,
+		GenerationID:    v.GenerationID,
+		Code:            v.Code,
+		Error:           v.Error,
+	}
+	for _, doc := range v.Documents {
+		msg.Documents = append(msg.Documents, protocol.PolicyDocumentWire{
+			Key: doc.Key, Document: doc.Document, SHA256: doc.SHA256, SignedAtUnix: doc.SignedAtUnix,
+		})
+	}
+	for _, key := range v.Keys {
+		msg.Keys = append(msg.Keys, protocol.PolicyKeyStatusWire{Key: key.Key, Status: key.Status})
+	}
+	return msg
 }
 
 // CheckPolicyRequest validates candidate documents without writing. Remove
