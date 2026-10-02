@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -15,13 +16,20 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
-	cfg := cosignerPolicyConfig(s.CosignerPolicy, plan.ComponentKey)
-	if cfg == nil {
+	componentKey, err := witness.NormalizeID(plan.ComponentKey)
+	if err != nil {
+		return badRequest(err.Error())
+	}
+	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
+		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
+	}
+	cfg, ok := s.CosignerPolicies[componentKey]
+	if !ok || cfg == nil {
 		return s.rejectCosignerComponentPolicy(plan, []policy.LintViolation{{
-			RuleID:   policy.CosignerPolicyMissingRuleID,
+			RuleID:   policy.CosignerKeyHasNoPolicyRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
-			Message:  "cosigner policy is not configured",
+			Message:  fmt.Sprintf("cosigner key %s has no policy", componentKey),
 		}})
 	}
 	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
@@ -45,13 +53,6 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return s.rejectCosignerComponentPolicy(plan, violations)
 	}
 	return nil
-}
-
-func cosignerPolicyConfig(cfg *policy.Config, componentKey string) *policy.Config {
-	if cfg == nil {
-		return nil
-	}
-	return cfg.ForKey(componentKey)
 }
 
 func cosignerTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintViolation {

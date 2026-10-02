@@ -32,7 +32,11 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			}
 			return func() {}, nil
 		},
-		Policy:         ir.Policy(),
-		CosignerPolicy: ir.CosignerPolicy(),
+		Policy:           ir.Policy(),
+		CosignerPolicies: ir.CosignerPolicies(),
+		HoldsCosignerKey: func(witnessKeyID string) bool {
+			_, err := ir.FindKeyFile(witnessKeyID)
+			return err == nil
+		},
 	}
 }

@@ -41,7 +41,7 @@ func (u DeletedArchiveUsage) Warning() bool {
 // overflow before reading member bytes.
 func InspectDeletedArchive(gen storepaths.GenPaths) (DeletedArchiveUsage, error) {
 	var usage DeletedArchiveUsage
-	for _, dir := range []string{gen.DeletedKeysDir(), gen.DeletedKeyTypeRecordsDir()} {
+	for _, dir := range []string{gen.DeletedKeysDir(), gen.DeletedKeyTypeRecordsDir(), gen.DeletedCosignerPoliciesDir()} {
 		info, err := os.Lstat(dir)
 		if err != nil {
 			return usage, fmt.Errorf("inspect deleted archive: %w", err)

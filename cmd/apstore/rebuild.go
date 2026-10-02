@@ -149,24 +149,10 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 			); err != nil {
 				return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 			}
-			var policyErr error
-			if nodeRole == noderole.RoleCosigner {
-				policyErr = policy.SaveStoredCosignerConfigActiveWithKeyring(
-					staged,
-					&policy.StoredConfig{},
-					kr,
-					time.Now(),
-				)
-			} else {
-				policyErr = policy.SaveStoredConfigActiveWithKeyring(
-					staged,
-					&policy.StoredConfig{},
-					kr,
-					time.Now(),
-				)
-			}
-			if policyErr != nil {
-				return fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
+			if nodeRole != noderole.RoleCosigner {
+				if err := policy.WriteInitialSignerPolicy(staged, kr, time.Now()); err != nil {
+					return fmt.Errorf("failed to create policy baseline: %w", err)
+				}
 			}
 			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
 		},

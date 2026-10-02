@@ -181,18 +181,11 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 			} else if verifiedRole.Role != ir.NodeRole() {
 				return fmt.Errorf("node role verification failed: runtime role %q does not match verified role %q", ir.NodeRole(), verifiedRole.Role)
 			}
-			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStoredActive(ir.NodeRole(), opts.DataDir, opts.Config, active, kr)
+			nodePolicy, err := policyruntime.Load(ir.NodeRole(), opts.DataDir, opts.Config, active, kr)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for product store: %w", err)
 			}
-			switch ir.NodeRole() {
-			case noderole.RoleCosigner:
-				ir.SetPolicyState(nil, nil)
-				ir.SetCosignerPolicyState(storedPolicy, effectivePolicy)
-			default:
-				ir.SetPolicyState(storedPolicy, effectivePolicy)
-				ir.SetCosignerPolicyState(nil, nil)
-			}
+			ir.SetNodePolicy(nodePolicy)
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {

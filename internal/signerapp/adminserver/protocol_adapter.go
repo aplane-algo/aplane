@@ -371,40 +371,70 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 	}
 }
 
-func ProtocolPolicySnapshotMessage(id string, snapshot adminproto.PolicySnapshot) protocol.PolicySnapshotMessage {
-	return protocol.PolicySnapshotMessage{
-		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: id},
-		Success:      snapshot.Success,
-		Target:       string(snapshot.Target),
-		PolicyYAML:   snapshot.PolicyYAML,
-		PolicySHA256: snapshot.PolicySHA256,
-		Canonical:    snapshot.Canonical,
-		Code:         snapshot.Code,
-		Error:        snapshot.Error,
+func ProtocolPolicyMessage(id string, view adminproto.PolicyView) protocol.PolicyMessage {
+	msg := protocol.PolicyMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: id},
+		Success:         view.Success,
+		NodeRole:        view.NodeRole,
+		PolicySetSHA256: view.PolicySetSHA256,
+		GenerationID:    view.GenerationID,
+		Code:            view.Code,
+		Error:           view.Error,
 	}
+	for _, doc := range view.Documents {
+		msg.Documents = append(msg.Documents, protocol.PolicyDocumentWire{
+			Key: doc.Key, Document: doc.Document, SHA256: doc.SHA256, SignedAtUnix: doc.SignedAtUnix,
+		})
+	}
+	for _, key := range view.Keys {
+		msg.Keys = append(msg.Keys, protocol.PolicyKeyStatusWire{Key: key.Key, Status: key.Status})
+	}
+	return msg
 }
 
-func ProtocolReplacePolicyResultMessage(id string, snapshot adminproto.PolicySnapshot) protocol.ReplacePolicyResultMessage {
-	return protocol.ReplacePolicyResultMessage{
-		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: id},
-		Success:      snapshot.Success,
-		Target:       string(snapshot.Target),
-		PolicyYAML:   snapshot.PolicyYAML,
-		PolicySHA256: snapshot.PolicySHA256,
-		Canonical:    snapshot.Canonical,
-		Code:         snapshot.Code,
-		Error:        snapshot.Error,
-	}
-}
-
-func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePolicyResult) protocol.ValidatePolicyResultMessage {
-	return protocol.ValidatePolicyResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: id},
+func ProtocolCheckPolicyResultMessage(id string, result adminproto.CheckPolicyResult) protocol.CheckPolicyResultMessage {
+	return protocol.CheckPolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCheckPolicyResult, ID: id},
 		Success:     result.Success,
-		Target:      string(result.Target),
+		Valid:       result.Valid,
+		Errors:      protocolPolicyProblems(result.Errors),
+		Warnings:    protocolPolicyProblems(result.Warnings),
 		Code:        result.Code,
 		Error:       result.Error,
 	}
+}
+
+func ProtocolApplyPolicyResultMessage(id string, result adminproto.ApplyPolicyResult) protocol.ApplyPolicyResultMessage {
+	msg := protocol.ApplyPolicyResultMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicyResult, ID: id},
+		Success:         result.Success,
+		Errors:          protocolPolicyProblems(result.Errors),
+		CommitUncertain: result.CommitUncertain,
+		Code:            result.Code,
+		Error:           result.Error,
+	}
+	if result.Policy != nil {
+		policyMsg := ProtocolPolicyMessage(id, *result.Policy)
+		msg.Policy = &policyMsg
+	}
+	return msg
+}
+
+// AdminPolicyDocuments converts request documents to the admin domain.
+func AdminPolicyDocuments(docs []protocol.PolicyDocumentWire) []adminproto.PolicyDocument {
+	out := make([]adminproto.PolicyDocument, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, adminproto.PolicyDocument{Key: doc.Key, Document: doc.Document})
+	}
+	return out
+}
+
+func protocolPolicyProblems(problems []adminproto.PolicyProblem) []protocol.PolicyProblemWire {
+	var out []protocol.PolicyProblemWire
+	for _, problem := range problems {
+		out = append(out, protocol.PolicyProblemWire{Key: problem.Key, Pointer: problem.Pointer, Message: problem.Message})
+	}
+	return out
 }
 
 func ProtocolCosignerReferencesListMessage(id string, result adminproto.ListCosignerReferencesResult) protocol.CosignerReferencesListMessage {

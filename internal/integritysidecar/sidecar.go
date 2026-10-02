@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package integritysidecar implements the HMAC sidecar that authenticates a
-// product store file (policy.yaml, the node role) against the product store
+// product store file (a policy document, the node role) against the product store
 // keyring. The HMAC covers the file's exact bytes. Only the Header fields are
 // security inputs; any digest or timestamp a file's sidecar adds beside them
 // is diagnostic.

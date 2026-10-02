@@ -287,9 +287,9 @@ func validateStructure(gen storepaths.GenPaths) error {
 			if _, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), name)); err != nil {
 				return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 			}
-		case slices.Contains(generationAuthorityFiles, name):
+		case isAuthorityFileName(name):
 			// Validated unconditionally above.
-		case name == "keys" || name == "keytypes" || name == "deleted":
+		case slices.Contains(generationRootDirs, name):
 			// Validated unconditionally above.
 		case isDurableWriteResidue(name):
 			// Crash residue of WriteFileDurable's temp file (a power loss
@@ -310,7 +310,11 @@ func validateGenerationAuthorityShape(gen storepaths.GenPaths) error {
 			return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
 		}
 	}
-	for _, relative := range generationAuthorityFiles {
+	authority, err := presentAuthorityFiles(gen)
+	if err != nil {
+		return fmt.Errorf("generation %s: %w", gen.GenerationID(), err)
+	}
+	for _, relative := range authority {
 		if _, _, err := fsutil.ReadRegularFile(filepath.Join(gen.Dir(), relative)); err != nil {
 			return fmt.Errorf("generation %s authority file %s: %w", gen.GenerationID(), relative, err)
 		}
@@ -320,7 +324,7 @@ func validateGenerationAuthorityShape(gen storepaths.GenPaths) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.Name() != "keys" && entry.Name() != "keytypes" {
+		if !slices.Contains(deletedArchiveNamespaces, entry.Name()) {
 			return fmt.Errorf(
 				"generation %s deleted archive contains unsupported entry %q",
 				gen.GenerationID(),
@@ -354,7 +358,7 @@ func isDurableWriteResidue(name string) bool {
 		strings.HasPrefix(name, storepaths.GenerationManifestName+".tmp-") {
 		return true
 	}
-	for _, authority := range generationAuthorityFiles {
+	for _, authority := range append(append([]string(nil), generationAuthorityFiles...), generationOptionalAuthorityFiles...) {
 		if strings.HasPrefix(name, authority+".tmp-") {
 			return true
 		}

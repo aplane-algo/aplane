@@ -542,7 +542,11 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring
 		})
 		return nil
 	}
-	for _, relative := range generationAuthorityFiles {
+	authority, err := presentAuthorityFiles(gen)
+	if err != nil {
+		return nil, 0, validation, err
+	}
+	for _, relative := range authority {
 		if len(inventory)+1 > quarantineCandidateMaxFiles {
 			return nil, 0, validation, fmt.Errorf(
 				"generation %s exceeds quarantine file limit %d",

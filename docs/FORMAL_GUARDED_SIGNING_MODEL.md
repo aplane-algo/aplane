@@ -16,13 +16,13 @@ Normative inputs:
   role-separated messages, assembly semantics, and endpoint routing trust
   model.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
-  `/sign/assemble`, endpoint registry, node role, `policy.yaml`,
+  `/sign/assemble`, endpoint registry, node role, policy documents,
   and on-disk selector contracts.
-- [ARCH_POLICY.md](ARCH_POLICY.md): cosigner-domain `policy.yaml`, cosigner
+- [ARCH_POLICY.md](ARCH_POLICY.md): per-key cosigner policy documents, cosigner
   transfer policy, deterministic reject-only route-miss behavior, and
-  Witness Key ID overrides.
+  Witness Key ID document selection.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
-  precedence. This model imports only the snapshot and overlay concepts; the
+  precedence. This model imports only the snapshot concept; the
   cosigner role has no manual-review or operator-default verdict.
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   stored key-file authority for existing keys.
@@ -108,9 +108,16 @@ signer services; clients do not verify component signatures (A10).
 
 ### Cosigner Policy Snapshot
 
-`CosignerPolicySnapshot` is the verified effective cosigner-domain `policy.yaml` snapshot
-for the cosigner node's product runtime. It contains transfer routing and sparse
-`key_overrides` keyed by Witness Key ID.
+`CosignerPolicySnapshot` is the verified set of cosigner policy documents for
+the cosigner node's product runtime: a partial map from Witness Key ID to that
+key's compiled policy (`policies/<WitnessKeyID>.json`). A held key with no entry
+has no policy; there is no node-wide default.
+
+```text
+CosignerPolicyFor(snapshot, component_key) =
+  snapshot[component_key]   if defined
+  NoPolicy                  otherwise
+```
 
 Unlike client-signing policy, cosigner policy has no manual-review verdict and
 no operator default. If no positive transfer route authorizes every target
@@ -179,9 +186,11 @@ endpoint and calls:
 POST /sign/component kind=cosigner component_key=<component_selector>
 ```
 
-The cosigner signer evaluates the cosigner-domain `policy.yaml` transfer policy for every
-target transaction before loading the component private key. The request is
-accepted only when the effective cosigner policy authorizes all target
+The cosigner signer first requires `component_key` to name a held cosigner key
+(else bad request) and to have a policy document (else reject with
+`cosigner_policy:key_has_no_policy`). It then evaluates that key's transfer
+policy for every target transaction before loading the component private key.
+The request is accepted only when that key's policy authorizes all target
 transactions.
 
 ### Sign Non-Guarded Originals
@@ -262,11 +271,12 @@ not LoadGuardedAccount(component_key) =>
 
 ### A4: Cosigner Policy Before Key Load
 
-Cosigner-role component signing evaluates the effective cosigner-domain `policy.yaml`
-policy before loading the component private key.
+Cosigner-role component signing evaluates the requested key's own policy
+document before loading the component private key.
 
 ```text
-not CosignerPolicyAllowsAllTargets(snapshot, request) =>
+CosignerPolicyFor(snapshot, request.component_key) = NoPolicy or
+not CosignerPolicyAllowsAllTargets(CosignerPolicyFor(snapshot, request.component_key), request) =>
   RejectBeforePrivateKeyLoad(request)
 ```
 
@@ -446,7 +456,8 @@ High-value test anchors:
 - direct `/sign` rejection for every cosigner and guarded account
   key type,
 - sender binding before user-role key load,
-- deterministic cosigner-domain `policy.yaml` policy rejection before cosigner key load,
+- deterministic per-key cosigner policy rejection, including a key with no
+  policy document, before cosigner key load,
 - Witness Key ID/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
 - assembly rejection for wrong cosigner signatures,

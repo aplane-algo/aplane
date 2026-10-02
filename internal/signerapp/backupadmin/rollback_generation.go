@@ -161,7 +161,7 @@ func rollbackMemberContext(
 	entry genstore.InventoryEntry,
 ) (crypto.ObjectContext, bool, error) {
 	switch entry.Path {
-	case "policy.yaml", "policy.yaml.hmac", "node.yaml.hmac":
+	case storepaths.SignerPolicyFileName, storepaths.SignerPolicyFileName + ".hmac", "node.yaml.hmac":
 		if entry.Term != 0 {
 			return crypto.ObjectContext{}, false, fmt.Errorf(
 				"rollback plaintext authority member %s carries term %d",
@@ -181,6 +181,8 @@ func rollbackMemberContext(
 	switch namespace {
 	case "keys":
 		return rollbackCredentialContext(entry.Path, name, entry.Term)
+	case "policies":
+		return rollbackPolicyContext(entry.Path, name, entry.Term)
 	case "deleted":
 		deletedNamespace, deletedName, ok := strings.Cut(name, "/")
 		if !ok {
@@ -194,6 +196,8 @@ func rollbackMemberContext(
 			return rollbackCredentialContext(entry.Path, deletedName, entry.Term)
 		case "keytypes":
 			return rollbackTemplateContext(entry.Path, deletedName, entry.Term)
+		case "policies":
+			return rollbackPolicyContext(entry.Path, deletedName, entry.Term)
 		}
 		return crypto.ObjectContext{}, false, fmt.Errorf(
 			"rollback source has unsupported deleted archive member %q",
@@ -222,6 +226,20 @@ func rollbackMemberContext(
 		"rollback source has unsupported inventory member %q",
 		entry.Path,
 	)
+}
+
+// rollbackPolicyContext accepts a plaintext cosigner policy document or
+// sidecar. Rollback keeps the outgoing policy, so these members are only
+// recognized, never copied.
+func rollbackPolicyContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
+	key, ok := strings.CutSuffix(strings.TrimSuffix(name, ".hmac"), ".json")
+	if !ok || storepaths.ValidateWitnessKeyIDComponent(key) != nil {
+		return crypto.ObjectContext{}, false, fmt.Errorf("rollback source has invalid policy member %q", path)
+	}
+	if term != 0 {
+		return crypto.ObjectContext{}, false, fmt.Errorf("rollback plaintext member %s carries term %d", path, term)
+	}
+	return crypto.ObjectContext{}, false, nil
 }
 
 func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {

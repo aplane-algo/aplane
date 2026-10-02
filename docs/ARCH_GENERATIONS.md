@@ -30,8 +30,10 @@ the retired `CURRENT` plus `keyring.enc` layout.
       keytypes/*.json|*.template
       deleted/keys/*.key|*.cos
       deleted/keytypes/*.template
-      policy.yaml
-      policy.yaml.hmac
+      deleted/policies/<WitnessKeyID>.json|.json.hmac   (cosigner nodes)
+      policy.json                                       (signer nodes)
+      policy.json.hmac                                  (signer nodes)
+      policies/<WitnessKeyID>.json|.json.hmac           (cosigner nodes)
       node.yaml.hmac
 ```
 
@@ -97,7 +99,8 @@ inventory:
 
 - active credentials and installed templates;
 - deleted credentials and templates;
-- policy document and integrity sidecar;
+- policy documents and integrity sidecars (signer `policy.json` when present,
+  cosigner `policies/` and `deleted/policies/`);
 - node-role integrity sidecar;
 - term numbers, sizes, and exact digests.
 
@@ -111,8 +114,11 @@ they are immutable except for explicit generation pruning.
 ## Ordinary generation commit
 
 Credential restore, restore rollback reconstruction, initialization, rebuild,
-and passphrase change mint generations. Ordinary key or policy mutations do
-not.
+passphrase change, and policy apply mint generations. Every policy apply or
+removal, online or rescue, mints one generation with operation `policy-apply`
+(`internal/signerapp/policyapply`), so each committed apply leaves a retained
+generation until explicit generation pruning. Ordinary key mutations do not
+mint.
 
 The commit order is:
 
@@ -165,6 +171,8 @@ Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
 comparison to fail. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
+Rollback restores only `keys/` and `keytypes/`; the outgoing generation's
+policy documents are kept.
 
 ## Reconciliation and quarantine
 

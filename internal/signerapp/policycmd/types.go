@@ -2,8 +2,8 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package policycmd owns the application workflows behind apadmin policy
-// commands. Command parsing and process exit remain in cmd/apadmin; policy
-// schemas and persistence remain in their existing owning packages.
+// commands. Command parsing and process exit remain in cmd/apadmin; the rules
+// for checking and committing policy live in policyapply.
 package policycmd
 
 import (
@@ -13,26 +13,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
 type Verb string
 
 const (
-	VerbCheck      Verb = "check"
-	VerbExport     Verb = "export"
-	VerbDigest     Verb = "digest"
-	VerbApply      Verb = "apply"
-	VerbToCosigner Verb = "to-cosigner"
+	VerbStatus Verb = "status"
+	VerbExport Verb = "export"
+	VerbCheck  Verb = "check"
+	VerbApply  Verb = "apply"
+	VerbRemove Verb = "remove"
 )
 
 var ProductionVerbs = []Verb{
-	VerbCheck,
+	VerbStatus,
 	VerbExport,
-	VerbDigest,
+	VerbCheck,
 	VerbApply,
-	VerbToCosigner,
+	VerbRemove,
 }
 
 func ParseVerb(raw string) (Verb, error) {
@@ -45,10 +45,13 @@ func ParseVerb(raw string) (Verb, error) {
 	return "", fmt.Errorf("unknown policy command %q", raw)
 }
 
+// Command is one parsed apadmin policy invocation. Args holds policy files
+// for check and apply, or Witness Key IDs for remove. Key selects one
+// cosigner document for export.
 type Command struct {
 	Verb    Verb
-	Target  policyeditor.Target
-	Source  string
+	Args    []string
+	Key     string
 	DataDir string
 }
 
@@ -56,22 +59,37 @@ func (c Command) Validate() error {
 	if _, err := ParseVerb(string(c.Verb)); err != nil {
 		return err
 	}
-	if c.Target == "" {
-		c.Target = policyeditor.TargetAuto
+	switch c.Verb {
+	case VerbStatus, VerbExport:
+		if len(c.Args) > 0 {
+			return fmt.Errorf("policy %s takes no arguments", c.Verb)
+		}
+	case VerbCheck, VerbApply:
+		if len(c.Args) == 0 {
+			return fmt.Errorf("policy %s requires at least one policy file, or - for stdin", c.Verb)
+		}
+		for _, arg := range c.Args {
+			if arg == "-" && len(c.Args) > 1 {
+				return fmt.Errorf("policy %s reads stdin only as its sole file", c.Verb)
+			}
+		}
+	case VerbRemove:
+		if len(c.Args) == 0 {
+			return fmt.Errorf("policy remove requires at least one Witness Key ID")
+		}
 	}
-	if _, err := policyeditor.ParseTarget(string(c.Target)); err != nil {
-		return err
-	}
-	if c.Verb == VerbApply && c.Source == "" {
-		return fmt.Errorf("policy apply requires a YAML file or - for stdin")
-	}
-	if c.Verb != VerbApply && c.Source == "-" {
-		return fmt.Errorf("policy %s does not read YAML from stdin; provide a file", c.Verb)
-	}
-	if c.Verb == VerbToCosigner && c.Target == policyeditor.TargetCosigner {
-		return fmt.Errorf("policy to-cosigner requires signer-policy input; --target cosigner is invalid")
+	if c.Key != "" && c.Verb != VerbExport {
+		return fmt.Errorf("--key applies only to policy export")
 	}
 	return nil
+}
+
+func (c Command) readsStdin() bool {
+	return len(c.Args) == 1 && c.Args[0] == "-" && (c.Verb == VerbCheck || c.Verb == VerbApply)
+}
+
+func (c Command) mutates() bool {
+	return c.Verb == VerbApply || c.Verb == VerbRemove
 }
 
 type Streams struct {
@@ -91,6 +109,14 @@ func (s Streams) normalized() Streams {
 		s.Stderr = io.Discard
 	}
 	return s
+}
+
+// Backend reaches a node's policy, online through the daemon or offline
+// through the store.
+type Backend interface {
+	Get(context.Context) (adminproto.PolicyView, error)
+	Check(context.Context, adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error)
+	Apply(context.Context, adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error)
 }
 
 type OnlineSession interface {

@@ -10,7 +10,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
@@ -74,13 +73,6 @@ func AcquireOfflineMutation(dataDir string) (*OfflineMutation, error) {
 	}
 	guard.uid, guard.gid, guard.socketPath = uid, gid, socketPath
 	return guard, nil
-}
-
-func (g *OfflineMutation) Bind(store *policyeditor.OfflineStore) error {
-	if g == nil || g.lock == nil {
-		return fmt.Errorf("offline policy mutation lock is not held")
-	}
-	return store.UseExclusiveMutationLock(g.lock)
 }
 
 func (g *OfflineMutation) Normalize() error {

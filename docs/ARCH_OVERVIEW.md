@@ -220,7 +220,7 @@ aplane/
 │   ├── config/                    # Client and server config loading
 │   ├── serverconfig/              # apsigner server configuration loading and validation
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
-│   ├── policy/                    # Signer and cosigner policy configuration
+│   ├── policy/                    # Signer and cosigner policy documents, compilation, and evaluation
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
 │   └── fsutil/, theme/, tokenfile/, cmdlog/, ...   # Focused support packages
 │
@@ -273,7 +273,7 @@ endpoint-routed client model.
 apsigner also reads product-store configuration:
 - `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
 - `identities/default/unlock.yaml` — product passphrase helper configuration
-- selected generation `policy.yaml` — product node-role policy
+- selected generation `policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner nodes, one per key) — product node-role policy documents in the v1 JSON format ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md))
 - selected generation `keytypes/<key_type>.json` — product state records for optional key types
 - selected generation `keytypes/<key_type>.template` — encrypted installed YAML templates
 
@@ -373,8 +373,8 @@ The process owns one `productruntime.Runtime` signing-state aggregate containing
 
 The on-disk namespace is rooted at `identities/default/`: keys live
 under `keys/`, encrypted templates and state records under `keytypes/`, deleted
-key/template archives under `deleted/`, node-role policy at `policy.yaml`, and
-runtime configuration at `config.yaml`. HTTP authentication authorizes access
+key/template/policy archives under `deleted/`, node-role policy at `policy.json`
+or `policies/`, and runtime configuration at `config.yaml`. HTTP authentication authorizes access
 to that one aggregate; admin sessions over IPC or the SSH `aplane-admin`
 subsystem bind to the same aggregate at authentication time. The aggregate has
 no runtime selector or registry.

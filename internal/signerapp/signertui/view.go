@@ -443,6 +443,10 @@ func (m Model) renderViewContent() string {
 		content = m.renderDisplaceConfirm()
 	case ViewAdminPanel:
 		content = m.renderAdminPanel()
+	case ViewPolicies:
+		content = m.renderPolicies()
+	case ViewPolicyDocument:
+		content = m.renderPolicyDocument()
 	case ViewTemplateLibrary:
 		content = m.renderTemplateLibrary()
 	case ViewTemplateInstallConfirm:

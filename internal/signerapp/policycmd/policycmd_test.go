@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,33 +15,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig"
 )
 
+const (
+	testKeyA = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	testKeyB = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+)
+
+const testSignerDoc = `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"2000"}`
+
+func testCosignerDoc(key string) string {
+	return fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, key)
+}
+
+// fakeOnlineSession plays the daemon side of the policy messages.
 type fakeOnlineSession struct {
 	status           string
 	dialCalls        int
 	closeCalls       int
 	authPassphrase   string
 	unlockPassphrase string
-	replaceRequest   protocol.ReplacePolicyMessage
-	nodeRole         string
-	snapshotTarget   string
-	snapshotPolicy   string
-	snapshotSHA      string
 	authErr          error
-	unlockResult     *protocol.UnlockResultMessage
-	replaceResult    *protocol.ReplacePolicyResultMessage
-	replaceCalls     int
-	snapshotCalls    int
-	validateCalls    int
+	policy           protocol.PolicyMessage
+	checkResult      *protocol.CheckPolicyResultMessage
+	applyResult      *protocol.ApplyPolicyResultMessage
+	checks           []protocol.CheckPolicyMessage
+	applies          []protocol.ApplyPolicyMessage
+}
+
+func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlineSession {
+	return &fakeOnlineSession{status: "unlocked", policy: protocol.PolicyMessage{
+		Success: true, NodeRole: role, Documents: docs, PolicySetSHA256: "active-set",
+	}}
 }
 
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
@@ -54,99 +68,173 @@ func (f *fakeOnlineSession) WaitForStatus(time.Duration) (*protocol.StatusMessag
 }
 func (f *fakeOnlineSession) Unlock(passphrase string, _ time.Duration) (*protocol.UnlockResultMessage, error) {
 	f.unlockPassphrase = passphrase
-	if f.unlockResult != nil {
-		return f.unlockResult, nil
-	}
 	return &protocol.UnlockResultMessage{Success: true}, nil
 }
 func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration) ([]byte, error) {
-	role := f.nodeRole
-	if role == "" {
-		role = "signer"
-	}
-	target := f.snapshotTarget
-	if target == "" {
-		target = role
-	}
-	policyYAML := f.snapshotPolicy
-	if policyYAML == "" {
-		policyYAML = "reject_foreign_rekey: true\n"
-	}
-	if target == "cosigner" {
-		policyYAML = "reject_rekey: true\n"
-	}
-	policySHA := f.snapshotSHA
-	if policySHA == "" {
-		policySHA = "active-sha"
-	}
 	switch request := message.(type) {
-	case protocol.GetAdminSettingsMessage:
-		return marshalTestMessage(protocol.AdminSettingsMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: request.ID},
-			NodeRole:    role,
-		})
-	case protocol.GetPolicySnapshotMessage:
-		f.snapshotCalls++
-		return marshalTestMessage(protocol.PolicySnapshotMessage{
-			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: request.ID},
-			Success:      true,
-			Target:       target,
-			PolicyYAML:   policyYAML,
-			PolicySHA256: policySHA,
-		})
-	case protocol.ValidatePolicyMessage:
-		f.validateCalls++
-		return marshalTestMessage(protocol.ValidatePolicyResultMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: request.ID},
-			Success:     true,
-			Target:      target,
-		})
-	case protocol.ReplacePolicyMessage:
-		f.replaceCalls++
-		f.replaceRequest = request
-		if f.replaceResult != nil {
-			result := *f.replaceResult
-			result.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID}
-			return marshalTestMessage(result)
+	case protocol.GetPolicyMessage:
+		reply := f.policy
+		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: request.ID}
+		return protocol.MarshalAdminMessage(reply)
+	case protocol.CheckPolicyMessage:
+		f.checks = append(f.checks, request)
+		reply := protocol.CheckPolicyResultMessage{Success: true, Valid: true}
+		if f.checkResult != nil {
+			reply = *f.checkResult
 		}
-		return marshalTestMessage(protocol.ReplacePolicyResultMessage{
-			BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: request.ID},
-			Success:      true,
-			Target:       "signer",
-			PolicyYAML:   request.PolicyYAML,
-			PolicySHA256: "replacement-sha",
-		})
+		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypeCheckPolicyResult, ID: request.ID}
+		return protocol.MarshalAdminMessage(reply)
+	case protocol.ApplyPolicyMessage:
+		f.applies = append(f.applies, request)
+		reply := protocol.ApplyPolicyResultMessage{Success: true, Policy: &protocol.PolicyMessage{
+			Success: true, GenerationID: "gen-new", PolicySetSHA256: "new-set",
+		}}
+		if f.applyResult != nil {
+			reply = *f.applyResult
+		}
+		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicyResult, ID: request.ID}
+		return protocol.MarshalAdminMessage(reply)
 	default:
 		return nil, errors.New("unexpected request")
 	}
 }
 
-func TestOnlineReadOnlyAutoTargetsCosignerWithoutReplacement(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	session := &fakeOnlineSession{status: "unlocked", nodeRole: "cosigner"}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetAuto,
-	}, Streams{Stdout: &stdout})
-	if err != nil {
+func writePolicyFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if session.unlockPassphrase != "" || session.replaceCalls != 0 {
-		t.Fatalf("read-only command unlocked or replaced: unlock=%q replacements=%d", session.unlockPassphrase, session.replaceCalls)
+	return path
+}
+
+func onlineEnv(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "secret")
+}
+
+func TestOnlineStatusListsCosignerCoverage(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA), SHA256: "abc"})
+	session.policy.Keys = []protocol.PolicyKeyStatusWire{{Key: testKeyA, Status: "active"}, {Key: testKeyB, Status: "no_policy"}}
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "cosigner policy OK online") {
+	out := stdout.String()
+	for _, want := range []string{"cosigner policies (2 keys)", testKeyA + "  active", testKeyB + "  no policy", "policy_set_sha256 active-set"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+	if session.unlockPassphrase != "" || len(session.applies) != 0 {
+		t.Fatal("status unlocked or applied")
+	}
+}
+
+func TestOnlineExportWritesExactDocument(t *testing.T) {
+	onlineEnv(t)
+	signer := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc + "\n"})
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: signer}).Run(context.Background(), Command{Verb: VerbExport}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != testSignerDoc+"\n" {
+		t.Fatalf("export = %q", stdout.String())
+	}
+
+	cosigner := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
+	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport}, Streams{}); err == nil || !strings.Contains(err.Error(), "--key") {
+		t.Fatalf("cosigner export without --key error = %v", err)
+	}
+	stdout.Reset()
+	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport, Key: testKeyA}, Streams{Stdout: &stdout}); err != nil || stdout.String() != testCosignerDoc(testKeyA) {
+		t.Fatalf("export --key = %q, %v", stdout.String(), err)
+	}
+	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport, Key: testKeyB}, Streams{}); err == nil {
+		t.Fatal("export of a key without a policy succeeded")
+	}
+}
+
+func TestOnlineApplyChecksThenAppliesExactBytesAgainstActiveSet(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner")
+	a := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	b := writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{a, b}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.checks) != 1 || len(session.applies) != 1 {
+		t.Fatalf("checks %d applies %d, want 1 each", len(session.checks), len(session.applies))
+	}
+	apply := session.applies[0]
+	if apply.ExpectedPolicySetSHA256 != "active-set" || len(apply.Documents) != 2 ||
+		apply.Documents[0].Key != testKeyA || apply.Documents[0].Document != testCosignerDoc(testKeyA) ||
+		apply.Documents[1].Key != testKeyB {
+		t.Fatalf("apply request = %+v", apply)
+	}
+	if !strings.Contains(stdout.String(), "policy applied as generation gen-new") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
+func TestOnlineCheckReportsProblemsByFileAndStopsApply(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner")
+	session.checkResult = &protocol.CheckPolicyResultMessage{Success: true, Errors: []protocol.PolicyProblemWire{
+		{Key: testKeyA, Pointer: "/limits", Message: "bad limit"},
+	}}
+	file := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	var stderr bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{Stderr: &stderr})
+	if !errors.Is(err, ErrPolicyInvalid) {
+		t.Fatalf("Run() error = %v, want ErrPolicyInvalid", err)
+	}
+	if !strings.Contains(stderr.String(), "error: "+file+" /limits: bad limit") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if len(session.applies) != 0 {
+		t.Fatal("an invalid policy was applied")
+	}
+}
+
+func TestOnlineApplyReportsDaemonFailureCode(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	session.applyResult = &protocol.ApplyPolicyResultMessage{Code: "policy_snapshot_changed", Error: "active policy changed"}
+	file := writePolicyFile(t, "policy.json", testSignerDoc)
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{})
+	if err == nil || !strings.Contains(err.Error(), "policy_snapshot_changed") {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestReadDocumentsEnforcesRoleShape(t *testing.T) {
+	signer := writePolicyFile(t, "policy.json", testSignerDoc)
+	if _, _, err := readDocuments([]string{signer, signer}, "signer", nil); err == nil {
+		t.Fatal("two signer files accepted")
+	}
+	noKey := writePolicyFile(t, "nokey.json", `{"format":"aplane.cosigner-policy.v1"}`)
+	if _, _, err := readDocuments([]string{noKey}, "cosigner", nil); err == nil || !strings.Contains(err.Error(), `"key"`) {
+		t.Fatalf("cosigner file without key error = %v", err)
+	}
+	a := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	again := writePolicyFile(t, "again.json", testCosignerDoc(testKeyA))
+	if _, _, err := readDocuments([]string{a, again}, "cosigner", nil); err == nil || !strings.Contains(err.Error(), "both policies") {
+		t.Fatalf("duplicate key error = %v", err)
+	}
+	empty := writePolicyFile(t, "empty.json", "  \n")
+	if _, _, err := readDocuments([]string{empty}, "signer", nil); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty file error = %v", err)
+	}
+}
+
 func TestOnlineAuthenticationFailureClosesSession(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	session := &fakeOnlineSession{authErr: errors.New("denied")}
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetSigner,
-	}, Streams{})
+	onlineEnv(t)
+	session := newFakeSession("signer")
+	session.authErr = errors.New("denied")
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{})
 	if err == nil || !strings.Contains(err.Error(), "authentication failed") {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -155,125 +243,7 @@ func TestOnlineAuthenticationFailureClosesSession(t *testing.T) {
 	}
 }
 
-func marshalTestMessage(message interface{}) ([]byte, error) {
-	return protocol.MarshalAdminMessage(message)
-}
-
-func TestOnlineApplyUsesActiveSnapshotSHAAndExactBytes(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	path := filepath.Join(t.TempDir(), "draft.yaml")
-	want := []byte("# exact draft\nreject_foreign_rekey: false\n")
-	if err := os.WriteFile(path, want, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := &fakeOnlineSession{status: "locked"}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetAuto, Source: path,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.authPassphrase != "secret" || session.unlockPassphrase != "secret" {
-		t.Fatalf("authentication/unlock passphrases = %q/%q", session.authPassphrase, session.unlockPassphrase)
-	}
-	if session.replaceRequest.ExpectedCurrentSHA256 != "active-sha" {
-		t.Fatalf("expected SHA = %q, want active-sha", session.replaceRequest.ExpectedCurrentSHA256)
-	}
-	if session.replaceRequest.PolicyYAML != string(want) {
-		t.Fatalf("replacement changed exact bytes:\n%s", session.replaceRequest.PolicyYAML)
-	}
-}
-
-func TestOnlineApplyRejectsConcurrentSnapshotChange(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	path := filepath.Join(t.TempDir(), "draft.yaml")
-	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := &fakeOnlineSession{replaceResult: &protocol.ReplacePolicyResultMessage{
-		Success: false,
-		Target:  "signer",
-		Code:    "policy_snapshot_changed",
-		Error:   "active policy changed",
-	}}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "active policy changed") {
-		t.Fatalf("Run(concurrent apply) error = %v", err)
-	}
-	if session.replaceCalls != 1 || session.replaceRequest.ExpectedCurrentSHA256 != "active-sha" {
-		t.Fatalf("replacement calls=%d expected SHA=%q", session.replaceCalls, session.replaceRequest.ExpectedCurrentSHA256)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("failed concurrent apply reported success: %q", stdout.String())
-	}
-}
-
-func TestOnlineExportUsesExactSnapshotBytes(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	want := "# daemon bytes\nreject_foreign_rekey: true\n"
-	session := &fakeOnlineSession{status: "unlocked", snapshotPolicy: want}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbExport, Target: policyeditor.TargetSigner,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stdout.String() != want {
-		t.Fatalf("export = %q, want exact snapshot %q", stdout.String(), want)
-	}
-}
-
-func TestOnlineDigestUsesDaemonSnapshotSHA(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	session := &fakeOnlineSession{
-		status: "unlocked", snapshotPolicy: "reject_foreign_rekey: true\n", snapshotSHA: "daemon-authoritative-sha",
-	}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbDigest, Target: policyeditor.TargetSigner,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stdout.String() != "daemon-authoritative-sha\n" {
-		t.Fatalf("digest = %q, want daemon snapshot SHA", stdout.String())
-	}
-}
-
-func TestOnlineToCosignerReportsUnrepresentablePolicy(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	path := filepath.Join(t.TempDir(), "policy.yaml")
-	data := []byte("transfer_policy:\n  schema_version: 1\n  enabled: true\n  on_no_route: review\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := &fakeOnlineSession{}
-	var stdout bytes.Buffer
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbToCosigner, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "cannot be converted to deterministic cosigner policy") {
-		t.Fatalf("Run(to-cosigner) error = %v", err)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("failed conversion emitted partial YAML: %q", stdout.String())
-	}
-	if session.replaceCalls != 0 {
-		t.Fatalf("failed conversion replaced policy %d times", session.replaceCalls)
-	}
-}
-
-func TestPolicyCheckAcceptsPipedPassphrase(t *testing.T) {
+func TestPolicyStatusAcceptsPipedPassphrase(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	originalOpenTTY := OpenTTY
@@ -283,18 +253,14 @@ func TestPolicyCheckAcceptsPipedPassphrase(t *testing.T) {
 		ttyCalls++
 		return nil, errors.New("no tty")
 	}
-	session := &fakeOnlineSession{}
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetSigner,
-	}, Streams{Stdin: strings.NewReader("explicit-secret\n"), Stderr: io.Discard})
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus},
+		Streams{Stdin: strings.NewReader("explicit-secret\n"), Stderr: io.Discard})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.authPassphrase != "explicit-secret" {
-		t.Fatalf("IPC authentication passphrase = %q", session.authPassphrase)
-	}
-	if ttyCalls != 0 {
-		t.Fatalf("IPC command opened /dev/tty %d times instead of consuming explicit stdin", ttyCalls)
+	if session.authPassphrase != "explicit-secret" || ttyCalls != 0 {
+		t.Fatalf("passphrase %q, tty opens %d", session.authPassphrase, ttyCalls)
 	}
 }
 
@@ -311,75 +277,8 @@ func TestLocalNonterminalPassphrasePreservesStdinAutomation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(passphrase) != "piped-secret" {
-		t.Fatalf("passphrase = %q", passphrase)
-	}
-	if ttyCalls != 0 {
-		t.Fatalf("ReadPassphrase opened /dev/tty %d times", ttyCalls)
-	}
-}
-
-func TestHeadlessApplyStdinFailsBeforeReadingYAML(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "")
-	originalOpenTTY := OpenTTY
-	t.Cleanup(func() { OpenTTY = originalOpenTTY })
-	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
-	stdin := &countingReader{}
-	session := &fakeOnlineSession{}
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: "-",
-	}, Streams{Stdin: stdin, Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "controlling terminal") {
-		t.Fatalf("Run(IPC apply -) error = %v", err)
-	}
-	if stdin.calls != 0 {
-		t.Fatalf("IPC apply read YAML stdin %d times before authentication", stdin.calls)
-	}
-	if session.dialCalls != 0 {
-		t.Fatalf("IPC apply dialed %d times before authentication input was available", session.dialCalls)
-	}
-}
-
-func TestHeadlessApplyFileAcceptsPipedPassphrase(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "")
-	path := filepath.Join(t.TempDir(), "draft.yaml")
-	want := []byte("reject_foreign_rekey: false\n")
-	if err := os.WriteFile(path, want, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := &fakeOnlineSession{status: "locked"}
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdin: strings.NewReader("explicit-secret\n"), Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.authPassphrase != "explicit-secret" || session.unlockPassphrase != "explicit-secret" {
-		t.Fatalf("IPC authentication/unlock = %q/%q", session.authPassphrase, session.unlockPassphrase)
-	}
-	if session.replaceRequest.PolicyYAML != string(want) {
-		t.Fatalf("IPC replacement changed exact bytes:\n%s", session.replaceRequest.PolicyYAML)
-	}
-}
-
-func TestRescueDraftCheckNeedsNoStoreOrPassphrase(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "")
-	path := filepath.Join(t.TempDir(), "draft.yaml")
-	if err := os.WriteFile(path, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(stdout.String(), "policy OK: "+path) {
-		t.Fatalf("stdout = %q", stdout.String())
+	if string(passphrase) != "piped-secret" || ttyCalls != 0 {
+		t.Fatalf("passphrase = %q, tty opens %d", passphrase, ttyCalls)
 	}
 }
 
@@ -387,16 +286,33 @@ type countingReader struct{ calls int }
 
 func (r *countingReader) Read([]byte) (int, error) { r.calls++; return 0, io.EOF }
 
-func TestRescueApplyWithoutIndependentPassphraseDoesNotConsumeYAML(t *testing.T) {
+func TestHeadlessApplyStdinFailsBeforeReadingDocument(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	originalOpenTTY := OpenTTY
 	t.Cleanup(func() { OpenTTY = originalOpenTTY })
 	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
 	stdin := &countingReader{}
-	err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: "-", DataDir: t.TempDir(),
-	}, Streams{Stdin: stdin, Stderr: io.Discard})
+	session := newFakeSession("signer")
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{"-"}},
+		Streams{Stdin: stdin, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "controlling terminal") {
+		t.Fatalf("Run(IPC apply -) error = %v", err)
+	}
+	if stdin.calls != 0 || session.dialCalls != 0 {
+		t.Fatalf("stdin reads %d, dials %d before a passphrase was available", stdin.calls, session.dialCalls)
+	}
+}
+
+func TestRescueApplyWithoutIndependentPassphraseDoesNotConsumeDocument(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	originalOpenTTY := OpenTTY
+	t.Cleanup(func() { OpenTTY = originalOpenTTY })
+	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
+	stdin := &countingReader{}
+	err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{"-"}, DataDir: t.TempDir()},
+		Streams{Stdin: stdin, Stderr: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), passphraseEnv) {
 		t.Fatalf("Run(rescue apply) error = %v", err)
 	}
@@ -407,15 +323,10 @@ func TestRescueApplyWithoutIndependentPassphraseDoesNotConsumeYAML(t *testing.T)
 
 func TestRetiredPassphraseEnvironmentFailsBeforeSession(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "legacy-secret")
-	session := &fakeOnlineSession{}
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetSigner,
-	}, Streams{Stderr: io.Discard})
-	if err == nil || !strings.Contains(err.Error(), "is retired") {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if session.dialCalls != 0 {
-		t.Fatalf("session dialed %d times", session.dialCalls)
+	session := newFakeSession("signer")
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "is retired") || session.dialCalls != 0 {
+		t.Fatalf("Run() error = %v, dials %d", err, session.dialCalls)
 	}
 }
 
@@ -443,122 +354,108 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 	}
 }
 
-func TestDraftDigestUsesExactBytes(t *testing.T) {
+func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")
-	path := filepath.Join(t.TempDir(), "draft.yaml")
-	data := []byte("# exact\nreject_foreign_rekey: false\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(passphraseEnv, passphrase)
+	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
+	file := writePolicyFile(t, "policy.json", want)
 	var stdout bytes.Buffer
-	err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbDigest, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdout: &stdout})
-	if err != nil {
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := stdout.String(), policy.PolicySHA256(data)+"\n"; got != want {
-		t.Fatalf("digest = %q, want %q", got, want)
+	if !strings.Contains(stdout.String(), "policy applied as generation") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	doc := verifiedSignerPolicy(t, root, passphrase)
+	if string(doc.Bytes) != want {
+		t.Fatalf("stored policy = %q, want exact bytes %q", doc.Bytes, want)
+	}
+
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbExport, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || stdout.String() != want {
+		t.Fatalf("rescue export = %q, %v", stdout.String(), err)
+	}
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyA}, DataDir: root},
+		Streams{Stderr: io.Discard}); err == nil || !strings.Contains(err.Error(), "cosigner nodes") {
+		t.Fatalf("rescue remove on a signer error = %v", err)
 	}
 }
 
-func TestRescueApplyPreservesExactBytesAndProducesVerifiedPolicy(t *testing.T) {
-	root, passphrase := initializedPolicyStore(t)
+func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t, noderole.RoleCosigner)
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
-	draft := filepath.Join(t.TempDir(), "replacement.yaml")
-	want := []byte("# exact rescue replacement\nreject_foreign_rekey: false\n")
-	if err := os.WriteFile(draft, want, 0o600); err != nil {
+	files := []string{writePolicyFile(t, "a.json", testCosignerDoc(testKeyA)), writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))}
+	var stderr bytes.Buffer
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: files, DataDir: root},
+		Streams{Stdout: io.Discard, Stderr: &stderr}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "policy is for a key this node does not hold") {
+		t.Fatalf("apply warnings = %q", stderr.String())
+	}
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyB}, DataDir: root},
+		Streams{Stdout: io.Discard, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
-	err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: draft, DataDir: root,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbStatus, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
-	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("rescue apply changed bytes:\n%s", got)
-	}
-	if err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbCheck, Target: policyeditor.TargetSigner, DataDir: root,
-	}, Streams{Stdout: io.Discard, Stderr: io.Discard}); err != nil {
-		t.Fatalf("saved policy did not verify: %v", err)
-	}
-}
-
-func TestRescueProductionExportEmitsVerifiedExactBytes(t *testing.T) {
-	root, passphrase := initializedPolicyStore(t)
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, passphrase)
-	want := []byte("# authenticated exact bytes\nreject_foreign_rekey: false\n")
-	store := policyeditor.OfflineStore{DataDir: root, Target: policyeditor.TargetSigner, Passphrase: []byte(passphrase)}
-	if err := store.SaveYAML(context.Background(), want); err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	err := (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbExport, Target: policyeditor.TargetSigner, DataDir: root,
-	}, Streams{Stdout: &stdout, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(stdout.Bytes(), want) {
-		t.Fatalf("export changed verified bytes:\n%s", stdout.Bytes())
+	if !strings.Contains(stdout.String(), testKeyA+"  key not held") || strings.Contains(stdout.String(), testKeyB) {
+		t.Fatalf("status after remove:\n%s", stdout.String())
 	}
 }
 
 func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
-	root, passphrase := initializedPolicyStore(t)
+	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
+	before := verifiedSignerPolicy(t, root, passphrase)
 	shared, err := storelock.AcquireShared(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = shared.Close() }()
-	path, err := (policyeditor.OfflineStore{DataDir: root, Passphrase: []byte(passphrase)}).ResolvedPath(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = (RescueRunner{}).Run(context.Background(), Command{
-		Verb: VerbApply, Target: policyeditor.TargetSigner, Source: filepath.Join(t.TempDir(), "missing.yaml"), DataDir: root,
-	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
+	err = (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{filepath.Join(t.TempDir(), "missing.json")}, DataDir: root},
+		Streams{Stdout: io.Discard, Stderr: io.Discard})
 	if !errors.Is(err, storelock.ErrBusy) {
 		t.Fatalf("Run(rescue apply busy) error = %v, want ErrBusy", err)
 	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(before, after) {
+	_ = shared.Close()
+	if after := verifiedSignerPolicy(t, root, passphrase); !bytes.Equal(before.Bytes, after.Bytes) {
 		t.Fatal("busy rescue apply changed production policy")
 	}
 }
 
-func initializedPolicyStore(t *testing.T) (string, string) {
+func initializedPolicyStore(t *testing.T, role noderole.Role) (string, string) {
 	t.Helper()
 	lsig.RegisterClient()
 	root := t.TempDir()
 	passphrase := "policycmd-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
-		DataDir: root, Paths: storepaths.NewPaths(root), Role: noderole.RoleSigner,
+		DataDir: root, Paths: storepaths.NewPaths(root), Role: role,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return root, passphrase
+}
+
+func verifiedSignerPolicy(t *testing.T, root, passphrase string) policy.StoredDocument {
+	t.Helper()
+	active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	doc, _, err := policy.LoadVerifiedSignerPolicy(active, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }

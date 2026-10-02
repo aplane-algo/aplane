@@ -96,30 +96,35 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 }
 
 func restrictiveAlgoPaymentPolicy(network string) string {
-	// Zero means "unset" in policy threshold maps, so use 1 microAlgo to keep
-	// the 0-ALGO validation path open while rejecting practical payments.
-	return fmt.Sprintf(`reject_foreign_rekey: false
-reject_close_remainder: false
-reject_asset_close: false
-reject_clawback: false
-max_algo_payments:
-  %s: 1
+	// reject_above "0" keeps the 0-ALGO validation path open while rejecting
+	// every nonzero payment.
+	return fmt.Sprintf(`{
+  "format": "aplane.signer-policy.v1",
+  "reject_foreign_rekey": false,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "limits": {%q: {"algo": {"reject_above": "0"}}}
+}
 `, network)
 }
 
 func permissiveIntegrationPolicy() string {
-	return `reject_foreign_rekey: false
-reject_close_remainder: false
-reject_asset_close: false
-reject_clawback: false
+	return `{
+  "format": "aplane.signer-policy.v1",
+  "reject_foreign_rekey": false,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false
+}
 `
 }
 
-func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness, signerDataDir, passphrase, policyYAML string) {
+func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness, signerDataDir, passphrase, policyJSON string) {
 	t.Helper()
 
 	path := mustActiveStorePaths(t, signerDataDir).PolicyPath()
-	if err := os.WriteFile(path, []byte(policyYAML), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(policyJSON), 0o600); err != nil {
 		t.Fatalf("failed to write policy file %s: %v", path, err)
 	}
 
@@ -127,7 +132,7 @@ func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness
 	if err != nil {
 		t.Fatalf("apstore policy sign failed: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "policy.yaml sidecar signed") {
+	if !strings.Contains(output, "policy sidecar signed") {
 		t.Fatalf("apstore policy sign output missing success markers:\n%s", output)
 	}
 
@@ -135,7 +140,7 @@ func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness
 	if err != nil {
 		t.Fatalf("apstore policy verify failed: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "policy.yaml integrity verified") {
+	if !strings.Contains(output, "policy verified") {
 		t.Fatalf("apstore policy verify output missing success markers:\n%s", output)
 	}
 }

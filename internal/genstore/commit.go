@@ -439,7 +439,11 @@ func copyNamespaces(from, to storepaths.GenPaths) error {
 			}
 		}
 	}
-	for _, relative := range generationAuthorityFiles {
+	authority, err := presentAuthorityFiles(from)
+	if err != nil {
+		return err
+	}
+	for _, relative := range authority {
 		data, mode, err := fsutil.ReadRegularFile(filepath.Join(from.Dir(), relative))
 		if err != nil {
 			return fmt.Errorf("copy generation authority file %s: %w", relative, err)
@@ -460,9 +464,11 @@ func makeGenerationDirectories(gen storepaths.GenPaths) error {
 	for _, dir := range []string{
 		gen.KeysDir(),
 		gen.KeyTypeRecordsDir(),
+		gen.CosignerPoliciesDir(),
 		gen.DeletedDir(),
 		gen.DeletedKeysDir(),
 		gen.DeletedKeyTypeRecordsDir(),
+		gen.DeletedCosignerPoliciesDir(),
 	} {
 		if err := makeNamespaceDir(dir); err != nil {
 			return err
@@ -542,9 +548,9 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 				// before the generation ever became current. Never accept.
 				return fmt.Errorf("staged generation %s carries a seal", generationID)
 			}
-		case "keys", "keytypes", "deleted":
+		case "keys", "keytypes", "policies", "deleted":
 			// Validated unconditionally above.
-		case "policy.yaml", "policy.yaml.hmac", "node.yaml.hmac":
+		case "policy.json", "policy.json.hmac", "node.yaml.hmac":
 			// Validated unconditionally above.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", generationID, name)

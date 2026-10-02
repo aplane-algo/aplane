@@ -353,13 +353,12 @@ func dispatchAdminMessage(t *testing.T, session *Session, msg any) {
 }
 
 type adminProtoWrite struct {
-	Type       string `json:"type"`
-	ID         string `json:"id"`
-	Success    bool   `json:"success,omitempty"`
-	Target     string `json:"target,omitempty"`
-	PolicyYAML string `json:"policy_yaml,omitempty"`
-	Canonical  bool   `json:"canonical,omitempty"`
-	Code       string `json:"code,omitempty"`
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	Success         bool   `json:"success,omitempty"`
+	Valid           bool   `json:"valid,omitempty"`
+	PolicySetSHA256 string `json:"policy_set_sha256,omitempty"`
+	Code            string `json:"code,omitempty"`
 }
 
 func decodeAdminProtoWrites(t *testing.T, conn *queueConn) []adminProtoWrite {

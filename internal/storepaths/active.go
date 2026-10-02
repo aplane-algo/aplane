@@ -20,6 +20,9 @@ type ActivePaths interface {
 	DeletedKeyTypeTemplate(keyType string) string
 	PolicyPath() string
 	PolicyIntegritySidecar() string
+	CosignerPoliciesDir() string
+	CosignerPolicyPath(witnessKeyID string) string
+	DeletedCosignerPoliciesDir() string
 	NodeRoleIntegritySidecar() string
 }
 

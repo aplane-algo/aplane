@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -87,15 +88,12 @@ type Runtime struct {
 	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock      func() sync.Locker
 
-	approval                atomic.Pointer[signerapproval.Coordinator]
-	authenticator           auth.Authenticator
-	runtimeCfg              *RuntimeConfig
-	nodeRole                noderole.Role
-	policyMu                sync.RWMutex
-	policyCfg               *policy.Config
-	storedPolicyCfg         *policy.StoredConfig
-	cosignerPolicyCfg       *policy.Config
-	storedCosignerPolicyCfg *policy.StoredConfig
+	approval      atomic.Pointer[signerapproval.Coordinator]
+	authenticator auth.Authenticator
+	runtimeCfg    *RuntimeConfig
+	nodeRole      noderole.Role
+	policyMu      sync.RWMutex
+	nodePolicy    *policyruntime.NodePolicy
 
 	// SSH authorized keys for this identity
 	sshKeys   []ssh.PublicKey
@@ -210,129 +208,41 @@ func (ir *Runtime) NodeRole() noderole.Role {
 	return ir.nodeRole
 }
 
-// Policy returns a copy of the effective policy for this identity.
+// Policy returns a copy of the compiled signer policy, or nil on a cosigner
+// node or before policy loads.
 func (ir *Runtime) Policy() *policy.Config {
-	ir.policyMu.RLock()
-	defer ir.policyMu.RUnlock()
-	if ir.policyCfg == nil {
-		return nil
-	}
-	return ir.policyCfg.Clone()
+	return ir.NodePolicy().SignerConfig()
 }
 
-// StoredPolicy returns a copy of the stored policy snapshot that produced the
-// currently active effective policy, if one is available.
-func (ir *Runtime) StoredPolicy() *policy.StoredConfig {
-	ir.policyMu.RLock()
-	defer ir.policyMu.RUnlock()
-	if ir.storedPolicyCfg == nil {
-		return nil
-	}
-	return ir.storedPolicyCfg.Clone()
+// CosignerPolicies returns copies of the compiled per-key cosigner policies.
+func (ir *Runtime) CosignerPolicies() map[string]*policy.Config {
+	return ir.NodePolicy().CosignerConfigs()
 }
 
-// PolicySnapshot returns copies of the active stored and effective policy
-// state. The stored snapshot can be nil when the effective policy was injected
-// by tests or compatibility code instead of loaded from policy.yaml.
-func (ir *Runtime) PolicySnapshot() (*policy.StoredConfig, *policy.Config) {
+// NodePolicy returns the node's active verified policy, or nil before policy
+// loads. The returned value is immutable and must not be modified.
+func (ir *Runtime) NodePolicy() *policyruntime.NodePolicy {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	var stored *policy.StoredConfig
-	if ir.storedPolicyCfg != nil {
-		stored = ir.storedPolicyCfg.Clone()
-	}
-	var effective *policy.Config
-	if ir.policyCfg != nil {
-		effective = ir.policyCfg.Clone()
-	}
-	return stored, effective
+	return ir.nodePolicy
 }
 
-// CosignerPolicy returns a copy of the effective cosigner component policy
-// for this identity.
-func (ir *Runtime) CosignerPolicy() *policy.Config {
-	ir.policyMu.RLock()
-	defer ir.policyMu.RUnlock()
-	if ir.cosignerPolicyCfg == nil {
-		return nil
-	}
-	return ir.cosignerPolicyCfg.Clone()
+// SetNodePolicy installs the node's verified policy as one atomic runtime
+// update. nil clears it, which rejects every request that needs policy.
+func (ir *Runtime) SetNodePolicy(p *policyruntime.NodePolicy) {
+	ir.policyMu.Lock()
+	defer ir.policyMu.Unlock()
+	ir.nodePolicy = p
 }
 
-// StoredCosignerPolicy returns a copy of the stored cosigner policy snapshot
-// that produced the currently active effective cosigner policy, if one is
-// available.
-func (ir *Runtime) StoredCosignerPolicy() *policy.StoredConfig {
-	ir.policyMu.RLock()
-	defer ir.policyMu.RUnlock()
-	if ir.storedCosignerPolicyCfg == nil {
-		return nil
-	}
-	return ir.storedCosignerPolicyCfg.Clone()
-}
-
-// CosignerPolicySnapshot returns copies of the active stored and effective
-// cosigner policy state.
-func (ir *Runtime) CosignerPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
-	ir.policyMu.RLock()
-	defer ir.policyMu.RUnlock()
-	var stored *policy.StoredConfig
-	if ir.storedCosignerPolicyCfg != nil {
-		stored = ir.storedCosignerPolicyCfg.Clone()
-	}
-	var effective *policy.Config
-	if ir.cosignerPolicyCfg != nil {
-		effective = ir.cosignerPolicyCfg.Clone()
-	}
-	return stored, effective
-}
-
-// SetPolicy installs the effective policy for this identity.
+// SetPolicy installs a compiled signer policy without stored documents. It
+// exists for tests that inject policy directly.
 func (ir *Runtime) SetPolicy(cfg *policy.Config) {
-	ir.SetPolicyState(nil, cfg)
-}
-
-// SetPolicyState installs the stored policy snapshot and the effective policy
-// for this identity as one atomic runtime update.
-func (ir *Runtime) SetPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
-	ir.policyMu.Lock()
-	defer ir.policyMu.Unlock()
 	if cfg == nil {
-		ir.storedPolicyCfg = nil
-		ir.policyCfg = nil
+		ir.SetNodePolicy(nil)
 		return
 	}
-	if stored == nil {
-		ir.storedPolicyCfg = nil
-	} else {
-		ir.storedPolicyCfg = stored.Clone()
-	}
-	ir.policyCfg = cfg.Clone()
-}
-
-// SetCosignerPolicy installs the effective cosigner policy for this
-// identity.
-func (ir *Runtime) SetCosignerPolicy(cfg *policy.Config) {
-	ir.SetCosignerPolicyState(nil, cfg)
-}
-
-// SetCosignerPolicyState installs the stored cosigner policy snapshot and
-// the effective cosigner policy for this identity as one atomic runtime
-// update.
-func (ir *Runtime) SetCosignerPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
-	ir.policyMu.Lock()
-	defer ir.policyMu.Unlock()
-	if cfg == nil {
-		ir.storedCosignerPolicyCfg = nil
-		ir.cosignerPolicyCfg = nil
-		return
-	}
-	if stored == nil {
-		ir.storedCosignerPolicyCfg = nil
-	} else {
-		ir.storedCosignerPolicyCfg = stored.Clone()
-	}
-	ir.cosignerPolicyCfg = cfg.Clone()
+	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleSigner, Signer: cfg.Clone()})
 }
 
 // --- Lock state ---

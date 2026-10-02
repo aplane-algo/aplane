@@ -181,7 +181,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	receiver := types.Address{8}.String()
 	txn := paymentTransaction(t, sender, receiver, 10)
 
-	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := (&Service{HoldsCosignerKey: holdsAllCosignerKeys}).signComponentWithContext(context.Background(), componentPlanRequest{
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -190,7 +190,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.CosignerPolicyMissingRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerKeyHasNoPolicyRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
 	}
 
@@ -209,7 +209,7 @@ func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := (&Service{HoldsCosignerKey: holdsAllCosignerKeys}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-no-policy",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
@@ -219,7 +219,7 @@ func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.CosignerPolicyMissingRuleID) {
+	if !strings.Contains(err.Message, policy.CosignerKeyHasNoPolicyRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
 	}
 	if store.calls != 0 {
@@ -233,7 +233,7 @@ func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-no-routing",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
@@ -266,7 +266,7 @@ func TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-appl",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -292,7 +292,7 @@ func TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-route-miss",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -310,53 +310,61 @@ func TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestCosignerComponentPolicyUsesComponentKeyOverride(t *testing.T) {
+func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 	source := types.Address{25}.String()
-	baseDest := types.Address{26}.String()
-	overrideDest := types.Address{27}.String()
-	componentKey := testFalconComponentSelector(t, 0xab)
-	otherComponentKey := testFalconComponentSelector(t, 0xcd)
-	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes:
-    - id: base_route
-      networks: [testnet]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-key_overrides:
-  %s:
-    transfer_policy:
-      schema_version: 1
-      enabled: true
-      routes:
-        - id: override_route
-          networks: [testnet]
-          sources: [%q]
-          assets: ["algo"]
-          destinations: [%q]
-`, source, baseDest, componentKey, source, overrideDest))
-	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
+	firstDest := types.Address{26}.String()
+	secondDest := types.Address{27}.String()
+	firstKey := testFalconComponentSelector(t, 0xab)
+	secondKey := testFalconComponentSelector(t, 0xcd)
+	svc := &Service{
+		CosignerPolicies: map[string]*policy.Config{
+			firstKey:  cosignerRoutePolicy(t, source, firstDest),
+			secondKey: cosignerRoutePolicy(t, source, secondDest),
+		},
+		HoldsCosignerKey: holdsAllCosignerKeys,
+	}
+	txn := testnetPaymentTransaction(t, source, secondDest, 1)
 	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-cosigner-key-override",
+		RequestID:     "cmp-cosigner-per-key",
 		Role:          ComponentSignRoleCosigner,
-		ComponentKey:  componentKey,
+		ComponentKey:  secondKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	})
 	if err != nil {
 		t.Fatalf("prepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{CosignerPolicy: cfg}).evaluateCosignerComponentPolicy(plan); signErr != nil {
+	if signErr := svc.evaluateCosignerComponentPolicy(plan); signErr != nil {
 		t.Fatalf("evaluateCosignerComponentPolicy() error = %v", signErr)
 	}
 
-	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{CosignerPolicy: cfg}).evaluateCosignerComponentPolicy(plan)
+	plan.ComponentKey = firstKey
+	signErr := svc.evaluateCosignerComponentPolicy(plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
-		t.Fatalf("evaluateCosignerComponentPolicy(other key) error = %#v, want route miss", signErr)
+		t.Fatalf("evaluateCosignerComponentPolicy(first key) error = %#v, want route miss", signErr)
+	}
+}
+
+func TestSignComponentCosignerRejectsKeyNotHeldBeforePolicy(t *testing.T) {
+	componentKey := testFalconComponentSelector(t, 0xab)
+	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
+	store := &componentKeyStore{}
+	svc := &Service{
+		CosignerPolicies: map[string]*policy.Config{componentKey: wildcardCosignerPolicy(t)},
+		HoldsCosignerKey: func(string) bool { return false },
+	}
+	_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-not-held",
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "not found") {
+		t.Fatalf("SignComponentWithContext() error = %#v, want key not found", err)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0", store.calls)
 	}
 }
 
@@ -371,7 +379,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-review-route-miss",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -409,7 +417,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-review-above",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -436,8 +444,9 @@ func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	_, err := (&Service{
-		CosignerPolicy: cosignerRoutePolicy(t, source, dest),
-		AuditLog:       audit,
+		CosignerPolicies: testCosignerPolicies(t, cosignerRoutePolicy(t, source, dest)),
+		HoldsCosignerKey: holdsAllCosignerKeys,
+		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey",
 		Role:          ComponentSignRoleCosigner,
@@ -494,7 +503,7 @@ rekey_policy:
 	}
 	store := &componentKeyStore{key: keyMaterial}
 
-	result, signErr := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	result, signErr := cosignerTestServiceFor(componentKey, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey-allow",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
@@ -530,7 +539,7 @@ rekey_policy:
 	txn.RekeyTo = blockedTarget
 	store := &componentKeyStore{}
 
-	_, err := (&Service{CosignerPolicy: cfg}).signComponentWithContext(context.Background(), componentPlanRequest{
+	_, err := cosignerTestServiceFor(testFalconComponentSelector(t, 0xbb), cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey-deny",
 		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xbb),
@@ -571,8 +580,9 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	result, signErr := (&Service{
-		CosignerPolicy: cosignerRoutePolicy(t, source, dest),
-		AuditLog:       audit,
+		CosignerPolicies: map[string]*policy.Config{componentKey: cosignerRoutePolicy(t, source, dest)},
+		HoldsCosignerKey: holdsAllCosignerKeys,
+		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-policy-pass",
 		Role:          ComponentSignRoleCosigner,
@@ -1321,6 +1331,23 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 	txn := paymentTransaction(t, sender, receiver, amount)
 	txn.GenesisHash = testDigest(t, apconfig.AlgorandTestnetGenesisHash)
 	return txn
+}
+
+func holdsAllCosignerKeys(string) bool { return true }
+
+// testCosignerPolicies maps cfg to the component key most tests sign with.
+func testCosignerPolicies(t *testing.T, cfg *policy.Config) map[string]*policy.Config {
+	t.Helper()
+	return map[string]*policy.Config{testFalconComponentSelector(t, 0xab): cfg}
+}
+
+func cosignerTestService(t *testing.T, cfg *policy.Config) *Service {
+	t.Helper()
+	return cosignerTestServiceFor(testFalconComponentSelector(t, 0xab), cfg)
+}
+
+func cosignerTestServiceFor(componentKey string, cfg *policy.Config) *Service {
+	return &Service{CosignerPolicies: map[string]*policy.Config{componentKey: cfg}, HoldsCosignerKey: holdsAllCosignerKeys}
 }
 
 func wildcardCosignerPolicy(t *testing.T) *policy.Config {

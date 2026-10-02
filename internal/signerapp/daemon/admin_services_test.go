@@ -420,7 +420,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 	}
 }
 
-func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
+func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -430,25 +430,29 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 	}
 
 	svc := server.adminServices()
-	uploaded := "reject_foreign_rekey: false\nmax_fee_microalgos: 4321\nalways_review_warnings: true\n"
-	result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: uploaded})
-	if !result.Success {
-		t.Fatalf("ReplacePolicy() success = false, code %q error %q", result.Code, result.Error)
+	current := svc.adminApp().GetPolicy()
+	if !current.Success {
+		t.Fatalf("GetPolicy() = %+v", current)
 	}
-	if !result.Canonical || result.PolicySHA256 == "" {
-		t.Fatalf("ReplacePolicy() result = %+v, want canonical snapshot with SHA", result)
+	uploaded := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"reject_foreign_rekey\": false,\n" +
+		"  \"max_fee_microalgos\": \"4321\",\n  \"always_review_warnings\": true\n}\n"
+	result := svc.adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Document: uploaded}},
+		ExpectedPolicySetSHA256: current.PolicySetSHA256,
+	})
+	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
+		t.Fatalf("ApplyPolicy() = %+v", result)
 	}
-	if !strings.Contains(result.PolicyYAML, "reject_foreign_rekey: false") ||
-		!strings.Contains(result.PolicyYAML, "max_fee_microalgos: 4321") {
-		t.Fatalf("canonical policy missing uploaded settings:\n%s", result.PolicyYAML)
+	if len(result.Policy.Documents) != 1 || result.Policy.Documents[0].Document != uploaded {
+		t.Fatalf("ApplyPolicy() documents = %+v, want the exact uploaded bytes", result.Policy.Documents)
 	}
 
 	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
-		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
+		t.Fatalf("ReadFile(policy.json) error = %v", err)
 	}
 	if string(onDisk) != uploaded {
-		t.Fatalf("policy.yaml = %q, want exact uploaded bytes %q", string(onDisk), uploaded)
+		t.Fatalf("policy.json = %q, want exact uploaded bytes %q", string(onDisk), uploaded)
 	}
 
 	got := ir.Policy()
@@ -456,19 +460,24 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 		t.Fatal("Policy() = nil")
 		return
 	}
-	if got.RejectForeignRekey {
-		t.Fatal("RejectForeignRekey = true, want false")
-	}
-	if got.MaxFeeMicroAlgos != 4321 {
-		t.Fatalf("MaxFeeMicroAlgos = %d, want 4321", got.MaxFeeMicroAlgos)
-	}
-	if !got.AlwaysReviewWarnings {
-		t.Fatal("AlwaysReviewWarnings = false, want true")
+	if got.RejectForeignRekey || got.MaxFeeMicroAlgos != 4321 || !got.AlwaysReviewWarnings {
+		t.Fatalf("Policy() = %+v, want the uploaded settings", got)
 	}
 	assertPolicySidecarVerifies(t, ir)
 }
 
-func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
+// applySignerPolicyDoc applies one signer document against the current
+// policy and returns the result.
+func applySignerPolicyDoc(t *testing.T, server *Signer, doc string) adminproto.ApplyPolicyResult {
+	t.Helper()
+	current := server.adminServices().adminApp().GetPolicy()
+	return server.adminServices().adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Document: doc}},
+		ExpectedPolicySetSHA256: current.PolicySetSHA256,
+	})
+}
+
+func TestApplyPolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -477,26 +486,22 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := server.adminServices()
-	baseline := "reject_foreign_rekey: false\nmax_fee_microalgos: 4321\n"
-	if result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: baseline}); !result.Success {
-		t.Fatalf("ReplacePolicy(baseline) success = false, code %q error %q", result.Code, result.Error)
+	baseline := `{"format":"aplane.signer-policy.v1","reject_foreign_rekey":false,"max_fee_microalgos":"4321"}`
+	if result := applySignerPolicyDoc(t, server, baseline); !result.Success {
+		t.Fatalf("ApplyPolicy(baseline) = %+v", result)
 	}
 
-	invalid := "max_asa_amounts:\n  testnet:\n    usdc: 1\n"
-	result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: invalid})
-	if result.Success {
-		t.Fatal("ReplacePolicy(invalid) success = true, want false")
-	}
-	if result.Code != "policy_validation_failed" {
-		t.Fatalf("ReplacePolicy(invalid) code = %q, want policy_validation_failed; error %q", result.Code, result.Error)
+	invalid := `{"format":"aplane.signer-policy.v1","limits":{"testnet":{"usdc":{"reject_above":"1"}}}}`
+	result := applySignerPolicyDoc(t, server, invalid)
+	if result.Success || result.Code != "policy_validation_failed" || len(result.Errors) != 1 {
+		t.Fatalf("ApplyPolicy(invalid) = %+v, want one policy_validation_failed problem", result)
 	}
 	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
-		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
+		t.Fatalf("ReadFile(policy.json) error = %v", err)
 	}
 	if string(onDisk) != baseline {
-		t.Fatalf("policy.yaml changed to %q, want baseline %q", string(onDisk), baseline)
+		t.Fatalf("policy.json changed to %q, want baseline %q", string(onDisk), baseline)
 	}
 	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 4321 || got.RejectForeignRekey {
 		t.Fatalf("Policy() = %+v, want unchanged baseline", got)
@@ -504,7 +509,7 @@ func TestReplacePolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	assertPolicySidecarVerifies(t, ir)
 }
 
-func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
+func TestApplyPolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -513,35 +518,31 @@ func TestReplacePolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	svc := server.adminServices()
-	baseline := "max_fee_microalgos: 4321\n"
-	if result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{PolicyYAML: baseline}); !result.Success {
-		t.Fatalf("ReplacePolicy(baseline) success = false, code %q error %q", result.Code, result.Error)
+	baseline := `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"4321"}`
+	if result := applySignerPolicyDoc(t, server, baseline); !result.Success {
+		t.Fatalf("ApplyPolicy(baseline) = %+v", result)
 	}
 
-	result := svc.adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{
-		PolicyYAML:            "max_fee_microalgos: 9999\n",
-		ExpectedCurrentSHA256: "deadbeef",
+	result := server.adminServices().adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Document: `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"9999"}`}},
+		ExpectedPolicySetSHA256: "deadbeef",
 	})
-	if result.Success {
-		t.Fatal("ReplacePolicy(stale) success = true, want false")
-	}
-	if result.Code != "policy_snapshot_changed" {
-		t.Fatalf("ReplacePolicy(stale) code = %q, want policy_snapshot_changed; error %q", result.Code, result.Error)
+	if result.Success || result.Code != "policy_snapshot_changed" {
+		t.Fatalf("ApplyPolicy(stale) = %+v, want policy_snapshot_changed", result)
 	}
 	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))
 	if err != nil {
-		t.Fatalf("ReadFile(policy.yaml) error = %v", err)
+		t.Fatalf("ReadFile(policy.json) error = %v", err)
 	}
 	if string(onDisk) != baseline {
-		t.Fatalf("policy.yaml changed to %q, want baseline %q", string(onDisk), baseline)
+		t.Fatalf("policy.json changed to %q, want baseline %q", string(onDisk), baseline)
 	}
 	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 4321 {
 		t.Fatalf("Policy() = %+v, want unchanged baseline", got)
 	}
 }
 
-func TestReplacePolicyFailsWhenLocked(t *testing.T) {
+func TestApplyPolicyFailsWhenLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -551,14 +552,9 @@ func TestReplacePolicyFailsWhenLocked(t *testing.T) {
 	}
 	ir.Lock()
 
-	result := server.adminServices().adminApp().ReplacePolicy(adminproto.ReplacePolicyRequest{
-		PolicyYAML: "max_fee_microalgos: 4321\n",
-	})
-	if result.Success {
-		t.Fatal("ReplacePolicy() success = true, want locked identity failure")
-	}
-	if result.Code != "identity_locked" || !strings.Contains(result.Error, "unlock signer before replacing policy") {
-		t.Fatalf("ReplacePolicy() result = %+v, want identity_locked message", result)
+	result := applySignerPolicyDoc(t, server, `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"4321"}`)
+	if result.Success || result.Code != "identity_locked" || !strings.Contains(result.Error, "unlock the signer before applying policy") {
+		t.Fatalf("ApplyPolicy() = %+v, want identity_locked", result)
 	}
 }
 
@@ -569,7 +565,7 @@ func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime) {
 		if err != nil {
 			return err
 		}
-		_, err = policy.LoadVerifiedStoredConfigActive(active, masterKey)
+		_, _, err = policy.LoadVerifiedSignerPolicy(active, masterKey)
 		return err
 	}); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)

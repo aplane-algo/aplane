@@ -10,7 +10,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_CONTRACTS.md`: compatibility-bearing HTTP/IPC behavior, on-disk formats, config contracts, SDK/plugin/MCP contracts
 - `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
 - `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
-- `docs/ARCH_POLICY_FORMAT.md`: v1 JSON policy document format, storage, and acceptance rules (specified; replacing `policy.yaml`)
+- `docs/ARCH_POLICY_FORMAT.md`: v1 JSON policy document format, storage (`policy.json` on signer nodes, `policies/<WitnessKeyID>.json` on cosigner nodes), and acceptance rules
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
 - `docs/ARCH_COSIGNER.md`: guarded signing and cosigner node architecture, cosigner keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
@@ -299,6 +299,7 @@ gofmt -s -w .         # Format code
 - `config.yaml`: Process-global server configuration
 - `identities/default/config.yaml`: Product runtime settings
 - `identities/default/unlock.yaml`: Product passphrase-helper configuration
+- `identities/default/generations/<gen-id>/policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner nodes): v1 JSON policy documents, each with a `.hmac` sidecar
 
 See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility details.
 

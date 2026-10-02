@@ -28,18 +28,12 @@ func TestCmdPolicyCheckAcceptsInitializedBaseline(t *testing.T) {
 func TestCmdPolicyCheckAcceptsValidTransferRoutingPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		addr := types.Address{1}.String()
-		raw := []byte(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: valid_route
-      networks: [testnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["` + addr + `"]
-`)
+		raw := []byte(`{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "valid_route", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["` + addr + `"]}
+  ]}
+}`)
 		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
@@ -52,7 +46,7 @@ transfer_policy:
 func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		policyPath := activePolicyPathForTest(t, root, passphrase)
-		policyBytes := []byte("# direct policy edit\nreject_foreign_rekey: false\n")
+		policyBytes := []byte("{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"reject_foreign_rekey\": false\n}\n")
 		if err := os.WriteFile(policyPath, policyBytes, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
@@ -60,11 +54,8 @@ func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 		err := withTestStdin(string(passphrase)+"\n", func() error {
 			return cmdPolicy([]string{"verify"})
 		})
-		if err == nil {
-			t.Fatal("cmdPolicy(verify) error = nil, want mismatch before signing")
-		}
-		if !strings.Contains(err.Error(), "policy.yaml integrity verification failed") {
-			t.Fatalf("cmdPolicy(verify) error = %v, want integrity failure", err)
+		if err == nil || !strings.Contains(err.Error(), "policy verification failed") {
+			t.Fatalf("cmdPolicy(verify) error = %v, want integrity failure before signing", err)
 		}
 
 		if err := withTestStdin(string(passphrase)+"\n", func() error {
@@ -89,11 +80,11 @@ func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 
 func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
-		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), []byte("reject_foreign_rekey: [\n"), 0o600); err != nil {
+		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), []byte(`{"format":`), 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "failed to parse policy.yaml config") {
+		if err == nil || !strings.Contains(err.Error(), "invalid JSON") {
 			t.Fatalf("cmdPolicy(check) error = %v, want parse failure", err)
 		}
 	})
@@ -101,36 +92,37 @@ func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 
 func TestCmdPolicyCheckRejectsInvalidTransferRoutingPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
-		raw := []byte(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: bad.route
-      networks: [testnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["*"]
-`)
+		raw := []byte(`{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "bad.route", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]}
+  ]}
+}`)
 		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "policy.yaml config invalid") {
-			t.Fatalf("cmdPolicy(check) error = %v, want transfer routing validation failure", err)
+		if err == nil || !strings.Contains(err.Error(), "/transfer_policy/routes/0/id") {
+			t.Fatalf("cmdPolicy(check) error = %v, want route id validation failure", err)
 		}
 	})
 }
 
 func TestCmdPolicyCheckRejectsInvalidCosignerReviewPolicy(t *testing.T) {
 	withPolicyCommandStoreWithRole(t, noderole.RoleCosigner, func(root string, passphrase []byte) {
-		raw := []byte("always_review_warnings: true\n")
-		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
+		const key = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+		raw := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + key + `",` +
+			`"limits":{"testnet":{"algo":{"review_above":"1"}}},"transfer_policy":{"routes":[]}}`)
+		active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), passphrase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kr.Zero()
+		if err := os.WriteFile(active.CosignerPolicyPath(key), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
-		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "cosigner.always_review_warnings") {
+		err = cmdPolicy([]string{"check"})
+		if err == nil || !strings.Contains(err.Error(), "cannot produce review verdicts") {
 			t.Fatalf("cmdPolicy(check) error = %v, want cosigner review rejection", err)
 		}
 	})

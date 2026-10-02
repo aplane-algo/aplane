@@ -173,26 +173,25 @@ LogicSig and native-PQ rules.
 
 ## ASA Transfer Guards
 
-Signer safety policy stores ASA transfer guard thresholds as raw units:
+Signer safety policy stores transfer guard thresholds in `limits` as raw units:
 
-```yaml
-review_asa_amounts:
-  voi_mainnet:
-    "123456": 1000000
-max_asa_amounts:
-  voi_mainnet:
-    "123456": 5000000
+```json
+"limits": {
+  "voi_mainnet": {
+    "asa:123456": { "review_above": "1000000", "reject_above": "5000000" }
+  }
+}
 ```
 
-The first map key is the network context token. The second key is the ASA ID as
-a string. The value is the raw on-chain unit threshold. `review_asa_amounts`
-requires operator review above the configured value; `max_asa_amounts` rejects
-above the configured value.
+The first map key is the network context token. The second key is the asset,
+`algo` or `asa:<id>`. Each value is a raw on-chain unit threshold written as a
+decimal string. `review_above` requires operator review above the configured
+value; `reject_above` rejects above the configured value.
 
 At enforcement time:
 
 ```text
-txn.GenesisHash -> resolver -> network token -> review_asa_amounts[token] / max_asa_amounts[token]
+txn.GenesisHash -> resolver -> network token -> limits[token][asset]
 ```
 
 Unknown genesis hashes fail closed before a transaction can use the wrong policy
@@ -200,13 +199,13 @@ bucket.
 
 ## Admin Protocol
 
-Admin IPC reads, validates, and replaces the complete policy YAML document
-through `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
-Network context tokens remain opaque YAML map keys; the admin UI must not
-hard-code `mainnet`, `testnet`, or `betanet`.
+Admin IPC reads, checks, and applies whole policy documents through
+`get_policy`, `check_policy`, and `apply_policy`. Network context tokens remain
+opaque JSON object keys; the admin surfaces must not hard-code `mainnet`,
+`testnet`, or `betanet`.
 
 The exact message contracts are documented in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 ## Plugins And SDKs
 
@@ -270,6 +269,6 @@ With that configuration:
 
 - apshell uses `voi_mainnet` for endpoint lookup and cache context,
 - signer TEAL compilation uses `networks.voi_mainnet.algod`,
-- signer policy maps Voi transactions to `review_asa_amounts.voi_mainnet` and `max_asa_amounts.voi_mainnet`,
-- ASA guards entered with numeric IDs work when the Voi algod endpoint can
-  resolve metadata for those assets.
+- signer policy maps Voi transactions to `limits.voi_mainnet`,
+- review and rejection messages show ASA amounts in display units when the Voi
+  algod endpoint can resolve metadata for those assets.

@@ -37,7 +37,12 @@ type Service struct {
 	IsUnlocked                    IsUnlockedFunc
 	BeforeExecute                 BeforeExecuteFunc
 	Policy                        *policy.Config
-	CosignerPolicy                *policy.Config
+	// CosignerPolicies maps each Witness Key ID with a policy document to
+	// its compiled policy. A key without an entry rejects every request.
+	CosignerPolicies map[string]*policy.Config
+	// HoldsCosignerKey reports whether the node holds a cosigner key,
+	// without loading it.
+	HoldsCosignerKey func(witnessKeyID string) bool
 }
 
 type SignGroupResult struct {

@@ -24,9 +24,9 @@ type ProductServices interface {
 type SettingsServices interface {
 	BuildAdminSettings() adminproto.AdminSettings
 	UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error
-	BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot
-	ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot
-	ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult
+	GetPolicy() adminproto.PolicyView
+	CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult
+	ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.ApplyPolicyResult
 }
 
 type KeyServices interface {

@@ -70,7 +70,7 @@ moved behind an existing owner.
 | `internal/signerapp/backupadmin` and `internal/backup` when invoked by it | Managed backup, restore, rollback, reconciliation |
 | `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
 | `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
-| `internal/policy`, `internal/noderole` when invoked by the daemon | Authenticated policy and node-role state |
+| `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/tokenfile` when invoked by signer administration | Product bearer-token state |
 
@@ -87,8 +87,9 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore initialize` | Offline mutation; root on systemd or data-root owner in same-UID mode |
 | `apstore rebuild` | Offline mutation into an absent product store |
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
-| `apstore policy sign` | Offline mutation for a signer that cannot load policy |
-| `apadmin policy rescue` production apply | Offline policy repair for a stopped daemon |
+| `apstore policy sign` | Offline re-signing of sidecars for hand-placed policy documents |
+| `apadmin policy rescue` reads | Offline read-only policy inspection under the shared store lock |
+| `apadmin policy rescue apply`/`remove` | Offline policy repair for a stopped daemon |
 | `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
@@ -99,10 +100,11 @@ inventory validation, and the installation-mode owner check. They preserve the
 narrow root-owned `identities/default/passphrase.cred` exception and the
 installer-owned `install/` metadata artifacts.
 
-Root-run `apadmin policy rescue` saves hold one exclusive lock across policy
-publication and managed-store ownership normalization. The already-held guard
-is passed into the offline policy store so nested save code does not reacquire
-the same flock, and a daemon cannot start between publication and repair.
+Root-run `apadmin policy rescue apply` and `remove` hold one exclusive lock
+across the policy generation commit and managed-store ownership normalization,
+so a daemon cannot start between publication and repair. They commit through
+the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
+(`status`, `export`, `check`) hold the shared store lock.
 
 ### External-file-only operations
 

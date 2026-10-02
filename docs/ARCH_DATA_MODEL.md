@@ -87,7 +87,8 @@ Important vocabulary:
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
 - identity keystores and key files,
-- product runtime config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
+- product runtime config, node-role policy documents (`policy.json` or
+  `policies/<WitnessKeyID>.json`), tokens, SSH enrollments,
   and key type state,
 - encrypted installed templates,
 - public cosigner references and witness public metadata sidecars,
@@ -146,7 +147,7 @@ DTOs and contract fixtures.
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
-| Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
+| Node-role policy | Signer identity | signer: `policy.json` plus `policy.json.hmac`; cosigner: `policies/<WitnessKeyID>.json` plus `.json.hmac` per key | client-signing `policy.Config` or per-key cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Product signer and client | signer `identities/default/aplane.token`, client `aplane.token` | product token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
 | SSH enrollment | Product signer | `identities/default/.ssh/authorized_keys` | product SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
@@ -186,7 +187,7 @@ Signer data dir
       -> selected generation key files -> runtime key indexes -> /keys and signing
       -> cosigners public references -> /keytypes generation options
       -> key type state + installed templates -> /keytypes and generation
-      -> policy.yaml + HMAC -> signer approval verdicts or cosigner component-sign authorization by node role
+      -> policy documents + HMAC -> signer approval verdicts or per-key cosigner component-sign authorization by node role
       -> API token + SSH keys -> authn
       -> approval coordinator -> sign/token prompts
       -> process-wide admin session -> admin mutations and approvals
@@ -197,7 +198,7 @@ The strongest authority chain is:
 ```text
 identity term key
   -> decrypts key files and installed templates
-  -> derives policy integrity key used to verify policy.yaml sidecar
+  -> derives policy integrity key used to verify policy document sidecars
   -> enables runtime signing session
 ```
 
@@ -252,11 +253,13 @@ identities/default/
     keys/*.wit.json        # public cosigner metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
-    policy.yaml
-    policy.yaml.hmac
+    policy.json            # signer nodes only
+    policy.json.hmac
+    policies/<WitnessKeyID>.json       # cosigner nodes only, one per key
+    policies/<WitnessKeyID>.json.hmac
     node.yaml.hmac
     cosigners/*.json
-    deleted/{keys,keytypes}/
+    deleted/{keys,keytypes,policies}/
   quarantine/generations/<gen-id>/
   aplane.token
   config.yaml
@@ -435,32 +438,37 @@ installation and enablement.
 
 ### Policy
 
-Policy is product-store durable state selected by node role:
+Policy is product-store durable state selected by node role, stored as v1 JSON
+documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)) in the selected
+generation:
 
 ```text
-policy.yaml
-policy.yaml.hmac
+policy.json                          # signer nodes
+policy.json.hmac
+policies/<WitnessKeyID>.json         # cosigner nodes, one per cosigner key
+policies/<WitnessKeyID>.json.hmac
 ```
 
-The HMAC authenticates exact YAML bytes with a key derived from the identity's
-current term key. Policy load verifies the sidecar before applying policy; a missing
-or mismatched sidecar fails closed according to the policy contract.
+Each HMAC authenticates exact document bytes with a key derived from the
+identity's current term key. Policy load verifies every sidecar before applying
+policy; a missing or mismatched sidecar, or a document that fails to decode,
+fails the node closed. Every policy change mints a new generation.
 
-`policy.yaml` is parsed according to node role. On signer nodes, it is the
-client-signing policy. Runtime client-signing policy is an effective
-`policy.Config` layered from defaults and stored YAML. It controls:
+On signer nodes, `policy.json` is the client-signing policy. Runtime
+client-signing policy is an effective `policy.Config` compiled from defaults
+and the stored document. It controls:
 
 - Always Deny rules,
 - Always Review rules,
 - Always Approve rules,
-- network-scoped ALGO and ASA transfer thresholds,
-- YAML-only `key_overrides`.
+- network-scoped, per-asset transfer thresholds,
+- per-auth-address `key_overrides`.
 
-On cosigner nodes, the same `policy.yaml` file is parsed as the cosigner component
-policy. It uses the same transfer routing model as deterministic authorization for
-`/sign/component`; it has no operator default and no review verdict. Cosigner
-`key_overrides` are keyed by Witness Key ID, while client-signing overrides
-are keyed by Algorand auth address.
+On cosigner nodes, each `policies/<WitnessKeyID>.json` is the cosigner component
+policy for that one key. It uses the same transfer routing model as deterministic
+authorization for `/sign/component`; it has no operator default and no review
+verdict. A held cosigner key without a document rejects every request. Deleting
+a cosigner key archives its policy pair under `deleted/policies/`.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 product runtime config.
@@ -774,7 +782,8 @@ projections of shell application results, not a separate backend model.
 2. Bind the authenticated selected generation and hold its unsealed term keys
    for the unlocked session.
 3. Verify root `node.yaml` against the selected generation's role HMAC sidecar.
-4. Verify and load the node-role policy domain from `policy.yaml`.
+4. Verify and load the node-role policy documents (`policy.json` or every
+   `policies/*.json`); any sidecar or decode failure stops the load.
 5. Apply node role gates.
 6. Register installed templates.
 7. Scan key files.
@@ -892,7 +901,7 @@ credentials directly because no live signer store is being mutated.
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
 | Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
-| `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or cosigner policy according to node role |
+| `policy.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; v1 signer or cosigner documents according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
 | SSH private key | client secret | client-side file, used for tunnel auth |
@@ -920,9 +929,10 @@ generation availability, provenance, and policy amount rendering.
 - `GenesisHash` is signer policy chain identity; `GenesisID` is display data.
 - Server config can seed the default `user_auto_approve`; product runtime config owns
   the effective live setting; policy owns rule verdicts.
-- Policy HMAC authenticates exact YAML bytes and fails closed on mismatch.
-- `policy.yaml` is client-signing policy on signer nodes and cosigner component
-  policy on cosigner nodes. Neither domain may wrap the other.
+- Policy HMAC authenticates exact document bytes and fails closed on mismatch.
+- `policy.json` is client-signing policy on signer nodes; `policies/<WitnessKeyID>.json`
+  is one cosigner key's component policy on cosigner nodes. Neither domain may
+  wrap the other.
 - Client signer and cosigner routing authority is `endpoints.yaml`, not
   `config.yaml`.
 - Witness Key IDs are uppercase 52-character base32-no-padding

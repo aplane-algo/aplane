@@ -152,9 +152,22 @@ signer settings and status:
 - SSH enabled state, port, fingerprint, and connected-client count
 - Signer port, TEAL compile network, and theme
 
-Policy is managed outside the TUI with the `apadmin policy`
-verbs (`check`, `export`, `digest`, `apply`, `to-cosigner`) online, or
-`apadmin policy rescue` while the daemon is stopped.
+## Policies View
+
+`p` on the key list or Settings, and the Settings `Policies` row, open a
+read-only list of the node's active policy documents, loaded with the
+`get_policy` admin message (`internal/signerapp/signertui/policy_view.go`):
+
+- signer nodes show one `policy.json` row,
+- cosigner nodes show one row per Witness Key ID with its status: `active`,
+  `no policy (rejects every request)`, or `policy, key not held`.
+
+Each row with a document shows its size, SHA-256, and applied time from the
+sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
+Enter opens a read-only scrollable view of the exact stored document, and Esc
+returns. The TUI does not edit or apply policy. Changes go through the
+`apadmin policy` verbs (`status`, `export`, `check`, `apply`, `remove`) online,
+or `apadmin policy rescue` while the daemon is stopped.
 
 ## Local Activity And Idle Locking
 

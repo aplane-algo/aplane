@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -68,13 +69,24 @@ func (s *Service) RevokeToken() (string, error) {
 	return tokenPath, nil
 }
 
-// DeleteKey moves a key file out of the active key set into the identity archive.
+// DeleteKey moves a key file out of the active key set into the identity
+// archive. Deleting a cosigner key also archives its policy document, so a
+// re-imported key starts with no policy.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
 	active, err := genstore.ResolveActive(s.keyPaths)
 	if err != nil {
 		return nil, err
 	}
-	return keymgmt.DeleteKeyActive(active, address, keyFile)
+	result, err := keymgmt.DeleteKeyActive(active, address, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	if _, class, ok := keys.ParseManagedCredentialFilename(filepath.Base(keyFile)); ok && class == keys.ManagedCredentialCosigner {
+		if err := policy.ArchiveCosignerPolicy(active, address); err != nil {
+			return nil, fmt.Errorf("key deleted, but archiving its policy failed: %w", err)
+		}
+	}
+	return result, nil
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the

@@ -651,6 +651,13 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					},
 				})
 
+			case MsgTypePolicy:
+				var policyMsg PolicyMessage
+				if err := json.Unmarshal(line, &policyMsg); err != nil {
+					continue
+				}
+				c.emit(sessionID, PolicyLoadedMsg{Policy: policyMsg})
+
 			case MsgTypeAdminSettings:
 				var settings AdminSettingsMessage
 				if err := json.Unmarshal(line, &settings); err != nil {

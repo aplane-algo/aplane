@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type storedConfigParser func([]byte) (*StoredConfig, error)
@@ -35,26 +34,6 @@ func LoadVerifiedStoredConfigDocument(dataRoot string, kr *crypto.Keyring) (*Sto
 	)
 }
 
-// LoadVerifiedStoredConfigDocumentActive reads the signer policy from one
-// already-resolved generation. The caller is responsible for resolving the
-// generation once under the applicable mutation or runtime lock.
-func LoadVerifiedStoredConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
-	return loadVerifiedStoredConfigAtPath(
-		active.PolicyPath(),
-		kr,
-		ParseStoredConfig,
-		"policy",
-		"policy config",
-	)
-}
-
-// LoadVerifiedStoredConfigActive verifies and parses the signer policy in one
-// already-resolved generation.
-func LoadVerifiedStoredConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedStoredConfigDocumentActive(active, kr)
-	return stored, err
-}
-
 // LoadVerifiedCosignerConfig reads policy.yaml for a cosigner node, verifies
 // policy.yaml.hmac against the document bytes, then parses the stored cosigner
 // policy.
@@ -73,25 +52,6 @@ func LoadVerifiedCosignerConfigDocument(dataRoot string, kr *crypto.Keyring) (*S
 		"cosigner policy",
 		"cosigner policy config",
 	)
-}
-
-// LoadVerifiedCosignerConfigDocumentActive reads the cosigner policy from one
-// already-resolved generation.
-func LoadVerifiedCosignerConfigDocumentActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, []byte, error) {
-	return loadVerifiedStoredConfigAtPath(
-		active.PolicyPath(),
-		kr,
-		ParseStoredCosignerConfig,
-		"cosigner policy",
-		"cosigner policy config",
-	)
-}
-
-// LoadVerifiedCosignerConfigActive verifies and parses the cosigner policy in one
-// already-resolved generation.
-func LoadVerifiedCosignerConfigActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*StoredConfig, error) {
-	stored, _, err := LoadVerifiedCosignerConfigDocumentActive(active, kr)
-	return stored, err
 }
 
 func loadVerifiedStoredConfigAtPath(path string, kr *crypto.Keyring, parser storedConfigParser, docLabel, parseLabel string) (*StoredConfig, []byte, error) {
@@ -151,66 +111,6 @@ func SaveStoredCosignerConfigWithIntegrity(dataRoot string, cfg *StoredConfig, k
 		return fmt.Errorf("failed to marshal cosigner policy config: %w", err)
 	}
 	return SaveCosignerBytesWithIntegrity(dataRoot, cosignerBytes, kr, signedAt)
-}
-
-// SaveStoredConfigActiveWithKeyring writes the signer policy and integrity
-// sidecar into one already-resolved generation.
-func SaveStoredConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	policyBytes, err := MarshalStoredConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal policy config: %w", err)
-	}
-	return savePolicyBytesWithIntegrityAtPath(
-		active.PolicyPath(),
-		policyBytes,
-		kr,
-		signedAt,
-		"policy config",
-		"policy integrity sidecar",
-	)
-}
-
-// SaveStoredCosignerConfigActiveWithKeyring writes the cosigner policy and
-// integrity sidecar into one already-resolved generation.
-func SaveStoredCosignerConfigActiveWithKeyring(active storepaths.ActivePaths, cfg *StoredConfig, kr *crypto.Keyring, signedAt time.Time) error {
-	policyBytes, err := MarshalStoredCosignerConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal cosigner policy config: %w", err)
-	}
-	return savePolicyBytesWithIntegrityAtPath(
-		active.PolicyPath(),
-		policyBytes,
-		kr,
-		signedAt,
-		"cosigner policy config",
-		"policy integrity sidecar",
-	)
-}
-
-// SavePolicyBytesActiveWithKeyring writes exact signer-policy bytes and their
-// integrity sidecar into one already-resolved generation.
-func SavePolicyBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(
-		active.PolicyPath(),
-		policyBytes,
-		kr,
-		signedAt,
-		"policy config",
-		"policy integrity sidecar",
-	)
-}
-
-// SaveCosignerBytesActiveWithKeyring writes exact cosigner-policy bytes and their
-// integrity sidecar into one already-resolved generation.
-func SaveCosignerBytesActiveWithKeyring(active storepaths.ActivePaths, policyBytes []byte, kr *crypto.Keyring, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(
-		active.PolicyPath(),
-		policyBytes,
-		kr,
-		signedAt,
-		"cosigner policy config",
-		"policy integrity sidecar",
-	)
 }
 
 // SavePolicyBytesWithIntegrity writes exact policy.yaml bytes plus
@@ -294,32 +194,4 @@ func signPolicyFileIntegrityAtPath(path string, kr *crypto.Keyring, signedAt tim
 		return fmt.Errorf("failed to write %s: %w", sidecarLabel, err)
 	}
 	return nil
-}
-
-// SignPolicyFileIntegrityActiveWithKeyring signs the current signer-policy
-// bytes in one already-resolved generation.
-func SignPolicyFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(
-		active.PolicyPath(),
-		kr,
-		signedAt,
-		ParseStoredConfig,
-		"policy",
-		"policy config",
-		"policy integrity sidecar",
-	)
-}
-
-// SignCosignerFileIntegrityActiveWithKeyring signs the current cosigner-policy
-// bytes in one already-resolved generation.
-func SignCosignerFileIntegrityActiveWithKeyring(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(
-		active.PolicyPath(),
-		kr,
-		signedAt,
-		ParseStoredCosignerConfig,
-		"cosigner policy",
-		"cosigner policy config",
-		"policy integrity sidecar",
-	)
 }

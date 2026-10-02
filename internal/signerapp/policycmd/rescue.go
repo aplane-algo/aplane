@@ -6,12 +6,23 @@ package policycmd
 import (
 	"context"
 	"fmt"
-	"io"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/storelock"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
+// AcquireSharedStoreLock takes the cooperative read lock for offline reads.
+var AcquireSharedStoreLock = storelock.AcquireShared
+
+// RescueRunner runs policy commands directly against a stopped daemon's
+// store. Reads hold the shared store lock; apply and remove hold the
+// exclusive lock and commit through the same rules as the daemon.
 type RescueRunner struct{}
 
 func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams) error {
@@ -21,138 +32,113 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err := RejectRetiredEnvironment(); err != nil {
 		return err
 	}
-	streams = streams.normalized()
-	target, err := rescueTarget(command)
-	if err != nil {
-		return err
-	}
-	if command.Source != "" && command.Verb != VerbApply {
-		return r.runDraft(ctx, command, streams, target)
-	}
 	if command.DataDir == "" {
-		return fmt.Errorf("signer data directory is required for production policy rescue")
+		return fmt.Errorf("signer data directory is required for policy rescue")
 	}
-	return r.runProduction(ctx, command, streams, target)
-}
+	streams = streams.normalized()
 
-func (r RescueRunner) runDraft(ctx context.Context, command Command, streams Streams, target policyeditor.Target) error {
-	parseTarget := target
-	if command.Verb == VerbToCosigner {
-		parseTarget = policyeditor.TargetSigner
-	}
-	fileStore := &policyeditor.FileStore{Path: command.Source, Target: parseTarget, DataDir: command.DataDir}
-	data, stored, err := loadDraft(ctx, command, parseTarget, fileStore, streams.Stdin)
-	if err != nil {
-		return err
-	}
-	return (loadedDocument{
-		command: command, streams: streams, store: fileStore, stored: stored,
-		exactYAML: data, target: parseTarget,
-		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
-		dataDir: command.DataDir,
-	}).run()
-}
-
-func (r RescueRunner) runProduction(ctx context.Context, command Command, streams Streams, target policyeditor.Target) error {
-	cache := &passphraseCache{stdin: streams.Stdin, stderr: streams.Stderr, stdinReserved: command.Verb == VerbApply && command.Source == "-"}
-	defer cache.Clear()
-	store := &policyeditor.OfflineStore{
-		DataDir:            command.DataDir,
-		Target:             target,
-		PassphraseProvider: cache.Get,
-	}
-	defer store.ClearPassphrase()
-
-	if command.Verb == VerbApply {
-		passphrase, err := cache.Get(ctx)
-		if err != nil {
-			return err
-		}
-		store.SetPassphrase(passphrase)
-		crypto.ZeroBytes(passphrase)
-		guard, err := AcquireOfflineMutation(command.DataDir)
-		if err != nil {
-			return fmt.Errorf("refusing offline policy apply: %w", err)
+	var guard *OfflineMutation
+	if command.mutates() {
+		var err error
+		if guard, err = AcquireOfflineMutation(command.DataDir); err != nil {
+			return fmt.Errorf("refusing offline policy %s: %w", command.Verb, err)
 		}
 		defer guard.Close()
-		if err := guard.Bind(store); err != nil {
-			return fmt.Errorf("refusing offline policy apply: %w", err)
-		}
-		data, err := readSource(command.Source, streams.Stdin)
+	} else {
+		lock, err := AcquireSharedStoreLock(command.DataDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("acquire signer-store lock (stop store-mutating tools first): %w", err)
 		}
-		if err := store.SaveYAML(ctx, data); err != nil {
-			return err
-		}
-		if err := guard.Normalize(); err != nil {
-			return fmt.Errorf("policy saved, but managed store ownership normalization failed: %w", err)
-		}
-		path, err := store.ResolvedPath(ctx)
-		if err != nil {
-			return fmt.Errorf("resolve saved policy path: %w", err)
-		}
-		_, _ = fmt.Fprintf(streams.Stdout, "%s saved: %s\n", target.StatusNoun(), path)
-		return nil
+		defer func() { _ = lock.Close() }()
 	}
 
-	stored, data, err := store.LoadVerifiedYAML(ctx)
+	passphrase, err := ReadPassphrase(streams.Stdin, streams.Stderr, command.readsStdin())
 	if err != nil {
 		return err
 	}
-	if passphrase := cache.Cached(); len(passphrase) > 0 {
-		store.SetPassphrase(passphrase)
-		crypto.ZeroBytes(passphrase)
-	}
-	path, err := store.ResolvedPath(ctx)
+	paths := storepaths.NewPaths(command.DataDir)
+	_, kr, err := genstore.OpenStoreRootSelection(paths, passphrase)
+	crypto.ZeroBytes(passphrase)
 	if err != nil {
-		return fmt.Errorf("resolve policy path: %w", err)
+		return fmt.Errorf("unlock keystore: %w", err)
 	}
-	return (loadedDocument{
-		command: command, streams: streams, store: store, stored: stored,
-		exactYAML: data, target: target,
-		status:  fmt.Sprintf("%s OK: %s", target.StatusNoun(), path),
-		dataDir: command.DataDir,
-	}).run()
-}
+	defer kr.Zero()
 
-func rescueTarget(command Command) (policyeditor.Target, error) {
-	if command.Verb == VerbToCosigner {
-		return policyeditor.TargetSigner, nil
+	backend, err := newOfflineBackend(command.DataDir, paths, kr)
+	if err != nil {
+		return err
 	}
-	if command.Target == "" || command.Target == policyeditor.TargetAuto {
-		if command.Source != "" && command.Verb != VerbApply && command.DataDir == "" {
-			return policyeditor.TargetSigner, nil
+	if err := run(ctx, command, streams, backend); err != nil {
+		return err
+	}
+	if backend.committed {
+		if err := guard.Normalize(); err != nil {
+			return fmt.Errorf("policy applied, but managed store ownership normalization failed: %w", err)
 		}
-		return policyeditor.ResolveTarget(command.DataDir, policyeditor.TargetAuto)
 	}
-	return policyeditor.ResolveTarget(command.DataDir, command.Target)
+	return nil
 }
 
-type passphraseCache struct {
-	stdin         io.Reader
-	stderr        io.Writer
-	stdinReserved bool
-	passphrase    []byte
+// offlineBackend serves policy requests from the store itself.
+type offlineBackend struct {
+	env       policyapply.Env
+	current   *policyruntime.NodePolicy
+	committed bool
 }
 
-func (p *passphraseCache) Get(context.Context) ([]byte, error) {
-	if len(p.passphrase) == 0 {
-		passphrase, err := ReadPassphrase(p.stdin, p.stderr, p.stdinReserved)
-		if err != nil {
-			return nil, err
+func newOfflineBackend(dataDir string, paths storepaths.Paths, kr *crypto.Keyring) (*offlineBackend, error) {
+	cfg, err := LoadServerConfig(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("load signer config: %w", err)
+	}
+	active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
+	if err != nil {
+		return nil, err
+	}
+	role, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr)
+	if err != nil {
+		return nil, fmt.Errorf("verify node role: %w", err)
+	}
+	b := &offlineBackend{env: policyapply.Env{
+		Role: role.Role, DataDir: dataDir, Config: &cfg, KeyPaths: paths, Keyring: kr,
+	}}
+	return b, b.reload()
+}
+
+func (b *offlineBackend) reload() error {
+	active, err := genstore.ResolveStoreRootWithKeyring(b.env.KeyPaths, b.env.Keyring)
+	if err != nil {
+		return err
+	}
+	if b.current, err = policyruntime.Load(b.env.Role, b.env.DataDir, b.env.Config, active, b.env.Keyring); err != nil {
+		return fmt.Errorf("verify active policy: %w", err)
+	}
+	b.env.HeldKeys, err = policyapply.HeldCosignerKeysInGeneration(active)
+	return err
+}
+
+func (b *offlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
+	return policyapply.View(b.current, b.env.HeldKeys, ""), nil
+}
+
+func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {
+	return policyapply.Check(b.env, b.current, req), nil
+}
+
+func (b *offlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error) {
+	outcome, err := policyapply.Commit(b.env, req)
+	if err != nil {
+		return adminproto.ApplyPolicyResult{
+			Code: policyapply.Code(err, "policy_apply_failed"), Error: err.Error(),
+			Errors: outcome.Problems, CommitUncertain: outcome.Uncertain,
+		}, nil
+	}
+	if outcome.GenerationID != "" {
+		b.committed = true
+		if err := b.reload(); err != nil {
+			return adminproto.ApplyPolicyResult{}, fmt.Errorf("policy applied as generation %s, but reloading it failed: %w", outcome.GenerationID, err)
 		}
-		p.passphrase = append([]byte(nil), passphrase...)
-		crypto.ZeroBytes(passphrase)
 	}
-	return append([]byte(nil), p.passphrase...), nil
-}
-
-func (p *passphraseCache) Cached() []byte {
-	return append([]byte(nil), p.passphrase...)
-}
-
-func (p *passphraseCache) Clear() {
-	crypto.ZeroBytes(p.passphrase)
-	p.passphrase = nil
+	view := policyapply.View(b.current, b.env.HeldKeys, outcome.GenerationID)
+	return adminproto.ApplyPolicyResult{Success: true, Policy: &view}, nil
 }

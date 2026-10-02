@@ -92,9 +92,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Term key session | runtime-only secret | unsealed from `store-root.enc`, resident only while unlocked | `keystore.KeySession`, `FileKeyStore` | `internal/keystore`, `internal/signerapp/runtime` | Zeroed on lock; not exposed on wire. |
 | API token | bearer secret | `identities/default/aplane.token` | HTTP authenticator and SSH mutual-proof key | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` | Mode `0600`; never sent as SSH metadata; token revocation rotates identity credential and closes stale SSH sessions. |
 | SSH authorized keys | authoritative enrollment | `identities/default/.ssh/authorized_keys` | SSH identity key set | `internal/sshtunnel`, `internal/signerapp/sshprovision` | Token plus SSH key required; token provisioning writes after admin approval. |
-| Client-signing policy domain | authoritative safety policy | selected generation `policy.yaml` plus `policy.yaml.hmac` on signer nodes | client-signing `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
-| Cosigner component policy domain | authoritative co-sign policy | selected generation `policy.yaml` plus `policy.yaml.hmac` on cosigner nodes | cosigner policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | Same durable file contract as signer policy; no review or operator-default outcomes; missing/mismatched sidecar fails closed. |
-| Policy sidecar | authoritative integrity metadata | selected generation `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `internal/signerapp/policycmd`, `cmd/apadmin`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
+| Client-signing policy domain | authoritative safety policy | selected generation `policy.json` plus `policy.json.hmac` on signer nodes | client-signing `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | v1 `aplane.signer-policy.v1` document; HMAC over exact bytes; missing document, mismatched sidecar, or decode failure fails the node closed. |
+| Cosigner component policy domain | authoritative co-sign policy | selected generation `policies/<WitnessKeyID>.json` plus `.json.hmac`, one pair per cosigner key, on cosigner nodes | per-key cosigner policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | v1 `aplane.cosigner-policy.v1` document whose signed `key` matches the file name; no review or operator-default outcomes; a held key without a document rejects every request; any mismatched sidecar or decode failure fails the node closed. |
+| Policy sidecar | authoritative integrity metadata | selected generation `policy.json.hmac`, `policies/<WitnessKeyID>.json.hmac`, and archived `deleted/policies/*.json.hmac` JSON | HMAC verification result | `internal/policy`, `internal/integritysidecar`, `internal/signerapp/policyapply`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics such as `signed_at` are not trust inputs; passphrase rotation re-signs every policy sidecar. |
 | Key type state record | authoritative generation state | selected generation `keytypes/<key_type>.json` | enabled/disabled product-store key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | selected generation `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
 | Public cosigner reference | public product catalog | `identities/default/cosigners/<name>.json` | `/keytypes` `cosigner` select options | `internal/cosigner/cosignerrefs`, `internal/signerapp/rest`, `internal/apadminapp` | Non-generational, explicitly imported public metadata only; not endpoint ownership proof. |
@@ -180,13 +180,12 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Client-signing policy config | authoritative policy domain | `policy.yaml` interpreted on signer nodes | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
-| Cosigner policy config | authoritative policy domain | `policy.yaml` interpreted on cosigner nodes | effective cosigner component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
-| Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/signerapp/policycmd` | `schema_version:1`; route IDs are audit identifiers. |
+| Client-signing policy config | authoritative policy domain | `policy.json` interpreted on signer nodes | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
+| Cosigner policy config | authoritative policy domain | `policies/<WitnessKeyID>.json` interpreted on cosigner nodes | effective cosigner component policy for that key | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
+| Transfer policy | authoritative policy section | `transfer_policy` object | route table and movement authorization | `internal/policy` | Schema-checked by the v1 format; route IDs are audit identifiers. |
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
-| Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; cosigner overrides keyed by Witness Key ID. |
+| Policy key override | authoritative sparse override | signer `key_overrides` map | effective per-key client-signing policy | `internal/policy` | Keyed by signing auth address; scalar settings and `limits` only; limits merge per threshold. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Cosigner rejects if a review verdict would be required. |
-| Cosigner policy conversion output | derived YAML | `apadmin policy to-cosigner` input policy | deterministic "could allow" cosigner-role `policy.yaml` content | `internal/signerapp/policycmd`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
 
@@ -236,7 +235,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/sshprovision` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | backup create/list/delete, bounded import/export, preview, direct restore, rollback, and reconcile DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/backupadmin` | Import authenticates the sealed manifest and validates every credential before publication; restore validates the complete set before publishing one generation; export passphrases are parsed as `SensitiveBytes`. |
 | Admin settings messages | wire contract | settings get/update messages | process/product runtime config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | `apadmin policy` online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/cosigner writes replace whole documents and sidecars. |
+| Policy get/check/apply messages | wire/runtime projection | active policy documents or candidate documents and removals | `apadmin policy` online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyapply` | Exact document bytes; node role selects document type; `apply_policy` requires `expected_policy_set_sha256` and mints one generation per change. |
 
 ## Transaction And Signing Runtime Models
 
@@ -349,9 +348,9 @@ name a test inline:
 - Node role and key-class gates: signer startup, `internal/signerapp/productruntime`,
   `internal/signerapp/rest/service_test.go`,
   `internal/signerapp/signing/cosigner_gate.go`.
-- Policy domains, integrity, and conversion: `internal/policy/*_test.go`,
+- Policy domains and integrity: `internal/policy/*_test.go`,
   `internal/signerapp/policycmd/policycmd_test.go`, `cmd/apadmin/policy_test.go`,
-  `test/contracts/policy/*.yaml`.
+  `internal/signerapp/admin/policy_test.go`, `test/contracts/policy/v1/`.
 - Key payload parsing, scan, backup, and restore: `internal/keys`,
   `internal/backup/service_test.go`, `cmd/apstore/policy_test.go`.
 - Bounded metadata, ceremony, and external witness artifacts:

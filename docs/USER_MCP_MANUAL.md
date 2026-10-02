@@ -375,9 +375,10 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 
-The product policy document is in the selected generation at
-`identities/default/generations/<selected-generation>/policy.yaml`
-(with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
+The product policy document is a v1 JSON document in the selected generation at
+`identities/default/generations/<selected-generation>/policy.json` on a signer
+node, or one `policies/<WitnessKeyID>.json` per key on a cosigner node (each
+with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
 settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`) live
 in `identities/default/config.yaml`.
 
@@ -387,7 +388,7 @@ in `identities/default/config.yaml`.
   force an unlock.
 - **Always Review** → the call may block for a long time and can still be
   rejected by the human. Don't assume a fast return.
-- **Transfer routing** (`transfer_policy` in `policy.yaml`) is an allowlist gate
+- **Transfer routing** (`transfer_policy` in the policy document) is an allowlist gate
   over payment/transfer/close/clawback destinations. A route match means "may
   continue," **not** "approved" — fee/rekey/close/clawback checks and Operator
   Default still apply. Routing does **not** choose the sender or move funds for
@@ -413,8 +414,9 @@ it never holds keys:
   operation, the client queries authenticated `/keys` and routes to the one
   endpoint advertising the required embedded public key.
 - Cosigner policy has only two outcomes — **reject or sign** (no human, no
-  Operator Default). A locked, unreachable, stale, or wrong cosigner endpoint
-  fails **closed** before submission.
+  Operator Default). Each cosigner key has its own policy document; a key with
+  no policy rejects every request. A locked, unreachable, stale, or wrong
+  cosigner endpoint fails **closed** before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
 > [ARCH_COSIGNER.md](ARCH_COSIGNER.md).

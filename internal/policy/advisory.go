@@ -20,60 +20,82 @@ type ConfigAdvisory struct {
 	Message  string
 }
 
-// CheckStoredConfigAdvisories reports policy shapes that are valid but can
-// surprise users because one policy layer cannot weaken another. In particular,
-// route-level close/clawback permissions do not override top-level reject
-// booleans.
-func CheckStoredConfigAdvisories(stored *StoredConfig) []ConfigAdvisory {
-	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) == 0 {
+// Advisories reports signer policy shapes that are valid but can surprise
+// users because one policy layer cannot weaken another: a route that allows
+// close-out or clawback does not override a reject_* setting. Key overrides
+// are checked with their inherited settings.
+func (d *SignerPolicyV1) Advisories() []ConfigAdvisory {
+	if d == nil || d.TransferPolicy == nil {
 		return nil
 	}
+	out := routeOverlapAdvisories("policy", d.SignerSettingsV1, d.TransferPolicy.Routes)
+	for _, key := range sortedKeys(d.KeyOverrides) {
+		effective := d.SignerSettingsV1
+		ov := d.KeyOverrides[key].SignerSettingsV1
+		for _, f := range []struct{ dst, src **bool }{
+			{&effective.RejectCloseRemainder, &ov.RejectCloseRemainder},
+			{&effective.RejectAssetClose, &ov.RejectAssetClose},
+			{&effective.RejectClawback, &ov.RejectClawback},
+		} {
+			if *f.src != nil {
+				*f.dst = *f.src
+			}
+		}
+		out = append(out, routeOverlapAdvisories("key_overrides/"+key, effective, d.TransferPolicy.Routes)...)
+	}
+	return dedupeAdvisories(out)
+}
+
+// Advisories reports cosigner policy shapes that are valid but can surprise
+// users; see SignerPolicyV1.Advisories.
+func (d *CosignerPolicyV1) Advisories() []ConfigAdvisory {
+	if d == nil {
+		return nil
+	}
+	return routeOverlapAdvisories("policy", SignerSettingsV1{
+		RejectCloseRemainder: d.RejectCloseRemainder,
+		RejectAssetClose:     d.RejectAssetClose,
+		RejectClawback:       d.RejectClawback,
+	}, d.Routes)
+}
+
+func routeOverlapAdvisories(scope string, settings SignerSettingsV1, routes []RouteV1) []ConfigAdvisory {
+	allowsClose, allowsClawback := false, false
+	for _, route := range routes {
+		allowsClose = allowsClose || route.AllowClose
+		allowsClawback = allowsClawback || route.AllowClawback
+	}
 	var out []ConfigAdvisory
-	if boolPtrValue(stored.RejectCloseRemainder) && anyStoredRouteAllowsClose(stored.TransferPolicy.Routes) {
-		out = append(out, ConfigAdvisory{
-			RuleID:   ConfigAdvisoryRejectCloseRemainderRouteOverlap,
-			Scope:    "policy",
-			Severity: ConfigAdvisorySeverityWarning,
-			Message:  "reject_close_remainder still rejects ALGO close-out even when a transfer route sets close.allow:true",
-		})
+	add := func(ruleID, message string) {
+		out = append(out, ConfigAdvisory{RuleID: ruleID, Scope: scope, Severity: ConfigAdvisorySeverityWarning, Message: message})
 	}
-	if boolPtrValue(stored.RejectAssetClose) && anyStoredRouteAllowsClose(stored.TransferPolicy.Routes) {
-		out = append(out, ConfigAdvisory{
-			RuleID:   ConfigAdvisoryRejectAssetCloseRouteOverlap,
-			Scope:    "policy",
-			Severity: ConfigAdvisorySeverityWarning,
-			Message:  "reject_asset_close still rejects ASA close-out even when a transfer route sets close.allow:true",
-		})
+	if boolPtrValue(settings.RejectCloseRemainder) && allowsClose {
+		add(ConfigAdvisoryRejectCloseRemainderRouteOverlap, "reject_close_remainder still rejects ALGO close-out even when a route sets allow_close")
 	}
-	if boolPtrValue(stored.RejectClawback) && anyStoredRouteAllowsClawback(stored.TransferPolicy.Routes) {
-		out = append(out, ConfigAdvisory{
-			RuleID:   ConfigAdvisoryRejectClawbackRouteOverlap,
-			Scope:    "policy",
-			Severity: ConfigAdvisorySeverityWarning,
-			Message:  "reject_clawback still rejects clawback transactions even when a transfer route sets clawback.allow:true",
-		})
+	if boolPtrValue(settings.RejectAssetClose) && allowsClose {
+		add(ConfigAdvisoryRejectAssetCloseRouteOverlap, "reject_asset_close still rejects ASA close-out even when a route sets allow_close")
+	}
+	if boolPtrValue(settings.RejectClawback) && allowsClawback {
+		add(ConfigAdvisoryRejectClawbackRouteOverlap, "reject_clawback still rejects clawback even when a route sets allow_clawback")
+	}
+	return out
+}
+
+// dedupeAdvisories drops override advisories identical to the document's.
+func dedupeAdvisories(in []ConfigAdvisory) []ConfigAdvisory {
+	base := map[string]bool{}
+	var out []ConfigAdvisory
+	for _, a := range in {
+		if a.Scope == "policy" {
+			base[a.RuleID] = true
+		} else if base[a.RuleID] {
+			continue
+		}
+		out = append(out, a)
 	}
 	return out
 }
 
 func boolPtrValue(v *bool) bool {
 	return v != nil && *v
-}
-
-func anyStoredRouteAllowsClose(routes []StoredTransferRoute) bool {
-	for _, route := range routes {
-		if boolPtrValue(route.Close.Allow) {
-			return true
-		}
-	}
-	return false
-}
-
-func anyStoredRouteAllowsClawback(routes []StoredTransferRoute) bool {
-	for _, route := range routes {
-		if boolPtrValue(route.Clawback.Allow) {
-			return true
-		}
-	}
-	return false
 }

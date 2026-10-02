@@ -38,6 +38,7 @@ func ListDeletedArchive(gen storepaths.GenPaths) ([]DeletedArchiveEntry, Deleted
 	for _, namespace := range []struct{ relative, dir string }{
 		{"deleted/keys", gen.DeletedKeysDir()},
 		{"deleted/keytypes", gen.DeletedKeyTypeRecordsDir()},
+		{"deleted/policies", gen.DeletedCosignerPoliciesDir()},
 	} {
 		entries, err := os.ReadDir(namespace.dir)
 		if err != nil {
@@ -134,6 +135,10 @@ func validateDeletedArchiveRelativePath(relative string) (string, error) {
 	case "deleted/keytypes":
 		if !strings.HasSuffix(base, ".template") {
 			return "", fmt.Errorf("invalid deleted template entry %q", relative)
+		}
+	case "deleted/policies":
+		if !strings.HasSuffix(base, ".json") && !strings.HasSuffix(base, ".json.hmac") {
+			return "", fmt.Errorf("invalid deleted policy entry %q", relative)
 		}
 	default:
 		return "", fmt.Errorf("archive entry is outside the closed deleted namespaces: %q", relative)

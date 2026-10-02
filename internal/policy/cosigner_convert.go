@@ -37,21 +37,6 @@ func ConvertSigningPolicyToCosigner(stored *StoredConfig) (*StoredConfig, error)
 	return out, nil
 }
 
-// ConvertSigningPolicyToCosignerYAML converts signer-domain policy.yaml
-// bytes into direct cosigner policy YAML suitable for review, signing, and
-// installation as policy.yaml on a cosigner node.
-func ConvertSigningPolicyToCosignerYAML(data []byte) ([]byte, error) {
-	stored, err := ParseStoredConfig(data)
-	if err != nil {
-		return nil, err
-	}
-	converted, err := ConvertSigningPolicyToCosigner(stored)
-	if err != nil {
-		return nil, err
-	}
-	return MarshalStoredCosignerConfig(converted)
-}
-
 func convertTransferPolicyToCosigner(tp *StoredTransferPolicy) *StoredTransferPolicy {
 	if tp == nil {
 		return nil

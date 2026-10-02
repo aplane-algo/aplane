@@ -170,7 +170,7 @@ Guarded signing has two independent authorization gates, one per party:
 - the **user signer** gates user-role component signing with the same
   signer-domain machinery as ordinary `/sign`: hard policy rejection,
   always-review rules, and blocking operator approval. The guarded account is
-  the per-target policy key (`policy.yaml` key overrides apply), and every
+  the per-target policy key (signer `policy.json` key overrides apply), and every
   non-target position in the canonical group is evaluated as a foreign leg, so
   dangerous fields on co-signed legs (rekey, close, clawback) force operator
   review exactly as they do on `/sign`.
@@ -440,8 +440,15 @@ slot through ordinary LogicSig arguments.
 
 ## Cosigner Policy
 
-On a cosigner node, `policy.yaml` is parsed in the cosigner policy domain. It uses
-the shared policy grammar, but the verdict model is direct authorization:
+On a cosigner node, each cosigner key has its own v1 policy document,
+`policies/<WitnessKeyID>.json` in the selected generation, specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). A `/sign/component` request's
+`component_key` selects the document: a key the node does not hold fails as a
+bad request, and a held key with no document rejects with
+`cosigner_policy:key_has_no_policy`. There is no node-wide cosigner policy, so a
+new key rejects every request until its document is applied. Policy is
+evaluated before the cosigner key is loaded. The verdict model is direct
+authorization:
 
 - matching deterministic allow policy signs,
 - deny guards reject,
@@ -596,14 +603,18 @@ Primary packages and files:
   profile source.
 - `internal/apadminapp/catalog.go`: public cosigner export/import/list/show/remove
   workflows used by `apadmin`.
-- `internal/signerapp/policycmd`: live and rescue policy workflows, including
-  signer-to-cosigner policy conversion and offline validation through `apadmin`.
+- `internal/signerapp/policycmd`: live and rescue policy workflows through
+  `apadmin`, including per-key cosigner document apply and removal.
+- `internal/signerapp/policyapply`: shared policy check and generation-commit
+  rules.
+- `internal/signerapp/signing/cosigner_policy.go`: cosigner key and policy
+  selection and evaluation.
 
 Representative tests:
 
 - `internal/signerapp/signing/component_test.go`
-- `internal/policy/role_domains_test.go`
-- `internal/policy/cosigner_convert_test.go`
+- `internal/policy/doc_v1_test.go`
+- `internal/policy/store_v1_test.go`
 - `internal/policy/transfer_routing_eval_test.go`
 - `internal/engine/guarded/submit_test.go`
 - `internal/apshellapp/endpoints_test.go`

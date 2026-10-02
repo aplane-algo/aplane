@@ -40,7 +40,7 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │                                                             │
 │  apstore local     ─────────►  File System                  │
 │    • Initialize keystore                                    │
-│    • Check/sign/verify policy sidecars                      │
+│    • Check/sign/verify policy documents and sidecars        │
 │    • Verify backup archives                                 │
 │    • Rebuild an absent keystore from a backup archive       │
 │                                                             │
@@ -237,10 +237,13 @@ It also creates the product `aplane.token` under `identities/default/` if one do
 exist. Normal clients should use the operator-approved `request-token`
 flow to receive a client-side copy of that token.
 
-`apstore initialize` also creates the initial signed policy baseline inside
-the first selected generation:
-`identities/default/generations/<generation-id>/policy.yaml` and its
-`policy.yaml.hmac` sidecar.
+On a signer node, `apstore initialize` also creates the initial signed policy
+document inside the first selected generation:
+`identities/default/generations/<generation-id>/policy.json`, containing
+`{"format": "aplane.signer-policy.v1"}`, and its `policy.json.hmac` sidecar. A
+cosigner node starts with no policy documents; each cosigner key rejects every
+request until its `policies/<WitnessKeyID>.json` document is applied with
+`apadmin policy apply`.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role cosigner` creates a dedicated
@@ -330,8 +333,9 @@ privileged operation. `appass-systemd-creds` files remain root-owned.
 
 A passphrase change creates a fresh numbered key term, stages a complete
 successor generation, re-encrypts live keys, templates, and deleted managed
-objects, and re-signs policy and node-role integrity sidecars from the exact
-outgoing generation seal. One `store-root.enc` rename commits both the newly
+objects, and re-signs every policy sidecar (the signer document, each cosigner
+key's document, and archived cosigner policies) and the node-role integrity
+sidecar from the exact outgoing generation seal. One `store-root.enc` rename commits both the newly
 wrapped keyring and successor selection. Retained generations stay
 byte-for-byte unchanged and remain anchor-gated historical state.
 
@@ -444,7 +448,9 @@ the product enters recovery mode and signing remains blocked. Recovery tools:
 it never guesses or promotes the newest-looking directory.
 `restore rollback` is available only while the current generation is the
 latest clean rollback-eligible credential restore. Any later mutation causes a
-safe refusal, and a rollback generation cannot itself be rolled back. A restore
+safe refusal, and a rollback generation cannot itself be rolled back. Rollback
+restores credentials and key types only; the outgoing policy documents stay in
+effect. A restore
 performed from recovery mode is not rollback-eligible because its damaged
 parent must not be promoted back into service.
 
@@ -476,6 +482,11 @@ restore the entire directory from one coherent snapshot. Never restore
 directories. Such a mix may select older valid authority; quarantine preserves
 ambiguous newer ciphertext but cannot make the mixed snapshot valid or
 decryptable.
+
+Every policy apply or removal (`apadmin policy apply|remove`, online or
+rescue) also commits a new generation, so each policy change leaves a retained
+prior generation until explicit generation pruning. Key mutations do not mint
+generations.
 
 Inspect generations through the running daemon; stop the daemon only for
 destructive pruning:
@@ -546,7 +557,8 @@ above still apply.
 Managed backups contain complete encrypted credential records and archive
 integrity metadata. They deliberately exclude:
 
-- `policy.yaml` and policy integrity sidecars
+- policy documents (`policy.json`, `policies/*.json`) and policy integrity
+  sidecars
 - `user_auto_approve` and other product settings
 - network/genesis mappings and endpoints
 - installed or library templates and key-type enable/disable state
@@ -746,9 +758,10 @@ From the key details view:
 ./apstore policy check
 ./apstore policy verify
 ./apstore policy sign
-./apadmin policy rescue check
-./apadmin policy rescue export
-./apadmin policy rescue apply - < selected-policy.yaml
+./apadmin policy rescue status
+./apadmin policy rescue export > policy.json
+./apadmin policy rescue check policy.json
+./apadmin policy rescue apply - < policy.json
 
 # Template management (for custom LogicSigs)
 ./apadmin template list

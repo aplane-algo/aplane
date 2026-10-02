@@ -2,15 +2,13 @@
 
 ## Status
 
-Decoder implemented; storage not yet switched. This document defines the v1
-policy document format that replaces `policy.yaml`. The decoder, semantic
-validation, and compiler live in `internal/policy` (`jsontree.go`,
-`doc_v1.go`, `doc_v1_compile.go`), and every contract fixture is checked
-against both the JSON Schema and the decoder. Nodes still store and read
-`policy.yaml` as described in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-file-policyyaml) and
-[ARCH_POLICY.md](ARCH_POLICY.md). The system is unreleased, so v1 does not
-read or migrate `policy.yaml`.
+Implemented. This document defines the v1 policy document format that nodes
+store and enforce. The decoder, semantic validation, and compiler live in
+`internal/policy` (`jsontree.go`, `doc_v1.go`, `doc_v1_compile.go`), storage
+and sidecar handling in `internal/policy/store_v1.go`, and the shared
+check/commit rules in `internal/signerapp/policyapply`. Every contract fixture
+is checked against both the JSON Schema and the decoder. The system is
+unreleased, so v1 does not read or migrate `policy.yaml`.
 
 Verdict semantics (Always Deny, Always Review, route matching, strictest-limit
 aggregation, close and clawback rules, rule IDs) are unchanged and remain
@@ -33,8 +31,8 @@ Consequences:
   the exact field.
 - The schema is a versioned contract. Changing it is a deliberate new
   `format` version.
-- There is no policy editor in the node. Review happens through `check` and
-  `diff` before `apply`.
+- There is no policy editor in the node. Review happens through `export`,
+  an external diff, and `check` before `apply`.
 
 The machine-readable schema is
 [`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json)
@@ -50,21 +48,61 @@ accepts but the node's semantic rules reject in `semantic_invalid/`.
 | signer | `policy.json`, `policy.json.hmac` | All signing on the node |
 | cosigner | `policies/<WitnessKeyID>.json`, `policies/<WitnessKeyID>.json.hmac`, one pair per cosigner key | Component signing by that key only |
 
+Files live under `identities/default/generations/<generation-id>/`. A new
+signer store starts with `{"format": "aplane.signer-policy.v1"}`
+(`policy.InitialSignerPolicy`): every setting at its default and routing off.
+A new cosigner store has no documents, so every cosigner key rejects every
+request until its document is applied.
+
 Each `.hmac` sidecar authenticates the exact document bytes with the
-`internal/integritysidecar` format already used for `policy.yaml`. The HMAC is
+`internal/integritysidecar` format. The HMAC is
 not bound to a file name, so a cosigner document carries a signed `key` field
 that must equal the Witness Key ID in its file name; a mismatch is rejected.
 
 Cosigner rules:
 
-- A cosigner request must name a `component_key`. The node rejects the
-  request before any policy evaluation unless it holds that key **and** has a
-  verified policy document for it. A key without a document rejects
-  everything.
+- A cosigner request must name a `component_key`. Before any policy
+  evaluation, the node rejects the request as a bad request ("Witness Key ID
+  not found") unless it holds that key, and rejects it with rule ID
+  `cosigner_policy:key_has_no_policy` unless it has a verified policy document
+  for that key. Only then is the document evaluated and the key loaded. A key
+  without a document rejects everything; there is no node-wide fallback
+  policy.
 - A document for a key the node does not hold is accepted (policy may be
   installed before its key) and reported by `check`.
-- Deleting a cosigner key archives its policy document with it.
+- Deleting a cosigner key archives its policy pair under
+  `deleted/policies/` with it.
 - Changing several keys' documents lands in one generation commit.
+
+## Storage and Acceptance
+
+- Every apply or removal, online or rescue, mints a new generation with
+  manifest operation `policy-apply` through `genstore.Mint`. An apply that
+  leaves the policy set unchanged commits nothing. Each committed apply
+  leaves the outgoing generation retained until explicit generation pruning.
+- `policy.json` and `policy.json.hmac` are optional generation authority
+  files, present on signer generations, and pinned in the generation
+  manifest and seal when present. `policies/` and `deleted/policies/` are
+  generation leaf namespaces.
+- On load, every document must verify against its sidecar and decode for the
+  node role; any failure makes the node refuse to load policy.
+- Every digest covers the exact stored bytes; there is no canonical
+  re-serialization. `policy_set_sha256` is the lowercase hex SHA-256 over the
+  sorted lines `<key> <document sha256>\n`, one per document, where `<key>` is
+  the Witness Key ID for a cosigner document and empty for the signer
+  document. `apply_policy` requires it as the optimistic-concurrency base.
+- Passphrase rotation re-signs every policy sidecar: the signer document,
+  every cosigner document, and archived cosigner documents. Rollback restores
+  only `keys/` and `keytypes/`, so the outgoing policy is kept.
+- Store validation loads and verifies the policy and verifies archived policy
+  sidecars.
+
+Operator surfaces: `apadmin policy status|export|check|apply|remove` (online
+over admin IPC, or `apadmin policy rescue ...` against a stopped daemon's
+store), `apstore policy check|verify|sign`, and the read-only apadmin TUI
+Policies view. Wire messages are `get_policy`, `check_policy`, and
+`apply_policy`; see [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages)
+and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-documents).
 
 ## Parsing
 

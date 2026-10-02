@@ -303,18 +303,14 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: boolPtr(false), MaxFeeMicroAlgos: &maxFee, MaxASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"31566704": 77,
-		},
-	}},
-	}
+	document := []byte(`{"format":"aplane.signer-policy.v1","reject_foreign_rekey":false,"max_fee_microalgos":"1234",` +
+		`"limits":{"testnet":{"asa:31566704":{"reject_above":"77"}}}}`)
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.WriteSignerPolicy(active, document, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -387,7 +383,7 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("ReloadWithPassphrase() error = nil, want policy integrity failure")
 	}
-	if !strings.Contains(err.Error(), "policy.yaml.hmac") {
+	if !strings.Contains(err.Error(), "policy.json.hmac") {
 		t.Fatalf("ReloadWithPassphrase() error = %v, want missing policy integrity sidecar", err)
 	}
 	if pol := ir.Policy(); pol != nil {
@@ -451,13 +447,12 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.WriteSignerPolicy(active, []byte(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"1234"}`), masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -476,7 +471,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	if got := ir.Policy().MaxFeeMicroAlgos; got != maxFee {
 		t.Fatalf("MaxFeeMicroAlgos after verified load = %d, want %d", got, maxFee)
 	}
-	if err := os.WriteFile(active.PolicyPath(), []byte("max_fee_microalgos: 999999\n"), 0o600); err != nil {
+	if err := os.WriteFile(active.PolicyPath(), []byte(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"999999"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -499,5 +494,3 @@ func testKeyringForStore(t *testing.T, paths utilkeys.Paths, passphrase []byte) 
 	t.Cleanup(kr.Zero)
 	return kr
 }
-
-func boolPtr(v bool) *bool { return &v }

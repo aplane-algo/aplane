@@ -48,7 +48,7 @@ const (
 	TransferRoutingCloseRejectedRuleID      = "transfer_policy:close_rejected"
 	TransferRoutingClawbackRejectedRuleID   = "transfer_policy:clawback_rejected"
 
-	CosignerPolicyMissingRuleID          = "cosigner_policy:missing"
+	CosignerKeyHasNoPolicyRuleID         = "cosigner_policy:key_has_no_policy"
 	CosignerTransferPolicyRequiredRuleID = "cosigner_policy:transfer_policy_required"
 	CosignerDeterministicRoutingRuleID   = "cosigner_policy:deterministic_routing_required"
 	CosignerNonTransferRuleID            = "cosigner_policy:non_transfer"

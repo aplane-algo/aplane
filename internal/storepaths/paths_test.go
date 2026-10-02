@@ -99,8 +99,15 @@ func TestGenerationOwnedPathMatrix(t *testing.T) {
 			gen.DeletedKeyTypeTemplate("test.generic-policy.v1"),
 			filepath.Join(generationDir, "deleted", "keytypes", "test.generic-policy.v1.template"),
 		},
-		{"policy", gen.PolicyPath(), filepath.Join(generationDir, "policy.yaml")},
-		{"policy sidecar", gen.PolicyIntegritySidecar(), filepath.Join(generationDir, "policy.yaml.hmac")},
+		{"policy", gen.PolicyPath(), filepath.Join(generationDir, "policy.json")},
+		{"policy sidecar", gen.PolicyIntegritySidecar(), filepath.Join(generationDir, "policy.json.hmac")},
+		{"cosigner policies", gen.CosignerPoliciesDir(), filepath.Join(generationDir, "policies")},
+		{
+			"cosigner policy",
+			gen.CosignerPolicyPath("MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"),
+			filepath.Join(generationDir, "policies", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json"),
+		},
+		{"deleted cosigner policies", gen.DeletedCosignerPoliciesDir(), filepath.Join(generationDir, "deleted", "policies")},
 		{"node role sidecar", gen.NodeRoleIntegritySidecar(), filepath.Join(generationDir, "node.yaml.hmac")},
 	}
 	for _, tt := range tests {

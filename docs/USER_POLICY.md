@@ -4,17 +4,32 @@ Signer policy is the product-scoped safety layer that decides whether a
 signing request should be rejected, forced through operator review, explicitly
 approved, or left to the operator default.
 
-Policy is stored beside the product keys in the product store:
+Policy is a v1 JSON document stored beside the product keys in the selected
+store generation. The node role decides which documents exist:
 
 ```text
-identities/default/generations/<selected-generation>/policy.yaml
-identities/default/generations/<selected-generation>/policy.yaml.hmac
+# signer node: one document governs all signing
+identities/default/generations/<selected-generation>/policy.json
+identities/default/generations/<selected-generation>/policy.json.hmac
+
+# cosigner node: one document per cosigner key
+identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json
+identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json.hmac
 ```
 
-`policy.yaml` controls account signing on signer nodes and cosigner component
-signing on cosigner nodes. Its `.hmac` sidecar authenticates the exact YAML
-bytes. After the signed baseline exists, a missing or mismatched sidecar fails
-closed rather than silently loading defaults.
+Each `.hmac` sidecar authenticates the exact document bytes. A missing or
+mismatched sidecar, or a document that does not decode, makes the node refuse
+to load rather than silently loading defaults.
+
+A new signer store starts with the empty signer document
+`{"format": "aplane.signer-policy.v1"}`, which applies product defaults. A new
+cosigner store has no policy documents, so every cosigner key rejects every
+request until its policy is applied. Deleting a cosigner key archives its
+policy document with it.
+
+The document format, field types, and acceptance rules are specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md); the machine-readable schema is
+[`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json).
 
 ## What Policy Controls
 
@@ -44,29 +59,51 @@ Write or edit the policy file outside the node, review it with
 `apadmin policy check FILE`, then install it with `apadmin policy apply FILE`.
 While `apsigner` is stopped, use the `apadmin policy rescue` forms instead.
 
-`apadmin policy` connects through authenticated local admin IPC, selects the
+`apadmin policy` connects through authenticated local admin IPC, follows the
 daemon's node role, unlocks the product when required, and never needs
-filesystem access to the private signer store. Signer nodes target
-signer-domain `policy.yaml`, and cosigner nodes target cosigner-domain
-`policy.yaml`.
+filesystem access to the private signer store.
 
 ```bash
-apadmin policy export > selected-policy.yaml
-apadmin policy check selected-policy.yaml
-apadmin policy apply selected-policy.yaml
-apadmin policy digest
-apadmin policy apply - < selected-policy.yaml
+apadmin policy status
+apadmin policy export > policy.json
+apadmin policy check policy.json
+apadmin policy apply policy.json
+apadmin policy apply - < policy.json
 ```
 
-`apadmin policy` requires a verb: `check`, `export`, `digest`, `apply`, or
-`to-cosigner`. All verbs are noninteractive. A file passed to online `check`
-is validated through the running daemon. Online `apply` validates the file
-with the running signer, uses the current live snapshot as its
-optimistic-concurrency base, replaces the whole document, writes the fresh
-sidecar, and activates the resulting runtime policy immediately. Every
-online verb authenticates first; if the daemon is locked, even the read-only
-`check`, `export`, and `digest` commands unlock it before reading policy state
-and are therefore not guaranteed to preserve the daemon's lock state.
+`apadmin policy` requires a verb:
+
+| Verb | Meaning |
+|------|---------|
+| `status` | List the node's policy documents with size, SHA-256, and applied time, the cosigner key coverage, and the `policy_set_sha256` of the whole set |
+| `export [--key ID]` | Write one stored document to stdout exactly as stored; on a cosigner node, `--key` selects the Witness Key ID |
+| `check FILE...` | Validate files against the node without writing; `-` reads one file from stdin |
+| `apply FILE...` | Check, then install the files in one commit; `-` reads one file from stdin |
+| `remove ID...` | Delete cosigner keys' documents (cosigner nodes only) |
+
+All verbs are noninteractive. A signer node takes exactly one file. On a
+cosigner node, each file is one key's document and names that key in its
+`"key"` field; `apply` adds or replaces the listed keys' documents and leaves
+documents for other keys unchanged.
+
+`check` prints errors with the JSON Pointer of the failing field and prints
+warnings that do not block an apply: cosigner keys the node holds that would
+have no policy, documents for keys the node does not hold, and reject settings
+that override a route's `allow_close` or `allow_clawback`.
+
+`apply` runs `check` first, prints its warnings, and stops on errors. It then
+applies the change against the `policy_set_sha256` it read at the start, so the
+signer rejects the change if the active policy changed in the meantime. On
+success the signer writes the exact submitted bytes plus fresh sidecars as a
+new store generation and activates the resulting runtime policy immediately;
+`apply` prints the new generation ID and `policy_set_sha256`. Each apply leaves
+a retained generation until explicit generation pruning; see
+[USER_STORE_MGMT.md](USER_STORE_MGMT.md).
+
+Every online verb authenticates first; if the daemon is locked, even the
+read-only `status`, `export`, and `check` commands unlock it before reading
+policy state and are therefore not guaranteed to preserve the daemon's lock
+state.
 
 ### Migration from the retired policy binary
 
@@ -77,59 +114,41 @@ as follows:
 |---|---|
 | `appolicy --online` | `apadmin policy export`, edit the file, then `apadmin policy check FILE` and `apadmin policy apply FILE` |
 | `appolicy --online --check FILE` | `apadmin policy check FILE` |
-| `appolicy --online --yaml FILE` | `apadmin policy export FILE` |
-| `appolicy --online --sha256 FILE` | `apadmin policy digest FILE` |
+| `appolicy --online --yaml FILE` | `apadmin policy export` |
+| `appolicy --online --sha256 FILE` | `apadmin policy status` |
 | `appolicy --online --save` | `apadmin policy apply -` |
 | `appolicy FILE` | `apadmin policy rescue check FILE`, then `apadmin policy rescue apply FILE` |
 | `appolicy --check FILE` | `apadmin policy rescue check FILE` |
-| `appolicy --yaml FILE` | `apadmin policy rescue export FILE` |
-| `appolicy --sha256 FILE` | `apadmin policy rescue digest FILE` |
+| `appolicy --yaml FILE` | `apadmin policy rescue export` |
+| `appolicy --sha256 FILE` | `apadmin policy rescue status` |
 | `appolicy --save` | `apadmin policy rescue apply -` |
 
 There is no wrapper or automatic online-to-rescue fallback.
 
-`apadmin policy rescue` is the stopped-service rescue command family. With
-`--target auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run
-store-backed rescue as root only while `apsigner` is stopped. A positional
-standalone file passed to `check`, `export`, or `digest` does not read the
-signer store or sidecar.
+`apadmin policy rescue` is the stopped-service rescue command family. It takes
+the same verbs, reads the store named by `APSIGNER_DATA` or `-d` directly, and
+follows the node role recorded in the store. Reads (`status`, `export`,
+`check`) hold the shared store lock; `apply` and `remove` hold the exclusive
+store lock and require a stopped daemon. Rescue applies use the same check and
+commit rules as the daemon and also commit a new generation. On a systemd
+store, run rescue as root only while `apsigner` is stopped.
 
-When `apadmin policy rescue` reads production policy from `APSIGNER_DATA` or
-`-d`, it needs the store passphrase to verify the sidecar. To publish a
-standalone file, run `apadmin policy rescue apply FILE` explicitly while the
-signer is stopped.
-
-For byte-preserving offline rescue edits:
+Rescue commands need the store passphrase to verify the sidecars:
 
 ```bash
-apadmin -d "$APSIGNER_DATA" policy rescue export > selected-policy.yaml
-APSIGNER_PASSPHRASE="$passphrase" apadmin -d "$APSIGNER_DATA" policy rescue apply - < selected-policy.yaml
+apadmin -d "$APSIGNER_DATA" policy rescue status
+apadmin -d "$APSIGNER_DATA" policy rescue export > policy.json
+APSIGNER_PASSPHRASE="$passphrase" apadmin -d "$APSIGNER_DATA" policy rescue apply - < policy.json
 ```
 
-`apadmin policy rescue digest` verifies the current sidecar and prints the
-SHA-256 digest of the trusted selected document bytes.
-`apadmin policy rescue export` verifies the current sidecar and emits those
-trusted bytes. `apadmin policy rescue apply -` reads replacement YAML
-from stdin, validates it in the selected policy domain, writes the selected
-document, and writes a fresh sidecar. Use `--target signer` or
-`--target cosigner` to override auto-selection. Because stdin is the document
-stream for `apply -`, provide its passphrase through the local-only environment
-source or an interactive terminal.
-
 `APSIGNER_PASSPHRASE` supplies the passphrase for local IPC and rescue policy
-commands. A command whose policy comes from the active document or a named file
-may also read one passphrase line from nonterminal stdin. `apply -` reserves
-stdin for YAML and requires the environment passphrase or a controlling terminal.
-For remote administration, SSH into the signer machine and run apadmin there;
-all named paths then refer to that machine.
+commands. A command that reads its policy from a named file may also read one
+passphrase line from nonterminal stdin. `check -` and `apply -` reserve stdin
+for the document and require the environment passphrase or a controlling
+terminal. For remote administration, SSH into the signer machine and run
+apadmin there; all named paths then refer to that machine.
 
-With a positional YAML file, `apadmin policy rescue check draft.yaml`,
-`apadmin policy rescue export draft.yaml`, and
-`apadmin policy rescue digest draft.yaml` validate the file itself and do not
-verify or update the production sidecar. Their non-rescue equivalents validate
-through the running daemon.
-
-For deliberate direct YAML edits:
+For documents placed or edited by hand in the selected generation:
 
 ```bash
 apstore -d "$APSIGNER_DATA" policy check
@@ -137,63 +156,88 @@ apstore -d "$APSIGNER_DATA" policy sign
 apstore -d "$APSIGNER_DATA" policy verify
 ```
 
-These direct commands are offline maintenance operations; stop `apsigner` and
-use `sudo` for a systemd store. Normal production changes should use
-`apadmin policy check` and `apadmin policy apply`.
-
-Direct YAML edits take effect only after the next successful signer reload,
-unlock, or restart. These are offline store mutations, so the normal workflow
-is to run them while `apsigner` is stopped or before starting it.
-
-Online `apadmin policy apply` is a whole-file replacement, not a merge. The
-signer must be unlocked; it verifies the current sidecar for the selected
-document, validates the submitted YAML with the signer runtime compiler, writes
-the exact submitted bytes plus a fresh sidecar, and activates the resulting
-policy immediately. The request includes the SHA-256 of the snapshot loaded at
-the start of the apply, so the signer rejects the replacement if the active
-policy changed before the upload was applied.
+`apstore policy check` validates the stored documents without verifying their
+sidecars and warns about cosigner keys without policies and policies for keys
+the node does not hold. `apstore policy sign` writes fresh sidecars for the
+stored documents (`policy.json` on a signer node, every `policies/*.json` on a
+cosigner node). `apstore policy verify` verifies every sidecar and compiles the
+policy. These are offline maintenance operations; stop `apsigner` and use
+`sudo` for a systemd store. Hand edits take effect only after the next
+successful signer start, reload, or unlock. Normal production changes should
+use `apadmin policy check` and `apadmin policy apply`.
 
 ## Top-Level Fields
 
-`policy.yaml` is sparse. Omitted fields resolve through product defaults.
+Policy documents are sparse. Omitted fields resolve through product defaults.
+Amounts are decimal strings in base units, and ASA IDs are written `asa:<id>`.
+
+Signer document (`"format": "aplane.signer-policy.v1"`):
 
 | Field | Meaning |
 |-------|---------|
-| `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer product. Defaults to `true`. |
-| `reject_rekey` | Cosigner-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
-| `rekey_policy` | Cosigner-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. |
+| `format` | Required document type. |
+| `description` | Notes for reviewers. |
+| `reject_foreign_rekey` | Reject txns whose non-zero `RekeyTo` target is not held by this signer product. Defaults to `true`. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
 | `reject_asset_close` | Reject ASA transfer txns with non-zero `AssetCloseTo`. Defaults to `false`. |
 | `reject_clawback` | Reject ASA clawback txns using `AssetSender`. Defaults to `false`. |
 | `always_review_warnings` | Require operator review for warning-level findings. Defaults to `false`. |
 | `auto_approve_self_noop_transfer` | Auto-approve exact low-risk 0-amount self-transfer shapes. Defaults to `false`. |
-| `max_fee_microalgos` | Reject txns whose fee exceeds this raw microAlgo ceiling. Omitted or `0` means no ceiling. |
-| `review_algo_payments` | Compatibility per-network raw microAlgo review thresholds for ALGO payments. |
-| `max_algo_payments` | Compatibility per-network raw microAlgo reject thresholds for ALGO payments. |
-| `review_asa_amounts` | Compatibility per-network raw ASA unit review thresholds. |
-| `max_asa_amounts` | Compatibility per-network raw ASA unit reject thresholds. |
+| `max_fee_microalgos` | Reject txns whose fee exceeds this raw microAlgo ceiling. Omitted means no ceiling. |
+| `limits` | Per-network, per-asset `review_above` / `reject_above` thresholds in base units. |
+| `address_sets` | Named address sets for routes. |
+| `asset_sets` | Named per-network asset sets for routes. |
 | `transfer_policy` | Source/asset/destination route table for direct ALGO and ASA movements. |
-| `key_overrides` | Advanced per-key policy overlays. |
+| `key_overrides` | Advanced per-key settings keyed by signing auth address. |
 
-Use `transfer_policy` for route-based operator policy. The payment and ASA
-threshold maps remain accepted compatibility fields.
+Cosigner document (`"format": "aplane.cosigner-policy.v1"`), one per key:
 
-For cosigner rekey authorization, set `reject_rekey: true` for a coarse
+| Field | Meaning |
+|-------|---------|
+| `format` | Required document type. |
+| `key` | Required Witness Key ID this document governs; must equal the file name. |
+| `description` | Notes for reviewers. |
+| `reject_close_remainder`, `reject_asset_close`, `reject_clawback` | As for signer documents. |
+| `reject_rekey` | Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
+| `max_fee_microalgos` | Reject txns whose fee exceeds this raw microAlgo ceiling. |
+| `limits` | Per-network, per-asset `reject_above` thresholds only. |
+| `address_sets`, `asset_sets` | Named sets, local to this document. |
+| `transfer_policy` | Required allow-list: `blocked_destinations` and `routes`. |
+| `rekey_policy` | Allow-list for pure 0 ALGO self-payment rekeys by sender and target. |
+
+Cosigner policy never produces review verdicts: there is no `review_above`, no
+`on_no_route` (an unmatched movement, close-out, or clawback is always
+rejected), and no operator setting.
+
+Limits are keyed by network, then by asset:
+
+```json
+"limits": {
+  "mainnet": {
+    "algo": { "review_above": "100000000", "reject_above": "1000000000" },
+    "asa:31566704": { "reject_above": "5000000000" }
+  }
+}
+```
+
+Document-level and route-level limits are separate checks and both apply.
+
+For cosigner rekey authorization, set `"reject_rekey": true` for a coarse
 deny-all policy. To authorize a controlled rekey, omit `reject_rekey` or set it
 to `false`, and add `rekey_policy.allowed` entries:
 
-```yaml
-rekey_policy:
-  allowed:
-    - sender: "SENDERADDR..."
-      targets: ["TARGETADDR..."]
+```json
+"rekey_policy": {
+  "allowed": [
+    { "sender": "SENDERADDR...", "targets": ["TARGETADDR..."] }
+  ]
+}
 ```
 
-Each `sender` and `targets` item may be an Algorand address or a flat
-`transfer_policy.address_sets` reference such as `@corridor_accounts`.
-Network-specific address sets are not accepted for rekey policy. The target
-transaction must be a pure 0 ALGO self-payment with non-zero `RekeyTo` and no
-close remainder.
+Each `sender` and `targets` item may be an Algorand address or a reference to
+a flat `address_sets` entry such as `@corridor_accounts`. Network-specific
+address sets are not accepted for rekey policy. The target transaction must be
+a pure 0 ALGO self-payment with non-zero `RekeyTo` and no close remainder.
 
 `rekey_policy` applies to dedicated `cosigner1` guarded accounts. Corridor v1's
 cosigner is spend-only; its pure rekey instead requires the separate offline
@@ -201,14 +245,17 @@ contract-admin witness and does not contact the cosigner.
 
 ## Basic Example
 
-```yaml
-reject_foreign_rekey: true
-reject_close_remainder: true
-reject_asset_close: false
-reject_clawback: false
-always_review_warnings: true
-auto_approve_self_noop_transfer: false
-max_fee_microalgos: 1000000
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": true,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "1000000"
+}
 ```
 
 This rejects foreign rekeys and ALGO close-outs, forces review for warning-level
@@ -230,20 +277,20 @@ A matching route means the movement may continue through the remaining policy
 pipeline. It is not an approval. Routing can reject a movement or force review,
 but it never auto-approves signing.
 
-Minimal shape:
+Minimal signer shape:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  close_on_no_route: reject
-  clawback_on_no_route: reject
-
-  blocked_destinations: []
-  address_sets: {}
-  asset_sets: {}
-  routes: []
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "blocked_destinations": [],
+    "routes": []
+  }
+}
 ```
 
 `on_no_route` controls in-scope transfer movements that match no route:
@@ -257,110 +304,155 @@ transfer_policy:
 `close_on_no_route` and `clawback_on_no_route` accept the same values, but
 default to `reject`. They make the stricter close-out and clawback fallback
 explicit. They apply only when no route matches; a matching route that lacks
-`close.allow:true` or `clawback.allow:true` still rejects.
+`"allow_close": true` or `"allow_clawback": true` still rejects.
 
 `blocked_destinations` is checked before route matching, so a wildcard route
 cannot rescue a blocked recipient.
 
 For detailed route fields, movement extraction, amount unit rules, close-out
-and clawback behavior, grouped transactions, and routing audit IDs, see
-[USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
+and clawback behavior, grouped transactions, cosigner documents, and routing
+audit IDs, see [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
 
 ## Common Allowlist Example
 
 This pattern allows all direct ALGO and ASA transfers to two approved
 recipients and denies direct transfers to all other recipients:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  close_on_no_route: reject
-  clawback_on_no_route: reject
-
-  routes:
-    - id: approved_recipients_all_assets
-      description: Allow all assets to approved recipients.
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["*"]
-      destinations:
-        - APPROVEDADDRESS1...
-        - APPROVEDADDRESS2...
-      close:
-        allow: false
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "routes": [
+      {
+        "id": "approved_recipients_all_assets",
+        "description": "Allow all assets to approved recipients.",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["APPROVEDADDRESS1...", "APPROVEDADDRESS2..."]
+      }
+    ]
+  }
+}
 ```
 
-With `on_no_route: reject`, any covered transfer movement that does not match
-the route is rejected. Non-transfer policy layers still apply independently.
+With `"on_no_route": "reject"`, any covered transfer movement that does not
+match the route is rejected. Non-transfer policy layers still apply
+independently.
+
+The cosigner equivalent is one document per key, with `transfer_policy`
+holding only `routes` and `blocked_destinations`:
+
+```json
+{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "approved_recipients_all_assets",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["APPROVEDADDRESS1...", "APPROVEDADDRESS2..."]
+      }
+    ]
+  }
+}
+```
 
 ## Key Overrides
 
-Overrides let one concrete signing key use tighter or looser settings than the
-product-wide policy. The override is selected by the auth address that will
-actually sign, not necessarily by the transaction sender.
+Signer documents may carry `key_overrides`, which let one concrete signing key
+use tighter or looser settings than the rest of the document. The override is
+selected by the auth address that will actually sign, not necessarily by the
+transaction sender. Cosigner documents have no overrides; each key already has
+its own document.
 
 Example:
 
-```yaml
-reject_foreign_rekey: true
-reject_asset_close: false
-max_fee_microalgos: 10000
-
-key_overrides:
-  SIGNINGAUTHADDRESS...:
-    reject_asset_close: true
-
-  OTHERAUTHADDRESS...:
-    max_fee_microalgos: 5000
-    review_algo_payments:
-      mainnet: 50000000
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "reject_foreign_rekey": true,
+  "reject_asset_close": false,
+  "max_fee_microalgos": "10000",
+  "limits": {
+    "mainnet": {
+      "algo": { "reject_above": "1000000000" }
+    }
+  },
+  "key_overrides": {
+    "SIGNINGAUTHADDRESS...": {
+      "reject_asset_close": true
+    },
+    "OTHERAUTHADDRESS...": {
+      "max_fee_microalgos": "5000",
+      "limits": {
+        "mainnet": {
+          "algo": { "review_above": "50000000" }
+        }
+      }
+    }
+  }
+}
 ```
 
 Override rules:
 
 | Field kind | If omitted in override | If present in override |
 |------------|------------------------|------------------------|
-| Scalar fields | Inherit product-wide value | Replace product-wide value |
-| Per-network maps (`review_*`, `max_*`) | Inherit product-wide map | Replace the product-wide map |
-| `transfer_policy` | Inherit product-wide routing | Rejected |
-| `reject_rekey`, `rekey_policy` | Not applicable | Rejected (cosigner-only fields) |
-| Nested `key_overrides` | Not applicable | Rejected |
+| Scalar fields | Inherit the document value | Replace the document value |
+| `limits` thresholds | Inherit each `(network, asset, threshold)` | Replace exactly that threshold; `null` removes it |
+| `transfer_policy`, `address_sets`, `asset_sets` | Inherit document routing | Rejected |
+| `key_overrides` | Not applicable | Rejected |
+
+In the example, `OTHERAUTHADDRESS...` adds a 50 ALGO review threshold on
+mainnet and keeps the document's 1000 ALGO reject cap. Validation runs on each
+key's merged result, so its effective `review_above` must not exceed its
+effective `reject_above`.
 
 Overrides never carry transfer routing. Express per-account routing in the
-product-wide `transfer_policy` with route `sources`, for example a route whose
+document's `transfer_policy` with route `sources`, for example a route whose
 `sources` is `["@treasury"]`. Every key is then routed by the same, fully
 validated route list.
 
 Use overrides when one key has materially different signing settings, such as
-a stricter fee cap. Avoid overrides when product-wide policy can express the
-rule; simpler policy is easier to audit.
+a stricter fee cap. Avoid overrides when the document-wide settings can express
+the rule; simpler policy is easier to audit.
 
 ## Validation Checklist
 
 Before relying on a policy:
 
-1. Run `apadmin policy check` (or an offline rescue check while the daemon
-   is stopped).
+1. Run `apadmin policy check FILE` (or `apadmin policy rescue check FILE`
+   while the daemon is stopped) and read its warnings.
 2. Confirm the route miss behavior is intentional, especially
-   `on_no_route: reject`, `close_on_no_route: reject`, and
-   `clawback_on_no_route: reject`.
+   `"on_no_route": "reject"`, `"close_on_no_route": "reject"`, and
+   `"clawback_on_no_route": "reject"`.
 3. Confirm address and asset set names resolve on the intended networks.
-4. Confirm amount thresholds use raw units in YAML.
-5. Sign the policy sidecar with `apadmin policy rescue apply -` or `apstore policy sign`.
-6. Reload, unlock, or restart the signer so the new verified policy is active.
+4. Confirm amounts are decimal strings in raw base units.
+5. On a cosigner node, confirm `apadmin policy status` shows every held key as
+   `active`; a key with no policy rejects every request.
+6. Install the policy with `apadmin policy apply FILE`, which signs the
+   sidecar and activates the policy. For hand-placed documents, run
+   `apstore policy sign` and start the signer.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|--------------|
-| Edited policy has no effect | The running signer has not reloaded, unlocked, or restarted since the edit. |
-| Signer refuses to load policy | The sidecar is missing or does not match `policy.yaml`, or validation failed. |
-| A transfer is rejected unexpectedly | `on_no_route: reject`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
+| Edited policy has no effect | The file was checked but not applied, or a hand-placed document was signed while the signer was running and it has not restarted since. |
+| Signer refuses to load policy | A sidecar is missing or does not match its document, or a document does not decode. |
+| `apply` fails with `policy_snapshot_changed` | The active policy changed after `apply` read it; check the current state with `apadmin policy status` and apply again. |
+| A cosigner request is rejected with `cosigner_policy:key_has_no_policy` | The cosigner key has no policy document; apply one for that Witness Key ID. |
+| A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
 | A route does not match an ASA | ASA IDs are network-local; check the transaction network and any `asset_sets` mapping. |
-| A key override still uses base routes | The override omitted `transfer_policy.routes`; omitted routes inherit. |
-| A key override cannot unblock an address | `blocked_destinations` are inherited and unioned. Overrides cannot remove base blocked destinations. |
+| A key override cannot change routing | Overrides carry only scalar settings and `limits`; express per-account routing with route `sources`. |
 
 For implementation-level details, see [ARCH_POLICY.md](ARCH_POLICY.md). For
 network token rules, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).

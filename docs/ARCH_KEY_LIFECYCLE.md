@@ -309,8 +309,9 @@ The relevant order is:
 
 1. open or reuse the identity keyring,
 2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
-3. load and validate product runtime config and the node-role policy domain from
-   `policy.yaml`,
+3. load and validate product runtime config and the node-role policy documents
+   (`policy.json` on signer nodes, `policies/<WitnessKeyID>.json` on cosigner
+   nodes),
 4. apply node role to key type discovery and service dispatch,
 5. register enabled compiled/YAML key type state,
 6. register enabled installed templates,

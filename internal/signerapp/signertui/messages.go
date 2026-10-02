@@ -81,6 +81,7 @@ const (
 	// Admin settings message types
 	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
 	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
+	MsgTypePolicy                   = protocol.MsgTypePolicy
 	MsgTypeUpdateAdminSetting       = protocol.MsgTypeUpdateAdminSetting
 	MsgTypeUpdateAdminSettingResult = protocol.MsgTypeUpdateAdminSettingResult
 
@@ -170,12 +171,7 @@ type (
 	AdminSettingsMessage                 = protocol.AdminSettingsMessage
 	UpdateAdminSettingMessage            = protocol.UpdateAdminSettingMessage
 	UpdateAdminSettingResultMessage      = protocol.UpdateAdminSettingResultMessage
-	GetPolicySnapshotMessage             = protocol.GetPolicySnapshotMessage
-	PolicySnapshotMessage                = protocol.PolicySnapshotMessage
-	ReplacePolicyMessage                 = protocol.ReplacePolicyMessage
-	ReplacePolicyResultMessage           = protocol.ReplacePolicyResultMessage
-	ValidatePolicyMessage                = protocol.ValidatePolicyMessage
-	ValidatePolicyResultMessage          = protocol.ValidatePolicyResultMessage
+	PolicyMessage                        = protocol.PolicyMessage
 )
 
 func CurrentAdminProtocolVersion() ProtocolVersion {

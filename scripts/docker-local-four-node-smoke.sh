@@ -651,20 +651,22 @@ YAML
 }
 
 configure_cosigner_policy() {
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    # Each cosigner key has its own policy document; a key without one
+    # rejects every request. Apply it online once the key exists.
     docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
-        apadmin -d /home/$TEST_USER/aplane/apsigner policy rescue apply - <<'YAML'
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: docker_smoke_allow_all
-      networks: [\"*\"]
-      sources: [\"*\"]
-      assets: [\"*\"]
-      destinations: [\"*\"]
-YAML
+        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply - <<'JSON'
+{
+  \"format\": \"aplane.cosigner-policy.v1\",
+  \"key\": \"$COSIGNER_COMPONENT_KEY\",
+  \"transfer_policy\": {
+    \"routes\": [
+      {\"id\": \"docker_smoke_allow_all\", \"networks\": [\"*\"], \"sources\": [\"*\"], \"assets\": [\"*\"], \"destinations\": [\"*\"]}
+    ]
+  }
+}
+JSON
     "
 }
 
@@ -1742,9 +1744,6 @@ main() {
     log "Configuring signer, cosigner, and client for $NETWORK_TOKEN"
     configure_selected_network
 
-    log "Configuring cosigner policy for guarded smoke transactions"
-    configure_cosigner_policy
-
     log "Verifying $NETWORK_TOKEN reachability from APlane nodes"
     verify_selected_network_reachable
 
@@ -1791,7 +1790,10 @@ main() {
     log "Importing cosigner public reference through local IPC"
     enroll_cosigner_reference_to_signer
 
-    # Local IPC export and import displace the node approval sessions.
+    log "Applying the cosigner key's policy for guarded smoke transactions"
+    configure_cosigner_policy
+
+    # Local IPC export, import, and policy apply displace the node approval sessions.
     # Re-establish both approval sessions before component signing.
     log "Re-establishing signer and cosigner approval sessions after public-reference import"
     start_signer_apapprover
