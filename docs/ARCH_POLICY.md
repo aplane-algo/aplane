@@ -775,21 +775,22 @@ true because no human approval is involved.
 
 ## Admin Surface
 
-`apadmin` embeds the shared guided policy editor and operates against the live
-signer through admin IPC. Its policy store requests the active signer-owned
-snapshot, validates draft YAML with the signer runtime compiler, and applies a
-whole-document replacement with optimistic concurrency. The replacement path
-requires an unlocked signer store, verifies the current sidecar, validates the
-submitted YAML in the selected policy domain, writes the exact submitted bytes
-plus a fresh sidecar, and updates the active runtime policy immediately.
+`apadmin policy` operates against the live signer through admin IPC. Policy
+documents are written or edited outside the node, reviewed with
+`apadmin policy check FILE`, and installed with `apadmin policy apply FILE`
+(or `apadmin policy rescue check|apply` while the daemon is stopped). The
+online store requests the active signer-owned snapshot, validates YAML with
+the signer runtime compiler, and applies a whole-document replacement with
+optimistic concurrency. The replacement path requires an unlocked signer
+store, verifies the current sidecar, validates the submitted YAML in the
+selected policy domain, writes the exact submitted bytes plus a fresh
+sidecar, and updates the active runtime policy immediately.
 
 The admin protocol and `internal/signerapp/admin` expose target-aware policy
 messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
 Targets are `signer` and `cosigner` policy domains; the filename is always
 `policy.yaml`. Omitted targets default from the node role. Signer nodes reject
-the cosigner target, and cosigner nodes reject the signer target. New policy
-UI work should reuse `internal/signerapp/policytui` with an appropriate store rather than
-adding a second field-editing model.
+the cosigner target, and cosigner nodes reject the signer target.
 
 Client-signing and cosigner component `transfer_policy` are both persisted in
 `policy.yaml`, with schema validation selected by node role. `apstore policy
@@ -797,64 +798,23 @@ check|sign|verify` operates on the active node-role policy. `apadmin policy`
 uses the daemon's node-role target online. `apadmin policy rescue` resolves
 `auto` from `node.yaml`; `--target signer|cosigner` may select a domain for a
 standalone draft, while store-backed role-incompatible targets fail closed.
-There is no scalar policy-settings IPC. The shared full-document editor renders
-and saves transfer policy through canonical YAML.
+There is no scalar policy-settings IPC.
 
-`apadmin policy edit` is the normal production editor. It obtains the active
-node-role policy snapshot through authenticated admin IPC, unlocks a locked
-identity with the authenticated passphrase before requesting that snapshot,
-validates the exact YAML through the daemon, and replaces it through the
-daemon-owned mutation path. All online policy verbs use that authenticated,
-unlock-capable session, including read-only verbs. Online `export` emits the
-exact daemon snapshot bytes, and online `digest` emits the daemon-reported
-snapshot SHA used for optimistic concurrency. `apadmin policy rescue` is a stopped-service tool:
+`apadmin policy` requires a verb: `check`, `export`, `digest`, `apply`, or
+`to-cosigner`. Online verbs obtain the active node-role policy snapshot
+through authenticated admin IPC, unlocking a locked identity with the
+authenticated passphrase before requesting that snapshot; this applies to
+read-only verbs too. Online `check FILE` validates the exact YAML through the
+daemon, and online `apply FILE|-` loads the active snapshot and replaces it
+through the daemon-owned mutation path. Online `export` emits the exact
+daemon snapshot bytes, and online `digest` emits the daemon-reported snapshot
+SHA used for optimistic concurrency. `apadmin policy rescue` is a stopped-service tool:
 it reads root `node.yaml`, verifies the HMAC sidecar with the store passphrase, validates
-changes through the same runtime compiler as `apsigner`, and applies the draft
-by saving the document plus a fresh sidecar while holding the store mutation
+changes through the same runtime compiler as `apsigner`, and applies a
+replacement by saving the document plus a fresh sidecar while holding the store mutation
 lock. On a systemd store, offline use requires root.
-When opened with a standalone YAML file, it validates the file without
-unlocking the production store; applying that file-backed draft to production
-is the operation that asks for the passphrase. The TUI exposes common policy
-fields as effective values with a source column, such as
-`default`, `explicit`, or `absent`, rather than showing YAML-null markers as
-values. Values that match the product default can still be omitted from saved
-YAML. For common transfer policies, transfer settings edit the binary
-`transfer_policy.enabled` switch, `on_no_route`, and `close_on_no_route`.
-Clawback-specific settings such as `reject_clawback` and
-`transfer_policy.clawback_on_no_route` are YAML-only in the guided editor;
-existing YAML values are preserved by unrelated guided edits. Guard,
-transfer-settings, and asset-set field editors
-validate and commit successful edits into the in-memory draft as each field
-editor closes; applying the draft to production remains a separate `a` action.
-
-A transfer guard is a UI projection of adjacent stored routes with the
-same derived guard name and network/source/destination/close shape. Note that
-this editor "transfer guard" (a grouping of `transfer_policy.routes`) is a
-different concept from the `max_*`/`review_*` amount-threshold maps. The UI "Guards" screen
-edits routes, not those maps; the two share a name but not a model. Group-level
-fields edit the shared shape: guard name, description, enabled, networks,
-sources, destinations, and close allowance. The route row table edits one real
-route per asset row: asset term and optional review/reject thresholds. The editor
-derives stored route IDs as `<guard>_<asset>`, with asset-set references using
-the set name without `@`. Existing route IDs that do not follow that generated
-convention are preserved on no-op guard edits because route IDs are persistent
-audit identifiers; changing the guard name or asset row intentionally writes
-the generated convention.
-The Transfer Guards screen also exposes the global `blocked_destinations` list
-and owns an Asset Sets editor for the `asset_sets` map; route asset cells
-accept bare set names and store them as `@name` in YAML. New transfer policies
-and existing transfer policies with no asset sets are seeded with a `usdc` set
-from APlane's built-in mainnet/testnet ASA metadata when the Asset Sets editor
-opens. Thresholds are still stored in raw YAML units, but the editor uses ALGO,
-concrete ASA, and eligible single-asset-per-network asset-set thresholds in
-display units and uses signer-side ASA metadata to convert ASA values.
-Multi-network asset-set guard rows are written as uniform `limits_by_network`
-entries.
-Advanced routing structures that are not yet surfaced in the guard editor
-still round-trip through YAML and can be edited directly with
-`apstore policy check/sign/verify`. This includes clawback routes using
-`asset_sources` and `clawback.allow`. Local non-interactive rescue may use
-`APSIGNER_PASSPHRASE`; remote policy commands require the controlling terminal.
+Local non-interactive rescue may use `APSIGNER_PASSPHRASE`; remote policy
+commands require the controlling terminal.
 `apadmin policy rescue digest` verifies the selected sidecar and prints the
 SHA-256 digest of the exact trusted selected document bytes.
 `apadmin policy rescue export` verifies the sidecar and emits those bytes to
@@ -871,16 +831,12 @@ and fails closed for route-miss `review` or `operator_default` behavior because
 cosigner policy has no human-review verdict.
 With a positional YAML file, the rescue `check`, `export`, and `digest` verbs
 parse and runtime-validate the file without reading the production sidecar or
-requesting the store passphrase.
-Inside the TUI, `a` applies the current in-memory draft to production. `w`
-exports the current draft to an operator-selected YAML file only; it does not
-write a sidecar, update the product store, or mark the draft clean.
+requesting the store passphrase; applying that file to production is the
+operation that asks for the passphrase.
 
 Authenticated admin IPC policy changes use only whole-document replacement.
 The identity must be unlocked so the signer can verify the current policy and
-write a fresh sidecar. `apadmin` presents those capabilities through the shared
-guided editor; the editor displays the policy currently held by the signer
-runtime and applies changes as whole-document replacements.
+write a fresh sidecar.
 For deliberate direct YAML edits, use `apstore policy check`, review the file,
 then run `apstore policy sign`; `apstore policy verify` checks the sidecar with
 the store passphrase. `apstore policy sign` is an offline store mutation and
@@ -944,7 +900,6 @@ Implementation source of truth:
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
 - `internal/signerapp/policyeditor`: online, store-backed rescue, and standalone
   draft stores.
-- `internal/signerapp/policytui`: shared terminal UI model for policy editing.
 - `internal/signerapp/signing/always_review.go`: Always Review evaluation.
 - `internal/signerapp/signing/approval.go`: approval prompts and operator default behavior.
 - `internal/signerapp/signing/service.go`: phase ordering.

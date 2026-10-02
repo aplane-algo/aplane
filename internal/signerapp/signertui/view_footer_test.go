@@ -31,7 +31,7 @@ func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
 					Theme:            "auto",
 				}},
 			},
-			footerWant: "p: Policy",
+			footerWant: "k: KeyTypes",
 		},
 		{
 			name:       "generate form",
@@ -86,7 +86,7 @@ func TestWindowFooterWrapsAbovePinnedStatus(t *testing.T) {
 	}
 	footerHeight := renderedBlockHeight(m.renderWindowFooter())
 	footerBlock := strings.Join(lines[len(lines)-1-footerHeight:len(lines)-1], "\n")
-	for _, want := range []string{"g: Generate", "p: Policy", "q: Quit"} {
+	for _, want := range []string{"g: Generate", "l: Lock", "q: Quit"} {
 		if !strings.Contains(footerBlock, want) {
 			t.Fatalf("wrapped footer block missing %q:\n%s", want, strings.Join(lines, "\n"))
 		}

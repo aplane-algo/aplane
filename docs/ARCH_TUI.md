@@ -70,13 +70,12 @@ identifies the current screen. The enum has families for:
   (`locked` / `recovery` / `unlocked`); recovery is never rendered as
   unlocked.
 - Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeTokenConfirm`, `ViewDisplaceConfirm`)
-- Settings panel (`ViewAdminPanel`) and shared policy editor workflow (`ViewPolicyEditor`)
+- Settings panel (`ViewAdminPanel`)
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
 - `ViewError`
 
 See `internal/signerapp/signertui/model.go` for the authoritative enum values and the
-one-line comments that document each screen's purpose. Compatibility-only
-policy view states in the enum are not active `apadmin` entry points.
+one-line comments that document each screen's purpose.
 
 ## Cosigner Reference Manager
 
@@ -152,18 +151,10 @@ signer settings and status:
 - Signer-managed backup creation and managed backup restore
 - SSH enabled state, port, fingerprint, and connected-client count
 - Signer port, TEAL compile network, and theme
-- The shared guided policy editor, opened with `p` from the key list or
-  through the secondary `Policy` row in Settings
 
-`apadmin` embeds `internal/signerapp/policytui` for online policy editing. The TUI
-requests the active signer-owned snapshot over the admin protocol, selects
-`policy.yaml` on signer nodes or cosigner-domain `policy.yaml` on cosigner nodes, and
-applies edits as whole-document replacements guarded by
-`expected_current_sha256`. The signer validates draft YAML in the selected
-policy domain, writes the YAML plus a fresh sidecar, and returns a canonical
-snapshot after a successful apply. `apadmin policy rescue` uses the same editor
-offline for store-locked edits, scriptable save/check/export, and signing-to-cosigner
-conversion.
+Policy is managed outside the TUI with the `apadmin policy`
+verbs (`check`, `export`, `digest`, `apply`, `to-cosigner`) online, or
+`apadmin policy rescue` while the daemon is stopped.
 
 ## Local Activity And Idle Locking
 
@@ -200,7 +191,6 @@ recoverable view.
 | `internal/signerapp/signertui/activity.go` | Local keystroke activity reporting and idle lock timers |
 | `internal/signerapp/signertui/ipc_client.go` | IPC connection to the signer |
 | `internal/signerapp/signertui/connector.go` | Local Unix socket admin connector |
-| `internal/signerapp/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
 | `internal/signerapp/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
 
 ## Related Documentation

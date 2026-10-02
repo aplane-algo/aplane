@@ -140,9 +140,6 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r", "R":
 		return m.openRestoreList()
 
-	case "p", "P":
-		return m.openPolicyViewer()
-
 	case "l":
 		return m.openManualLockConfirm()
 

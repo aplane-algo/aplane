@@ -24,7 +24,8 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		wantRescue bool
 		wantErr    string
 	}{
-		{name: "policy aliases edit", wantVerb: policycmd.VerbEdit, wantTarget: policyeditor.TargetAuto},
+		{name: "verb required", wantErr: "requires a verb"},
+		{name: "edit retired", args: []string{"edit"}, wantErr: "unknown policy command"},
 		{name: "online check file", args: []string{"check", "draft.yaml"}, wantVerb: policycmd.VerbCheck, wantTarget: policyeditor.TargetAuto, wantSource: "draft.yaml"},
 		{name: "targeted rescue", args: []string{"rescue", "export", "--target", "cosigner", "draft.yaml"}, wantVerb: policycmd.VerbExport, wantTarget: policyeditor.TargetCosigner, wantSource: "draft.yaml", wantRescue: true},
 		{name: "apply stdin", args: []string{"apply", "-"}, wantVerb: policycmd.VerbApply, wantTarget: policyeditor.TargetAuto, wantSource: "-"},

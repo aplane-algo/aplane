@@ -88,7 +88,7 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore rebuild` | Offline mutation into an absent product store |
 | `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
 | `apstore policy sign` | Offline mutation for a signer that cannot load policy |
-| `apadmin policy rescue` production apply/edit | Offline policy repair for a stopped daemon |
+| `apadmin policy rescue` production apply | Offline policy repair for a stopped daemon |
 | `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
@@ -115,7 +115,7 @@ operator-owned state outside `APSIGNER_DATA`.
 The multi-UID clients `apadmin`, `apapprover`, `approbe`, and systemd-attach
 `apconsole` resolve the public runtime socket without reading signer
 configuration. `apadmin` owns every general running-daemon administration
-workflow: policy editing, template and key-type administration, cosigner-reference
+workflow: policy check/apply, template and key-type administration, cosigner-reference
 administration, endpoint export, generation listing, managed backup transfer,
 restore, and passphrase rotation. Those workflows use typed admin operations;
 operator-selected exports are written to operator-owned locations. `apstore`

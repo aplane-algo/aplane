@@ -83,12 +83,6 @@ const (
 	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
 	MsgTypeUpdateAdminSetting       = protocol.MsgTypeUpdateAdminSetting
 	MsgTypeUpdateAdminSettingResult = protocol.MsgTypeUpdateAdminSettingResult
-	MsgTypeGetPolicySnapshot        = protocol.MsgTypeGetPolicySnapshot
-	MsgTypePolicySnapshot           = protocol.MsgTypePolicySnapshot
-	MsgTypeReplacePolicy            = protocol.MsgTypeReplacePolicy
-	MsgTypeReplacePolicyResult      = protocol.MsgTypeReplacePolicyResult
-	MsgTypeValidatePolicy           = protocol.MsgTypeValidatePolicy
-	MsgTypeValidatePolicyResult     = protocol.MsgTypeValidatePolicyResult
 
 	// Client displacement message types
 	MsgTypeClientExists    = protocol.MsgTypeClientExists

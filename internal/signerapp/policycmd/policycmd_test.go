@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -212,38 +211,6 @@ func TestOnlineApplyRejectsConcurrentSnapshotChange(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("failed concurrent apply reported success: %q", stdout.String())
-	}
-}
-
-func TestOnlineEditDraftSeedsExpectedSHAFromActiveSnapshot(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "secret")
-	draft := filepath.Join(t.TempDir(), "draft.yaml")
-	if err := os.WriteFile(draft, []byte("reject_foreign_rekey: false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := &fakeOnlineSession{status: "unlocked"}
-	editor := func(store policyeditor.Store, _ *policy.StoredConfig, _ string, _ policyeditor.Target) error {
-		adminStore, ok := store.(*policyeditor.AdminStore)
-		if !ok {
-			t.Fatalf("editor store = %T, want *policyeditor.AdminStore", store)
-		}
-		if session.snapshotCalls != 1 {
-			t.Fatalf("active snapshot calls before editor = %d, want 1", session.snapshotCalls)
-		}
-		return adminStore.SaveYAML(context.Background(), []byte("reject_foreign_rekey: true\n"))
-	}
-	err := (OnlineRunner{Session: session, Editor: editor}).Run(context.Background(), Command{
-		Verb: VerbEdit, Target: policyeditor.TargetSigner, Source: draft,
-	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.replaceRequest.ExpectedCurrentSHA256 != "active-sha" {
-		t.Fatalf("expected SHA = %q, want active-sha", session.replaceRequest.ExpectedCurrentSHA256)
-	}
-	if session.validateCalls != 2 {
-		t.Fatalf("validation calls = %d, want draft validation plus replacement validation", session.validateCalls)
 	}
 }
 
@@ -471,7 +438,7 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 		}
 		seen[verb] = true
 	}
-	if !seen[VerbEdit] || !seen[VerbApply] || len(seen) != 6 {
+	if !seen[VerbCheck] || !seen[VerbApply] || len(seen) != 5 {
 		t.Fatalf("production verbs = %#v", ProductionVerbs)
 	}
 }
@@ -579,106 +546,6 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("busy rescue apply changed production policy")
-	}
-}
-
-func TestRescueDraftEditWritesOnlyDraftWithoutSidecar(t *testing.T) {
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, "")
-	dir := t.TempDir()
-	path := filepath.Join(dir, "draft.yaml")
-	if err := os.WriteFile(path, []byte("reject_foreign_rekey: true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var editorDataDir string
-	editor := func(store policyeditor.Store, _ *policy.StoredConfig, dataDir string, _ policyeditor.Target) error {
-		editorDataDir = dataDir
-		replacement, err := policy.ParseStoredConfig([]byte("reject_foreign_rekey: false\n"))
-		if err != nil {
-			return err
-		}
-		return store.Save(context.Background(), replacement)
-	}
-	err := (RescueRunner{Editor: editor}).Run(context.Background(), Command{
-		Verb: VerbEdit, Target: policyeditor.TargetSigner, Source: path,
-	}, Streams{Stdout: io.Discard, Stderr: io.Discard})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if editorDataDir != "" {
-		t.Fatalf("standalone editor data directory = %q, want empty", editorDataDir)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(got)) != "reject_foreign_rekey: false" {
-		t.Fatalf("draft contents = %q", got)
-	}
-	if _, err := os.Stat(path + ".hmac"); !os.IsNotExist(err) {
-		t.Fatalf("standalone draft created sidecar: %v", err)
-	}
-}
-
-func TestRescueProductionEditHoldsLockThroughEditorAndNormalizesOnlyOnSuccess(t *testing.T) {
-	root, passphrase := initializedPolicyStore(t)
-	t.Setenv(retiredPassphraseEnv, "")
-	t.Setenv(passphraseEnv, passphrase)
-
-	oldEUID, oldManaged := EffectiveUID, IsManagedStore
-	oldOwner, oldLoad := ManagedStoreOwner, LoadServerConfig
-	oldSocket, oldNormalize := ResolveLegacySocket, NormalizeStore
-	t.Cleanup(func() {
-		EffectiveUID, IsManagedStore = oldEUID, oldManaged
-		ManagedStoreOwner, LoadServerConfig = oldOwner, oldLoad
-		ResolveLegacySocket, NormalizeStore = oldSocket, oldNormalize
-	})
-	EffectiveUID = func() int { return 0 }
-	IsManagedStore = func(string) (bool, error) { return true, nil }
-	ManagedStoreOwner = func(string) (int, int, error) { return 12, 34, nil }
-	LoadServerConfig = func(string) (serverconfig.ServerConfig, error) {
-		cfg := serverconfig.DefaultServerConfig()
-		return cfg, nil
-	}
-	ResolveLegacySocket = func(string, string) (string, error) { return "socket", nil }
-	normalizeCalls := 0
-	NormalizeStore = func(root string, uid, gid int, socket string) error {
-		normalizeCalls++
-		if uid != 12 || gid != 34 || socket != "socket" {
-			t.Fatalf("normalization inputs = %d:%d %q", uid, gid, socket)
-		}
-		return nil
-	}
-
-	editor := func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error {
-		guard, err := storelock.AcquireShared(root)
-		if err == nil {
-			_ = guard.Close()
-			t.Fatal("editor did not retain the exclusive mutation lock")
-		}
-		if !errors.Is(err, storelock.ErrBusy) {
-			t.Fatalf("AcquireShared() error = %v", err)
-		}
-		return nil
-	}
-	err := (RescueRunner{Editor: editor}).Run(context.Background(), Command{
-		Verb: VerbEdit, Target: policyeditor.TargetSigner, DataDir: root,
-	}, Streams{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if normalizeCalls != 1 {
-		t.Fatalf("normalize calls = %d, want 1", normalizeCalls)
-	}
-
-	normalizeCalls = 0
-	err = (RescueRunner{Editor: func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error {
-		return errors.New("cancelled")
-	}}).Run(context.Background(), Command{
-		Verb: VerbEdit, Target: policyeditor.TargetSigner, DataDir: root,
-	}, Streams{})
-	if err == nil || normalizeCalls != 0 {
-		t.Fatalf("failed edit error=%v normalize calls=%d", err, normalizeCalls)
 	}
 }
 

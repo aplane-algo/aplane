@@ -319,7 +319,8 @@ moments:
 Day-to-day:
 
 - Use `apadmin` to unlock the signer, approve transactions, change runtime
-  admin settings, and edit the node-role policy while `apsigner` is running.
+  admin settings, and check and apply the node-role policy with
+  `apadmin policy` while `apsigner` is running.
 - Use `apadmin policy rescue` for offline or scriptable policy inspection,
   validation, and signing of the node-role policy document: `policy.yaml` for signer nodes or
   cosigner-domain `policy.yaml` for cosigner nodes.
@@ -578,10 +579,11 @@ For the operator-facing policy guide, including transfer routing and key type
 override examples, see [USER_POLICY.md](USER_POLICY.md). This section is a
 configuration reference for the policy fields.
 
-Use `apadmin` for online guided policy edits while `apsigner` is running; it
-selects the node-role policy document, validates through the signer, writes the
-selected document plus a fresh sidecar, and activates the result immediately.
-Use `apadmin policy rescue` for offline or scriptable policy edits. It
+Write or edit the policy file outside the node, run `apadmin policy check FILE`,
+then `apadmin policy apply FILE` while `apsigner` is running; it selects the
+node-role policy document, validates through the signer, writes the selected
+document plus a fresh sidecar, and activates the result immediately.
+Use `apadmin policy rescue check|apply` while the daemon is stopped. It
 auto-selects the policy document from `node.yaml`, verifies the existing sidecar, validates the
 edited policy, and writes the selected document plus a fresh sidecar while
 holding the offline store mutation lock. For deliberate direct YAML edits to
@@ -680,9 +682,10 @@ max_asa_amounts:
 ### Transfer Routing
 
 `transfer_policy` is the route table for direct `pay` and `axfer`
-transactions. Use `apadmin` for online guided editing while the signer is
-running, or `apadmin -d "$APSIGNER_DATA" policy rescue edit` for offline guided
-editing of common policy and transfer guards. Advanced routing fields can also be edited directly
+transactions. Edit routes in the policy file outside the node, then run
+`apadmin policy check FILE` and `apadmin policy apply FILE` while the signer is
+running, or the `apadmin -d "$APSIGNER_DATA" policy rescue` forms while it is
+stopped. Routing fields can also be edited directly
 in `policy.yaml` or cosigner-domain `policy.yaml`; then run `apstore policy check` and
 `apstore policy sign` before starting or reloading the signer. For scripts, use
 `apadmin policy rescue export` to export the verified selected policy and
@@ -694,8 +697,7 @@ troubleshooting, see [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
 
 Routes constrain signer-controlled transfer movements by network, source,
 asset, and destination. The stored YAML schema calls these entries `routes`;
-the shared policy TUI presents the common one-asset form as transfer guards. A
-matching route means the movement may continue through the normal policy
+A matching route means the movement may continue through the normal policy
 pipeline; it is not an auto-approval. Routing can produce Always Deny or
 Always Review verdicts, never Always Approve.
 
@@ -958,15 +960,16 @@ key_overrides:
     max_fee_microalgos: 5000
 ```
 
-### Policy Editing UI
+### Policy Editing
 
-`apadmin` exposes the shared guided policy editor from the main key list with
-`p` and from Settings with the `Policy` row. It edits the active node-role
-policy through the running signer and applies changes immediately on success.
-Use `apadmin policy rescue` for offline guided policy edits:
+Write or edit the policy file outside the node, run `apadmin policy check FILE`,
+then `apadmin policy apply FILE`. It applies to the active node-role policy
+through the running signer and takes effect immediately on success. While the
+signer is stopped, use the rescue forms:
 
 ```bash
-apadmin -d "$APSIGNER_DATA" policy rescue edit
+apadmin -d "$APSIGNER_DATA" policy rescue check FILE
+apadmin -d "$APSIGNER_DATA" policy rescue apply FILE
 ```
 
 For scripted flows, `apadmin policy rescue export` writes the verified selected
@@ -986,23 +989,6 @@ The scalar transfer guard compatibility fields are accepted in `policy.yaml`:
 Use the `transfer_policy` route table for operator-managed policy; it expresses
 source, destination, asset, close, clawback, and amount threshold rules in one
 model.
-
-In the shared policy editor's Transfer Guards screen, the global
-blocked-destination list is edited next to the route list. Each editable guard contains one or more asset
-rows, and each asset row maps to one stored route with exactly one asset term
-and optional `review_above` / `reject_above` thresholds. The guard editor
-exposes guard-level name and description fields, plus asset and threshold rows.
-The editor saves each asset row as one real route whose ID is derived as
-`<guard>_<asset>`; asset rows accept bare asset-set names such as `usdc`,
-save them as `@name` in YAML, and drop the `@` in the route ID.
-For `algo` and concrete ASA IDs, threshold fields use display units in the TUI
-and are converted back to raw YAML units on save.
-`50` on an ALGO guard stores `50000000`; `5` on a 6-decimal ASA stores
-`5000000`. ASA decimals come from signer-side ASA metadata, with numeric ASA
-IDs able to query configured algod when the local cache is cold. Routes with
-multiple asset terms, `limits_by_network`, clawback `asset_sources`, wildcard
-or asset-set amount limits, or other advanced YAML-only fields remain supported
-but are edited through the full YAML view or the rescue `export` / `apply` flow.
 
 ### Approval vs Policy
 

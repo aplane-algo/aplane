@@ -200,15 +200,9 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 		"github.com/aplane-algo/aplane/internal/signerapp/policycmd": {
 			filepath.Join("cmd", "apadmin"): true,
 		},
-		"github.com/aplane-algo/aplane/internal/signerapp/policytui": {
-			filepath.Join("cmd", "apadmin"):                     true,
-			filepath.Join("internal", "signerapp", "signertui"): true,
-		},
 		"github.com/aplane-algo/aplane/internal/signerapp/policyeditor": {
 			filepath.Join("cmd", "apadmin"):                     true,
 			filepath.Join("internal", "signerapp", "policycmd"): true,
-			filepath.Join("internal", "signerapp", "policytui"): true,
-			filepath.Join("internal", "signerapp", "signertui"): true,
 		},
 	}
 	for _, sourceRoot := range []string{"cmd", "internal"} {

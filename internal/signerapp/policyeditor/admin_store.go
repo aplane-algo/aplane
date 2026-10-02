@@ -166,11 +166,6 @@ func (s *AdminStore) SaveYAML(ctx context.Context, data []byte) error {
 	return nil
 }
 
-// ModeLabel identifies this backend in policytui headers.
-func (s *AdminStore) ModeLabel() string {
-	return "online"
-}
-
 // LastSHA256 returns the canonical snapshot SHA from the last successful Load
 // or Save.
 func (s *AdminStore) LastSHA256() string {

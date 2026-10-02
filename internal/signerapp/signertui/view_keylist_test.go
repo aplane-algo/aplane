@@ -334,36 +334,6 @@ func TestHandleKeyListKeysDoesNotDeleteFromMainScreen(t *testing.T) {
 	}
 }
 
-func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
-	m := Model{
-		viewState: ViewKeyList,
-		keylist: keyListState{keys: []KeyInfo{{
-			Address: "ADDR",
-			KeyType: "ed25519",
-		}}},
-	}
-
-	nextModel, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	next := nextModel.(Model)
-	if next.viewState != ViewPolicyEditor {
-		t.Fatalf("viewState = %v, want %v", next.viewState, ViewPolicyEditor)
-	}
-	if next.policyEd.returnView != ViewKeyList {
-		t.Fatalf("policyEditorReturnView = %v, want %v", next.policyEd.returnView, ViewKeyList)
-	}
-	if !next.policyEd.loading {
-		t.Fatal("policyEditorLoading = false, want true")
-	}
-	if cmd == nil {
-		t.Fatal("cmd = nil, want policy editor load command")
-	}
-
-	rendered := stripANSI(m.View())
-	if !strings.Contains(rendered, "p: Policy") {
-		t.Fatalf("View() missing policy shortcut:\n%s", rendered)
-	}
-}
-
 func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyDetails,

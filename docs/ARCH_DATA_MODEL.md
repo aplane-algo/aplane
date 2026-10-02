@@ -903,7 +903,7 @@ credentials directly because no live signer store is being mutated.
 
 Signer-wide ASA metadata and product-store key type state records are not secrets.
 They still must be mutated through supported paths because they affect UX,
-generation availability, provenance, and policy editing behavior.
+generation availability, provenance, and policy amount rendering.
 
 ## Compatibility Invariants
 

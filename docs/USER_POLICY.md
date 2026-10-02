@@ -40,31 +40,30 @@ rule.
 
 ## Editing Policy
 
-Use `apadmin` for online guided policy edits while `apsigner` is running. From
-the main key list, press `p`, or open Settings and choose `Policy`. `apadmin`
-targets the node-role policy domain automatically: signer nodes edit
-signer-domain `policy.yaml`, and cosigner nodes edit cosigner-domain
-`policy.yaml`. It validates drafts with the running signer, applies changes as
-whole-document replacements, writes the fresh sidecar, and activates the
-resulting runtime policy immediately.
+Write or edit the policy file outside the node, review it with
+`apadmin policy check FILE`, then install it with `apadmin policy apply FILE`.
+While `apsigner` is stopped, use the `apadmin policy rescue` forms instead.
 
-Use `apadmin policy` for a standalone guided or scriptable production client.
-It connects through authenticated local admin IPC, selects the daemon's node role, unlocks the product
-when required, and never needs filesystem access to the private signer store.
+`apadmin policy` connects through authenticated local admin IPC, selects the
+daemon's node role, unlocks the product when required, and never needs
+filesystem access to the private signer store. Signer nodes target
+signer-domain `policy.yaml`, and cosigner nodes target cosigner-domain
+`policy.yaml`.
 
 ```bash
-apadmin policy edit
-apadmin policy check
 apadmin policy export > selected-policy.yaml
+apadmin policy check selected-policy.yaml
+apadmin policy apply selected-policy.yaml
+apadmin policy digest
 apadmin policy apply - < selected-policy.yaml
-apadmin policy edit draft-policy.yaml
-apadmin policy rescue edit draft-policy.yaml
 ```
 
-`apadmin policy` with no verb is the same as `apadmin policy edit`. A draft
-passed to `edit` is validated through the daemon and uses the current live
-snapshot as its optimistic-concurrency base. The `check`, `export`, `digest`,
-`apply`, and `to-cosigner` verbs are noninteractive batch operations. Every
+`apadmin policy` requires a verb: `check`, `export`, `digest`, `apply`, or
+`to-cosigner`. All verbs are noninteractive. A file passed to online `check`
+is validated through the running daemon. Online `apply` validates the file
+with the running signer, uses the current live snapshot as its
+optimistic-concurrency base, replaces the whole document, writes the fresh
+sidecar, and activates the resulting runtime policy immediately. Every
 online verb authenticates first; if the daemon is locked, even the read-only
 `check`, `export`, and `digest` commands unlock it before reading policy state
 and are therefore not guaranteed to preserve the daemon's lock state.
@@ -76,12 +75,12 @@ as follows:
 
 | Former command | Current command |
 |---|---|
-| `appolicy --online` | `apadmin policy edit` |
+| `appolicy --online` | `apadmin policy export`, edit the file, then `apadmin policy check FILE` and `apadmin policy apply FILE` |
 | `appolicy --online --check FILE` | `apadmin policy check FILE` |
 | `appolicy --online --yaml FILE` | `apadmin policy export FILE` |
 | `appolicy --online --sha256 FILE` | `apadmin policy digest FILE` |
 | `appolicy --online --save` | `apadmin policy apply -` |
-| `appolicy FILE` | `apadmin policy rescue edit FILE` |
+| `appolicy FILE` | `apadmin policy rescue check FILE`, then `apadmin policy rescue apply FILE` |
 | `appolicy --check FILE` | `apadmin policy rescue check FILE` |
 | `appolicy --yaml FILE` | `apadmin policy rescue export FILE` |
 | `appolicy --sha256 FILE` | `apadmin policy rescue digest FILE` |
@@ -92,22 +91,13 @@ There is no wrapper or automatic online-to-rescue fallback.
 `apadmin policy rescue` is the stopped-service rescue command family. With
 `--target auto` it reads `$APSIGNER_DATA/node.yaml`. On a systemd store, run
 store-backed rescue as root only while `apsigner` is stopped. A positional
-standalone draft does not read the signer store or sidecar.
+standalone file passed to `check`, `export`, or `digest` does not read the
+signer store or sidecar.
 
-Inside the online TUI, or rescue mode opened without a positional file, `a`
-applies the current draft to production by writing the selected policy document
-plus a fresh sidecar. In `apadmin policy rescue edit FILE`, `a` instead saves
-only that standalone draft file; it does not update production policy, request
-a store passphrase, or create a sidecar. The editor labels these two actions
-differently. In either mode, `w` writes the current in-memory policy draft to a
-separate YAML file. This is an export only and does not clear the modified
-state.
-
-When `apadmin policy rescue` opens production policy from `APSIGNER_DATA` or
-`-d`, it needs the store passphrase to verify the sidecar. When it opens a
-standalone YAML file, it validates and saves that file without unlocking the
-store. To publish a standalone draft later, run `apadmin policy rescue apply
-FILE` explicitly while the signer is stopped.
+When `apadmin policy rescue` reads production policy from `APSIGNER_DATA` or
+`-d`, it needs the store passphrase to verify the sidecar. To publish a
+standalone file, run `apadmin policy rescue apply FILE` explicitly while the
+signer is stopped.
 
 For byte-preserving offline rescue edits:
 
@@ -137,8 +127,7 @@ With a positional YAML file, `apadmin policy rescue check draft.yaml`,
 `apadmin policy rescue export draft.yaml`, and
 `apadmin policy rescue digest draft.yaml` validate the file itself and do not
 verify or update the production sidecar. Their non-rescue equivalents validate
-through the running daemon; `apadmin policy edit draft.yaml` opens the
-validated draft for online editing.
+through the running daemon.
 
 For deliberate direct YAML edits:
 
@@ -149,21 +138,20 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 These direct commands are offline maintenance operations; stop `apsigner` and
-use `sudo` for a systemd store. Normal production edits should use `apadmin` or
-`apadmin policy edit`.
+use `sudo` for a systemd store. Normal production changes should use
+`apadmin policy check` and `apadmin policy apply`.
 
 Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. These are offline store mutations, so the normal workflow
 is to run them while `apsigner` is stopped or before starting it.
 
-The `apadmin` editor shows the policy currently loaded by `apsigner`. Applying
-from the editor is a whole-file replacement, not a merge. The signer must be
-unlocked; it verifies the current sidecar for the selected document, validates
-the submitted YAML with the signer runtime compiler, writes the exact submitted
-bytes plus a fresh sidecar, and activates the resulting policy immediately. The
-request includes the SHA-256 of the snapshot you were editing, so the signer
-rejects the replacement if the active policy changed before the upload was
-applied.
+Online `apadmin policy apply` is a whole-file replacement, not a merge. The
+signer must be unlocked; it verifies the current sidecar for the selected
+document, validates the submitted YAML with the signer runtime compiler, writes
+the exact submitted bytes plus a fresh sidecar, and activates the resulting
+policy immediately. The request includes the SHA-256 of the snapshot loaded at
+the start of the apply, so the signer rejects the replacement if the active
+policy changed before the upload was applied.
 
 ## Top-Level Fields
 
@@ -173,7 +161,7 @@ applied.
 |-------|---------|
 | `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer product. Defaults to `true`. |
 | `reject_rekey` | Cosigner-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
-| `rekey_policy` | Cosigner-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. YAML-only. |
+| `rekey_policy` | Cosigner-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
 | `reject_asset_close` | Reject ASA transfer txns with non-zero `AssetCloseTo`. Defaults to `false`. |
 | `reject_clawback` | Reject ASA clawback txns using `AssetSender`. Defaults to `false`. |
@@ -185,18 +173,12 @@ applied.
 | `review_asa_amounts` | Compatibility per-network raw ASA unit review thresholds. |
 | `max_asa_amounts` | Compatibility per-network raw ASA unit reject thresholds. |
 | `transfer_policy` | Source/asset/destination route table for direct ALGO and ASA movements. |
-| `key_overrides` | Advanced per-key policy overlays. YAML-only. |
+| `key_overrides` | Advanced per-key policy overlays. |
 
 Use `transfer_policy` for route-based operator policy. The payment and ASA
 threshold maps remain accepted compatibility fields.
 
-Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
-`transfer_policy.clawback_on_no_route`, and clawback routes using
-`asset_sources` / `clawback.allow` remain valid in `policy.yaml`, but the
-shared `apadmin` policy TUI does not expose controls to change them. Existing
-YAML-authored clawback settings are preserved by unrelated guided edits.
-
-Cosigner rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse
+For cosigner rekey authorization, set `reject_rekey: true` for a coarse
 deny-all policy. To authorize a controlled rekey, omit `reject_rekey` or set it
 to `false`, and add `rekey_policy.allowed` entries:
 
@@ -313,42 +295,7 @@ transfer_policy:
 With `on_no_route: reject`, any covered transfer movement that does not match
 the route is rejected. Non-transfer policy layers still apply independently.
 
-## Guided Editor Guard Shape
-
-The shared policy editor's Transfer Guards screen presents the common route shape as a
-guard with guard-level fields and an asset table.
-
-Guard-level fields include:
-
-- `Name`,
-- `Description`,
-- `Networks`,
-- `Sources`,
-- `Destinations`,
-- `Enabled`,
-- `Close Allow`.
-
-Each asset row becomes one stored route in the selected policy document. The
-TUI derives the route ID as `<guard>_<asset>`, for example `test_algo` and
-`test_usdc` for a guard named `test`. Asset-set rows accept either `@usdc` or
-`usdc`; the editor stores the route asset as `@usdc` and uses `test_usdc` as the
-route ID.
-Field edits validate and save into the in-memory draft when the field editor
-closes. Press `a` from the main policy screens to apply that draft to
-production.
-
-For `algo`, concrete ASA IDs, and eligible asset sets, amount fields in the TUI
-use display units. Policy YAML stores raw on-chain units: microAlgos for ALGO
-and raw ASA units for ASAs.
-
-Advanced route shapes remain YAML-only, including multi-asset routes,
-non-uniform `limits_by_network`, clawback `asset_sources` /
-`clawback.allow`, and some wildcard or asset-set amount-limit combinations.
-
 ## Key Overrides
-
-`key_overrides` is an advanced YAML-only feature. The guided editor does not
-edit overrides.
 
 Overrides let one concrete signing key use tighter or looser settings than the
 product-wide policy. The override is selected by the auth address that will

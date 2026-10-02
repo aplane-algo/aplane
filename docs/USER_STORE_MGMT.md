@@ -273,7 +273,7 @@ cosigner-reference, and generation-list operations run through `apadmin` as the
 operator over authenticated IPC. Offline bootstrap/rescue operations and `appass` require a
 stopped service and `sudo`. The tools refuse the wrong mode before prompting or
 touching the store. Root-run `appass` verifies the systemd unit principal
-against `install/service-principal.json`. Offline `apadmin policy rescue` edits restore the
+against `install/service-principal.json`. Offline `apadmin policy rescue apply` runs restore the
 recorded service ownership before returning.
 
 ### Auditing and migrating systemd store permissions
@@ -749,7 +749,6 @@ From the key details view:
 ./apadmin policy rescue check
 ./apadmin policy rescue export
 ./apadmin policy rescue apply - < selected-policy.yaml
-./apadmin policy rescue edit
 
 # Template management (for custom LogicSigs)
 ./apadmin template list
