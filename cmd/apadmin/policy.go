@@ -14,13 +14,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
-	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
 	"github.com/aplane-algo/aplane/internal/transport"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type policyGlobalOptions struct {
@@ -50,7 +47,6 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 	}
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
-	editor := launchPolicyEditor
 
 	if rescue {
 		if globals.ipcPathPassed {
@@ -65,7 +61,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 			}
 			command.DataDir = dataDir
 		}
-		if err := (policycmd.RescueRunner{Editor: editor}).Run(ctx, command, ioStreams); err != nil {
+		if err := (policycmd.RescueRunner{}).Run(ctx, command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
 			return 1
 		}
@@ -81,7 +77,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 		return 1
 	}
 	session := transport.NewIPC(ipcPath)
-	if err := (policycmd.OnlineRunner{Session: session, Editor: editor}).Run(ctx, command, ioStreams); err != nil {
+	if err := (policycmd.OnlineRunner{Session: session}).Run(ctx, command, ioStreams); err != nil {
 		writePolicyError(streams.stderr, err)
 		return 1
 	}
@@ -89,7 +85,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 }
 
 func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, bool, error) {
-	command := policycmd.Command{Verb: policycmd.VerbEdit, Target: policyeditor.TargetAuto}
+	command := policycmd.Command{Target: policyeditor.TargetAuto}
 	rescue := false
 	if len(args) > 0 && args[0] == "rescue" {
 		rescue = true
@@ -116,10 +112,9 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		mode = " rescue"
 	}
 	fs.Usage = func() {
-		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s [VERB] [--target auto|signer|cosigner] [FILE|-]
+		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s VERB [--target auto|signer|cosigner] [FILE|-]
 
 Verbs:
-  edit [FILE]       open the guided editor (default)
   check [FILE]      validate policy
   export [FILE]     write exact validated YAML
   digest [FILE]     write the exact YAML SHA-256 digest
@@ -138,6 +133,9 @@ production edits, and reject --ipc-path.
 	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or cosigner")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
+	}
+	if command.Verb == "" {
+		return command, rescue, fmt.Errorf("policy requires a verb: check, export, digest, apply, or to-cosigner")
 	}
 	target, err := policyeditor.ParseTarget(*targetRaw)
 	if err != nil {
@@ -162,15 +160,6 @@ func needsPolicyDataDir(command policycmd.Command) bool {
 		return true
 	}
 	return command.DataDir != "" || os.Getenv("APSIGNER_DATA") != ""
-}
-
-func launchPolicyEditor(store policyeditor.Store, stored *policy.StoredConfig, dataDir string, target policyeditor.Target) error {
-	program := tea.NewProgram(
-		policytui.NewWithTarget(store, stored, dataDir, target),
-		tea.WithAltScreen(),
-	)
-	_, err := program.Run()
-	return err
 }
 
 func writePolicyError(stderr io.Writer, err error) {

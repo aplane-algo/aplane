@@ -182,11 +182,10 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Client-signing policy config | authoritative policy domain | `policy.yaml` interpreted on signer nodes | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
 | Cosigner policy config | authoritative policy domain | `policy.yaml` interpreted on cosigner nodes | effective cosigner component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
-| Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/policyview`, `internal/signerapp/policycmd` | `schema_version:1`; route IDs are audit identifiers. |
+| Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/signerapp/policycmd` | `schema_version:1`; route IDs are audit identifiers. |
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
 | Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; cosigner overrides keyed by Witness Key ID. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Cosigner rejects if a review verdict would be required. |
-| Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | apadmin policy TUI draft | `cmd/apadmin`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor` | Applies only on explicit save/apply; production save writes exact bytes and sidecar. |
 | Cosigner policy conversion output | derived YAML | `apadmin policy to-cosigner` input policy | deterministic "could allow" cosigner-role `policy.yaml` content | `internal/signerapp/policycmd`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
@@ -237,7 +236,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/sshprovision` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | backup create/list/delete, bounded import/export, preview, direct restore, rollback, and reconcile DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/backupadmin` | Import authenticates the sealed manifest and validates every credential before publication; restore validates the complete set before publishing one generation; export passphrases are parsed as `SensitiveBytes`. |
 | Admin settings messages | wire contract | settings get/update messages | process/product runtime config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/cosigner writes replace whole documents and sidecars; interactive and batch apadmin workflows share the editor model. |
+| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | `apadmin policy` online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/cosigner writes replace whole documents and sidecars. |
 
 ## Transaction And Signing Runtime Models
 

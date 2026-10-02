@@ -8,7 +8,7 @@ over local IPC only, independently of apshell client configuration.
 apadmin is the primary interactive surface for:
 - unlock and approval operations
 - key generation, import, and deletion
-- runtime/admin settings and online guided policy editing
+- runtime/admin settings and online policy check/apply
 - signer status monitoring
 
 Adjacent tools:
@@ -50,11 +50,12 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 Batch commands use the same local IPC transport as the TUI:
 
 ```bash
-./apadmin policy edit
-./apadmin policy check
 ./apadmin policy export > policy.yaml
+./apadmin policy check policy.yaml
+./apadmin policy apply policy.yaml
 ./apadmin policy apply - < policy.yaml
-./apadmin -d /path/to/signer-data policy rescue edit
+./apadmin -d /path/to/signer-data policy rescue check policy.yaml
+./apadmin -d /path/to/signer-data policy rescue apply policy.yaml
 ./apadmin backup create all
 ./apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
 ./apadmin restore preview aplane-backup-YYYYMMDD-HHMMSS.tar.gz
@@ -91,7 +92,7 @@ explicitly. apadmin does not use `APCLIENT_DATA`, client tokens, or endpoint fil
 ### Signer Operations
 - **Unlock**: Enter passphrase to unlock the signer
 - **Approve/Reject**: Review pending requests
-- **Settings**: Inspect admin settings, edit the active node-role policy, create signer-managed backups, and restore from managed backup archives for the bound identity
+- **Settings**: Inspect admin settings, create signer-managed backups, and restore from managed backup archives for the bound identity
 
 ### Signing Approvals
 When `apsigner` receives a signing request:
@@ -111,7 +112,6 @@ When `apsigner` receives a signing request:
 | `u` | Unlock signer |
 | `b` | Open backup flow from the settings/admin panel |
 | `o` | Open restore flow from the settings/admin panel |
-| `p` | Open the policy editor |
 | `l` (key list/settings) | Lock signer after confirmation, keeping apadmin open |
 | `q` | Quit |
 

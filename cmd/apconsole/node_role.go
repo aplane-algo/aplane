@@ -26,7 +26,7 @@ func cosignerShellDisabledLines(notices []string) []string {
 	lines := consoleStartupNoticeLines(notices)
 	lines = append(lines,
 		"[config] shell pane disabled on cosigner nodes",
-		"Use F1 Admin and press p to edit cosigner policy.",
+		"Change cosigner policy with apadmin policy check FILE, then apadmin policy apply FILE.",
 	)
 	return lines
 }

@@ -3,10 +3,7 @@
 Transfer routing is a signer policy for direct ALGO and ASA transfers. It lets
 an operator define which signer-controlled source accounts may send which
 assets to which destinations, on which networks, and at what amount thresholds.
-The stored YAML schema calls these entries `routes`; the shared `apadmin`
-policy TUI presents normal adjacent routes with the same
-network/source/destination shape as a single transfer guard with an asset
-threshold table.
+The stored YAML schema calls these entries `routes`.
 
 This is the transfer-routing deep dive. For the broader signer policy model,
 editing workflow, top-level fields, and key override overview, start with
@@ -18,13 +15,11 @@ Routing is configured in the product policy file:
 identities/default/generations/<selected-generation>/policy.yaml
 ```
 
-Use `apadmin` for online guided routing edits while `apsigner` is running: open
-the policy editor from the main key list with `p`, or from Settings with the
-`Policy` row. `apadmin` applies changes as whole-document replacements through
-the running signer; it does not merge independent route fragments. Use
-`apadmin policy rescue` for the offline TUI/checker when you want guided
-editing of common policy, transfer settings, blocked destinations, and transfer
-guards without a running signer:
+Write or edit routes in the policy file outside the node, run
+`apadmin policy check FILE`, then `apadmin policy apply FILE` while `apsigner`
+is running. `apadmin` applies changes as whole-document replacements through
+the running signer; it does not merge independent route fragments. Use the
+`apadmin policy rescue` forms when the signer is stopped:
 
 A successful policy apply affects new signing requests after the signer
 publishes the replacement policy snapshot. Signing requests that are already in
@@ -32,22 +27,20 @@ flight, including requests waiting for operator approval, continue under the
 policy snapshot they captured when they started.
 
 ```bash
-apadmin -d "$APSIGNER_DATA" policy rescue edit
 apadmin -d "$APSIGNER_DATA" policy rescue check
 apadmin -d "$APSIGNER_DATA" policy rescue digest
 apadmin -d "$APSIGNER_DATA" policy rescue export > policy.yaml
+apadmin policy rescue check policy.yaml
+apadmin -d "$APSIGNER_DATA" policy rescue apply policy.yaml
 apadmin -d "$APSIGNER_DATA" policy rescue apply - < policy.yaml
-apadmin policy rescue edit draft-policy.yaml
 ```
 
-When `apadmin policy rescue` opens production policy from `APSIGNER_DATA` or
+When `apadmin policy rescue` reads production policy from `APSIGNER_DATA` or
 `-d`, it
 prompts for the store passphrase and auto-selects the document from
-`node.yaml`: signer nodes edit `policy.yaml`, cosigner nodes edit
+`node.yaml`: signer nodes use `policy.yaml`, cosigner nodes use
 cosigner-domain `policy.yaml`. Use `--target signer` or `--target cosigner` to override
-auto-selection. When it opens a standalone YAML file, it validates that file
-without unlocking the store; if the file-backed draft is later applied to
-production with `a`, the passphrase prompt happens at apply time. Local rescue
+auto-selection. Local rescue
 automation may use `APSIGNER_PASSPHRASE`; remote policy commands require the
 controlling terminal. The `digest` verb verifies the current production
 sidecar and prints the SHA-256 digest of the trusted selected document bytes.
@@ -56,78 +49,17 @@ YAML file, `check`, `export`, and `digest` validate the standalone file without
 reading the production sidecar or requesting the store passphrase. `apply`
 reads a file (or stdin when the source is `-`), validates it in the selected
 policy domain, preserves the submitted YAML bytes, and writes the selected
-document plus a fresh sidecar.
+document plus a fresh sidecar; you do not need to run `apstore policy sign`
+afterward.
 
-Inside the TUI, `a` applies the current draft to production by writing
-the selected policy document plus a fresh sidecar. `w` writes the current
-draft to a YAML file you choose without applying it to the product store or
-writing a sidecar. Use this when you want to inspect or hand off a modified
-policy draft before production apply.
-
-When you apply from the rescue TUI or use `apadmin policy rescue apply -`, it
-writes the selected policy document and a fresh sidecar itself; you do not need
-to run `apstore policy sign` afterward.
-
-In the Transfer Guards screen, the list is grouped by guard name plus
-network/source/destination shape and shows the global blocked-destination list
-above the route list. Press `b` from that screen to edit blocked destinations.
-Selecting a guard opens group-level fields for `Name`, `Description`,
-`Networks`, `Sources`, `Destinations`, `Enabled`, and `Close Allow`, plus an
-asset row table with `Asset`, `Review Above`, and `Reject Above` columns. Each
-asset row is saved as one real route in the selected policy document; the editor
-derives the stored route ID as `<guard>_<asset>`, for example `test_algo` and
-`test_usdc` for guard `test`. `Asset` may be `algo`, an ASA ID, `asa:<id>`,
-cached symbol, asset set name, or `*`. Asset-set route IDs use the set name
-without `@`, and the editor stores asset-set rows in YAML as `@name`. If an
-existing route ID does not follow the generated convention, the editor preserves
-it on no-op guard edits;
-renaming the guard or changing an asset row writes the generated convention.
-
-For `algo`, concrete ASA IDs, and eligible asset-set rows, `Review Above`
-and `Reject Above` use display units. `50` means 50 ALGO for `algo`; `5` means
-5 display units of the selected ASA or asset set. The editor writes raw base
-units to the selected policy document. This is the recommended UI path for rules such as "source A may send
-ALGO to B up to 50 ALGO" and "source A may send USDC to B up to 5 USDC."
-
-`Enter` opens a field-specific editor. Text and numeric fields open a
-single-line text popup, tri-state fields open a choice popup, and list fields
-open a multi-entry list editor. `Sources` and `Destinations` show the number of
-entries currently defined. Closing a field editor validates and saves the
-change into the in-memory draft; press `a` from the main policy screens to
-apply that draft to production. In the asset table, `n` adds an asset row and
-`x` deletes the selected asset row.
-
-From the Transfer Guards screen, press `t` to edit Asset Sets. The Asset Sets
-screen lists each named set, the number of network mappings, the total number
-of ASA IDs, and a compact preview. `Enter` edits the selected set, `n` creates
-a new set, `c` clones the selected set, and `d` deletes the selected set after
-validation. Inside the asset-set editor, `Name` and `Network` use text popups,
-and `ASA IDs` is a comma-separated text field. Asset-set field edits are also
-validated and saved into the in-memory draft when the field editor closes.
-Transfer guard asset rows accept the bare set name, such as `usdc`; the editor
-saves the route asset as `@name` in YAML.
-
-When the editor initializes a new transfer policy, it includes a default
-`usdc` asset set using APlane's built-in Algorand mainnet and testnet USDC ASA
-metadata. If an existing transfer policy has no asset sets, opening the Asset
-Sets screen seeds the draft with the same `usdc` set so it appears in the list.
-
-Advanced route shapes remain supported by YAML but are read-only in the guard
-editor. The TUI marks these as YAML-only and offers the full policy YAML view.
-Use rescue `export`/`apply` or direct selected-document YAML edits for non-uniform
-`limits_by_network`, multi-asset route entries, clawback routes, and other
-advanced fields. After direct in-place YAML edits, check it, sign it, and then
-reload or restart the signer:
+After direct in-place YAML edits to the selected document, check it, sign it,
+and then reload or restart the signer:
 
 ```bash
 apstore -d "$APSIGNER_DATA" policy check
 apstore -d "$APSIGNER_DATA" policy sign
 apstore -d "$APSIGNER_DATA" policy verify
 ```
-
-The guided transfer settings editor also leaves
-`transfer_policy.clawback_on_no_route` YAML-only. It preserves an existing YAML
-value during unrelated settings edits, but does not show a choice field for it.
 
 Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. `apstore policy sign` and `apadmin policy rescue` saves are offline
@@ -425,15 +357,12 @@ Asset terms:
 Asset IDs are network-local, so asset sets must use the network-map shape.
 There is no flat-list asset-set shape.
 
-In the shared policy editor, open Transfer Guards and press `t` to maintain this table
-without editing YAML by hand. Asset set names may use lowercase ASCII letters,
+Asset set names may use lowercase ASCII letters,
 digits, `_`, and `-`. Network rows must use concrete network context tokens,
-not `*`, and each row must contain at least one ASA ID. When editing a guard's
-`Asset` cell, use either `@stablecoins` or the bare set name `stablecoins`;
-the editor stores the route asset as `@stablecoins` in YAML and drops the `@` in
-the generated route ID.
+not `*`, and each row must contain at least one ASA ID. Routes reference a set
+as `@stablecoins`.
 
-The default `usdc` set is:
+A `usdc` set for Algorand mainnet and testnet is:
 
 ```yaml
 asset_sets:
@@ -527,20 +456,6 @@ In `policy.yaml`, amount limits use raw on-chain units:
 - ALGO limits are microAlgos.
 - ASA limits are raw ASA units.
 
-In the shared policy editor's Transfer Guards screen, amount fields use display units for
-`algo`, concrete ASA IDs, and eligible asset sets. For ASAs, the editor resolves
-decimals from the signer-side ASA metadata cache or, for numeric ASA IDs, from
-the configured algod endpoint when available. Cached symbols such as `USDC` are
-accepted when they resolve to one ASA on the guard's single concrete network;
-the editor saves the numeric ASA ID back to YAML.
-
-For asset-set rows, display-unit editing is available when every selected
-concrete network resolves the set to exactly one ASA and all of those ASAs use
-the same decimals. When the guard spans multiple networks, the editor writes the
-thresholds as uniform `limits_by_network` entries so the stored policy remains
-valid even though ASA IDs are network-local. Asset-set rows that do not meet
-those constraints are YAML-only.
-
 Threshold comparison is strict greater-than:
 
 ```text
@@ -583,9 +498,7 @@ assets: ["*"]
 If you need thresholds for several assets, write separate routes.
 
 Use `limits_by_network` when the same route spans networks with different ASA
-IDs or different operational thresholds. The editor can generate the uniform
-case for eligible asset-set guard rows; use YAML for intentionally non-uniform
-thresholds:
+IDs or different operational thresholds:
 
 ```yaml
 routes:

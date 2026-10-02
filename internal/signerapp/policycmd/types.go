@@ -3,8 +3,7 @@
 
 // Package policycmd owns the application workflows behind apadmin policy
 // commands. Command parsing and process exit remain in cmd/apadmin; policy
-// schemas, persistence, and the editor remain in their existing owning
-// packages.
+// schemas and persistence remain in their existing owning packages.
 package policycmd
 
 import (
@@ -14,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
@@ -22,7 +20,6 @@ import (
 type Verb string
 
 const (
-	VerbEdit       Verb = "edit"
 	VerbCheck      Verb = "check"
 	VerbExport     Verb = "export"
 	VerbDigest     Verb = "digest"
@@ -31,7 +28,6 @@ const (
 )
 
 var ProductionVerbs = []Verb{
-	VerbEdit,
 	VerbCheck,
 	VerbExport,
 	VerbDigest,
@@ -40,9 +36,6 @@ var ProductionVerbs = []Verb{
 }
 
 func ParseVerb(raw string) (Verb, error) {
-	if strings.TrimSpace(raw) == "" {
-		return VerbEdit, nil
-	}
 	verb := Verb(strings.ToLower(strings.TrimSpace(raw)))
 	for _, candidate := range ProductionVerbs {
 		if verb == candidate {
@@ -99,8 +92,6 @@ func (s Streams) normalized() Streams {
 	}
 	return s
 }
-
-type Editor func(policyeditor.Store, *policy.StoredConfig, string, policyeditor.Target) error
 
 type OnlineSession interface {
 	Dial() error

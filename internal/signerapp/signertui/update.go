@@ -79,9 +79,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewSigningPopup {
 			m.resizeSigningViewport()
 		}
-		if m.viewState == ViewPolicyEditor && m.policyEd.editor != nil {
-			return m.forwardPolicyEditorMsg(tea.WindowSizeMsg{Width: m.width, Height: m.policyEditorHeight()})
-		}
 		return m, nil
 
 	case ConnectedMsg:
@@ -532,12 +529,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMessageCmd()
 
-	case policyEditorLoadedMsg:
-		return m.handlePolicyEditorLoaded(msg)
-
-	case policyEditorClosedMsg:
-		return m.closePolicyEditor()
-
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active
 		if m.viewState == ViewAdminPanel {
@@ -860,10 +851,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
-	if m.viewState == ViewPolicyEditor && m.policyEd.editor != nil {
-		return m.forwardPolicyEditorMsg(msg)
-	}
-
 	return m, nil
 }
 
@@ -971,8 +958,6 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTEALFullDisplayKeys(msg)
 	case ViewAdminPanel:
 		return m.handleAdminPanelKeys(msg)
-	case ViewPolicyEditor:
-		return m.handlePolicyEditorKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:

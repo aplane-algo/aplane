@@ -56,19 +56,10 @@ type loadedDocument struct {
 	status    string
 	dataDir   string
 	digest    string
-	editor    Editor
 }
 
 func (d loadedDocument) run() error {
 	switch d.command.Verb {
-	case VerbEdit:
-		if d.editor == nil {
-			return fmt.Errorf("policy editor is unavailable")
-		}
-		if d.status != "" {
-			_, _ = fmt.Fprintln(d.streams.Stdout, d.status)
-		}
-		return d.editor(d.store, d.stored, d.dataDir, d.target)
 	case VerbCheck:
 		_, _ = fmt.Fprintln(d.streams.Stdout, d.status)
 	case VerbExport:

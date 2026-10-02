@@ -19,7 +19,6 @@ const OnlineTimeout = 10 * time.Second
 
 type OnlineRunner struct {
 	Session OnlineSession
-	Editor  Editor
 }
 
 func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams) error {
@@ -88,8 +87,8 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: []byte(store.PolicyYAML()), target: target,
 		status:  fmt.Sprintf("%s OK online", target.StatusNoun()),
-		dataDir: "apsigner admin protocol", editor: r.Editor,
-		digest: store.LastSHA256(),
+		dataDir: "apsigner admin protocol",
+		digest:  store.LastSHA256(),
 	}).run()
 }
 
@@ -103,16 +102,11 @@ func (r OnlineRunner) runDraft(ctx context.Context, command Command, streams Str
 	if err != nil {
 		return err
 	}
-	if command.Verb == VerbEdit {
-		if _, err := store.Load(ctx); err != nil {
-			return fmt.Errorf("load active %s before editing draft: %w", target.StatusNoun(), err)
-		}
-	}
 	return (loadedDocument{
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: parseTarget,
 		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
-		dataDir: "apsigner admin protocol", editor: r.Editor,
+		dataDir: "apsigner admin protocol",
 	}).run()
 }
 

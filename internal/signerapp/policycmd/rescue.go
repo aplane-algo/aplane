@@ -12,9 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
-type RescueRunner struct {
-	Editor Editor
-}
+type RescueRunner struct{}
 
 func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams) error {
 	if err := command.Validate(); err != nil {
@@ -51,7 +49,7 @@ func (r RescueRunner) runDraft(ctx context.Context, command Command, streams Str
 		command: command, streams: streams, store: fileStore, stored: stored,
 		exactYAML: data, target: parseTarget,
 		status:  fmt.Sprintf("%s OK: %s", parseTarget.StatusNoun(), command.Source),
-		dataDir: command.DataDir, editor: r.Editor,
+		dataDir: command.DataDir,
 	}).run()
 }
 
@@ -98,19 +96,6 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 		return nil
 	}
 
-	var guard *OfflineMutation
-	if command.Verb == VerbEdit {
-		var err error
-		guard, err = AcquireOfflineMutation(command.DataDir)
-		if err != nil {
-			return fmt.Errorf("refusing offline policy editor: %w", err)
-		}
-		defer guard.Close()
-		if err := guard.Bind(store); err != nil {
-			return fmt.Errorf("refusing offline policy editor: %w", err)
-		}
-	}
-
 	stored, data, err := store.LoadVerifiedYAML(ctx)
 	if err != nil {
 		return err
@@ -123,16 +108,12 @@ func (r RescueRunner) runProduction(ctx context.Context, command Command, stream
 	if err != nil {
 		return fmt.Errorf("resolve policy path: %w", err)
 	}
-	err = (loadedDocument{
+	return (loadedDocument{
 		command: command, streams: streams, store: store, stored: stored,
 		exactYAML: data, target: target,
 		status:  fmt.Sprintf("%s OK: %s", target.StatusNoun(), path),
-		dataDir: command.DataDir, editor: r.Editor,
+		dataDir: command.DataDir,
 	}).run()
-	if err == nil && command.Verb == VerbEdit {
-		err = guard.Normalize()
-	}
-	return err
 }
 
 func rescueTarget(command Command) (policyeditor.Target, error) {

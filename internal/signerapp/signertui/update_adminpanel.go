@@ -61,9 +61,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewTemplateLibrary
 		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 
-	case "p", "P":
-		return m.openPolicyViewer()
-
 	case "up":
 		if m.admin.selectedRow > 0 {
 			m.admin.selectedRow--
@@ -99,9 +96,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if row.action == "open_restore" {
 				return m.openRestoreList()
-			}
-			if row.action == "open_policy" {
-				return m.openPolicyViewer()
 			}
 			if !row.editable {
 				return m, nil

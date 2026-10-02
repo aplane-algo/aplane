@@ -31,11 +31,6 @@ func (s *FileStore) Persistence() Persistence {
 	return Persistence{Kind: PersistenceDraft, Path: s.Path}
 }
 
-// ModeLabel identifies this backend in policytui headers.
-func (s *FileStore) ModeLabel() string {
-	return "standalone draft"
-}
-
 func (s *FileStore) Load(ctx context.Context) (*policy.StoredConfig, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

@@ -103,9 +103,7 @@ func (m Model) viewFooterText() string {
 	case ViewDisplaceConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
-		return "p: Policy | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
-	case ViewPolicyEditor:
-		return m.policyEditorFooterText()
+		return "k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:

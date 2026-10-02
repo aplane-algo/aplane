@@ -645,12 +645,12 @@ IPC failure semantics:
 | Signing approval | yes | no | yes | no |
 | Token provisioning approval | yes | no | yes | no |
 | Admin settings | yes | no | no | no |
-| Policy editor | yes | no | no | no |
 | Async notifications | yes | limited | limited | no |
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-`apadmin` uses the shared full-document policy editor. Policy reads,
+The `apadmin` TUI has no policy view; the `apadmin policy` verbs
+(`check`, `export`, `digest`, `apply`, `to-cosigner`) handle policy. Policy reads,
 validation, and mutation use canonical policy YAML through
 `get_policy_snapshot`, `validate_policy`, and `replace_policy`; there is no
 parallel scalar policy RPC surface.
@@ -1027,7 +1027,7 @@ Additional signer-state notes:
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other
   direction, so operators never need filesystem access to the private locker
-- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy editing/rendering; it is outside the private product store and is not authoritative for policy enforcement
+- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy amount rendering; it is outside the private product store and is not authoritative for policy enforcement
 - signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
@@ -1121,7 +1121,7 @@ Additional client-state notes:
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
-- local-mode cosigner `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; cosigner policy editing happens through apadmin in the admin pane
+- local-mode cosigner `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; cosigner policy changes use the `apadmin policy` verbs
 - the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, token provisioning, and endpoint configuration
 - for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
 - remote-mode `apconsole` is rejected; run apconsole on the signer machine, using an ordinary SSH login when needed
@@ -1484,10 +1484,11 @@ Policy load behavior:
   root-controlled `install/service-principal.json` before returning
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
-- `apadmin policy edit <draft.yaml>` rejects an empty draft, validates it through
-  the daemon, loads the active snapshot as its optimistic-concurrency base,
-  and opens the draft in the online editor; batch output/check flags validate
-  the positional draft and exit without opening the editor
+- `apadmin policy` requires a verb; with no verb it is a usage error
+- online `apadmin policy check <file.yaml>` validates the file through the daemon;
+  online `apadmin policy apply <file.yaml>|-` rejects an empty document, loads
+  the active snapshot as its optimistic-concurrency base, and replaces it
+  through the daemon
 
 ### Managed Credential Files (`.key` and `.cos`)
 
@@ -2306,10 +2307,9 @@ the normal policy load path and by `apstore policy check/sign/verify`.
 `apadmin policy rescue` auto-targets the node-role domain and
 `--target signer|cosigner` can explicitly select a domain for offline work;
 `apadmin policy` uses the node-role target online through admin IPC. There is no
-scalar policy-settings IPC; guided edits use the shared full-document editor
-and are saved as whole-document YAML replacements. The rescue `export` and
-`apply` verbs remain the scriptable offline path for byte-preserving route-table
-edits.
+scalar policy-settings IPC; online `apply` saves whole-document YAML
+replacements. The rescue `export` and `apply` verbs are the offline path for
+byte-preserving route-table edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

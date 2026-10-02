@@ -60,7 +60,6 @@ const (
 	ViewLockConfirm        // Manual signer lock confirmation dialog
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
-	ViewPolicyEditor       // Guided online policy editor
 	ViewTemplateLibrary    // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling
@@ -337,15 +336,6 @@ type keyDetailsState struct {
 	saveStatus               string
 }
 
-// policyEditorState is the embedded guided policy editor.
-type policyEditorState struct {
-	editor     tea.Model
-	loading    bool
-	err        string
-	target     string
-	returnView ViewState
-}
-
 // libraryState is the KeyType Library browser, install confirm flow, and the
 // full-screen details viewer.
 type libraryState struct {
@@ -409,7 +399,6 @@ type Model struct {
 	admin         adminPanelState
 	manualLock    manualLockState
 	details       keyDetailsState
-	policyEd      policyEditorState
 	library       libraryState
 	errorPopup    errorPopupState
 
