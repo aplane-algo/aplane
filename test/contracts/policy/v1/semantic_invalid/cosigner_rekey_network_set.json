@@ -1,0 +1,18 @@
+{
+  "format": "aplane.cosigner-policy.v1",
+  "description": "rekey_policy references a per-network address set; rekey edges are not network-scoped.",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "address_sets": {
+    "ops": {
+      "testnet": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"]
+    }
+  },
+  "transfer_policy": {
+    "routes": []
+  },
+  "rekey_policy": {
+    "allowed": [
+      {"sender": "@ops", "targets": ["EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"]}
+    ]
+  }
+}

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -965,8 +966,8 @@ func optionalDescription(r *jsonObjectReader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(s) > maxPolicyDescriptionLength {
-		return "", docErrorf(n.pointer, "description is longer than %d bytes", maxPolicyDescriptionLength)
+	if utf8.RuneCountInString(s) > maxPolicyDescriptionLength {
+		return "", docErrorf(n.pointer, "description is longer than %d characters", maxPolicyDescriptionLength)
 	}
 	return s, nil
 }
@@ -1014,11 +1015,11 @@ func (d *CosignerPolicyV1) validate() error {
 	}
 	for i, rule := range d.RekeyPolicy {
 		pointer := fmt.Sprintf("/rekey_policy/allowed/%d", i)
-		if err := requireAddressSet(pointer+"/sender", rule.Sender, d.AddressSets); err != nil {
+		if err := requireRekeyAddressSet(pointer+"/sender", rule.Sender, d.AddressSets); err != nil {
 			return err
 		}
 		for j, target := range rule.Targets {
-			if err := requireAddressSet(fmt.Sprintf("%s/targets/%d", pointer, j), target, d.AddressSets); err != nil {
+			if err := requireRekeyAddressSet(fmt.Sprintf("%s/targets/%d", pointer, j), target, d.AddressSets); err != nil {
 				return err
 			}
 		}
@@ -1104,6 +1105,18 @@ func routeCoversAsset(route RouteV1, assetSets map[string]AssetSetV1, network st
 		}
 	}
 	return false
+}
+
+// requireRekeyAddressSet additionally requires a referenced set to be flat:
+// rekey edges are not network-scoped.
+func requireRekeyAddressSet(pointer, term string, addressSets map[string]AddressSetV1) error {
+	if err := requireAddressSet(pointer, term, addressSets); err != nil {
+		return err
+	}
+	if name, ok := strings.CutPrefix(term, "@"); ok && addressSets[name].ByNetwork != nil {
+		return docErrorf(pointer, "rekey_policy cannot reference per-network address set %q", name)
+	}
+	return nil
 }
 
 func requireAddressSet(pointer, term string, addressSets map[string]AddressSetV1) error {

@@ -234,6 +234,8 @@ Checked at acceptance in addition to the schema:
    matches `format`.
 10. For every signer key override, the merged effective `limits` satisfy
     rule 4 (see [Key Override Inheritance](#key-override-inheritance)).
+11. `rekey_policy` references only flat address sets; rekey edges are not
+    network-scoped.
 
 Errors report the JSON Pointer of the failing value, for example
 `/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.

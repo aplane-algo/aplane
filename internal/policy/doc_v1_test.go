@@ -53,6 +53,8 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"enabled without on_no_route", fmt.Sprintf(signer, `"transfer_policy":{"enabled":true}`), "/transfer_policy", "on_no_route is required"},
 		{"override transfer_policy", fmt.Sprintf(signer, fmt.Sprintf(`"key_overrides":{%q:{"transfer_policy":{}}}`, v1Ops.String())), "/key_overrides/" + v1Ops.String() + "/transfer_policy", "cannot carry transfer_policy"},
 		{"override merged review above reject", fmt.Sprintf(signer, fmt.Sprintf(`"limits":{"testnet":{"algo":{"reject_above":"5"}}},"key_overrides":{%q:{"limits":{"testnet":{"algo":{"review_above":"9"}}}}}`, v1Ops.String())), "/key_overrides/" + v1Ops.String() + "/limits", "after merging"},
+		{"duplicate address in set", fmt.Sprintf(signer, fmt.Sprintf(`"address_sets":{"ops":[%q,%q]}`, v1Ops.String(), v1Ops.String())), "/address_sets/ops/1", "duplicate address"},
+		{"description too long", fmt.Sprintf(signer, fmt.Sprintf(`"description":%q`, strings.Repeat("中", maxPolicyDescriptionLength+1))), "/description", "1024 characters"},
 		{"cosigner document on signer", `{"format":"aplane.cosigner-policy.v1"}`, "/format", "not accepted here"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,6 +72,18 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		doc := fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, testWitnessKeyIDV1)
 		_, err := DecodeCosignerPolicyV1([]byte(doc), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 		assertDocumentError(t, err, "/key", "does not match its file name")
+	})
+	t.Run("description limit counts characters", func(t *testing.T) {
+		doc := fmt.Sprintf(signer, fmt.Sprintf(`"description":%q`, strings.Repeat("中", maxPolicyDescriptionLength)))
+		if _, err := DecodeSignerPolicyV1([]byte(doc)); err != nil {
+			t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
+		}
+	})
+	t.Run("cosigner rekey per-network set", func(t *testing.T) {
+		doc := fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"address_sets":{"ops":{"testnet":[%q]}},"transfer_policy":{"routes":[]},"rekey_policy":{"allowed":[{"sender":%q,"targets":["@ops"]}]}}`,
+			testWitnessKeyIDV1, v1Ops.String(), v1Vendor.String())
+		_, err := DecodeCosignerPolicyV1([]byte(doc), testWitnessKeyIDV1)
+		assertDocumentError(t, err, "/rekey_policy/allowed/0/targets/0", "per-network address set")
 	})
 	t.Run("cosigner review threshold", func(t *testing.T) {
 		doc := fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"limits":{"testnet":{"algo":{"review_above":"1"}}},"transfer_policy":{"routes":[]}}`, testWitnessKeyIDV1)
