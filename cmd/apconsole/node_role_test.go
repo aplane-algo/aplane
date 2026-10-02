@@ -26,7 +26,7 @@ func TestCosignerShellDisabledLines(t *testing.T) {
 		t.Fatalf("startup lines missing profile notice:\n%s", joined)
 	}
 	if !strings.Contains(joined, "shell pane disabled on cosigner nodes") ||
-		!strings.Contains(joined, "press p to edit cosigner policy") {
+		!strings.Contains(joined, "apadmin policy check FILE, then apadmin policy apply FILE") {
 		t.Fatalf("startup lines missing cosigner shell guidance:\n%s", joined)
 	}
 }
