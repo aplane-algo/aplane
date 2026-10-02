@@ -236,13 +236,17 @@ prune restores compliance. The health and status surfaces retain a warning
 whenever the emergency reserve is consumed.
 
 Deletes preflight the exact append and fail before active-state mutation if the
-hard bound would be exceeded. Mints check the parent before staging and the
+hard bound would be exceeded. Deleting a cosigner key preflights the credential
+together with its policy document and sidecar, which move into
+`deleted/policies/` with it. Mints check the parent before staging and the
 successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 
 `apadmin archive list` reports exact usage and the reserve warning.
 `apadmin archive prune --confirm <deleted/path>...` accepts only canonical
-`deleted/keys/*.key|*.cos` and `deleted/keytypes/*.template` selections. It
+`deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
+`deleted/policies/*.json|*.json.hmac` selections. An archived policy document
+and its sidecar must be selected together. It
 requires `identity.archive.prune`, a recovery-capable authenticated runtime,
 and durable intent audit before mutation. It changes only the selected
 generation; retained copies disappear only with retained-generation pruning.

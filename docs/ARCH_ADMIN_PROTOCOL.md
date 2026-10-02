@@ -446,13 +446,14 @@ Apply rules:
 - A signer node takes exactly one document with no `key` and no removals.
 - A cosigner node adds or replaces each listed document, deletes each key in `remove`, and keeps unlisted documents. Each document's `key` must equal its signed `key` field. A key may appear only once across `documents` and `remove`; removing a key with no document is rejected.
 - `expected_policy_set_sha256` is required and must equal the active `policy_set_sha256`.
+- The resulting documents, JSON-encoded as `get_policy` returns them, must fit in one admin message with room for the envelope (4 MiB less 256 KiB); a larger set is rejected with `policy_set_too_large` before anything is written.
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed; signing is blocked pending reconciliation or recovery.
 
 Result codes include `expected_policy_set_sha256_required`,
 `policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
-`invalid_policy_request`, `policy_unavailable`, `policy_verify_failed`,
+`invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_verify_failed`,
 `identity_locked`, `policy_commit_uncertain`, `policy_reload_failed`, and
 `policy_save_failed`.
 

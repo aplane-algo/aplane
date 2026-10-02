@@ -78,29 +78,34 @@ func InspectDeletedArchive(gen storepaths.GenPaths) (DeletedArchiveUsage, error)
 	return usage, nil
 }
 
-// PreflightDeletedArchiveAppend proves that moving candidate into the
-// selected archive cannot cross either hard limit. It performs no mutation.
-func PreflightDeletedArchiveAppend(gen storepaths.GenPaths, candidate string) (DeletedArchiveUsage, error) {
+// PreflightDeletedArchiveAppend proves that moving every candidate into the
+// selected archive cannot cross either hard limit. Callers that archive
+// several files for one deletion pass them together. It performs no mutation.
+func PreflightDeletedArchiveAppend(gen storepaths.GenPaths, candidates ...string) (DeletedArchiveUsage, error) {
 	usage, err := InspectDeletedArchive(gen)
 	if err != nil {
 		return usage, err
 	}
-	info, err := os.Lstat(candidate)
-	if err != nil {
-		return usage, fmt.Errorf("inspect deletion candidate: %w", err)
+	if len(candidates) == 0 {
+		return usage, fmt.Errorf("deletion preflight requires a candidate")
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return usage, fmt.Errorf("deletion candidate is not a regular file: %s", candidate)
-	}
-	if info.Size() > crypto.MaxStandaloneEnvelopeBytes {
-		return usage, fmt.Errorf(
-			"deletion candidate is %d bytes; maximum managed envelope is %d",
-			info.Size(), crypto.MaxStandaloneEnvelopeBytes,
-		)
-	}
-	prospective := DeletedArchiveUsage{
-		Entries:      usage.Entries + 1,
-		EncodedBytes: usage.EncodedBytes + info.Size(),
+	prospective := usage
+	for _, candidate := range candidates {
+		info, err := os.Lstat(candidate)
+		if err != nil {
+			return usage, fmt.Errorf("inspect deletion candidate: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return usage, fmt.Errorf("deletion candidate is not a regular file: %s", candidate)
+		}
+		if info.Size() > crypto.MaxStandaloneEnvelopeBytes {
+			return usage, fmt.Errorf(
+				"deletion candidate is %d bytes; maximum managed envelope is %d",
+				info.Size(), crypto.MaxStandaloneEnvelopeBytes,
+			)
+		}
+		prospective.Entries++
+		prospective.EncodedBytes += info.Size()
 	}
 	if err := validateDeletedArchiveUsage(prospective); err != nil {
 		countDeficit := max(0, prospective.Entries-DeletedArchiveMaxEntries)

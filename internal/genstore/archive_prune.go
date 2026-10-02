@@ -83,6 +83,23 @@ func PruneDeletedArchive(gen storepaths.GenPaths, relativePaths []string) ([]Del
 		targets[i] = clean
 	}
 
+	// An archived policy document and its sidecar are one record: a
+	// selection that would leave either half behind is refused.
+	for _, relative := range targets {
+		partner, ok := archivedPolicyPartner(relative)
+		if !ok {
+			continue
+		}
+		if _, selected := seen[partner]; selected {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(gen.Dir(), filepath.FromSlash(partner))); err == nil {
+			return nil, fmt.Errorf("archive prune must select %s together with %s", partner, relative)
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+
 	// Prevalidate the entire selection before deleting the first member.
 	results := make([]DeletedArchivePruneResult, len(targets))
 	for i, relative := range targets {
@@ -113,6 +130,18 @@ func PruneDeletedArchive(gen storepaths.GenPaths, relativePaths []string) ([]Del
 		}
 	}
 	return results, nil
+}
+
+// archivedPolicyPartner returns the other half of an archived policy
+// document/sidecar pair.
+func archivedPolicyPartner(relative string) (string, bool) {
+	if !strings.HasPrefix(relative, "deleted/policies/") {
+		return "", false
+	}
+	if document, ok := strings.CutSuffix(relative, ".hmac"); ok {
+		return document, true
+	}
+	return relative + ".hmac", true
 }
 
 func validateDeletedArchiveRelativePath(relative string) (string, error) {

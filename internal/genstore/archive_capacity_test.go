@@ -4,6 +4,7 @@
 package genstore
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,4 +60,28 @@ func TestDeletedArchiveHardLimitErrorNamesPrune(t *testing.T) {
 
 func cryptoMaxEnvelopeForTest() int64 {
 	return int64(DeletedArchiveMaxEncodedBytes - DeletedArchiveWarnEncodedBytes)
+}
+
+func TestAppendPreflightCountsEveryCandidate(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	active := mintTestGeneration(t, paths, testGenA, nil)
+	for i := range DeletedArchiveMaxEntries - 2 {
+		if err := os.WriteFile(filepath.Join(active.DeletedKeysDir(), fmt.Sprintf("K%d.key", i)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var candidates []string
+	for _, name := range []string{"KEY.cos", "KEY.json", "KEY.json.hmac"} {
+		path := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		candidates = append(candidates, path)
+	}
+	if _, err := PreflightDeletedArchiveAppend(active, candidates[:2]...); err != nil {
+		t.Fatalf("preflight of two candidates at the limit error = %v", err)
+	}
+	if _, err := PreflightDeletedArchiveAppend(active, candidates...); err == nil || !strings.Contains(err.Error(), "entry deficit 1") {
+		t.Fatalf("preflight of three candidates past the limit error = %v", err)
+	}
 }

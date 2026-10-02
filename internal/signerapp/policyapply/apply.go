@@ -7,8 +7,10 @@
 package policyapply
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -29,6 +32,32 @@ import (
 
 // Operation is the generation manifest operation for a policy apply.
 const Operation = "policy-apply"
+
+// MaxPolicySetWireBytes bounds a node's encoded policy documents so the
+// get_policy and apply_policy responses, which carry all of them, fit in one
+// admin frame. The remainder of the frame covers the envelope, digests, and
+// cosigner key status.
+const MaxPolicySetWireBytes = protocol.MaxAdminMessageBytes - 256<<10
+
+// encodedDocumentsSize returns the JSON size of docs as the admin protocol
+// carries them, including string escaping.
+func encodedDocumentsSize(docs []policy.StoredDocument) int {
+	type wireDoc struct {
+		Key          string `json:"key,omitempty"`
+		Document     string `json:"document"`
+		SHA256       string `json:"sha256"`
+		SignedAtUnix int64  `json:"signed_at_unix"`
+	}
+	wire := make([]wireDoc, 0, len(docs))
+	for _, doc := range docs {
+		wire = append(wire, wireDoc{Key: doc.Key, Document: string(doc.Bytes), SHA256: doc.SHA256(), SignedAtUnix: time.Now().Unix()})
+	}
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		return math.MaxInt
+	}
+	return len(encoded)
+}
 
 // Env is the node context a policy change is checked and committed in.
 type Env struct {
@@ -103,6 +132,12 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 		}
 	default:
 		return nil, nil, Error{"policy_unavailable", fmt.Sprintf("unsupported node role %q", env.Role)}
+	}
+
+	if size := encodedDocumentsSize(resulting); size > MaxPolicySetWireBytes {
+		return nil, nil, Error{"policy_set_too_large", fmt.Sprintf(
+			"the resulting policy documents encode to %d bytes; the node returns them in one admin message, which allows %d",
+			size, MaxPolicySetWireBytes)}
 	}
 
 	var problems []adminproto.PolicyProblem
