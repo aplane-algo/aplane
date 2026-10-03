@@ -47,7 +47,7 @@ func writeTestGenerationAuthority(staged storepaths.GenPaths) error {
 func mintTestGeneration(t *testing.T, paths storepaths.Paths, generationID string, files map[string]string) storepaths.GenPaths {
 	t.Helper()
 	gen := paths.GenerationPaths(generationID)
-	for _, namespace := range []string{"keys", "keytypes", "deleted/keys", "deleted/keytypes"} {
+	for _, namespace := range generationLeafNamespaces {
 		if err := os.MkdirAll(filepath.Join(gen.Dir(), namespace), 0o770); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", namespace, err)
 		}
@@ -368,7 +368,7 @@ func TestCanonicalInventoryDigestIsStableAndDomainSeparated(t *testing.T) {
 
 func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
 	inventory := []InventoryEntry{{
-		Path: "policy.yaml", SHA256: strings.Repeat("a", 64), Size: 12,
+		Path: "policy.json", SHA256: strings.Repeat("a", 64), Size: 12,
 	}}
 	digest, err := CanonicalInventoryDigest(inventory)
 	if err != nil {
@@ -587,5 +587,48 @@ func TestResolveActiveResolvesGeneration(t *testing.T) {
 	}
 	if active.KeysDir() != gen.KeysDir() {
 		t.Fatalf("KeysDir = %s, want %s", active.KeysDir(), gen.KeysDir())
+	}
+}
+
+// TestSignerPolicyFilesAreOptionalAuthority pins that genstore accepts a
+// generation without the signer policy pair (a cosigner generation) and pins
+// the pair and per-key policy documents when present.
+func TestSignerPolicyFilesAreOptionalAuthority(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
+		"policies/" + witnessKeyID + ".json":      "{}\n",
+		"policies/" + witnessKeyID + ".json.hmac": "{}\n",
+	})
+	inventory, err := BuildInventory(gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, entry := range inventory {
+		got = append(got, entry.Path)
+	}
+	for _, want := range []string{"policy.json", "policy.json.hmac", "policies/" + witnessKeyID + ".json"} {
+		if !slices.Contains(got, want) {
+			t.Fatalf("inventory %v missing %s", got, want)
+		}
+	}
+
+	for _, path := range []string{gen.PolicyPath(), gen.PolicyIntegritySidecar()} {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ValidateCurrent(gen); err != nil {
+		t.Fatalf("ValidateCurrent(without signer policy) error = %v", err)
+	}
+	inventory, err = BuildInventory(gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range inventory {
+		if strings.HasPrefix(entry.Path, "policy.json") {
+			t.Fatalf("inventory carries absent %s", entry.Path)
+		}
 	}
 }

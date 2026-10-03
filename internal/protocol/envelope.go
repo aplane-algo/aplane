@@ -4,6 +4,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -49,9 +50,10 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeListKeyTypes,
 		MsgTypeGetAdminSettings,
 		MsgTypeUpdateAdminSetting,
-		MsgTypeGetPolicySnapshot,
-		MsgTypeReplacePolicy,
-		MsgTypeValidatePolicy,
+		MsgTypeGetPolicy,
+		MsgTypeGetPolicyDocument,
+		MsgTypeCheckPolicy,
+		MsgTypeApplyPolicy,
 		MsgTypeListCosignerReferences,
 		MsgTypeGetCosignerReference,
 		MsgTypeImportCosignerReference,
@@ -101,9 +103,10 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeRevokeTokenResult,
 		MsgTypeAdminSettings,
 		MsgTypeUpdateAdminSettingResult,
-		MsgTypePolicySnapshot,
-		MsgTypeReplacePolicyResult,
-		MsgTypeValidatePolicyResult,
+		MsgTypePolicy,
+		MsgTypePolicyDocument,
+		MsgTypeCheckPolicyResult,
+		MsgTypeApplyPolicyResult,
 		MsgTypeCosignerReferencesList,
 		MsgTypeCosignerReference,
 		MsgTypeImportCosignerReferenceResult,
@@ -147,7 +150,7 @@ func ParseAdminBaseMessage(data []byte) (BaseMessage, error) {
 }
 
 func MarshalAdminMessage(v interface{}) ([]byte, error) {
-	data, err := json.Marshal(v)
+	data, err := marshalAdminJSON(v)
 	if err != nil {
 		return nil, err
 	}
@@ -170,10 +173,25 @@ func MarshalAdminMessage(v interface{}) ([]byte, error) {
 		return nil, err
 	}
 
-	kindBytes, err := json.Marshal(inferred)
+	kindBytes, err := marshalAdminJSON(inferred)
 	if err != nil {
 		return nil, err
 	}
 	object["kind"] = kindBytes
-	return json.Marshal(object)
+	return marshalAdminJSON(object)
+}
+
+// marshalAdminJSON encodes v without HTML escaping. Admin messages never reach
+// an HTML context, and escaping <, >, and & as six-byte sequences would let a
+// valid policy document grow past the frame limit. Without it a string at
+// most doubles: only quotes, backslashes, JSON whitespace, and U+2028/U+2029
+// are escaped, and none of them grows by more than its own size.
+func marshalAdminJSON(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }

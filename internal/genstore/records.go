@@ -43,20 +43,57 @@ const (
 
 // generationLeafNamespaces are the flat file namespaces carried by every
 // generation. Order is load-bearing for inventory comparison. The deleted/
-// directory itself is only a closed container for its two leaf namespaces.
+// directory itself is only a closed container for its leaf namespaces.
 var generationLeafNamespaces = []string{
 	"keys",
 	"keytypes",
+	"policies",
 	"deleted/keys",
 	"deleted/keytypes",
+	"deleted/policies",
 }
 
+// generationRootDirs are the generation-root directories that hold the leaf
+// namespaces.
+var generationRootDirs = []string{"keys", "keytypes", "policies", "deleted"}
+
+// deletedArchiveNamespaces are the leaf namespaces inside deleted/.
+var deletedArchiveNamespaces = []string{"keys", "keytypes", "policies"}
+
 // generationAuthorityFiles are generation-root files whose exact bytes are
-// part of the selected authority state.
+// part of the selected authority state and which every generation carries.
 var generationAuthorityFiles = []string{
-	"policy.yaml",
-	"policy.yaml.hmac",
 	"node.yaml.hmac",
+}
+
+// generationOptionalAuthorityFiles are authority files present only for some
+// node roles: signer generations carry the signer policy document, cosigner
+// generations do not. Role-aware candidate validation decides which are
+// required; when present they are pinned exactly like required members.
+var generationOptionalAuthorityFiles = []string{
+	"policy.json",
+	"policy.json.hmac",
+}
+
+// presentAuthorityFiles returns the required authority files plus each
+// optional one that exists in gen.
+func presentAuthorityFiles(gen storepaths.GenPaths) ([]string, error) {
+	files := append([]string(nil), generationAuthorityFiles...)
+	for _, relative := range generationOptionalAuthorityFiles {
+		_, err := os.Lstat(filepath.Join(gen.Dir(), relative))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, relative)
+	}
+	return files, nil
+}
+
+func isAuthorityFileName(name string) bool {
+	return slices.Contains(generationAuthorityFiles, name) || slices.Contains(generationOptionalAuthorityFiles, name)
 }
 
 // InventoryEntry pins one regular file by namespace-relative path.
@@ -204,7 +241,11 @@ func CanonicalInventoryDigest(inventory []InventoryEntry) (string, error) {
 // subdirectories in leaf namespaces, and irregular files are errors.
 func BuildInventory(gen storepaths.GenPaths) ([]InventoryEntry, error) {
 	var inventory []InventoryEntry
-	for _, relative := range generationAuthorityFiles {
+	authority, err := presentAuthorityFiles(gen)
+	if err != nil {
+		return nil, err
+	}
+	for _, relative := range authority {
 		entry, err := buildInventoryEntry(gen, relative)
 		if err != nil {
 			return nil, err
@@ -617,7 +658,7 @@ func validateInventory(inventory []InventoryEntry) error {
 }
 
 func validGenerationInventoryPath(path string) bool {
-	if slices.Contains(generationAuthorityFiles, path) {
+	if isAuthorityFileName(path) {
 		return true
 	}
 	for _, namespace := range generationLeafNamespaces {

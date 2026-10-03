@@ -7,6 +7,7 @@ package storevalidate
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -93,7 +95,7 @@ func validateDestinationAuthority(opts Options) error {
 	if role.Role != opts.ExpectedRole {
 		return fmt.Errorf("node role %q does not match runtime role %q", role.Role, opts.ExpectedRole)
 	}
-	if _, _, err := policyruntime.LoadVerifiedForNodeRoleWithStoredActive(
+	if _, err := policyruntime.Load(
 		opts.ExpectedRole, opts.DataDir, opts.Config, opts.Candidate, opts.Keyring,
 	); err != nil {
 		return fmt.Errorf("policy: %w", err)
@@ -139,6 +141,11 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 				return fmt.Errorf("unsupported deleted template %q", entry.Path)
 			}
 			ctx = crypto.KeyTypeTemplateContext(strings.TrimSuffix(base, ".template"))
+		case "deleted/policies":
+			if err := verifyArchivedPolicy(candidate, entry.Path, kr); err != nil {
+				return err
+			}
+			continue
 		default:
 			return fmt.Errorf("deleted member is outside closed namespaces: %q", entry.Path)
 		}
@@ -158,13 +165,46 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 	return nil
 }
 
+// verifyArchivedPolicy checks one member of the archived cosigner policies.
+// Archived documents are plaintext, so each must still verify against its
+// sidecar; a sidecar must sit beside its document.
+func verifyArchivedPolicy(candidate storepaths.GenPaths, relative string, kr *crypto.Keyring) error {
+	path := filepath.Join(candidate.Dir(), filepath.FromSlash(relative))
+	if docPath, ok := strings.CutSuffix(path, ".hmac"); ok {
+		if _, err := os.Lstat(docPath); err != nil {
+			return fmt.Errorf("archived policy sidecar %q has no document: %w", relative, err)
+		}
+		return nil
+	}
+	data, _, err := fsutil.ReadRegularFileLimited(path, 1<<20)
+	if err != nil {
+		return err
+	}
+	sidecar, err := policy.LoadPolicyIntegritySidecar(policy.PolicyIntegritySidecarPath(path))
+	if err != nil {
+		return fmt.Errorf("verify %s: %w", relative, err)
+	}
+	if err := policy.VerifyPolicyIntegrity(data, sidecar, kr); err != nil {
+		return fmt.Errorf("verify %s: %w", relative, err)
+	}
+	return nil
+}
+
 func validateCredentialReport(role noderole.Role, scan *keys.KeyScanReport) error {
 	if len(scan.Warnings) > 0 {
 		return fmt.Errorf("credential content defect: %s", scan.Warnings[0].Message())
 	}
 	keyTypes := make(map[string]string, len(scan.Keys))
+	cosignerKeys := 0
 	for selector, info := range scan.Keys {
 		keyTypes[selector] = info.KeyType
+		if info.Category == keys.CategoryWitness {
+			cosignerKeys++
+		}
+	}
+	if cosignerKeys > keys.MaxCosignerCredentials {
+		return fmt.Errorf("credential inventory: %w: %d cosigner credentials, limit %d",
+			keys.ErrCosignerCredentialLimit, cosignerKeys, keys.MaxCosignerCredentials)
 	}
 	if err := keyclass.ValidateKeyTypesAllowedForNodeRole(role, keyTypes); err != nil {
 		return fmt.Errorf("credential inventory: %w", err)

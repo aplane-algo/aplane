@@ -123,24 +123,10 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 				); err != nil {
 					return fmt.Errorf("create generation node role integrity sidecar: %w", err)
 				}
-				var policyErr error
-				if role == noderole.RoleCosigner {
-					policyErr = policy.SaveStoredCosignerConfigActiveWithKeyring(
-						staged,
-						&policy.StoredConfig{},
-						keyring,
-						time.Now(),
-					)
-				} else {
-					policyErr = policy.SaveStoredConfigActiveWithKeyring(
-						staged,
-						&policy.StoredConfig{},
-						keyring,
-						time.Now(),
-					)
-				}
-				if policyErr != nil {
-					return fmt.Errorf("create generation policy integrity baseline: %w", policyErr)
+				if role != noderole.RoleCosigner {
+					if err := policy.WriteInitialSignerPolicy(staged, keyring, time.Now()); err != nil {
+						return fmt.Errorf("create generation policy baseline: %w", err)
+					}
 				}
 				return defaultkeytypes.InstallForNewStoreActive(staged, role, keyring, opts.Logf)
 			},

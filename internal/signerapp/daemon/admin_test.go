@@ -79,7 +79,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		Operation: "test-init", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_753_800_000, 0),
 		Apply: func(staged utilkeys.GenPaths) error {
-			if err := policy.SaveStoredConfigActiveWithKeyring(staged, &policy.StoredConfig{}, masterKeyRing, time.Now()); err != nil {
+			if err := policy.WriteInitialSignerPolicy(staged, masterKeyRing, time.Now()); err != nil {
 				return err
 			}
 			return noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, masterKeyRing, time.Now())
@@ -88,7 +88,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	if err != nil {
 		t.Fatalf("Failed to initialize atomic store: %v", err)
 	}
-	_, initialPolicy, err := policyruntime.LoadVerifiedWithStoredActive(tmpDir, serverConfigForTest(), active, masterKeyRing)
+	initialPolicy, err := policyruntime.Load(noderole.RoleSigner, tmpDir, serverConfigForTest(), active, masterKeyRing)
 	if err != nil {
 		t.Fatalf("Failed to verify policy baseline: %v", err)
 	}
@@ -127,7 +127,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	server.httpAuth = newProductAuthenticator(server.nodeFailState, ir)
 	signerstartup.WireReloadFunc(ir, testProductBuildOptions(server), server.productBuildHooks())
 	signerstartup.WireApprovalCoordinator(ir, server.productBuildHooks())
-	ir.SetPolicy(initialPolicy)
+	ir.SetNodePolicy(initialPolicy)
 	ir.SetUnlocked()
 
 	cleanup := func() {}

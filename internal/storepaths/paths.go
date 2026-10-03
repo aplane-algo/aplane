@@ -102,6 +102,26 @@ func ValidateKeyTypeComponent(keyType string) error {
 	return nil
 }
 
+// SignerPolicyFileName is the signer policy document at a generation root.
+const SignerPolicyFileName = "policy.json"
+
+var witnessKeyIDPattern = regexp.MustCompile(`^[A-Z2-7]{52}$`)
+
+// ValidateWitnessKeyIDComponent reports whether id is a canonical Witness Key
+// ID usable as a file-name component.
+func ValidateWitnessKeyIDComponent(id string) error {
+	if !witnessKeyIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid Witness Key ID path component %q", id)
+	}
+	return nil
+}
+
+func validateWitnessKeyIDComponent(id string) {
+	if err := ValidateWitnessKeyIDComponent(id); err != nil {
+		panic(err.Error())
+	}
+}
+
 func validateKeyTypeComponent(keyType string) {
 	if err := ValidateKeyTypeComponent(keyType); err != nil {
 		panic(err.Error())

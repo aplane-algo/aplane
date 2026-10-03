@@ -4,8 +4,7 @@
 package adminproto
 
 import (
-	"strings"
-
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -456,60 +455,122 @@ type UpdateAdminSettingRequest struct {
 	Value string
 }
 
-// PolicyTarget identifies which policy document an admin policy operation uses.
-type PolicyTarget string
-
-const (
-	PolicyTargetSigner   PolicyTarget = "signer"
-	PolicyTargetCosigner PolicyTarget = "cosigner"
-)
-
-// NormalizePolicyTarget maps the legacy omitted target to signer and trims the
-// raw protocol value. Target validity is enforced by the signer service.
-func NormalizePolicyTarget(raw string) PolicyTarget {
-	target := strings.ToLower(strings.TrimSpace(raw))
-	if target == "" {
-		return PolicyTargetSigner
-	}
-	return PolicyTarget(target)
+// PolicyDocument is one policy document's exact bytes in a check or apply
+// request. Key is the Witness Key ID of a cosigner document and empty for the
+// signer document.
+type PolicyDocument struct {
+	Key      string
+	Document string
 }
 
-// PolicySnapshot is the admin-domain read-only view of the active signer
-// policy. PolicyYAML is canonical YAML generated from the active stored policy
-// snapshot, not bytes read by the admin client.
-type PolicySnapshot struct {
+// PolicyDocumentInfo describes one stored policy document without its bytes.
+type PolicyDocumentInfo struct {
+	Key          string
+	SHA256       string
+	Size         int
+	SignedAtUnix int64
+}
+
+// PolicyDocumentResult is one stored policy document's exact bytes.
+type PolicyDocumentResult struct {
 	Success      bool
-	Target       PolicyTarget
-	PolicyYAML   string
-	PolicySHA256 string
-	Canonical    bool
+	Key          string
+	Document     string
+	SHA256       string
+	SignedAtUnix int64
 	Code         string
 	Error        string
 }
 
-// ReplacePolicyRequest is the admin-domain request to replace policy.yaml as a
-// whole file. ExpectedCurrentSHA256 is optional optimistic concurrency against
-// the canonical active snapshot.
-type ReplacePolicyRequest struct {
-	Target                PolicyTarget
-	PolicyYAML            string
-	ExpectedCurrentSHA256 string
+// Cosigner key policy coverage states.
+const (
+	PolicyKeyActive   = "active"
+	PolicyKeyNoPolicy = "no_policy"
+	PolicyKeyNotHeld  = "key_not_held"
+)
+
+// PolicyKeyStatus reports one cosigner key's policy coverage.
+type PolicyKeyStatus struct {
+	Key    string
+	Status string
 }
 
-// ValidatePolicyRequest is the admin-domain request to validate policy YAML
-// without replacing signer-owned files.
-type ValidatePolicyRequest struct {
-	Target     PolicyTarget
-	PolicyYAML string
+// PolicyProblem is one validation problem located by cosigner key and JSON
+// Pointer.
+type PolicyProblem struct {
+	Key     string
+	Pointer string
+	Message string
 }
 
-// ValidatePolicyResult is the admin-domain response to a validation-only policy
-// request.
-type ValidatePolicyResult struct {
-	Success bool
-	Target  PolicyTarget
-	Code    string
-	Error   string
+// PolicyView summarizes the node's active policy: each document without its
+// bytes, cosigner key coverage, and the set digest that apply uses as its
+// concurrency base.
+type PolicyView struct {
+	Success         bool
+	NodeRole        string
+	Documents       []PolicyDocumentInfo
+	Keys            []PolicyKeyStatus
+	PolicySetSHA256 string
+	GenerationID    string
+	Code            string
+	Error           string
+}
+
+// Wire projects the view onto the admin protocol's policy message.
+func (v PolicyView) Wire(id string) protocol.PolicyMessage {
+	msg := protocol.PolicyMessage{
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: id},
+		Success:         v.Success,
+		NodeRole:        v.NodeRole,
+		PolicySetSHA256: v.PolicySetSHA256,
+		GenerationID:    v.GenerationID,
+		Code:            v.Code,
+		Error:           v.Error,
+	}
+	for _, doc := range v.Documents {
+		msg.Documents = append(msg.Documents, protocol.PolicyDocumentInfoWire{
+			Key: doc.Key, SHA256: doc.SHA256, Size: doc.Size, SignedAtUnix: doc.SignedAtUnix,
+		})
+	}
+	for _, key := range v.Keys {
+		msg.Keys = append(msg.Keys, protocol.PolicyKeyStatusWire{Key: key.Key, Status: key.Status})
+	}
+	return msg
+}
+
+// CheckPolicyRequest validates candidate documents without writing. Remove
+// lists cosigner keys the candidate change would delete.
+type CheckPolicyRequest struct {
+	Documents []PolicyDocument
+	Remove    []string
+}
+
+// CheckPolicyResult reports validation problems; Valid means no errors.
+type CheckPolicyResult struct {
+	Success  bool
+	Valid    bool
+	Errors   []PolicyProblem
+	Warnings []PolicyProblem
+	Code     string
+	Error    string
+}
+
+// ApplyPolicyRequest replaces policy documents in one generation commit.
+type ApplyPolicyRequest struct {
+	Documents               []PolicyDocument
+	Remove                  []string
+	ExpectedPolicySetSHA256 string
+}
+
+// ApplyPolicyResult reports an apply; Policy is the new active policy.
+type ApplyPolicyResult struct {
+	Success         bool
+	Errors          []PolicyProblem
+	Policy          *PolicyView
+	CommitUncertain bool
+	Code            string
+	Error           string
 }
 
 // GenerateKeyRequest is the admin-domain request to generate a key.

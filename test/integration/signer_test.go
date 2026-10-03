@@ -2634,58 +2634,68 @@ func mustRejectIPCSignRequest(t *testing.T, ipcClient *transport.IPCClient, requ
 	}
 }
 
-// mustReplaceIPCPolicySetting sets one top-level policy field through the
-// supported whole-policy YAML replacement path.
+// mustReplaceIPCPolicySetting sets one top-level signer policy field through
+// the supported whole-document apply path.
 func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, key string, value any) {
 	t.Helper()
 
-	snapBytes, err := ipcClient.SendAndReceive(protocol.GetPolicySnapshotMessage{
+	snapBytes, err := ipcClient.SendAndReceive(protocol.GetPolicyMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeGetPolicySnapshot,
-			ID:   fmt.Sprintf("policy-snapshot-%d", time.Now().UnixNano()),
+			Type: protocol.MsgTypeGetPolicy,
+			ID:   fmt.Sprintf("policy-%d", time.Now().UnixNano()),
 		},
 	}, 10*time.Second)
 	if err != nil {
-		t.Fatalf("failed to get policy snapshot: %v", err)
+		t.Fatalf("failed to get policy: %v", err)
 	}
-	var snapshot protocol.PolicySnapshotMessage
-	if err := json.Unmarshal(snapBytes, &snapshot); err != nil {
-		t.Fatalf("failed to parse policy snapshot: %v", err)
+	var current protocol.PolicyMessage
+	if err := json.Unmarshal(snapBytes, &current); err != nil {
+		t.Fatalf("failed to parse policy: %v", err)
 	}
-	if !snapshot.Success {
-		t.Fatalf("policy snapshot failed: %s", snapshot.Error)
+	if !current.Success || len(current.Documents) != 1 {
+		t.Fatalf("get policy failed: %+v", current)
 	}
 
-	var doc map[string]any
-	if err := yaml.Unmarshal([]byte(snapshot.PolicyYAML), &doc); err != nil {
-		t.Fatalf("failed to parse snapshot policy YAML: %v", err)
+	docBytes, err := ipcClient.SendAndReceive(protocol.GetPolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeGetPolicyDocument,
+			ID:   fmt.Sprintf("policy-document-%d", time.Now().UnixNano()),
+		},
+	}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("failed to get policy document: %v", err)
 	}
-	if doc == nil {
-		doc = map[string]any{}
+	var stored protocol.PolicyDocumentMessage
+	if err := json.Unmarshal(docBytes, &stored); err != nil || !stored.Success {
+		t.Fatalf("get policy document failed: %+v, %v", stored, err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(stored.Document), &doc); err != nil {
+		t.Fatalf("failed to parse signer policy document: %v", err)
 	}
 	doc[key] = value
-	updatedYAML, err := yaml.Marshal(doc)
+	updated, err := json.Marshal(doc)
 	if err != nil {
-		t.Fatalf("failed to marshal updated policy YAML: %v", err)
+		t.Fatalf("failed to marshal updated policy document: %v", err)
 	}
 
-	respBytes, err := ipcClient.SendAndReceive(protocol.ReplacePolicyMessage{
+	respBytes, err := ipcClient.SendAndReceive(protocol.ApplyPolicyMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeReplacePolicy,
-			ID:   fmt.Sprintf("policy-replace-%d", time.Now().UnixNano()),
+			Type: protocol.MsgTypeApplyPolicy,
+			ID:   fmt.Sprintf("policy-apply-%d", time.Now().UnixNano()),
 		},
-		PolicyYAML:            string(updatedYAML),
-		ExpectedCurrentSHA256: snapshot.PolicySHA256,
+		Documents:               []protocol.PolicyDocumentWire{{Document: string(updated)}},
+		ExpectedPolicySetSHA256: current.PolicySetSHA256,
 	}, 10*time.Second)
 	if err != nil {
-		t.Fatalf("failed to replace policy for %s: %v", key, err)
+		t.Fatalf("failed to apply policy for %s: %v", key, err)
 	}
-	var result protocol.ReplacePolicyResultMessage
+	var result protocol.ApplyPolicyResultMessage
 	if err := json.Unmarshal(respBytes, &result); err != nil {
-		t.Fatalf("failed to parse replace-policy result: %v", err)
+		t.Fatalf("failed to parse apply-policy result: %v", err)
 	}
 	if !result.Success {
-		t.Fatalf("policy replacement for %s=%v failed: %s", key, value, result.Error)
+		t.Fatalf("policy apply for %s=%v failed: %s", key, value, result.Error)
 	}
 }
 

@@ -131,12 +131,14 @@ const (
 	MsgTypeAdminSettings            = "admin_settings"              // Server → client: current settings
 	MsgTypeUpdateAdminSetting       = "update_admin_setting"        // Client → server: change a setting
 	MsgTypeUpdateAdminSettingResult = "update_admin_setting_result" // Server → client: result
-	MsgTypeGetPolicySnapshot        = "get_policy_snapshot"         // Client → server: request active read-only policy snapshot
-	MsgTypePolicySnapshot           = "policy_snapshot"             // Server → client: active read-only policy snapshot
-	MsgTypeReplacePolicy            = "replace_policy"              // Client → server: wholesale replace policy.yaml
-	MsgTypeReplacePolicyResult      = "replace_policy_result"       // Server → client: replacement result and active snapshot
-	MsgTypeValidatePolicy           = "validate_policy"             // Client → server: validate policy YAML without writing
-	MsgTypeValidatePolicyResult     = "validate_policy_result"      // Server → client: validation result
+	MsgTypeGetPolicy                = "get_policy"                  // Client → server: request the node's policy documents
+	MsgTypePolicy                   = "policy"                      // Server → client: the node's policy summary and key status
+	MsgTypeGetPolicyDocument        = "get_policy_document"         // Client → server: request one policy document
+	MsgTypePolicyDocument           = "policy_document"             // Server → client: one policy document's exact bytes
+	MsgTypeCheckPolicy              = "check_policy"                // Client → server: validate policy documents without writing
+	MsgTypeCheckPolicyResult        = "check_policy_result"         // Server → client: validation problems
+	MsgTypeApplyPolicy              = "apply_policy"                // Client → server: replace policy documents in one generation commit
+	MsgTypeApplyPolicyResult        = "apply_policy_result"         // Server → client: apply result and new policy
 
 	// Signer-owned cosigner reference and generation inventory messages.
 	MsgTypeListCosignerReferences            = "list_cosigner_references"
@@ -966,66 +968,124 @@ type UpdateAdminSettingResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// GetPolicySnapshotMessage requests the active read-only policy snapshot from
-// the signer. The response is a signer-owned projection and must not be
-// synthesized from local apadmin files.
-type GetPolicySnapshotMessage struct {
-	BaseMessage
-	Target string `json:"target,omitempty"`
+// PolicyDocumentWire is one policy document in a check or apply request.
+// Document carries the exact bytes, so the stored bytes are exactly what was
+// sent. Key is the Witness Key ID of a cosigner document and empty for the
+// signer document.
+type PolicyDocumentWire struct {
+	Key      string `json:"key,omitempty"`
+	Document string `json:"document"`
 }
 
-// PolicySnapshotMessage contains the active signer policy snapshot as canonical
-// YAML suitable for read-only display.
-type PolicySnapshotMessage struct {
+// PolicyDocumentInfoWire describes one stored policy document without its
+// bytes; get_policy_document returns the bytes.
+type PolicyDocumentInfoWire struct {
+	Key          string `json:"key,omitempty"`
+	SHA256       string `json:"sha256"`
+	Size         int    `json:"size"`
+	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
+}
+
+// PolicyKeyStatusWire reports one cosigner key's policy coverage. Status is
+// "active" (key held, document present), "no_policy" (key held, no document:
+// the key rejects every request), or "key_not_held" (document for a key the
+// node does not hold).
+type PolicyKeyStatusWire struct {
+	Key    string `json:"key"`
+	Status string `json:"status"`
+}
+
+// PolicyProblemWire is one validation problem. Key names the cosigner
+// document it concerns; Pointer is a JSON Pointer into that document.
+type PolicyProblemWire struct {
+	Key     string `json:"key,omitempty"`
+	Pointer string `json:"pointer,omitempty"`
+	Message string `json:"message"`
+}
+
+// GetPolicyMessage requests the node's active policy documents.
+type GetPolicyMessage struct {
+	BaseMessage
+}
+
+// PolicyMessage summarizes the node's active policy: one entry per document
+// (without its bytes) and, on cosigner nodes, each key's coverage. Its size is
+// bounded by the cosigner key and document caps. PolicySetSHA256 is the
+// concurrency base for apply_policy.
+type PolicyMessage struct {
+	BaseMessage
+	Success         bool                     `json:"success"`
+	NodeRole        string                   `json:"node_role,omitempty"`
+	Documents       []PolicyDocumentInfoWire `json:"documents,omitempty"`
+	Keys            []PolicyKeyStatusWire    `json:"keys,omitempty"`
+	PolicySetSHA256 string                   `json:"policy_set_sha256,omitempty"`
+	GenerationID    string                   `json:"generation_id,omitempty"`
+	Code            string                   `json:"code,omitempty"`
+	Error           string                   `json:"error,omitempty"`
+}
+
+// GetPolicyDocumentMessage requests one active policy document. Key is the
+// Witness Key ID of a cosigner document and empty for the signer document.
+type GetPolicyDocumentMessage struct {
+	BaseMessage
+	Key string `json:"key,omitempty"`
+}
+
+// PolicyDocumentMessage returns one active policy document's exact bytes.
+type PolicyDocumentMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
-	Target       string `json:"target,omitempty"`
-	PolicyYAML   string `json:"policy_yaml,omitempty"`
-	PolicySHA256 string `json:"policy_sha256,omitempty"`
-	Canonical    bool   `json:"canonical,omitempty"`
+	Key          string `json:"key,omitempty"`
+	Document     string `json:"document,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
 	Code         string `json:"code,omitempty"`
 	Error        string `json:"error,omitempty"`
 }
 
-// ReplacePolicyMessage requests wholesale replacement of signer-owned policy
-// YAML. ExpectedCurrentSHA256 is the optional canonical active policy SHA from
-// a prior snapshot and lets clients fail closed when the signer policy changed
-// since the file was previewed.
-type ReplacePolicyMessage struct {
+// CheckPolicyMessage validates candidate documents for the node's role
+// without writing. Remove names cosigner keys whose documents the candidate
+// change would delete, so warnings describe the resulting state.
+type CheckPolicyMessage struct {
 	BaseMessage
-	Target                string `json:"target,omitempty"`
-	PolicyYAML            string `json:"policy_yaml"`
-	ExpectedCurrentSHA256 string `json:"expected_current_sha256,omitempty"`
+	Documents []PolicyDocumentWire `json:"documents"`
+	Remove    []string             `json:"remove,omitempty"`
 }
 
-// ReplacePolicyResultMessage returns the result of a wholesale policy
-// replacement. On success, PolicyYAML is the resulting canonical active policy
-// YAML, not necessarily the exact uploaded bytes.
-type ReplacePolicyResultMessage struct {
+// CheckPolicyResultMessage reports validation problems. Valid is true when
+// Errors is empty. Warnings never block an apply.
+type CheckPolicyResultMessage struct {
 	BaseMessage
-	Success      bool   `json:"success"`
-	Target       string `json:"target,omitempty"`
-	PolicyYAML   string `json:"policy_yaml,omitempty"`
-	PolicySHA256 string `json:"policy_sha256,omitempty"`
-	Canonical    bool   `json:"canonical,omitempty"`
-	Code         string `json:"code,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Success  bool                `json:"success"`
+	Valid    bool                `json:"valid"`
+	Errors   []PolicyProblemWire `json:"errors,omitempty"`
+	Warnings []PolicyProblemWire `json:"warnings,omitempty"`
+	Code     string              `json:"code,omitempty"`
+	Error    string              `json:"error,omitempty"`
 }
 
-// ValidatePolicyMessage requests policy validation without mutating signer-owned files.
-type ValidatePolicyMessage struct {
+// ApplyPolicyMessage replaces policy documents in one generation commit. A
+// signer node takes exactly one document. A cosigner node adds or replaces
+// each listed document and deletes each key in Remove; unlisted documents are
+// kept. ExpectedPolicySetSHA256 must equal the active policy_set_sha256.
+type ApplyPolicyMessage struct {
 	BaseMessage
-	Target     string `json:"target,omitempty"`
-	PolicyYAML string `json:"policy_yaml"`
+	Documents               []PolicyDocumentWire `json:"documents,omitempty"`
+	Remove                  []string             `json:"remove,omitempty"`
+	ExpectedPolicySetSHA256 string               `json:"expected_policy_set_sha256"`
 }
 
-// ValidatePolicyResultMessage is the response to a validation-only policy request.
-type ValidatePolicyResultMessage struct {
+// ApplyPolicyResultMessage reports an apply. On success Policy is the new
+// active policy. CommitUncertain means the commit may be visible but its
+// durability is unconfirmed; signing is blocked pending reconciliation.
+type ApplyPolicyResultMessage struct {
 	BaseMessage
-	Success bool   `json:"success"`
-	Target  string `json:"target,omitempty"`
-	Code    string `json:"code,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success         bool                `json:"success"`
+	Errors          []PolicyProblemWire `json:"errors,omitempty"`
+	Policy          *PolicyMessage      `json:"policy,omitempty"`
+	CommitUncertain bool                `json:"commit_uncertain,omitempty"`
+	Code            string              `json:"code,omitempty"`
+	Error           string              `json:"error,omitempty"`
 }
 
 type CosignerReferenceInfo struct {

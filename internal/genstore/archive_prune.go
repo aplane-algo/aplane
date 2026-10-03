@@ -38,6 +38,7 @@ func ListDeletedArchive(gen storepaths.GenPaths) ([]DeletedArchiveEntry, Deleted
 	for _, namespace := range []struct{ relative, dir string }{
 		{"deleted/keys", gen.DeletedKeysDir()},
 		{"deleted/keytypes", gen.DeletedKeyTypeRecordsDir()},
+		{"deleted/policies", gen.DeletedCosignerPoliciesDir()},
 	} {
 		entries, err := os.ReadDir(namespace.dir)
 		if err != nil {
@@ -82,6 +83,23 @@ func PruneDeletedArchive(gen storepaths.GenPaths, relativePaths []string) ([]Del
 		targets[i] = clean
 	}
 
+	// An archived policy document and its sidecar are one record: a
+	// selection that would leave either half behind is refused.
+	for _, relative := range targets {
+		partner, ok := archivedPolicyPartner(relative)
+		if !ok {
+			continue
+		}
+		if _, selected := seen[partner]; selected {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(gen.Dir(), filepath.FromSlash(partner))); err == nil {
+			return nil, fmt.Errorf("archive prune must select %s together with %s", partner, relative)
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+
 	// Prevalidate the entire selection before deleting the first member.
 	results := make([]DeletedArchivePruneResult, len(targets))
 	for i, relative := range targets {
@@ -114,6 +132,18 @@ func PruneDeletedArchive(gen storepaths.GenPaths, relativePaths []string) ([]Del
 	return results, nil
 }
 
+// archivedPolicyPartner returns the other half of an archived policy
+// document/sidecar pair.
+func archivedPolicyPartner(relative string) (string, bool) {
+	if !strings.HasPrefix(relative, "deleted/policies/") {
+		return "", false
+	}
+	if document, ok := strings.CutSuffix(relative, ".hmac"); ok {
+		return document, true
+	}
+	return relative + ".hmac", true
+}
+
 func validateDeletedArchiveRelativePath(relative string) (string, error) {
 	if relative == "" || strings.ContainsRune(relative, 0) || strings.Contains(relative, "\\") {
 		return "", fmt.Errorf("invalid archive entry %q", relative)
@@ -134,6 +164,10 @@ func validateDeletedArchiveRelativePath(relative string) (string, error) {
 	case "deleted/keytypes":
 		if !strings.HasSuffix(base, ".template") {
 			return "", fmt.Errorf("invalid deleted template entry %q", relative)
+		}
+	case "deleted/policies":
+		if !strings.HasSuffix(base, ".json") && !strings.HasSuffix(base, ".json.hmac") {
+			return "", fmt.Errorf("invalid deleted policy entry %q", relative)
 		}
 	default:
 		return "", fmt.Errorf("archive entry is outside the closed deleted namespaces: %q", relative)

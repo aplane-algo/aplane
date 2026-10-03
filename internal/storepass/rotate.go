@@ -296,7 +296,7 @@ func reencryptSealedGeneration(
 		} else if entry.Term != 0 {
 			return counts, fmt.Errorf("plaintext member %s carries term %d", entry.Path, entry.Term)
 		}
-		if entry.Path == "policy.yaml.hmac" || entry.Path == "node.yaml.hmac" {
+		if entry.Path == "node.yaml.hmac" || isPolicySidecarMember(entry.Path) {
 			continue
 		}
 		if err := os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(entry.Path)), output, 0o600); err != nil {
@@ -308,41 +308,13 @@ func reencryptSealedGeneration(
 	if err != nil {
 		return counts, err
 	}
-	nodeDocument, err := noderole.ParseDocument(nodeBytes)
-	if err != nil {
-		return counts, err
-	}
-
-	policyBytes := members["policy.yaml"]
-	switch nodeDocument.Role {
-	case noderole.RoleSigner:
-		if _, err := policy.ParseStoredConfig(policyBytes); err != nil {
-			return counts, fmt.Errorf("parse outgoing signer policy: %w", err)
+	for relative, data := range members {
+		if !isPolicyDocumentMember(relative) {
+			continue
 		}
-	case noderole.RoleCosigner:
-		if _, err := policy.ParseStoredCosignerConfig(policyBytes); err != nil {
-			return counts, fmt.Errorf("parse outgoing cosigner policy: %w", err)
+		if err := resignPolicyMember(staged, relative, data, members, oldKeyring, successorKeyring, now); err != nil {
+			return counts, err
 		}
-	default:
-		return counts, fmt.Errorf("unsupported node role %q", nodeDocument.Role)
-	}
-	policySidecar, err := policy.ParsePolicyIntegritySidecar(members["policy.yaml.hmac"])
-	if err != nil {
-		return counts, err
-	}
-	if err := policy.VerifyPolicyIntegrity(policyBytes, policySidecar, oldKeyring); err != nil {
-		return counts, fmt.Errorf("verify outgoing policy sidecar: %w", err)
-	}
-	newPolicySidecar, err := policy.SignPolicyIntegrity(policyBytes, successorKeyring, now)
-	if err != nil {
-		return counts, err
-	}
-	newPolicyBytes, err := policy.MarshalPolicyIntegritySidecar(newPolicySidecar)
-	if err != nil {
-		return counts, err
-	}
-	if err := os.WriteFile(staged.PolicyIntegritySidecar(), newPolicyBytes, 0o600); err != nil {
-		return counts, err
 	}
 
 	nodeSidecar, err := noderole.ParseSidecar(members["node.yaml.hmac"])
@@ -369,7 +341,7 @@ func reencryptSealedGeneration(
 func generationMemberContext(relative string) (crypto.ObjectContext, bool, string, error) {
 	base := filepath.Base(relative)
 	switch {
-	case relative == "policy.yaml", relative == "policy.yaml.hmac", relative == "node.yaml.hmac":
+	case relative == "node.yaml.hmac", isPolicyDocumentMember(relative), isPolicySidecarMember(relative):
 		return crypto.ObjectContext{}, false, "", nil
 	case strings.HasPrefix(relative, "keys/"), strings.HasPrefix(relative, "deleted/keys/"):
 		if strings.HasSuffix(base, keys.WitnessPublicMetadataSuffix) {
@@ -397,6 +369,63 @@ func generationMemberContext(relative string) (crypto.ObjectContext, bool, strin
 		}
 	}
 	return crypto.ObjectContext{}, false, "", fmt.Errorf("unsupported generation member %q", relative)
+}
+
+// isPolicyDocumentMember reports whether relative is a policy document: the
+// signer policy, a cosigner key's policy, or an archived cosigner policy.
+func isPolicyDocumentMember(relative string) bool {
+	if relative == storepaths.SignerPolicyFileName {
+		return true
+	}
+	for _, dir := range []string{"policies/", "deleted/policies/"} {
+		if key, ok := strings.CutPrefix(relative, dir); ok {
+			key, ok = strings.CutSuffix(key, ".json")
+			return ok && storepaths.ValidateWitnessKeyIDComponent(key) == nil
+		}
+	}
+	return false
+}
+
+func isPolicySidecarMember(relative string) bool {
+	document, ok := strings.CutSuffix(relative, ".hmac")
+	return ok && isPolicyDocumentMember(document)
+}
+
+// resignPolicyMember verifies one policy document's outgoing sidecar under the
+// old keyring and writes a sidecar signed by the successor. Live documents are
+// also decoded, so rotation never re-signs a document the node would reject.
+func resignPolicyMember(staged storepaths.GenPaths, relative string, data []byte, members map[string][]byte, oldKeyring, successorKeyring *crypto.Keyring, now time.Time) error {
+	switch {
+	case relative == storepaths.SignerPolicyFileName:
+		if _, err := policy.DecodeSignerPolicyV1(data); err != nil {
+			return fmt.Errorf("decode outgoing signer policy: %w", err)
+		}
+	case strings.HasPrefix(relative, "policies/"):
+		key := strings.TrimSuffix(strings.TrimPrefix(relative, "policies/"), ".json")
+		if _, err := policy.DecodeCosignerPolicyV1(data, key); err != nil {
+			return fmt.Errorf("decode outgoing cosigner policy %s: %w", key, err)
+		}
+	}
+	sidecarBytes, ok := members[relative+".hmac"]
+	if !ok {
+		return fmt.Errorf("outgoing policy %s has no sidecar", relative)
+	}
+	sidecar, err := policy.ParsePolicyIntegritySidecar(sidecarBytes)
+	if err != nil {
+		return err
+	}
+	if err := policy.VerifyPolicyIntegrity(data, sidecar, oldKeyring); err != nil {
+		return fmt.Errorf("verify outgoing policy sidecar %s: %w", relative, err)
+	}
+	newSidecar, err := policy.SignPolicyIntegrity(data, successorKeyring, now)
+	if err != nil {
+		return err
+	}
+	newSidecarBytes, err := policy.MarshalPolicyIntegritySidecar(newSidecar)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(relative+".hmac")), newSidecarBytes, 0o600)
 }
 
 func updatePassphraseHelper(result *RotateResult, opts RotateOptions) {

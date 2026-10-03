@@ -316,8 +316,8 @@ This creates `/tmp/aplane-test-env/` containing:
 │       ├── .keystore              # Store format marker
 │       ├── aplane.token           # Generated API token
 │       └── generations/<gen-id>/  # Active generation selected by store-root.enc
-│           ├── policy.yaml        # Permissive integration-test node-role policy
-│           ├── policy.yaml.hmac   # Integrity sidecar for policy.yaml
+│           ├── policy.json        # Permissive integration-test signer policy
+│           ├── policy.json.hmac   # Integrity sidecar for policy.json
 │           └── keys/              # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
@@ -344,7 +344,7 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 7. Initializes the keystore non-interactively by piping the generated test passphrase to `apstore initialize`
 8. Copies the generated API token to the client data directory
 9. Pre-populates client `known_hosts` with the signer's SSH host key (avoids TOFU prompts)
-10. Writes product-store authorized keys and permissive test policy
+10. Writes product-store authorized keys and applies a permissive test policy with `apadmin policy rescue apply -`
 11. Copies the top-level `library/templates/` YAML files into the signer data library
 12. In localnet mode, creates a disposable native Falcon account, funds it from KMD, exports it as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
 13. Writes `.env.test` with all required environment variables

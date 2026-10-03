@@ -150,21 +150,27 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 			},
 		},
 		{
-			name: "get policy snapshot",
+			name: "get policy",
 			handle: func(session *Session) {
-				session.HandleGetPolicySnapshot(&protocol.GetPolicySnapshotMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+				session.HandleGetPolicy(&protocol.GetPolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
 			},
 		},
 		{
-			name: "replace policy",
+			name: "get policy document",
 			handle: func(session *Session) {
-				session.HandleReplacePolicy(&protocol.ReplacePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+				session.HandleGetPolicyDocument(&protocol.GetPolicyDocumentMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
 			},
 		},
 		{
-			name: "validate policy",
+			name: "check policy",
 			handle: func(session *Session) {
-				session.HandleValidatePolicy(&protocol.ValidatePolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+				session.HandleCheckPolicy(&protocol.CheckPolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "apply policy",
+			handle: func(session *Session) {
+				session.HandleApplyPolicy(&protocol.ApplyPolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
 			},
 		},
 	}
@@ -185,164 +191,91 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 	}
 }
 
-func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
-	svc := &stubServices{
-		policySnapshotResult: adminproto.PolicySnapshot{
-			Success:      true,
-			Target:       adminproto.PolicyTargetCosigner,
-			PolicyYAML:   "reject_foreign_rekey: true\n",
-			PolicySHA256: "abc123",
-			Canonical:    true,
-		},
-	}
+// boundPolicySession binds a session over svc with a recording authorizer.
+func boundPolicySession(svc *stubServices) (*Session, *recordingAuthorizer, *queueConn) {
+	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{
-		Product:    svc,
-		Settings:   svc,
-		Authorizer: authorizer,
-	})
+	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer})
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+	return session, authorizer, conn
+}
 
-	session.HandleGetPolicySnapshot(&protocol.GetPolicySnapshotMessage{
-		BaseMessage: protocol.BaseMessage{ID: "snapshot-1", Type: protocol.MsgTypeGetPolicySnapshot},
-		Target:      "cosigner",
-	})
+func TestHandleGetPolicyAuthorizesPolicyView(t *testing.T) {
+	svc := &stubServices{getPolicyResult: adminproto.PolicyView{Success: true, NodeRole: "cosigner", PolicySetSHA256: "set1"}}
+	session, authorizer, conn := boundPolicySession(svc)
 
-	if svc.policySnapshotCalls != 1 {
-		t.Fatalf("BuildPolicySnapshot calls = %d, want 1", svc.policySnapshotCalls)
-	}
-	if svc.lastPolicySnapshot != adminproto.PolicyTargetCosigner {
-		t.Fatalf("BuildPolicySnapshot target = %q, want cosigner", svc.lastPolicySnapshot)
-	}
-	if authorizer.got.action != auth.ActionPolicyView {
-		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
-	}
-	if authorizer.got.resource.Type != "policy" {
-		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
-	}
+	session.HandleGetPolicy(&protocol.GetPolicyMessage{BaseMessage: protocol.BaseMessage{ID: "policy-1", Type: protocol.MsgTypeGetPolicy}})
 
+	if svc.getPolicyCalls != 1 || authorizer.got.action != auth.ActionPolicyView || authorizer.got.resource.Type != "policy" {
+		t.Fatalf("calls = %d, authorization = %+v", svc.getPolicyCalls, authorizer.got)
+	}
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 1 {
-		t.Fatalf("write count = %d, want 1", len(msgs))
-	}
-	if msgs[0].Type != protocol.MsgTypePolicySnapshot || msgs[0].ID != "snapshot-1" {
-		t.Fatalf("response = %+v, want policy_snapshot snapshot-1", msgs[0])
-	}
-	if !msgs[0].Success || msgs[0].Target != "cosigner" ||
-		msgs[0].PolicyYAML != "reject_foreign_rekey: true\n" || !msgs[0].Canonical {
-		t.Fatalf("policy snapshot response = %+v, want successful canonical YAML", msgs[0])
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypePolicy || msgs[0].ID != "policy-1" ||
+		!msgs[0].Success || msgs[0].PolicySetSHA256 != "set1" {
+		t.Fatalf("responses = %+v", msgs)
 	}
 }
 
-func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
+func TestHandleGetPolicyDocumentAuthorizesPolicyView(t *testing.T) {
+	svc := &stubServices{}
+	session, authorizer, conn := boundPolicySession(svc)
 
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
-	svc := &stubServices{
-		replacePolicyResult: adminproto.PolicySnapshot{
-			Success:    true,
-			PolicyYAML: "reject_foreign_rekey: false\n",
-			Canonical:  true,
-		},
-	}
-	authorizer := &recordingAuthorizer{}
-	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{
-		Product:    svc,
-		Settings:   svc,
-		Authorizer: authorizer,
-	})
-	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-
-	session.HandleReplacePolicy(&protocol.ReplacePolicyMessage{
-		BaseMessage:           protocol.BaseMessage{ID: "replace-1", Type: protocol.MsgTypeReplacePolicy},
-		Target:                "cosigner",
-		PolicyYAML:            "reject_foreign_rekey: false\n",
-		ExpectedCurrentSHA256: "abc123",
+	session.HandleGetPolicyDocument(&protocol.GetPolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{ID: "doc-1", Type: protocol.MsgTypeGetPolicyDocument},
+		Key:         "K1",
 	})
 
-	if svc.replacePolicyCalls != 1 {
-		t.Fatalf("ReplacePolicy calls = %d, want 1", svc.replacePolicyCalls)
+	if authorizer.got.action != auth.ActionPolicyView || authorizer.got.resource.Type != "policy" {
+		t.Fatalf("authorization = %+v", authorizer.got)
 	}
-	if svc.lastReplacePolicy.PolicyYAML != "reject_foreign_rekey: false\n" ||
-		svc.lastReplacePolicy.ExpectedCurrentSHA256 != "abc123" ||
-		svc.lastReplacePolicy.Target != adminproto.PolicyTargetCosigner {
-		t.Fatalf("ReplacePolicy request = %+v, want YAML and expected SHA", svc.lastReplacePolicy)
-	}
-	if authorizer.got.action != auth.ActionPolicyUpdate {
-		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyUpdate)
-	}
-	if authorizer.got.resource.Type != "policy" {
-		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
-	}
-
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 1 {
-		t.Fatalf("write count = %d, want 1", len(msgs))
-	}
-	if msgs[0].Type != protocol.MsgTypeReplacePolicyResult || msgs[0].ID != "replace-1" {
-		t.Fatalf("response = %+v, want replace_policy_result replace-1", msgs[0])
-	}
-	if !msgs[0].Success ||
-		msgs[0].PolicyYAML != "reject_foreign_rekey: false\n" || !msgs[0].Canonical {
-		t.Fatalf("replace policy response = %+v, want successful canonical YAML", msgs[0])
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypePolicyDocument || msgs[0].ID != "doc-1" || !msgs[0].Success {
+		t.Fatalf("responses = %+v", msgs)
 	}
 }
 
-func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
+func TestHandleCheckPolicyAuthorizesPolicyView(t *testing.T) {
+	svc := &stubServices{checkPolicyResult: adminproto.CheckPolicyResult{Success: true, Valid: true}}
+	session, authorizer, conn := boundPolicySession(svc)
 
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
-	svc := &stubServices{
-		validatePolicyResult: adminproto.ValidatePolicyResult{
-			Success: true,
-			Target:  adminproto.PolicyTargetCosigner,
-		},
-	}
-	authorizer := &recordingAuthorizer{}
-	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{
-		Product:    svc,
-		Settings:   svc,
-		Authorizer: authorizer,
-	})
-	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-
-	session.HandleValidatePolicy(&protocol.ValidatePolicyMessage{
-		BaseMessage: protocol.BaseMessage{ID: "validate-1", Type: protocol.MsgTypeValidatePolicy},
-		Target:      "cosigner",
-		PolicyYAML:  "cosigner:\n  transfer_policy:\n    schema_version: 1\n",
+	session.HandleCheckPolicy(&protocol.CheckPolicyMessage{
+		BaseMessage: protocol.BaseMessage{ID: "check-1", Type: protocol.MsgTypeCheckPolicy},
+		Documents:   []protocol.PolicyDocumentWire{{Key: "K1", Document: "{}"}},
+		Remove:      []string{"K2"},
 	})
 
-	if svc.validatePolicyCalls != 1 {
-		t.Fatalf("ValidatePolicy calls = %d, want 1", svc.validatePolicyCalls)
+	if svc.checkPolicyCalls != 1 || authorizer.got.action != auth.ActionPolicyView {
+		t.Fatalf("calls = %d, authorization = %+v", svc.checkPolicyCalls, authorizer.got)
 	}
-	if svc.lastValidatePolicy.Target != adminproto.PolicyTargetCosigner ||
-		svc.lastValidatePolicy.PolicyYAML != "cosigner:\n  transfer_policy:\n    schema_version: 1\n" {
-		t.Fatalf("ValidatePolicy request = %+v, want cosigner YAML", svc.lastValidatePolicy)
+	if got := svc.lastCheckPolicy; len(got.Documents) != 1 || got.Documents[0] != (adminproto.PolicyDocument{Key: "K1", Document: "{}"}) ||
+		len(got.Remove) != 1 || got.Remove[0] != "K2" {
+		t.Fatalf("CheckPolicy request = %+v", got)
 	}
-	if authorizer.got.action != auth.ActionPolicyView {
-		t.Fatalf("authorizer action = %q, want %q", authorizer.got.action, auth.ActionPolicyView)
-	}
-	if authorizer.got.resource.Type != "policy" {
-		t.Fatalf("authorizer resource = %+v, want policy/default", authorizer.got.resource)
-	}
-
 	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 1 {
-		t.Fatalf("write count = %d, want 1", len(msgs))
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypeCheckPolicyResult || !msgs[0].Valid {
+		t.Fatalf("responses = %+v", msgs)
 	}
-	if msgs[0].Type != protocol.MsgTypeValidatePolicyResult || msgs[0].ID != "validate-1" {
-		t.Fatalf("response = %+v, want validate_policy_result validate-1", msgs[0])
+}
+
+func TestHandleApplyPolicyAuthorizesPolicyUpdate(t *testing.T) {
+	svc := &stubServices{applyPolicyResult: adminproto.ApplyPolicyResult{Success: true, Policy: &adminproto.PolicyView{Success: true, PolicySetSHA256: "set2"}}}
+	session, authorizer, conn := boundPolicySession(svc)
+
+	session.HandleApplyPolicy(&protocol.ApplyPolicyMessage{
+		BaseMessage:             protocol.BaseMessage{ID: "apply-1", Type: protocol.MsgTypeApplyPolicy},
+		Documents:               []protocol.PolicyDocumentWire{{Document: "{}"}},
+		ExpectedPolicySetSHA256: "set1",
+	})
+
+	if svc.applyPolicyCalls != 1 || authorizer.got.action != auth.ActionPolicyUpdate || authorizer.got.resource.Type != "policy" {
+		t.Fatalf("calls = %d, authorization = %+v", svc.applyPolicyCalls, authorizer.got)
 	}
-	if !msgs[0].Success || msgs[0].Target != "cosigner" {
-		t.Fatalf("validate policy response = %+v, want successful cosigner result", msgs[0])
+	if got := svc.lastApplyPolicy; got.ExpectedPolicySetSHA256 != "set1" || len(got.Documents) != 1 || got.Documents[0].Document != "{}" {
+		t.Fatalf("ApplyPolicy request = %+v", got)
+	}
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypeApplyPolicyResult || msgs[0].ID != "apply-1" || !msgs[0].Success {
+		t.Fatalf("responses = %+v", msgs)
 	}
 }

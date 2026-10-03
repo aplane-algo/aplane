@@ -67,8 +67,8 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "aplane.token")); err != nil {
 		t.Fatalf("token stat error = %v", err)
 	}
-	if _, err := policy.LoadVerifiedStoredConfigActive(active, kr); err != nil {
-		t.Fatalf("policy integrity baseline did not verify: %v", err)
+	if doc, _, err := policy.LoadVerifiedSignerPolicy(active, kr); err != nil || string(doc.Bytes) != string(policy.InitialSignerPolicy) {
+		t.Fatalf("signer policy baseline = %q, %v", doc.Bytes, err)
 	}
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(paths, active, kr)
 	if err != nil {
@@ -120,8 +120,11 @@ func TestInitializeCreatesExplicitCosignerNodeRole(t *testing.T) {
 	if role.Role != noderole.RoleCosigner {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleCosigner)
 	}
-	if _, err := policy.LoadVerifiedCosignerConfigActive(active, kr); err != nil {
-		t.Fatalf("cosigner policy integrity baseline did not verify: %v", err)
+	if _, err := os.Stat(active.PolicyPath()); !os.IsNotExist(err) {
+		t.Fatalf("cosigner store has a signer policy: %v", err)
+	}
+	if docs, err := policy.LoadVerifiedCosignerPolicies(active, kr); err != nil || len(docs) != 0 {
+		t.Fatalf("cosigner store policies = %v, %v, want none", docs, err)
 	}
 	rec, ok, err := keytypestate.GetActive(active, defaultkeytypes.Falcon1024AllowlistKeyType)
 	if err != nil {

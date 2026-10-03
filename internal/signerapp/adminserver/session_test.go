@@ -82,9 +82,9 @@ type stubServices struct {
 	restoreBackupCalls     int
 	rollbackRestoreCalls   int
 	reconcileStoreCalls    int
-	policySnapshotCalls    int
-	replacePolicyCalls     int
-	validatePolicyCalls    int
+	getPolicyCalls         int
+	checkPolicyCalls       int
+	applyPolicyCalls       int
 	lastInstallTemplate    adminproto.InstallLibraryTemplateRequest
 	lastShowInstalled      adminproto.ShowInstalledTemplateRequest
 	lastShowLibrary        adminproto.ShowLibraryTemplateRequest
@@ -102,9 +102,8 @@ type stubServices struct {
 	lastPreviewRestore     adminproto.PreviewRestoreRequest
 	lastRestoreBackup      adminproto.RestoreBackupRequest
 	lastRollbackRestore    adminproto.RollbackRestoreRequest
-	lastPolicySnapshot     adminproto.PolicyTarget
-	lastReplacePolicy      adminproto.ReplacePolicyRequest
-	lastValidatePolicy     adminproto.ValidatePolicyRequest
+	lastCheckPolicy        adminproto.CheckPolicyRequest
+	lastApplyPolicy        adminproto.ApplyPolicyRequest
 	listLibraryResult      adminproto.ListLibraryTemplatesResult
 	installResult          adminproto.InstallLibraryTemplateResult
 	listInstalledResult    adminproto.ListInstalledTemplatesResult
@@ -126,9 +125,9 @@ type stubServices struct {
 	restoreBackupResult    adminproto.RestoreBackupResult
 	rollbackRestoreResult  adminproto.RollbackRestoreResult
 	reconcileStoreResult   adminproto.ReconcileStoreResult
-	policySnapshotResult   adminproto.PolicySnapshot
-	replacePolicyResult    adminproto.PolicySnapshot
-	validatePolicyResult   adminproto.ValidatePolicyResult
+	getPolicyResult        adminproto.PolicyView
+	checkPolicyResult      adminproto.CheckPolicyResult
+	applyPolicyResult      adminproto.ApplyPolicyResult
 }
 
 func (s *stubServices) ProductRuntime() *productruntime.Runtime { return s.runtime }
@@ -173,29 +172,22 @@ func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 func (s *stubServices) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
 	return nil
 }
-func (s *stubServices) BuildPolicySnapshot(target adminproto.PolicyTarget) adminproto.PolicySnapshot {
-	s.policySnapshotCalls++
-	s.lastPolicySnapshot = target
-	if s.policySnapshotResult.Target == "" {
-		s.policySnapshotResult.Target = target
-	}
-	return s.policySnapshotResult
+func (s *stubServices) GetPolicy() adminproto.PolicyView {
+	s.getPolicyCalls++
+	return s.getPolicyResult
 }
-func (s *stubServices) ReplacePolicy(req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
-	s.replacePolicyCalls++
-	s.lastReplacePolicy = req
-	if s.replacePolicyResult.Target == "" {
-		s.replacePolicyResult.Target = req.Target
-	}
-	return s.replacePolicyResult
+func (s *stubServices) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
+	return adminproto.PolicyDocumentResult{Success: true, Key: key, Document: "{}"}
 }
-func (s *stubServices) ValidatePolicy(req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
-	s.validatePolicyCalls++
-	s.lastValidatePolicy = req
-	if s.validatePolicyResult.Target == "" {
-		s.validatePolicyResult.Target = req.Target
-	}
-	return s.validatePolicyResult
+func (s *stubServices) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
+	s.checkPolicyCalls++
+	s.lastCheckPolicy = req
+	return s.checkPolicyResult
+}
+func (s *stubServices) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.ApplyPolicyResult {
+	s.applyPolicyCalls++
+	s.lastApplyPolicy = req
+	return s.applyPolicyResult
 }
 func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {
 	return nil, nil

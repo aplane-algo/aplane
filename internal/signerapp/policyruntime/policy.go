@@ -5,13 +5,13 @@ package policyruntime
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"time"
+	"os"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -32,101 +32,159 @@ func DefaultConfig(dataDir string, serverCfg *serverconfig.ServerConfig) (*polic
 	return cfg, nil
 }
 
-// ApplyStoredConfig resolves a stored policy overlay into an effective signer
-// policy using the runtime defaults for this process.
-func ApplyStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
-	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
-	if err != nil {
-		return nil, err
-	}
-	effectivePolicy, err := stored.ApplySigning(defaultPolicy)
-	if err != nil {
-		return nil, err
-	}
-	return effectivePolicy, nil
+// NodePolicy is a node's verified policy: the exact stored documents and the
+// compiled policies the signing path enforces. A NodePolicy is immutable once
+// built; readers clone the compiled configs they hand out.
+type NodePolicy struct {
+	Role noderole.Role
+	// Documents holds the signer document, or one document per cosigner key
+	// sorted by Witness Key ID.
+	Documents []policy.StoredDocument
+	// Signer is the compiled signer policy (signer nodes only).
+	Signer *policy.Config
+	// Cosigner maps each Witness Key ID with a document to its compiled
+	// policy (cosigner nodes only). A key without an entry rejects every
+	// request.
+	Cosigner map[string]*policy.Config
 }
 
-// ApplyCosignerStoredConfig resolves a stored cosigner policy overlay into
-// an effective cosigner component policy using the runtime defaults for this
-// process.
-func ApplyCosignerStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
-	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
-	if err != nil {
-		return nil, err
+// SetSHA256 digests the node's complete policy document set.
+func (p *NodePolicy) SetSHA256() string {
+	if p == nil {
+		return policy.PolicySetSHA256(nil)
 	}
-	effectivePolicy, err := stored.ApplyCosigner(defaultPolicy)
-	if err != nil {
-		return nil, err
-	}
-	return effectivePolicy, nil
+	return policy.PolicySetSHA256(p.Documents)
 }
 
-// LoadVerifiedWithStoredActive loads and applies a signer policy from one
-// already-resolved generation.
-func LoadVerifiedWithStoredActive(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedStoredConfigActive(active, kr)
-	if err != nil {
-		return nil, nil, err
+// SignerConfig returns a copy of the compiled signer policy, or nil.
+func (p *NodePolicy) SignerConfig() *policy.Config {
+	if p == nil || p.Signer == nil {
+		return nil
 	}
-	effective, err := ApplyStoredConfig(dataDir, serverCfg, stored)
-	if err != nil {
-		return nil, nil, err
-	}
-	return stored, effective, nil
+	return p.Signer.Clone()
 }
 
-// LoadVerifiedCosignerWithStoredActive loads and applies a cosigner policy from
-// one already-resolved generation.
-func LoadVerifiedCosignerWithStoredActive(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	stored, err := policy.LoadVerifiedCosignerConfigActive(active, kr)
-	if err != nil {
-		return nil, nil, err
+// CosignerConfigs returns copies of the compiled cosigner policies.
+func (p *NodePolicy) CosignerConfigs() map[string]*policy.Config {
+	if p == nil || p.Cosigner == nil {
+		return nil
 	}
-	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
-	if err != nil {
-		return nil, nil, err
+	out := make(map[string]*policy.Config, len(p.Cosigner))
+	for key, cfg := range p.Cosigner {
+		out[key] = cfg.Clone()
 	}
-	return stored, effective, nil
+	return out
 }
 
-// LoadVerifiedForNodeRoleWithStoredActive loads the role-selected policy from
-// one already-resolved generation.
-func LoadVerifiedForNodeRoleWithStoredActive(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*policy.StoredConfig, *policy.Config, error) {
-	if role == "" {
-		role = noderole.DefaultRole()
-	}
+// Load verifies, decodes, and compiles the role's policy documents from one
+// already-resolved generation. Any document that fails verification or
+// validation fails the whole load.
+func Load(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, kr *crypto.Keyring) (*NodePolicy, error) {
 	switch role {
-	case noderole.RoleCosigner:
-		return LoadVerifiedCosignerWithStoredActive(dataDir, serverCfg, active, kr)
 	case noderole.RoleSigner:
-		return LoadVerifiedWithStoredActive(dataDir, serverCfg, active, kr)
+		if err := requireNoCosignerPolicies(active); err != nil {
+			return nil, err
+		}
+		doc, _, err := policy.LoadVerifiedSignerPolicy(active, kr)
+		if err != nil {
+			return nil, err
+		}
+		return Compile(role, dataDir, serverCfg, []policy.StoredDocument{doc})
+	case noderole.RoleCosigner:
+		if err := requireNoSignerPolicy(active); err != nil {
+			return nil, err
+		}
+		loaded, err := policy.LoadVerifiedCosignerPolicies(active, kr)
+		if err != nil {
+			return nil, err
+		}
+		docs := make([]policy.StoredDocument, 0, len(loaded))
+		for _, entry := range loaded {
+			docs = append(docs, entry.Document)
+		}
+		return Compile(role, dataDir, serverCfg, docs)
 	default:
-		return nil, nil, fmt.Errorf("unsupported node role %q", role)
+		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
 }
 
-// SaveStoredConfigActiveWithKeyring validates and writes a signer policy into
-// one already-resolved generation.
-func SaveStoredConfigActiveWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
-	effective, err := ApplyStoredConfig(dataDir, serverCfg, stored)
+// Compile decodes and compiles exact policy documents for role without
+// touching storage. A signer node takes exactly one document; a cosigner node
+// takes any number, each carrying its Witness Key ID.
+func Compile(role noderole.Role, dataDir string, serverCfg *serverconfig.ServerConfig, docs []policy.StoredDocument) (*NodePolicy, error) {
+	defaults, err := DefaultConfig(dataDir, serverCfg)
 	if err != nil {
 		return nil, err
 	}
-	if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, kr, signedAt); err != nil {
-		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
+	out := &NodePolicy{Role: role, Documents: cloneDocuments(docs)}
+	switch role {
+	case noderole.RoleSigner:
+		if len(docs) != 1 || docs[0].Key != "" {
+			return nil, fmt.Errorf("a signer node takes exactly one policy document")
+		}
+		decoded, err := policy.DecodeSignerPolicyV1(docs[0].Bytes)
+		if err != nil {
+			return nil, err
+		}
+		if out.Signer, err = decoded.Compile(defaults); err != nil {
+			return nil, err
+		}
+	case noderole.RoleCosigner:
+		out.Cosigner = make(map[string]*policy.Config, len(docs))
+		for _, doc := range docs {
+			if _, dup := out.Cosigner[doc.Key]; dup {
+				return nil, fmt.Errorf("duplicate policy document for cosigner key %s", doc.Key)
+			}
+			decoded, err := policy.DecodeCosignerPolicyV1(doc.Bytes, doc.Key)
+			if err != nil {
+				return nil, fmt.Errorf("cosigner key %s: %w", doc.Key, err)
+			}
+			cfg, err := decoded.Compile(defaults)
+			if err != nil {
+				return nil, fmt.Errorf("cosigner key %s: %w", doc.Key, err)
+			}
+			out.Cosigner[doc.Key] = cfg
+		}
+	default:
+		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
-	return effective, nil
+	return out, nil
 }
 
-// SaveStoredCosignerConfigActiveWithKeyring validates and writes a cosigner policy
-// into one already-resolved generation.
-func SaveStoredCosignerConfigActiveWithKeyring(dataDir string, serverCfg *serverconfig.ServerConfig, active storepaths.ActivePaths, stored *policy.StoredConfig, kr *crypto.Keyring, signedAt time.Time) (*policy.Config, error) {
-	effective, err := ApplyCosignerStoredConfig(dataDir, serverCfg, stored)
+func cloneDocuments(docs []policy.StoredDocument) []policy.StoredDocument {
+	out := make([]policy.StoredDocument, len(docs))
+	for i, doc := range docs {
+		out[i] = policy.StoredDocument{Key: doc.Key, Bytes: append([]byte(nil), doc.Bytes...), SignedAtUnix: doc.SignedAtUnix}
+	}
+	return out
+}
+
+func requireNoCosignerPolicies(active storepaths.ActivePaths) error {
+	keys, err := policy.CosignerPolicyKeys(active)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := policy.SaveStoredCosignerConfigActiveWithKeyring(active, stored, kr, signedAt); err != nil {
-		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
+	if len(keys) > 0 {
+		return fmt.Errorf("signer node generation contains cosigner policy documents")
 	}
-	return effective, nil
+	return nil
+}
+
+func requireNoSignerPolicy(active storepaths.ActivePaths) error {
+	for _, path := range []string{active.PolicyPath(), policy.PolicyIntegritySidecarPath(active.PolicyPath())} {
+		if exists, err := pathExists(path); err != nil {
+			return err
+		} else if exists {
+			return fmt.Errorf("cosigner node generation contains a signer policy document")
+		}
+	}
+	return nil
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
 }

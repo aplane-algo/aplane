@@ -41,6 +41,7 @@ func (m Model) adminRows() []adminRow {
 		{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
 		{section: "Runtime", label: m.rolePortLabel(), key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
 		{section: "Runtime", label: "TEAL compile network", key: "", value: s.TEALCompileNet, editable: false},
+		{section: "Runtime", label: "Policies", key: "", value: "view active policy", editable: false, action: "open_policies"},
 	}
 
 	if s.SSHEnabled {

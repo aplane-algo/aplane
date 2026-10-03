@@ -50,12 +50,16 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 Batch commands use the same local IPC transport as the TUI:
 
 ```bash
-./apadmin policy export > policy.yaml
-./apadmin policy check policy.yaml
-./apadmin policy apply policy.yaml
-./apadmin policy apply - < policy.yaml
-./apadmin -d /path/to/signer-data policy rescue check policy.yaml
-./apadmin -d /path/to/signer-data policy rescue apply policy.yaml
+./apadmin policy status
+./apadmin policy export > policy.json
+./apadmin policy check policy.json
+./apadmin policy apply policy.json
+./apadmin policy apply - < policy.json
+./apadmin policy export --key WITNESSKEYID > WITNESSKEYID.json
+./apadmin policy apply WITNESSKEYID.json OTHERKEYID.json
+./apadmin policy remove WITNESSKEYID
+./apadmin -d /path/to/signer-data policy rescue check policy.json
+./apadmin -d /path/to/signer-data policy rescue apply policy.json
 ./apadmin backup create all
 ./apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
 ./apadmin restore preview aplane-backup-YYYYMMDD-HHMMSS.tar.gz
@@ -72,6 +76,15 @@ Online policy commands use the same local IPC transport as the main TUI.
 They authenticate and unlock before policy access. The explicit `policy rescue`
 namespace accesses a stopped signer's store directly and never falls back from
 a failed online connection. Run `apadmin policy --help` for verbs and stream behavior.
+
+Policy documents use the v1 JSON format in
+[docs/ARCH_POLICY_FORMAT.md](../../docs/ARCH_POLICY_FORMAT.md). A signer node
+takes one `policy.json` document. A cosigner node takes one document per
+cosigner key, each naming its Witness Key ID in its `"key"` field; `apply`
+adds or replaces the listed documents, leaves other keys' documents unchanged,
+and `remove` deletes keys' documents. `apply` runs `check` first, prints
+warnings, stops on errors, and then applies against the current
+`policy_set_sha256`. Each apply commits a new generation.
 
 `APSIGNER_DATA` can be used instead of `-d`; `--ipc-path` selects a socket
 explicitly. apadmin does not use `APCLIENT_DATA`, client tokens, or endpoint files.

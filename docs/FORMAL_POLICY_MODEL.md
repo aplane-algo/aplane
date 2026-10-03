@@ -43,8 +43,9 @@ Client-signing policy decides whether a planned signing request is:
 - explicitly approved without manual review,
 - handled by the operator default.
 
-Cosigner component policy is a separate deterministic surface stored in
-cosigner-domain `policy.yaml`: no manual-review verdict and no operator default. This
+Cosigner component policy is a separate deterministic surface stored as one
+document per cosigner key (`policies/<WitnessKeyID>.json`): no manual-review
+verdict and no operator default. This
 document defines the shared snapshot and sparse-override vocabulary; the
 cosigner-specific decision rules are modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
@@ -68,16 +69,16 @@ Policy is separate from:
 `PolicySnapshot` is the immutable effective policy observed by one signing
 request. For client-signing requests it includes:
 
-- product policy fields,
-- YAML-only `key_overrides`,
+- product policy fields from the signer `policy.json`,
+- signer `key_overrides` (scalar settings and `limits`),
 - transfer routing configuration,
 - policy defaults for absent fields,
 - the product runtime's operator default input `user_auto_approve`, even though that
-  setting is stored outside `policy.yaml`.
+  setting is stored outside `policy.json`.
 
-The policy YAML is trusted only after sidecar verification. A missing or
-mismatched `policy.yaml.hmac` fails closed once a signed baseline exists. A
-reload failure keeps the previous in-memory snapshot active.
+The policy document is trusted only after sidecar verification. A missing or
+mismatched `policy.json.hmac` fails closed. A reload failure keeps the previous
+in-memory snapshot active.
 
 ### Planned Request
 
@@ -200,8 +201,7 @@ Always Deny rules are hard safety guards. Current deny sources include:
 - `reject_asset_close`,
 - `reject_clawback`,
 - `max_fee_microalgos`,
-- network-scoped `max_algo_payments`,
-- network-scoped `max_asa_amounts`,
+- network- and asset-scoped `limits` `reject_above` thresholds,
 - transfer routing blocked destinations, route misses, close/clawback denials,
   and `reject_above` thresholds.
 
@@ -211,8 +211,7 @@ Always Review rules force operator approval even when the operator default would
 otherwise auto-approve. Current review sources include:
 
 - `always_review_warnings`,
-- network-scoped `review_algo_payments`,
-- network-scoped `review_asa_amounts`,
+- network- and asset-scoped `limits` `review_above` thresholds,
 - transfer routing `on_no_route: review` and `review_above` thresholds.
 
 Warnings are displayed even when they do not force review.
@@ -247,12 +246,13 @@ Client-signing rules:
 3. This matters for rekeyed accounts: the auth address controls the override.
 4. Missing key-type metadata for a signer-controlled slot still fails closed before a
    policy decision can silently fall back to the wrong override.
-5. Override fields are sparse overlays over the product policy; nested
-   overrides are rejected.
+5. Override fields are sparse overlays over the product policy: scalars replace
+   inherited values and `limits` merge per network, asset, and threshold;
+   nested overrides are rejected.
 
-Cosigner overrides are keyed by Witness Key ID and are consumed only by the
-cosigner-role component-signing flow modeled in
-[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
+Cosigner policy has no overrides. Each cosigner key has its own document,
+selected by Witness Key ID in the cosigner-role component-signing flow modeled
+in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection
 
@@ -281,13 +281,13 @@ Policy updates are atomic from the perspective of signing requests:
    service is constructed.
 4. That snapshot governs policy evaluation, approval waiting, and final
    signature execution for the request.
-5. Later reloads or whole-file replacements affect only later requests.
+5. Later reloads or policy applies affect only later requests.
 6. In-flight requests are not re-evaluated or canceled only because policy
    changed while they waited for approval.
 
 `user_auto_approve` is captured at the same point even though it is sourced
 from product config (`identities/default/config.yaml`) rather
-than from `policy.yaml`. Admin RPCs that toggle `user_auto_approve` are
+than from `policy.json`. Admin RPCs that toggle `user_auto_approve` are
 visible to subsequent signing requests but do not propagate into a request
 that has already captured its snapshot.
 

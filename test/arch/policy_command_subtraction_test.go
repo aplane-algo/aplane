@@ -200,8 +200,11 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 		"github.com/aplane-algo/aplane/internal/signerapp/policycmd": {
 			filepath.Join("cmd", "apadmin"): true,
 		},
-		"github.com/aplane-algo/aplane/internal/signerapp/policyeditor": {
-			filepath.Join("cmd", "apadmin"):                     true,
+		// policyapply owns the rules for committing policy; the daemon admin
+		// service, the rescue workflow, and apstore's checks are its only users.
+		"github.com/aplane-algo/aplane/internal/signerapp/policyapply": {
+			filepath.Join("cmd", "apstore"):                     true,
+			filepath.Join("internal", "signerapp", "admin"):     true,
 			filepath.Join("internal", "signerapp", "policycmd"): true,
 		},
 	}

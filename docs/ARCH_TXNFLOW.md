@@ -787,23 +787,22 @@ When modifications occur, the approval UI displays an explicit banner:
 
 ### Relevant Policy Parameters
 
-The following runtime and policy settings affect server behavior:
+The following runtime and policy settings affect server behavior. Policy
+settings live in the selected generation's `policy.json` on signer nodes, in
+the v1 format specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
 | `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign requests that are not auto-rejected, forced to review, or explicitly auto-approved without TUI confirmation. |
-| `reject_foreign_rekey` | selected generation `policy.yaml` | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
-| `reject_close_remainder` | selected generation `policy.yaml` | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
-| `reject_asset_close` | selected generation `policy.yaml` | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
-| `reject_clawback` | selected generation `policy.yaml` | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
-| `always_review_warnings` | selected generation `policy.yaml` | `false` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
-| `auto_approve_self_noop_transfer` | selected generation `policy.yaml` | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
-| `max_fee_microalgos` | selected generation `policy.yaml` | unset | Reject txns whose fee exceeds the raw microAlgo ceiling. |
-| `review_algo_payments` | selected generation `policy.yaml` | unset | Force review for payment txns whose raw microAlgo amount exceeds the configured per-network threshold. Admin UI/IPC input and review messages use ALGO display units. |
-| `max_algo_payments` | selected generation `policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
-| `review_asa_amounts` | selected generation `policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `max_asa_amounts` | selected generation `policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `key_overrides` | selected generation `policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; cosigner-domain overrides are keyed by Witness Key ID. Unset fields inherit the product policy, and nested overrides are rejected. |
+| `reject_foreign_rekey` | signer `policy.json` | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
+| `reject_close_remainder` | signer `policy.json` | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
+| `reject_asset_close` | signer `policy.json` | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
+| `reject_clawback` | signer `policy.json` | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
+| `always_review_warnings` | signer `policy.json` | `false` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
+| `auto_approve_self_noop_transfer` | signer `policy.json` | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
+| `max_fee_microalgos` | signer `policy.json` | unset | Reject txns whose fee exceeds the raw microAlgo ceiling. |
+| `limits` | signer `policy.json` | unset | Per-network, per-asset `review_above` (force review) and `reject_above` (reject) thresholds for ALGO payments (microAlgos) and ASA transfers (base units), as decimal strings keyed by `algo` or `asa:<id>`. |
+| `key_overrides` | signer `policy.json` | unset | Sparse per-key overrides keyed by signing auth address, carrying only the scalar settings above and `limits`. Unset scalars inherit the document value; `limits` merge per threshold, and `null` removes an inherited threshold. Nested overrides are rejected. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If
 they require additional resource dummies or fees, the request is rejected.

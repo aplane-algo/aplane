@@ -360,8 +360,8 @@ func TestValidateCurrentRequiresCompleteAuthorityShape(t *testing.T) {
 		"keytypes":         func(gen storepaths.GenPaths) string { return gen.KeyTypeRecordsDir() },
 		"deleted-keys":     func(gen storepaths.GenPaths) string { return gen.DeletedKeysDir() },
 		"deleted-keytypes": func(gen storepaths.GenPaths) string { return gen.DeletedKeyTypeRecordsDir() },
-		"policy":           func(gen storepaths.GenPaths) string { return gen.PolicyPath() },
-		"policy-integrity": func(gen storepaths.GenPaths) string { return gen.PolicyIntegritySidecar() },
+		"policies":         func(gen storepaths.GenPaths) string { return gen.CosignerPoliciesDir() },
+		"deleted-policies": func(gen storepaths.GenPaths) string { return gen.DeletedCosignerPoliciesDir() },
 		"node-integrity":   func(gen storepaths.GenPaths) string { return gen.NodeRoleIntegritySidecar() },
 	}
 	for name, target := range tests {

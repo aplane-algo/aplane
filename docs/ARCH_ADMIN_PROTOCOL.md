@@ -213,17 +213,19 @@ Client to Server:
 
 - `get_admin_settings`
 - `update_admin_setting`
-- `get_policy_snapshot`
-- `validate_policy`
-- `replace_policy`
+- `get_policy`
+- `get_policy_document`
+- `check_policy`
+- `apply_policy`
 
 Server to Client:
 
 - `admin_settings`
 - `update_admin_setting_result`
-- `policy_snapshot`
-- `validate_policy_result`
-- `replace_policy_result`
+- `policy`
+- `policy_document`
+- `check_policy_result`
+- `apply_policy_result`
 
 ### Cosigner References And Store Inventory
 
@@ -420,12 +422,48 @@ checks and locked/unlocked/recovery-state interlocks.
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `get_policy_snapshot`: optional `target` (`signer` or `cosigner`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
-- `policy_snapshot`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
-- `validate_policy`: optional `target` (`signer` or `cosigner`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
-- `validate_policy_result`: `success`, optional `target`, optional `code`, optional `error`
-- `replace_policy`: optional `target` (`signer` or `cosigner`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
-- `replace_policy_result`: `success`, optional `target`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
+
+### Policy Messages
+
+Policy documents are the v1 JSON documents specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). There is no `target` field;
+the node role selects the document type. Every `document` value carries the
+exact document bytes as a string, and every `sha256` is the SHA-256 of those
+exact bytes; the server never re-serializes a document.
+
+Shared shapes:
+
+- request document (check and apply): `key` (Witness Key ID; omitted for the signer document), `document`
+- document summary: `key`, `sha256`, `size`, optional `signed_at_unix` (diagnostic sidecar timestamp)
+- key status (cosigner): `key`, `status` — `active` (key held, document present), `no_policy` (key held, no document; the key rejects every request), or `key_not_held` (document for a key the node does not hold)
+- policy problem: optional `key`, optional `pointer` (JSON Pointer into that document), `message`
+
+Messages:
+
+- `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries, without bytes), `keys[]` (cosigner nodes), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document (empty key for the signer document). Returns `policy_unavailable` when no policy is loaded.
+- `get_policy_document`: optional `key` (omitted for the signer document) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when the key has no document.
+- `check_policy`: `documents[]`, optional `remove[]` (cosigner Witness Key IDs the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report cosigner key coverage gaps in the resulting state (`no_policy`, `key_not_held`) and policy advisories, such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`.
+- `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
+
+Apply rules:
+
+- A signer node takes exactly one document with no `key` and no removals.
+- A cosigner node adds or replaces each listed document, deletes each key in `remove`, and keeps unlisted documents. Each document's `key` must equal its signed `key` field. A key may appear only once across `documents` and `remove`; removing a key with no document is rejected.
+- `expected_policy_set_sha256` is required and must equal the active `policy_set_sha256`.
+- A cosigner node holds at most 8,192 policy documents (`policyapply.MaxCosignerPolicies`); a change past the cap is rejected with `policy_set_too_large` before anything is written. Key generation, import, and restore refuse an 8,193rd cosigner credential (`keys.MaxCosignerCredentials`).
+- Response sizes are bounded: `policy` and `apply_policy_result` carry document summaries, never bytes, so with both caps full and every field at its longest they encode to about 3 MB, inside the 4 MiB admin frame. `policy_document` carries one document of at most 1 MiB; admin messages are encoded without HTML escaping, so a document string at most doubles (only quotes, backslashes, JSON whitespace, and U+2028/U+2029 are escaped) and the response stays near 2 MiB.
+- The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
+- Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
+- `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed; signing is blocked pending reconciliation or recovery.
+
+Result codes include `expected_policy_set_sha256_required`,
+`policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
+`invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_document_not_found`, `policy_verify_failed`,
+`identity_locked`, `policy_commit_uncertain`, `policy_reload_failed`, and
+`policy_save_failed`.
+
+`get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
+`policy.update`. Policy messages are not exposed through apshell or MCP.
 
 ## Writable Settings
 
@@ -456,8 +494,8 @@ YAML-only runtime settings:
   not projected through admin IPC.
 
 Policy has no scalar admin setting surface. Read, validation, and mutation use
-`get_policy_snapshot`, `validate_policy`, and `replace_policy` with the complete
-canonical YAML document.
+`get_policy`, `check_policy`, and `apply_policy` with complete v1 JSON
+documents.
 
 ### Cosigner References And Generation Inventory
 
@@ -512,24 +550,13 @@ explicit confirmation, and a durable audit intent written before any removal.
 Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
 are accepted; arbitrary filesystem paths are not an admin-protocol surface.
 
-Key-type override semantics:
+Policy key-override semantics:
 
-- `policy.yaml` may include `key_overrides`, a map from concrete signing key selector to sparse policy blocks
-- override blocks inherit unset fields from the product-wide effective policy
-- nested `key_overrides` are rejected at policy load
+- a signer `policy.json` may include `key_overrides`, a map from signing auth address to sparse blocks of scalar settings and `limits` (see [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#key-override-inheritance))
 - normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
-- cosigner component signing selects an override by the request `component_key` Witness Key ID
-- overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
-- `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
-- `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
-- `policy.yaml` and cosigner-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound product runtime on unlock/reload; policy-mutation admin IPC requires an unlocked signer store and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
-
-Whole-policy replacement:
-
-- `replace_policy` first verifies the current on-disk sidecar for the selected target, then parses and runtime-validates the submitted YAML
-- successful replacement writes the exact submitted YAML bytes plus a fresh sidecar, verifies the saved file, and updates the bound product runtime without requiring a restart
-- failure is fail-closed: parse, validation, stale-snapshot, locked-store, or current-policy verification errors do not overwrite the existing policy
-- `replace_policy_result.policy_yaml` is canonical YAML for display; clients that need byte preservation should retain their own uploaded bytes
+- cosigner documents have no overrides; each cosigner key has its own self-contained document selected by the request `component_key`
+- admin settings do not expose or mutate policy fields; overrides change only through a whole-document `apply_policy`
+- documents placed by hand in a stopped store apply only after `apstore policy sign` and the next unlock
 
 ## Admin Lock Semantics
 

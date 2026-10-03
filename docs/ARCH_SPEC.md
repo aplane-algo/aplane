@@ -164,7 +164,7 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyeditor`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
@@ -598,38 +598,41 @@ Passphrase files are stored at `identities/default/passphrase` or `passphrase.cr
 
 Signer policy participates in the ordered approval engine. The current policy
 verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
-node-role policy is product-store scoped and stored at
-the selected generation's `policy.yaml` with a sibling HMAC sidecar. On signer
-nodes the document is client-signing policy; on cosigner nodes the same
-filename is direct cosigner component policy. The default approval fallback is
+node-role policy is product-store scoped and stored in the selected generation
+as v1 JSON policy documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)),
+each with a sibling HMAC sidecar. Signer nodes hold one client-signing
+document, `policy.json`; cosigner nodes hold one cosigner component document
+per cosigner key, `policies/<WitnessKeyID>.json`. The default approval fallback is
 `user_auto_approve`, persisted in
 `identities/default/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the product
 store term key and loaded into the product runtime on unlock/reload before
-the key scan. Policy files are prepared outside the node, reviewed with
-`apadmin policy check FILE`, and installed with `apadmin policy apply FILE`.
-`apadmin policy` checks and replaces the active document
+the key scan; any document that fails its sidecar or decode stops the node
+from loading. Policy files are prepared outside the node, reviewed with
+`apadmin policy check FILE...`, and installed with `apadmin policy apply FILE...`.
+`apadmin policy` checks and applies documents
 through authenticated local admin IPC while `apsigner` is running;
-`apadmin policy rescue` checks and replaces the selected domain directly while holding the
-store mutation lock. `internal/signerapp/policycmd` owns both workflows.
-Both modes select the policy domain from the node role; store-backed
-role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
-and signed with `apstore policy`. Admin IPC policy messages are
-target-aware (`signer|cosigner`), validate replacements before writing, use
-`expected_current_sha256` for optimistic concurrency, write the YAML plus a
-fresh sidecar, and update the product runtime immediately on success. The policy
-admin surface reads, validates, and replaces only complete YAML documents
-through `get_policy_snapshot`, `validate_policy`, and `replace_policy`,
-including YAML-only fields such as `key_overrides`. There is no scalar
-policy-settings IPC. Separate admin-settings IPC reports identity/process
-configuration and status and mutates only its documented writable settings; it
-does not project policy fields.
+`apadmin policy rescue` checks and applies them directly while holding the
+store mutation lock. `internal/signerapp/policycmd` owns both workflows, and
+`internal/signerapp/policyapply` owns the shared check and commit rules used by
+the admin service, rescue, and `apstore`. The node role decides which document
+type is accepted. Hand-placed documents are checked and signed with
+`apstore policy`. The policy admin surface reads, checks, and applies exact
+document bytes through `get_policy` (summary), `get_policy_document`,
+`check_policy`, and `apply_policy`;
+`apply_policy` requires `expected_policy_set_sha256` for optimistic
+concurrency, mints a new generation (operation `policy-apply`) carrying the
+documents and fresh sidecars, and updates the product runtime immediately on
+success. There is no scalar policy-settings IPC. Separate admin-settings IPC
+reports identity/process configuration and status and mutates only its
+documented writable settings; it does not project policy fields.
 
-The policy document may contain YAML-only `key_overrides`; during normal
+The signer document may contain `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. On cosigner nodes, component signing selects overrides by the
-txid-shaped Witness Key ID from the cosigner-domain `policy.yaml`.
+address. On cosigner nodes, component signing selects the document for the
+request's txid-shaped Witness Key ID; a held key without a document rejects
+every request.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -668,9 +671,10 @@ Operationally:
   [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
 - active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by authenticated `store-root.enc`; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
 - store initialization stages the first generation with its node-role sidecar,
-  role-appropriate empty policy baseline and HMAC, and default key types before
-  publishing `store-root.enc`; installers must not create or sign a root-level
-  `identities/default/policy.yaml`,
+  the role's policy baseline (an initial signed `policy.json` on signer nodes;
+  no cosigner documents on cosigner nodes), and default key types before
+  publishing `store-root.enc`; installers do not create or sign policy files
+  outside the generation,
 - systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
 - the effective product layout is fixed; `default` is a literal namespace and
   compatibility value, not a caller-supplied locator.
@@ -1262,7 +1266,7 @@ accounts whose LogicSig bytecode requires both:
 - a user component signature produced by the user signer that owns the
   guarded-account key file, and
 - a cosigner component signature produced by a separate cosigner signer that
-  owns a cosigner key and evaluates cosigner-domain `policy.yaml`.
+  owns a cosigner key and evaluates that key's cosigner policy document.
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1412,7 +1416,7 @@ guarded effective signer and runs the signer-domain approval gates (hard
 policy rejection, always-review rules, blocking operator approval) before any
 key operation, with the guarded account as the per-target policy key. The
 cosigner-role component request evaluates decoded target transaction facts
-against cosigner-domain `policy.yaml` and returns cosigner component signatures
+against the component key's cosigner policy document and returns cosigner component signatures
 when allowed.
 
 If the original group also has non-guarded positions, the client then calls the
@@ -1504,15 +1508,15 @@ the embedded public key and verified component signature remain authoritative.
 
 ### Policy And Audit
 
-Signer nodes use `policy.yaml` for account signing. Cosigner nodes also use
-`policy.yaml`, parsed in the cosigner policy domain, for cosigner component
-signing. Both domains use the shared policy grammar and HMAC sidecar model, but
+Signer nodes use `policy.json` for account signing. Cosigner nodes use one
+`policies/<WitnessKeyID>.json` document per cosigner key for cosigner component
+signing. Both domains use the v1 policy format and HMAC sidecar model, but
 cosigner policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
 authorized by the effective cosigner policy, and deny guards fail closed.
 
-Cosigner policy overrides are keyed by Witness Key ID.
-Client-signing policy overrides are keyed by signing auth address.
+Cosigner policy is selected per Witness Key ID, one self-contained document
+per key. Client-signing policy overrides are keyed by signing auth address.
 
 Cosigner component approvals and rejections are recorded through existing sign
 audit events. Current records put the Witness Key ID in `txn_auth`, the
@@ -2002,7 +2006,7 @@ Product-level boundaries:
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |
-| Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/integritysidecar/sidecar.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
+| Policy | `internal/policy/doc_v1.go`, `internal/policy/doc_v1_compile.go`, `internal/policy/jsontree.go`, `internal/policy/store_v1.go`, `internal/policy/integrity.go`, `pkg/policyschema/policy.v1.schema.json`, `internal/signerapp/policyapply/apply.go`, `internal/integritysidecar/sidecar.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `internal/signerapp/admin/policy.go`, `internal/signerapp/signing/cosigner_policy.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keys (payload codec) | `internal/keys/payload_codec.go`, `internal/keys/save.go`, `internal/keys/keys.go`, `internal/keys/file_types.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/integritysidecar/sidecar.go`, `internal/keyclass/keyclass.go`, `internal/cosigner/keytypes/keytypes.go` |

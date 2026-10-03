@@ -9,14 +9,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/transport"
 )
 
@@ -53,14 +51,12 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 			writePolicyError(streams.stderr, fmt.Errorf("policy rescue cannot use --ipc-path"))
 			return 2
 		}
-		if needsPolicyDataDir(command) {
-			dataDir, err := signerbootstrap.ResolveDataDir(globals.dataDir)
-			if err != nil {
-				writePolicyError(streams.stderr, err)
-				return 1
-			}
-			command.DataDir = dataDir
+		dataDir, err := signerbootstrap.ResolveDataDir(globals.dataDir)
+		if err != nil {
+			writePolicyError(streams.stderr, err)
+			return 1
 		}
+		command.DataDir = dataDir
 		if err := (policycmd.RescueRunner{}).Run(ctx, command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
 			return 1
@@ -85,7 +81,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 }
 
 func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, bool, error) {
-	command := policycmd.Command{Target: policyeditor.TargetAuto}
+	var command policycmd.Command
 	rescue := false
 	if len(args) > 0 && args[0] == "rescue" {
 		rescue = true
@@ -101,8 +97,8 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 	}
 	for _, arg := range args {
 		switch arg {
-		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online":
-			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (check, export, digest, apply, or to-cosigner)", arg)
+		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online", "--target":
+			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (status, export, check, apply, or remove)", arg)
 		}
 	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
@@ -112,54 +108,41 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		mode = " rescue"
 	}
 	fs.Usage = func() {
-		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s VERB [--target auto|signer|cosigner] [FILE|-]
+		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s VERB [ARGS]
 
 Verbs:
-  check [FILE]      validate policy
-  export [FILE]     write exact validated YAML
-  digest [FILE]     write the exact YAML SHA-256 digest
-  apply FILE|-      validate and replace production policy
-  to-cosigner [FILE]  convert signer policy to cosigner policy
+  status            list the node's policy documents and cosigner key coverage
+  export [--key ID] write one policy document exactly as stored
+  check FILE...     validate policy files against the node
+  apply FILE...|-   check, then replace policy documents in one commit
+  remove ID...      delete cosigner keys' policy documents (cosigner nodes)
+
+A signer node takes one policy.json file. On a cosigner node each file is one
+key's document and names that key in its "key" field; apply leaves documents
+for other keys unchanged.
 
 Online commands authenticate and unlock before policy access; local IPC may use
 APSIGNER_PASSPHRASE. IPC commands may read one passphrase line from stdin.
 When applying policy from stdin, use APSIGNER_PASSPHRASE or a controlling terminal
 so the policy document and passphrase stay separate.
 Policy rescue commands access the store directly, require a stopped daemon for
-production edits, and reject --ipc-path.
+apply and remove, and reject --ipc-path.
 
 `, mode)
 	}
-	targetRaw := fs.String("target", "auto", "policy target: auto, signer, or cosigner")
+	key := fs.String("key", "", "Witness Key ID of the cosigner document to export")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
 	}
 	if command.Verb == "" {
-		return command, rescue, fmt.Errorf("policy requires a verb: check, export, digest, apply, or to-cosigner")
+		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, apply, or remove")
 	}
-	target, err := policyeditor.ParseTarget(*targetRaw)
-	if err != nil {
-		return command, rescue, err
-	}
-	command.Target = target
-	sources := fs.Args()
-	if len(sources) > 1 {
-		return command, rescue, fmt.Errorf("policy %s accepts at most one YAML file", command.Verb)
-	}
-	if len(sources) == 1 {
-		command.Source = sources[0]
-	}
+	command.Key = *key
+	command.Args = fs.Args()
 	if err := command.Validate(); err != nil {
 		return command, rescue, err
 	}
 	return command, rescue, nil
-}
-
-func needsPolicyDataDir(command policycmd.Command) bool {
-	if command.Verb == policycmd.VerbApply || command.Source == "" {
-		return true
-	}
-	return command.DataDir != "" || os.Getenv("APSIGNER_DATA") != ""
 }
 
 func writePolicyError(stderr io.Writer, err error) {

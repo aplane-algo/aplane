@@ -8,6 +8,7 @@ package storemut
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -68,13 +70,47 @@ func (s *Service) RevokeToken() (string, error) {
 	return tokenPath, nil
 }
 
-// DeleteKey moves a key file out of the active key set into the identity archive.
+// DeleteKey moves a key file out of the active key set into the identity
+// archive. Deleting a cosigner key also archives its policy document, so a
+// re-imported key starts with no policy.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
 	active, err := genstore.ResolveActive(s.keyPaths)
 	if err != nil {
 		return nil, err
 	}
-	return keymgmt.DeleteKeyActive(active, address, keyFile)
+	_, class, ok := keys.ParseManagedCredentialFilename(filepath.Base(keyFile))
+	cosigner := ok && class == keys.ManagedCredentialCosigner
+	if cosigner {
+		// The key and its policy pair are archived by one deletion, so the
+		// archive must have room for all of them before anything moves.
+		candidates := []string{keyFile}
+		if err := storepaths.ValidateWitnessKeyIDComponent(address); err != nil {
+			return nil, err
+		}
+		policyPath := active.CosignerPolicyPath(address)
+		if _, err := os.Lstat(policyPath); err == nil {
+			candidates = append(candidates, policyPath, policy.PolicyIntegritySidecarPath(policyPath))
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		gen, ok := active.(storepaths.GenPaths)
+		if !ok {
+			return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
+		}
+		if _, err := genstore.PreflightDeletedArchiveAppend(gen, candidates...); err != nil {
+			return nil, err
+		}
+	}
+	result, err := keymgmt.DeleteKeyActive(active, address, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	if cosigner {
+		if err := policy.ArchiveCosignerPolicy(active, address); err != nil {
+			return nil, fmt.Errorf("key deleted, but archiving its policy failed: %w", err)
+		}
+	}
+	return result, nil
 }
 
 // GenerateKeyWithActivatedContext creates and persists a key type using the

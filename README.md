@@ -219,6 +219,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_CONTRACTS.md](docs/ARCH_CONTRACTS.md) - Compatibility contracts (on-disk, config, SDK, plugin, MCP) with TOC into extracted docs
 - [ARCH_HTTP_API.md](docs/ARCH_HTTP_API.md) - HTTP wire shapes, status codes, product-runtime binding, and sign cancellation
 - [ARCH_ADMIN_PROTOCOL.md](docs/ARCH_ADMIN_PROTOCOL.md) - apsigner admin RPC catalog, payload shapes, writable-settings rules
+- [ARCH_POLICY_FORMAT.md](docs/ARCH_POLICY_FORMAT.md) - v1 JSON policy document format, storage, and acceptance rules
 - [FORMALIZATION_ROADMAP.md](docs/FORMALIZATION_ROADMAP.md) - Formal-assurance roadmap and scope
 - [FORMAL_TXN_PLANNING_MODEL.md](docs/FORMAL_TXN_PLANNING_MODEL.md) - Precise transaction-planning model and invariants
 - [FORMAL_POLICY_MODEL.md](docs/FORMAL_POLICY_MODEL.md) - Precise policy precedence model and invariants

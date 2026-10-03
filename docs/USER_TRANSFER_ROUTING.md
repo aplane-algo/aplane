@@ -3,57 +3,63 @@
 Transfer routing is a signer policy for direct ALGO and ASA transfers. It lets
 an operator define which signer-controlled source accounts may send which
 assets to which destinations, on which networks, and at what amount thresholds.
-The stored YAML schema calls these entries `routes`.
+The policy document calls these entries `routes`.
 
 This is the transfer-routing deep dive. For the broader signer policy model,
 editing workflow, top-level fields, and key override overview, start with
-[USER_POLICY.md](USER_POLICY.md).
+[USER_POLICY.md](USER_POLICY.md). The document format itself is specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
 
-Routing is configured in the product policy file:
+Routing is configured in the node's v1 JSON policy document. A signer node has
+one document; a cosigner node has one document per cosigner key:
 
 ```text
-identities/default/generations/<selected-generation>/policy.yaml
+identities/default/generations/<selected-generation>/policy.json
+identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json
 ```
 
-Write or edit routes in the policy file outside the node, run
+Write or edit routes in a policy file outside the node, run
 `apadmin policy check FILE`, then `apadmin policy apply FILE` while `apsigner`
 is running. `apadmin` applies changes as whole-document replacements through
-the running signer; it does not merge independent route fragments. Use the
-`apadmin policy rescue` forms when the signer is stopped:
+the running signer; it does not merge independent route fragments. Every apply
+commits a new store generation.
+
+```bash
+apadmin policy status
+apadmin policy export > policy.json
+apadmin policy check policy.json
+apadmin policy apply policy.json
+```
 
 A successful policy apply affects new signing requests after the signer
 publishes the replacement policy snapshot. Signing requests that are already in
 flight, including requests waiting for operator approval, continue under the
 policy snapshot they captured when they started.
 
+Use the `apadmin policy rescue` forms when the signer is stopped:
+
 ```bash
-apadmin -d "$APSIGNER_DATA" policy rescue check
-apadmin -d "$APSIGNER_DATA" policy rescue digest
-apadmin -d "$APSIGNER_DATA" policy rescue export > policy.yaml
-apadmin policy rescue check policy.yaml
-apadmin -d "$APSIGNER_DATA" policy rescue apply policy.yaml
-apadmin -d "$APSIGNER_DATA" policy rescue apply - < policy.yaml
+apadmin -d "$APSIGNER_DATA" policy rescue status
+apadmin -d "$APSIGNER_DATA" policy rescue export > policy.json
+apadmin -d "$APSIGNER_DATA" policy rescue check policy.json
+apadmin -d "$APSIGNER_DATA" policy rescue apply policy.json
+apadmin -d "$APSIGNER_DATA" policy rescue apply - < policy.json
 ```
 
-When `apadmin policy rescue` reads production policy from `APSIGNER_DATA` or
-`-d`, it
-prompts for the store passphrase and auto-selects the document from
-`node.yaml`: signer nodes use `policy.yaml`, cosigner nodes use
-cosigner-domain `policy.yaml`. Use `--target signer` or `--target cosigner` to override
-auto-selection. Local rescue
-automation may use `APSIGNER_PASSPHRASE`; remote policy commands require the
-controlling terminal. The `digest` verb verifies the current production
-sidecar and prints the SHA-256 digest of the trusted selected document bytes.
-The `export` verb writes only those trusted bytes to stdout. With a positional
-YAML file, `check`, `export`, and `digest` validate the standalone file without
-reading the production sidecar or requesting the store passphrase. `apply`
-reads a file (or stdin when the source is `-`), validates it in the selected
-policy domain, preserves the submitted YAML bytes, and writes the selected
-document plus a fresh sidecar; you do not need to run `apstore policy sign`
-afterward.
+`apadmin policy rescue` reads the store directly, prompts for the store
+passphrase, and follows the node role recorded in the store: a signer node
+takes one `policy.json` document, and on a cosigner node each file names its
+key in its `"key"` field. Local rescue automation may use
+`APSIGNER_PASSPHRASE`; remote policy commands require the controlling
+terminal. `status` lists the stored documents with their SHA-256 digests, and
+`export` writes the trusted bytes of one document to stdout (`--key ID`
+selects a cosigner key's document). `apply` reads a file (or stdin when the
+source is `-`), checks it with the same rules as the running daemon, preserves
+the submitted bytes, and commits the document plus a fresh sidecar as a new
+generation; you do not need to run `apstore policy sign` afterward.
 
-After direct in-place YAML edits to the selected document, check it, sign it,
-and then reload or restart the signer:
+After hand-placing or editing a document in the selected generation while the
+signer is stopped, check it, sign it, and then start the signer:
 
 ```bash
 apstore -d "$APSIGNER_DATA" policy check
@@ -61,10 +67,9 @@ apstore -d "$APSIGNER_DATA" policy sign
 apstore -d "$APSIGNER_DATA" policy verify
 ```
 
-Direct YAML edits take effect only after the next successful signer reload,
-unlock, or restart. `apstore policy sign` and `apadmin policy rescue` saves are offline
-store mutations, so the normal workflow is to run them while `apsigner` is
-stopped or before starting it.
+Hand edits take effect only after the next successful signer start, reload, or
+unlock. `apstore policy sign` and `apadmin policy rescue apply` are offline
+store mutations, so run them while `apsigner` is stopped.
 
 For the architecture-level policy model, see
 [ARCH_POLICY.md](ARCH_POLICY.md#transfer-routing). For network token rules, see
@@ -98,38 +103,41 @@ but it never auto-approves signing.
 
 Start in review mode when you are not yet sure the route table is complete:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: review
-  close_on_no_route: reject
-  clawback_on_no_route: reject
-
-  address_sets:
-    treasury:
-      - TREASURYADDRESS...
-    operations:
-      - OPERATIONSADDRESS...
-
-  routes:
-    - id: treasury_to_operations
-      description: Treasury can transfer any asset to operations.
-      networks: ["*"]
-      sources: ["@treasury"]
-      assets: ["*"]
-      destinations: ["@operations"]
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "treasury": ["TREASURYADDRESS..."],
+    "operations": ["OPERATIONSADDRESS..."]
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "review",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "routes": [
+      {
+        "id": "treasury_to_operations",
+        "description": "Treasury can transfer any asset to operations.",
+        "networks": ["*"],
+        "sources": ["@treasury"],
+        "assets": ["*"],
+        "destinations": ["@operations"]
+      }
+    ]
+  }
+}
 ```
 
-With `on_no_route: review`, transfer movements that match no route go to the
-operator for approval. After reviewing audit output and adding any missing
-routes, switch to `on_no_route: reject` for production allowlist behavior.
+With `"on_no_route": "review"`, transfer movements that match no route go to
+the operator for approval. After reviewing audit output and adding any missing
+routes, switch to `"on_no_route": "reject"` for production allowlist behavior.
 
 Use `operator_default` only when route misses should behave as if routing did
 not exist:
 
-```yaml
-on_no_route: operator_default
+```json
+"on_no_route": "operator_default"
 ```
 
 That mode still applies matching route thresholds and explicit close/clawback
@@ -139,43 +147,45 @@ fallbacks. Close-out and clawback misses are controlled by
 
 ## Minimal Shape
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  close_on_no_route: reject
-  clawback_on_no_route: reject
-
-  blocked_destinations: []
-  address_sets: {}
-  asset_sets: {}
-  routes: []
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "blocked_destinations": [],
+    "routes": []
+  }
+}
 ```
 
-`schema_version: 1` and an explicit `enabled: true` or `enabled: false` are
-required whenever `transfer_policy` is present. `enabled:true` turns routing on.
-If `enabled:false`, routing sits out and current non-routing policy behavior is
-unchanged.
+`enabled` is required whenever `transfer_policy` is present. `"enabled": true`
+turns routing on. With `"enabled": false`, routing sits out and non-routing
+policy behavior is unchanged.
 
-When routing is enabled, `on_no_route` must be explicit unless the block is a
-key override inheriting a product-wide value.
+When routing is enabled, `on_no_route` is required.
 
 ## Schema Walkthrough
 
-Top-level fields:
+`transfer_policy` fields in a signer document:
 
 | Field | Required | Meaning |
 |-------|----------|---------|
-| `schema_version` | yes | Routing schema version; currently `1` |
 | `enabled` | yes | Enables routing when `true`; disables routing when `false` |
 | `on_no_route` | when enabled | Route-miss behavior: `reject`, `review`, or `operator_default` |
 | `close_on_no_route` | no | Close-out route-miss behavior; defaults to `reject` |
 | `clawback_on_no_route` | no | Clawback route-miss behavior; defaults to `reject` |
 | `blocked_destinations` | no | Global concrete-address deny list checked before route matching |
-| `address_sets` | no | Named address lists or network-scoped address lists |
-| `asset_sets` | no | Named network-scoped ASA ID lists |
 | `routes` | no | Route definitions; order does not grant priority |
+
+Named sets are top-level document fields, beside `transfer_policy`:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `address_sets` | no | Named address lists or network-scoped address lists |
+| `asset_sets` | no | Named network-scoped asset lists |
 
 Route fields:
 
@@ -183,17 +193,16 @@ Route fields:
 |-------|----------|---------|
 | `id` | yes | Stable lowercase identifier used in audit and policy rule IDs |
 | `description` | no | Operator-facing note |
-| `enabled` | no | Defaults to `true`; disabled routes are ignored |
 | `networks` | yes | Either `["*"]` or concrete network context tokens |
 | `sources` | yes | Sender addresses, `@address_set` references, or `*` |
-| `asset_sources` | clawback only | ASA `AssetSender` terms; requires `clawback.allow:true` |
-| `assets` | yes | `algo`, ASA ID, `asa:<id>`, `@asset_set`, or `*` |
+| `asset_sources` | clawback only | ASA `AssetSender` terms; requires `"allow_clawback": true` |
+| `assets` | yes | `algo`, `asa:<id>`, `@asset_set`, or `*` |
 | `destinations` | yes | Receiver addresses, `@address_set` references, `self`, or `*` |
-| `limits.review_above` | no | Always Review when amount is strictly greater than this raw threshold |
-| `limits.reject_above` | no | Always Deny when amount is strictly greater than this raw threshold |
-| `limits_by_network` | no | Per-network threshold overrides |
-| `close.allow` | no | Allows matching close-out movements; defaults to false |
-| `clawback.allow` | no | Allows matching ASA clawback movements; defaults to false |
+| `limits` | no | Per-network, per-asset `review_above` / `reject_above` thresholds |
+| `allow_close` | no | Allows matching close-out movements; defaults to `false` |
+| `allow_clawback` | no | Allows matching ASA clawback movements; defaults to `false` |
+
+To disable a route, remove it from the document.
 
 Route IDs must match:
 
@@ -222,36 +231,39 @@ not affect transaction types outside routing's scope.
 Close-out and clawback have their own no-route fallbacks because they are more
 destructive than ordinary transfers:
 
-```yaml
-close_on_no_route: reject
-clawback_on_no_route: reject
+```json
+"close_on_no_route": "reject",
+"clawback_on_no_route": "reject"
 ```
 
 Both fields accept the same values as `on_no_route`. Their default is `reject`.
 They apply only when no route matches. If a route matches but does not set
-`close.allow:true` or `clawback.allow:true`, the movement is still rejected.
+`"allow_close": true` or `"allow_clawback": true`, the movement is still
+rejected.
 
 ## Blocked Destinations
 
 `blocked_destinations` is an optional flat list of concrete Algorand addresses
 that no covered signer-controlled movement may target.
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-
-  blocked_destinations:
-    - SANCTIONEDADDRESS...
-    - COMPROMISEDADDRESS...
-
-  routes:
-    - id: allow_all_except_blocked
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["*"]
-      destinations: ["*"]
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "blocked_destinations": ["SANCTIONEDADDRESS...", "COMPROMISEDADDRESS..."],
+    "routes": [
+      {
+        "id": "allow_all_except_blocked",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}
 ```
 
 The example above intentionally makes ordinary routing broad. The block list is
@@ -290,34 +302,33 @@ enforcement, so review removals as policy relaxation.
 
 ## Address Sets
 
-Address sets define local aliases inside `policy.yaml`. They are not imported
-from the apshell address book.
+Address sets define local aliases in the top-level `address_sets` field of the
+policy document. They are not imported from the apshell address book.
 
 A flat list applies on every network:
 
-```yaml
-address_sets:
-  payroll:
-    - PAYROLL1...
-    - PAYROLL2...
+```json
+"address_sets": {
+  "payroll": ["PAYROLL1...", "PAYROLL2..."]
+}
 ```
 
 A network map applies only on named network context tokens:
 
-```yaml
-address_sets:
-  treasury:
-    mainnet:
-      - MAINNETTREASURY...
-    testnet:
-      - TESTNETTREASURY...
+```json
+"address_sets": {
+  "treasury": {
+    "mainnet": ["MAINNETTREASURY..."],
+    "testnet": ["TESTNETTREASURY..."]
+  }
+}
 ```
 
 Routes reference address sets with `@name`:
 
-```yaml
-sources: ["@treasury"]
-destinations: ["@payroll"]
+```json
+"sources": ["@treasury"],
+"destinations": ["@payroll"]
 ```
 
 Set names may use lowercase ASCII letters, digits, `_`, and `-`. A single
@@ -327,21 +338,22 @@ addresses should apply on every network.
 
 ## Asset Sets
 
-Asset sets group ASA IDs by network context token:
+Asset sets group assets by network context token in the top-level
+`asset_sets` field:
 
-```yaml
-asset_sets:
-  stablecoins:
-    mainnet:
-      - 31566704
-    testnet:
-      - 10458941
+```json
+"asset_sets": {
+  "stablecoins": {
+    "mainnet": ["asa:31566704"],
+    "testnet": ["asa:10458941"]
+  }
+}
 ```
 
 Routes reference asset sets with `@name`:
 
-```yaml
-assets: ["@stablecoins"]
+```json
+"assets": ["@stablecoins"]
 ```
 
 Asset terms:
@@ -349,29 +361,19 @@ Asset terms:
 | Term | Meaning |
 |------|---------|
 | `algo` | Native ALGO payment, measured in microAlgos |
-| `123456` | ASA ID 123456, measured in raw ASA units |
-| `asa:123456` | Explicit ASA spelling, equivalent to `123456` |
+| `asa:123456` | ASA ID 123456, measured in raw ASA units |
 | `@stablecoins` | Asset set expanded for the transaction network |
 | `*` | Any asset, including ALGO and ASAs |
+
+Bare numeric ASA IDs are not accepted; write `asa:<id>`.
 
 Asset IDs are network-local, so asset sets must use the network-map shape.
 There is no flat-list asset-set shape.
 
-Asset set names may use lowercase ASCII letters,
-digits, `_`, and `-`. Network rows must use concrete network context tokens,
-not `*`, and each row must contain at least one ASA ID. Routes reference a set
-as `@stablecoins`.
-
-A `usdc` set for Algorand mainnet and testnet is:
-
-```yaml
-asset_sets:
-  usdc:
-    mainnet:
-      - 31566704
-    testnet:
-      - 10458941
-```
+Asset set names may use lowercase ASCII letters, digits, `_`, and `-`. Network
+rows must use concrete network context tokens, not `*`, and each row must
+contain at least one asset (`algo` or `asa:<id>`). Routes reference a set as
+`@stablecoins`.
 
 ## Movement Model
 
@@ -451,10 +453,12 @@ the case where `AssetSender` is non-zero and different from `Sender`.
 
 ## Amount Limits
 
-In `policy.yaml`, amount limits use raw on-chain units:
+Amounts in the policy document are decimal strings in raw on-chain units:
 
 - ALGO limits are microAlgos.
 - ASA limits are raw ASA units.
+
+JSON numbers are rejected; write `"250000000"`, not `250000000`.
 
 Threshold comparison is strict greater-than:
 
@@ -462,101 +466,105 @@ Threshold comparison is strict greater-than:
 amount > threshold
 ```
 
-For example, `review_above: 250000000` reviews ALGO payments above 250 ALGO,
-not exactly 250 ALGO.
+For example, `"review_above": "250000000"` reviews ALGO payments above 250
+ALGO, not exactly 250 ALGO.
 
-```yaml
-routes:
-  - id: treasury_algo_vendors
-    networks: [mainnet]
-    sources: ["@treasury"]
-    assets: ["algo"]
-    destinations: ["@vendors"]
-    limits:
-      review_above: 250000000
-      reject_above: 1000000000
+Route `limits` are keyed by network, then by asset, so every threshold applies
+to exactly one asset in its own units:
+
+```json
+{
+  "id": "treasury_algo_vendors",
+  "networks": ["mainnet"],
+  "sources": ["@treasury"],
+  "assets": ["algo"],
+  "destinations": ["@vendors"],
+  "limits": {
+    "mainnet": {
+      "algo": { "review_above": "250000000", "reject_above": "1000000000" }
+    }
+  }
+}
 ```
 
 If both `review_above` and `reject_above` are present, `reject_above` must be
 greater than or equal to `review_above`. Deny is evaluated first, so equal
 thresholds reject matching amounts above that value.
 
-Routes with active limits must not mix incompatible units. These are valid:
+A route's `limits` may name only networks the route covers (any network when
+`networks` is `["*"]`) and only assets the route covers on that network,
+directly, through a referenced asset set, or through `*`. One route can carry
+thresholds for several assets, and a route that spans networks with different
+ASA IDs lists each network's asset under its own network key:
 
-```yaml
-assets: ["algo"]
-assets: [31566704]
+```json
+{
+  "id": "treasury_stablecoin_vendors",
+  "networks": ["mainnet", "testnet"],
+  "sources": ["@treasury"],
+  "assets": ["@stablecoins"],
+  "destinations": ["@vendors"],
+  "limits": {
+    "mainnet": {
+      "asa:31566704": { "review_above": "100000000", "reject_above": "500000000" }
+    },
+    "testnet": {
+      "asa:10458941": { "review_above": "50000000", "reject_above": "250000000" }
+    }
+  }
+}
 ```
 
-These are not valid with limits:
+An asset the route covers but its `limits` does not mention has no route-level
+threshold.
 
-```yaml
-assets: ["algo", 31566704]
-assets: ["*"]
-```
-
-If you need thresholds for several assets, write separate routes.
-
-Use `limits_by_network` when the same route spans networks with different ASA
-IDs or different operational thresholds:
-
-```yaml
-routes:
-  - id: treasury_stablecoin_vendors
-    networks: [mainnet, testnet]
-    sources: ["@treasury"]
-    assets: ["@stablecoins"]
-    destinations: ["@vendors"]
-    limits_by_network:
-      mainnet:
-        review_above: 100000000
-        reject_above: 500000000
-      testnet:
-        review_above: 50000000
-        reject_above: 250000000
-```
+Document-level `limits` use the same shape at the top level of the document.
+They are a separate check: a movement is rejected or sent to review if it
+exceeds the document's threshold for its asset or the strictest threshold
+among its matching routes.
 
 ## Close-Out And Clawback
 
 By default, close-out movements are rejected by routing unless a matching route
-explicitly sets `close.allow:true`. If no route matches, `close_on_no_route`
-controls the fallback and defaults to `reject`.
+explicitly sets `"allow_close": true`. If no route matches,
+`close_on_no_route` controls the fallback and defaults to `reject`.
 
-```yaml
-routes:
-  - id: customer_asset_close_to_recovery
-    networks: [mainnet]
-    sources: ["@customers"]
-    assets: [31566704]
-    destinations: ["@recovery"]
-    close:
-      allow: true
+```json
+{
+  "id": "customer_asset_close_to_recovery",
+  "networks": ["mainnet"],
+  "sources": ["@customers"],
+  "assets": ["asa:31566704"],
+  "destinations": ["@recovery"],
+  "allow_close": true
+}
 ```
 
-The existing `reject_close_remainder` and `reject_asset_close` guards still
-apply independently. If either guard is enabled, it can reject even when a
-route allows the close-out movement. Treat that overlap as advisory-level
-configuration debt: route permissions cannot weaken top-level reject guards.
+The `reject_close_remainder` and `reject_asset_close` guards still apply
+independently. If either guard is enabled, it can reject even when a route
+allows the close-out movement. `apadmin policy check` reports that overlap as a
+warning: route permissions cannot weaken top-level reject guards.
 
 By default, clawback movements are rejected unless a matching route explicitly
-sets `clawback.allow:true` and defines `asset_sources`. If no route matches,
-`clawback_on_no_route` controls the fallback and defaults to `reject`:
+sets `"allow_clawback": true` and defines `asset_sources`. If no route
+matches, `clawback_on_no_route` controls the fallback and defaults to
+`reject`:
 
-```yaml
-routes:
-  - id: authority_clawback_to_recovery
-    networks: [mainnet]
-    sources: ["@clawback_authorities"]
-    asset_sources: ["@customers"]
-    assets: [31566704]
-    destinations: ["@recovery"]
-    clawback:
-      allow: true
+```json
+{
+  "id": "authority_clawback_to_recovery",
+  "networks": ["mainnet"],
+  "sources": ["@clawback_authorities"],
+  "asset_sources": ["@customers"],
+  "assets": ["asa:31566704"],
+  "destinations": ["@recovery"],
+  "allow_clawback": true
+}
 ```
 
-The existing `reject_clawback` guard still applies independently. If it is
-enabled, `clawback.allow:true` documents the route intent but cannot make the
-clawback signable.
+The `reject_clawback` guard still applies independently. If it is enabled,
+`"allow_clawback": true` documents the route intent but cannot make the
+clawback signable; `check` reports that overlap as a warning too.
 
 `self` is not allowed in clawback `destinations` or `asset_sources` in v1.
 `self` is ambiguous for clawback because the transaction sender is the clawback
@@ -567,13 +575,15 @@ authority, not the asset owner.
 More than one route may match a movement. The evaluator combines matching
 routes conservatively:
 
-- at least one enabled route must match for the movement to be route-permitted,
-- the lowest present `reject_above` among matching routes wins,
-- the lowest present `review_above` among matching routes wins,
+- at least one route must match for the movement to be route-permitted,
+- the lowest present `reject_above` for the movement's asset among matching
+  routes wins,
+- the lowest present `review_above` for the movement's asset among matching
+  routes wins,
 - close-out is allowed only if at least one matching route has
-  `close.allow:true`,
+  `"allow_close": true`,
 - clawback is allowed only if at least one matching route has
-  `clawback.allow:true`.
+  `"allow_clawback": true`.
 
 This lets broad routes set organization-wide ceilings while narrower routes
 permit specific destinations. Broad routes can make thresholds stricter, not
@@ -606,18 +616,20 @@ Evaluation order for each movement:
 6. If no route matches and the movement is clawback, apply
    `clawback_on_no_route`.
 7. If no route matches for any other movement, apply `on_no_route`.
-8. If the movement is close-out and no matching route has `close.allow:true`,
-   reject.
+8. If the movement is close-out and no matching route has
+   `"allow_close": true`, reject.
 9. If the movement is clawback and no matching route has
-   `clawback.allow:true`, reject.
-10. If amount is known and the lowest matching `reject_above` threshold is
+   `"allow_clawback": true`, reject.
+10. If amount is known and the lowest matching `reject_above` threshold for
+   the movement's asset is
    exceeded, reject.
-11. If amount is known and the lowest matching `review_above` threshold is
+11. If amount is known and the lowest matching `review_above` threshold for
+   the movement's asset is
    exceeded, force review.
 12. Otherwise routing produces no verdict and the request continues through the
    remaining policy phases.
 
-With the default `close_on_no_route: reject`, a close-out without an explicit
+With the default `"close_on_no_route": "reject"`, a close-out without an explicit
 close route is rejected even if `on_no_route` is `review` or
 `operator_default`.
 
@@ -654,25 +666,27 @@ For a grouped request:
 
 ### One Source Can Send To One Destination Or Itself
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-
-  routes:
-    - id: source_to_partner_or_self
-      description: Source may transfer only to partner or itself.
-      networks: ["*"]
-      sources:
-        - SOURCEADDRESS...
-      assets: ["*"]
-      destinations:
-        - PARTNERADDRESS...
-        - self
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "source_to_partner_or_self",
+        "description": "Source may transfer only to partner or itself.",
+        "networks": ["*"],
+        "sources": ["SOURCEADDRESS..."],
+        "assets": ["*"],
+        "destinations": ["PARTNERADDRESS...", "self"]
+      }
+    ]
+  }
+}
 ```
 
-With `on_no_route: reject`, `SOURCEADDRESS...` cannot send to any other
+With `"on_no_route": "reject"`, `SOURCEADDRESS...` cannot send to any other
 destination. Other signer-controlled accounts also need routes, or their
 direct transfers will miss and be rejected.
 
@@ -682,62 +696,67 @@ v1 has no negative source matching. If you want one source to be tightly
 restricted while existing sources keep broad routing, enumerate the existing
 sources in an address set:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-
-  address_sets:
-    other_existing_keys:
-      - AAAAA...
-      - BBBBB...
-      - CCCCC...
-
-  routes:
-    - id: restricted_source
-      networks: ["*"]
-      sources: ["SOURCEADDRESS..."]
-      assets: ["*"]
-      destinations:
-        - PARTNERADDRESS...
-        - self
-
-    - id: other_existing_keys_passthrough
-      networks: ["*"]
-      sources: ["@other_existing_keys"]
-      assets: ["*"]
-      destinations: ["*"]
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "other_existing_keys": ["AAAAA...", "BBBBB...", "CCCCC..."]
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "restricted_source",
+        "networks": ["*"],
+        "sources": ["SOURCEADDRESS..."],
+        "assets": ["*"],
+        "destinations": ["PARTNERADDRESS...", "self"]
+      },
+      {
+        "id": "other_existing_keys_passthrough",
+        "networks": ["*"],
+        "sources": ["@other_existing_keys"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}
 ```
 
 New keys added later are not automatically included in
-`other_existing_keys`. Update and re-sign policy when adding keys that should
+`other_existing_keys`. Update and apply the policy when adding keys that should
 retain broad routing.
 
 ### Treasury Pays Payroll In ALGO
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-
-  address_sets:
-    treasury:
-      - TREASURY...
-    payroll:
-      - PAYROLL1...
-      - PAYROLL2...
-
-  routes:
-    - id: treasury_algo_payroll
-      networks: [mainnet]
-      sources: ["@treasury"]
-      assets: ["algo"]
-      destinations: ["@payroll"]
-      limits:
-        review_above: 250000000
-        reject_above: 1000000000
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "treasury": ["TREASURY..."],
+    "payroll": ["PAYROLL1...", "PAYROLL2..."]
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "treasury_algo_payroll",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["algo"],
+        "destinations": ["@payroll"],
+        "limits": {
+          "mainnet": {
+            "algo": { "review_above": "250000000", "reject_above": "1000000000" }
+          }
+        }
+      }
+    ]
+  }
+}
 ```
 
 This reviews payroll payments above 250 ALGO and rejects payments above 1000
@@ -745,47 +764,60 @@ ALGO.
 
 ### Treasury Pays Vendors In A Specific ASA
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-
-  address_sets:
-    treasury:
-      - TREASURY...
-    vendors:
-      - VENDOR1...
-      - VENDOR2...
-
-  routes:
-    - id: treasury_usdc_vendors
-      networks: [mainnet]
-      sources: ["@treasury"]
-      assets: [31566704]
-      destinations: ["@vendors"]
-      limits:
-        review_above: 100000000
-        reject_above: 500000000
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "treasury": ["TREASURY..."],
+    "vendors": ["VENDOR1...", "VENDOR2..."]
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "treasury_usdc_vendors",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["asa:31566704"],
+        "destinations": ["@vendors"],
+        "limits": {
+          "mainnet": {
+            "asa:31566704": { "review_above": "100000000", "reject_above": "500000000" }
+          }
+        }
+      }
+    ]
+  }
+}
 ```
 
-The ASA thresholds are raw asset units. For a 6-decimal asset, `100000000`
+The ASA thresholds are raw asset units. For a 6-decimal asset, `"100000000"`
 means 100 display units.
 
 ### Permit ASA Opt-In
 
-```yaml
-asset_sets:
-  stablecoins:
-    mainnet:
-      - 31566704
+Add an asset set and a route to `self` (shown as a fragment of the document):
 
-routes:
-  - id: treasury_stablecoin_optin
-    networks: [mainnet]
-    sources: ["@treasury"]
-    assets: ["@stablecoins"]
-    destinations: ["self"]
+```json
+"asset_sets": {
+  "stablecoins": {
+    "mainnet": ["asa:31566704"]
+  }
+},
+"transfer_policy": {
+  "enabled": true,
+  "on_no_route": "reject",
+  "routes": [
+    {
+      "id": "treasury_stablecoin_optin",
+      "networks": ["mainnet"],
+      "sources": ["@treasury"],
+      "assets": ["@stablecoins"],
+      "destinations": ["self"]
+    }
+  ]
+}
 ```
 
 Without this route, an ASA opt-in can be a route miss when routing is enabled.
@@ -795,19 +827,18 @@ Without this route, an ASA opt-in can be a route miss when routing is enabled.
 Use `blocked_destinations` for a small concrete list of recipients that should
 always be denied, regardless of source or route.
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: operator_default
-
-  blocked_destinations:
-    - X...
-    - Y...
-    - Z...
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "operator_default",
+    "blocked_destinations": ["X...", "Y...", "Z..."]
+  }
+}
 ```
 
-With `on_no_route: operator_default`, ordinary route misses behave as if
+With `"on_no_route": "operator_default"`, ordinary route misses behave as if
 routing had no opinion. Attempts to send to X, Y, or Z are still Always Deny.
 Close-out and clawback misses still use `close_on_no_route` and
 `clawback_on_no_route`.
@@ -816,73 +847,120 @@ Close-out and clawback misses still use `close_on_no_route` and
 
 Signer `key_overrides` cannot carry `transfer_policy`; a signer document that
 puts routing inside an override is rejected. Express per-account routing in the
-product-wide route list with route `sources`, typically through address sets:
+document's route list with route `sources`, typically through address sets:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  address_sets:
-    treasury:
-      - TREASURY...
-    ops:
-      - OPS...
-  routes:
-    - id: treasury_to_ops_algo
-      networks: [mainnet]
-      sources: ["@treasury"]
-      assets: ["algo"]
-      destinations: ["@ops"]
-    - id: ops_usdc_payouts
-      networks: [mainnet]
-      sources: ["@ops"]
-      assets: [31566704]
-      destinations: ["*"]
-      limits:
-        reject_above: 1000000000
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "treasury": ["TREASURY..."],
+    "ops": ["OPS..."]
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "treasury_to_ops_algo",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["algo"],
+        "destinations": ["@ops"]
+      },
+      {
+        "id": "ops_usdc_payouts",
+        "networks": ["mainnet"],
+        "sources": ["@ops"],
+        "assets": ["asa:31566704"],
+        "destinations": ["*"],
+        "limits": {
+          "mainnet": {
+            "asa:31566704": { "reject_above": "1000000000" }
+          }
+        }
+      }
+    ]
+  }
+}
 ```
 
 Routes match on the transaction sender, so each account is governed by the
 routes whose `sources` include it, and every route is validated against the
 same sets it is evaluated with.
 
+## Cosigner Documents
+
+A cosigner node holds one self-contained document per cosigner key, in
+`policies/<WitnessKeyID>.json`. Its `transfer_policy` has only
+`blocked_destinations` and `routes`: there is no `enabled` switch and no
+`on_no_route` family, because an unmatched movement, close-out, or clawback is
+always rejected. Cosigner route and document `limits` accept only
+`reject_above`. A cosigner key that has no document rejects every request.
+
+```json
+{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "address_sets": {
+    "treasury": ["TREASURY..."],
+    "exchange": ["EXCHANGE..."]
+  },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "treasury_to_exchange",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["algo"],
+        "destinations": ["@exchange"],
+        "limits": {
+          "mainnet": {
+            "algo": { "reject_above": "1000000000" }
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+The `key` field must equal the Witness Key ID the document is stored under.
+On a cosigner node, `apadmin policy apply` takes one file per key and leaves
+documents for other keys unchanged; `apadmin policy remove ID` deletes one
+key's document.
+
 ## Validation Rules
 
-Policy load fails closed on routing errors. The previous in-memory policy
-remains active if reload fails.
+`apadmin policy check` and `apply` reject an invalid document before anything
+is written, and a stored document that fails its sidecar check or does not
+decode makes the node refuse to load. Errors name the failing field as a JSON
+Pointer, for example
+`/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.
 
 Common validation failures:
 
-- missing `schema_version` under a present `transfer_policy`,
-- missing `enabled` under a present `transfer_policy`,
-- unsupported `schema_version`,
-- unknown fields under `transfer_policy`,
-- unknown fields under any route,
-- invalid `on_no_route`,
-- invalid `close_on_no_route`,
-- invalid `clawback_on_no_route`,
-- invalid `blocked_destinations` value shape,
+- unknown fields at any level, duplicate object keys, or trailing data,
+- a missing or wrong `format` for the node role,
+- missing `enabled` under a present signer `transfer_policy`,
+- missing `on_no_route` while routing is enabled,
+- invalid `on_no_route`, `close_on_no_route`, or `clawback_on_no_route`,
 - duplicate route IDs,
 - route IDs that do not match `^[a-z0-9][a-z0-9_-]*$`,
-- invalid Algorand addresses,
+- invalid Algorand addresses or checksums,
 - `self`, `*`, or `@address_set` terms in `blocked_destinations`,
-- invalid network tokens,
-- `*` used as a network key in `address_sets` or `asset_sets`,
-- invalid ASA IDs,
+- invalid network tokens, including `*` as a network key in `address_sets`,
+  `asset_sets`, or `limits`,
+- bare numeric ASA IDs, or ASA IDs and amounts outside the uint64 range,
+- amounts written as JSON numbers instead of decimal strings,
 - mixed flat-and-network address-set shape in one address set,
 - empty address sets or asset sets,
 - unresolved `@address_set` or `@asset_set` references,
 - `reject_above < review_above`,
-- active amount limits on routes that can match mixed asset units,
-- global `limits` on an asset set that resolves to different ASA IDs across
-  route networks,
-- `limits_by_network` keys outside the route's networks, unless the route uses
-  `networks: ["*"]`,
-- `asset_sources` without `clawback.allow:true`,
-- `clawback.allow:true` without `asset_sources`,
+- route `limits` naming a network or asset the route does not cover,
+- `asset_sources` without `"allow_clawback": true`,
+- `"allow_clawback": true` without `asset_sources`,
 - `self` in clawback routes,
-- `close.allow:true` with wildcard destinations.
+- `"allow_close": true` with wildcard destinations.
 
 `default` and `on_route_miss` are not valid field names. Use `on_no_route`.
 
@@ -911,9 +989,9 @@ IDs for close-out and clawback. `transfer_policy:close_route_miss` and
 `transfer_policy:clawback_route_miss` are used when the corresponding no-route
 fallback forces review.
 
-Threshold-map transfer guards retain their own rule IDs. For example, a
-`max_algo_payments` rejection is reported as a threshold-guard rejection, not
-as a synthetic routing threshold.
+Document-level `limits` retain their own rule IDs. For example, an ALGO
+payment above a document-level `reject_above` is reported as
+`max_algo_payment_exceeded`, not as a synthetic routing threshold.
 
 Blocked-destination denials do not enter the approval queue. Operators who need
 active alerts for blocked attempts should alert on
@@ -925,11 +1003,11 @@ active alerts for blocked attempts should alert on
 
 Use `on_no_route`, not `default`:
 
-```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
+```json
+"transfer_policy": {
+  "enabled": true,
+  "on_no_route": "reject"
+}
 ```
 
 ### `unknown field "on_route_miss"`
@@ -938,9 +1016,10 @@ The field is `on_no_route`.
 
 ### Policy Check Passes But The Signer Uses Different Behavior
 
-Run `apstore policy sign` after editing, then reload, unlock, or restart the
-signer. A valid YAML file without a matching HMAC sidecar is not accepted after
-the signed baseline exists.
+`apadmin policy check` only validates a file; run `apadmin policy apply` to
+install it. For a document hand-placed in the store, run `apstore policy sign`
+and then start the signer. A stored document without a matching HMAC sidecar
+makes the node refuse to load.
 
 ### A Route-Permitted Transfer Still Rejects
 
@@ -952,7 +1031,7 @@ Routing is only one policy layer. Check for:
 - `reject_asset_close`,
 - `reject_clawback`,
 - `max_fee_microalgos`,
-- `max_algo_payments` or `max_asa_amounts`,
+- document-level `limits`,
 - warning review settings.
 
 Routes cannot weaken those guards.
@@ -973,7 +1052,7 @@ Add a route with `destinations: ["self"]` for the asset or asset set.
 
 ### Close-Out Is Rejected Even Though A Route Matches
 
-Close-out requires `close.allow:true` on a matching route. The existing
+Close-out requires `"allow_close": true` on a matching route. The
 `reject_close_remainder` and `reject_asset_close` guards can still reject
 independently.
 
@@ -981,10 +1060,10 @@ independently.
 
 Clawback requires:
 
-- `clawback.allow:true`,
+- `"allow_clawback": true`,
 - an `asset_sources` list,
 - matching `sources`, `asset_sources`, `assets`, and `destinations`,
-- `reject_clawback:false` when the independent clawback guard should not reject.
+- `"reject_clawback": false` when the independent clawback guard should not reject.
 
 ### Unknown Genesis Hash
 

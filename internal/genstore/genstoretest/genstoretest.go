@@ -98,8 +98,8 @@ func BindDefault(paths storepaths.Paths) (storepaths.Paths, error) {
 }
 
 // ApplyAuthorityPlaceholders supplies structurally complete, deliberately
-// unauthenticated authority members to low-level tests that do not exercise
-// policy or node-role verification. Production initialization must create
+// unauthenticated authority members (a signer-shaped generation) to low-level
+// tests that do not exercise policy or node-role verification. Production initialization must create
 // authenticated members with policy and noderole APIs instead.
 func ApplyAuthorityPlaceholders(staged storepaths.GenPaths) error {
 	for _, path := range []string{

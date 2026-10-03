@@ -1021,19 +1021,23 @@ $APSIGNER_DATA/identities/default/
 ├── generations/<gen-id>/
 │   ├── manifest.json
 │   ├── seal.json
-│   ├── policy.yaml
-│   ├── policy.yaml.hmac
+│   ├── policy.json   # Signer nodes only: the signer policy document
+│   ├── policy.json.hmac
+│   ├── policies/     # Cosigner nodes only: <WitnessKeyID>.json(.hmac) per key
 │   ├── node.yaml.hmac
 │   ├── keytypes/     # State records and encrypted installed templates
 │   ├── keys/         # Encrypted credentials and public witness metadata
-│   └── deleted/      # Bounded deleted credential/template archive
+│   └── deleted/      # Bounded deleted credential/template/cosigner-policy archive
 ├── quarantine/generations/<gen-id>/ # Non-authoritative abandoned publications
 ├── aplane.token      # Product API token created by apstore initialize
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
-The selected generation's `policy.yaml` and `policy.yaml.hmac` are created by
-`apstore initialize`.
+On a signer node, the selected generation's `policy.json` and
+`policy.json.hmac` are created by `apstore initialize`. A cosigner node starts
+with an empty `policies/` set, so each cosigner key rejects every request until
+its policy is applied with `apadmin policy apply`. Every policy apply commits a
+new generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. The signer-side `aplane.token` is created during initialization;
 client-side token files are written when a client is enrolled via
@@ -1143,13 +1147,13 @@ apadmin changepass
 
 This asks you to manually enter the current passphrase, appends a fresh store
 key term, and synchronously completes the durable rewrap of mutable store
-content before returning. It re-signs the policy and node-role integrity
-sidecars and updates `passphrase.cred`. Retained prior generations remain
+content before returning. It re-signs every policy and node-role integrity
+sidecar and updates `passphrase.cred`. Retained prior generations remain
 readable under pre-change terms until pruned. Restart the service afterward:
 
 Systemd data directories contain a `.prod` marker. Daemon-backed commands use
 the public admin socket and do not require filesystem access. Offline commands
-such as `initialize`, `rebuild`, policy rescue signing, generation pruning, and
+such as `initialize`, `rebuild`, policy rescue applies, `apstore policy sign`, generation pruning, and
 permission migration require root and a stopped service. Local data
 directories reject root instead.
 

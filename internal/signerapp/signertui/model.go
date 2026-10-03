@@ -60,6 +60,8 @@ const (
 	ViewLockConfirm        // Manual signer lock confirmation dialog
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
+	ViewPolicies           // Read-only list of the node's policy documents
+	ViewPolicyDocument     // Read-only view of one policy document
 	ViewTemplateLibrary    // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling
@@ -397,6 +399,7 @@ type Model struct {
 	cosigner      cosignerState
 	del           deleteConfirmState
 	admin         adminPanelState
+	policies      policiesState
 	manualLock    manualLockState
 	details       keyDetailsState
 	library       libraryState

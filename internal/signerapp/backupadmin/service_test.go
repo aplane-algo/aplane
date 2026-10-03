@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -64,7 +65,7 @@ func TestBackupIdentityArchiveOmitsOperationalAuthority(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
-	installBackupAdminPolicy(t, ir, paths, &policy.StoredConfig{})
+	installBackupAdminPolicy(t, ir, paths)
 	address, payload := keystest.Ed25519KeyJSON(t)
 	defer crypto.ZeroBytes(payload)
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
@@ -204,9 +205,7 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 			); err != nil {
 				return err
 			}
-			return policy.SaveStoredConfigActiveWithKeyring(
-				staged, &policy.StoredConfig{}, kr, time.Unix(1_700_000_000, 0),
-			)
+			return policy.WriteInitialSignerPolicy(staged, kr, time.Unix(1_700_000_000, 0))
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -214,22 +213,23 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 	return generationID
 }
 
-func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths, stored *policy.StoredConfig) {
+func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths storepaths.Paths) {
 	t.Helper()
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
 		if err != nil {
 			return err
 		}
-		return policy.SaveStoredConfigActiveWithKeyring(active, stored, kr, time.Unix(1_700_000_000, 0))
+		return policy.WriteInitialSignerPolicy(active, kr, time.Unix(1_700_000_000, 0))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	effective, err := stored.ApplySigning(nil)
+	nodePolicy, err := policyruntime.Compile(noderole.RoleSigner, "", nil,
+		[]policy.StoredDocument{{Bytes: policy.InitialSignerPolicy}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ir.SetPolicyState(stored, effective)
+	ir.SetNodePolicy(nodePolicy)
 }
 
 func testBackupIdentityRuntime() *productruntime.Runtime {

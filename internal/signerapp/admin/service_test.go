@@ -4,26 +4,19 @@
 package admin
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -109,51 +102,6 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		NodeRole:      role,
 	})
 	return Service{Deps: deps, Runtime: ir}, ir, deps
-}
-
-func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *productruntime.Runtime, target adminproto.PolicyTarget, stored *policy.StoredConfig) {
-	t.Helper()
-
-	passphrase := []byte("admin-policy-test-passphrase")
-	if err := ir.KeyStore().Unlock(passphrase); err != nil {
-		t.Fatalf("Unlock(): %v", err)
-	}
-	ir.SetUnlocked()
-
-	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
-		active, err := genstore.ResolveStoreRootWithKeyring(ir.KeyPaths(), masterKey)
-		if err != nil {
-			return err
-		}
-		switch target {
-		case adminproto.PolicyTargetCosigner:
-			if err := policy.SaveStoredCosignerConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
-				return err
-			}
-			verified, effective, err := policyruntime.LoadVerifiedCosignerWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
-			if err != nil {
-				return err
-			}
-			ir.SetCosignerPolicyState(verified, effective)
-		default:
-			if err := policy.SaveStoredConfigActiveWithKeyring(active, stored, masterKey, testPolicyTime()); err != nil {
-				return err
-			}
-			verified, effective, err := policyruntime.LoadVerifiedWithStoredActive(svc.Deps.DataDir(), svc.Deps.Config(), active, masterKey)
-			if err != nil {
-				return err
-			}
-			ir.SetPolicyState(verified, effective)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("install initial %s policy: %v", target, err)
-	}
-}
-
-func testPolicyTime() time.Time {
-	return time.Unix(1700000000, 0)
 }
 
 func TestDetectPassphraseMethod(t *testing.T) {
@@ -381,191 +329,4 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
-	svc, ir, _ := setupAdminService(t)
-	rejectForeignRekey := false
-	maxFee := uint64(7000)
-	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, MaxFeeMicroAlgos: &maxFee}}
-	effective := policy.DefaultConfig()
-	effective.RejectForeignRekey = false
-	effective.MaxFeeMicroAlgos = maxFee
-	ir.SetPolicyState(stored, effective)
-
-	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSigner)
-	if !snapshot.Success {
-		t.Fatalf("BuildPolicySnapshot() success = false, code %q error %q", snapshot.Code, snapshot.Error)
-	}
-	if !snapshot.Canonical {
-		t.Fatal("Canonical = false, want true")
-	}
-	if !strings.Contains(snapshot.PolicyYAML, "reject_foreign_rekey: false") ||
-		!strings.Contains(snapshot.PolicyYAML, "max_fee_microalgos: 7000") {
-		t.Fatalf("PolicyYAML missing expected fields:\n%s", snapshot.PolicyYAML)
-	}
-	sum := sha256.Sum256([]byte(snapshot.PolicyYAML))
-	if want := fmt.Sprintf("%x", sum); snapshot.PolicySHA256 != want {
-		t.Fatalf("PolicySHA256 = %q, want %q", snapshot.PolicySHA256, want)
-	}
-}
-
-func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
-	svc, ir, _ := setupAdminService(t)
-	ir.SetPolicy(policy.DefaultConfig())
-
-	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetSigner)
-	if snapshot.Success {
-		t.Fatal("BuildPolicySnapshot() success = true, want false without stored snapshot")
-	}
-	if snapshot.Code != "policy_snapshot_unavailable" {
-		t.Fatalf("Code = %q, want policy_snapshot_unavailable", snapshot.Code)
-	}
-}
-
-func TestBuildCosignerPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
-	stored := storedCosignerPolicyForAdminTest(t, "allow_initial")
-	effective, err := policyruntime.ApplyCosignerStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
-	if err != nil {
-		t.Fatalf("ApplyCosignerStoredConfig(): %v", err)
-	}
-	ir.SetCosignerPolicyState(stored, effective)
-
-	snapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetCosigner)
-	if !snapshot.Success {
-		t.Fatalf("BuildPolicySnapshot(cosigner) success = false, code %q error %q", snapshot.Code, snapshot.Error)
-	}
-	if snapshot.Target != adminproto.PolicyTargetCosigner {
-		t.Fatalf("Target = %q, want cosigner", snapshot.Target)
-	}
-	if !snapshot.Canonical {
-		t.Fatal("Canonical = false, want true")
-	}
-	if strings.Contains(snapshot.PolicyYAML, "cosigner:") {
-		t.Fatalf("cosigner snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
-	}
-	if !strings.Contains(snapshot.PolicyYAML, "allow_initial") ||
-		!strings.Contains(snapshot.PolicyYAML, "transfer_policy:") {
-		t.Fatalf("PolicyYAML missing expected cosigner policy fields:\n%s", snapshot.PolicyYAML)
-	}
-}
-
-func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
-	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
-	cosignerYAML := cosignerPolicyYAMLForAdminTest("allow_validate")
-	result := svc.ValidatePolicy(adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetCosigner,
-		PolicyYAML: cosignerYAML,
-	})
-	if result.Success {
-		t.Fatalf("ValidatePolicy(cosigner on signer) success = true, want false")
-	}
-	if result.Code != "policy_target_not_allowed_for_node_role" {
-		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
-	}
-
-	cosignerSvc, _, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
-	result = cosignerSvc.ValidatePolicy(adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetCosigner,
-		PolicyYAML: cosignerYAML,
-	})
-	if !result.Success {
-		t.Fatalf("ValidatePolicy(cosigner) success = false, code %q error %q", result.Code, result.Error)
-	}
-	if result.Target != adminproto.PolicyTargetCosigner {
-		t.Fatalf("Target = %q, want cosigner", result.Target)
-	}
-}
-
-func TestReplaceCosignerPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
-	initial := storedCosignerPolicyForAdminTest(t, "allow_initial")
-	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetCosigner, initial)
-	initialSnapshot := svc.BuildPolicySnapshot(adminproto.PolicyTargetCosigner)
-	if !initialSnapshot.Success {
-		t.Fatalf("initial snapshot success = false, code %q error %q", initialSnapshot.Code, initialSnapshot.Error)
-	}
-
-	updatedYAML := cosignerPolicyYAMLForAdminTest("allow_updated")
-	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
-		Target:                adminproto.PolicyTargetCosigner,
-		PolicyYAML:            updatedYAML,
-		ExpectedCurrentSHA256: initialSnapshot.PolicySHA256,
-	})
-	if !result.Success {
-		t.Fatalf("ReplacePolicy(cosigner) success = false, code %q error %q", result.Code, result.Error)
-	}
-	if result.Target != adminproto.PolicyTargetCosigner {
-		t.Fatalf("Target = %q, want cosigner", result.Target)
-	}
-	if !strings.Contains(result.PolicyYAML, "allow_updated") {
-		t.Fatalf("result PolicyYAML missing updated route:\n%s", result.PolicyYAML)
-	}
-
-	var verified *policy.StoredConfig
-	err := ir.WithKeyring(func(masterKey *securecrypto.Keyring) error {
-		active, err := genstore.ResolveActive(svc.Deps.KeyPaths())
-		if err != nil {
-			return err
-		}
-		loaded, loadErr := policy.LoadVerifiedCosignerConfigActive(active, masterKey)
-		verified = loaded
-		return loadErr
-	})
-	if err != nil {
-		t.Fatalf("LoadVerifiedCosignerConfigWithKeyring(): %v", err)
-	}
-	verifiedData, err := policy.MarshalStoredCosignerConfig(verified)
-	if err != nil {
-		t.Fatalf("MarshalStoredCosignerConfig(): %v", err)
-	}
-	if !strings.Contains(string(verifiedData), "allow_updated") {
-		t.Fatalf("verified cosigner policy missing updated route:\n%s", verifiedData)
-	}
-	stored, _ := ir.CosignerPolicySnapshot()
-	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) != 1 ||
-		stored.TransferPolicy.Routes[0].ID != "allow_updated" {
-		t.Fatalf("runtime stored cosigner policy = %+v, want allow_updated route", stored)
-	}
-}
-
-func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
-	svc, _, _ := setupAdminServiceWithRole(t, noderole.RoleCosigner)
-	result := svc.ReplacePolicy(adminproto.ReplacePolicyRequest{
-		Target:     adminproto.PolicyTargetSigner,
-		PolicyYAML: "reject_foreign_rekey: true\n",
-	})
-	if result.Success {
-		t.Fatal("ReplacePolicy(signer target on cosigner) success = true, want false")
-	}
-	if result.Code != "policy_target_not_allowed_for_node_role" {
-		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
-	}
-}
-
-func storedCosignerPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
-	t.Helper()
-	stored, err := policy.ParseStoredCosignerConfig([]byte(cosignerPolicyYAMLForAdminTest(routeID)))
-	if err != nil {
-		t.Fatalf("ParseStoredCosignerConfig(): %v", err)
-	}
-	return stored
-}
-
-func cosignerPolicyYAMLForAdminTest(routeID string) string {
-	return fmt.Sprintf(`transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes:
-    - id: %s
-      networks:
-        - '*'
-      sources:
-        - '*'
-      assets:
-        - algo
-      destinations:
-        - '*'
-`, routeID)
 }

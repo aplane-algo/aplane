@@ -5,17 +5,20 @@ package storemut
 
 import (
 	"context"
+	"fmt"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -269,4 +272,69 @@ func mustActiveKeysDirStoremut(t *testing.T, paths utilkeys.Paths) string {
 		t.Fatalf("ResolveActive: %v", err)
 	}
 	return active.KeysDir()
+}
+
+func TestDeleteCosignerKeyArchivesItsPolicy(t *testing.T) {
+	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	paths, kr, cleanup := setupKeystore(t)
+	defer cleanup()
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(active.KeysDir(), witnessKeyID+keys.CosignerCredentialExtension)
+	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + witnessKeyID + `","transfer_policy":{"routes":[]}}`)
+	if err := policy.WriteCosignerPolicy(active, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New(paths, nil, nil).DeleteKey(witnessKeyID, keyPath); err != nil {
+		t.Fatalf("DeleteKey() error = %v", err)
+	}
+	if _, err := os.Stat(active.CosignerPolicyPath(witnessKeyID)); !os.IsNotExist(err) {
+		t.Fatalf("live policy still present after key deletion: %v", err)
+	}
+	archived, err := os.ReadFile(filepath.Join(active.DeletedCosignerPoliciesDir(), witnessKeyID+".json"))
+	if err != nil || string(archived) != string(doc) {
+		t.Fatalf("archived policy = %q, %v", archived, err)
+	}
+}
+
+func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
+	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	paths, kr, cleanup := setupKeystore(t)
+	defer cleanup()
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for the credential alone, not for the credential plus policy pair.
+	for i := range genstore.DeletedArchiveMaxEntries - 2 {
+		if err := os.WriteFile(filepath.Join(active.DeletedKeysDir(), fmt.Sprintf("K%d.key", i)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keyPath := filepath.Join(active.KeysDir(), witnessKeyID+keys.CosignerCredentialExtension)
+	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + witnessKeyID + `","transfer_policy":{"routes":[]}}`)
+	if err := policy.WriteCosignerPolicy(active, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New(paths, nil, nil).DeleteKey(witnessKeyID, keyPath); err == nil {
+		t.Fatal("DeleteKey() succeeded past the archive limit")
+	}
+	for _, path := range []string{keyPath, active.CosignerPolicyPath(witnessKeyID)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("refused deletion moved %s: %v", path, err)
+		}
+	}
+	if usage, err := genstore.InspectDeletedArchive(active.(utilkeys.GenPaths)); err != nil || usage.Entries != genstore.DeletedArchiveMaxEntries-2 {
+		t.Fatalf("archive after refused deletion = %+v, %v", usage, err)
+	}
 }

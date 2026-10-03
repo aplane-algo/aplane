@@ -529,6 +529,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMessageCmd()
 
+	case PolicyLoadedMsg:
+		return m.handlePolicyLoaded(msg)
+
+	case PolicyDocumentLoadedMsg:
+		return m.handlePolicyDocumentLoaded(msg)
+
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active
 		if m.viewState == ViewAdminPanel {
@@ -958,6 +964,10 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTEALFullDisplayKeys(msg)
 	case ViewAdminPanel:
 		return m.handleAdminPanelKeys(msg)
+	case ViewPolicies:
+		return m.handlePoliciesKeys(msg)
+	case ViewPolicyDocument:
+		return m.handlePolicyDocumentKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:

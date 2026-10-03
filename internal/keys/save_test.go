@@ -6,10 +6,13 @@ package keys
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -168,5 +171,29 @@ func assertKeyFileMode(t *testing.T, path string, want os.FileMode) {
 	}
 	if got := info.Mode() & os.ModePerm; got != want {
 		t.Fatalf("mode(%s) = %o, want %o", path, got, want)
+	}
+}
+
+func TestSavePayloadRefusesCosignerCredentialPastCap(t *testing.T) {
+	masterKey := testMasterKey(t)
+	paths := storepaths.NewPaths(t.TempDir())
+	paths = genstoretest.MintFirst(t, paths)
+	active := mustResolveActive(paths)
+	for i := range MaxCosignerCredentials {
+		name := fmt.Sprintf("%c%c%c%s%s", "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i/1024%32],
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i/32%32], "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i%32],
+			strings.Repeat("Z", 49), CosignerCredentialExtension)
+		if err := os.WriteFile(filepath.Join(active.KeysDir(), name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
+	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
+	if _, err := SavePayload(paths, payload, cryptotest.Keyring(t, masterKey)); !errors.Is(err, ErrCosignerCredentialLimit) {
+		t.Fatalf("SavePayload(past the cap) error = %v, want ErrCosignerCredentialLimit", err)
+	}
+	selector, _ := payload.Selector()
+	if _, err := os.Stat(CosignerCredentialFilePath(paths, selector)); !os.IsNotExist(err) {
+		t.Fatalf("refused save wrote a credential: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -13,19 +14,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
-
-type policyCommandDocument struct {
-	name      string
-	path      string
-	sidecar   string
-	loadCheck func() (*policy.StoredConfig, error)
-	verify    func(kr *crypto.Keyring) (*policy.StoredConfig, error)
-	apply     func(*policy.StoredConfig) (*policy.Config, error)
-	sign      func(kr *crypto.Keyring, signedAt time.Time) error
-}
 
 func cmdPolicy(args []string) error {
 	if len(args) != 1 {
@@ -43,32 +35,50 @@ func cmdPolicy(args []string) error {
 	}
 }
 
+// cmdPolicyCheck validates every stored policy document without verifying
+// sidecars, so hand-placed documents can be reviewed before signing, and
+// reports cosigner keys and documents that do not match.
 func cmdPolicyCheck() error {
 	active, kr, err := readStore()
 	if err != nil {
 		return err
 	}
 	defer kr.Zero()
-	docs, err := policyCommandDocuments(active)
+	role, err := storeNodeRole()
 	if err != nil {
 		return err
 	}
+	docs, err := storedPolicyDocuments(active, role)
+	if err != nil {
+		return err
+	}
+	if _, err := policyruntime.Compile(role, dataDirectory, &config, docs); err != nil {
+		return fmt.Errorf("policy invalid: %w", err)
+	}
 	for _, doc := range docs {
-		if _, err := doc.loadCheck(); err != nil {
+		path := policyDocumentPath(active, doc.Key)
+		sidecarBytes, err := os.ReadFile(policy.PolicyIntegritySidecarPath(path))
+		switch {
+		case os.IsNotExist(err):
+			logWarnf("%s has no sidecar; run apstore policy sign after reviewing it", path)
+		case err != nil:
+			return fmt.Errorf("read sidecar for %s: %w", path, err)
+		default:
+			if _, err := policy.ParsePolicyIntegritySidecar(sidecarBytes); err != nil {
+				return fmt.Errorf("parse sidecar for %s: %w", path, err)
+			}
+		}
+		logInfof("policy OK: %s", path)
+	}
+	if role == noderole.RoleCosigner {
+		held, err := policyapply.HeldCosignerKeysInGeneration(active)
+		if err != nil {
 			return err
 		}
-		sidecarBytes, err := os.ReadFile(doc.sidecar)
-		if os.IsNotExist(err) {
-			logWarnf("%s sidecar missing: %s", doc.name, doc.sidecar)
-			logWarnf("run apstore policy sign after reviewing direct policy edits")
-		} else if err != nil {
-			return fmt.Errorf("failed to read %s sidecar: %w", doc.name, err)
-		} else if _, err := policy.ParsePolicyIntegritySidecar(sidecarBytes); err != nil {
-			return fmt.Errorf("failed to parse %s sidecar: %w", doc.name, err)
-		} else {
-			logInfof("%s sidecar shape OK: %s", doc.name, doc.sidecar)
+		np := &policyruntime.NodePolicy{Role: role, Documents: docs}
+		for _, warning := range policyapply.CoverageWarnings(policyapply.KeyStatus(held, np)) {
+			logWarnf("%s: %s", warning.Key, warning.Message)
 		}
-		logInfof("%s syntax OK: %s", doc.name, doc.path)
 	}
 	return nil
 }
@@ -79,117 +89,103 @@ func cmdPolicyVerify() error {
 		return err
 	}
 	defer kr.Zero()
-	docs, err := policyCommandDocuments(active)
+	role, err := storeNodeRole()
 	if err != nil {
 		return err
 	}
-
-	for _, doc := range docs {
-		stored, err := doc.verify(kr)
-		if err != nil {
-			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s integrity verification failed: %v", doc.name, err)}
-		}
-		if _, err := doc.apply(stored); err != nil {
-			return fmt.Errorf("%s config invalid: %w", doc.name, err)
-		}
-		logInfof("%s integrity verified: %s", doc.name, doc.path)
+	np, err := policyruntime.Load(role, dataDirectory, &config, active, kr)
+	if err != nil {
+		return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("policy verification failed: %v", err)}
+	}
+	for _, doc := range np.Documents {
+		logInfof("policy verified: %s", policyDocumentPath(active, doc.Key))
 	}
 	return nil
 }
 
+// cmdPolicySign validates every stored policy document and replaces its
+// sidecar, for documents placed or edited by hand while the daemon is stopped.
 func cmdPolicySign() error {
 	active, kr, err := readStore()
 	if err != nil {
 		return err
 	}
 	defer kr.Zero()
-	docs, err := policyCommandDocuments(active)
+	role, err := storeNodeRole()
 	if err != nil {
 		return err
 	}
-	for _, doc := range docs {
-		if _, err := doc.loadCheck(); err != nil {
-			return err
-		}
-	}
 	now := time.Now()
-	for _, doc := range docs {
-		if err := doc.sign(kr, now); err != nil {
-			return fmt.Errorf("failed to sign %s integrity sidecar: %w", doc.name, err)
-		}
-		if _, err := doc.verify(kr); err != nil {
-			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s sidecar written but verification failed: %v", doc.name, err)}
-		}
-		logInfof("%s sidecar signed: %s", doc.name, doc.sidecar)
+	switch role {
+	case noderole.RoleSigner:
+		err = policy.ResignSignerPolicy(active, kr, now)
+	case noderole.RoleCosigner:
+		err = policy.ResignCosignerPolicies(active, kr, now)
+	default:
+		err = fmt.Errorf("unsupported node role %q", role)
+	}
+	if err != nil {
+		return fmt.Errorf("sign policy sidecars: %w", err)
+	}
+	np, err := policyruntime.Load(role, dataDirectory, &config, active, kr)
+	if err != nil {
+		return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("sidecars written but verification failed: %v", err)}
+	}
+	for _, doc := range np.Documents {
+		logInfof("policy sidecar signed: %s", policy.PolicyIntegritySidecarPath(policyDocumentPath(active, doc.Key)))
 	}
 	return nil
 }
 
-func policyCommandDocuments(active storepaths.ActivePaths) ([]policyCommandDocument, error) {
-	paths := storepaths.NewPaths(dataDirectory)
-	policyPath := active.PolicyPath()
-	nodeDoc, _, err := noderole.Load(paths)
+func storeNodeRole() (noderole.Role, error) {
+	doc, _, err := noderole.Load(storepaths.NewPaths(dataDirectory))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load node role: %w", err)
+		return "", fmt.Errorf("failed to load node role: %w", err)
 	}
-	doc := policyCommandDocument{
-		name:    "policy.yaml",
-		path:    policyPath,
-		sidecar: policy.PolicyIntegritySidecarPath(policyPath),
-	}
-	switch nodeDoc.Role {
-	case noderole.RoleCosigner:
-		doc.loadCheck = func() (*policy.StoredConfig, error) {
-			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredCosignerConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplyCosignerStoredConfig(dataDirectory, &config, stored)
-			})
-		}
-		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedCosignerConfigActive(active, kr)
-		}
-		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
-			return policyruntime.ApplyCosignerStoredConfig(dataDirectory, &config, stored)
-		}
-		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignCosignerFileIntegrityActiveWithKeyring(active, kr, signedAt)
-		}
-	case noderole.RoleSigner:
-		doc.loadCheck = func() (*policy.StoredConfig, error) {
-			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
-			})
-		}
-		doc.verify = func(kr *crypto.Keyring) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedStoredConfigActive(active, kr)
-		}
-		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
-			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
-		}
-		doc.sign = func(kr *crypto.Keyring, signedAt time.Time) error {
-			return policy.SignPolicyFileIntegrityActiveWithKeyring(active, kr, signedAt)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
-	}
-	return []policyCommandDocument{doc}, nil
+	return doc.Role, nil
 }
 
-func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.StoredConfig, error), apply func(*policy.StoredConfig) (*policy.Config, error)) (*policy.StoredConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%s file missing: %s", name, path)
+// storedPolicyDocuments reads the role's policy documents without verifying
+// their sidecars.
+func storedPolicyDocuments(active storepaths.GenPaths, role noderole.Role) ([]policy.StoredDocument, error) {
+	switch role {
+	case noderole.RoleSigner:
+		data, err := os.ReadFile(active.PolicyPath())
+		if err != nil {
+			return nil, fmt.Errorf("read signer policy: %w", err)
 		}
-		return nil, fmt.Errorf("failed to read %s config: %w", name, err)
+		return []policy.StoredDocument{{Bytes: data}}, nil
+	case noderole.RoleCosigner:
+		entries, err := os.ReadDir(active.CosignerPoliciesDir())
+		if err != nil {
+			return nil, fmt.Errorf("read cosigner policies: %w", err)
+		}
+		var docs []policy.StoredDocument
+		for _, entry := range entries {
+			key, ok := strings.CutSuffix(entry.Name(), ".json")
+			if !ok {
+				continue
+			}
+			if err := storepaths.ValidateWitnessKeyIDComponent(key); err != nil {
+				return nil, fmt.Errorf("cosigner policies contain unsupported entry %q", entry.Name())
+			}
+			data, err := os.ReadFile(active.CosignerPolicyPath(key))
+			if err != nil {
+				return nil, err
+			}
+			docs = append(docs, policy.StoredDocument{Key: key, Bytes: data})
+		}
+		return docs, nil
+	default:
+		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
-	stored, err := parser(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s config: %w", name, err)
+}
+
+func policyDocumentPath(active storepaths.GenPaths, key string) string {
+	if key == "" {
+		return active.PolicyPath()
 	}
-	if _, err := apply(stored); err != nil {
-		return nil, fmt.Errorf("%s config invalid: %w", name, err)
-	}
-	return stored, nil
+	return active.CosignerPolicyPath(key)
 }
 
 func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {

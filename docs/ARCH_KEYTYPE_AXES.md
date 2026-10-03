@@ -35,7 +35,7 @@ another merely because two dimensions currently use the same string.
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/bounded-admin` then `aprekey` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; dedicated guarded provider | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
-| **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, `policy.yaml`, and the selected policy key |
+| **Signer policy domain** | Which off-chain rules gate release of a signature that the key and on-chain program could produce? | client-signing policy, cosigner policy | Node role, the node's policy documents, and the selected policy key |
 | **Network context** | Which configured network and network-scoped policy apply to the transaction? | `mainnet`, `voi_mainnet`, `localnet` | Transaction `GenesisHash` resolved to a network context token |
 
 The terms are related, but none is a synonym for another:

@@ -49,35 +49,41 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
 
-func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage) {
+func (s *Session) HandleGetPolicy(msg *protocol.GetPolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
-	snapshot := s.settingsServices.BuildPolicySnapshot(adminproto.NormalizePolicyTarget(msg.Target))
-	_ = s.WriteJSON(ProtocolPolicySnapshotMessage(msg.ID, snapshot))
+	_ = s.WriteJSON(ProtocolPolicyMessage(msg.ID, s.settingsServices.GetPolicy()))
 }
 
-func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
+func (s *Session) HandleGetPolicyDocument(msg *protocol.GetPolicyDocumentMessage) {
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
+		return
+	}
+	_ = s.WriteJSON(ProtocolPolicyDocumentMessage(msg.ID, s.settingsServices.GetPolicyDocument(msg.Key)))
+}
+
+func (s *Session) HandleCheckPolicy(msg *protocol.CheckPolicyMessage) {
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
+		return
+	}
+	result := s.settingsServices.CheckPolicy(adminproto.CheckPolicyRequest{
+		Documents: AdminPolicyDocuments(msg.Documents),
+		Remove:    msg.Remove,
+	})
+	_ = s.WriteJSON(ProtocolCheckPolicyResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleApplyPolicy(msg *protocol.ApplyPolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy"}) {
 		return
 	}
-	result := s.settingsServices.ReplacePolicy(adminproto.ReplacePolicyRequest{
-		Target:                adminproto.NormalizePolicyTarget(msg.Target),
-		PolicyYAML:            msg.PolicyYAML,
-		ExpectedCurrentSHA256: msg.ExpectedCurrentSHA256,
+	result := s.settingsServices.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               AdminPolicyDocuments(msg.Documents),
+		Remove:                  msg.Remove,
+		ExpectedPolicySetSHA256: msg.ExpectedPolicySetSHA256,
 	})
-	_ = s.WriteJSON(ProtocolReplacePolicyResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
-	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
-		return
-	}
-	result := s.settingsServices.ValidatePolicy(adminproto.ValidatePolicyRequest{
-		Target:     adminproto.NormalizePolicyTarget(msg.Target),
-		PolicyYAML: msg.PolicyYAML,
-	})
-	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
+	_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, result))
 }
 
 func (s *Session) HandleListCosignerReferences(requestID string) {

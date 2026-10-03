@@ -59,7 +59,15 @@ func newRotateFixture(t *testing.T) rotateFixture {
 			if err := noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err
 			}
-			if err := policy.SaveStoredConfigActiveWithKeyring(staged, &policy.StoredConfig{}, kr, time.Unix(1_785_200_000, 0)); err != nil {
+			if err := policy.WriteInitialSignerPolicy(staged, kr, time.Unix(1_785_200_000, 0)); err != nil {
+				return err
+			}
+			// An archived cosigner policy: rotation must re-sign archived
+			// sidecars too.
+			if err := policy.WriteCosignerPolicy(staged, rotateArchivedPolicyKey, rotateArchivedPolicy, kr, time.Unix(1_785_200_000, 0)); err != nil {
+				return err
+			}
+			if err := policy.ArchiveCosignerPolicy(staged, rotateArchivedPolicyKey); err != nil {
 				return err
 			}
 			fixture.accountPath = filepath.Join(staged.KeysDir(), "ACCOUNT.key")
@@ -97,6 +105,10 @@ func newRotateFixture(t *testing.T) rotateFixture {
 	fixture.deletedTplPath = active.DeletedKeyTypeTemplate("removed.v1")
 	return fixture
 }
+
+const rotateArchivedPolicyKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+
+var rotateArchivedPolicy = []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + rotateArchivedPolicyKey + `","transfer_policy":{"routes":[]}}`)
 
 func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	fixture := newRotateFixture(t)
@@ -156,8 +168,20 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	if err != nil || !bytes.Equal(state, fixture.stateBytes) {
 		t.Fatalf("plaintext state = %q, %v", state, err)
 	}
-	if _, err := policy.LoadVerifiedStoredConfigActive(active, kr); err != nil {
+	if _, _, err := policy.LoadVerifiedSignerPolicy(active, kr); err != nil {
 		t.Fatalf("successor policy verification: %v", err)
+	}
+	archivedPath := filepath.Join(active.DeletedCosignerPoliciesDir(), rotateArchivedPolicyKey+".json")
+	archived, err := os.ReadFile(archivedPath)
+	if err != nil || !bytes.Equal(archived, rotateArchivedPolicy) {
+		t.Fatalf("archived policy = %q, %v", archived, err)
+	}
+	archivedSidecar, err := policy.LoadPolicyIntegritySidecar(archivedPath + ".hmac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.VerifyPolicyIntegrity(archived, archivedSidecar, kr); err != nil {
+		t.Fatalf("archived policy sidecar not re-signed for the successor term: %v", err)
 	}
 	if _, err := noderole.LoadAndVerifyGenerationWithKeyring(fixture.paths, active, kr); err != nil {
 		t.Fatalf("successor node role verification: %v", err)

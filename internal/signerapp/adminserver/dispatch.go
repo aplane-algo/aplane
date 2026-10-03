@@ -51,9 +51,10 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeGetAdminSettings:   typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
 	protocol.MsgTypeUpdateAdminSetting: typed("update admin setting", (*Session).HandleUpdateAdminSetting),
 
-	protocol.MsgTypeGetPolicySnapshot: typed("get policy snapshot", (*Session).HandleGetPolicySnapshot),
-	protocol.MsgTypeReplacePolicy:     typed("replace policy", (*Session).HandleReplacePolicy),
-	protocol.MsgTypeValidatePolicy:    typed("validate policy", (*Session).HandleValidatePolicy),
+	protocol.MsgTypeGetPolicy:         typed("get policy", (*Session).HandleGetPolicy),
+	protocol.MsgTypeGetPolicyDocument: typed("get policy document", (*Session).HandleGetPolicyDocument),
+	protocol.MsgTypeCheckPolicy:       typed("check policy", (*Session).HandleCheckPolicy),
+	protocol.MsgTypeApplyPolicy:       typed("apply policy", (*Session).HandleApplyPolicy),
 
 	protocol.MsgTypeListCosignerReferences: typed("list cosigner references", func(s *Session, m *protocol.ListCosignerReferencesMessage) {
 		s.HandleListCosignerReferences(m.ID)

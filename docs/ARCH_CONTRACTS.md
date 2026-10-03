@@ -649,11 +649,11 @@ IPC failure semantics:
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-The `apadmin` TUI has no policy view; the `apadmin policy` verbs
-(`check`, `export`, `digest`, `apply`, `to-cosigner`) handle policy. Policy reads,
-validation, and mutation use canonical policy YAML through
-`get_policy_snapshot`, `validate_policy`, and `replace_policy`; there is no
-parallel scalar policy RPC surface.
+The `apadmin` TUI has a read-only Policies view; the `apadmin policy` verbs
+(`status`, `export`, `check`, `apply`, `remove`) change policy. Policy reads,
+validation, and mutation use exact v1 JSON documents through `get_policy`
+(summary), `get_policy_document`, `check_policy`, and `apply_policy`; there is no parallel scalar policy RPC
+surface.
 
 These client capabilities describe the one product surface. Backend admin
 operations use the one process-owned runtime; `apadmin`, `apapprover`, and
@@ -739,30 +739,23 @@ Process-global settings live in `config.yaml`. Product runtime settings live in
 Unknown fields, including `decommissioned`, fail parsing.
 
 Signer policy participates in the ordered approval engine.
-The active node-role policy is product-store scoped and stored in
-the selected generation's `policy.yaml`, with a sibling `.hmac` sidecar that
-authenticates the exact YAML bytes with a key derived from the product store
-key. Signer nodes parse it as client-signing policy; cosigner nodes parse it as
-direct cosigner component policy. The default approval fallback is
-`user_auto_approve`, lives in `identities/default/config.yaml`, and is not a
-policy document field. The policy document is verified and loaded on
-unlock/reload before the key scan; a missing policy file or missing/mismatched
-sidecar fails closed instead of falling back to defaults. Authenticated admin
-IPC policy operations are target-aware by policy domain, and role-incompatible
-targets fail closed. Direct YAML edits are checked, signed, and verified
-through `apadmin policy rescue` or `apstore policy`.
-Policy and sidecar bytes are both staged and synced before either path is
-published. HMAC, encoding, or staging failure therefore preserves the prior
-pair. Interruption between the two publication renames can still leave a
-mixed pair, which verification rejects fail-closed and requires explicit
-repair.
-Both policy domains support YAML-only `key_overrides` blocks for per-key
-effective policy. Client-signing overrides are keyed by Algorand auth address;
-cosigner overrides are keyed by Witness Key ID. Client-signing overrides cannot
-carry `transfer_policy`. These overrides apply to policy phases and can be changed through authenticated full-document
-`replace_policy`, or by direct/offline YAML editing followed by
-`apadmin policy rescue apply` or `apstore policy sign` before the signer will
-trust the edited document.
+The active node-role policy is product-store scoped and stored in the selected
+generation as v1 JSON documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)):
+`policy.json` on signer nodes, and one `policies/<WitnessKeyID>.json` per
+cosigner key on cosigner nodes. Each document has a sibling `.hmac` sidecar
+that authenticates its exact bytes with a key derived from the product store
+key. The default approval fallback is `user_auto_approve`, lives in
+`identities/default/config.yaml`, and is not a policy document field. Policy
+documents are verified and loaded on unlock/reload before the key scan; any
+document failing HMAC verification or decode makes the node refuse to load
+policy instead of falling back to defaults. The node role selects the
+document type; a document whose `format` does not match the role is rejected.
+Every policy change is an authenticated whole-document `apply_policy` (online)
+or `apadmin policy rescue apply|remove` (stopped daemon), and each committed
+change mints a new generation (see [Policy Documents](#policy-documents)).
+Signer `policy.json` may contain `key_overrides` keyed by Algorand auth
+address, carrying scalar settings and `limits` only. Cosigner documents have
+no overrides; each key's document is self-contained.
 There is no scalar policy-settings IPC.
 
 Validation:
@@ -969,9 +962,12 @@ execution, output decoding, environment filtering, and validation.
       keytypes/<key_type>.template  # encrypted key type template
       deleted/keys/*.{key,sen}
       deleted/keytypes/<key_type>.template
+      deleted/policies/<WitnessKeyID>.json[.hmac]  # cosigner: policy archived with its key
       node.yaml.hmac
-      policy.yaml
-      policy.yaml.hmac
+      policy.json           # signer nodes: v1 signer policy document
+      policy.json.hmac
+      policies/<WitnessKeyID>.json       # cosigner nodes: one v1 document per key
+      policies/<WitnessKeyID>.json.hmac
     quarantine/generations/<gen-id>/ # non-authoritative abandoned publications
     aplane.token
     config.yaml
@@ -1321,11 +1317,14 @@ retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
 from credential backup into a fresh store.
 
 Store initialization stages the first generation with its generation-scoped
-node-role sidecar, role-appropriate empty `policy.yaml` and `policy.yaml.hmac`,
-and default key types before the sole commit publishes `store-root.enc`.
-Installers and smoke-test setup must not create or sign a root-level
-`identities/default/policy.yaml`; later policy changes target the authenticated
-active generation through the stopped-store or live-admin policy surfaces.
+node-role sidecar, the role's initial policy, and default key types before the
+sole commit publishes `store-root.enc`. A signer generation starts with
+`policy.json` containing `{"format": "aplane.signer-policy.v1"}`
+(`policy.InitialSignerPolicy`) plus its sidecar; a cosigner generation starts
+with no policy documents, so every cosigner key rejects every request until its
+document is applied. Installers and smoke-test setup must not create or sign a
+root-level policy file; later policy changes target the authenticated active
+generation through the stopped-store or live-admin policy surfaces.
 
 ### Term Envelope Object Context
 
@@ -1362,7 +1361,8 @@ Behavior:
 store mutation lock and maintenance fence it authenticates the current root,
 seals the outgoing generation, verifies every source buffer against that exact
 seal, re-encrypts all current-state term consumers under a new term, re-signs
-policy and node-role sidecars, validates a complete successor, and commits the
+every policy sidecar (signer, per-key cosigner, and archived cosigner) and the
+node-role sidecar, validates a complete successor, and commits the
 new wrapped keyring plus successor selection with one `store-root.enc` rename.
 
 Retained generations are immutable. The successor keyring inherits historical
@@ -1420,18 +1420,22 @@ captured snapshots is unsupported. Credential archive restore is a separate,
 credential-only workflow and cannot fabricate policy, node-role, key-type,
 template, or deleted-archive authority.
 
-### Policy File (`policy.yaml`)
+### Policy Documents
 
-`policy.yaml` is being replaced by the v1 JSON policy documents specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md) (`policy.json` on signer nodes,
-`policies/<WitnessKeyID>.json` per cosigner key). Until that lands, the contract
-below is what the system reads.
+The document format, semantic rules, and storage rules are specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). Files in
+`identities/default/generations/<selected-generation>/`:
 
-The product-store active policy is stored at
-`identities/default/generations/<selected-generation>/policy.yaml`. Signer nodes parse that file as
-client-signing policy. Cosigner nodes parse that same file as direct cosigner
-component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
-exact YAML bytes.
+| Node role | Files |
+|-----------|-------|
+| signer | `policy.json`, `policy.json.hmac` |
+| cosigner | `policies/<WitnessKeyID>.json`, `policies/<WitnessKeyID>.json.hmac` per key; `deleted/policies/` holds the pair of a deleted key |
+
+`policy.json` and its sidecar are optional generation authority files,
+present on signer generations and pinned in the manifest and seal when
+present. `policies/` and `deleted/policies/` are generation leaf namespaces.
+Deleting a cosigner key (`storemut.DeleteKey`) archives its policy pair under
+`deleted/policies/`.
 
 The policy integrity key is derived inside `internal/crypto` from the named
 product-store term key with HKDF-SHA256 using info string
@@ -1454,41 +1458,71 @@ security fields. Sidecar JSON is strict: unknown fields, trailing documents,
 and non-canonical MAC encodings are rejected.
 `policy_sha256` and `signed_at_unix` are diagnostic
 metadata; tampering with those fields does not affect the policy integrity
-decision.
+decision. The HMAC is not bound to a file name, so a cosigner document's
+signed `key` field must equal the Witness Key ID in its file name.
+
+Digests: every document `sha256` covers the exact stored bytes; nothing is
+re-serialized. `policy_set_sha256` is the lowercase hex SHA-256 over the
+sorted lines `<key> <document sha256>\n`, one per document, with an empty key
+for the signer document. It is the optimistic-concurrency base for apply.
 
 Policy load behavior:
 
-- unlock/reload verifies `policy.yaml.hmac` before parsing and applying policy
-- missing `policy.yaml` or a missing/mismatched sidecar fails closed
+- unlock/reload verifies every policy document against its sidecar and decodes
+  it for the node role; a missing signer `policy.json`, a missing or
+  mismatched sidecar, or a decode failure makes the node refuse to load
+- a cosigner key with no document is valid at load and rejects every
+  component request with `cosigner_policy:key_has_no_policy`
 - during initial locked startup, a policy integrity failure prevents the
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
-- admin policy writes require an unlocked signer store and replace the
-  node-role-selected policy document
-- online `apadmin policy` verbs authenticate and may unlock a locked signer store;
-  online export emits the exact daemon snapshot bytes and online digest emits
-  the daemon-reported snapshot SHA
-- direct YAML edits require offline `apadmin policy rescue apply -` or `apstore policy sign`
-  before the signer trusts them
-- `apadmin policy rescue` defaults to `--target auto`; for store-backed operations, auto
-  reads root `node.yaml` and targets the signer or cosigner policy domain for
-  the single `policy.yaml` file
-- `apadmin policy rescue export` emits the exact verified selected document bytes;
-  `apadmin policy rescue apply -` reads replacement YAML bytes from stdin,
-  validates them in
-  the selected policy domain, and writes those exact bytes plus a fresh sidecar
-  under the store mutation lock; `--target signer|cosigner` explicitly
-  selects the domain; store-backed role-incompatible targets fail closed. A
-  root-run offline edit of a production store restores the owner recorded in
-  root-controlled `install/service-principal.json` before returning
-- `apstore policy check|verify|sign` checks, verifies, or signs the active
-  node-role policy
-- `apadmin policy` requires a verb; with no verb it is a usage error
-- online `apadmin policy check <file.yaml>` validates the file through the daemon;
-  online `apadmin policy apply <file.yaml>|-` rejects an empty document, loads
-  the active snapshot as its optimistic-concurrency base, and replaces it
-  through the daemon
+- store validation (`storevalidate`) loads and verifies the policy and
+  verifies archived cosigner policy sidecars
+- passphrase rotation re-signs every policy sidecar; restore rollback restores
+  only `keys/` and `keytypes/` and keeps the outgoing policy
+
+Policy change behavior (shared by the daemon and rescue through
+`internal/signerapp/policyapply`):
+
+- every apply or removal verifies the active policy, requires
+  `expected_policy_set_sha256` to equal the active `policy_set_sha256`,
+  validates the change, and mints one new generation with operation
+  `policy-apply`; a change that leaves the set unchanged commits nothing
+- each committed apply leaves the outgoing generation retained until explicit
+  generation pruning
+- a signer change is exactly one document with no key and no removals; a
+  cosigner change adds or replaces the listed documents, deletes the removed
+  keys, and keeps unlisted documents
+- online changes require an unlocked signer store and reload the runtime from
+  the committed generation
+
+Operator verbs:
+
+- `apadmin policy [rescue] VERB` requires a verb; with no verb it is a usage
+  error. Verbs: `status` (documents, sizes, digests, applied times, cosigner
+  key coverage, and `policy_set_sha256`), `export [--key ID]` (exact stored
+  bytes; a cosigner node requires `--key`), `check FILE...|-`,
+  `apply FILE...|-`, and `remove ID...` (cosigner nodes only)
+- a signer node takes exactly one file; each cosigner file names its key in
+  its `"key"` field, and documents for unlisted keys stay unchanged
+- `apply` and `remove` run check first, print warnings, stop on errors, and
+  then apply against the `policy_set_sha256` read at the start; output names
+  the committed generation or reports `policy unchanged`
+- online verbs use admin IPC, authenticate, and may unlock a locked signer
+  store
+- `apadmin policy rescue` accesses the store directly and rejects
+  `--ipc-path`: `status`, `export`, and `check` hold the shared store lock;
+  `apply` and `remove` hold the exclusive store lock and therefore require a
+  stopped daemon. A root-run rescue change of a production store restores the
+  owner recorded in root-controlled `install/service-principal.json` before
+  returning
+- `apstore policy check` validates the stored documents without verifying
+  sidecars and warns about missing sidecars, cosigner keys without policies,
+  and policies for keys not held; `apstore policy verify` verifies sidecars and
+  compiles the policy; `apstore policy sign` validates and re-signs sidecars in
+  the selected generation for hand-placed documents (signer: `policy.json`;
+  cosigner: every `policies/*.json`)
 
 ### Managed Credential Files (`.key` and `.cos`)
 
@@ -2270,24 +2304,22 @@ Auto-rejection policy includes:
 - `reject_asset_close`
 - `reject_clawback`
 - `max_fee_microalgos`
-- network-scoped `max_algo_payments`
-- network-scoped `max_asa_amounts`
+- network- and asset-scoped `limits` `reject_above`
 - `transfer_policy` blocked destinations, route misses,
   close/clawback denials, and `reject_above` thresholds for direct `pay` and
   `axfer` movements
-- YAML-only `key_overrides` keyed by signing auth address or Witness Key ID
+- signer `key_overrides` keyed by signing auth address (scalar settings and
+  `limits`)
 
-Policy enforcement stores and compares `review_algo_payments` and
-`max_algo_payments` in raw microAlgos; admin-facing input, display, and
-review/rejection text use ALGO display units.
+Policy documents store amounts as decimal strings in base units (microAlgos
+for ALGO); review and rejection text use display units.
 
 Always-review policy includes:
 
 - `always_review_warnings`: require operator review for requests that carry
   warning-level approval findings, such as rekey, close-out, clawback, asset
   close, or unusually high fees.
-- network-scoped `review_algo_payments`
-- network-scoped `review_asa_amounts`
+- network- and asset-scoped `limits` `review_above`
 - `transfer_policy` `on_no_route: review` route misses and
   `review_above` thresholds for direct `pay` and `axfer` movements
 
@@ -2301,15 +2333,14 @@ fallback switch stored in product runtime config and shown in `apadmin` as
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
 
-Client-signing and cosigner component `transfer_policy` are both persisted in
-`policy.yaml`, with schema selected by node role. Both domains are validated by
-the normal policy load path and by `apstore policy check/sign/verify`.
-`apadmin policy rescue` auto-targets the node-role domain and
-`--target signer|cosigner` can explicitly select a domain for offline work;
-`apadmin policy` uses the node-role target online through admin IPC. There is no
-scalar policy-settings IPC; online `apply` saves whole-document YAML
-replacements. The rescue `export` and `apply` verbs are the offline path for
-byte-preserving route-table edits.
+Client-signing `transfer_policy` is persisted in signer `policy.json`;
+cosigner component `transfer_policy` is persisted in each key's
+`policies/<WitnessKeyID>.json`. The node role selects the document type. Both
+are validated by the normal policy load path and by `apstore policy
+check|verify|sign`. `apadmin policy` applies whole documents online through
+admin IPC, and `apadmin policy rescue` applies them against a stopped
+daemon's store; both store the exact submitted bytes. There is no scalar
+policy-settings IPC.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

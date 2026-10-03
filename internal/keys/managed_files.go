@@ -23,6 +23,31 @@ const (
 	CosignerCredentialExtension = ".cos"
 )
 
+// MaxCosignerCredentials caps the cosigner credentials one store holds. With
+// the cap on cosigner policy documents it bounds the admin policy summary,
+// which lists every key, to one admin message.
+const MaxCosignerCredentials = 8192
+
+// ErrCosignerCredentialLimit reports that a store already holds
+// MaxCosignerCredentials cosigner credentials.
+var ErrCosignerCredentialLimit = errors.New("cosigner credential limit reached")
+
+// CountCosignerCredentials counts the cosigner credentials in a key
+// namespace by file name.
+func CountCosignerCredentials(keysDir string) (int, error) {
+	entries, err := os.ReadDir(keysDir)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, err
+	}
+	count := 0
+	for _, entry := range entries {
+		if _, class, ok := ParseManagedCredentialFilename(entry.Name()); ok && class == ManagedCredentialCosigner {
+			count++
+		}
+	}
+	return count, nil
+}
+
 type ManagedCredentialClass string
 
 type ManagedCredentialFile struct {

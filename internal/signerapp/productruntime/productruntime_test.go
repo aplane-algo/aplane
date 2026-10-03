@@ -17,7 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -97,69 +99,41 @@ func TestValidateProductStoreLayout(t *testing.T) {
 	})
 }
 
-func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
+func TestRuntimePolicyReturnsDefensiveCopies(t *testing.T) {
 	ir := New(Config{
 		Authenticator: auth.NewTokenAuthenticator("tok"),
 	})
-	rejectForeignRekey := false
-	maxFee := uint64(7000)
-	enabled := true
-	onNoRoute := string(policy.TransferOnNoRouteReject)
-	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, MaxFeeMicroAlgos: &maxFee, TransferPolicy: &policy.StoredTransferPolicy{
-		SchemaVersion: 1,
-		Enabled:       &enabled,
-		OnNoRoute:     &onNoRoute,
-		Routes: []policy.StoredTransferRoute{
-			{
-				ID:           "ops_algo",
-				Networks:     []string{"mainnet"},
-				Sources:      []string{"*"},
-				Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
-				Destinations: []string{"*"},
-			},
-		},
-		RoutesSet: true,
-	}},
+	signer := policy.DefaultConfig()
+	signer.MaxFeeMicroAlgos = 7000
+	ir.SetPolicy(signer)
+	got := ir.Policy()
+	if got == nil || got.MaxFeeMicroAlgos != 7000 {
+		t.Fatalf("Policy() = %#v, want max fee 7000", got)
 	}
-	effective := policy.DefaultConfig()
-	effective.RejectForeignRekey = false
-	effective.MaxFeeMicroAlgos = maxFee
-
-	ir.SetPolicyState(stored, effective)
-
-	gotStored, gotEffective := ir.PolicySnapshot()
-	if gotStored == nil || gotEffective == nil {
-		t.Fatalf("PolicySnapshot() = (%v, %v), want both snapshots", gotStored, gotEffective)
+	got.MaxFeeMicroAlgos = 1
+	if ir.Policy().MaxFeeMicroAlgos != 7000 {
+		t.Fatal("signer policy was mutated through a returned copy")
 	}
-	if gotStored.RejectForeignRekey == nil || *gotStored.RejectForeignRekey {
-		t.Fatalf("stored RejectForeignRekey = %#v, want false", gotStored.RejectForeignRekey)
-	}
-	if gotEffective.MaxFeeMicroAlgos != maxFee {
-		t.Fatalf("effective MaxFeeMicroAlgos = %d, want %d", gotEffective.MaxFeeMicroAlgos, maxFee)
+	if ir.CosignerPolicies() != nil {
+		t.Fatal("CosignerPolicies() on a signer policy != nil")
 	}
 
-	*gotStored.RejectForeignRekey = true
-	gotStored.TransferPolicy.Routes[0].ID = "mutated"
-	gotEffective.MaxFeeMicroAlgos = 1
-
-	gotStored, gotEffective = ir.PolicySnapshot()
-	if gotStored.RejectForeignRekey == nil || *gotStored.RejectForeignRekey {
-		t.Fatalf("stored snapshot was mutated through returned copy: %#v", gotStored.RejectForeignRekey)
+	cosigner := policy.DefaultConfig()
+	cosigner.MaxFeeMicroAlgos = 5000
+	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Cosigner: map[string]*policy.Config{"K": cosigner}})
+	policies := ir.CosignerPolicies()
+	policies["K"].MaxFeeMicroAlgos = 1
+	delete(policies, "K")
+	if again := ir.CosignerPolicies(); again["K"] == nil || again["K"].MaxFeeMicroAlgos != 5000 {
+		t.Fatalf("cosigner policies were mutated through a returned copy: %#v", again)
 	}
-	if gotStored.TransferPolicy.Routes[0].ID != "ops_algo" {
-		t.Fatalf("stored route ID = %q, want ops_algo", gotStored.TransferPolicy.Routes[0].ID)
-	}
-	if gotEffective.MaxFeeMicroAlgos != maxFee {
-		t.Fatalf("effective snapshot was mutated through returned copy: %d", gotEffective.MaxFeeMicroAlgos)
+	if ir.Policy() != nil {
+		t.Fatal("Policy() on a cosigner policy != nil")
 	}
 
-	ir.SetPolicy(policy.DefaultConfig())
-	gotStored, gotEffective = ir.PolicySnapshot()
-	if gotStored != nil {
-		t.Fatalf("stored snapshot after SetPolicy = %#v, want nil", gotStored)
-	}
-	if gotEffective == nil {
-		t.Fatal("effective policy after SetPolicy = nil, want policy")
+	ir.SetNodePolicy(nil)
+	if ir.NodePolicy() != nil || ir.Policy() != nil {
+		t.Fatal("cleared policy is still visible")
 	}
 }
 
