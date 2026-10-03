@@ -79,7 +79,7 @@ func TestPoliciesViewListsCosignerKeysAndOpensDocuments(t *testing.T) {
 	})
 	rendered := stripANSI(m.renderPolicies())
 	for _, want := range []string{policyViewKeyB + "  no policy (rejects every request)", policyViewKeyA + "  active",
-		fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14", "set-digest", "read-only"} {
+		fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14", "set-digest", "a loads a policy file"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("policies view missing %q:\n%s", want, rendered)
 		}

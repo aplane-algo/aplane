@@ -225,30 +225,6 @@ func TestOnlineApplyReportsDaemonFailureCode(t *testing.T) {
 	}
 }
 
-func TestReadDocumentsEnforcesRoleShape(t *testing.T) {
-	signer := writePolicyFile(t, "policy.json", testSignerDoc)
-	if _, _, err := readDocuments([]string{signer, signer}, "signer", nil); err == nil {
-		t.Fatal("two signer files accepted")
-	}
-	noKey := writePolicyFile(t, "nokey.json", `{"format":"aplane.cosigner-policy.v1"}`)
-	if _, _, err := readDocuments([]string{noKey}, "cosigner", nil); err == nil || !strings.Contains(err.Error(), `"key"`) {
-		t.Fatalf("cosigner file without key error = %v", err)
-	}
-	a := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
-	again := writePolicyFile(t, "again.json", testCosignerDoc(testKeyA))
-	if _, _, err := readDocuments([]string{a, again}, "cosigner", nil); err == nil || !strings.Contains(err.Error(), "both policies") {
-		t.Fatalf("duplicate key error = %v", err)
-	}
-	invalid := writePolicyFile(t, "invalid.json", "{\"format\":\"aplane.signer-policy.v1\",\"description\":\"\xff\"}")
-	if _, _, err := readDocuments([]string{invalid}, "signer", nil); err == nil || !strings.Contains(err.Error(), "UTF-8") {
-		t.Fatalf("invalid UTF-8 error = %v", err)
-	}
-	empty := writePolicyFile(t, "empty.json", "  \n")
-	if _, _, err := readDocuments([]string{empty}, "signer", nil); err == nil || !strings.Contains(err.Error(), "empty") {
-		t.Fatalf("empty file error = %v", err)
-	}
-}
-
 func TestOnlineAuthenticationFailureClosesSession(t *testing.T) {
 	onlineEnv(t)
 	session := newFakeSession("signer")

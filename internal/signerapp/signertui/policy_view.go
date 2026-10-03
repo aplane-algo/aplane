@@ -12,10 +12,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// The policies view lists the node's active policy documents read-only.
-// Changes go through apadmin policy check and apply, never through the TUI.
+// The policies view lists the node's active policy documents and shows their
+// exact bytes. It never edits a document; policy_apply.go loads a policy file
+// through the same check, diff, and apply steps as apadmin policy apply.
 
-// policiesState is the read-only policy list and document viewer.
+// policiesState is the policy list, the document viewer, and the
+// load-policy-file workflow.
 type policiesState struct {
 	loading      bool
 	err          string
@@ -29,6 +31,9 @@ type policiesState struct {
 	// waiting for; responses to any other request are stale and ignored.
 	pendingPolicyID   string
 	pendingDocumentID string
+	// status reports the last apply on the list.
+	status string
+	apply  policyApplyState
 }
 
 func newPolicyRequestID(prefix string) string {
@@ -111,7 +116,10 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.policies = policiesState{}
 		return m, nil
 	case "r":
+		m.policies.status = ""
 		return m.requestPolicy()
+	case "a":
+		return m.openPolicyApply()
 	case "up", "k":
 		if m.policies.selected > 0 {
 			m.policies.selected--
@@ -135,6 +143,9 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Document.ID != "" && msg.Document.ID == m.policies.apply.pendingDocumentID {
+		return m.handlePolicyApplyDocumentLoaded(msg)
+	}
 	if msg.Document.ID == "" || msg.Document.ID != m.policies.pendingDocumentID {
 		return m, m.waitForMessageCmd()
 	}
@@ -199,7 +210,7 @@ func (m Model) renderPolicies() string {
 		return sb.String()
 	}
 	p := m.policies.policy
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  read-only; change with apadmin policy check / apply", p.NodeRole)))
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  a loads a policy file; apadmin policy covers diff, remove, and rescue", p.NodeRole)))
 	sb.WriteString("\n\n")
 	rows := m.policyRows()
 	if len(rows) == 0 {
@@ -219,6 +230,11 @@ func (m Model) renderPolicies() string {
 	sb.WriteString("\n")
 	sb.WriteString(subtitleStyle.Render("policy_set_sha256 " + p.PolicySetSHA256))
 	sb.WriteString("\n")
+	if m.policies.status != "" {
+		sb.WriteString("\n")
+		sb.WriteString(m.policies.status)
+		sb.WriteString("\n")
+	}
 	return sb.String()
 }
 
@@ -302,7 +318,7 @@ func (m Model) policiesFooterText() string {
 		}
 		return footer
 	}
-	return "up/down: Select | enter: View | r: Refresh | esc/q: Back"
+	return "up/down: Select | enter: View | a: Load file | r: Refresh | esc/q: Back"
 }
 
 // SendGetPolicy requests the node's policy summary under request id.

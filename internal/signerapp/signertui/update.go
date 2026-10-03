@@ -269,6 +269,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
+		if next, ok := m.failPendingPolicyApply(msg.Error); ok {
+			return next, next.waitForMessageCmd()
+		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
 			m.restore.previewing = false
@@ -544,6 +547,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PolicyDocumentLoadedMsg:
 		return m.handlePolicyDocumentLoaded(msg)
+
+	case PolicyCheckResultMsg:
+		return m.handlePolicyCheckResult(msg)
+
+	case PolicyApplyResultMsg:
+		return m.handlePolicyApplyResult(msg)
 
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active
@@ -978,6 +987,10 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePoliciesKeys(msg)
 	case ViewPolicyDocument:
 		return m.handlePolicyDocumentKeys(msg)
+	case ViewPolicyApplyForm:
+		return m.handlePolicyApplyFormKeys(msg)
+	case ViewPolicyApplyReview:
+		return m.handlePolicyApplyReviewKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:
@@ -1028,6 +1041,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewRevokeTokenConfirm,
 		ViewLockConfirm,
 		ViewDisplaceConfirm,
+		ViewPolicyApplyForm,
 		ViewTemplateInstallConfirm,
 		ViewTemplateInstalling,
 		ViewError:

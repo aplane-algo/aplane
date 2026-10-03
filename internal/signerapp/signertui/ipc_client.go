@@ -665,6 +665,20 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				}
 				c.emit(sessionID, PolicyDocumentLoadedMsg{Document: documentMsg})
 
+			case MsgTypeCheckPolicyResult:
+				var result CheckPolicyResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, PolicyCheckResultMsg{Result: result})
+
+			case MsgTypeApplyPolicyResult:
+				var result ApplyPolicyResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, PolicyApplyResultMsg{Result: result})
+
 			case MsgTypeAdminSettings:
 				var settings AdminSettingsMessage
 				if err := json.Unmarshal(line, &settings); err != nil {

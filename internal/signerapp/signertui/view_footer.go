@@ -106,6 +106,8 @@ func (m Model) viewFooterText() string {
 		return "p: Policies | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
 	case ViewPolicies, ViewPolicyDocument:
 		return m.policiesFooterText()
+	case ViewPolicyApplyForm, ViewPolicyApplyReview:
+		return m.policyApplyFooterText()
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:

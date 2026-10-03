@@ -447,6 +447,10 @@ func (m Model) renderViewContent() string {
 		content = m.renderPolicies()
 	case ViewPolicyDocument:
 		content = m.renderPolicyDocument()
+	case ViewPolicyApplyForm:
+		content = m.renderPolicyApplyForm()
+	case ViewPolicyApplyReview:
+		content = m.renderPolicyApplyReview()
 	case ViewTemplateLibrary:
 		content = m.renderTemplateLibrary()
 	case ViewTemplateInstallConfirm:

@@ -62,6 +62,8 @@ const (
 	ViewAdminPanel         // Admin control panel
 	ViewPolicies           // Read-only list of the node's policy documents
 	ViewPolicyDocument     // Read-only view of one policy document
+	ViewPolicyApplyForm    // File path prompt for loading a policy file
+	ViewPolicyApplyReview  // Diff review and confirmation before a policy apply
 	ViewTemplateLibrary    // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling
