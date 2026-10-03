@@ -256,6 +256,7 @@ test/
 │   ├── key_derivation_regression_test.go # Deterministic derivation pins
 │   ├── single_identity_boundary_test.go # Extra identity startup rejection
 │   ├── signer_test.go             # Signer policy, lock, approval, restart tests
+│   ├── policy_cli_test.go         # apadmin policy verbs, online and rescue
 │   ├── app_test.go                # Application deploy/read/call flow tests
 │   ├── apstore_initialize_test.go # apstore initialize bootstrap tests
 │   ├── backup_portability_test.go # Backup/restore portability tests
@@ -793,7 +794,9 @@ make docker-systemd-test
 starts signer, cosigner, client/admin, and AlgoKit-style LocalNet algod/KMD
 containers on one Docker network. It verifies local install layouts, shared
 LocalNet reachability, SSH token provisioning for signer and cosigner endpoints,
-local IPC `apadmin` public-reference export and import, guarded signing, Corridor allowlist
+local IPC `apadmin` public-reference export and import, the `apadmin policy`
+verbs on the cosigner node (`status`, `check`, `diff`, `apply` from a file and
+from stdin, `export --key`, `remove`), guarded signing, Corridor allowlist
 and external-admin behavior, and guarded preparation/signing through a local
 Python SDK checkout.
 

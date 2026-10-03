@@ -182,6 +182,17 @@ Signer boundary, lifecycle, rekey, and LSig coverage:
 - `TestLSigRuntimeArgValidation` — LSig arg validation
 - `TestApprovalTimeoutOrClientDisconnect` — approval disconnect handling
 
+### `policy_cli_test.go`
+
+`apadmin policy` command coverage on a signer node:
+
+- `TestApadminPolicyCLIOnlineAndRescue` — `status`, `export`, `check`, `diff`,
+  and `apply` (file and stdin) against the running daemon, including the
+  refusals (invalid file, no `--yes` without a terminal, `remove` on a signer
+  node); then `policy rescue` against the stopped store. Signing confirms each
+  applied policy is the one enforced. Cosigner-node policy verbs are covered by
+  the Docker four-node smoke test.
+
 ### `native_falcon_test.go`
 
 Protocol-native Falcon-1024 live acceptance on any selected v42 network:
