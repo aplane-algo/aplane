@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"time"
 	"unicode/utf8"
 
@@ -101,7 +102,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		if countChanges(diffs) == 0 {
+		if unchanged(diffs) {
 			_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
 			return nil
 		}
@@ -286,10 +287,12 @@ func resultError(code, msg string) error {
 	return fmt.Errorf("%s (%s)", msg, code)
 }
 
-// documentDiff is the reviewed change to one policy document.
+// documentDiff is the reviewed change to one policy document. identical
+// means the decoded documents are equal, so applying changes nothing.
 type documentDiff struct {
-	label   string
-	changes []policy.PolicyChange
+	label     string
+	changes   []policy.PolicyChange
+	identical bool
 }
 
 // diffChange compares each submitted document, and each removal, with the
@@ -305,11 +308,11 @@ func diffChange(ctx context.Context, backend Backend, role string, docs []adminp
 			return nil, resultError(current.Code, current.Error)
 		}
 		label := names[doc.Key]
-		changes, err := diffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
+		changes, identical, err := diffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", label, err)
 		}
-		out = append(out, documentDiff{label: label, changes: changes})
+		out = append(out, documentDiff{label: label, changes: changes, identical: identical})
 	}
 	for _, key := range remove {
 		current, err := backend.Document(ctx, key)
@@ -328,47 +331,55 @@ func diffChange(ctx context.Context, backend Backend, role string, docs []adminp
 	return out, nil
 }
 
-func diffDocument(role, key string, hasCurrent bool, current, next string) ([]policy.PolicyChange, error) {
+func diffDocument(role, key string, hasCurrent bool, current, next string) ([]policy.PolicyChange, bool, error) {
 	if role == "cosigner" {
 		nextDoc, err := policy.DecodeCosignerPolicyV1([]byte(next), key)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		var currentDoc *policy.CosignerPolicyV1
-		if hasCurrent {
-			if currentDoc, err = policy.DecodeCosignerPolicyV1([]byte(current), key); err != nil {
-				return nil, fmt.Errorf("active policy: %w", err)
-			}
+		if !hasCurrent {
+			return policy.DiffCosignerPolicyV1(nil, nextDoc), false, nil
 		}
-		return policy.DiffCosignerPolicyV1(currentDoc, nextDoc), nil
+		currentDoc, err := policy.DecodeCosignerPolicyV1([]byte(current), key)
+		if err != nil {
+			return nil, false, fmt.Errorf("active policy: %w", err)
+		}
+		return policy.DiffCosignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
 	}
 	nextDoc, err := policy.DecodeSignerPolicyV1([]byte(next))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !hasCurrent {
-		return nil, fmt.Errorf("the node has no active signer policy")
+		return nil, false, fmt.Errorf("the node has no active signer policy")
 	}
 	currentDoc, err := policy.DecodeSignerPolicyV1([]byte(current))
 	if err != nil {
-		return nil, fmt.Errorf("active policy: %w", err)
+		return nil, false, fmt.Errorf("active policy: %w", err)
 	}
-	return policy.DiffSignerPolicyV1(currentDoc, nextDoc), nil
+	return policy.DiffSignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
 }
 
-func countChanges(diffs []documentDiff) int {
-	n := 0
+// unchanged reports whether applying would change no document: every
+// submitted document decodes equal to the active one and nothing is removed.
+func unchanged(diffs []documentDiff) bool {
 	for _, d := range diffs {
-		n += len(d.changes)
+		if !d.identical {
+			return false
+		}
 	}
-	return n
+	return true
 }
 
 func printDiffs(w io.Writer, diffs []documentDiff) {
 	total, loosened := 0, 0
 	for _, d := range diffs {
 		if len(d.changes) == 0 {
-			_, _ = fmt.Fprintf(w, "%s: no changes\n", d.label)
+			if d.identical {
+				_, _ = fmt.Fprintf(w, "%s: no changes\n", d.label)
+			} else {
+				_, _ = fmt.Fprintf(w, "%s: no change to what the policy allows; the document differs only in order\n", d.label)
+			}
 			continue
 		}
 		_, _ = fmt.Fprintf(w, "%s:\n", d.label)

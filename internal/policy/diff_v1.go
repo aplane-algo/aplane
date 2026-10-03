@@ -119,6 +119,13 @@ func effectiveBool(v *bool, def bool) bool {
 }
 
 func (d *policyDiff) feeCap(path string, current, next *uint64) {
+	// A cap of zero is enforced as no cap.
+	if current != nil && *current == 0 {
+		current = nil
+	}
+	if next != nil && *next == 0 {
+		next = nil
+	}
 	switch {
 	case current == nil && next == nil:
 	case current == nil:
@@ -216,6 +223,9 @@ func (d *policyDiff) signerSettings(prefix string, cur, nxt SignerSettingsV1, cu
 		c := effectiveBool(f.c, effectiveBool(f.cb, f.def))
 		n := effectiveBool(f.n, effectiveBool(f.nb, f.def))
 		d.boolSetting(prefix+"/"+f.name, c, n, f.strictWhenTrue)
+		if only != nil && c == n && (f.c == nil) != (f.n == nil) {
+			d.pinChange(prefix+"/"+f.name, f.n != nil, fmt.Sprint(n))
+		}
 	}
 	if only == nil || cur.MaxFeeMicroAlgos != nil || nxt.MaxFeeMicroAlgos != nil {
 		c, n := cur.MaxFeeMicroAlgos, nxt.MaxFeeMicroAlgos
@@ -225,7 +235,26 @@ func (d *policyDiff) signerSettings(prefix string, cur, nxt SignerSettingsV1, cu
 		if n == nil {
 			n = nxtBase.MaxFeeMicroAlgos
 		}
+		before := len(d.changes)
 		d.feeCap(prefix+"/max_fee_microalgos", c, n)
+		if only != nil && len(d.changes) == before && (cur.MaxFeeMicroAlgos == nil) != (nxt.MaxFeeMicroAlgos == nil) {
+			value := "no cap"
+			if n != nil && *n != 0 {
+				value = formatAlgoAmount(*n)
+			}
+			d.pinChange(prefix+"/max_fee_microalgos", nxt.MaxFeeMicroAlgos != nil, value)
+		}
+	}
+}
+
+// pinChange reports an override field moving between inherited and set
+// explicitly while its value stays the same. It changes nothing today but
+// decides whether later document changes reach the key.
+func (d *policyDiff) pinChange(path string, explicit bool, value string) {
+	if explicit {
+		d.add(path, PolicyChangeNeutral, "inherited %s → set explicitly to %s", value, value)
+	} else {
+		d.add(path, PolicyChangeNeutral, "set explicitly to %s → inherited %s", value, value)
 	}
 }
 
@@ -369,7 +398,11 @@ func (d *policyDiff) sets(curAddr, nxtAddr map[string]AddressSetV1, curAsset, nx
 		default:
 			for _, network := range addressSetNetworks(c, n) {
 				p := path
-				if network != "" {
+				switch network {
+				case "":
+				case otherNetworks:
+					p += "/(other networks)"
+				default:
 					p += "/" + network
 				}
 				d.addresses(p, addressSetMembers(c, network), addressSetMembers(n, network), effectFor(name))
@@ -393,16 +426,26 @@ func (d *policyDiff) sets(curAddr, nxtAddr map[string]AddressSetV1, curAsset, nx
 	}
 }
 
+// otherNetworks stands for every network a per-network set does not name.
+const otherNetworks = "\x00other"
+
+// addressSetNetworks lists the networks to compare two address sets on. Two
+// flat sets compare once (""). When either is per-network, each named network
+// is compared, plus otherNetworks, where a flat set's members still apply.
 func addressSetNetworks(a, b AddressSetV1) []string {
 	if a.ByNetwork == nil && b.ByNetwork == nil {
 		return []string{""}
 	}
-	return unionKeys(a.ByNetwork, b.ByNetwork)
+	return append(unionKeys(a.ByNetwork, b.ByNetwork), otherNetworks)
 }
 
+// addressSetMembers returns the members a set covers on network.
 func addressSetMembers(set AddressSetV1, network string) []types.Address {
-	if network == "" {
+	if set.ByNetwork == nil {
 		return set.Flat
+	}
+	if network == otherNetworks {
+		return nil
 	}
 	return set.ByNetwork[network]
 }
@@ -514,7 +557,64 @@ func (d *policyDiff) keyOverrides(current, next *SignerPolicyV1) {
 			}
 		}
 		if len(mentioned) > 0 {
+			before := map[string]bool{}
+			for _, ch := range d.changes {
+				before[ch.Path] = true
+			}
 			d.limits(path+"/limits", mergeOverrideLimits(current.Limits, c.Limits), mergeOverrideLimits(next.Limits, n.Limits), mentioned)
+			reported := map[string]bool{}
+			for _, ch := range d.changes {
+				if !before[ch.Path] {
+					reported[ch.Path] = true
+				}
+			}
+			for _, p := range sortedSetKeys(mentioned) {
+				if reported[p] {
+					continue
+				}
+				if was, now := overrideThresholdState(c.Limits, p, path), overrideThresholdState(n.Limits, p, path); was != now {
+					d.add(p, PolicyChangeNeutral, "%s → %s", was, now)
+				}
+			}
 		}
+	}
+}
+
+func sortedSetKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// overrideThresholdState describes how an override treats one threshold
+// path: inherited, removed with null, or set to a value.
+func overrideThresholdState(limits OverrideLimitsV1, path, overridePath string) string {
+	rest := strings.TrimPrefix(path, overridePath+"/limits/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 {
+		return "inherited"
+	}
+	asset, err := parseAssetRefV1("", parts[1])
+	if err != nil {
+		return "inherited"
+	}
+	t, ok := limits[parts[0]][asset]
+	if !ok {
+		return "inherited"
+	}
+	amount := t.ReviewAbove
+	if parts[2] == "reject_above" {
+		amount = t.RejectAbove
+	}
+	switch {
+	case !amount.Set:
+		return "inherited"
+	case amount.Null:
+		return "removed explicitly"
+	default:
+		return "set explicitly to " + formatAssetAmount(asset, amount.Value)
 	}
 }

@@ -120,3 +120,46 @@ func TestDiffCosignerPolicyLifecycleAndRekey(t *testing.T) {
 		"loosened /rekey_policy/allowed: added "+v1Ops.String()+" → "+v1Vendor.String(),
 	)
 }
+
+func TestDiffAddressSetComparesCoverageAcrossForms(t *testing.T) {
+	doc := func(set string) *SignerPolicyV1 {
+		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","address_sets":{"ops":%s},
+			"transfer_policy":{"enabled":true,"on_no_route":"reject","routes":[
+			{"id":"r","networks":["*"],"sources":["@ops"],"assets":["algo"],"destinations":["*"]}]}}`, set))
+	}
+	a := v1Ops.String()
+	perNetwork, flat := doc(fmt.Sprintf(`{"testnet":[%q]}`, a)), doc(fmt.Sprintf(`[%q]`, a))
+	assertChanges(t, DiffSignerPolicyV1(perNetwork, flat), "loosened /address_sets/ops/(other networks): added "+a)
+	assertChanges(t, DiffSignerPolicyV1(flat, perNetwork), "tightened /address_sets/ops/(other networks): removed "+a)
+}
+
+func TestDiffFeeCapTreatsZeroAsNoCap(t *testing.T) {
+	doc := func(fee string) *SignerPolicyV1 {
+		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1"%s}`, fee))
+	}
+	capped, zero, none := doc(`,"max_fee_microalgos":"2000"`), doc(`,"max_fee_microalgos":"0"`), doc("")
+	assertChanges(t, DiffSignerPolicyV1(capped, zero), "loosened /max_fee_microalgos: 0.002 ALGO → no cap")
+	assertChanges(t, DiffSignerPolicyV1(zero, capped), "tightened /max_fee_microalgos: no cap → 0.002 ALGO")
+	assertChanges(t, DiffSignerPolicyV1(zero, none))
+}
+
+func TestDiffKeyOverrideReportsPinsWithUnchangedValues(t *testing.T) {
+	key := v1Ops.String()
+	doc := func(override string) *SignerPolicyV1 {
+		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","reject_clawback":true,
+			"limits":{"testnet":{"algo":{"reject_above":"100"}}},"key_overrides":{%q:{%s}}}`, key, override))
+	}
+	inherits := doc(`"description":"ops"`)
+	pinned := doc(`"description":"ops","max_fee_microalgos":"5000","reject_clawback":true,"limits":{"testnet":{"algo":{"reject_above":"100"}}}`)
+	prefix := "changed /key_overrides/" + key
+	assertChanges(t, DiffSignerPolicyV1(inherits, pinned),
+		prefix+"/limits/testnet/algo/reject_above: inherited → set explicitly to 0.0001 ALGO",
+		prefix+"/max_fee_microalgos: inherited 0.005 ALGO → set explicitly to 0.005 ALGO",
+		prefix+"/reject_clawback: inherited true → set explicitly to true",
+	)
+	assertChanges(t, DiffSignerPolicyV1(pinned, inherits),
+		prefix+"/limits/testnet/algo/reject_above: set explicitly to 0.0001 ALGO → inherited",
+		prefix+"/max_fee_microalgos: set explicitly to 0.005 ALGO → inherited 0.005 ALGO",
+		prefix+"/reject_clawback: set explicitly to true → inherited true",
+	)
+}

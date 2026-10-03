@@ -779,11 +779,18 @@ changes. Each change names a path (routes by id, key overrides by address) and
 is marked `tightened`, `loosened`, or `changed`: raising or removing a threshold,
 clearing a `reject_*` flag, adding a route, route term, or member of a set a
 route uses, relaxing a route-miss action, or removing a blocked destination
-loosens; the reverse tightens. Key overrides are compared on the values that
-take effect for that key. A cosigner key gaining its first document loosens
-(it rejected every request); removing one tightens. `apply` and `remove` ask for
-confirmation on the controlling terminal, never stdin; `--yes` skips it, and a
-change that leaves every document unchanged applies nothing.
+loosens; the reverse tightens. A fee cap of `"0"` is compared as no cap,
+matching enforcement. Address sets are compared on the members they cover on
+each network, so moving between flat and per-network forms is described by
+what changes where. Key overrides are compared on the values that take effect
+for that key, and a field moving between inherited and set explicitly is
+reported as `changed` even when its value is the same, because it decides
+whether later document changes reach the key. A cosigner key gaining its first
+document loosens (it rejected every request); removing one tightens. `apply`
+and `remove` ask for confirmation on the controlling terminal, never stdin;
+`--yes` skips it. `apply` skips the commit only when every submitted document
+decodes identical to the active one; a document that differs only in term order
+is still applied.
 
 A signer node takes one file. Each cosigner file is one key's document and names
 that key in its `key` field. Online verbs authenticate through admin IPC and

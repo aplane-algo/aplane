@@ -563,3 +563,33 @@ func TestConfirmApplyNeedsATerminal(t *testing.T) {
 		t.Fatalf("ConfirmApply() without a terminal error = %v", err)
 	}
 }
+
+func TestOnlineApplyKeepsChangesTheDiffCannotSee(t *testing.T) {
+	onlineEnv(t)
+	key := "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+	current := fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","key_overrides":{%q:{"reject_clawback":true}}}`, key)
+	pinned := fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","key_overrides":{%q:{"reject_clawback":true,"max_fee_microalgos":"5000"}}}`, key)
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: current})
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{writePolicyFile(t, "p.json", pinned)}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "inherited 0.005 ALGO → set explicitly to 0.005 ALGO") {
+		t.Fatalf("pin: applies %d, output:\n%s", len(session.applies), stdout.String())
+	}
+
+	// Reordering route terms changes what is stored but not what is allowed.
+	route := func(dests string) string {
+		return fmt.Sprintf(`{"format":"aplane.signer-policy.v1","transfer_policy":{"enabled":true,"on_no_route":"reject","routes":[
+			{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":[%s]}]}}`, dests)
+	}
+	a, b := fmt.Sprintf("%q", key), fmt.Sprintf("%q", "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA")
+	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: route(a + "," + b)})
+	stdout.Reset()
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{writePolicyFile(t, "r.json", route(b+","+a))}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "differs only in order") {
+		t.Fatalf("reorder: applies %d, output:\n%s", len(session.applies), stdout.String())
+	}
+}
