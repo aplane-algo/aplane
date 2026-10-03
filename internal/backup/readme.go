@@ -30,8 +30,13 @@ Each ` + "`.apb`" + ` file is named after the Algorand address it controls (e.g.
 Each file is self-contained: it can be decrypted with only the file and the export passphrase (no additional metadata files are needed).
 
 Each encrypted payload is the complete canonical managed credential record,
-including durable signing metadata. Backups do not contain policy, approval
-settings, network mappings, templates, endpoints, tokens, or operator config.
+including durable signing metadata.
+
+A cosigner key's policy travels with it: policies/<WitnessKeyID>.apb holds the
+key's exact v1 policy document in the same encryption envelope, and restore
+installs it with the key. Backups do not contain the signer's node-wide
+policy, approval settings, network mappings, templates, endpoints, tokens, or
+operator config.
 
 ## Encryption Format (envelope_version 2)
 

@@ -22,17 +22,20 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // CredentialEntry is one complete canonical managed credential prepared for
 // destination installation. KeyJSON contains private authority and must be
-// cleared with ZeroSecrets.
+// cleared with ZeroSecrets. Policy is a cosigner credential's archived policy
+// document, nil when the archive carries none.
 type CredentialEntry struct {
 	Selector string
 	Category string
 	KeyType  string
 	KeyJSON  []byte
+	Policy   []byte
 }
 
 func (e *CredentialEntry) ZeroSecrets() {
@@ -100,10 +103,13 @@ type RestoreConflict struct {
 }
 
 // RestoreClassification is destination state pinned under the identity
-// mutation lock immediately before generation minting.
+// mutation lock immediately before generation minting. Policies lists the
+// entries whose archived policy must be installed, whether or not their
+// credential is pending.
 type RestoreClassification struct {
 	Identical []CredentialEntry
 	Pending   []CredentialEntry
+	Policies  []CredentialEntry
 	Conflicts []RestoreConflict
 }
 
@@ -168,6 +174,12 @@ func LoadManagedRestoreSet(
 		if err := validateCredentialRuntimeSupport(&inspected); err != nil {
 			inspected.ZeroSecrets()
 			return nil, authenticatedArchiveError(fmt.Errorf("validate backup credential %s: %w", selector, err))
+		}
+		if inspected.Category == keys.CategoryWitness {
+			if inspected.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase); err != nil {
+				inspected.ZeroSecrets()
+				return nil, authenticatedArchiveError(err)
+			}
 		}
 		set.Entries = append(set.Entries, inspected)
 	}
@@ -349,6 +361,9 @@ func ClassifyRestoreSet(
 	var result RestoreClassification
 	for i := range set.Entries {
 		entry := set.Entries[i]
+		if err := classifyRestorePolicy(active, entry, kr, &result); err != nil {
+			return RestoreClassification{}, err
+		}
 		destPath, exists, err := keys.ManagedCredentialDestinationActive(
 			active,
 			entry.Selector,
@@ -400,6 +415,35 @@ func ClassifyRestoreSet(
 		result.Pending = append(result.Pending, entry)
 	}
 	return result, nil
+}
+
+// classifyRestorePolicy decides whether an entry's archived policy is
+// installed. A destination without a policy takes the archived one; a
+// different destination policy is a conflict that replace_existing resolves;
+// a destination policy is kept when the archive carries none.
+func classifyRestorePolicy(active storepaths.ActivePaths, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) error {
+	if entry.Policy == nil {
+		return nil
+	}
+	current, err := destinationPolicy(active, entry.Selector, kr)
+	switch {
+	case err != nil:
+		result.Conflicts = append(result.Conflicts, RestoreConflict{
+			Selector: entry.Selector, Category: entry.Category, KeyType: entry.KeyType,
+			Reason: "existing policy is unreadable: " + err.Error(),
+		})
+	case current == nil:
+	case bytes.Equal(current, entry.Policy):
+		return nil
+	default:
+		result.Conflicts = append(result.Conflicts, RestoreConflict{
+			Selector: entry.Selector, Category: entry.Category, KeyType: entry.KeyType,
+			ExistingSHA256: policy.PolicySHA256(current),
+			Reason:         "existing policy differs from backup",
+		})
+	}
+	result.Policies = append(result.Policies, entry)
+	return nil
 }
 
 func openCanonicalDestination(path string, entry CredentialEntry, kr *crypto.Keyring) ([]byte, error) {

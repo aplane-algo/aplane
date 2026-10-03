@@ -1017,8 +1017,9 @@ Additional signer-state notes:
   `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
 - signer-managed backup archives are written under
-  `<data_dir>/backups/default/`; the archive contains `README.md` and
-  `apb/*.apb` encrypted canonical credential payloads plus `manifest.sealed`
+  `<data_dir>/backups/default/`; the archive contains `README.md`,
+  `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
+  encrypted cosigner key policy documents, and `manifest.sealed`
 - imported backup archives are validated by the operator client, streamed to
   the daemon in bounded admin-protocol chunks, and atomically published under
   `<data_dir>/backups/default/`; exports stream bounded chunks in the other
@@ -1480,7 +1481,12 @@ Policy load behavior:
 - store validation (`storevalidate`) loads and verifies the policy and
   verifies archived cosigner policy sidecars
 - passphrase rotation re-signs every policy sidecar; restore rollback restores
-  only `keys/` and `keytypes/` and keeps the outgoing policy
+  `keys/`, `keytypes/`, and cosigner `policies/` (re-signed under the current
+  term) and keeps the outgoing signer `policy.json`
+- a cosigner key's policy travels with it in backups: restore installs the
+  archived document with the key, a different destination policy is a
+  conflict that `replace_existing` resolves, and a destination policy is kept
+  when the archive carries none
 
 Policy change behavior (shared by the daemon and rescue through
 `internal/signerapp/policyapply`):
@@ -2786,13 +2792,19 @@ Export:
 4. re-encrypts the canonical payload with standalone envelope version 2 under
    the export passphrase
 5. writes `apb/<selector>.apb`
+6. for each exported cosigner credential with a verified policy document,
+   encrypts the exact document bytes the same way and writes
+   `policies/<WitnessKeyID>.apb`
 
 Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
 65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
 parameters before decoding the envelope body or invoking Argon2id; changing the
-tuple requires a new envelope version. Encoded standalone envelopes are limited
-to 1 MiB, and archive readers enforce that bound while reading each regular
-file rather than after an unbounded allocation.
+tuple requires a new envelope version. Encoded credential envelopes are limited
+to 1 MiB, policy envelopes to 2 MiB, and the sealed manifest to 4 MiB; archive
+readers enforce each bound while reading the regular file rather than after an
+unbounded allocation. An archive holds at most 16,400 entries and 1 GiB
+extracted, enough for a credential and a policy per key at the 8,192-key cosigner
+cap; backup creation refuses to package an archive extraction would reject.
 
 An all-credentials backup is fail-hard: if any selected active credential
 cannot be read, decrypted, canonicalized, or exported, no archive is
@@ -2802,12 +2814,14 @@ A managed archive contains exactly:
 
 - `README.md`
 - one or more `apb/<selector>.apb` files
+- zero or more `policies/<WitnessKeyID>.apb` files, each for a cosigner
+  credential in the archive
 - `manifest.sealed`
 
 The sealed manifest plaintext uses schema
 `aplane.credential-backup.manifest.v1`, schema version 1. It records the
 source node role, packaging time, and the complete member inventory
-(`path`, `sha256`, `size`). It does not contain policy, approval defaults,
+(`path`, `sha256`, `size`). Backups carry no signer policy, approval defaults,
 genesis-hash mappings, templates, endpoints, tokens, SSH enrollment, or other
 operator configuration. The manifest is encrypted under the export passphrase.
 Knowing that passphrase authenticates the archive as produced or endorsed by a

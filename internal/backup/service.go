@@ -104,6 +104,9 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			return nil, fmt.Errorf("no addresses selected for backup")
 		}
 	}
+	if _, err := exportCosignerPolicies(activeStore, stageDir, exported, req.Keyring, req.ExportPassphrase); err != nil {
+		return nil, err
+	}
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}
@@ -119,6 +122,9 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		time.Now(),
 		req.ExportPassphrase,
 	); err != nil {
+		return nil, err
+	}
+	if err := requireExtractableArchive(stageDir); err != nil {
 		return nil, err
 	}
 	if err := CreateTarGzArchive(stageDir, req.ArchivePath); err != nil {

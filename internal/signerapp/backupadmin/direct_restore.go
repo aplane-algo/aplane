@@ -92,7 +92,7 @@ func (s Service) RestoreBackup(
 					len(classification.Conflicts),
 				)
 			}
-			if len(classification.Pending) == 0 {
+			if len(classification.Pending) == 0 && len(classification.Policies) == 0 {
 				result.GenerationID = current.GenerationID()
 				result.KeyCount = ir.KeyCount()
 				return nil
@@ -142,6 +142,12 @@ func (s Service) RestoreBackup(
 					})
 				},
 				Apply: func(staged storepaths.GenPaths) error {
+					for i := range classification.Policies {
+						entry := classification.Policies[i]
+						if applyErr := backup.ApplyPolicyEntry(staged, entry, masterKey); applyErr != nil {
+							return fmt.Errorf("apply restored policy %s: %w", entry.Selector, applyErr)
+						}
+					}
 					for i := range classification.Pending {
 						entry := classification.Pending[i]
 						if applyErr := backup.ApplyCredentialEntry(
@@ -172,6 +178,9 @@ func (s Service) RestoreBackup(
 			result.GenerationID = generationID
 			committedGeneration = generationID
 			result.Restored = projectCredentialEntries(classification.Pending)
+			for _, entry := range classification.Policies {
+				result.PoliciesRestored = append(result.PoliciesRestored, entry.Selector)
+			}
 
 			return nil
 		})

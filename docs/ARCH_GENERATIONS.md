@@ -171,8 +171,11 @@ Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
 comparison to fail. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
-Rollback restores only `keys/` and `keytypes/`; the outgoing generation's
-policy documents are kept.
+Rollback restores `keys/`, `keytypes/`, and the per-key cosigner `policies/`,
+because restore installs a cosigner key's archived policy with the key. Each
+restored policy document is checked against the source seal and written with a
+sidecar signed under the current term. The signer `policy.json`, the deleted
+archives, and node role authority are kept from the outgoing generation.
 
 ## Reconciliation and quarantine
 

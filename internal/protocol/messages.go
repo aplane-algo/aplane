@@ -414,6 +414,7 @@ type RestoreKeyInfo struct {
 	Address       string `json:"address"`
 	KeyType       string `json:"key_type,omitempty"`
 	AlreadyExists bool   `json:"already_exists,omitempty"`
+	HasPolicy     bool   `json:"has_policy,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -464,9 +465,12 @@ type RestoreBackupResultMessage struct {
 	Restored      []RestoreCredential `json:"restored,omitempty"`
 	Identical     []RestoreCredential `json:"identical,omitempty"`
 	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
-	KeyCount      int                 `json:"key_count,omitempty"`
-	Code          string              `json:"code,omitempty"`
-	Error         string              `json:"error,omitempty"`
+	// PoliciesRestored lists the cosigner keys whose archived policy was
+	// installed.
+	PoliciesRestored []string `json:"policies_restored,omitempty"`
+	KeyCount         int      `json:"key_count,omitempty"`
+	Code             string   `json:"code,omitempty"`
+	Error            string   `json:"error,omitempty"`
 }
 
 type RollbackRestoreMessage struct {
