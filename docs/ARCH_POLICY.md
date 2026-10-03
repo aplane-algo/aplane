@@ -769,8 +769,21 @@ document bytes. Message payloads are in
 | `status` | List the node's documents (size, SHA-256, applied time) and, on a cosigner node, each key's coverage: `active`, `no_policy`, or `key_not_held` |
 | `export [--key ID]` | Write one stored document exactly as stored; `--key` selects a cosigner key's document |
 | `check FILE...\|-` | Validate documents against the node; print errors and warnings |
-| `apply FILE...\|-` | Run `check`, print warnings, stop on errors, then apply against the current `policy_set_sha256` |
-| `remove ID...` | Delete cosigner keys' documents (cosigner nodes only) |
+| `diff FILE...\|-` | Describe how the files differ from the active documents, without writing |
+| `apply FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
+| `remove ID...` | Print the diff, confirm, then delete cosigner keys' documents (cosigner nodes only) |
+
+`diff` compares decoded documents (`policy.DiffSignerPolicyV1`,
+`policy.DiffCosignerPolicyV1`), so formatting and key order never appear as
+changes. Each change names a path (routes by id, key overrides by address) and
+is marked `tightened`, `loosened`, or `changed`: raising or removing a threshold,
+clearing a `reject_*` flag, adding a route, route term, or member of a set a
+route uses, relaxing a route-miss action, or removing a blocked destination
+loosens; the reverse tightens. Key overrides are compared on the values that
+take effect for that key. A cosigner key gaining its first document loosens
+(it rejected every request); removing one tightens. `apply` and `remove` ask for
+confirmation on the controlling terminal, never stdin; `--yes` skips it, and a
+change that leaves every document unchanged applies nothing.
 
 A signer node takes one file. Each cosigner file is one key's document and names
 that key in its `key` field. Online verbs authenticate through admin IPC and

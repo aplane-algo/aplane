@@ -78,10 +78,14 @@ apadmin policy apply - < policy.json
 | `status` | List the node's policy documents with size, SHA-256, and applied time, the cosigner key coverage, and the `policy_set_sha256` of the whole set |
 | `export [--key ID]` | Write one stored document to stdout exactly as stored; on a cosigner node, `--key` selects the Witness Key ID |
 | `check FILE...` | Validate files against the node without writing; `-` reads one file from stdin |
-| `apply FILE...` | Check, then install the files in one commit; `-` reads one file from stdin |
-| `remove ID...` | Delete cosigner keys' documents (cosigner nodes only) |
+| `diff FILE...` | Show how the files differ from the active policy, marking each change tightened, loosened, or changed |
+| `apply FILE...` | Check, show the diff, ask for confirmation, then install the files in one commit; `-` reads one file from stdin |
+| `remove ID...` | Show the diff, ask for confirmation, then delete cosigner keys' documents (cosigner nodes only) |
 
-All verbs are noninteractive. A signer node takes exactly one file. On a
+`apply` and `remove` ask "Apply these changes?" on the terminal. Pass `--yes`
+to skip the question in scripts; without a terminal and without `--yes` they
+refuse. Reformatting a file changes nothing, so applying it reports
+`policy unchanged`. The other verbs are noninteractive. A signer node takes exactly one file. On a
 cosigner node, each file is one key's document and names that key in its
 `"key"` field; `apply` adds or replaces the listed keys' documents and leaves
 documents for other keys unchanged.

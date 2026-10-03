@@ -5,6 +5,7 @@ package policycmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -58,7 +59,7 @@ func ReadPassphrase(stdin io.Reader, stderr io.Writer, stdinReserved bool) ([]by
 		return readTerminalPassphrase(tty, tty)
 	}
 
-	return nil, fmt.Errorf("passphrase must come from %s or a controlling terminal when policy YAML is read from stdin", passphraseEnv)
+	return nil, fmt.Errorf("passphrase must come from %s or a controlling terminal when the policy document is read from stdin", passphraseEnv)
 }
 
 func readTerminalPassphrase(terminal *os.File, prompt io.Writer) ([]byte, error) {
@@ -69,4 +70,25 @@ func readTerminalPassphrase(terminal *os.File, prompt io.Writer) ([]byte, error)
 		return nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
 	return passphrase, nil
+}
+
+// ErrApplyNotConfirmed reports that the operator declined an apply.
+var ErrApplyNotConfirmed = errors.New("policy apply cancelled")
+
+// ConfirmApply asks the operator, on the controlling terminal, whether to
+// apply the change just shown. It never reads stdin, which may carry the
+// policy document or the passphrase.
+var ConfirmApply = func() (bool, error) {
+	tty, err := OpenTTY()
+	if err != nil {
+		return false, fmt.Errorf("apply needs confirmation from a terminal; pass --yes to apply without it")
+	}
+	defer func() { _ = tty.Close() }()
+	_, _ = fmt.Fprint(tty, "Apply these changes? [y/N] ")
+	line, err := bufio.NewReader(tty).ReadString('\n')
+	if err != nil && line == "" {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }

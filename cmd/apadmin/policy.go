@@ -98,7 +98,7 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 	for _, arg := range args {
 		switch arg {
 		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online", "--target":
-			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (status, export, check, apply, or remove)", arg)
+			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (status, export, check, diff, apply, or remove)", arg)
 		}
 	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
@@ -114,8 +114,11 @@ Verbs:
   status            list the node's policy documents and cosigner key coverage
   export [--key ID] write one policy document exactly as stored
   check FILE...     validate policy files against the node
-  apply FILE...|-   check, then replace policy documents in one commit
-  remove ID...      delete cosigner keys' policy documents (cosigner nodes)
+  diff FILE...|-    describe how policy files differ from the active policy
+  apply FILE...|-   check, show the diff, confirm, then replace documents in one commit
+  remove ID...      show the diff, confirm, then delete cosigner keys' policies
+
+apply and remove ask for confirmation on the terminal; --yes skips it.
 
 A signer node takes one policy.json file. On a cosigner node each file is one
 key's document and names that key in its "key" field; apply leaves documents
@@ -131,13 +134,15 @@ apply and remove, and reject --ipc-path.
 `, mode)
 	}
 	key := fs.String("key", "", "Witness Key ID of the cosigner document to export")
+	yes := fs.Bool("yes", false, "apply or remove without asking for confirmation")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
 	}
 	if command.Verb == "" {
-		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, apply, or remove")
+		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, diff, apply, or remove")
 	}
 	command.Key = *key
+	command.Yes = *yes
 	command.Args = fs.Args()
 	if err := command.Validate(); err != nil {
 		return command, rescue, err

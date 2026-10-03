@@ -23,6 +23,7 @@ const (
 	VerbStatus Verb = "status"
 	VerbExport Verb = "export"
 	VerbCheck  Verb = "check"
+	VerbDiff   Verb = "diff"
 	VerbApply  Verb = "apply"
 	VerbRemove Verb = "remove"
 )
@@ -31,6 +32,7 @@ var ProductionVerbs = []Verb{
 	VerbStatus,
 	VerbExport,
 	VerbCheck,
+	VerbDiff,
 	VerbApply,
 	VerbRemove,
 }
@@ -46,12 +48,13 @@ func ParseVerb(raw string) (Verb, error) {
 }
 
 // Command is one parsed apadmin policy invocation. Args holds policy files
-// for check and apply, or Witness Key IDs for remove. Key selects one
-// cosigner document for export.
+// for check, diff, and apply, or Witness Key IDs for remove. Key selects one
+// cosigner document for export. Yes applies without asking for confirmation.
 type Command struct {
 	Verb    Verb
 	Args    []string
 	Key     string
+	Yes     bool
 	DataDir string
 }
 
@@ -64,7 +67,7 @@ func (c Command) Validate() error {
 		if len(c.Args) > 0 {
 			return fmt.Errorf("policy %s takes no arguments", c.Verb)
 		}
-	case VerbCheck, VerbApply:
+	case VerbCheck, VerbDiff, VerbApply:
 		if len(c.Args) == 0 {
 			return fmt.Errorf("policy %s requires at least one policy file, or - for stdin", c.Verb)
 		}
@@ -81,11 +84,14 @@ func (c Command) Validate() error {
 	if c.Key != "" && c.Verb != VerbExport {
 		return fmt.Errorf("--key applies only to policy export")
 	}
+	if c.Yes && !c.mutates() {
+		return fmt.Errorf("--yes applies only to policy apply and remove")
+	}
 	return nil
 }
 
 func (c Command) readsStdin() bool {
-	return len(c.Args) == 1 && c.Args[0] == "-" && (c.Verb == VerbCheck || c.Verb == VerbApply)
+	return len(c.Args) == 1 && c.Args[0] == "-" && (c.Verb == VerbCheck || c.Verb == VerbDiff || c.Verb == VerbApply)
 }
 
 func (c Command) mutates() bool {

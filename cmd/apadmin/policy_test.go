@@ -33,6 +33,8 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "rescue apply", args: []string{"rescue", "apply", "policy.json"}, wantVerb: policycmd.VerbApply, wantArgs: []string{"policy.json"}, wantRescue: true},
 		{name: "apply stdin", args: []string{"apply", "-"}, wantVerb: policycmd.VerbApply, wantArgs: []string{"-"}},
 		{name: "remove keys", args: []string{"remove", keyID}, wantVerb: policycmd.VerbRemove, wantArgs: []string{keyID}},
+		{name: "diff files", args: []string{"diff", "a.json"}, wantVerb: policycmd.VerbDiff, wantArgs: []string{"a.json"}},
+		{name: "yes only for mutations", args: []string{"diff", "--yes", "a.json"}, wantErr: "--yes applies only"},
 		{name: "apply requires a file", args: []string{"apply"}, wantErr: "requires at least one policy file"},
 		{name: "stdin must be alone", args: []string{"check", "-", "a.json"}, wantErr: "sole file"},
 		{name: "remove requires a key", args: []string{"remove"}, wantErr: "requires at least one Witness Key ID"},

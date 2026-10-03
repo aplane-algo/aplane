@@ -177,7 +177,7 @@ func TestOnlineApplyChecksThenAppliesExactBytesAgainstActiveSet(t *testing.T) {
 	a := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
 	b := writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))
 	var stdout bytes.Buffer
-	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{a, b}}, Streams{Stdout: &stdout}); err != nil {
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{a, b}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	if len(session.checks) != 1 || len(session.applies) != 1 {
@@ -218,8 +218,8 @@ func TestOnlineApplyReportsDaemonFailureCode(t *testing.T) {
 	onlineEnv(t)
 	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
 	session.applyResult = &protocol.ApplyPolicyResultMessage{Code: "policy_snapshot_changed", Error: "active policy changed"}
-	file := writePolicyFile(t, "policy.json", testSignerDoc)
-	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{})
+	file := writePolicyFile(t, "policy.json", `{"format":"aplane.signer-policy.v1"}`)
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, Yes: true}, Streams{})
 	if err == nil || !strings.Contains(err.Error(), "policy_snapshot_changed") {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -368,7 +368,7 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 		}
 		seen[verb] = true
 	}
-	if !seen[VerbCheck] || !seen[VerbApply] || len(seen) != 5 {
+	if !seen[VerbCheck] || !seen[VerbDiff] || !seen[VerbApply] || len(seen) != 6 {
 		t.Fatalf("production verbs = %#v", ProductionVerbs)
 	}
 }
@@ -380,7 +380,7 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
 	file := writePolicyFile(t, "policy.json", want)
 	var stdout bytes.Buffer
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root},
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root, Yes: true},
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
@@ -409,14 +409,14 @@ func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
 	t.Setenv(passphraseEnv, passphrase)
 	files := []string{writePolicyFile(t, "a.json", testCosignerDoc(testKeyA)), writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))}
 	var stderr bytes.Buffer
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: files, DataDir: root},
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: files, DataDir: root, Yes: true},
 		Streams{Stdout: io.Discard, Stderr: &stderr}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stderr.String(), "policy is for a key this node does not hold") {
 		t.Fatalf("apply warnings = %q", stderr.String())
 	}
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyB}, DataDir: root},
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyB}, DataDir: root, Yes: true},
 		Streams{Stdout: io.Discard, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
@@ -477,4 +477,89 @@ func verifiedSignerPolicy(t *testing.T, root, passphrase string) policy.StoredDo
 		t.Fatal(err)
 	}
 	return doc
+}
+
+func TestOnlineDiffDescribesChangesWithoutApplying(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	file := writePolicyFile(t, "next.json", `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"9000","reject_clawback":true}`)
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{file}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	out := stdout.String()
+	for _, want := range []string{file + ":", "loosened   /max_fee_microalgos: 0.002 ALGO → 0.009 ALGO", "tightened  /reject_clawback: false → true", "2 changes; 1 loosen the policy"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("diff output missing %q:\n%s", want, out)
+		}
+	}
+	if len(session.applies) != 0 || len(session.checks) != 0 {
+		t.Fatal("diff checked or applied")
+	}
+}
+
+func TestOnlineApplyAsksForConfirmation(t *testing.T) {
+	onlineEnv(t)
+	original := ConfirmApply
+	t.Cleanup(func() { ConfirmApply = original })
+	file := writePolicyFile(t, "next.json", `{"format":"aplane.signer-policy.v1","reject_clawback":true}`)
+
+	asked := 0
+	ConfirmApply = func() (bool, error) { asked++; return false, nil }
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	var stdout bytes.Buffer
+	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{Stdout: &stdout})
+	if !errors.Is(err, ErrApplyNotConfirmed) || asked != 1 || len(session.applies) != 0 {
+		t.Fatalf("declined apply: err %v, asked %d, applies %d", err, asked, len(session.applies))
+	}
+	if !strings.Contains(stdout.String(), "/reject_clawback: false → true") {
+		t.Fatalf("diff not shown before confirmation:\n%s", stdout.String())
+	}
+
+	ConfirmApply = func() (bool, error) { asked++; return true, nil }
+	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{}); err != nil || len(session.applies) != 1 {
+		t.Fatalf("confirmed apply: err %v, applies %d", err, len(session.applies))
+	}
+
+	unchanged := writePolicyFile(t, "same.json", "{\n  \"max_fee_microalgos\": \"2000\",\n  \"format\": \"aplane.signer-policy.v1\"\n}\n")
+	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	asked = 0
+	stdout.Reset()
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{unchanged}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 0 || len(session.applies) != 0 || !strings.Contains(stdout.String(), "policy unchanged") {
+		t.Fatalf("reformatted document: asked %d, applies %d, output %q", asked, len(session.applies), stdout.String())
+	}
+}
+
+func TestOnlineRemoveShowsRemovalAndCosignerAdditions(t *testing.T) {
+	onlineEnv(t)
+	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyA}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), testKeyA+":") || !strings.Contains(stdout.String(), "policy removed; the key will reject every request") {
+		t.Fatalf("remove output:\n%s", stdout.String())
+	}
+
+	file := writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))
+	stdout.Reset()
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{file}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "new policy; the key rejected every request without one") {
+		t.Fatalf("diff for a key without a policy:\n%s", stdout.String())
+	}
+}
+
+func TestConfirmApplyNeedsATerminal(t *testing.T) {
+	original := OpenTTY
+	t.Cleanup(func() { OpenTTY = original })
+	OpenTTY = func() (*os.File, error) { return nil, errors.New("no tty") }
+	if _, err := ConfirmApply(); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("ConfirmApply() without a terminal error = %v", err)
+	}
 }
