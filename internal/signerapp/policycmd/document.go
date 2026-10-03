@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 )
@@ -182,6 +183,11 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("%s is empty", file)
+	}
+	// JSON encoding would replace invalid UTF-8, so the node would not
+	// receive the file's exact bytes.
+	if !utf8.Valid(data) {
+		return nil, fmt.Errorf("%s is not valid UTF-8", file)
 	}
 	return data, nil
 }

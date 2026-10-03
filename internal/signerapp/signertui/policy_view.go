@@ -25,6 +25,14 @@ type policiesState struct {
 	returnView   ViewState
 	document     protocol.PolicyDocumentMessage
 	docLoading   bool
+	// pendingPolicyID and pendingDocumentID name the requests this view is
+	// waiting for; responses to any other request are stale and ignored.
+	pendingPolicyID   string
+	pendingDocumentID string
+}
+
+func newPolicyRequestID(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 }
 
 // PolicyDocumentLoadedMsg carries the daemon's response for one document.
@@ -45,12 +53,22 @@ type policyRow struct {
 }
 
 func (m Model) openPolicies() (tea.Model, tea.Cmd) {
-	m.policies = policiesState{loading: true, returnView: m.viewState}
+	m.policies = policiesState{returnView: m.viewState}
 	m.viewState = ViewPolicies
-	return m, tea.Batch(m.sendGetPolicyCmd(), m.waitForMessageCmd())
+	return m.requestPolicy()
+}
+
+func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
+	m.policies.loading = true
+	m.policies.pendingPolicyID = newPolicyRequestID("policy")
+	return m, tea.Batch(m.sendGetPolicyCmd(m.policies.pendingPolicyID), m.waitForMessageCmd())
 }
 
 func (m Model) handlePolicyLoaded(msg PolicyLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Policy.ID == "" || msg.Policy.ID != m.policies.pendingPolicyID {
+		return m, m.waitForMessageCmd()
+	}
+	m.policies.pendingPolicyID = ""
 	m.policies.loading = false
 	m.policies.policy = msg.Policy
 	m.policies.err = ""
@@ -93,7 +111,7 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.policies = policiesState{}
 		return m, nil
 	case "r":
-		return m.openPoliciesRefresh()
+		return m.requestPolicy()
 	case "up", "k":
 		if m.policies.selected > 0 {
 			m.policies.selected--
@@ -107,23 +125,23 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.policies.scrollOffset = 0
 			m.policies.document = protocol.PolicyDocumentMessage{}
 			m.policies.docLoading = true
+			m.policies.pendingDocumentID = newPolicyRequestID("policy-doc")
 			m.viewState = ViewPolicyDocument
 			key := rows[m.policies.selected].doc.Key
-			return m, tea.Batch(m.sendGetPolicyDocumentCmd(key), m.waitForMessageCmd())
+			return m, tea.Batch(m.sendGetPolicyDocumentCmd(key, m.policies.pendingDocumentID), m.waitForMessageCmd())
 		}
 	}
 	return m, nil
 }
 
 func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Document.ID == "" || msg.Document.ID != m.policies.pendingDocumentID {
+		return m, m.waitForMessageCmd()
+	}
+	m.policies.pendingDocumentID = ""
 	m.policies.docLoading = false
 	m.policies.document = msg.Document
 	return m, m.waitForMessageCmd()
-}
-
-func (m Model) openPoliciesRefresh() (tea.Model, tea.Cmd) {
-	m.policies.loading = true
-	return m, tea.Batch(m.sendGetPolicyCmd(), m.waitForMessageCmd())
 }
 
 func (m Model) policyDocumentLines() []string {
@@ -153,6 +171,8 @@ func (m Model) handlePolicyDocumentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		m.viewState = ViewPolicies
 		m.policies.scrollOffset = 0
+		m.policies.pendingDocumentID = ""
+		m.policies.docLoading = false
 	case "up", "k":
 		m.policies.scrollOffset--
 	case "down", "j":
@@ -285,25 +305,25 @@ func (m Model) policiesFooterText() string {
 	return "up/down: Select | enter: View | r: Refresh | esc/q: Back"
 }
 
-// SendGetPolicy requests the node's policy documents.
-func (c *IPCClient) SendGetPolicy() error {
+// SendGetPolicy requests the node's policy summary under request id.
+func (c *IPCClient) SendGetPolicy(id string) error {
 	return c.sendMessage(protocol.GetPolicyMessage{
-		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicy, ID: fmt.Sprintf("policy-%d", time.Now().UnixNano())},
+		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicy, ID: id},
 	})
 }
 
-func (m Model) sendGetPolicyCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicy() })
+func (m Model) sendGetPolicyCmd(id string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicy(id) })
 }
 
-// SendGetPolicyDocument requests one policy document.
-func (c *IPCClient) SendGetPolicyDocument(key string) error {
+// SendGetPolicyDocument requests one policy document under request id.
+func (c *IPCClient) SendGetPolicyDocument(key, id string) error {
 	return c.sendMessage(protocol.GetPolicyDocumentMessage{
-		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: fmt.Sprintf("policy-doc-%d", time.Now().UnixNano())},
+		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: id},
 		Key:         key,
 	})
 }
 
-func (m Model) sendGetPolicyDocumentCmd(key string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyDocument(key) })
+func (m Model) sendGetPolicyDocumentCmd(key, id string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) })
 }

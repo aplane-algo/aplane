@@ -239,6 +239,10 @@ func TestReadDocumentsEnforcesRoleShape(t *testing.T) {
 	if _, _, err := readDocuments([]string{a, again}, "cosigner", nil); err == nil || !strings.Contains(err.Error(), "both policies") {
 		t.Fatalf("duplicate key error = %v", err)
 	}
+	invalid := writePolicyFile(t, "invalid.json", "{\"format\":\"aplane.signer-policy.v1\",\"description\":\"\xff\"}")
+	if _, _, err := readDocuments([]string{invalid}, "signer", nil); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("invalid UTF-8 error = %v", err)
+	}
 	empty := writePolicyFile(t, "empty.json", "  \n")
 	if _, _, err := readDocuments([]string{empty}, "signer", nil); err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("empty file error = %v", err)

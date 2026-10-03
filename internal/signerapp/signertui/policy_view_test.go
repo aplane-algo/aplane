@@ -21,6 +21,7 @@ func loadedPoliciesModel(policy protocol.PolicyMessage) Model {
 	m := Model{viewState: ViewKeyList}
 	next, _ := m.openPolicies()
 	m = next.(Model)
+	policy.ID = m.policies.pendingPolicyID
 	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: policy})
 	return next.(Model)
 }
@@ -62,6 +63,7 @@ func openLoadedDocument(t *testing.T, m Model, doc protocol.PolicyDocumentMessag
 	if !strings.Contains(stripANSI(m.renderPolicyDocument()), "Loading document") {
 		t.Fatal("document view does not show loading")
 	}
+	doc.ID = m.policies.pendingDocumentID
 	next, _ = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: doc})
 	return next.(Model)
 }
@@ -147,5 +149,46 @@ func TestPolicyDocumentScrollIsBounded(t *testing.T) {
 	}
 	if next.(Model).policies.scrollOffset != 0 {
 		t.Fatalf("scroll offset = %d, want 0", next.(Model).policies.scrollOffset)
+	}
+}
+
+// TestPoliciesViewIgnoresStaleResponses opens A, backs out, opens B, and
+// then delivers A's delayed response, which must not replace B.
+func TestPoliciesViewIgnoresStaleResponses(t *testing.T) {
+	m := loadedPoliciesModel(protocol.PolicyMessage{
+		Success:   true,
+		NodeRole:  "cosigner",
+		Documents: []protocol.PolicyDocumentInfoWire{{Key: policyViewKeyA, SHA256: "a"}, {Key: policyViewKeyB, SHA256: "b"}},
+		Keys:      []protocol.PolicyKeyStatusWire{{Key: policyViewKeyA, Status: "active"}, {Key: policyViewKeyB, Status: "active"}},
+	})
+	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	staleID := next.(Model).policies.pendingDocumentID
+	next, _ = next.(Model).handlePolicyDocumentKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ = next.(Model).handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = next.(Model).handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if staleID == "" || m.policies.pendingDocumentID == staleID {
+		t.Fatalf("request IDs: stale %q, pending %q", staleID, m.policies.pendingDocumentID)
+	}
+
+	next, _ = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+		BaseMessage: BaseMessage{ID: staleID}, Success: true, Key: policyViewKeyA, Document: "A",
+	}})
+	if got := next.(Model); !got.policies.docLoading || got.policies.document.Key != "" {
+		t.Fatalf("stale response was shown: loading %v doc %+v", got.policies.docLoading, got.policies.document)
+	}
+	next, _ = next.(Model).handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+		BaseMessage: BaseMessage{ID: m.policies.pendingDocumentID}, Success: true, Key: policyViewKeyB, Document: "B",
+	}})
+	if got := next.(Model); got.policies.docLoading || got.policies.document.Key != policyViewKeyB {
+		t.Fatalf("current response not shown: %+v", got.policies.document)
+	}
+
+	// A summary response for an earlier request is ignored the same way.
+	refreshed, _ := m.requestPolicy()
+	before := refreshed.(Model).policies.policy
+	next, _ = refreshed.(Model).handlePolicyLoaded(PolicyLoadedMsg{Policy: protocol.PolicyMessage{BaseMessage: BaseMessage{ID: "old"}, Success: true, NodeRole: "signer"}})
+	if got := next.(Model); !got.policies.loading || got.policies.policy.NodeRole != before.NodeRole {
+		t.Fatal("stale policy summary replaced the view")
 	}
 }
