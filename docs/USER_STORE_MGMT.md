@@ -170,6 +170,8 @@ an otherwise successful verification.
 
 `apadmin backup create` writes a single `.tar.gz` archive. The archive includes:
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
+- For each backed-up cosigner key with a policy, `policies/<WitnessKeyID>.apb`:
+  the key's exact policy document, encrypted with the same passphrase
 - `README.md` with decryption instructions
 - `manifest.sealed`, the archive's authenticated description: an inventory of
   every other member with its digest, the source node role, and archive
@@ -420,14 +422,19 @@ explicitly intend to replace a different or unreadable destination credential.
 
 The core ownership rule is:
 
-> Backup restores credential authority. The destination's current policy and
-> configuration govern that authority.
+> Backup restores credential authority. A cosigner key brings its own policy;
+> otherwise the destination's current policy and configuration govern it.
 
-A backup does not carry policy, approval defaults, network mappings, templates,
-endpoints, tokens, or operator settings. Restore therefore has no source-policy
-review or unattended-signing acknowledgement. Review the destination policy
-before restoring if you do not want the credentials to become usable under its
-current rules.
+A cosigner key's policy is backed up with the key and installed with it on
+restore, so a cold standby enforces the same policy as the original. If the
+destination already has a different policy for that key, the restore reports a
+conflict, and `--replace-existing` replaces it. A destination policy is kept when
+the archive carries none.
+
+A backup does not carry the signer's node-wide policy, approval defaults,
+network mappings, templates, endpoints, tokens, or operator settings. Review the
+destination signer policy before restoring if you do not want the credentials
+to become usable under its current rules.
 
 A canonical-plaintext-identical destination credential is an idempotent no-op.
 A different credential is a conflict. An unreadable destination credential is
@@ -449,8 +456,8 @@ it never guesses or promotes the newest-looking directory.
 `restore rollback` is available only while the current generation is the
 latest clean rollback-eligible credential restore. Any later mutation causes a
 safe refusal, and a rollback generation cannot itself be rolled back. Rollback
-restores credentials and key types only; the outgoing policy documents stay in
-effect. A restore
+restores credentials, key types, and cosigner key policies; the signer
+`policy.json` stays in effect. A restore
 performed from recovery mode is not rollback-eligible because its damaged
 parent must not be promoted back into service.
 

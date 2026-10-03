@@ -30,7 +30,9 @@ const (
 	ManifestSchema        = "aplane.credential-backup.manifest.v1"
 	ManifestSchemaVersion = 1
 
-	maxSealedManifestBytes = 1 << 20
+	// The sealed manifest lists every member; 4 MiB covers an archive at the
+	// cosigner caps, a credential and a policy for each of 8,192 keys.
+	maxSealedManifestBytes = 4 << 20
 )
 
 // ManifestMember is one archive member's authenticated identity.
@@ -127,7 +129,7 @@ func OpenSealedManifest(sourceRoot string, exportPassphrase []byte) (Manifest, e
 		}
 		return Manifest{}, fmt.Errorf("read backup manifest: %w", err)
 	}
-	plaintext, err := crypto.DecryptStandalone(sealed, exportPassphrase)
+	plaintext, err := crypto.DecryptStandaloneLimited(sealed, exportPassphrase, maxSealedManifestBytes)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("decrypt backup manifest: %w", err)
 	}
@@ -264,7 +266,7 @@ func isCredentialBackupMember(path string) bool {
 		return true
 	}
 	dir, name := filepath.Split(path)
-	return dir == "apb/" && strings.HasSuffix(name, ".apb") &&
+	return (dir == "apb/" || dir == backupPoliciesDir+"/") && strings.HasSuffix(name, ".apb") &&
 		name != ".apb" && name == filepath.Base(name)
 }
 

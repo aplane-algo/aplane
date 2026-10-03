@@ -301,6 +301,9 @@ func (m Model) renderRestoreDisplay() string {
 func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) string {
 	keyType := "[" + displayKeyType(key.KeyType) + "]"
 	suffix := "  " + keyType
+	if key.HasPolicy {
+		suffix += "  policy"
+	}
 	addressWidth := keyAddressWidth(maxWidth, prefix, "", suffix)
 	return fmt.Sprintf("%s%s%s", prefix, restorePreviewAddress(key, addressWidth), suffix)
 }
@@ -384,6 +387,9 @@ func restorePreviewSuffix(key RestoreKeyInfo) string {
 	if key.AlreadyExists {
 		// Informational: replacement still requires explicit confirmation.
 		suffix += "  exists"
+	}
+	if key.HasPolicy {
+		suffix += "  +policy"
 	}
 	if key.Error != "" {
 		suffix += "  " + key.Error

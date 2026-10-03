@@ -95,6 +95,28 @@ func LoadVerifiedCosignerPolicies(active storepaths.ActivePaths, kr *crypto.Keyr
 	return out, nil
 }
 
+// LoadVerifiedCosignerPolicy verifies and decodes one cosigner key's policy
+// document. ok is false when the key has no document.
+func LoadVerifiedCosignerPolicy(active storepaths.ActivePaths, key string, kr *crypto.Keyring) (doc StoredDocument, ok bool, err error) {
+	if err := storepaths.ValidateWitnessKeyIDComponent(key); err != nil {
+		return StoredDocument{}, false, err
+	}
+	path := active.CosignerPolicyPath(key)
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return StoredDocument{}, false, nil
+	} else if err != nil {
+		return StoredDocument{}, false, err
+	}
+	data, signedAt, err := readVerifiedPolicyFile(path, kr)
+	if err != nil {
+		return StoredDocument{}, false, err
+	}
+	if _, err := DecodeCosignerPolicyV1(data, key); err != nil {
+		return StoredDocument{}, false, fmt.Errorf("policies/%s.json: %w", key, err)
+	}
+	return StoredDocument{Key: key, Bytes: data, SignedAtUnix: signedAt}, true, nil
+}
+
 // CosignerPolicyKeys lists the Witness Key IDs that have a policy document,
 // sorted, after checking that the namespace holds only complete document and
 // sidecar pairs. It does not verify or decode the documents.

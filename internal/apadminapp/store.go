@@ -533,7 +533,7 @@ func (s Store) restoreApply(args []string) error {
 		return err
 	}
 	defer crypto.ZeroBytes(secret)
-	s.info("restored credentials will use the destination's current policy and configuration")
+	s.info("restored credentials use the destination's configuration; cosigner keys bring their archived policy")
 	var result protocol.RestoreBackupResultMessage
 	if err := s.Client.Request(protocol.RestoreBackupMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: s.requestID("restore")},
@@ -548,6 +548,9 @@ func (s Store) restoreApply(args []string) error {
 		return resultError("credential restore failed", result.Code, result.Error)
 	}
 	s.info("restored %d credential(s); %d already identical", len(result.Restored), len(result.Identical))
+	if len(result.PoliciesRestored) > 0 {
+		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
+	}
 	if result.GenerationID != "" {
 		s.info("generation: %s", result.GenerationID)
 	}

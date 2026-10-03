@@ -218,17 +218,18 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 
 func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBackupResult) protocol.RestoreBackupResultMessage {
 	return protocol.RestoreBackupResultMessage{
-		BaseMessage:   protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackupResult, ID: id},
-		Success:       result.Success,
-		OperationID:   result.OperationID,
-		ArchiveSHA256: result.ArchiveSHA256,
-		GenerationID:  result.GenerationID,
-		Restored:      protocolRestoreCredentials(result.Restored),
-		Identical:     protocolRestoreCredentials(result.Identical),
-		Conflicts:     protocolRestoreConflicts(result.Conflicts),
-		KeyCount:      result.KeyCount,
-		Code:          result.Code,
-		Error:         result.Error,
+		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackupResult, ID: id},
+		Success:          result.Success,
+		OperationID:      result.OperationID,
+		ArchiveSHA256:    result.ArchiveSHA256,
+		GenerationID:     result.GenerationID,
+		Restored:         protocolRestoreCredentials(result.Restored),
+		Identical:        protocolRestoreCredentials(result.Identical),
+		Conflicts:        protocolRestoreConflicts(result.Conflicts),
+		PoliciesRestored: result.PoliciesRestored,
+		KeyCount:         result.KeyCount,
+		Code:             result.Code,
+		Error:            result.Error,
 	}
 }
 
@@ -330,6 +331,7 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			Address:       item.Address,
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
+			HasPolicy:     item.HasPolicy,
 			Error:         item.Error,
 		}
 	}

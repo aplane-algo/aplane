@@ -420,9 +420,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearRestorePassphrase()
 		m.restore.replaceExisting = false
 		m.restore.replaceConflicts = nil
-		restored := make([]RestoreKeyInfo, len(msg.Result.Restored))
-		for i, entry := range msg.Result.Restored {
-			restored[i] = RestoreKeyInfo{Address: entry.Selector, KeyType: entry.KeyType}
+		withPolicy := make(map[string]bool, len(msg.Result.PoliciesRestored))
+		for _, key := range msg.Result.PoliciesRestored {
+			withPolicy[key] = true
+		}
+		restored := make([]RestoreKeyInfo, 0, len(msg.Result.Restored)+len(withPolicy))
+		for _, entry := range msg.Result.Restored {
+			restored = append(restored, RestoreKeyInfo{Address: entry.Selector, KeyType: entry.KeyType, HasPolicy: withPolicy[entry.Selector]})
+			delete(withPolicy, entry.Selector)
+		}
+		for _, key := range msg.Result.PoliciesRestored {
+			if withPolicy[key] {
+				restored = append(restored, RestoreKeyInfo{Address: key, HasPolicy: true})
+			}
 		}
 		m.restore.result = RestoreDisplayResult{
 			ArchivePath: m.restore.archivePath,

@@ -817,16 +817,27 @@ only after the next successful reload, unlock, or restart.
 
 ## Backup and Restore
 
-Credential backups deliberately contain no policy snapshot, approval setting,
-network mapping, or other operational configuration. Restore preserves managed
-credential authority and installs it under the destination product store's current
-policy and configuration. The operator owns that policy decision.
+A cosigner key's policy travels with the key. A backup of a cosigner key that
+has a policy carries `policies/<WitnessKeyID>.apb`: the exact v1 document,
+encrypted under the export passphrase and listed in the sealed manifest. Restore
+validates it against the key and installs it with a sidecar signed by the
+destination store, in the same generation commit as the credential:
 
-Restore therefore performs no source/destination policy comparison and does
-not use source-policy review tokens or unattended-signing acknowledgements.
-This matches bulk credential import: neither operation changes destination
-policy, and both require the existing admin authorization action
-`identity.restore`. Policy migration, if ever offered, is a separate feature.
+| Destination | Archive | Result |
+|---|---|---|
+| no policy for the key | policy | installed |
+| the same policy | same | nothing to do |
+| a different policy | policy | conflict; `replace_existing` replaces it |
+| a policy | none | the destination's policy is kept |
+
+A restored cosigner key without an archived or existing policy rejects every
+request until one is applied. Restore rollback restores the source generation's
+cosigner policies along with its keys.
+
+Backups carry no signer `policy.json`, approval setting, network mapping, or
+other operational configuration: a signer's restored credentials run under the
+destination's current policy, which the operator owns. Restore requires the
+admin authorization action `identity.restore`.
 
 ## Audit and Observability
 

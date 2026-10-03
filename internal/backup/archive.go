@@ -110,7 +110,9 @@ func CreateTarGzArchive(srcDir, destPath string) (err error) {
 // credential payloads, a sealed manifest, and a README — all small; anything
 // approaching these bounds is not a backup.
 const (
-	maxArchiveEntries        = 4096
+	// Enough for a credential and a policy per key at the 8,192-key cosigner
+	// cap, plus the README and manifest.
+	maxArchiveEntries        = 16400
 	maxArchiveExtractedBytes = 1 << 30 // 1 GiB across all entries
 )
 
@@ -120,6 +122,37 @@ const (
 // opened with the same no-follow regular-file enforcement as the recover path,
 // and extraction is bounded (entry count and total decompressed size) so a
 // crafted archive cannot exhaust the disk.
+// requireExtractableArchive refuses to package a staged archive that
+// extraction would reject, so a backup is never written that cannot be
+// restored.
+func requireExtractableArchive(stageDir string) error {
+	entries, total := 0, int64(0)
+	err := filepath.WalkDir(stageDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || path == stageDir {
+			return err
+		}
+		entries++
+		if !d.IsDir() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			total += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if entries > maxArchiveEntries {
+		return fmt.Errorf("backup would hold %d entries; an archive allows %d; back up fewer keys per archive", entries, maxArchiveEntries)
+	}
+	if total > maxArchiveExtractedBytes {
+		return fmt.Errorf("backup would hold %d bytes; an archive allows %d; back up fewer keys per archive", total, int64(maxArchiveExtractedBytes))
+	}
+	return nil
+}
+
 func ExtractTarGzArchive(archivePath, destDir string) error {
 	file, err := openManagedBackupArchive(archivePath)
 	if err != nil {

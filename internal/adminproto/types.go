@@ -206,6 +206,7 @@ type RestoreKeyInfo struct {
 	Address       string
 	KeyType       string
 	AlreadyExists bool
+	HasPolicy     bool
 	Error         string
 }
 
@@ -269,9 +270,12 @@ type RestoreBackupResult struct {
 	Restored        []RestoreCredential
 	Identical       []RestoreCredential
 	Conflicts       []RestoreConflict
-	KeyCount        int
-	Code            string
-	Error           string
+	// PoliciesRestored lists the cosigner keys whose archived policy was
+	// installed.
+	PoliciesRestored []string
+	KeyCount         int
+	Code             string
+	Error            string
 }
 
 // RollbackRestoreRequest identifies an authenticated request to reconstruct

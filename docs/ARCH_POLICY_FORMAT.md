@@ -70,6 +70,8 @@ Cosigner rules:
   policy.
 - A document for a key the node does not hold is accepted (policy may be
   installed before its key) and reported by `check`.
+- A key's document travels with it in backups and is installed with it on
+  restore (see [ARCH_POLICY.md](ARCH_POLICY.md#backup-and-restore)).
 - Deleting a cosigner key archives its policy pair under
   `deleted/policies/` with it.
 - Changing several keys' documents lands in one generation commit.

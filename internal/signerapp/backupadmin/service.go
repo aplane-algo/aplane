@@ -184,6 +184,7 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 			Address:       item.Address,
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
+			HasPolicy:     item.HasPolicy,
 			Error:         item.Error,
 		}
 	}

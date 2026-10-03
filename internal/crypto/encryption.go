@@ -70,9 +70,10 @@ const (
 )
 
 // MaxStandaloneEnvelopeBytes is the maximum encoded size accepted for one
-// standalone passphrase envelope. Standalone envelopes hold one canonical
-// credential or the sealed backup manifest; either is far smaller than this
-// bound. Callers reading files should apply the same limit before allocation.
+// standalone passphrase envelope holding one canonical credential. Larger
+// envelopes (the sealed backup manifest, archived policy documents) use
+// DecryptStandaloneLimited with their own bound. Callers reading files should
+// apply the same limit before allocation.
 const MaxStandaloneEnvelopeBytes = 1 << 20
 
 // EncryptedData stores the encrypted content with metadata
@@ -200,10 +201,17 @@ func EncryptStandalone(plaintext, passphrase []byte) ([]byte, error) {
 // DecryptStandalone decrypts ciphertext using a passphrase.
 // Only supports envelope_version 2 (standalone encryption with embedded salt).
 func DecryptStandalone(encryptedJSON, passphrase []byte) ([]byte, error) {
-	if len(encryptedJSON) == 0 || len(encryptedJSON) > MaxStandaloneEnvelopeBytes {
+	return DecryptStandaloneLimited(encryptedJSON, passphrase, MaxStandaloneEnvelopeBytes)
+}
+
+// DecryptStandaloneLimited is DecryptStandalone with a caller-chosen envelope
+// size limit, for envelopes larger than one credential such as a backup
+// manifest or an archived policy document.
+func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes int) ([]byte, error) {
+	if len(encryptedJSON) == 0 || len(encryptedJSON) > maxEnvelopeBytes {
 		return nil, fmt.Errorf(
 			"standalone envelope size %d is invalid (maximum %d)",
-			len(encryptedJSON), MaxStandaloneEnvelopeBytes,
+			len(encryptedJSON), maxEnvelopeBytes,
 		)
 	}
 

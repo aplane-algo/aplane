@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
@@ -68,9 +70,11 @@ func loadRollbackGenerationSource(
 	return source, nil
 }
 
-// populateRollbackGeneration replaces only active keys/ and keytypes/ in a
-// staging copy of the outgoing generation. Deleted archives, policy, and node
-// role authority remain monotonic and therefore come from the outgoing state.
+// populateRollbackGeneration replaces active keys/, keytypes/, and the
+// per-key cosigner policies/ in a staging copy of the outgoing generation:
+// restore installs cosigner policies with their keys, so undoing a restore
+// undoes those too. Deleted archives, the signer policy, and node role
+// authority remain monotonic and therefore come from the outgoing state.
 // Source members are consumed only from exact seal-verified buffers.
 func populateRollbackGeneration(
 	source *rollbackGenerationSource,
@@ -80,7 +84,7 @@ func populateRollbackGeneration(
 	if source == nil || source.seal == nil {
 		return fmt.Errorf("rollback source is not authenticated")
 	}
-	for _, dir := range []string{staged.KeysDir(), staged.KeyTypeRecordsDir()} {
+	for _, dir := range []string{staged.KeysDir(), staged.KeyTypeRecordsDir(), staged.CosignerPoliciesDir()} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return err
@@ -92,6 +96,12 @@ func populateRollbackGeneration(
 		}
 	}
 	for _, entry := range source.seal.Inventory {
+		if strings.HasPrefix(entry.Path, "policies/") {
+			if err := restoreRollbackPolicy(source, entry, staged, kr); err != nil {
+				return err
+			}
+			continue
+		}
 		if !strings.HasPrefix(entry.Path, "keys/") && !strings.HasPrefix(entry.Path, "keytypes/") {
 			continue
 		}
@@ -153,6 +163,32 @@ func populateRollbackGeneration(
 		if zeroOutput {
 			crypto.ZeroBytes(output)
 		}
+	}
+	return nil
+}
+
+// restoreRollbackPolicy copies one seal-verified cosigner policy document
+// into the staged generation with a sidecar signed by the current keyring. The
+// source sidecar is skipped: it may be signed by an older term, and the seal
+// already authenticates the document's exact bytes.
+func restoreRollbackPolicy(source *rollbackGenerationSource, entry genstore.InventoryEntry, staged storepaths.GenPaths, kr *crypto.Keyring) error {
+	name := strings.TrimPrefix(entry.Path, "policies/")
+	if strings.HasSuffix(name, ".hmac") {
+		return nil
+	}
+	if _, _, err := rollbackPolicyContext(entry.Path, name, entry.Term); err != nil {
+		return err
+	}
+	data, _, err := fsutil.ReadRegularFile(filepath.Join(source.gen.Dir(), filepath.FromSlash(entry.Path)))
+	if err != nil {
+		return fmt.Errorf("read rollback source %s: %w", entry.Path, err)
+	}
+	if err := genstore.VerifyBytesAgainstSeal(source.seal, entry.Path, data); err != nil {
+		return fmt.Errorf("verify rollback source %s: %w", entry.Path, err)
+	}
+	key := strings.TrimSuffix(name, ".json")
+	if err := policy.WriteCosignerPolicy(staged, key, data, kr, time.Now()); err != nil {
+		return fmt.Errorf("restore rollback source %s: %w", entry.Path, err)
 	}
 	return nil
 }
