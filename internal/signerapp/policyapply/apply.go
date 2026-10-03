@@ -131,8 +131,9 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	return candidate, nil, nil
 }
 
-// Check validates a candidate change and reports the key coverage it would
-// leave.
+// Check validates a candidate change and, on a cosigner node, reports the key
+// coverage it would leave. A signer node's one document governs every key, so
+// it has no per-key coverage to report.
 func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	candidate, problems, err := Candidate(env, current, req.Documents, req.Remove)
 	if err != nil {
@@ -143,7 +144,9 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 		for _, doc := range req.Documents {
 			result.Warnings = append(result.Warnings, advisoryWarnings(env.Role, doc)...)
 		}
-		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
+		if env.Role == noderole.RoleCosigner {
+			result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
+		}
 	}
 	return result
 }

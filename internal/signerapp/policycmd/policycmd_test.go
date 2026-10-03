@@ -379,13 +379,18 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	t.Setenv(passphraseEnv, passphrase)
 	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
 	file := writePolicyFile(t, "policy.json", want)
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root, Yes: true},
-		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
+		Streams{Stdout: &stdout, Stderr: &stderr}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), "policy applied as generation") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+	// Key coverage is a cosigner-node concept; a signer document is not
+	// "for a key this node does not hold".
+	if strings.Contains(stderr.String(), "warning:") {
+		t.Fatalf("signer apply printed warnings: %q", stderr.String())
 	}
 	doc := verifiedSignerPolicy(t, root, passphrase)
 	if string(doc.Bytes) != want {
