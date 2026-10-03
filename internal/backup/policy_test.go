@@ -182,3 +182,18 @@ func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 		t.Fatalf("rebuilt policy = %q, %v, %v", stored.Bytes, ok, err)
 	}
 }
+
+func TestBackupRefusesCosignerKeyWithOrphanPolicySidecar(t *testing.T) {
+	paths, selector, _ := cosignerStoreWithPolicy(t)
+	active := activePathsForBackupTest(t, paths)
+	if err := os.Remove(active.CosignerPolicyPath(selector)); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := BuildManagedArchivePath(paths, "20260721-010207")
+	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, nil, noderole.RoleCosigner, cryptotest.Keyring(t, testExportMasterKey))); err == nil {
+		t.Fatal("CreateKeysArchive() succeeded with a policy sidecar missing its document")
+	}
+	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
+		t.Fatalf("refused backup left an archive: %v", err)
+	}
+}

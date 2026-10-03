@@ -190,3 +190,20 @@ func TestLoadVerifiedSignerPolicyReportsMissingFileAndWrongKey(t *testing.T) {
 		t.Fatalf("wrong-key error = %v, want ErrPolicyIntegrityMismatch", err)
 	}
 }
+
+func TestLoadVerifiedCosignerPolicyRejectsOrphanSidecar(t *testing.T) {
+	gen := testPolicyGeneration(t)
+	kr := policyIntegrityTestKey(t)
+	if _, ok, err := LoadVerifiedCosignerPolicy(gen, testWitnessKeyIDV1, kr); ok || err != nil {
+		t.Fatalf("absent pair = %v, %v; want no policy and no error", ok, err)
+	}
+	if err := WriteCosignerPolicy(gen, testWitnessKeyIDV1, cosignerDocV1(testWitnessKeyIDV1), kr, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(gen.CosignerPolicyPath(testWitnessKeyIDV1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := LoadVerifiedCosignerPolicy(gen, testWitnessKeyIDV1, kr); ok || !errors.Is(err, ErrPolicyIntegrityMissingFile) {
+		t.Fatalf("orphan sidecar = %v, %v; want ErrPolicyIntegrityMissingFile", ok, err)
+	}
+}

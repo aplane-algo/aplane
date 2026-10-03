@@ -96,13 +96,20 @@ func LoadVerifiedCosignerPolicies(active storepaths.ActivePaths, kr *crypto.Keyr
 }
 
 // LoadVerifiedCosignerPolicy verifies and decodes one cosigner key's policy
-// document. ok is false when the key has no document.
+// document. ok is false only when neither the document nor its sidecar
+// exists; a sidecar without its document fails, as it does for a full load.
 func LoadVerifiedCosignerPolicy(active storepaths.ActivePaths, key string, kr *crypto.Keyring) (doc StoredDocument, ok bool, err error) {
 	if err := storepaths.ValidateWitnessKeyIDComponent(key); err != nil {
 		return StoredDocument{}, false, err
 	}
 	path := active.CosignerPolicyPath(key)
 	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		if _, sidecarErr := os.Lstat(PolicyIntegritySidecarPath(path)); sidecarErr == nil {
+			return StoredDocument{}, false, policyIntegrityError(ErrPolicyIntegrityMissingFile,
+				"cosigner policy sidecar %s.json.hmac has no document", key)
+		} else if !os.IsNotExist(sidecarErr) {
+			return StoredDocument{}, false, sidecarErr
+		}
 		return StoredDocument{}, false, nil
 	} else if err != nil {
 		return StoredDocument{}, false, err
