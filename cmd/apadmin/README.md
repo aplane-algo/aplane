@@ -53,8 +53,9 @@ Batch commands use the same local IPC transport as the TUI:
 ./apadmin policy status
 ./apadmin policy export > policy.json
 ./apadmin policy check policy.json
+./apadmin policy diff policy.json
 ./apadmin policy apply policy.json
-./apadmin policy apply - < policy.json
+./apadmin policy apply --yes - < policy.json
 ./apadmin policy export --key WITNESSKEYID > WITNESSKEYID.json
 ./apadmin policy apply WITNESSKEYID.json OTHERKEYID.json
 ./apadmin policy remove WITNESSKEYID

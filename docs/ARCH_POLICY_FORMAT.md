@@ -31,8 +31,8 @@ Consequences:
   the exact field.
 - The schema is a versioned contract. Changing it is a deliberate new
   `format` version.
-- There is no policy editor in the node. Review happens through `export`,
-  an external diff, and `check` before `apply`.
+- There is no policy editor in the node. Review happens through `check` and
+  `diff` before `apply`, which shows the same diff and asks for confirmation.
 
 The machine-readable schema is
 [`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json)
@@ -97,7 +97,7 @@ Cosigner rules:
 - Store validation loads and verifies the policy and verifies archived policy
   sidecars.
 
-Operator surfaces: `apadmin policy status|export|check|apply|remove` (online
+Operator surfaces: `apadmin policy status|export|check|diff|apply|remove` (online
 over admin IPC, or `apadmin policy rescue ...` against a stopped daemon's
 store), `apstore policy check|verify|sign`, and the read-only apadmin TUI
 Policies view. Wire messages are `get_policy`, `get_policy_document`,

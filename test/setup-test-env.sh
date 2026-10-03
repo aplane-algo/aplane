@@ -275,7 +275,7 @@ echo "  Authorized client key for default identity"
 # these operations to succeed for cleanup and workflow verification.
 # Tests that specifically verify policy rejection create their own fixtures.
 APSIGNER_PASSPHRASE="$TEST_PASSPHRASE" \
-    go run "$PROJECT_ROOT/cmd/apadmin" -d "$SIGNER_DATA" policy rescue apply - << JSON
+    go run "$PROJECT_ROOT/cmd/apadmin" -d "$SIGNER_DATA" policy rescue apply --yes - << JSON
 {
   "format": "aplane.signer-policy.v1",
   "reject_foreign_rekey": false,

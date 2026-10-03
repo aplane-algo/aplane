@@ -219,7 +219,7 @@ func TestInstallerAndDockerSmokeDoNotWriteRootLevelPolicy(t *testing.T) {
 	if strings.Contains(string(smoke), `identities/default/policy.yaml`) {
 		t.Error("docker-local-four-node-smoke.sh writes the retired root-level policy path")
 	}
-	if !strings.Contains(string(smoke), `policy apply -`) {
+	if !strings.Contains(string(smoke), `policy apply --yes -`) {
 		t.Error("docker-local-four-node-smoke.sh does not apply cosigner policy through authenticated apadmin policy apply")
 	}
 }

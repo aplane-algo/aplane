@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"time"
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/policy"
 )
 
 // maxPolicyFileBytes bounds what a policy file read accepts; the node
@@ -61,6 +63,21 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 			return err
 		}
 		return checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: docs}, names)
+	case VerbDiff:
+		view, err := getPolicy(ctx, backend)
+		if err != nil {
+			return err
+		}
+		docs, names, err := readDocuments(command.Args, view.NodeRole, streams.Stdin)
+		if err != nil {
+			return err
+		}
+		diffs, err := diffChange(ctx, backend, view.NodeRole, docs, nil, names)
+		if err != nil {
+			return err
+		}
+		printDiffs(streams.Stdout, diffs)
+		return nil
 	case VerbApply, VerbRemove:
 		view, err := getPolicy(ctx, backend)
 		if err != nil {
@@ -80,6 +97,24 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		}
 		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
 			return err
+		}
+		diffs, err := diffChange(ctx, backend, view.NodeRole, req.Documents, req.Remove, names)
+		if err != nil {
+			return err
+		}
+		if unchanged(diffs) {
+			_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
+			return nil
+		}
+		printDiffs(streams.Stdout, diffs)
+		if !command.Yes {
+			confirmed, err := ConfirmApply()
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return ErrApplyNotConfirmed
+			}
 		}
 		req.ExpectedPolicySetSHA256 = view.PolicySetSHA256
 		result, err := backend.Apply(ctx, req)
@@ -250,4 +285,118 @@ func resultError(code, msg string) error {
 		return errors.New(msg)
 	}
 	return fmt.Errorf("%s (%s)", msg, code)
+}
+
+// documentDiff is the reviewed change to one policy document. identical
+// means the decoded documents are equal, so applying changes nothing.
+type documentDiff struct {
+	label     string
+	changes   []policy.PolicyChange
+	identical bool
+}
+
+// diffChange compares each submitted document, and each removal, with the
+// node's active document for the same key.
+func diffChange(ctx context.Context, backend Backend, role string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]documentDiff, error) {
+	var out []documentDiff
+	for _, doc := range docs {
+		current, err := backend.Document(ctx, doc.Key)
+		if err != nil {
+			return nil, err
+		}
+		if !current.Success && current.Code != "policy_document_not_found" {
+			return nil, resultError(current.Code, current.Error)
+		}
+		label := names[doc.Key]
+		changes, identical, err := diffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+		out = append(out, documentDiff{label: label, changes: changes, identical: identical})
+	}
+	for _, key := range remove {
+		current, err := backend.Document(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if !current.Success {
+			return nil, resultError(current.Code, current.Error)
+		}
+		previous, err := policy.DecodeCosignerPolicyV1([]byte(current.Document), key)
+		if err != nil {
+			return nil, fmt.Errorf("active policy for %s: %w", key, err)
+		}
+		out = append(out, documentDiff{label: key, changes: policy.DiffCosignerPolicyV1(previous, nil)})
+	}
+	return out, nil
+}
+
+func diffDocument(role, key string, hasCurrent bool, current, next string) ([]policy.PolicyChange, bool, error) {
+	if role == "cosigner" {
+		nextDoc, err := policy.DecodeCosignerPolicyV1([]byte(next), key)
+		if err != nil {
+			return nil, false, err
+		}
+		if !hasCurrent {
+			return policy.DiffCosignerPolicyV1(nil, nextDoc), false, nil
+		}
+		currentDoc, err := policy.DecodeCosignerPolicyV1([]byte(current), key)
+		if err != nil {
+			return nil, false, fmt.Errorf("active policy: %w", err)
+		}
+		return policy.DiffCosignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
+	}
+	nextDoc, err := policy.DecodeSignerPolicyV1([]byte(next))
+	if err != nil {
+		return nil, false, err
+	}
+	if !hasCurrent {
+		return nil, false, fmt.Errorf("the node has no active signer policy")
+	}
+	currentDoc, err := policy.DecodeSignerPolicyV1([]byte(current))
+	if err != nil {
+		return nil, false, fmt.Errorf("active policy: %w", err)
+	}
+	return policy.DiffSignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
+}
+
+// unchanged reports whether applying would change no document: every
+// submitted document decodes equal to the active one and nothing is removed.
+func unchanged(diffs []documentDiff) bool {
+	for _, d := range diffs {
+		if !d.identical {
+			return false
+		}
+	}
+	return true
+}
+
+func printDiffs(w io.Writer, diffs []documentDiff) {
+	total, loosened := 0, 0
+	for _, d := range diffs {
+		if len(d.changes) == 0 {
+			if d.identical {
+				_, _ = fmt.Fprintf(w, "%s: no changes\n", d.label)
+			} else {
+				_, _ = fmt.Fprintf(w, "%s: no change to what the policy allows; the document differs only in order\n", d.label)
+			}
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "%s:\n", d.label)
+		for _, c := range d.changes {
+			_, _ = fmt.Fprintf(w, "  %-9s  %s: %s\n", c.Effect, c.Path, c.Summary)
+			total++
+			if c.Effect == policy.PolicyChangeLoosened {
+				loosened++
+			}
+		}
+	}
+	switch {
+	case total == 0:
+		_, _ = fmt.Fprintln(w, "no changes")
+	case loosened > 0:
+		_, _ = fmt.Fprintf(w, "%d changes; %d loosen the policy\n", total, loosened)
+	default:
+		_, _ = fmt.Fprintf(w, "%d changes\n", total)
+	}
 }

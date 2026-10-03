@@ -656,7 +656,7 @@ configure_cosigner_policy() {
     # rejects every request. Apply it online once the key exists.
     docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
-        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply - <<'JSON'
+        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply --yes - <<'JSON'
 {
   \"format\": \"aplane.cosigner-policy.v1\",
   \"key\": \"$COSIGNER_COMPONENT_KEY\",

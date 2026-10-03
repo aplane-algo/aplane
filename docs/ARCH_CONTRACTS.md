@@ -1503,7 +1503,10 @@ Operator verbs:
   error. Verbs: `status` (documents, sizes, digests, applied times, cosigner
   key coverage, and `policy_set_sha256`), `export [--key ID]` (exact stored
   bytes; a cosigner node requires `--key`), `check FILE...|-`,
-  `apply FILE...|-`, and `remove ID...` (cosigner nodes only)
+  `diff FILE...|-`, `apply FILE...|-`, and `remove ID...` (cosigner nodes only)
+- `apply` and `remove` print the diff against the active documents and ask for
+  confirmation on the controlling terminal unless `--yes` is given; with no
+  changes they apply nothing
 - a signer node takes exactly one file; each cosigner file names its key in
   its `"key"` field, and documents for unlisted keys stay unchanged
 - `apply` and `remove` run check first, print warnings, stop on errors, and
