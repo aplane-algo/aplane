@@ -215,18 +215,22 @@ func TestEvaluateAutoRejectionRulesAppliesTransferRouting(t *testing.T) {
 	source := types.Address{1}
 	allowed := types.Address{2}
 	blocked := types.Address{3}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: allowed_payee
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+allowed.String()+`"]
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "allowed_payee",
+        "networks": ["testnet"],
+        "sources": ["`+source.String()+`"],
+        "assets": ["algo"],
+        "destinations": ["`+allowed.String()+`"]
+      }
+    ]
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -250,13 +254,14 @@ transfer_policy:
 
 func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
 	source := types.Address{1}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes: []
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": []
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -278,13 +283,14 @@ transfer_policy:
 func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForPassthroughForeignAndDummySlots(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes: []
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": []
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -329,28 +335,33 @@ func containsAll(s string, wants []string) bool {
 	return true
 }
 
-func routingPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
+// testCosignerPolicyKey is a valid Witness Key ID used as the key of cosigner
+// policy documents compiled by these tests. The compiled Config does not carry
+// the key, so it may be attached to any component key in Service.CosignerPolicies.
+const testCosignerPolicyKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+
+func routingPolicyConfigForSigningTest(t *testing.T, doc string) *policy.Config {
 	t.Helper()
-	stored, err := policy.ParseStoredConfig([]byte(raw))
+	decoded, err := policy.DecodeSignerPolicyV1([]byte(doc))
 	if err != nil {
-		t.Fatalf("ParseStoredConfig() error = %v", err)
+		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
 	}
-	cfg, err := stored.Apply(policy.DefaultConfig())
+	cfg, err := decoded.Compile(policy.DefaultConfig())
 	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
+		t.Fatalf("Compile() error = %v", err)
 	}
 	return cfg
 }
 
-func cosignerPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
+func cosignerPolicyConfigForSigningTest(t *testing.T, doc string) *policy.Config {
 	t.Helper()
-	stored, err := policy.ParseStoredCosignerConfig([]byte(raw))
+	decoded, err := policy.DecodeCosignerPolicyV1([]byte(doc), testCosignerPolicyKey)
 	if err != nil {
-		t.Fatalf("ParseStoredCosignerConfig() error = %v", err)
+		t.Fatalf("DecodeCosignerPolicyV1() error = %v", err)
 	}
-	cfg, err := stored.ApplyCosigner(policy.DefaultConfig())
+	cfg, err := decoded.Compile(policy.DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplyCosigner() error = %v", err)
+		t.Fatalf("Compile() error = %v", err)
 	}
 	return cfg
 }
@@ -897,20 +908,23 @@ func TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove(t *testi
 	var gotViolations []signerapproval.Violation
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: review_payee
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        review_above: 10
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "review_payee",
+        "networks": ["testnet"],
+        "sources": ["`+source.String()+`"],
+        "assets": ["algo"],
+        "destinations": ["`+dest.String()+`"],
+        "limits": {"testnet": {"algo": {"review_above": "10"}}}
+      }
+    ]
+  }
+}`)
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove:               userAutoApproveDefault(true),

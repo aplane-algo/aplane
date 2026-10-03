@@ -80,21 +80,13 @@ func TestTransferRoutingEvaluation(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	other := types.Address{3}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: payroll
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        review_above: 10
-        reject_above: 20
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "payroll", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"],
+     "destinations": ["`+dest.String()+`"], "limits": {"testnet": {"algo": {"review_above": "10", "reject_above": "20"}}}}
+  ]}
+}`)
 	base := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -141,13 +133,10 @@ transfer_policy:
 func TestTransferRoutingReviewOnNoRoute(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: review
-  routes: []
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "review", "routes": []}
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -205,18 +194,12 @@ func TestTransferRoutingUnknownGenesisHashOnNoRoute(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: `+tc.onNoRoute+`
-  routes:
-    - id: any_algo
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["*"]
-`)
+			cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "`+tc.onNoRoute+`", "routes": [
+    {"id": "any_algo", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]}
+  ]}
+}`)
 			txn := types.Transaction{
 				Type: types.PaymentTx,
 				Header: types.Header{
@@ -237,18 +220,12 @@ func TestTransferRoutingCloseOutIsDeniedBeforeOperatorDefault(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	closeTo := types.Address{3}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: operator_default
-  routes:
-    - id: normal_pay
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "operator_default", "routes": [
+    {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]}
+  ]}
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -273,33 +250,18 @@ func TestTransferRoutingCloseAndClawbackOnNoRouteFallbacks(t *testing.T) {
 	authority := types.Address{4}
 	owner := types.Address{5}
 	recovery := types.Address{6}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  close_on_no_route: review
-  clawback_on_no_route: operator_default
-  routes:
-    - id: normal_pay
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-    - id: close_without_allow
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+closeTo.String()+`"]
-    - id: clawback_without_match
-      networks: [testnet]
-      sources: ["`+authority.String()+`"]
-      asset_sources: ["`+owner.String()+`"]
-      assets: [123]
-      destinations: ["`+recovery.String()+`"]
-      clawback:
-        allow: true
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true, "on_no_route": "reject", "close_on_no_route": "review", "clawback_on_no_route": "operator_default",
+    "routes": [
+      {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]},
+      {"id": "close_without_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeTo.String()+`"]},
+      {"id": "clawback_without_match", "networks": ["testnet"], "sources": ["`+authority.String()+`"], "asset_sources": ["`+owner.String()+`"],
+       "assets": ["asa:123"], "destinations": ["`+recovery.String()+`"], "allow_clawback": true}
+    ]
+  }
+}`)
 	noRouteClose := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -347,37 +309,19 @@ func TestTransferRoutingAddressSetsMatchByNetwork(t *testing.T) {
 	owner := types.Address{3}
 	dest := types.Address{4}
 	mainnetOnlyDest := types.Address{5}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  address_sets:
-    sources:
-      - `+source.String()+`
-    receivers:
-      testnet:
-        - `+dest.String()+`
-      mainnet:
-        - `+mainnetOnlyDest.String()+`
-    owners:
-      testnet:
-        - `+owner.String()+`
-  routes:
-    - id: set_pay
-      networks: [testnet]
-      sources: ["@sources"]
-      assets: ["algo"]
-      destinations: ["@receivers"]
-    - id: set_clawback
-      networks: [testnet]
-      sources: ["`+authority.String()+`"]
-      asset_sources: ["@owners"]
-      assets: [123]
-      destinations: ["@receivers"]
-      clawback:
-        allow: true
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "address_sets": {
+    "sources": ["`+source.String()+`"],
+    "receivers": {"testnet": ["`+dest.String()+`"], "mainnet": ["`+mainnetOnlyDest.String()+`"]},
+    "owners": {"testnet": ["`+owner.String()+`"]}
+  },
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "set_pay", "networks": ["testnet"], "sources": ["@sources"], "assets": ["algo"], "destinations": ["@receivers"]},
+    {"id": "set_clawback", "networks": ["testnet"], "sources": ["`+authority.String()+`"], "asset_sources": ["@owners"],
+     "assets": ["asa:123"], "destinations": ["@receivers"], "allow_clawback": true}
+  ]}
+}`)
 	pay := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -416,30 +360,16 @@ transfer_policy:
 func TestTransferRoutingAssetSetAndOverlappingThresholds(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  asset_sets:
-    stablecoins:
-      testnet: [123]
-  routes:
-    - id: broad
-      networks: [testnet]
-      sources: ["*"]
-      assets: ["@stablecoins"]
-      destinations: ["*"]
-      limits:
-        reject_above: 100
-    - id: narrow
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: [123]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        reject_above: 50
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "asset_sets": {"stablecoins": {"testnet": ["asa:123"]}},
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "broad", "networks": ["testnet"], "sources": ["*"], "assets": ["@stablecoins"], "destinations": ["*"],
+     "limits": {"testnet": {"asa:123": {"reject_above": "100"}}}},
+    {"id": "narrow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["asa:123"], "destinations": ["`+dest.String()+`"],
+     "limits": {"testnet": {"asa:123": {"reject_above": "50"}}}}
+  ]}
+}`)
 	txn := types.Transaction{
 		Type: types.AssetTransferTx,
 		Header: types.Header{
@@ -457,28 +387,19 @@ transfer_policy:
 	}
 }
 
-func TestTransferRoutingLimitsByNetworkOverrideGlobalLimits(t *testing.T) {
+func TestTransferRoutingRouteLimitsArePerNetwork(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: tiered_pay
-      networks: [testnet, mainnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        review_above: 70
-        reject_above: 100
-      limits_by_network:
-        testnet:
-          review_above: 10
-          reject_above: 50
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "tiered_pay", "networks": ["testnet", "mainnet"], "sources": ["`+source.String()+`"], "assets": ["algo"],
+     "destinations": ["`+dest.String()+`"], "limits": {
+       "testnet": {"algo": {"review_above": "10", "reject_above": "50"}},
+       "mainnet": {"algo": {"review_above": "70", "reject_above": "100"}}
+     }}
+  ]}
+}`)
 	base := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -504,57 +425,34 @@ transfer_policy:
 	aboveNetworkReject.Amount = 51
 	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(aboveNetworkReject, cfg, false), []string{"transfer_policy:tiered_pay:reject_above"})
 
-	mainnetUsesGlobalReview := base
-	mainnetUsesGlobalReview.GenesisHash = testGenesisDigest(t, apconfig.AlgorandMainnetGenesisHash)
-	mainnetUsesGlobalReview.Amount = 71
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetUsesGlobalReview, cfg, false), nil)
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(mainnetUsesGlobalReview, cfg, false), []string{"transfer_policy:tiered_pay:review_above"})
+	mainnetReview := base
+	mainnetReview.GenesisHash = testGenesisDigest(t, apconfig.AlgorandMainnetGenesisHash)
+	mainnetReview.Amount = 71
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReview, cfg, false), nil)
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingReviewPolicyLints(mainnetReview, cfg, false), []string{"transfer_policy:tiered_pay:review_above"})
 
-	mainnetUsesGlobalReject := mainnetUsesGlobalReview
-	mainnetUsesGlobalReject.Amount = 101
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetUsesGlobalReject, cfg, false), []string{"transfer_policy:tiered_pay:reject_above"})
+	mainnetReject := mainnetReview
+	mainnetReject.Amount = 101
+	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(mainnetReject, cfg, false), []string{"transfer_policy:tiered_pay:reject_above"})
 }
 
 func TestTransferRoutingBlockedDestinations(t *testing.T) {
 	source := types.Address{1}
 	blocked := types.Address{2}
 	other := types.Address{3}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  blocked_destinations:
-    - `+blocked.String()+`
-  routes:
-    - id: allow_all_normal
-      networks: [testnet]
-      sources: ["*"]
-      assets: ["*"]
-      destinations: ["*"]
-    - id: allow_blocked_pay_close
-      networks: [testnet]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["`+blocked.String()+`"]
-      close:
-        allow: true
-    - id: allow_blocked_asset_close
-      networks: [testnet]
-      sources: ["*"]
-      assets: [123]
-      destinations: ["`+blocked.String()+`"]
-      close:
-        allow: true
-    - id: allow_blocked_clawback
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      asset_sources: ["`+other.String()+`"]
-      assets: [123]
-      destinations: ["`+blocked.String()+`"]
-      clawback:
-        allow: true
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
+    "routes": [
+      {"id": "allow_all_normal", "networks": ["testnet"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "allow_blocked_pay_close", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["`+blocked.String()+`"], "allow_close": true},
+      {"id": "allow_blocked_asset_close", "networks": ["testnet"], "sources": ["*"], "assets": ["asa:123"], "destinations": ["`+blocked.String()+`"], "allow_close": true},
+      {"id": "allow_blocked_clawback", "networks": ["testnet"], "sources": ["`+source.String()+`"], "asset_sources": ["`+other.String()+`"],
+       "assets": ["asa:123"], "destinations": ["`+blocked.String()+`"], "allow_clawback": true}
+    ]
+  }
+}`)
 	header := types.Header{
 		Sender:      source,
 		GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
@@ -644,38 +542,16 @@ func TestTransferRoutingCloseAndClawbackBranches(t *testing.T) {
 	owner := types.Address{6}
 	otherOwner := types.Address{7}
 	recovery := types.Address{8}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: normal_pay
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-    - id: close_without_allow
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+closeRejected.String()+`"]
-    - id: close_with_allow
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+closeAllowed.String()+`"]
-      close:
-        allow: true
-    - id: clawback_recovery
-      networks: [testnet]
-      sources: ["`+authority.String()+`"]
-      asset_sources: ["`+owner.String()+`"]
-      assets: [123]
-      destinations: ["`+recovery.String()+`"]
-      clawback:
-        allow: true
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]},
+    {"id": "close_without_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeRejected.String()+`"]},
+    {"id": "close_with_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeAllowed.String()+`"], "allow_close": true},
+    {"id": "clawback_recovery", "networks": ["testnet"], "sources": ["`+authority.String()+`"], "asset_sources": ["`+owner.String()+`"],
+     "assets": ["asa:123"], "destinations": ["`+recovery.String()+`"], "allow_clawback": true}
+  ]}
+}`)
 	closeRejectedTxn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -720,39 +596,15 @@ transfer_policy:
 	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(clawbackCloseRejected, cfg, false), []string{TransferRoutingCloseRejectedRuleID})
 }
 
-func TestTransferRoutingDisabledRoutesAndNonTransferTransactions(t *testing.T) {
+func TestTransferRoutingIgnoresNonTransferTransactions(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	disabled := false
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: disabled_pay
-      enabled: false
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-`)
-	pay := types.Transaction{
-		Type: types.PaymentTx,
-		Header: types.Header{
-			Sender:      source,
-			GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
-		},
-		PaymentTxnFields: types.PaymentTxnFields{
-			Receiver: dest,
-			Amount:   1,
-		},
-	}
-	if cfg.TransferPolicy.Routes[0].Enabled != disabled {
-		t.Fatalf("route enabled = %v, want %v", cfg.TransferPolicy.Routes[0].Enabled, disabled)
-	}
-	assertRoutingRuleIDs(t, CheckTxnTransferRoutingPolicyLints(pay, cfg, false), []string{TransferRoutingRouteMissRuleID})
-
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "only_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]}
+  ]}
+}`)
 	appCall := types.Transaction{
 		Type: types.ApplicationCallTx,
 		Header: types.Header{
@@ -769,18 +621,12 @@ func TestTransferRoutingMultipleMovementsCanEmitMultipleVerdicts(t *testing.T) {
 	allowed := types.Address{2}
 	miss := types.Address{3}
 	closeTo := types.Address{4}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: allowed_pay
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+allowed.String()+`"]
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+    {"id": "allowed_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+allowed.String()+`"]}
+  ]}
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -803,28 +649,16 @@ func TestTransferRoutingBlockedDestinationPrecedenceAndExemptions(t *testing.T) 
 	source := types.Address{1}
 	blocked := types.Address{2}
 	otherBlocked := types.Address{3}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  blocked_destinations:
-    - `+blocked.String()+`
-    - `+otherBlocked.String()+`
-  routes:
-    - id: allow_blocked
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["*"]
-    - id: allow_blocked_close
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["algo"]
-      destinations: ["`+otherBlocked.String()+`"]
-      close:
-        allow: true
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`", "`+otherBlocked.String()+`"],
+    "routes": [
+      {"id": "allow_blocked", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]},
+      {"id": "allow_blocked_close", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["`+otherBlocked.String()+`"], "allow_close": true}
+    ]
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -865,20 +699,15 @@ transfer_policy:
 
 func TestTransferRoutingBlockedDestinationsSkipOptIn(t *testing.T) {
 	blocked := types.Address{1}
-	cfg := routingConfig(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  blocked_destinations:
-    - `+blocked.String()+`
-  routes:
-    - id: allow_optin
-      networks: [testnet]
-      sources: ["`+blocked.String()+`"]
-      assets: [123]
-      destinations: ["self"]
-`)
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
+    "routes": [
+      {"id": "allow_optin", "networks": ["testnet"], "sources": ["`+blocked.String()+`"], "assets": ["asa:123"], "destinations": ["self"]}
+    ]
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.AssetTransferTx,
 		Header: types.Header{
@@ -898,12 +727,16 @@ transfer_policy:
 	}
 }
 
-func routingConfig(t *testing.T, raw string) *Config {
+// routingConfig decodes and compiles a v1 signer policy document.
+func routingConfig(t *testing.T, doc string) *Config {
 	t.Helper()
-	stored := parsePolicyYAML(t, raw)
-	cfg, err := stored.Apply(DefaultConfig())
+	decoded, err := DecodeSignerPolicyV1([]byte(doc))
 	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
+		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
+	}
+	cfg, err := decoded.Compile(DefaultConfig())
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
 	}
 	return cfg
 }

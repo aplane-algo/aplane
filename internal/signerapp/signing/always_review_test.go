@@ -14,18 +14,13 @@ import (
 )
 
 func TestEvaluateAlwaysReviewRulesUsesKeyOverride(t *testing.T) {
-	enabled := true
 	authKey := types.Address{9}.String()
-	cfg, err := (&policy.StoredConfig{
-		KeyOverrides: map[string]*policy.StoredConfig{
-			authKey: {
-				StoredPolicyCore: policy.StoredPolicyCore{AlwaysReviewWarnings: &enabled},
-			},
-		},
-	}).Apply(policy.DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "key_overrides": {
+    "`+authKey+`": {"always_review_warnings": true}
+  }
+}`)
 
 	txn := types.Transaction{
 		Type: types.PaymentTx,
@@ -116,20 +111,23 @@ func TestEvaluateAlwaysReviewRulesUsesTransferGuardThreshold(t *testing.T) {
 func TestEvaluateAlwaysReviewRulesUsesTransferRouting(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: review_payee
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        review_above: 10
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "review_payee",
+        "networks": ["testnet"],
+        "sources": ["`+source.String()+`"],
+        "assets": ["algo"],
+        "destinations": ["`+dest.String()+`"],
+        "limits": {"testnet": {"algo": {"review_above": "10"}}}
+      }
+    ]
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{
@@ -163,20 +161,23 @@ transfer_policy:
 func TestEvaluateAlwaysReviewRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
-	cfg := routingPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: review_payee
-      networks: [testnet]
-      sources: ["`+source.String()+`"]
-      assets: ["algo"]
-      destinations: ["`+dest.String()+`"]
-      limits:
-        review_above: 10
-`)
+	cfg := routingPolicyConfigForSigningTest(t, `{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "review_payee",
+        "networks": ["testnet"],
+        "sources": ["`+source.String()+`"],
+        "assets": ["algo"],
+        "destinations": ["`+dest.String()+`"],
+        "limits": {"testnet": {"algo": {"review_above": "10"}}}
+      }
+    ]
+  }
+}`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
 		Header: types.Header{

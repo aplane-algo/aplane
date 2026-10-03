@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -171,5 +173,20 @@ func TestResignPoliciesValidatesHandPlacedDocuments(t *testing.T) {
 	var docErr *DocumentError
 	if err := ResignSignerPolicy(gen, kr, time.Time{}); !errors.As(err, &docErr) {
 		t.Fatalf("ResignSignerPolicy(invalid) error = %v, want DocumentError", err)
+	}
+}
+
+func TestLoadVerifiedSignerPolicyReportsMissingFileAndWrongKey(t *testing.T) {
+	gen := testPolicyGeneration(t)
+	kr := policyIntegrityTestKey(t)
+	if _, _, err := LoadVerifiedSignerPolicy(gen, kr); !errors.Is(err, ErrPolicyIntegrityMissingFile) {
+		t.Fatalf("missing policy error = %v, want ErrPolicyIntegrityMissingFile", err)
+	}
+	if err := WriteInitialSignerPolicy(gen, kr, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	other := cryptotest.Keyring(t, bytes.Repeat([]byte{0x42}, 32))
+	if _, _, err := LoadVerifiedSignerPolicy(gen, other); !errors.Is(err, ErrPolicyIntegrityMismatch) {
+		t.Fatalf("wrong-key error = %v, want ErrPolicyIntegrityMismatch", err)
 	}
 }

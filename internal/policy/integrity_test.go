@@ -164,7 +164,7 @@ func TestPolicyIntegrityRejectsMissingKeyring(t *testing.T) {
 }
 
 func TestLoadPolicyIntegritySidecarMissing(t *testing.T) {
-	_, err := LoadPolicyIntegritySidecar(filepath.Join(t.TempDir(), "policy.yaml.hmac"))
+	_, err := LoadPolicyIntegritySidecar(filepath.Join(t.TempDir(), "policy.json.hmac"))
 	if !errors.Is(err, ErrPolicyIntegrityMissingSidecar) {
 		t.Fatalf("LoadPolicyIntegritySidecar() error = %v, want ErrPolicyIntegrityMissingSidecar", err)
 	}
@@ -182,7 +182,7 @@ func TestLoadPolicyIntegritySidecar(t *testing.T) {
 		t.Fatalf("MarshalPolicyIntegritySidecar() error = %v", err)
 	}
 
-	path := filepath.Join(t.TempDir(), "policy.yaml.hmac")
+	path := filepath.Join(t.TempDir(), "policy.json.hmac")
 	if err := os.WriteFile(path, encoded, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

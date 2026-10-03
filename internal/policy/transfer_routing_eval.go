@@ -291,9 +291,6 @@ func routeMissVerdictFor(action TransferOnNoRoute, rejectRuleID, reviewRuleID, m
 func matchingTransferRoutes(movement TransferMovement, tp *TransferPolicy) []CompiledTransferRoute {
 	var matches []CompiledTransferRoute
 	for _, route := range tp.Routes {
-		if !route.Enabled {
-			continue
-		}
 		if !routeMatchesNetwork(route, movement.Network) {
 			continue
 		}
@@ -442,17 +439,8 @@ func aggregateThreshold(routes []CompiledTransferRoute, network string, asset Tr
 }
 
 func effectiveRouteLimits(route CompiledTransferRoute, network string, asset TransferAssetRef) (AmountLimits, bool) {
-	if route.AssetLimits != nil {
-		limits, ok := route.AssetLimits[network][asset]
-		return limits, ok
-	}
-	if limits, ok := route.LimitsByNetwork[network]; ok {
-		return limits, true
-	}
-	if route.Limits != nil {
-		return *route.Limits, true
-	}
-	return AmountLimits{}, false
+	limits, ok := route.Limits[network][asset]
+	return limits, ok
 }
 
 func isCloseMovement(kind TransferMovementKind) bool {

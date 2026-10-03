@@ -339,8 +339,10 @@ func decodeSignerTransferPolicy(node *jsonNode) (*SignerTransferPolicyV1, error)
 		if err != nil {
 			return nil, err
 		}
-		action, err := parseTransferOnNoRoute(f.name, raw)
-		if err != nil {
+		action := TransferOnNoRoute(raw)
+		switch action {
+		case TransferOnNoRouteReject, TransferOnNoRouteReview, TransferOnNoRouteOperatorDefault:
+		default:
 			return nil, docErrorf(n.pointer, "must be one of reject, review, operator_default")
 		}
 		*f.dst = action

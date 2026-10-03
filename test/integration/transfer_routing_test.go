@@ -286,110 +286,55 @@ func randomTransferRoutingAddress() string {
 }
 
 func transferRoutingIntegrationPolicy(network string, addr transferRoutingTestAddresses) string {
-	return fmt.Sprintf(`reject_foreign_rekey: false
-reject_close_remainder: false
-reject_asset_close: false
-reject_clawback: false
-always_review_warnings: false
-auto_approve_self_noop_transfer: false
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  blocked_destinations:
-    - %q
-  address_sets:
-    source_accounts:
-      %q:
-        - %q
-    normal_receivers:
-      - %q
-    recovery_receivers:
-      %q:
-        - %q
-        - %q
-  asset_sets:
-    clawback_assets:
-      %q: [%d]
-  routes:
-    - id: normal_payee
-      networks: [%q]
-      sources: ["@source_accounts"]
-      assets: ["algo"]
-      destinations: ["@normal_receivers", "self"]
-    - id: review_payee
-      networks: [%q]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-      limits:
-        review_above: 10
-    - id: reject_payee
-      networks: [%q]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-      limits:
-        reject_above: 5
-    - id: network_limit_payee
-      networks: [%q]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-      limits:
-        reject_above: 100
-      limits_by_network:
-        %q:
-          review_above: 2
-          reject_above: 4
-    - id: other_passthrough
-      networks: [%q]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: ["*"]
-    - id: close_recovery
-      networks: [%q]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: ["@recovery_receivers"]
-      close:
-        allow: true
-    - id: clawback_recovery
-      networks: [%q]
-      sources: [%q]
-      asset_sources: [%q]
-      assets: ["@clawback_assets"]
-      destinations: ["@recovery_receivers"]
-      clawback:
-        allow: true
+	return fmt.Sprintf(`{
+  "format": "aplane.signer-policy.v1",
+  "reject_foreign_rekey": false,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": false,
+  "auto_approve_self_noop_transfer": false,
+  "address_sets": {
+    "source_accounts": {%[1]q: [%[2]q]},
+    "normal_receivers": [%[3]q],
+    "recovery_receivers": {%[1]q: [%[4]q, %[5]q]}
+  },
+  "asset_sets": {
+    "clawback_assets": {%[1]q: ["asa:%[6]d"]}
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "blocked_destinations": [%[7]q],
+    "routes": [
+      {"id": "normal_payee", "networks": [%[1]q], "sources": ["@source_accounts"], "assets": ["algo"], "destinations": ["@normal_receivers", "self"]},
+      {"id": "review_payee", "networks": [%[1]q], "sources": [%[2]q], "assets": ["algo"], "destinations": [%[8]q],
+       "limits": {%[1]q: {"algo": {"review_above": "10"}}}},
+      {"id": "reject_payee", "networks": [%[1]q], "sources": [%[2]q], "assets": ["algo"], "destinations": [%[9]q],
+       "limits": {%[1]q: {"algo": {"reject_above": "5"}}}},
+      {"id": "network_limit_payee", "networks": [%[1]q], "sources": [%[2]q], "assets": ["algo"], "destinations": [%[10]q],
+       "limits": {%[1]q: {"algo": {"review_above": "2", "reject_above": "4"}}}},
+      {"id": "other_passthrough", "networks": [%[1]q], "sources": [%[11]q], "assets": ["algo"], "destinations": ["*"]},
+      {"id": "close_recovery", "networks": [%[1]q], "sources": [%[2]q], "assets": ["algo"], "destinations": ["@recovery_receivers"], "allow_close": true},
+      {"id": "clawback_recovery", "networks": [%[1]q], "sources": [%[12]q], "asset_sources": [%[13]q], "assets": ["@clawback_assets"],
+       "destinations": ["@recovery_receivers"], "allow_clawback": true}
+    ]
+  }
+}
 `,
-		addr.denied,
-		network,
-		addr.source,
-		addr.allowed,
-		network,
-		addr.closeTo,
-		addr.recovery,
-		network,
-		transferRoutingIntegrationAssetID,
-		network,
-		network,
-		addr.source,
-		addr.review,
-		network,
-		addr.source,
-		addr.reject,
-		network,
-		addr.source,
-		addr.networkLimit,
-		network,
-		network,
-		addr.other,
-		network,
-		addr.source,
-		network,
-		addr.authority,
-		addr.owner,
+		network,                           // 1
+		addr.source,                       // 2
+		addr.allowed,                      // 3
+		addr.closeTo,                      // 4
+		addr.recovery,                     // 5
+		transferRoutingIntegrationAssetID, // 6
+		addr.denied,                       // 7
+		addr.review,                       // 8
+		addr.reject,                       // 9
+		addr.networkLimit,                 // 10
+		addr.other,                        // 11
+		addr.authority,                    // 12
+		addr.owner,                        // 13
 	)
 }
 

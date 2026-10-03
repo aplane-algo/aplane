@@ -41,8 +41,8 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
-		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
+	if err := policy.WriteInitialSignerPolicy(activePathsForBackupTest(t, paths), cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("WriteInitialSignerPolicy() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, "20260428-010203")
@@ -107,7 +107,8 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.SaveStoredCosignerConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	cosignerPolicy := []byte(`{"format": "aplane.cosigner-policy.v1", "key": "` + selector + `", "transfer_policy": {"routes": []}}`)
+	if err := policy.WriteCosignerPolicy(activePathsForBackupTest(t, paths), selector, cosignerPolicy, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,8 +219,8 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.SaveStoredConfigWithKeyring(paths.Root(), &policy.StoredConfig{}, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
-		t.Fatalf("SaveStoredConfigWithKeyring() error = %v", err)
+	if err := policy.WriteInitialSignerPolicy(activePathsForBackupTest(t, paths), cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("WriteInitialSignerPolicy() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, "20260710-010203")
@@ -294,4 +295,13 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
 		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
 	}
+}
+
+func activePathsForBackupTest(t *testing.T, paths storepaths.Paths) storepaths.ActivePaths {
+	t.Helper()
+	active, err := genstore.ResolveActive(paths)
+	if err != nil {
+		t.Fatalf("ResolveActive() error = %v", err)
+	}
+	return active
 }
