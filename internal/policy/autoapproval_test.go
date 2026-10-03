@@ -101,27 +101,15 @@ func TestMatchesSelfNoOpTransferAutoApprovalASA(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplyAutoApproveSelfNoOpTransfer(t *testing.T) {
-	enabled := true
-	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{AutoApproveSelfNoOpTransfer: &enabled}}
-
-	got, err := stored.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
+func TestPolicyV1AutoApproveSelfNoOpTransfer(t *testing.T) {
+	got := routingConfig(t, `{"format": "aplane.signer-policy.v1", "auto_approve_self_noop_transfer": true}`)
 	if !got.AutoApproveSelfNoOpTransfer {
 		t.Fatal("AutoApproveSelfNoOpTransfer = false, want true")
 	}
 }
 
-func TestStoredConfigApplyAlwaysReviewWarnings(t *testing.T) {
-	enabled := true
-	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{AlwaysReviewWarnings: &enabled}}
-
-	got, err := stored.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
+func TestPolicyV1AlwaysReviewWarnings(t *testing.T) {
+	got := routingConfig(t, `{"format": "aplane.signer-policy.v1", "always_review_warnings": true}`)
 	if !got.AlwaysReviewWarnings {
 		t.Fatal("AlwaysReviewWarnings = false, want true")
 	}

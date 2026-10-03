@@ -89,11 +89,7 @@ func (d *CosignerPolicyV1) Compile(defaults *Config) (*Config, error) {
 		return nil, err
 	}
 	if len(d.RekeyPolicy) > 0 {
-		stored := &StoredRekeyPolicy{Allowed: make([]StoredRekeyRule, 0, len(d.RekeyPolicy))}
-		for _, rule := range d.RekeyPolicy {
-			stored.Allowed = append(stored.Allowed, StoredRekeyRule{Sender: rule.Sender, Targets: append([]string(nil), rule.Targets...)})
-		}
-		if cfg.RekeyPolicy, err = stored.Apply(nil, addressSets); err != nil {
+		if cfg.RekeyPolicy, err = compileRekeyPolicyV1(d.RekeyPolicy, addressSets); err != nil {
 			return nil, fmt.Errorf("rekey_policy: %w", err)
 		}
 	}
@@ -205,7 +201,6 @@ func compileTransferPolicyV1(
 		AddressSets:       addressSets,
 		AssetSets:         assetSets,
 		Routes:            make([]CompiledTransferRoute, 0, len(routes)),
-		routeIDIndex:      make(map[string]struct{}, len(routes)),
 	}
 	if len(blocked) > 0 {
 		tp.BlockedDestinations = make(map[types.Address]struct{}, len(blocked))
@@ -214,41 +209,77 @@ func compileTransferPolicyV1(
 		}
 	}
 	for _, route := range routes {
-		networks := route.Networks
-		if route.NetworkWildcard {
-			networks = []string{"*"}
-		}
-		assets := make([]StoredAssetTerm, 0, len(route.Assets))
-		for _, term := range route.Assets {
-			assets = append(assets, StoredAssetTerm{Raw: term})
-		}
-		allowClose, allowClawback := route.AllowClose, route.AllowClawback
-		compiled, err := compileTransferRoute(StoredTransferRoute{
-			ID:           route.ID,
-			Description:  route.Description,
-			Networks:     networks,
-			Sources:      route.Sources,
-			AssetSources: route.AssetSources,
-			Assets:       assets,
-			Destinations: route.Destinations,
-			Close:        StoredRoutePermission{Allow: &allowClose},
-			Clawback:     StoredRoutePermission{Allow: &allowClawback},
-		}, addressSets, assetSets)
+		compiled, err := compileRouteV1(route, addressSets, assetSets)
 		if err != nil {
 			return nil, fmt.Errorf("route %q: %w", route.ID, err)
 		}
-		compiled.AssetLimits = make(map[string]map[TransferAssetRef]AmountLimits, len(route.Limits))
-		for network, limits := range route.Limits {
-			compiled.AssetLimits[network] = make(map[TransferAssetRef]AmountLimits, len(limits))
-			for asset, t := range limits {
-				compiled.AssetLimits[network][asset] = AmountLimits{
-					ReviewAbove: cloneUint64Ptr(t.ReviewAbove),
-					RejectAbove: cloneUint64Ptr(t.RejectAbove),
-				}
-			}
-		}
 		tp.Routes = append(tp.Routes, compiled)
-		tp.routeIDIndex[route.ID] = struct{}{}
 	}
 	return tp, nil
+}
+
+// compileRouteV1 compiles one decoded route. Decoding has already enforced
+// every route rule, so errors here indicate an internal bug.
+func compileRouteV1(route RouteV1, addressSets map[string]compiledAddressSet, assetSets map[string]compiledAssetSet) (CompiledTransferRoute, error) {
+	networks := route.Networks
+	if route.NetworkWildcard {
+		networks = []string{"*"}
+	}
+	wildcard, networkSet, err := compileNetworks(networks)
+	if err != nil {
+		return CompiledTransferRoute{}, err
+	}
+	sources, err := compileAddressTerms("sources", route.Sources, addressSets, false)
+	if err != nil {
+		return CompiledTransferRoute{}, err
+	}
+	assetSources, err := compileAddressTerms("asset_sources", route.AssetSources, addressSets, false)
+	if err != nil {
+		return CompiledTransferRoute{}, err
+	}
+	assets, err := compileAssetTerms(route.Assets, assetSets)
+	if err != nil {
+		return CompiledTransferRoute{}, err
+	}
+	destinations, err := compileAddressTerms("destinations", route.Destinations, addressSets, true)
+	if err != nil {
+		return CompiledTransferRoute{}, err
+	}
+	limits := make(map[string]map[TransferAssetRef]AmountLimits, len(route.Limits))
+	for network, byAsset := range route.Limits {
+		limits[network] = make(map[TransferAssetRef]AmountLimits, len(byAsset))
+		for asset, t := range byAsset {
+			limits[network][asset] = AmountLimits{ReviewAbove: cloneUint64Ptr(t.ReviewAbove), RejectAbove: cloneUint64Ptr(t.RejectAbove)}
+		}
+	}
+	return CompiledTransferRoute{
+		ID:              route.ID,
+		Description:     route.Description,
+		NetworkWildcard: wildcard,
+		Networks:        networkSet,
+		Sources:         sources,
+		AssetSources:    assetSources,
+		Assets:          assets,
+		Destinations:    destinations,
+		Limits:          limits,
+		AllowClose:      route.AllowClose,
+		AllowClawback:   route.AllowClawback,
+	}, nil
+}
+
+// compileRekeyPolicyV1 compiles decoded rekey rules.
+func compileRekeyPolicyV1(rules []RekeyRuleV1, addressSets map[string]compiledAddressSet) (*RekeyPolicy, error) {
+	out := &RekeyPolicy{Allowed: make([]CompiledRekeyRule, 0, len(rules))}
+	for i, rule := range rules {
+		sender, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].sender", i), []string{rule.Sender}, addressSets)
+		if err != nil {
+			return nil, err
+		}
+		targets, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].targets", i), rule.Targets, addressSets)
+		if err != nil {
+			return nil, err
+		}
+		out.Allowed = append(out.Allowed, CompiledRekeyRule{Sender: sender, Targets: targets})
+	}
+	return out, nil
 }

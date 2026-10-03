@@ -8,79 +8,7 @@ import (
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"gopkg.in/yaml.v3"
 )
-
-// StoredRekeyPolicy is the YAML representation of cosigner rekey authorization.
-// It is intentionally narrow: every allowed edge names a sender address or
-// flat address set and a list of allowed rekey target addresses or flat sets.
-type StoredRekeyPolicy struct {
-	Allowed []StoredRekeyRule `yaml:"allowed,omitempty"`
-}
-
-type StoredRekeyRule struct {
-	Sender  string   `yaml:"sender"`
-	Targets []string `yaml:"targets"`
-}
-
-func (p *StoredRekeyPolicy) Clone() *StoredRekeyPolicy {
-	if p == nil {
-		return nil
-	}
-	cp := *p
-	cp.Allowed = make([]StoredRekeyRule, len(p.Allowed))
-	for i, rule := range p.Allowed {
-		cp.Allowed[i] = rule.Clone()
-	}
-	return &cp
-}
-
-func (r StoredRekeyRule) Clone() StoredRekeyRule {
-	return StoredRekeyRule{
-		Sender:  r.Sender,
-		Targets: append([]string(nil), r.Targets...),
-	}
-}
-
-func (p *StoredRekeyPolicy) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("rekey_policy must be a mapping")
-	}
-	allowed := map[string]struct{}{"allowed": {}}
-	for i := 0; i < len(value.Content); i += 2 {
-		key := value.Content[i].Value
-		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("unknown rekey_policy field %q", key)
-		}
-	}
-	type rawPolicy StoredRekeyPolicy
-	var raw rawPolicy
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*p = StoredRekeyPolicy(raw)
-	return nil
-}
-
-func (r *StoredRekeyRule) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("rekey_policy.allowed entry must be a mapping")
-	}
-	allowed := map[string]struct{}{"sender": {}, "targets": {}}
-	for i := 0; i < len(value.Content); i += 2 {
-		key := value.Content[i].Value
-		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("unknown rekey_policy.allowed field %q", key)
-		}
-	}
-	type rawRule StoredRekeyRule
-	var raw rawRule
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*r = StoredRekeyRule(raw)
-	return nil
-}
 
 // RekeyPolicy is the compiled effective cosigner rekey policy.
 type RekeyPolicy struct {
@@ -110,28 +38,6 @@ func (p *RekeyPolicy) Clone() *RekeyPolicy {
 	return cp
 }
 
-func (p *StoredRekeyPolicy) Apply(base *RekeyPolicy, addressSets map[string]compiledAddressSet) (*RekeyPolicy, error) {
-	if p == nil {
-		if base == nil {
-			return nil, nil
-		}
-		return base.Clone(), nil
-	}
-	out := &RekeyPolicy{Allowed: make([]CompiledRekeyRule, 0, len(p.Allowed))}
-	for i, rule := range p.Allowed {
-		sender, err := compileRekeyAddressTerm(fmt.Sprintf("allowed[%d].sender", i), rule.Sender, addressSets)
-		if err != nil {
-			return nil, err
-		}
-		targets, err := compileRekeyAddressTerms(fmt.Sprintf("allowed[%d].targets", i), rule.Targets, addressSets)
-		if err != nil {
-			return nil, err
-		}
-		out.Allowed = append(out.Allowed, CompiledRekeyRule{Sender: sender, Targets: targets})
-	}
-	return out, nil
-}
-
 func (p *RekeyPolicy) Allows(sender, target types.Address) bool {
 	if p == nil {
 		return false
@@ -145,14 +51,6 @@ func (p *RekeyPolicy) Allows(sender, target types.Address) bool {
 		}
 	}
 	return false
-}
-
-func compileRekeyAddressTerm(label, raw string, addressSets map[string]compiledAddressSet) (compiledRekeyAddressTerms, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return compiledRekeyAddressTerms{}, fmt.Errorf("rekey_policy.%s is required", label)
-	}
-	return compileRekeyAddressTerms(label, []string{raw}, addressSets)
 }
 
 func compileRekeyAddressTerms(label string, raw []string, addressSets map[string]compiledAddressSet) (compiledRekeyAddressTerms, error) {

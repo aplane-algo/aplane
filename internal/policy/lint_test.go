@@ -29,25 +29,14 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplyParsesASAKeys(t *testing.T) {
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{
-		"testnet": 5_000_000,
-	}, MaxAlgoPayments: map[string]uint64{
-		"testnet": 10_000_000,
-	}, ReviewASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"123": 12,
-		},
-	}, MaxASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"123": 45,
-		},
-	}},
-	}
-	cfg, err := sp.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
+func TestPolicyV1LimitsCompileToConfig(t *testing.T) {
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "limits": {"testnet": {
+    "algo": {"review_above": "5000000", "reject_above": "10000000"},
+    "asa:123": {"review_above": "12", "reject_above": "45"}
+  }}
+}`)
 	if got := cfg.MaxASAAmounts["testnet"][123]; got != 45 {
 		t.Fatalf("MaxASAAmounts[testnet][123] = %d, want 45", got)
 	}
@@ -62,100 +51,20 @@ func TestStoredConfigApplyParsesASAKeys(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplyRejectsInvalidASAKey(t *testing.T) {
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"abc": 1,
-		},
-	}},
-	}
-	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want parse failure")
-	}
-}
-
-func TestStoredConfigApplyRejectsNonCanonicalASAKey(t *testing.T) {
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"00123": 1,
-		},
-	}},
-	}
-	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want canonical ASA key failure")
-	}
-}
-
-func TestStoredConfigApplyRejectsZeroASAKey(t *testing.T) {
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewASAAmounts: map[string]map[string]uint64{
-		"testnet": {
-			"0": 1,
-		},
-	}},
-	}
-	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want zero ASA ID failure")
-	}
-}
-
-func TestStoredConfigApplyRejectsInvalidLegacyLimitNetworks(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  *StoredConfig
-	}{
-		{
-			name: "review algo",
-			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{"bad network": 1}}},
-		},
-		{
-			name: "max algo",
-			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxAlgoPayments: map[string]uint64{"bad network": 1}}},
-		},
-		{
-			name: "review asa",
-			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}}}},
-		},
-		{
-			name: "max asa",
-			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}}}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := tt.cfg.Apply(DefaultConfig()); err == nil {
-				t.Fatal("Apply() error = nil, want network validation failure")
-			}
-		})
-	}
-}
-
-func TestStoredConfigApplyRejectsReviewThresholdAboveDenyThreshold(t *testing.T) {
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{"testnet": 10_000_000}, MaxAlgoPayments: map[string]uint64{"testnet": 5_000_000}}}
-	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want review/deny threshold validation failure")
-	}
-}
-
-func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
-	trueVal := true
-	falseVal := false
+// TestPolicyV1KeyOverridesInheritBase pins that a key override changes only
+// the settings it names and inherits the rest from the compiled document.
+// v1 overrides carry scalar settings and limits only.
+func TestPolicyV1KeyOverridesInheritBase(t *testing.T) {
 	allowlistKey := types.Address{1}.String()
 	strictKey := types.Address{2}.String()
-	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &falseVal}, KeyOverrides: map[string]*StoredConfig{
-		allowlistKey: {
-			// Override only RejectForeignRekey; inherit the rest from the identity base.
-			StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &falseVal},
-		},
-		strictKey: {
-			// Tighter guard for a specific signing key.
-			StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &trueVal},
-		},
-	},
-	}
-	cfg, err := sp.Apply(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
+	cfg := routingConfig(t, `{
+  "format": "aplane.signer-policy.v1",
+  "reject_close_remainder": false,
+  "key_overrides": {
+    "`+allowlistKey+`": {"reject_foreign_rekey": false},
+    "`+strictKey+`": {"reject_close_remainder": true}
+  }
+}`)
 
 	allowlist := cfg.ForKey(allowlistKey)
 	if allowlist == cfg {
@@ -165,12 +74,12 @@ func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 		t.Error("allowlist override RejectForeignRekey = true, want false (override applied)")
 	}
 	if allowlist.RejectCloseRemainder {
-		t.Error("allowlist override RejectCloseRemainder = true, want false (inherited from identity base)")
+		t.Error("allowlist override RejectCloseRemainder = true, want false (inherited from document)")
 	}
 
 	strict := cfg.ForKey(strictKey)
 	if !strict.RejectForeignRekey {
-		t.Error("strict override RejectForeignRekey = false, want true (inherited identity default)")
+		t.Error("strict override RejectForeignRekey = false, want true (inherited default)")
 	}
 	if !strict.RejectCloseRemainder {
 		t.Error("strict override RejectCloseRemainder = false, want true (override applied)")
@@ -178,98 +87,6 @@ func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 
 	if got := cfg.ForKey(types.Address{3}.String()); got != cfg {
 		t.Error("ForKey for unknown key should return the base config")
-	}
-}
-
-func TestStoredConfigApplyRejectsNestedKeyOverrides(t *testing.T) {
-	trueVal := true
-	outerKey := types.Address{1}.String()
-	innerKey := types.Address{2}.String()
-	sp := &StoredConfig{
-		KeyOverrides: map[string]*StoredConfig{
-			outerKey: {
-				StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &trueVal},
-				KeyOverrides: map[string]*StoredConfig{
-					innerKey: {StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &trueVal}},
-				},
-			},
-		},
-	}
-	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want error for nested key_overrides")
-	}
-}
-
-func TestParseStoredConfigRejectsOldKeyTypeOverridesField(t *testing.T) {
-	if _, err := ParseStoredConfig([]byte(`
-key_type_overrides:
-  ed25519: {}
-`)); err == nil {
-		t.Fatal("ParseStoredConfig() error = nil, want unknown key_type_overrides field")
-	}
-}
-
-func TestStoredConfigApplyRejectsKeyTypeAsKeyOverrideSelector(t *testing.T) {
-	_, err := ParseStoredConfig([]byte(`
-key_overrides:
-  ed25519: {}
-`))
-	if err == nil {
-		t.Fatal("ParseStoredConfig() error = nil, want invalid key override selector")
-	}
-}
-
-func TestStoredConfigApplyRejectsCosignerKeyIDAsSigningKeyOverrideSelector(t *testing.T) {
-	const cosignerKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
-
-	_, err := ParseStoredConfig([]byte(`
-key_overrides:
-  MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ:
-    max_fee_microalgos: 1000
-`))
-	if err == nil {
-		t.Fatal("ParseStoredConfig() error = nil, want invalid signer key override selector")
-	}
-	if !strings.Contains(err.Error(), "not a Witness Key ID") {
-		t.Fatalf("ParseStoredConfig() error = %v, want Witness Key ID rejection", err)
-	}
-	if _, err := NormalizeCosignerKeyOverrideKey(cosignerKeyID); err != nil {
-		t.Fatalf("test Witness Key ID is invalid: %v", err)
-	}
-}
-
-func TestStoredConfigApplyRejectsInvalidNilKeyOverrideSelector(t *testing.T) {
-	stored := &StoredConfig{
-		KeyOverrides: map[string]*StoredConfig{
-			"ed25519": nil,
-		},
-	}
-	if _, err := stored.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want invalid nil key override selector")
-	}
-}
-
-func TestStoredConfigApplyCosignerAcceptsCosignerKeyIDOverride(t *testing.T) {
-	const cosignerKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
-
-	rejectClawback := true
-	stored := &StoredConfig{
-		KeyOverrides: map[string]*StoredConfig{
-			cosignerKeyID: {
-				StoredPolicyCore: StoredPolicyCore{RejectClawback: &rejectClawback},
-			},
-		},
-	}
-	cfg, err := stored.ApplyCosigner(DefaultConfig())
-	if err != nil {
-		t.Fatalf("ApplyCosigner() error = %v", err)
-	}
-	override := cfg.ForKey(cosignerKeyID)
-	if override == cfg {
-		t.Fatal("ForKey did not return the cosigner override config")
-	}
-	if !override.RejectClawback {
-		t.Fatal("cosigner override RejectClawback = false, want true")
 	}
 }
 

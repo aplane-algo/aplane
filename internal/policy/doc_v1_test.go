@@ -31,6 +31,12 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 	tp := func(routes string) string {
 		return fmt.Sprintf(`"transfer_policy":{"enabled":true,"on_no_route":"reject","routes":[%s]}`, routes)
 	}
+	// routeWith returns the base route with one substring replaced and extra
+	// members appended.
+	routeWith := func(old, replacement, extra string) string {
+		return strings.Replace(fmt.Sprintf(route, extra), old, replacement, 1)
+	}
+	holder := v1Holder.String()
 	for _, tc := range []struct {
 		name, doc, pointer, msg string
 	}{
@@ -56,6 +62,31 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"duplicate address in set", fmt.Sprintf(signer, fmt.Sprintf(`"address_sets":{"ops":[%q,%q]}`, v1Ops.String(), v1Ops.String())), "/address_sets/ops/1", "duplicate address"},
 		{"description too long", fmt.Sprintf(signer, fmt.Sprintf(`"description":%q`, strings.Repeat("中", maxPolicyDescriptionLength+1))), "/description", "1024 characters"},
 		{"cosigner document on signer", `{"format":"aplane.cosigner-policy.v1"}`, "/format", "not accepted here"},
+		{"transfer_policy without enabled", fmt.Sprintf(signer, `"transfer_policy":{"on_no_route":"reject"}`), "/transfer_policy", `missing required field "enabled"`},
+		{"invalid on_no_route", fmt.Sprintf(signer, `"transfer_policy":{"enabled":true,"on_no_route":"allow"}`), "/transfer_policy/on_no_route", "must be one of"},
+		{"invalid close_on_no_route", fmt.Sprintf(signer, `"transfer_policy":{"enabled":true,"on_no_route":"reject","close_on_no_route":"allow"}`), "/transfer_policy/close_on_no_route", "must be one of"},
+		{"invalid clawback_on_no_route", fmt.Sprintf(signer, `"transfer_policy":{"enabled":true,"on_no_route":"reject","clawback_on_no_route":"allow"}`), "/transfer_policy/clawback_on_no_route", "must be one of"},
+		{"route id leading dash", fmt.Sprintf(signer, tp(routeWith(`"id":"r"`, `"id":"-bad"`, ""))), "/transfer_policy/routes/0/id", "route id"},
+		{"route id punctuation", fmt.Sprintf(signer, tp(routeWith(`"id":"r"`, `"id":"bad.route"`, ""))), "/transfer_policy/routes/0/id", "route id"},
+		{"route missing networks", fmt.Sprintf(signer, tp(routeWith(`"networks":["testnet"],`, "", ""))), "/transfer_policy/routes/0", `missing required field "networks"`},
+		{"route missing sources", fmt.Sprintf(signer, tp(routeWith(`"sources":["*"],`, "", ""))), "/transfer_policy/routes/0", `missing required field "sources"`},
+		{"route missing assets", fmt.Sprintf(signer, tp(routeWith(`"assets":["algo"],`, "", ""))), "/transfer_policy/routes/0", `missing required field "assets"`},
+		{"route missing destinations", fmt.Sprintf(signer, tp(routeWith(`,"destinations":["*"]`, "", ""))), "/transfer_policy/routes/0", `missing required field "destinations"`},
+		{"wildcard mixed with concrete network", fmt.Sprintf(signer, tp(routeWith(`"networks":["testnet"]`, `"networks":["*","testnet"]`, ""))), "/transfer_policy/routes/0/networks/0", "invalid network id"},
+		{"unknown asset set", fmt.Sprintf(signer, tp(routeWith(`"assets":["algo"]`, `"assets":["@usd"]`, ""))), "/transfer_policy/routes/0/assets/0", `unknown asset set "usd"`},
+		{"self source", fmt.Sprintf(signer, tp(routeWith(`"sources":["*"]`, `"sources":["self"]`, ""))), "/transfer_policy/routes/0/sources/0", "invalid Algorand address"},
+		{"self asset source", fmt.Sprintf(signer, tp(fmt.Sprintf(route, `,"asset_sources":["self"],"allow_clawback":true`))), "/transfer_policy/routes/0/asset_sources/0", "invalid Algorand address"},
+		{"asset_sources without allow_clawback", fmt.Sprintf(signer, tp(fmt.Sprintf(route, fmt.Sprintf(`,"asset_sources":[%q]`, holder)))), "/transfer_policy/routes/0", "allow_clawback and asset_sources"},
+		{"clawback route self destination", fmt.Sprintf(signer, tp(routeWith(`"destinations":["*"]`, `"destinations":["self"]`, fmt.Sprintf(`,"asset_sources":[%q],"allow_clawback":true`, holder)))), "/transfer_policy/routes/0/destinations/0", "self is not allowed in a clawback"},
+		{"invalid asset term", fmt.Sprintf(signer, tp(routeWith(`"assets":["algo"]`, `"assets":["not-an-asset"]`, ""))), "/transfer_policy/routes/0/assets/0", "asa:<id>"},
+		{"zero asa id", fmt.Sprintf(signer, tp(routeWith(`"assets":["algo"]`, `"assets":["asa:0"]`, ""))), "/transfer_policy/routes/0/assets/0", "asa:<id>"},
+		{"wildcard network key in asset set", fmt.Sprintf(signer, `"asset_sets":{"bad":{"*":["asa:1"]}}`), "/asset_sets/bad/*", "invalid network id"},
+		{"route review above reject", fmt.Sprintf(signer, tp(fmt.Sprintf(route, `,"limits":{"testnet":{"algo":{"review_above":"10","reject_above":"9"}}}`))), "/transfer_policy/routes/0/limits/testnet/algo", "must not exceed"},
+		{"blocked destination self", fmt.Sprintf(signer, `"transfer_policy":{"enabled":false,"blocked_destinations":["self"]}`), "/transfer_policy/blocked_destinations/0", "invalid Algorand address"},
+		{"blocked destination wildcard", fmt.Sprintf(signer, `"transfer_policy":{"enabled":false,"blocked_destinations":["*"]}`), "/transfer_policy/blocked_destinations/0", "invalid Algorand address"},
+		{"blocked destination set reference", fmt.Sprintf(signer, `"transfer_policy":{"enabled":false,"blocked_destinations":["@bad"]}`), "/transfer_policy/blocked_destinations/0", "invalid Algorand address"},
+		{"blocked destination malformed address", fmt.Sprintf(signer, `"transfer_policy":{"enabled":false,"blocked_destinations":["not-an-address"]}`), "/transfer_policy/blocked_destinations/0", "invalid Algorand address"},
+		{"duplicate blocked destination", fmt.Sprintf(signer, fmt.Sprintf(`"transfer_policy":{"enabled":false,"blocked_destinations":[%q,%q]}`, holder, holder)), "/transfer_policy/blocked_destinations/1", "duplicate address"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := DecodeSignerPolicyV1([]byte(tc.doc))
@@ -103,31 +134,11 @@ func assertDocumentError(t *testing.T, err error, pointer, msg string) {
 	}
 }
 
-// TestSignerPolicyV1MatchesYAMLVerdicts compiles the same signer policy from
-// policy.yaml and from v1 JSON and requires identical verdicts for every
-// transaction, for the base config and for a key override.
-func TestSignerPolicyV1MatchesYAMLVerdicts(t *testing.T) {
-	yamlDoc := fmt.Sprintf(`
-reject_clawback: true
-max_fee_microalgos: 5000
-review_algo_payments: {testnet: 100000000}
-max_algo_payments: {testnet: 1000000000}
-max_asa_amounts: {testnet: {"777": 500}}
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: review
-  close_on_no_route: reject
-  blocked_destinations: [%[1]s]
-  address_sets: {ops: [%[2]s]}
-  asset_sets: {usd: {testnet: [777]}}
-  routes:
-    - {id: ops-algo, networks: [testnet], sources: ["@ops"], assets: [algo], destinations: ["*"], limits: {reject_above: 50000000}}
-    - {id: ops-usd, networks: [testnet], sources: ["@ops"], assets: ["@usd"], destinations: [%[3]s], limits: {review_above: 100}}
-    - {id: ops-close, networks: [testnet], sources: ["@ops"], assets: [algo], destinations: [%[3]s], close: {allow: true}}
-key_overrides:
-  %[2]s: {max_fee_microalgos: 2000, review_algo_payments: {testnet: 10000000}}
-`, v1Bad, v1Ops, v1Vendor)
+// TestSignerPolicyV1Verdicts pins the verdicts of a signer policy covering
+// document limits, routes, sets, blocked destinations, close and clawback
+// rules, and a key override, for every transaction in the matrix. The
+// expectations match the verdicts policy.yaml produced for the same policy.
+func TestSignerPolicyV1Verdicts(t *testing.T) {
 	jsonDoc := fmt.Sprintf(`{
   "format": "aplane.signer-policy.v1",
   "reject_clawback": true,
@@ -145,58 +156,46 @@ key_overrides:
   },
   "key_overrides": {%[2]q: {"max_fee_microalgos": "2000", "limits": {"testnet": {"algo": {"review_above": "10000000"}}}}}
 }`, v1Bad.String(), v1Ops.String(), v1Vendor.String())
-
-	stored, err := ParseStoredConfig([]byte(yamlDoc))
-	if err != nil {
-		t.Fatalf("ParseStoredConfig() error = %v", err)
-	}
-	fromYAML, err := stored.ApplySigning(DefaultConfig())
-	if err != nil {
-		t.Fatalf("ApplySigning() error = %v", err)
-	}
 	doc, err := DecodeSignerPolicyV1([]byte(jsonDoc))
 	if err != nil {
 		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
 	}
-	fromJSON, err := doc.Compile(DefaultConfig())
+	cfg, err := doc.Compile(DefaultConfig())
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	distinct := map[string]bool{}
-	for _, tc := range v1VerdictTransactions(t) {
-		for _, key := range []string{v1Ops.String(), v1Other.String()} {
-			want := policyVerdicts(tc.txn, fromYAML.ForKey(key))
-			got := policyVerdicts(tc.txn, fromJSON.ForKey(key))
-			if got != want {
-				t.Errorf("%s signed by %s: v1 verdicts %q, yaml verdicts %q", tc.name, key[:6], got, want)
-			}
-			distinct[want] = true
-		}
+	// want[name] = {verdicts signed by the override key, verdicts signed by another key}
+	want := map[string][2]string{
+		"small algo payment":                 {"", ""},
+		"algo over route reject":             {"review_algo_payment_exceeded,transfer_policy:ops-algo:reject_above", "transfer_policy:ops-algo:reject_above"},
+		"algo over document review":          {"review_algo_payment_exceeded,transfer_policy:ops-algo:reject_above", "review_algo_payment_exceeded,transfer_policy:ops-algo:reject_above"},
+		"algo over document reject":          {"max_algo_payment_exceeded,review_algo_payment_exceeded,transfer_policy:ops-algo:reject_above", "max_algo_payment_exceeded,review_algo_payment_exceeded,transfer_policy:ops-algo:reject_above"},
+		"algo to blocked destination":        {"transfer_policy:blocked_destination", "transfer_policy:blocked_destination"},
+		"algo from unrouted sender":          {"transfer_policy:route_miss", "transfer_policy:route_miss"},
+		"algo on unknown network":            {"review_unknown_genesis_hash,transfer_policy:unknown_genesis_hash,unknown_genesis_hash", "review_unknown_genesis_hash,transfer_policy:unknown_genesis_hash,unknown_genesis_hash"},
+		"usd within limits":                  {"", ""},
+		"usd over route review":              {"transfer_policy:ops-usd:review_above", "transfer_policy:ops-usd:review_above"},
+		"usd over route cosigner reject":     {"transfer_policy:ops-usd:review_above", "transfer_policy:ops-usd:review_above"},
+		"usd over document reject":           {"max_asa_amount_exceeded,transfer_policy:ops-usd:review_above", "max_asa_amount_exceeded,transfer_policy:ops-usd:review_above"},
+		"usd to unrouted destination":        {"transfer_policy:route_miss", "transfer_policy:route_miss"},
+		"unrouted asset":                     {"transfer_policy:route_miss", "transfer_policy:route_miss"},
+		"close to routed destination":        {"", ""},
+		"close to unrouted destination":      {"transfer_policy:ops-algo:close_rejected", "transfer_policy:ops-algo:close_rejected"},
+		"clawback":                           {"reject_clawback,transfer_policy:clawback_rejected", "reject_clawback,transfer_policy:clawback_rejected"},
+		"fee between override and base caps": {"max_fee_exceeded", ""},
 	}
-	if len(distinct) < 8 {
-		t.Fatalf("only %d distinct verdict sets; the transaction matrix is not exercising the policy", len(distinct))
+	for _, tc := range v1VerdictTransactions(t) {
+		for i, key := range []string{v1Ops.String(), v1Other.String()} {
+			if got := policyVerdicts(tc.txn, cfg.ForKey(key)); got != want[tc.name][i] {
+				t.Errorf("%s signed by %s: verdicts %q, want %q", tc.name, key[:6], got, want[tc.name][i])
+			}
+		}
 	}
 }
 
-// TestCosignerPolicyV1MatchesYAMLVerdicts does the same for one cosigner key.
-func TestCosignerPolicyV1MatchesYAMLVerdicts(t *testing.T) {
-	yamlDoc := fmt.Sprintf(`
-reject_close_remainder: true
-max_fee_microalgos: 5000
-max_asa_amounts: {testnet: {"777": 500}}
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  blocked_destinations: [%[1]s]
-  address_sets: {ops: [%[2]s]}
-  routes:
-    - {id: ops-usd, networks: [testnet], sources: ["@ops"], assets: ["asa:777"], destinations: [%[3]s], limits: {reject_above: 300}}
-    - {id: ops-algo, networks: ["*"], sources: ["@ops"], assets: [algo], destinations: ["*"]}
-rekey_policy:
-  allowed:
-    - {sender: "@ops", targets: [%[3]s]}
-`, v1Bad, v1Ops, v1Vendor)
+// TestCosignerPolicyV1Verdicts does the same for one cosigner key's policy.
+func TestCosignerPolicyV1Verdicts(t *testing.T) {
 	jsonDoc := fmt.Sprintf(`{
   "format": "aplane.cosigner-policy.v1", "key": %[4]q,
   "reject_close_remainder": true,
@@ -209,41 +208,43 @@ rekey_policy:
   ]},
   "rekey_policy": {"allowed": [{"sender": "@ops", "targets": [%[3]q]}]}
 }`, v1Bad.String(), v1Ops.String(), v1Vendor.String(), testWitnessKeyIDV1)
-
-	stored, err := ParseStoredCosignerConfig([]byte(yamlDoc))
-	if err != nil {
-		t.Fatalf("ParseStoredCosignerConfig() error = %v", err)
-	}
-	fromYAML, err := stored.ApplyCosigner(DefaultConfig())
-	if err != nil {
-		t.Fatalf("ApplyCosigner() error = %v", err)
-	}
 	doc, err := DecodeCosignerPolicyV1([]byte(jsonDoc), testWitnessKeyIDV1)
 	if err != nil {
 		t.Fatalf("DecodeCosignerPolicyV1() error = %v", err)
 	}
-	fromJSON, err := doc.Compile(DefaultConfig())
+	cfg, err := doc.Compile(DefaultConfig())
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
+	want := map[string]string{
+		"small algo payment":                 "",
+		"algo over route reject":             "",
+		"algo over document review":          "",
+		"algo over document reject":          "",
+		"algo to blocked destination":        "transfer_policy:blocked_destination",
+		"algo from unrouted sender":          "transfer_policy:route_miss",
+		"algo on unknown network":            "transfer_policy:unknown_genesis_hash",
+		"usd within limits":                  "",
+		"usd over route review":              "",
+		"usd over route cosigner reject":     "transfer_policy:ops-usd:reject_above",
+		"usd over document reject":           "max_asa_amount_exceeded,transfer_policy:ops-usd:reject_above",
+		"usd to unrouted destination":        "transfer_policy:route_miss",
+		"unrouted asset":                     "transfer_policy:route_miss",
+		"close to routed destination":        "reject_close_remainder,transfer_policy:ops-algo:close_rejected",
+		"close to unrouted destination":      "reject_close_remainder,transfer_policy:ops-algo:close_rejected",
+		"clawback":                           "transfer_policy:clawback_rejected",
+		"fee between override and base caps": "",
+	}
 	for _, tc := range v1VerdictTransactions(t) {
-		if got, want := policyVerdicts(tc.txn, fromJSON), policyVerdicts(tc.txn, fromYAML); got != want {
-			t.Errorf("%s: v1 verdicts %q, yaml verdicts %q", tc.name, got, want)
+		if got := policyVerdicts(tc.txn, cfg); got != want[tc.name] {
+			t.Errorf("%s: verdicts %q, want %q", tc.name, got, want[tc.name])
 		}
 	}
-	for _, pair := range [][2]types.Address{{v1Ops, v1Vendor}, {v1Ops, v1Other}, {v1Other, v1Vendor}} {
-		if got, want := fromJSON.RekeyPolicy.Allows(pair[0], pair[1]), fromYAML.RekeyPolicy.Allows(pair[0], pair[1]); got != want {
-			t.Errorf("rekey %s -> %s allowed = %v, yaml %v", pair[0].String()[:6], pair[1].String()[:6], got, want)
-		}
-	}
-	if fromJSON.TransferPolicy.OnNoRoute != TransferOnNoRouteReject || fromJSON.TransferPolicy.CloseOnNoRoute != TransferOnNoRouteReject ||
-		fromJSON.TransferPolicy.ClawbackOnNoRoute != TransferOnNoRouteReject || !fromJSON.TransferPolicy.Enabled {
-		t.Fatalf("cosigner transfer policy = %+v, want enabled with reject route misses", fromJSON.TransferPolicy)
+	if !cfg.RekeyPolicy.Allows(v1Ops, v1Vendor) || cfg.RekeyPolicy.Allows(v1Ops, v1Other) {
+		t.Fatal("rekey_policy did not compile to the listed edge only")
 	}
 }
 
-// TestPolicyV1RouteLimitsArePerAsset covers what policy.yaml could not
-// express: one route with different limits per asset, and ALGO in a set.
 func TestPolicyV1RouteLimitsArePerAsset(t *testing.T) {
 	doc, err := DecodeSignerPolicyV1([]byte(fmt.Sprintf(`{
   "format": "aplane.signer-policy.v1",

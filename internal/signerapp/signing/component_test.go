@@ -228,7 +228,14 @@ func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 }
 
 func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
-	cfg := cosignerPolicyConfigForSigningTest(t, `{}`)
+	// v1 cosigner documents always carry a transfer policy; build the
+	// degenerate shape directly to exercise the defensive check.
+	cfg := cosignerPolicyConfigForSigningTest(t, `{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "`+testCosignerPolicyKey+`",
+  "transfer_policy": {"routes": []}
+}`)
+	cfg.TransferPolicy = nil
 	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
@@ -369,12 +376,11 @@ func TestSignComponentCosignerRejectsKeyNotHeldBeforePolicy(t *testing.T) {
 }
 
 func TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
-	cfg := cosignerPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes: []
-`)
+	cfg := cosignerPolicyConfigForSigningTest(t, `{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "`+testCosignerPolicyKey+`",
+  "transfer_policy": {"routes": []}
+}`)
 	cfg.TransferPolicy.OnNoRoute = policy.TransferOnNoRouteReview
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
@@ -400,20 +406,23 @@ transfer_policy:
 func TestSignComponentCosignerRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
 	source := types.Address{35}.String()
 	dest := types.Address{36}.String()
-	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: inherited_review_route
-      networks: [testnet]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-      limits:
-        review_above: 1
-`, source, dest))
+	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "inherited_review_route",
+        "networks": ["testnet"],
+        "sources": [%q],
+        "assets": ["algo"],
+        "destinations": [%q],
+        "limits": {"testnet": {"algo": {"review_above": "1"}}}
+      }
+    ]
+  }
+}`, source, dest))
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
@@ -480,16 +489,16 @@ func TestSignComponentCosignerAllowsExplicitRekeyPolicy(t *testing.T) {
 
 	source := types.Address{68}
 	target := types.Address{69}
-	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes: []
-rekey_policy:
-  allowed:
-    - sender: %q
-      targets: [%q]
-`, source.String(), target.String()))
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "format": "aplane.cosigner-policy.v1",
+  "key": %q,
+  "transfer_policy": {"routes": []},
+  "rekey_policy": {
+    "allowed": [
+      {"sender": %q, "targets": [%q]}
+    ]
+  }
+}`, testCosignerPolicyKey, source.String(), target.String()))
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = target
 	keyMaterial := &coresigning.KeyMaterial{
@@ -525,16 +534,16 @@ func TestSignComponentCosignerRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing
 	source := types.Address{70}
 	allowedTarget := types.Address{71}
 	blockedTarget := types.Address{72}
-	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes: []
-rekey_policy:
-  allowed:
-    - sender: %q
-      targets: [%q]
-`, source.String(), allowedTarget.String()))
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "format": "aplane.cosigner-policy.v1",
+  "key": %q,
+  "transfer_policy": {"routes": []},
+  "rekey_policy": {
+    "allowed": [
+      {"sender": %q, "targets": [%q]}
+    ]
+  }
+}`, testCosignerPolicyKey, source.String(), allowedTarget.String()))
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = blockedTarget
 	store := &componentKeyStore{}
@@ -1352,32 +1361,40 @@ func cosignerTestServiceFor(componentKey string, cfg *policy.Config) *Service {
 
 func wildcardCosignerPolicy(t *testing.T) *policy.Config {
 	t.Helper()
-	return cosignerPolicyConfigForSigningTest(t, `
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes:
-    - id: allow_all_dev
-      networks: ["*"]
-      sources: ["*"]
-      assets: ["*"]
-      destinations: ["*"]
-`)
+	return cosignerPolicyConfigForSigningTest(t, `{
+  "format": "aplane.cosigner-policy.v1",
+  "key": "`+testCosignerPolicyKey+`",
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "allow_all_dev",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}`)
 }
 
 func cosignerRoutePolicy(t *testing.T, source, destination string) *policy.Config {
 	t.Helper()
-	return cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  routes:
-    - id: allow_test_route
-      networks: [testnet]
-      sources: [%q]
-      assets: ["algo"]
-      destinations: [%q]
-`, source, destination))
+	return cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "format": "aplane.cosigner-policy.v1",
+  "key": %q,
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "allow_test_route",
+        "networks": ["testnet"],
+        "sources": [%q],
+        "assets": ["algo"],
+        "destinations": [%q]
+      }
+    ]
+  }
+}`, testCosignerPolicyKey, source, destination))
 }
 
 func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
