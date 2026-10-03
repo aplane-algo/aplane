@@ -651,8 +651,8 @@ IPC failure semantics:
 
 The `apadmin` TUI has a read-only Policies view; the `apadmin policy` verbs
 (`status`, `export`, `check`, `apply`, `remove`) change policy. Policy reads,
-validation, and mutation use exact v1 JSON documents through `get_policy`,
-`check_policy`, and `apply_policy`; there is no parallel scalar policy RPC
+validation, and mutation use exact v1 JSON documents through `get_policy`
+(summary), `get_policy_document`, `check_policy`, and `apply_policy`; there is no parallel scalar policy RPC
 surface.
 
 These client capabilities describe the one product surface. Backend admin

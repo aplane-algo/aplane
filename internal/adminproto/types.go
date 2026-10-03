@@ -455,13 +455,31 @@ type UpdateAdminSettingRequest struct {
 	Value string
 }
 
-// PolicyDocument is one policy document's exact bytes. Key is the Witness Key
-// ID of a cosigner document and empty for the signer document.
+// PolicyDocument is one policy document's exact bytes in a check or apply
+// request. Key is the Witness Key ID of a cosigner document and empty for the
+// signer document.
 type PolicyDocument struct {
+	Key      string
+	Document string
+}
+
+// PolicyDocumentInfo describes one stored policy document without its bytes.
+type PolicyDocumentInfo struct {
+	Key          string
+	SHA256       string
+	Size         int
+	SignedAtUnix int64
+}
+
+// PolicyDocumentResult is one stored policy document's exact bytes.
+type PolicyDocumentResult struct {
+	Success      bool
 	Key          string
 	Document     string
 	SHA256       string
 	SignedAtUnix int64
+	Code         string
+	Error        string
 }
 
 // Cosigner key policy coverage states.
@@ -485,12 +503,13 @@ type PolicyProblem struct {
 	Message string
 }
 
-// PolicyView is the node's active policy: its exact documents, cosigner key
-// coverage, and the set digest that apply uses as its concurrency base.
+// PolicyView summarizes the node's active policy: each document without its
+// bytes, cosigner key coverage, and the set digest that apply uses as its
+// concurrency base.
 type PolicyView struct {
 	Success         bool
 	NodeRole        string
-	Documents       []PolicyDocument
+	Documents       []PolicyDocumentInfo
 	Keys            []PolicyKeyStatus
 	PolicySetSHA256 string
 	GenerationID    string
@@ -510,8 +529,8 @@ func (v PolicyView) Wire(id string) protocol.PolicyMessage {
 		Error:           v.Error,
 	}
 	for _, doc := range v.Documents {
-		msg.Documents = append(msg.Documents, protocol.PolicyDocumentWire{
-			Key: doc.Key, Document: doc.Document, SHA256: doc.SHA256, SignedAtUnix: doc.SignedAtUnix,
+		msg.Documents = append(msg.Documents, protocol.PolicyDocumentInfoWire{
+			Key: doc.Key, SHA256: doc.SHA256, Size: doc.Size, SignedAtUnix: doc.SignedAtUnix,
 		})
 	}
 	for _, key := range v.Keys {

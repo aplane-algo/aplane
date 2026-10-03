@@ -176,6 +176,9 @@ func (s *stubServices) GetPolicy() adminproto.PolicyView {
 	s.getPolicyCalls++
 	return s.getPolicyResult
 }
+func (s *stubServices) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
+	return adminproto.PolicyDocumentResult{Success: true, Key: key, Document: "{}"}
+}
 func (s *stubServices) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	s.checkPolicyCalls++
 	s.lastCheckPolicy = req

@@ -214,6 +214,7 @@ Client to Server:
 - `get_admin_settings`
 - `update_admin_setting`
 - `get_policy`
+- `get_policy_document`
 - `check_policy`
 - `apply_policy`
 
@@ -222,6 +223,7 @@ Server to Client:
 - `admin_settings`
 - `update_admin_setting_result`
 - `policy`
+- `policy_document`
 - `check_policy_result`
 - `apply_policy_result`
 
@@ -431,13 +433,15 @@ exact bytes; the server never re-serializes a document.
 
 Shared shapes:
 
-- policy document: `key` (Witness Key ID; omitted for the signer document), `document`, `sha256` (set by the server, ignored on requests), `signed_at_unix` (diagnostic sidecar timestamp, set by the server)
+- request document (check and apply): `key` (Witness Key ID; omitted for the signer document), `document`
+- document summary: `key`, `sha256`, `size`, optional `signed_at_unix` (diagnostic sidecar timestamp)
 - key status (cosigner): `key`, `status` — `active` (key held, document present), `no_policy` (key held, no document; the key rejects every request), or `key_not_held` (document for a key the node does not hold)
 - policy problem: optional `key`, optional `pointer` (JSON Pointer into that document), `message`
 
 Messages:
 
-- `get_policy` -> `policy`: `success`, `node_role`, `documents[]`, `keys[]` (cosigner nodes), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document (empty key for the signer document). Returns `policy_unavailable` when no policy is loaded.
+- `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries, without bytes), `keys[]` (cosigner nodes), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document (empty key for the signer document). Returns `policy_unavailable` when no policy is loaded.
+- `get_policy_document`: optional `key` (omitted for the signer document) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when the key has no document.
 - `check_policy`: `documents[]`, optional `remove[]` (cosigner Witness Key IDs the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report cosigner key coverage gaps in the resulting state (`no_policy`, `key_not_held`) and policy advisories, such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`.
 - `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
 
@@ -446,18 +450,19 @@ Apply rules:
 - A signer node takes exactly one document with no `key` and no removals.
 - A cosigner node adds or replaces each listed document, deletes each key in `remove`, and keeps unlisted documents. Each document's `key` must equal its signed `key` field. A key may appear only once across `documents` and `remove`; removing a key with no document is rejected.
 - `expected_policy_set_sha256` is required and must equal the active `policy_set_sha256`.
-- The resulting policy, encoded as the full `apply_policy_result` that carries it (every document and every cosigner key status), must fit in one admin message with 4 KiB left for the request ID; a larger set is rejected with `policy_set_too_large` before anything is written.
+- A cosigner node holds at most 8,192 policy documents (`policyapply.MaxCosignerPolicies`); a change past the cap is rejected with `policy_set_too_large` before anything is written. Key generation, import, and restore refuse an 8,193rd cosigner credential (`keys.MaxCosignerCredentials`).
+- Response sizes are bounded: `policy` and `apply_policy_result` carry document summaries, never bytes, so with both caps full and every field at its longest they encode to about 3 MB, inside the 4 MiB admin frame. `policy_document` carries one document of at most 1 MiB.
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed; signing is blocked pending reconciliation or recovery.
 
 Result codes include `expected_policy_set_sha256_required`,
 `policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
-`invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_verify_failed`,
+`invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_document_not_found`, `policy_verify_failed`,
 `identity_locked`, `policy_commit_uncertain`, `policy_reload_failed`, and
 `policy_save_failed`.
 
-`get_policy` and `check_policy` require `policy.view`; `apply_policy` requires
+`get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
 `policy.update`. Policy messages are not exposed through apshell or MCP.
 
 ## Writable Settings

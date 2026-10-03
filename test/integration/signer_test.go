@@ -2656,8 +2656,21 @@ func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, k
 		t.Fatalf("get policy failed: %+v", current)
 	}
 
+	docBytes, err := ipcClient.SendAndReceive(protocol.GetPolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeGetPolicyDocument,
+			ID:   fmt.Sprintf("policy-document-%d", time.Now().UnixNano()),
+		},
+	}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("failed to get policy document: %v", err)
+	}
+	var stored protocol.PolicyDocumentMessage
+	if err := json.Unmarshal(docBytes, &stored); err != nil || !stored.Success {
+		t.Fatalf("get policy document failed: %+v, %v", stored, err)
+	}
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(current.Documents[0].Document), &doc); err != nil {
+	if err := json.Unmarshal([]byte(stored.Document), &doc); err != nil {
 		t.Fatalf("failed to parse signer policy document: %v", err)
 	}
 	doc[key] = value

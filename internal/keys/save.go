@@ -5,6 +5,7 @@ package keys
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -59,6 +60,11 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *cryp
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive canonical managed credential path: %w", err)
 	}
+	if payload.Category == CategoryWitness {
+		if err := requireCosignerCredentialCapacity(active, privateFile); err != nil {
+			return nil, err
+		}
+	}
 	// Durable, never in-place: a credential write must survive a crash and
 	// must not be able to reach an inode a sealed generation shares
 	// (docs/ARCH_GENERATIONS.md §4).
@@ -73,4 +79,20 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *cryp
 		Address:     selector,
 		PrivateFile: privateFile,
 	}, nil
+}
+
+// requireCosignerCredentialCapacity refuses a new cosigner credential once
+// the store holds MaxCosignerCredentials. Rewriting an existing one is allowed.
+func requireCosignerCredentialCapacity(active storepaths.ActivePaths, privateFile string) error {
+	if _, err := os.Lstat(privateFile); err == nil {
+		return nil
+	}
+	count, err := CountCosignerCredentials(active.KeysDir())
+	if err != nil {
+		return err
+	}
+	if count >= MaxCosignerCredentials {
+		return fmt.Errorf("%w: the store holds %d", ErrCosignerCredentialLimit, count)
+	}
+	return nil
 }

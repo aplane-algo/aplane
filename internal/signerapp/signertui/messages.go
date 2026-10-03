@@ -82,6 +82,7 @@ const (
 	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
 	MsgTypeAdminSettings            = protocol.MsgTypeAdminSettings
 	MsgTypePolicy                   = protocol.MsgTypePolicy
+	MsgTypePolicyDocument           = protocol.MsgTypePolicyDocument
 	MsgTypeUpdateAdminSetting       = protocol.MsgTypeUpdateAdminSetting
 	MsgTypeUpdateAdminSettingResult = protocol.MsgTypeUpdateAdminSettingResult
 
@@ -172,6 +173,7 @@ type (
 	UpdateAdminSettingMessage            = protocol.UpdateAdminSettingMessage
 	UpdateAdminSettingResultMessage      = protocol.UpdateAdminSettingResultMessage
 	PolicyMessage                        = protocol.PolicyMessage
+	PolicyDocumentMessage                = protocol.PolicyDocumentMessage
 )
 
 func CurrentAdminProtocolVersion() ProtocolVersion {

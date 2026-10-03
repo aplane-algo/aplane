@@ -115,6 +115,7 @@ func (s Streams) normalized() Streams {
 // through the store.
 type Backend interface {
 	Get(context.Context) (adminproto.PolicyView, error)
+	Document(ctx context.Context, key string) (adminproto.PolicyDocumentResult, error)
 	Check(context.Context, adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error)
 	Apply(context.Context, adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error)
 }

@@ -98,7 +98,8 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
 	view := svc.GetPolicy()
 	if !view.Success || view.NodeRole != "signer" || len(view.Documents) != 1 ||
-		view.Documents[0].Document != string(policy.InitialSignerPolicy) {
+		view.Documents[0].Size != len(policy.InitialSignerPolicy) ||
+		svc.GetPolicyDocument("").Document != string(policy.InitialSignerPolicy) {
 		t.Fatalf("GetPolicy() = %+v", view)
 	}
 	before := currentGeneration(t, svc, ir)
@@ -116,7 +117,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 2000 {
 		t.Fatalf("runtime policy after apply = %#v", got)
 	}
-	if again := svc.GetPolicy(); again.Documents[0].Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
+	if again := svc.GetPolicy(); svc.GetPolicyDocument("").Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
 		t.Fatalf("GetPolicy() after apply = %+v", again)
 	}
 
@@ -200,6 +201,14 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	}
 	if _, ok := ir.CosignerPolicies()[adminPolicyKeyB]; ok {
 		t.Fatal("removed policy is still enforced")
+	}
+	if doc := svc.GetPolicyDocument(adminPolicyKeyA); !doc.Success || doc.Document != cosignerPolicyDoc(adminPolicyKeyA) {
+		t.Fatalf("GetPolicyDocument(A) = %+v", doc)
+	}
+	for _, key := range []string{adminPolicyKeyB, ""} {
+		if doc := svc.GetPolicyDocument(key); doc.Success || doc.Code != "policy_document_not_found" {
+			t.Fatalf("GetPolicyDocument(%q) = %+v, want policy_document_not_found", key, doc)
+		}
 	}
 
 	for _, tc := range []struct {

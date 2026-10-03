@@ -50,32 +50,48 @@ func TestAdminPanelPoliciesRowOpensPolicies(t *testing.T) {
 	}
 }
 
+// openLoadedDocument presses enter on the selected row and delivers the
+// daemon's document response.
+func openLoadedDocument(t *testing.T, m Model, doc protocol.PolicyDocumentMessage) Model {
+	t.Helper()
+	next, cmd := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if m.viewState != ViewPolicyDocument || !m.policies.docLoading || cmd == nil {
+		t.Fatalf("enter: view %v loading %v cmd %v", m.viewState, m.policies.docLoading, cmd)
+	}
+	if !strings.Contains(stripANSI(m.renderPolicyDocument()), "Loading document") {
+		t.Fatal("document view does not show loading")
+	}
+	next, _ = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: doc})
+	return next.(Model)
+}
+
 func TestPoliciesViewListsCosignerKeysAndOpensDocuments(t *testing.T) {
 	doc := fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, policyViewKeyA)
 	m := loadedPoliciesModel(protocol.PolicyMessage{
 		Success:         true,
 		NodeRole:        "cosigner",
-		Documents:       []protocol.PolicyDocumentWire{{Key: policyViewKeyA, Document: doc, SHA256: "0123456789abcdef0123", SignedAtUnix: 1700000000}},
+		Documents:       []protocol.PolicyDocumentInfoWire{{Key: policyViewKeyA, SHA256: "0123456789abcdef0123", Size: len(doc), SignedAtUnix: 1700000000}},
 		Keys:            []protocol.PolicyKeyStatusWire{{Key: policyViewKeyB, Status: "no_policy"}, {Key: policyViewKeyA, Status: "active"}},
 		PolicySetSHA256: "set-digest",
 	})
 	rendered := stripANSI(m.renderPolicies())
-	for _, want := range []string{policyViewKeyB + "  no policy (rejects every request)", policyViewKeyA + "  active", "applied 2023-11-14", "set-digest", "read-only"} {
+	for _, want := range []string{policyViewKeyB + "  no policy (rejects every request)", policyViewKeyA + "  active",
+		fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14", "set-digest", "read-only"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("policies view missing %q:\n%s", want, rendered)
 		}
 	}
 
 	// The first row has no document, so enter stays on the list.
-	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if next.(Model).viewState != ViewPolicies {
+	next, cmd := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if next.(Model).viewState != ViewPolicies || cmd != nil {
 		t.Fatal("enter on a key without a policy left the list")
 	}
 	next, _ = m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyDown})
-	next, _ = next.(Model).handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	m = next.(Model)
-	if m.viewState != ViewPolicyDocument || !strings.Contains(stripANSI(m.renderPolicyDocument()), `"format":"aplane.cosigner-policy.v1"`) {
-		t.Fatalf("document view = %v:\n%s", m.viewState, m.renderPolicyDocument())
+	m = openLoadedDocument(t, next.(Model), protocol.PolicyDocumentMessage{Success: true, Key: policyViewKeyA, Document: doc, SHA256: "abc"})
+	if !strings.Contains(stripANSI(m.renderPolicyDocument()), `"format":"aplane.cosigner-policy.v1"`) {
+		t.Fatalf("document view:\n%s", m.renderPolicyDocument())
 	}
 
 	next, _ = m.handlePolicyDocumentKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -89,14 +105,18 @@ func TestPoliciesViewShowsSignerDocumentAndErrors(t *testing.T) {
 	m := loadedPoliciesModel(protocol.PolicyMessage{
 		Success:   true,
 		NodeRole:  "signer",
-		Documents: []protocol.PolicyDocumentWire{{Document: "{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n", SHA256: "abc"}},
+		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc", Size: 34}},
 	})
 	if rows := m.policyRows(); len(rows) != 1 || rows[0].label != "policy.json" {
 		t.Fatalf("signer rows = %+v", rows)
 	}
-	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if lines := next.(Model).policyDocumentLines(); len(lines) != 3 {
+	opened := openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: "{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n"})
+	if lines := opened.policyDocumentLines(); len(lines) != 3 {
 		t.Fatalf("document lines = %q", lines)
+	}
+	missing := openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Code: "policy_document_not_found", Error: "gone"})
+	if !strings.Contains(stripANSI(missing.renderPolicyDocument()), "Document unavailable: gone") {
+		t.Fatalf("missing document view:\n%s", missing.renderPolicyDocument())
 	}
 
 	failed := loadedPoliciesModel(protocol.PolicyMessage{Code: "policy_unavailable", Error: "policy is not loaded"})
@@ -111,9 +131,9 @@ func TestPolicyDocumentScrollIsBounded(t *testing.T) {
 		lines[i] = fmt.Sprintf("line %d", i)
 	}
 	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
-		Documents: []protocol.PolicyDocumentWire{{Document: strings.Join(lines, "\n")}}})
+		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc"}}})
 	m.height = 20
-	m.viewState = ViewPolicyDocument
+	m = openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: strings.Join(lines, "\n")})
 	for range 100 {
 		next, _ := m.handlePolicyDocumentKeys(tea.KeyMsg{Type: tea.KeyPgDown})
 		m = next.(Model)

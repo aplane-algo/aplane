@@ -100,8 +100,8 @@ Cosigner rules:
 Operator surfaces: `apadmin policy status|export|check|apply|remove` (online
 over admin IPC, or `apadmin policy rescue ...` against a stopped daemon's
 store), `apstore policy check|verify|sign`, and the read-only apadmin TUI
-Policies view. Wire messages are `get_policy`, `check_policy`, and
-`apply_policy`; see [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages)
+Policies view. Wire messages are `get_policy`, `get_policy_document`,
+`check_policy`, and `apply_policy`; see [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages)
 and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-documents).
 
 ## Parsing

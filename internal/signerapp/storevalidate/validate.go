@@ -195,8 +195,16 @@ func validateCredentialReport(role noderole.Role, scan *keys.KeyScanReport) erro
 		return fmt.Errorf("credential content defect: %s", scan.Warnings[0].Message())
 	}
 	keyTypes := make(map[string]string, len(scan.Keys))
+	cosignerKeys := 0
 	for selector, info := range scan.Keys {
 		keyTypes[selector] = info.KeyType
+		if info.Category == keys.CategoryWitness {
+			cosignerKeys++
+		}
+	}
+	if cosignerKeys > keys.MaxCosignerCredentials {
+		return fmt.Errorf("credential inventory: %w: %d cosigner credentials, limit %d",
+			keys.ErrCosignerCredentialLimit, cosignerKeys, keys.MaxCosignerCredentials)
 	}
 	if err := keyclass.ValidateKeyTypesAllowedForNodeRole(role, keyTypes); err != nil {
 		return fmt.Errorf("credential inventory: %w", err)

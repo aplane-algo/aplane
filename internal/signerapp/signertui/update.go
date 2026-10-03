@@ -532,6 +532,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PolicyLoadedMsg:
 		return m.handlePolicyLoaded(msg)
 
+	case PolicyDocumentLoadedMsg:
+		return m.handlePolicyDocumentLoaded(msg)
+
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active
 		if m.viewState == ViewAdminPanel {

@@ -164,8 +164,8 @@ read-only list of the node's active policy documents, loaded with the
 
 Each row with a document shows its size, SHA-256, and applied time from the
 sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
-Enter opens a read-only scrollable view of the exact stored document, and Esc
-returns. The TUI does not edit or apply policy. Changes go through the
+Enter fetches that document with `get_policy_document` and opens a read-only
+scrollable view of its exact bytes; Esc returns. The TUI does not edit or apply policy. Changes go through the
 `apadmin policy` verbs (`status`, `export`, `check`, `apply`, `remove`) online,
 or `apadmin policy rescue` while the daemon is stopped.
 

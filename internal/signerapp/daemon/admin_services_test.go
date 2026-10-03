@@ -443,8 +443,8 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
 		t.Fatalf("ApplyPolicy() = %+v", result)
 	}
-	if len(result.Policy.Documents) != 1 || result.Policy.Documents[0].Document != uploaded {
-		t.Fatalf("ApplyPolicy() documents = %+v, want the exact uploaded bytes", result.Policy.Documents)
+	if doc := svc.adminApp().GetPolicyDocument(""); !doc.Success || doc.Document != uploaded {
+		t.Fatalf("GetPolicyDocument() = %+v, want the exact uploaded bytes", doc)
 	}
 
 	onDisk, err := os.ReadFile(activeDaemonPolicyPath(t, server))

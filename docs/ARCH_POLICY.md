@@ -745,10 +745,12 @@ FILE...` (or `apadmin policy rescue check|apply` while the daemon is stopped).
 There is no policy editor in the node and no scalar policy-settings IPC.
 
 The admin protocol and `internal/signerapp/admin` expose three policy messages:
-`get_policy`, `check_policy`, and `apply_policy`. The node role decides which
-documents a request may carry; there is no target selector. `get_policy`
-returns the exact stored documents with their SHA-256 digests, the cosigner key
-coverage, and `policy_set_sha256`, a digest over the whole document set.
+`get_policy`, `get_policy_document`, `check_policy`, and `apply_policy`. The
+node role decides which documents a request may carry; there is no target
+selector. `get_policy` returns a summary: each document's SHA-256, size, and
+applied time, the cosigner key coverage, and `policy_set_sha256`, a digest over
+the whole document set. `get_policy_document` returns one document's exact
+bytes.
 `check_policy` validates candidate documents without writing and returns
 errors and warnings. `apply_policy` requires `expected_policy_set_sha256` for
 optimistic concurrency, validates the resulting document set, and commits it as

@@ -69,6 +69,18 @@ func (b onlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
 	return viewFromWire(msg), err
 }
 
+func (b onlineBackend) Document(_ context.Context, key string) (adminproto.PolicyDocumentResult, error) {
+	var msg protocol.PolicyDocumentMessage
+	err := b.roundTrip(protocol.GetPolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: onlineRequestID("policy-document")},
+		Key:         key,
+	}, protocol.MsgTypePolicyDocument, &msg)
+	return adminproto.PolicyDocumentResult{
+		Success: msg.Success, Key: msg.Key, Document: msg.Document, SHA256: msg.SHA256,
+		SignedAtUnix: msg.SignedAtUnix, Code: msg.Code, Error: msg.Error,
+	}, err
+}
+
 func (b onlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {
 	var msg protocol.CheckPolicyResultMessage
 	err := b.roundTrip(protocol.CheckPolicyMessage{
@@ -130,8 +142,8 @@ func viewFromWire(msg protocol.PolicyMessage) adminproto.PolicyView {
 		GenerationID: msg.GenerationID, Code: msg.Code, Error: msg.Error,
 	}
 	for _, doc := range msg.Documents {
-		view.Documents = append(view.Documents, adminproto.PolicyDocument{
-			Key: doc.Key, Document: doc.Document, SHA256: doc.SHA256, SignedAtUnix: doc.SignedAtUnix,
+		view.Documents = append(view.Documents, adminproto.PolicyDocumentInfo{
+			Key: doc.Key, SHA256: doc.SHA256, Size: doc.Size, SignedAtUnix: doc.SignedAtUnix,
 		})
 	}
 	for _, key := range msg.Keys {

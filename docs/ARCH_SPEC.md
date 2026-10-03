@@ -618,7 +618,8 @@ store mutation lock. `internal/signerapp/policycmd` owns both workflows, and
 the admin service, rescue, and `apstore`. The node role decides which document
 type is accepted. Hand-placed documents are checked and signed with
 `apstore policy`. The policy admin surface reads, checks, and applies exact
-document bytes through `get_policy`, `check_policy`, and `apply_policy`;
+document bytes through `get_policy` (summary), `get_policy_document`,
+`check_policy`, and `apply_policy`;
 `apply_policy` requires `expected_policy_set_sha256` for optimistic
 concurrency, mints a new generation (operation `policy-apply`) carrying the
 documents and fresh sidecars, and updates the product runtime immediately on

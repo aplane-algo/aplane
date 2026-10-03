@@ -9,7 +9,6 @@ package policyapply
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -32,34 +30,10 @@ import (
 // Operation is the generation manifest operation for a policy apply.
 const Operation = "policy-apply"
 
-// MaxPolicyResponseBytes bounds the encoded apply_policy response, the
-// largest message that carries a node's whole policy, so it and get_policy fit
-// in one admin frame. The remainder of the frame covers the request ID.
-const MaxPolicyResponseBytes = protocol.MaxAdminMessageBytes - 4<<10
-
-// policyResponseSize returns the encoded size of the apply_policy response
-// that would carry docs, including every cosigner key status.
-func policyResponseSize(env Env, docs []policy.StoredDocument) int {
-	stamped := make([]policy.StoredDocument, len(docs))
-	for i, doc := range docs {
-		stamped[i] = policy.StoredDocument{Key: doc.Key, Bytes: doc.Bytes, SignedAtUnix: time.Now().Unix()}
-	}
-	np := &policyruntime.NodePolicy{Role: env.Role, Documents: stamped}
-	view := View(np, env.HeldKeys, generationIDPlaceholder)
-	wire := view.Wire("")
-	encoded, err := protocol.MarshalAdminMessage(protocol.ApplyPolicyResultMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeApplyPolicyResult},
-		Success:     true,
-		Policy:      &wire,
-	})
-	if err != nil {
-		return math.MaxInt
-	}
-	return len(encoded)
-}
-
-// generationIDPlaceholder has the length of a generation ID.
-const generationIDPlaceholder = "gen-0000000000-00000000"
+// MaxCosignerPolicies caps a cosigner node's policy documents. Together with
+// keys.MaxCosignerCredentials it bounds the get_policy summary, which lists
+// every document and every key's coverage, to one admin frame.
+const MaxCosignerPolicies = 8192
 
 // Env is the node context a policy change is checked and committed in.
 type Env struct {
@@ -136,10 +110,9 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 		return nil, nil, Error{"policy_unavailable", fmt.Sprintf("unsupported node role %q", env.Role)}
 	}
 
-	if size := policyResponseSize(env, resulting); size > MaxPolicyResponseBytes {
+	if env.Role == noderole.RoleCosigner && len(resulting) > MaxCosignerPolicies {
 		return nil, nil, Error{"policy_set_too_large", fmt.Sprintf(
-			"the resulting policy would make a %d-byte policy response; one admin message allows %d",
-			size, MaxPolicyResponseBytes)}
+			"the change leaves %d cosigner policy documents; a node holds at most %d", len(resulting), MaxCosignerPolicies)}
 	}
 
 	var problems []adminproto.PolicyProblem
@@ -304,14 +277,33 @@ func View(np *policyruntime.NodePolicy, held map[string]bool, generationID strin
 		GenerationID:    generationID,
 	}
 	for _, doc := range np.Documents {
-		view.Documents = append(view.Documents, adminproto.PolicyDocument{
-			Key: doc.Key, Document: string(doc.Bytes), SHA256: doc.SHA256(), SignedAtUnix: doc.SignedAtUnix,
+		view.Documents = append(view.Documents, adminproto.PolicyDocumentInfo{
+			Key: doc.Key, SHA256: doc.SHA256(), Size: len(doc.Bytes), SignedAtUnix: doc.SignedAtUnix,
 		})
 	}
 	if np.Role == noderole.RoleCosigner {
 		view.Keys = KeyStatus(held, np)
 	}
 	return view
+}
+
+// Document returns one active policy document's exact bytes. key is empty for
+// the signer document.
+func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumentResult {
+	if np == nil {
+		return adminproto.PolicyDocumentResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+	}
+	for _, doc := range np.Documents {
+		if doc.Key == key {
+			return adminproto.PolicyDocumentResult{
+				Success: true, Key: doc.Key, Document: string(doc.Bytes), SHA256: doc.SHA256(), SignedAtUnix: doc.SignedAtUnix,
+			}
+		}
+	}
+	if key == "" {
+		return adminproto.PolicyDocumentResult{Code: "policy_document_not_found", Error: "a cosigner node has one policy per key; name the key"}
+	}
+	return adminproto.PolicyDocumentResult{Key: key, Code: "policy_document_not_found", Error: fmt.Sprintf("no policy for cosigner key %s", key)}
 }
 
 // HeldCosignerKeys returns the Witness Key IDs among a key index's

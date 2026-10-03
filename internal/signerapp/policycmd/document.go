@@ -38,9 +38,15 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		doc, err := exportedDocument(view, command.Key)
+		if view.NodeRole == "cosigner" && command.Key == "" {
+			return fmt.Errorf("a cosigner node has one policy per key; choose one with --key")
+		}
+		doc, err := backend.Document(ctx, command.Key)
 		if err != nil {
 			return err
+		}
+		if !doc.Success {
+			return resultError(doc.Code, doc.Error)
 		}
 		_, err = io.WriteString(streams.Stdout, doc.Document)
 		return err
@@ -180,21 +186,6 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 	return data, nil
 }
 
-func exportedDocument(view adminproto.PolicyView, key string) (adminproto.PolicyDocument, error) {
-	if key == "" {
-		if len(view.Documents) == 1 && view.NodeRole == "signer" {
-			return view.Documents[0], nil
-		}
-		return adminproto.PolicyDocument{}, fmt.Errorf("a cosigner node has one policy per key; choose one with --key")
-	}
-	for _, doc := range view.Documents {
-		if doc.Key == key {
-			return doc, nil
-		}
-	}
-	return adminproto.PolicyDocument{}, fmt.Errorf("no policy for cosigner key %s", key)
-}
-
 func printStatus(w io.Writer, view adminproto.PolicyView) {
 	if view.NodeRole == "signer" {
 		_, _ = fmt.Fprintln(w, "signer policy")
@@ -202,7 +193,7 @@ func printStatus(w io.Writer, view adminproto.PolicyView) {
 			_, _ = fmt.Fprintf(w, "  policy.json  %s\n", documentSummary(doc))
 		}
 	} else {
-		byKey := make(map[string]adminproto.PolicyDocument, len(view.Documents))
+		byKey := make(map[string]adminproto.PolicyDocumentInfo, len(view.Documents))
 		for _, doc := range view.Documents {
 			byKey[doc.Key] = doc
 		}
@@ -221,8 +212,8 @@ func printStatus(w io.Writer, view adminproto.PolicyView) {
 	_, _ = fmt.Fprintf(w, "policy_set_sha256 %s\n", view.PolicySetSHA256)
 }
 
-func documentSummary(doc adminproto.PolicyDocument) string {
-	summary := fmt.Sprintf("sha256 %s  %d bytes", doc.SHA256, len(doc.Document))
+func documentSummary(doc adminproto.PolicyDocumentInfo) string {
+	summary := fmt.Sprintf("sha256 %s  %d bytes", doc.SHA256, doc.Size)
 	if doc.SignedAtUnix > 0 {
 		summary += "  applied " + time.Unix(doc.SignedAtUnix, 0).UTC().Format(time.RFC3339)
 	}

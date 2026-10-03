@@ -45,6 +45,7 @@ type fakeOnlineSession struct {
 	unlockPassphrase string
 	authErr          error
 	policy           protocol.PolicyMessage
+	bodies           map[string]string
 	checkResult      *protocol.CheckPolicyResultMessage
 	applyResult      *protocol.ApplyPolicyResultMessage
 	checks           []protocol.CheckPolicyMessage
@@ -52,9 +53,16 @@ type fakeOnlineSession struct {
 }
 
 func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlineSession {
-	return &fakeOnlineSession{status: "unlocked", policy: protocol.PolicyMessage{
-		Success: true, NodeRole: role, Documents: docs, PolicySetSHA256: "active-set",
+	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, policy: protocol.PolicyMessage{
+		Success: true, NodeRole: role, PolicySetSHA256: "active-set",
 	}}
+	for _, doc := range docs {
+		f.bodies[doc.Key] = doc.Document
+		f.policy.Documents = append(f.policy.Documents, protocol.PolicyDocumentInfoWire{
+			Key: doc.Key, SHA256: policy.PolicySHA256([]byte(doc.Document)), Size: len(doc.Document),
+		})
+	}
+	return f
 }
 
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
@@ -75,6 +83,13 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 	case protocol.GetPolicyMessage:
 		reply := f.policy
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicy, ID: request.ID}
+		return protocol.MarshalAdminMessage(reply)
+	case protocol.GetPolicyDocumentMessage:
+		reply := protocol.PolicyDocumentMessage{Code: "policy_document_not_found", Error: "no such policy"}
+		if body, ok := f.bodies[request.Key]; ok {
+			reply = protocol.PolicyDocumentMessage{Success: true, Key: request.Key, Document: body}
+		}
+		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: request.ID}
 		return protocol.MarshalAdminMessage(reply)
 	case protocol.CheckPolicyMessage:
 		f.checks = append(f.checks, request)
@@ -115,7 +130,7 @@ func onlineEnv(t *testing.T) {
 
 func TestOnlineStatusListsCosignerCoverage(t *testing.T) {
 	onlineEnv(t)
-	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA), SHA256: "abc"})
+	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
 	session.policy.Keys = []protocol.PolicyKeyStatusWire{{Key: testKeyA, Status: "active"}, {Key: testKeyB, Status: "no_policy"}}
 	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{Stdout: &stdout}); err != nil {

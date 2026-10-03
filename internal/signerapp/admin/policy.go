@@ -17,6 +17,11 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 	return policyapply.View(s.Runtime.NodePolicy(), s.heldCosignerKeys(), "")
 }
 
+// GetPolicyDocument returns one active policy document's exact bytes.
+func (s Service) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
+	return policyapply.Document(s.Runtime.NodePolicy(), key)
+}
+
 // CheckPolicy validates candidate documents against the node's role and
 // reports the cosigner key coverage the change would leave, without writing.
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {

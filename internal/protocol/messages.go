@@ -132,7 +132,9 @@ const (
 	MsgTypeUpdateAdminSetting       = "update_admin_setting"        // Client → server: change a setting
 	MsgTypeUpdateAdminSettingResult = "update_admin_setting_result" // Server → client: result
 	MsgTypeGetPolicy                = "get_policy"                  // Client → server: request the node's policy documents
-	MsgTypePolicy                   = "policy"                      // Server → client: the node's policy documents and key status
+	MsgTypePolicy                   = "policy"                      // Server → client: the node's policy summary and key status
+	MsgTypeGetPolicyDocument        = "get_policy_document"         // Client → server: request one policy document
+	MsgTypePolicyDocument           = "policy_document"             // Server → client: one policy document's exact bytes
 	MsgTypeCheckPolicy              = "check_policy"                // Client → server: validate policy documents without writing
 	MsgTypeCheckPolicyResult        = "check_policy_result"         // Server → client: validation problems
 	MsgTypeApplyPolicy              = "apply_policy"                // Client → server: replace policy documents in one generation commit
@@ -966,14 +968,21 @@ type UpdateAdminSettingResultMessage struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// PolicyDocumentWire is one policy document. Document carries the exact bytes,
-// so the stored bytes are exactly what was sent. Key is the Witness Key ID of a
-// cosigner document and empty for the signer document. SHA256 is set on
-// documents the server returns and ignored on requests.
+// PolicyDocumentWire is one policy document in a check or apply request.
+// Document carries the exact bytes, so the stored bytes are exactly what was
+// sent. Key is the Witness Key ID of a cosigner document and empty for the
+// signer document.
 type PolicyDocumentWire struct {
+	Key      string `json:"key,omitempty"`
+	Document string `json:"document"`
+}
+
+// PolicyDocumentInfoWire describes one stored policy document without its
+// bytes; get_policy_document returns the bytes.
+type PolicyDocumentInfoWire struct {
 	Key          string `json:"key,omitempty"`
-	Document     string `json:"document"`
-	SHA256       string `json:"sha256,omitempty"`
+	SHA256       string `json:"sha256"`
+	Size         int    `json:"size"`
 	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
 }
 
@@ -999,18 +1008,39 @@ type GetPolicyMessage struct {
 	BaseMessage
 }
 
-// PolicyMessage returns the node's active policy documents. PolicySetSHA256
-// is the concurrency base for apply_policy.
+// PolicyMessage summarizes the node's active policy: one entry per document
+// (without its bytes) and, on cosigner nodes, each key's coverage. Its size is
+// bounded by the cosigner key and document caps. PolicySetSHA256 is the
+// concurrency base for apply_policy.
 type PolicyMessage struct {
 	BaseMessage
-	Success         bool                  `json:"success"`
-	NodeRole        string                `json:"node_role,omitempty"`
-	Documents       []PolicyDocumentWire  `json:"documents,omitempty"`
-	Keys            []PolicyKeyStatusWire `json:"keys,omitempty"`
-	PolicySetSHA256 string                `json:"policy_set_sha256,omitempty"`
-	GenerationID    string                `json:"generation_id,omitempty"`
-	Code            string                `json:"code,omitempty"`
-	Error           string                `json:"error,omitempty"`
+	Success         bool                     `json:"success"`
+	NodeRole        string                   `json:"node_role,omitempty"`
+	Documents       []PolicyDocumentInfoWire `json:"documents,omitempty"`
+	Keys            []PolicyKeyStatusWire    `json:"keys,omitempty"`
+	PolicySetSHA256 string                   `json:"policy_set_sha256,omitempty"`
+	GenerationID    string                   `json:"generation_id,omitempty"`
+	Code            string                   `json:"code,omitempty"`
+	Error           string                   `json:"error,omitempty"`
+}
+
+// GetPolicyDocumentMessage requests one active policy document. Key is the
+// Witness Key ID of a cosigner document and empty for the signer document.
+type GetPolicyDocumentMessage struct {
+	BaseMessage
+	Key string `json:"key,omitempty"`
+}
+
+// PolicyDocumentMessage returns one active policy document's exact bytes.
+type PolicyDocumentMessage struct {
+	BaseMessage
+	Success      bool   `json:"success"`
+	Key          string `json:"key,omitempty"`
+	Document     string `json:"document,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // CheckPolicyMessage validates candidate documents for the node's role

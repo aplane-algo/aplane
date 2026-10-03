@@ -156,6 +156,12 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 			},
 		},
 		{
+			name: "get policy document",
+			handle: func(session *Session) {
+				session.HandleGetPolicyDocument(&protocol.GetPolicyDocumentMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
 			name: "check policy",
 			handle: func(session *Session) {
 				session.HandleCheckPolicy(&protocol.CheckPolicyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
@@ -211,13 +217,31 @@ func TestHandleGetPolicyAuthorizesPolicyView(t *testing.T) {
 	}
 }
 
+func TestHandleGetPolicyDocumentAuthorizesPolicyView(t *testing.T) {
+	svc := &stubServices{}
+	session, authorizer, conn := boundPolicySession(svc)
+
+	session.HandleGetPolicyDocument(&protocol.GetPolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{ID: "doc-1", Type: protocol.MsgTypeGetPolicyDocument},
+		Key:         "K1",
+	})
+
+	if authorizer.got.action != auth.ActionPolicyView || authorizer.got.resource.Type != "policy" {
+		t.Fatalf("authorization = %+v", authorizer.got)
+	}
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypePolicyDocument || msgs[0].ID != "doc-1" || !msgs[0].Success {
+		t.Fatalf("responses = %+v", msgs)
+	}
+}
+
 func TestHandleCheckPolicyAuthorizesPolicyView(t *testing.T) {
 	svc := &stubServices{checkPolicyResult: adminproto.CheckPolicyResult{Success: true, Valid: true}}
 	session, authorizer, conn := boundPolicySession(svc)
 
 	session.HandleCheckPolicy(&protocol.CheckPolicyMessage{
 		BaseMessage: protocol.BaseMessage{ID: "check-1", Type: protocol.MsgTypeCheckPolicy},
-		Documents:   []protocol.PolicyDocumentWire{{Key: "K1", Document: "{}", SHA256: "ignored"}},
+		Documents:   []protocol.PolicyDocumentWire{{Key: "K1", Document: "{}"}},
 		Remove:      []string{"K2"},
 	})
 

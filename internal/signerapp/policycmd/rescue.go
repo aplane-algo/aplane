@@ -121,6 +121,10 @@ func (b *offlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
 	return policyapply.View(b.current, b.env.HeldKeys, ""), nil
 }
 
+func (b *offlineBackend) Document(_ context.Context, key string) (adminproto.PolicyDocumentResult, error) {
+	return policyapply.Document(b.current, key), nil
+}
+
 func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {
 	return policyapply.Check(b.env, b.current, req), nil
 }

@@ -375,6 +375,19 @@ func ProtocolPolicyMessage(id string, view adminproto.PolicyView) protocol.Polic
 	return view.Wire(id)
 }
 
+func ProtocolPolicyDocumentMessage(id string, result adminproto.PolicyDocumentResult) protocol.PolicyDocumentMessage {
+	return protocol.PolicyDocumentMessage{
+		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: id},
+		Success:      result.Success,
+		Key:          result.Key,
+		Document:     result.Document,
+		SHA256:       result.SHA256,
+		SignedAtUnix: result.SignedAtUnix,
+		Code:         result.Code,
+		Error:        result.Error,
+	}
+}
+
 func ProtocolCheckPolicyResultMessage(id string, result adminproto.CheckPolicyResult) protocol.CheckPolicyResultMessage {
 	return protocol.CheckPolicyResultMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCheckPolicyResult, ID: id},

@@ -23,6 +23,13 @@ type policiesState struct {
 	selected     int
 	scrollOffset int
 	returnView   ViewState
+	document     protocol.PolicyDocumentMessage
+	docLoading   bool
+}
+
+// PolicyDocumentLoadedMsg carries the daemon's response for one document.
+type PolicyDocumentLoadedMsg struct {
+	Document protocol.PolicyDocumentMessage
 }
 
 // PolicyLoadedMsg carries the daemon's policy response.
@@ -34,7 +41,7 @@ type PolicyLoadedMsg struct {
 type policyRow struct {
 	label  string
 	status string
-	doc    *protocol.PolicyDocumentWire
+	doc    *protocol.PolicyDocumentInfoWire
 }
 
 func (m Model) openPolicies() (tea.Model, tea.Cmd) {
@@ -61,7 +68,7 @@ func (m Model) handlePolicyLoaded(msg PolicyLoadedMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) policyRows() []policyRow {
 	p := m.policies.policy
-	byKey := make(map[string]*protocol.PolicyDocumentWire, len(p.Documents))
+	byKey := make(map[string]*protocol.PolicyDocumentInfoWire, len(p.Documents))
 	for i := range p.Documents {
 		byKey[p.Documents[i].Key] = &p.Documents[i]
 	}
@@ -98,10 +105,20 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.policies.selected < len(rows) && rows[m.policies.selected].doc != nil {
 			m.policies.scrollOffset = 0
+			m.policies.document = protocol.PolicyDocumentMessage{}
+			m.policies.docLoading = true
 			m.viewState = ViewPolicyDocument
+			key := rows[m.policies.selected].doc.Key
+			return m, tea.Batch(m.sendGetPolicyDocumentCmd(key), m.waitForMessageCmd())
 		}
 	}
 	return m, nil
+}
+
+func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
+	m.policies.docLoading = false
+	m.policies.document = msg.Document
+	return m, m.waitForMessageCmd()
 }
 
 func (m Model) openPoliciesRefresh() (tea.Model, tea.Cmd) {
@@ -109,17 +126,9 @@ func (m Model) openPoliciesRefresh() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.sendGetPolicyCmd(), m.waitForMessageCmd())
 }
 
-func (m Model) selectedPolicyDocument() *protocol.PolicyDocumentWire {
-	rows := m.policyRows()
-	if m.policies.selected < len(rows) {
-		return rows[m.policies.selected].doc
-	}
-	return nil
-}
-
 func (m Model) policyDocumentLines() []string {
-	doc := m.selectedPolicyDocument()
-	if doc == nil {
+	doc := m.policies.document
+	if m.policies.docLoading || !doc.Success {
 		return nil
 	}
 	return strings.Split(strings.TrimRight(doc.Document, "\n"), "\n")
@@ -204,8 +213,8 @@ func policyStatusLabel(status string) string {
 	}
 }
 
-func policyDocumentMeta(doc protocol.PolicyDocumentWire) string {
-	meta := fmt.Sprintf("%d bytes  sha256 %s", len(doc.Document), shortDigest(doc.SHA256))
+func policyDocumentMeta(doc protocol.PolicyDocumentInfoWire) string {
+	meta := fmt.Sprintf("%d bytes  sha256 %s", doc.Size, shortDigest(doc.SHA256))
 	if doc.SignedAtUnix > 0 {
 		meta += "  applied " + time.Unix(doc.SignedAtUnix, 0).UTC().Format("2006-01-02 15:04Z")
 	}
@@ -224,11 +233,20 @@ func (m Model) renderPolicyDocument() string {
 	if width < 20 {
 		width = 80
 	}
-	doc := m.selectedPolicyDocument()
+	doc := m.policies.document
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Policy Document"))
 	sb.WriteString("\n")
-	if doc == nil {
+	switch {
+	case m.policies.docLoading:
+		sb.WriteString(subtitleStyle.Render("Loading document..."))
+		return sb.String()
+	case !doc.Success:
+		msg := doc.Error
+		if msg == "" {
+			msg = "document is unavailable"
+		}
+		sb.WriteString(subtitleStyle.Render("Document unavailable: " + msg))
 		return sb.String()
 	}
 	label := "policy.json"
@@ -276,4 +294,16 @@ func (c *IPCClient) SendGetPolicy() error {
 
 func (m Model) sendGetPolicyCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicy() })
+}
+
+// SendGetPolicyDocument requests one policy document.
+func (c *IPCClient) SendGetPolicyDocument(key string) error {
+	return c.sendMessage(protocol.GetPolicyDocumentMessage{
+		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: fmt.Sprintf("policy-doc-%d", time.Now().UnixNano())},
+		Key:         key,
+	})
+}
+
+func (m Model) sendGetPolicyDocumentCmd(key string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetPolicyDocument(key) })
 }
