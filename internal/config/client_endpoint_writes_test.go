@@ -163,38 +163,18 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 	}
 }
 
-func TestStoredClientEndpointV1ReadDropsPublishedInventoryAndWritesV2(t *testing.T) {
-	dataDir := t.TempDir()
-	path := GetClientEndpointsPath(dataDir)
-	legacy := `schema_version: 1
-endpoints:
-  cosigner-local:
-    role: cosigner
-    url: ssh://127.0.0.1:2223
-    published_cosigners:
-      deadbeef:
-        component_key: LEGACY
-        key_type: legacy
-`
-	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
-	}
-	if registry.SchemaVersion != ClientEndpointSchemaVersion {
-		t.Fatalf("schema version = %d, want %d", registry.SchemaVersion, ClientEndpointSchemaVersion)
-	}
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		t.Fatal(err)
-	}
-	written, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(written), "published_cosigners") || !strings.Contains(string(written), "schema_version: 2") {
-		t.Fatalf("rewritten endpoints.yaml = %q, want v2 without retired inventory", written)
+func TestStoredClientEndpointRejectsRetiredSchemaVersions(t *testing.T) {
+	for _, contents := range []string{
+		"default: primary\nendpoints: {}\n",
+		"schema_version: 1\ndefault: primary\nendpoints: {}\n",
+	} {
+		dataDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := LoadStoredClientEndpointRegistry(dataDir); err == nil || !strings.Contains(err.Error(), "want 2") {
+			t.Errorf("LoadStoredClientEndpointRegistry(%q) error = %v, want a schema_version rejection", contents, err)
+		}
 	}
 }
 
@@ -300,7 +280,7 @@ func TestCheckSupportedClientEndpointConfigRejectsLegacySSHWithSignerEndpoint(t 
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

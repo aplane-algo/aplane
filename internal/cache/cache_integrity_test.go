@@ -208,7 +208,7 @@ func TestSaveSignedCacheWritesPayloadSchemaVersion(t *testing.T) {
 	}
 }
 
-func TestLoadSignedCacheDefaultsMissingPayloadSchemaToV1(t *testing.T) {
+func TestLoadSignedCacheRejectsMissingPayloadSchema(t *testing.T) {
 	store := NewStore(t.TempDir())
 	filename := storePath(store, "legacy-versioned.json")
 
@@ -231,11 +231,8 @@ func TestLoadSignedCacheDefaultsMissingPayloadSchemaToV1(t *testing.T) {
 	}
 
 	var loaded testVersionedCachePayload
-	if err := LoadSignedCache(filename, key, &loaded); err != nil {
-		t.Fatalf("LoadSignedCache() error = %v", err)
-	}
-	if loaded.Value != "legacy" || loaded.SchemaVersion != cachePayloadSchemaVersion {
-		t.Fatalf("loaded payload = %#v, want legacy v1 payload", loaded)
+	if err := LoadSignedCache(filename, key, &loaded); err == nil || !strings.Contains(err.Error(), "schema_version 0") {
+		t.Fatalf("LoadSignedCache() error = %v, want a missing payload schema_version rejection", err)
 	}
 }
 

@@ -130,9 +130,9 @@ func (s *Session) HandleImportCosignerReference(msg *protocol.ImportCosignerRefe
 	}
 	result := s.inspectionServices.ImportCosignerReference(adminproto.ImportCosignerReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
 	if audit, ok := s.audit.(interface {
-		LogCosignerReferenceChangedContext(SessionContext, string, string, string, string, bool)
+		LogCosignerReferenceChangedContext(SessionContext, string, string, string, bool)
 	}); ok {
-		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Reference.MigrationOrigin, result.Success)
+		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Success)
 	}
 	_ = s.WriteJSON(ProtocolCosignerReferenceMessage(
 		msg.ID,
@@ -154,9 +154,9 @@ func (s *Session) HandleRemoveCosignerReference(msg *protocol.RemoveCosignerRefe
 	}
 	result := s.inspectionServices.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: msg.Name})
 	if audit, ok := s.audit.(interface {
-		LogCosignerReferenceChangedContext(SessionContext, string, string, string, string, bool)
+		LogCosignerReferenceChangedContext(SessionContext, string, string, string, bool)
 	}); ok {
-		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, "", result.Success)
+		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, result.Success)
 	}
 	_ = s.WriteJSON(ProtocolRemoveCosignerReferenceResultMessage(msg.ID, result))
 }

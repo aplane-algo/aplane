@@ -631,7 +631,7 @@ func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerRefer
 		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
 		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
 		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,
-		ImportedAt: record.ImportedAt, MigrationOrigin: record.MigrationOrigin,
+		ImportedAt: record.ImportedAt,
 	}
 }
 

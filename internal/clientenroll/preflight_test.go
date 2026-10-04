@@ -39,7 +39,7 @@ func TestLoadEnrolledClientRequiresToken(t *testing.T) {
 network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -69,7 +69,7 @@ func TestLoadEnrolledClientRequiresKnownHost(t *testing.T) {
 network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -105,7 +105,7 @@ func TestLoadEnrolledClientRejectsDummyKnownHostEntry(t *testing.T) {
 network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -159,7 +159,7 @@ func TestLoadEnrolledClientBuildsPrereqs(t *testing.T) {
 network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

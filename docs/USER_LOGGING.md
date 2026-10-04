@@ -37,7 +37,6 @@ Each line is a JSON object with the following fields:
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Policy rule that forced manual review before the operator decision |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
-| `migration_origin` | string | Closed historical origin retained on migrated cosigner-reference records |
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |

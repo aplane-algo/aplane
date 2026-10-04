@@ -1084,7 +1084,7 @@ Additional client-state notes:
 - interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `No`. `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
-- `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 2`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
+- `endpoints.yaml` is the client-local endpoint registry. It requires `schema_version: 2`; any other or missing version is rejected. It has a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
 - if client `config.yaml` contains top-level `ssh:` or `signer_port:` routing, client startup fails closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]`, loopback `http://...`, or `https://...`), `signer_port`, `identity_file`, `known_hosts_path`, and `token_file`. Signer-role records may also set `local_port` for their persistent SSH forward; cosigner-role records reject it because cosigner HTTP connections use direct SSH channels without a local listener. Relative file paths resolve against `APCLIENT_DATA`. The special URL `self` is rejected for every role; same-host signer and cosigner processes use explicit endpoints. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
@@ -1130,9 +1130,9 @@ Additional client-state notes:
   rebuildable client state. The signed envelope has `version: 1`; alias, set,
   ASA, and auth-address payloads carry `schema_version: 1`, while
   `signer_cache.json` carries `schema_version: 2` for structured LogicSig
-  resources. A missing payload version is interpreted as v1. The signer cache
-  therefore rejects a missing or v1 payload and rebuilds it from authenticated
-  signer inventory without invalidating unrelated client caches.
+  resources. Every write records the payload version, and a missing or
+  mismatched version is rejected; the signer cache then rebuilds from
+  authenticated signer inventory without invalidating unrelated client caches.
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
@@ -1927,11 +1927,9 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 }
 ```
 
-The catalog is populated only by explicit operator import. Version-1 records
-remain readable through a bounded adapter and are projected as version 2 in
-memory without rewriting the store. A migrated historical discovery record carries
-`migration_origin: "v1_client_discovery"`; that closed marker is diagnostic
-provenance, not a live discovery source or routing input.
+The catalog is populated only by explicit operator import. Only the version 2
+record schema is read; records in any other schema, or carrying fields outside
+it, are rejected.
 When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
 controlling terminal. Unsupported
@@ -3075,10 +3073,10 @@ Go SDK specifics:
 - `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly
 - raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
   `PlanGroupResponse`, `GroupSignResponse`) rather
-  than the base64-returning convenience layer. `SignResponse` is a
-  source-compatibility type; the live `/sign` response is `GroupSignResponse`.
+  than the base64-returning convenience layer. The `/sign` response is
+  `GroupSignResponse`.
 - `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
-- `GroupPlanResponse`, `RuntimeArgInfo`, and `SigningArgInfo` are compatibility aliases for `PlanGroupResponse`, `RuntimeArg`, and `SigningArg`
+- `SigningArg` is the `/keys` name for `RuntimeArg`
 - input uses `go-algorand-sdk` `types.Transaction`
 
 TypeScript and Python SDKs preserve the same broad behaviors:

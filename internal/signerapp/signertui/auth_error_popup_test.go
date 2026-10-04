@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -21,7 +23,7 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 		height: 20,
 	}
 
-	next, _ := m.Update(AuthResultMsg{Success: false, Error: msg})
+	next, _ := m.Update(AuthResultMsg{Success: false, Code: protocol.ErrCodeUnlockFailed, Error: msg})
 	got := next.(Model)
 	if got.viewState != ViewError {
 		t.Fatalf("viewState = %v, want ViewError", got.viewState)

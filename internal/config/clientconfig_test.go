@@ -218,7 +218,7 @@ func TestLoadConfigAppliesSSHDefaultsFromEndpointRegistry(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

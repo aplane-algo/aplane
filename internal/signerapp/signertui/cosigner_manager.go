@@ -348,9 +348,6 @@ func (m Model) renderCosignerReferenceDetails() string {
 	if reference.ImportedAt != "" {
 		body.WriteString("Imported: " + reference.ImportedAt + "\n")
 	}
-	if reference.MigrationOrigin != "" {
-		body.WriteString("Migration origin: " + reference.MigrationOrigin + "\n")
-	}
 	if m.cosigner.importError != "" {
 		body.WriteString("\n" + errorStyle.Render(m.cosigner.importError) + "\n")
 	}

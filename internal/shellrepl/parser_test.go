@@ -796,8 +796,8 @@ func TestParseTakeCommand(t *testing.T) {
 				if p.Online {
 					t.Error("Online should be false for offline mode")
 				}
-				if p.Mode != "offline" {
-					t.Errorf("Mode = %v, want offline", p.Mode)
+				if p.Online {
+					t.Errorf("Online = true, want offline")
 				}
 			},
 		},

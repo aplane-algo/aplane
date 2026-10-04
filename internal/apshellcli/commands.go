@@ -146,7 +146,10 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) (command.Result, err
 		return nil, err
 	}
 
-	mode := cmdParams.Mode
+	mode := "offline"
+	if cmdParams.Online {
+		mode = "online"
+	}
 	incentiveEligible := cmdParams.IncentiveEligible
 
 	if mode == "online" {

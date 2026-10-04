@@ -314,7 +314,6 @@ type CosignerReferenceInfo struct {
 	PublicKeySize     int
 	PublicKeySHA256   string
 	ImportedAt        string
-	MigrationOrigin   string
 }
 
 type ListCosignerReferencesResult struct {

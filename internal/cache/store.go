@@ -12,14 +12,19 @@ type Store struct {
 	dataDir string
 }
 
-// NewStore creates a cache store rooted under <dataDir>/cache.
-// If dataDir is empty, it falls back to the legacy relative "cache" directory.
+// NewStore creates a cache store rooted under <dataDir>/cache. An empty
+// dataDir has no store: caches then live in memory only and are never written
+// to the working directory.
 func NewStore(dataDir string) *Store {
-	baseDir := "cache"
-	if dataDir != "" {
-		baseDir = filepath.Join(dataDir, "cache")
+	if dataDir == "" {
+		return nil
 	}
-	return &Store{baseDir: baseDir, dataDir: dataDir}
+	return &Store{baseDir: filepath.Join(dataDir, "cache"), dataDir: dataDir}
+}
+
+// persistent reports whether the store has a directory to read and write.
+func (s *Store) persistent() bool {
+	return s != nil && s.baseDir != ""
 }
 
 // NewStoreForCacheDir creates a cache store rooted at an explicit cache
@@ -29,15 +34,15 @@ func NewStoreForCacheDir(cacheDir string) *Store {
 }
 
 func (s *Store) path(filename string) string {
-	if s == nil {
-		return NewStore("").path(filename)
+	if !s.persistent() {
+		return ""
 	}
 	return filepath.Join(s.baseDir, filename)
 }
 
 func (s *Store) dir() string {
-	if s == nil {
-		return NewStore("").dir()
+	if !s.persistent() {
+		return ""
 	}
 	return s.baseDir
 }

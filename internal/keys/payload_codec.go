@@ -268,8 +268,9 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 	}
 	p.BoundedAuthorization = boundedmeta.Clone(metadata)
 	p.SigningMetadataVersion = BoundedSigningMetadataVersion
-	// Bounded metadata owns the complete argument contract. Legacy signing_args
-	// must not survive the upgrade or provide a second caller-controlled layout.
+	// Bounded metadata owns the complete argument contract. Generic
+	// signing_args must not survive it or provide a second caller-controlled
+	// layout.
 	p.SigningArgs = nil
 	return nil
 }

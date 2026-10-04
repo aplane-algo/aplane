@@ -15,9 +15,15 @@ import (
 // signer-owned generation catalog and client-owned live routing discovery.
 func TestCosignerCatalogSubtractionDoesNotRegrow(t *testing.T) {
 	root := filepath.Join("..", "..")
-	legacyAdapters := map[string]bool{
-		filepath.Clean(filepath.Join(root, "internal", "config", "client_endpoints_v1.go")):               true,
-		filepath.Clean(filepath.Join(root, "internal", "cosigner", "cosignerrefs", "cosignerrefs_v1.go")): true,
+	// The v1 read adapters are deleted: no reader of pre-v2 cosigner or
+	// endpoint data remains.
+	for _, retired := range []string{
+		filepath.Join(root, "internal", "config", "client_endpoints_v1.go"),
+		filepath.Join(root, "internal", "cosigner", "cosignerrefs", "cosignerrefs_v1.go"),
+	} {
+		if _, err := os.Stat(retired); !os.IsNotExist(err) {
+			t.Errorf("%s returned; pre-v2 cosigner and endpoint data is not read", retired)
+		}
 	}
 	forbiddenEverywhere := []string{
 		"CosignerEndpoints CosignerEndpointConfigs",
@@ -54,15 +60,12 @@ func TestCosignerCatalogSubtractionDoesNotRegrow(t *testing.T) {
 					t.Errorf("%s contains retired cosigner catalog shape %q", path, shape)
 				}
 			}
-			if !legacyAdapters[filepath.Clean(path)] {
-				for _, shape := range []string{"PublishedCosigners", `"published_cosigners"`, `"client_discovery"`} {
-					if strings.Contains(text, shape) {
-						t.Errorf("%s contains legacy cosigner discovery persistence outside its read adapter: %q", path, shape)
-					}
+			for _, shape := range []string{"PublishedCosigners", `"published_cosigners"`, `"client_discovery"`} {
+				if strings.Contains(text, shape) {
+					t.Errorf("%s contains legacy cosigner discovery persistence: %q", path, shape)
 				}
 			}
-			if strings.Contains(filepath.ToSlash(path), "/internal/cosigner/cosignerrefs/") &&
-				!legacyAdapters[filepath.Clean(path)] {
+			if strings.Contains(filepath.ToSlash(path), "/internal/cosigner/cosignerrefs/") {
 				for _, shape := range []string{`json:"source`, `json:"endpoint_alias`, `json:"last_seen_at`, `json:"synced_at`} {
 					if strings.Contains(text, shape) {
 						t.Errorf("%s contains retired v1 cosigner-reference field %q", path, shape)

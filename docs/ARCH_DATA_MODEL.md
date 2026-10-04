@@ -565,9 +565,11 @@ local, rebuildable state:
 - swap session files and tombstones.
 
 JSON cache files use an HMAC envelope version plus a payload-level
-`schema_version`. A missing payload `schema_version` is interpreted as v1;
-future unsupported payload versions are rejected and the cache is rebuilt from
-empty or seed data. Cache files remain non-authoritative.
+`schema_version`, which every write records. A missing or unsupported payload
+version is rejected and the cache is rebuilt from empty or seed data. Cache
+files remain non-authoritative. Caches persist only under a client data
+directory; without one they live in memory and nothing is written to the
+working directory.
 
 The cache owner is `internal/clientstate` plus `internal/cache`, with
 `internal/refname` owning persisted alias and set name validation and

@@ -136,7 +136,7 @@ type KeyScanInfo struct {
 	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
-	CreatedAt              string // RFC 3339 creation timestamp (empty for legacy keys)
+	CreatedAt              string // RFC 3339 creation timestamp
 }
 
 // KeyScanWarningCode classifies a key file skipped during directory scan.
@@ -343,9 +343,8 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 	// references (.wit.json) are the sole expected non-credential residents
 	// and are validated without decryption; external witness artifact
 	// bundles (.wit) are aprekey-owned and never signer store residents
-	// (docs/ARCH_CONTRACTS.md). Everything unrecognized is reported so
-	// generation-based stores can fail closed on unexpected content
-	// (legacy stores keep tolerating it as a warning). Nothing outside the
+	// (docs/ARCH_CONTRACTS.md). Everything unrecognized is reported so store
+	// validation fails closed on unexpected content. Nothing outside the
 	// managed credential classes ever reaches decryptFunc.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())

@@ -28,7 +28,7 @@ network: testnet
 		t.Fatalf("write client config: %v", err)
 	}
 	writeClientEndpointRegistry(t, clientDir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -75,7 +75,7 @@ network: testnet
 		t.Fatalf("write client config: %v", err)
 	}
 	writeClientEndpointRegistry(t, clientDir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -121,7 +121,7 @@ network: testnet
 		t.Fatalf("write client config: %v", err)
 	}
 	writeClientEndpointRegistry(t, clientDir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:
@@ -164,7 +164,7 @@ network: testnet
 		t.Fatalf("write client config: %v", err)
 	}
 	writeClientEndpointRegistry(t, clientDir, `
-schema_version: 1
+schema_version: 2
 default: primary
 endpoints:
   primary:

@@ -198,9 +198,6 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - optional `mutations`
 - optional `error`
 
-`signerapi.SignResponse` is a source-compatibility alias; it is not the
-`/sign` wire response.
-
 `/sign` response semantics:
 
 - `signed[]` always aligns 1:1 with the finalized group positions.

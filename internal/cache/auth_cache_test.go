@@ -18,7 +18,7 @@ import (
 
 // TestNewAuthAddressCache verifies creation of empty cache
 func TestNewAuthAddressCache(t *testing.T) {
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(nil)
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("AuthAddresses map should be initialized")
@@ -54,14 +54,20 @@ func TestGetAuthCacheFilename(t *testing.T) {
 		{"custom-network", "cache/custom-network_auth_cache.json"},
 	}
 
+	dataDir := t.TempDir()
+	store := NewStore(dataDir)
 	for _, tt := range tests {
 		t.Run(tt.network, func(t *testing.T) {
-			filename := GetAuthCacheFilenameForStore(nil, tt.network)
-			if filename != tt.expected {
-				t.Errorf("GetAuthCacheFilenameForStore(nil, %q) = %q, want %q",
-					tt.network, filename, tt.expected)
+			want := filepath.Join(dataDir, tt.expected)
+			if filename := GetAuthCacheFilenameForStore(store, tt.network); filename != want {
+				t.Errorf("GetAuthCacheFilenameForStore(%q) = %q, want %q", tt.network, filename, want)
 			}
 		})
+	}
+	// With no client data directory there is no cache file, never one in the
+	// working directory.
+	if filename := GetAuthCacheFilenameForStore(nil, "testnet"); filename != "" {
+		t.Errorf("GetAuthCacheFilenameForStore(nil) = %q, want no path", filename)
 	}
 }
 
@@ -69,16 +75,12 @@ func TestGetAuthCacheFilename(t *testing.T) {
 func TestSaveAndLoadAuthCache(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
 	network := "testnet"
 
 	// Create cache with test data
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["ADDR1"] = "AUTH1"
 	cache.AuthAddresses["ADDR2"] = ""
 	cache.AuthAddresses["ADDR3"] = "AUTH3"
@@ -89,13 +91,13 @@ func TestSaveAndLoadAuthCache(t *testing.T) {
 	}
 
 	// Verify file exists
-	filename := GetAuthCacheFilenameForStore(nil, network)
+	filename := GetAuthCacheFilenameForStore(store, network)
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		t.Fatal("Cache file was not created")
 	}
 
 	// Load
-	loaded := LoadAuthCacheFromStore(nil, network)
+	loaded := LoadAuthCacheFromStore(store, network)
 
 	// Verify contents match
 	if len(loaded.AuthAddresses) != len(cache.AuthAddresses) {
@@ -118,14 +120,10 @@ func TestSaveAndLoadAuthCache(t *testing.T) {
 // TestLoadAuthCacheNonExistent verifies handling of missing cache file
 func TestLoadAuthCacheNonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
 	// Load non-existent cache
-	cache := LoadAuthCacheFromStore(nil, "nonexistent-network")
+	cache := LoadAuthCacheFromStore(store, "nonexistent-network")
 
 	// Should return empty cache without error
 	if cache.AuthAddresses == nil {
@@ -140,20 +138,16 @@ func TestLoadAuthCacheNonExistent(t *testing.T) {
 // TestSaveAuthCachePermissions verifies file permissions
 func TestSaveAuthCachePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["TEST"] = "AUTH"
 
 	if err := cache.SaveCache("testnet"); err != nil {
 		t.Fatalf("SaveCache failed: %v", err)
 	}
 
-	filename := GetAuthCacheFilenameForStore(nil, "testnet")
+	filename := GetAuthCacheFilenameForStore(store, "testnet")
 	info, err := os.Stat(filename)
 	if err != nil {
 		t.Fatalf("Failed to stat cache file: %v", err)
@@ -169,7 +163,7 @@ func TestSaveAuthCachePermissions(t *testing.T) {
 
 // TestGetAuthAddress verifies retrieval from cache
 func TestGetAuthAddress(t *testing.T) {
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(nil)
 	cache.AuthAddresses["REKEYED_ADDR"] = "AUTH_ADDR"
 	cache.AuthAddresses["NORMAL_ADDR"] = ""
 
@@ -217,13 +211,9 @@ func TestGetAuthAddress(t *testing.T) {
 // TestUpdateAuthAddress verifies cache updates
 func TestUpdateAuthAddress(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	network := "testnet"
 
 	tests := []struct {
@@ -270,7 +260,7 @@ func TestUpdateAuthAddress(t *testing.T) {
 			}
 
 			// Verify persistence
-			loaded := LoadAuthCacheFromStore(nil, network)
+			loaded := LoadAuthCacheFromStore(store, network)
 			loadedAuth, exists := loaded.AuthAddresses[tt.address]
 			if !exists {
 				t.Error("Address not found in loaded cache")
@@ -286,13 +276,9 @@ func TestUpdateAuthAddress(t *testing.T) {
 // TestUpdateAuthAddressOverwrite verifies updating existing entries
 func TestUpdateAuthAddressOverwrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	network := "testnet"
 	address := "TEST_ADDR"
 
@@ -322,12 +308,6 @@ func TestUpdateAuthAddressOverwrite(t *testing.T) {
 }
 
 func TestUpdateAuthAddressInitializesZeroValueCache(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
 
 	cache := AuthAddressCache{}
 	if err := cache.UpdateAuthAddress("ADDR1", "AUTH1", "testnet"); err != nil {
@@ -343,12 +323,6 @@ func TestUpdateAuthAddressInitializesZeroValueCache(t *testing.T) {
 }
 
 func TestRefreshAuthAddressInitializesZeroValueCache(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
 
 	cache := AuthAddressCache{}
 	client := newBuildAuthCacheTestAlgodClient(t, map[string]string{"ADDR1": "AUTH1"})
@@ -371,13 +345,9 @@ func TestRefreshAuthAddressInitializesZeroValueCache(t *testing.T) {
 // TestAuthCacheConcurrentReads verifies concurrent read operations
 func TestAuthCacheConcurrentReads(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["ADDR1"] = "AUTH1"
 	cache.AuthAddresses["ADDR2"] = ""
 	network := "testnet"
@@ -396,7 +366,7 @@ func TestAuthCacheConcurrentReads(t *testing.T) {
 			_, _ = cache.GetAuthAddress("ADDR2")
 
 			// Load from disk (creates new instance)
-			loaded := LoadAuthCacheFromStore(nil, network)
+			loaded := LoadAuthCacheFromStore(store, network)
 			_, _ = loaded.GetAuthAddress("ADDR1")
 
 			done <- true
@@ -417,16 +387,12 @@ func TestAuthCacheConcurrentReads(t *testing.T) {
 // TestAuthCacheDirectoryCreation verifies cache directory is auto-created
 func TestAuthCacheDirectoryCreation(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
 	// Ensure cache directory doesn't exist
 	_ = os.RemoveAll("cache")
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["TEST"] = "AUTH"
 
 	if err := cache.SaveCache("testnet"); err != nil {
@@ -434,7 +400,7 @@ func TestAuthCacheDirectoryCreation(t *testing.T) {
 	}
 
 	// Verify directory was created
-	info, err := os.Stat("cache")
+	info, err := os.Stat(filepath.Join(tmpDir, "cache"))
 	if err != nil {
 		t.Fatalf("Cache directory was not created: %v", err)
 	}
@@ -454,13 +420,9 @@ func TestAuthCacheDirectoryCreation(t *testing.T) {
 // TestAuthCacheJSONFormat verifies signed cache JSON structure
 func TestAuthCacheJSONFormat(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["ADDR1"] = "AUTH1"
 	cache.AuthAddresses["ADDR2"] = ""
 
@@ -470,7 +432,7 @@ func TestAuthCacheJSONFormat(t *testing.T) {
 	}
 
 	// Read raw JSON
-	filename := GetAuthCacheFilenameForStore(nil, network)
+	filename := GetAuthCacheFilenameForStore(store, network)
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("Failed to read cache file: %v", err)
@@ -497,22 +459,23 @@ func TestAuthCacheJSONFormat(t *testing.T) {
 // TestLoadAuthCacheInvalidJSON verifies handling of corrupted cache
 func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
+	store := NewStore(tmpDir)
+
+	// Write invalid JSON where the store reads the auth cache.
+	network := "testnet"
+	filename := GetAuthCacheFilenameForStore(store, network)
+	if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filename, []byte("{invalid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadSignedCache(filename, nil, &AuthAddressCache{}); err == nil {
+		t.Fatal("fixture loaded cleanly; want malformed cache JSON")
 	}
 
-	// Create cache directory
-	_ = os.MkdirAll("cache", 0750)
-
-	// Write invalid JSON
-	network := "testnet"
-	filename := GetAuthCacheFilenameForStore(nil, network)
-	_ = os.WriteFile(filename, []byte("{invalid json"), 0600)
-
 	// Should return empty cache without crashing
-	cache := LoadAuthCacheFromStore(nil, network)
+	cache := LoadAuthCacheFromStore(store, network)
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should have initialized map even with invalid JSON")
@@ -524,12 +487,6 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 
 // TestBuildAuthCacheNilClient verifies handling of nil algod client
 func TestBuildAuthCacheNilClient(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
 
 	aliasCache := &AliasCache{
 		Aliases: map[string]string{"alice": "ALICE_ADDR"},
@@ -554,12 +511,6 @@ func TestBuildAuthCacheNilClient(t *testing.T) {
 
 // TestBuildAuthCacheEmptyInputs verifies handling of empty alias/signer caches
 func TestBuildAuthCacheEmptyInputs(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
 
 	emptyAliasCache := &AliasCache{
 		Aliases: map[string]string{},
@@ -628,20 +579,16 @@ func TestBuildAuthCachePrunesEntriesNotOwnedByCurrentAliasesOrSigners(t *testing
 // TestAuthCacheFileLocation verifies cache files are in cache/ subdirectory
 func TestAuthCacheFileLocation(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldDir, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldDir) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	store := NewStore(tmpDir)
 
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(store)
 	cache.AuthAddresses["TEST"] = "AUTH"
 
 	network := "testnet"
 	_ = cache.SaveCache(network)
 
 	// Verify file is in cache/ subdirectory
-	expectedPath := filepath.Join("cache", network+"_auth_cache.json")
+	expectedPath := filepath.Join(tmpDir, "cache", network+"_auth_cache.json")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("Cache file not found at expected path: %s", expectedPath)
 	}
@@ -655,7 +602,7 @@ func TestAuthCacheFileLocation(t *testing.T) {
 
 // TestResolveEffectiveSigner verifies effective signer resolution
 func TestResolveEffectiveSigner(t *testing.T) {
-	cache := NewAuthAddressCache()
+	cache := NewAuthAddressCacheForStore(nil)
 	cache.AuthAddresses["REKEYED_ADDR"] = "AUTH_ADDR"
 	cache.AuthAddresses["NORMAL_ADDR"] = ""
 
