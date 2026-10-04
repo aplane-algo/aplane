@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -35,6 +36,20 @@ type Deps interface {
 type Service struct {
 	Deps    Deps
 	Runtime *productruntime.Runtime
+}
+
+// withUnlockedStoreMutation runs an in-place write to the selected generation
+// under the store mutation lock, rechecking there that the runtime is still
+// unlocked. A request queued behind a failed generation commit must not
+// resume into recovery, where the runtime may still be bound to the
+// superseded, sealed generation.
+func (s Service) withUnlockedStoreMutation(fn func() error) error {
+	return s.Deps.WithStoreMutation(func() error {
+		if s.Runtime == nil || !s.Runtime.IsUnlocked() {
+			return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
+		}
+		return fn()
+	})
 }
 
 func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
@@ -82,7 +97,7 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 	ref := templatelibrary.TemplateRef{KeyType: keyType, TemplateType: templateType}
 	var installResult templatelibrary.InstallResult
 	var out adminproto.InstallLibraryTemplateResult
-	err := s.Deps.WithStoreMutation(func() error {
+	err := s.withUnlockedStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallFromLibrary(s.Deps.KeyPaths(), ref, masterKey)
@@ -304,7 +319,7 @@ func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateR
 
 	var installResult templatelibrary.InstallResult
 	var out adminproto.ImportInstalledTemplateResult
-	err = s.Deps.WithStoreMutation(func() error {
+	err = s.withUnlockedStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var installErr error
 			installResult, installErr = templatelibrary.InstallParsed(s.Deps.KeyPaths(), parsed, masterKey)
@@ -395,7 +410,7 @@ func (s Service) RemoveInstalledTemplate(req adminproto.RemoveInstalledTemplateR
 
 	var removeResult templatelibrary.RemoveResult
 	var out adminproto.RemoveInstalledTemplateResult
-	err := s.Deps.WithStoreMutation(func() error {
+	err := s.withUnlockedStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			removeResult, removeErr = templatelibrary.RemoveInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
@@ -448,7 +463,7 @@ func (s Service) ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminpro
 	ir := s.Runtime
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var out adminproto.ActivateKeyTypeResult
-	err := s.Deps.WithStoreMutation(func() error {
+	err := s.withUnlockedStoreMutation(func() error {
 		if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {
 			out = adminproto.ActivateKeyTypeResult{
 				Success: false,
@@ -554,7 +569,7 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 	var removeResult templatelibrary.RemoveResult
 	var disabledTemplate bool
 	var out adminproto.DeactivateKeyTypeResult
-	err := s.Deps.WithStoreMutation(func() error {
+	err := s.withUnlockedStoreMutation(func() error {
 		if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 			var removeErr error
 			if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), keyType); stateErr != nil {

@@ -244,3 +244,46 @@ func TestPolicyRequestsFailClosedWithoutLoadedPolicy(t *testing.T) {
 		t.Fatalf("CheckPolicy() = %+v", check)
 	}
 }
+
+// recordingMutationDeps reports whether the runtime was already in recovery
+// when the store mutation lock was released.
+type recordingMutationDeps struct {
+	Deps
+	ir                *productruntime.Runtime
+	recoveryAtRelease bool
+}
+
+func (d *recordingMutationDeps) WithStoreMutation(fn func() error) error {
+	return d.Deps.WithStoreMutation(func() error {
+		err := fn()
+		d.recoveryAtRelease = d.ir.IsRecovery()
+		return err
+	})
+}
+
+// A policy commit whose reload fails must enter recovery before the mutation
+// lock is released: until then the runtime may still serve the superseded
+// generation, and a key write taking the lock would land in it.
+func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
+	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
+	view := svc.GetPolicy()
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, fmt.Errorf("reload failed")
+	})
+	deps := &recordingMutationDeps{Deps: svc.Deps, ir: ir}
+	svc.Deps = deps
+
+	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Document: signerPolicyDoc("2000")}},
+		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+	})
+	if result.Success || !result.CommitUncertain || result.Code != "policy_reload_failed" {
+		t.Fatalf("ApplyPolicy() = %+v, want an uncertain reload failure", result)
+	}
+	if !deps.recoveryAtRelease {
+		t.Fatal("runtime entered recovery only after the store mutation lock was released")
+	}
+	if !ir.IsRecovery() {
+		t.Fatal("runtime is not in recovery after a failed post-commit reload")
+	}
+}

@@ -545,7 +545,7 @@ func (s signerAdminServices) DiscardAbandonedGenerations(
 
 func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInventory {
 	ir := s.ProductRuntime()
-	active, err := ir.ActivePaths()
+	active, err := authenticatedSelection(ir)
 	if err != nil {
 		return adminproto.DeletedArchiveInventory{Code: protocol.ResultCodeArchiveListFailed, Error: err.Error()}
 	}
@@ -564,11 +564,27 @@ func (s signerAdminServices) ListDeletedArchive() adminproto.DeletedArchiveInven
 	return result
 }
 
+// authenticatedSelection returns the generation store-root.enc selects now,
+// authenticated with the session keyring. Archive maintenance runs in recovery,
+// where a failed reload can leave the runtime's cached generation behind the
+// root, so it never acts on the cached binding. The selection is not
+// content-validated: pruning an over-limit archive is how such a generation is
+// repaired.
+func authenticatedSelection(ir *productruntime.Runtime) (storepaths.GenPaths, error) {
+	var active storepaths.GenPaths
+	err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		var err error
+		active, err = genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+		return err
+	})
+	return active, err
+}
+
 func (s signerAdminServices) PruneDeletedArchive(req adminproto.PruneDeletedArchiveRequest) adminproto.PruneDeletedArchiveResult {
 	ir := s.ProductRuntime()
 	var pruned []genstore.DeletedArchivePruneResult
 	err := s.withStoreMutation(func() error {
-		active, err := ir.ActivePaths()
+		active, err := authenticatedSelection(ir)
 		if err != nil {
 			return err
 		}

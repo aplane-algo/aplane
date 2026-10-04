@@ -152,7 +152,10 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}
 	}
 
-	unlockMutation := s.lockMutation()
+	unlockMutation, lockErr := s.lockUnlockedMutation()
+	if lockErr != nil {
+		return nil, lockErr
+	}
 	defer unlockMutation()
 	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
 	if activeErr != nil {
@@ -253,7 +256,10 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 
-	unlockMutation := s.lockMutation()
+	unlockMutation, lockErr := s.lockUnlockedMutation()
+	if lockErr != nil {
+		return nil, lockErr
+	}
 	defer unlockMutation()
 	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
 	if activeErr != nil {
@@ -292,6 +298,21 @@ func activatedKeyTypes(paths storepaths.Paths) ([]string, *Error) {
 		}
 	}
 	return enabled, nil
+}
+
+// lockUnlockedMutation takes the store mutation lock for an in-place write to
+// the selected generation and rechecks, under the lock, that the runtime is
+// still unlocked. A caller's earlier check is not enough: a request queued
+// behind a generation commit can resume after that commit failed and set
+// recovery, when the runtime may still be bound to the superseded, sealed
+// generation.
+func (s Service) lockUnlockedMutation() (func(), *Error) {
+	unlock := s.lockMutation()
+	if s.Runtime != nil && !s.Runtime.IsUnlocked() {
+		unlock()
+		return nil, &Error{Kind: ErrorLocked, Message: "signer is not unlocked"}
+	}
+	return unlock, nil
 }
 
 func (s Service) lockMutation() func() {

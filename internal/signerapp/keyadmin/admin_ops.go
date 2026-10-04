@@ -137,7 +137,10 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 
-	unlockMutation := s.lockMutation()
+	unlockMutation, lockErr := s.lockUnlockedMutation()
+	if lockErr != nil {
+		return nil, lockErr
+	}
 	defer unlockMutation()
 	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
 	if activeErr != nil {

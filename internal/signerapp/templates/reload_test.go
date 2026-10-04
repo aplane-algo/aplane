@@ -33,6 +33,8 @@ type fakeKeyStore struct {
 	scanErr      error
 	withMKErr    error
 	onScan       func()
+	bindCalled   bool
+	bindErr      error
 }
 
 func (f *fakeKeyStore) Unlock(_ []byte) error { return nil }
@@ -50,6 +52,10 @@ func (f *fakeKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	}
 	defer kr.Zero()
 	return fn(kr)
+}
+func (f *fakeKeyStore) BindStoreRootSelection() error {
+	f.bindCalled = true
+	return f.bindErr
 }
 func (f *fakeKeyStore) Scan(_ []byte) error {
 	f.scanCalled = true
@@ -553,4 +559,39 @@ func mintedPathsForReloadTest(t *testing.T) utilkeys.Paths {
 	paths := utilkeys.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
 	return paths
+}
+
+// A reload follows the store root before any step that can fail, so a failed
+// pre-scan hook after a root commit cannot leave the keystore bound to the
+// superseded, sealed generation.
+func TestReloadBindsStoreRootSelectionBeforePreScanHook(t *testing.T) {
+	store := &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}}
+	paths := genstoretest.MintFirst(t, utilkeys.NewPaths(t.TempDir()))
+	boundBeforeHook := false
+	service := &ReloadService{
+		KeyStore:        store,
+		Session:         &fakeSession{},
+		TemplateManager: &Manager{Paths: paths},
+		BeforeKeyScan: func(*crypto.Keyring) error {
+			boundBeforeHook = store.bindCalled
+			return errors.New("policy integrity failed")
+		},
+		PublishSnapshot: func(map[string]string, map[string]string) {},
+	}
+	if _, err := service.Reload(nil); err == nil {
+		t.Fatal("Reload() succeeded despite the failing pre-scan hook")
+	}
+	if !boundBeforeHook {
+		t.Fatal("Reload() ran the pre-scan hook before binding the store root selection")
+	}
+
+	// A root that cannot be bound stops the reload before anything else runs.
+	store.bindCalled, store.withMKCalled = false, false
+	store.bindErr = errors.New("authenticate store root")
+	if _, err := service.Reload(nil); err == nil || !strings.Contains(err.Error(), "authenticate store root") {
+		t.Fatalf("Reload() error = %v, want the binding failure", err)
+	}
+	if store.withMKCalled || store.scanCalled {
+		t.Fatal("Reload() continued after failing to bind the store root selection")
+	}
 }

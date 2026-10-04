@@ -17,6 +17,9 @@ type KeyStore interface {
 	Unlock(passphrase []byte) error
 	WithKeyring(fn func(kr *crypto.Keyring) error) error
 	ClearKeys()
+	// BindStoreRootSelection binds the generation the store root selects
+	// before reload validates it.
+	BindStoreRootSelection() error
 	Scan(passphrase []byte) error
 	GetCache() map[string]string
 	GetKeyTypes() map[string]string
@@ -105,6 +108,13 @@ func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 			return nil, fmt.Errorf("failed to unlock the keystore: %w", err)
 		}
 		initializedMasterKey = true
+	}
+	// Follow the store root before anything that can fail: a reload that
+	// fails after a root commit must leave recovery acting on the generation
+	// the root selects, never the superseded, sealed one.
+	if err := s.KeyStore.BindStoreRootSelection(); err != nil {
+		clearInitializedMasterKey()
+		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}
 
 	var beforeKeyScanErr error
