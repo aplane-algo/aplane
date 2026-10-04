@@ -118,7 +118,9 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 		path = filepath.Join(home, strings.TrimPrefix(path, "~/"))
 	}
 	role := m.policies.policy.NodeRole
-	docs, _, err := policyreview.ReadDocuments([]string{path}, role, nil)
+	// Regular files only: this runs inside the event loop, where opening a
+	// FIFO or device would block every key, timer, and daemon message.
+	docs, _, err := policyreview.ReadRegularDocuments([]string{path}, role)
 	if err != nil {
 		apply.err = err.Error()
 		return m, nil
@@ -210,7 +212,11 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	}
 	apply.busy = "Loading active policy..."
 	apply.pendingDocumentID = newPolicyRequestID("policy-apply-doc")
-	return m, tea.Batch(m.sendGetPolicyDocumentCmd(apply.doc.Key, apply.pendingDocumentID), m.waitForMessageCmd())
+	key, id := apply.doc.Key, apply.pendingDocumentID
+	return m, tea.Batch(
+		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
+		m.waitForMessageCmd(),
+	)
 }
 
 // handlePolicyApplyDocumentLoaded receives the active document the candidate
@@ -291,11 +297,19 @@ func (m Model) handlePolicyApplyResult(msg PolicyApplyResultMsg) (tea.Model, tea
 	apply.pendingApplyID = ""
 	apply.applying = false
 	if !msg.Result.Success {
-		lines := policyProblemLines("error", msg.Result.Errors, map[string]string{apply.doc.Key: apply.file})
-		lines = append(lines, "Apply failed: "+policyResultError(msg.Result.Code, msg.Result.Error, "policy apply failed"))
+		detail := policyResultError(msg.Result.Code, msg.Result.Error, "policy apply failed")
 		if msg.Result.CommitUncertain {
-			lines = append(lines, "The commit may be visible but its durability is unconfirmed; signing is blocked pending reconciliation.")
+			// The daemon has entered recovery without announcing it: the
+			// commit may be visible but signing is blocked. Open the recovery
+			// screen, where reconcile and rollback live, instead of leaving
+			// the operator on a view that believes the signer is unlocked.
+			m.policies = policiesState{}
+			m.applySignerRecoveryState()
+			m.restore.recoveryError = "Policy apply: " + detail
+			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
 		}
+		lines := policyProblemLines("error", msg.Result.Errors, map[string]string{apply.doc.Key: apply.file})
+		lines = append(lines, "Apply failed: "+detail)
 		apply.applyErr = strings.Join(lines, "\n")
 		apply.scrollOffset = 0
 		return m, m.waitForMessageCmd()
@@ -309,11 +323,36 @@ func (m Model) handlePolicyApplyResult(msg PolicyApplyResultMsg) (tea.Model, tea
 	return m.requestPolicy()
 }
 
+// policyRequestFailedMsg reports that a policy request could not be sent.
+type policyRequestFailedMsg struct {
+	id  string
+	err error
+}
+
+// policyRequestCmd sends one policy request and ties a send failure to its
+// request ID, so the failure reaches the step that is waiting on it.
+func policyRequestCmd(client *IPCClient, id string, send func(*IPCClient) error) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return policyRequestFailedMsg{id: id, err: fmt.Errorf("not connected")}
+		}
+		if err := send(client); err != nil {
+			return policyRequestFailedMsg{id: id, err: err}
+		}
+		return nil
+	}
+}
+
 // failPendingPolicyApply routes an untyped failure (authorization denial, a
 // send error) to the request the workflow is waiting on, so the operator is
-// not left on a screen that ignores keys.
-func (m Model) failPendingPolicyApply(err error) (Model, bool) {
+// not left on a screen that ignores keys. id must name that request: an error
+// for any other request, such as a background refresh, leaves the workflow
+// waiting for its own response.
+func (m Model) failPendingPolicyApply(id string, err error) (Model, bool) {
 	apply := &m.policies.apply
+	if id == "" || (id != apply.pendingCheckID && id != apply.pendingDocumentID && id != apply.pendingApplyID) {
+		return m, false
+	}
 	switch {
 	case m.viewState == ViewPolicyApplyForm && apply.busy != "":
 		apply.busy = ""
@@ -516,7 +555,7 @@ func (c *IPCClient) SendCheckPolicy(doc adminproto.PolicyDocument, id string) er
 }
 
 func (m Model) sendCheckPolicyCmd(doc adminproto.PolicyDocument, id string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendCheckPolicy(doc, id) })
+	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendCheckPolicy(doc, id) })
 }
 
 // SendApplyPolicy asks the daemon to install one document against the policy
@@ -530,5 +569,5 @@ func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolic
 }
 
 func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, id string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendApplyPolicy(doc, expectedPolicySetSHA256, id) })
+	return policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendApplyPolicy(doc, expectedPolicySetSHA256, id) })
 }

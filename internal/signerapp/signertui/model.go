@@ -558,8 +558,10 @@ type KeysChangedMsg struct {
 	KeyCount int
 }
 
-// ErrorMsg is sent when an error occurs
+// ErrorMsg is sent when an error occurs. ID is the request the daemon's error
+// answers; it is empty for local failures and uncorrelated daemon errors.
 type ErrorMsg struct {
+	ID    string
 	Error error
 }
 

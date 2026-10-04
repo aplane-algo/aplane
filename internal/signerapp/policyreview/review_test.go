@@ -58,6 +58,27 @@ func TestReadDocumentsEnforcesRoleShape(t *testing.T) {
 	}
 }
 
+func TestReadRegularDocumentsRejectsNonRegularPaths(t *testing.T) {
+	file := writePolicyFile(t, "a.json", testCosignerDoc(testKeyA))
+	docs, names, err := ReadRegularDocuments([]string{file}, "cosigner")
+	if err != nil || len(docs) != 1 || docs[0].Key != testKeyA || docs[0].Document != testCosignerDoc(testKeyA) || names[testKeyA] != file {
+		t.Fatalf("ReadRegularDocuments() = %+v, %v, %v", docs, names, err)
+	}
+	link := filepath.Join(t.TempDir(), "link.json")
+	if err := os.Symlink(file, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{link, t.TempDir(), "-", filepath.Join(t.TempDir(), "missing.json")} {
+		if _, _, err := ReadRegularDocuments([]string{path}, "cosigner"); err == nil {
+			t.Fatalf("ReadRegularDocuments(%s) accepted a path that is not a regular file", path)
+		}
+	}
+	empty := writePolicyFile(t, "empty.json", "  \n")
+	if _, _, err := ReadRegularDocuments([]string{empty}, "signer"); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty file error = %v", err)
+	}
+}
+
 func TestDiffDocumentClassifiesNewAndIdenticalDocuments(t *testing.T) {
 	next := testCosignerDoc(testKeyA)
 	changes, identical, err := DiffDocument("cosigner", testKeyA, false, "", next)

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
@@ -30,13 +31,31 @@ const maxPolicyFileBytes = 1 << 20
 // document's key to the file it came from, for messages. The file "-" reads
 // from stdin.
 func ReadDocuments(files []string, role string, stdin io.Reader) ([]adminproto.PolicyDocument, map[string]string, error) {
+	return readDocuments(files, role, func(file string) ([]byte, error) { return readPolicyFile(file, stdin) })
+}
+
+// ReadRegularDocuments is ReadDocuments for callers that must not block on
+// what a path names, such as an interactive UI reading inside its event loop:
+// every path must be a regular file, not a symlink, FIFO, or device, and
+// there is no stdin form.
+func ReadRegularDocuments(files []string, role string) ([]adminproto.PolicyDocument, map[string]string, error) {
+	return readDocuments(files, role, func(file string) ([]byte, error) {
+		data, _, err := fsutil.ReadRegularFileLimited(file, maxPolicyFileBytes)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", file, err)
+		}
+		return validPolicyBytes(file, data)
+	})
+}
+
+func readDocuments(files []string, role string, read func(file string) ([]byte, error)) ([]adminproto.PolicyDocument, map[string]string, error) {
 	if role == "signer" && len(files) != 1 {
 		return nil, nil, fmt.Errorf("a signer node takes exactly one policy file")
 	}
 	docs := make([]adminproto.PolicyDocument, 0, len(files))
 	names := make(map[string]string, len(files))
 	for _, file := range files {
-		data, err := readPolicyFile(file, stdin)
+		data, err := read(file)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -73,6 +92,10 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", file, err)
 	}
+	return validPolicyBytes(file, data)
+}
+
+func validPolicyBytes(file string, data []byte) ([]byte, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("%s is empty", file)
 	}

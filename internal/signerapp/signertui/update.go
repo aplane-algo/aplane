@@ -269,7 +269,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewCosignerExportPath
 			return m, m.waitForMessageCmd()
 		}
-		if next, ok := m.failPendingPolicyApply(msg.Error); ok {
+		if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
@@ -553,6 +553,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PolicyApplyResultMsg:
 		return m.handlePolicyApplyResult(msg)
+
+	case policyRequestFailedMsg:
+		// A local send failure, not a daemon message: nothing was consumed
+		// from the listener, so do not start another wait.
+		next, _ := m.failPendingPolicyApply(msg.id, msg.err)
+		return next, nil
 
 	case adminRefreshTickMsg:
 		// Periodic admin panel refresh — only poll while admin panel is active

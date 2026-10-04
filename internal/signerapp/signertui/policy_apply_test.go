@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -238,16 +239,15 @@ func TestPolicyApplySignerFileAndApplyFailure(t *testing.T) {
 	}
 
 	next, _ = m.handlePolicyApplyReviewKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	m = next.(Model)
-	next, _ = m.handlePolicyApplyResult(PolicyApplyResultMsg{Result: protocol.ApplyPolicyResultMessage{
-		BaseMessage: protocol.BaseMessage{ID: m.policies.apply.pendingApplyID},
-		Code:        "policy_snapshot_changed", Error: "active policy changed", CommitUncertain: true,
+	applying := next.(Model)
+	next, _ = applying.handlePolicyApplyResult(PolicyApplyResultMsg{Result: protocol.ApplyPolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{ID: applying.policies.apply.pendingApplyID},
+		Code:        "policy_snapshot_changed", Error: "active policy changed",
 	}})
 	m = next.(Model)
 	rendered = stripANSI(m.renderPolicyApplyReview())
 	if m.viewState != ViewPolicyApplyReview || m.policies.apply.applying ||
-		!strings.Contains(rendered, "Apply failed: active policy changed (policy_snapshot_changed)") ||
-		!strings.Contains(rendered, "durability is unconfirmed") {
+		!strings.Contains(rendered, "Apply failed: active policy changed (policy_snapshot_changed)") {
 		t.Fatalf("failed apply: view %v\n%s", m.viewState, rendered)
 	}
 	// A failed review cannot be applied again; leaving it refreshes the list.
@@ -259,26 +259,97 @@ func TestPolicyApplySignerFileAndApplyFailure(t *testing.T) {
 	if got := next.(Model); got.viewState != ViewPolicies || !got.policies.loading || cmd == nil {
 		t.Fatalf("esc after failure: view %v loading %v cmd %v", got.viewState, got.policies.loading, cmd)
 	}
+
+	// An uncertain commit has put the daemon into recovery without a status
+	// message, so the TUI opens the recovery screen itself.
+	next, cmd = applying.handlePolicyApplyResult(PolicyApplyResultMsg{Result: protocol.ApplyPolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{ID: applying.policies.apply.pendingApplyID},
+		Code:        "policy_reload_failed", Error: "policy committed as generation gen-9 but runtime reload failed", CommitUncertain: true,
+	}})
+	uncertain := next.(Model)
+	if uncertain.viewState != ViewStoreRecovery || uncertain.signerState != signerRuntimeRecovery || cmd == nil ||
+		uncertain.policies.apply.pendingApplyID != "" {
+		t.Fatalf("uncertain commit: view %v state %v cmd %v apply %+v", uncertain.viewState, uncertain.signerState, cmd, uncertain.policies.apply)
+	}
+	if want := "Policy apply: policy committed as generation gen-9 but runtime reload failed (policy_reload_failed)"; uncertain.restore.recoveryError != want {
+		t.Fatalf("recovery error = %q, want %q", uncertain.restore.recoveryError, want)
+	}
+	if rendered := stripANSI(uncertain.renderStoreRecovery()); !strings.Contains(rendered, "Signing is disabled") ||
+		!strings.Contains(rendered, "Policy apply: policy committed as generation gen-9") {
+		t.Fatalf("recovery screen after an uncertain commit:\n%s", rendered)
+	}
 }
 
-func TestPolicyApplyUntypedFailureReleasesTheWorkflow(t *testing.T) {
+func TestPolicyApplyUntypedFailureReleasesOnlyItsOwnRequest(t *testing.T) {
 	m := cosignerPoliciesModel("no_policy")
 	path := writePolicyApplyFile(t, "key-a.json", policyApplyCosignerDoc(policyViewKeyA, ""))
 	checking, _ := submitPolicyApplyPath(t, m, path)
-	next, _ := checking.Update(ErrorMsg{Error: fmt.Errorf("authorization denied")})
+
+	// An error for another request, such as a background key-list refresh,
+	// leaves the check pending, and its real response still arrives.
+	for _, unrelated := range []ErrorMsg{{Error: fmt.Errorf("list failed")}, {ID: "list-keys-1", Error: fmt.Errorf("list failed")}} {
+		next, _ := checking.Update(unrelated)
+		got := next.(Model)
+		if got.viewState != ViewPolicyApplyForm || got.policies.apply.busy == "" || got.policies.apply.pendingCheckID != checking.policies.apply.pendingCheckID {
+			t.Fatalf("unrelated error %+v released the check: view %v apply %+v", unrelated, got.viewState, got.policies.apply)
+		}
+		if reviewed := deliverPolicyCheck(got, protocol.CheckPolicyResultMessage{Success: true, Valid: true}); reviewed.viewState != ViewPolicyApplyReview {
+			t.Fatalf("check result after an unrelated error: view %v", reviewed.viewState)
+		}
+	}
+
+	next, _ := checking.Update(ErrorMsg{ID: checking.policies.apply.pendingCheckID, Error: fmt.Errorf("authorization denied")})
 	if got := next.(Model); got.viewState != ViewPolicyApplyForm || got.policies.apply.busy != "" || got.policies.apply.err != "authorization denied" {
 		t.Fatalf("denied check: view %v apply %+v", got.viewState, got.policies.apply)
 	}
 
 	review := deliverPolicyCheck(checking, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
 	next, _ = review.handlePolicyApplyReviewKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	next, _ = next.(Model).Update(ErrorMsg{Error: fmt.Errorf("authorization denied")})
+	applying := next.(Model)
+
+	next, _ = applying.Update(ErrorMsg{ID: "list-keys-2", Error: fmt.Errorf("list failed")})
+	if got := next.(Model); !got.policies.apply.applying || got.policies.apply.pendingApplyID != applying.policies.apply.pendingApplyID || got.policies.apply.applyErr != "" {
+		t.Fatalf("unrelated error released the apply: %+v", got.policies.apply)
+	}
+
+	next, _ = applying.Update(ErrorMsg{ID: applying.policies.apply.pendingApplyID, Error: fmt.Errorf("authorization denied")})
 	got := next.(Model)
 	if got.viewState != ViewPolicyApplyReview || got.policies.apply.applying || got.policies.apply.applyErr != "Apply failed: authorization denied" {
 		t.Fatalf("denied apply: view %v apply %+v", got.viewState, got.policies.apply)
 	}
 	if footer := got.policyApplyFooterText(); !strings.Contains(footer, "esc: Back") || strings.Contains(footer, "Apply") {
 		t.Fatalf("denied apply footer = %q", footer)
+	}
+
+	// A request that could not be sent fails the step waiting on it.
+	failed, ok := policyRequestCmd(nil, applying.policies.apply.pendingApplyID, func(*IPCClient) error { return nil })().(policyRequestFailedMsg)
+	if !ok {
+		t.Fatal("unsent policy request did not report a policy request failure")
+	}
+	next, cmd := applying.Update(failed)
+	if got := next.(Model); got.policies.apply.applying || got.policies.apply.applyErr != "Apply failed: not connected" || cmd != nil {
+		t.Fatalf("unsent apply: apply %+v cmd %v", got.policies.apply, cmd)
+	}
+}
+
+func TestPolicyApplyRejectsPathsThatAreNotRegularFiles(t *testing.T) {
+	m := cosignerPoliciesModel("no_policy")
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "policy.fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("cannot create a FIFO: %v", err)
+	}
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(writePolicyApplyFile(t, "key-a.json", policyApplyCosignerDoc(policyViewKeyA, "")), link); err != nil {
+		t.Fatal(err)
+	}
+	// Opening a FIFO with no writer would block the event loop forever; the
+	// submit must return an error instead.
+	for _, path := range []string{fifo, link, dir} {
+		got, cmd := submitPolicyApplyPath(t, m, path)
+		if cmd != nil || got.policies.apply.err == "" || got.policies.apply.pendingCheckID != "" {
+			t.Fatalf("path %s: cmd %v apply %+v", path, cmd, got.policies.apply)
+		}
 	}
 }
 

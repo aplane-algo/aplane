@@ -172,7 +172,9 @@ same steps as `apadmin policy apply FILE`
 (`internal/signerapp/signertui/policy_apply.go`):
 
 1. A path prompt reads the file with the shared reader in
-   `internal/signerapp/policyreview`. On a cosigner node the file's `"key"`
+   `internal/signerapp/policyreview`. The read happens inside the event loop,
+   so the path must be a regular file: a symlink, FIFO, or device is refused
+   rather than opened. On a cosigner node the file's `"key"`
    field selects the document. The TUI refuses a file for a Witness Key ID the
    node does not hold, which the batch command only warns about; pre-staging a
    policy for a key that is not yet held stays a batch operation.
@@ -186,11 +188,15 @@ same steps as `apadmin policy apply FILE`
    list as its concurrency base, so the daemon rejects the apply if the active
    policy changed after the list was loaded. On success the list reloads and
    shows the new generation ID; on failure the review shows the daemon's error
-   and must be left and restarted.
+   and must be left and restarted. A `commit_uncertain` result means the
+   daemon has entered recovery without sending a status message, so the TUI
+   opens the Store Recovery screen with the daemon's error.
 
-Request IDs tie each response to the pending step, and an untyped failure such
-as an authorization denial releases the pending step instead of stranding the
-operator. `diff` without applying, `remove`, multi-file applies, and stdin
+Request IDs tie each response to the pending step. An untyped failure such as
+an authorization denial releases the pending step only when its request ID
+names that step; an error for another request, such as a background key-list
+refresh, leaves the step waiting for its own response. A request that cannot
+be sent fails its own step the same way. `diff` without applying, `remove`, multi-file applies, and stdin
 remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
 
 ## Local Activity And Idle Locking

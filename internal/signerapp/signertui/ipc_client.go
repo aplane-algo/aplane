@@ -370,7 +370,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				if err := json.Unmarshal(line, &errMsg); err != nil {
 					continue
 				}
-				c.emit(sessionID, ErrorMsg{Error: fmt.Errorf("%s", errMsg.Error)})
+				c.emit(sessionID, ErrorMsg{ID: errMsg.ID, Error: fmt.Errorf("%s", errMsg.Error)})
 
 			case MsgTypeKeysList:
 				var keysList KeysListMessage
