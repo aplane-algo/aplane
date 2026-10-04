@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -34,7 +35,7 @@ func cosignerStoreWithPolicy(t *testing.T) (storepaths.Paths, string, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.CosignerCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {

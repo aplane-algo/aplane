@@ -42,7 +42,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if result.Address != selector {
 		t.Fatalf("Address = %q, want %q", result.Address, selector)
 	}
-	if result.PrivateFile != AccountKeyFilePath(paths, selector) {
+	if result.PrivateFile != AccountKeyFilePathActive(mustResolveActiveForTest(t, paths), selector) {
 		t.Fatalf("PrivateFile = %q, want canonical selector path", result.PrivateFile)
 	}
 
@@ -68,7 +68,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if roundTripped.KeyType != "ed25519" || roundTripped.Category != CategoryEd25519 {
 		t.Fatalf("round trip payload = (%q, %q), want ed25519 native", roundTripped.KeyType, roundTripped.Category)
 	}
-	if _, err := os.Stat(WitnessPublicMetadataPath(paths, selector)); !os.IsNotExist(err) {
+	if _, err := os.Stat(WitnessPublicMetadataPathActive(mustResolveActiveForTest(t, paths), selector)); !os.IsNotExist(err) {
 		t.Fatalf("component public metadata for ed25519 stat error = %v, want not exist", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	if result.Address != componentKey {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
 	}
-	wantPrivateFile := CosignerCredentialFilePath(paths, componentKey)
+	wantPrivateFile := CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), componentKey)
 	if result.PrivateFile != wantPrivateFile {
 		t.Fatalf("PrivateFile = %q, want %q", result.PrivateFile, wantPrivateFile)
 	}
@@ -102,18 +102,18 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	if !crypto.IsEncrypted(privateData) {
 		t.Fatal("saved cosigner credential should be encrypted")
 	}
-	if _, err := os.Stat(AccountKeyFilePath(paths, componentKey)); !os.IsNotExist(err) {
+	if _, err := os.Stat(AccountKeyFilePathActive(mustResolveActiveForTest(t, paths), componentKey)); !os.IsNotExist(err) {
 		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
 	}
 
-	path := WitnessPublicMetadataPath(paths, componentKey)
+	path := WitnessPublicMetadataPathActive(mustResolveActiveForTest(t, paths), componentKey)
 	assertKeyFileMode(t, path, fsutil.StoreFilePerm)
-	env, ok, err := ReadWitnessPublicMetadata(paths, componentKey)
+	env, ok, err := ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, paths), componentKey)
 	if err != nil {
-		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
+		t.Fatalf("ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ReadWitnessPublicMetadata() ok = false, want true")
+		t.Fatal("ReadWitnessPublicMetadataActive(mustResolveActiveForTest(t, )) ok = false, want true")
 	}
 	if env.WitnessKeyID != componentKey || env.KeyType != witness.Falcon1024V1 {
 		t.Fatalf("component metadata = %+v, want selector/key type", env)
@@ -178,7 +178,7 @@ func TestSavePayloadRefusesCosignerCredentialPastCap(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	active := mustResolveActive(paths)
+	active := mustResolveActiveForTest(t, paths)
 	for i := range MaxCosignerCredentials {
 		name := fmt.Sprintf("%c%c%c%s%s", "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i/1024%32],
 			"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i/32%32], "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i%32],
@@ -193,7 +193,7 @@ func TestSavePayloadRefusesCosignerCredentialPastCap(t *testing.T) {
 		t.Fatalf("SavePayload(past the cap) error = %v, want ErrCosignerCredentialLimit", err)
 	}
 	selector, _ := payload.Selector()
-	if _, err := os.Stat(CosignerCredentialFilePath(paths, selector)); !os.IsNotExist(err) {
+	if _, err := os.Stat(CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), selector)); !os.IsNotExist(err) {
 		t.Fatalf("refused save wrote a credential: %v", err)
 	}
 }

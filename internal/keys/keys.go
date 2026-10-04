@@ -287,18 +287,9 @@ func ScanKeysDirectoryWithKeyringActive(active storepaths.ActivePaths, kr *crypt
 	return report.Keys, nil
 }
 
-// ScanKeysDirectoryWithKeyringReport scans the product store's keys
-// subdirectory and returns structured warnings for key files that were skipped.
-func ScanKeysDirectoryWithKeyringReport(paths storepaths.Paths, kr *crypto.Keyring) (*KeyScanReport, error) {
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		return nil, err
-	}
-	return ScanKeysDirectoryWithKeyringReportActive(active, kr)
-}
-
-// ScanKeysDirectoryWithKeyringReportActive is
-// ScanKeysDirectoryWithKeyringReport against resolved active-store paths.
+// ScanKeysDirectoryWithKeyringReportActive scans an authenticated
+// generation's keys directory and returns structured warnings for key files
+// that were skipped.
 func ScanKeysDirectoryWithKeyringReportActive(active storepaths.ActivePaths, kr *crypto.Keyring) (*KeyScanReport, error) {
 	return scanKeysDirectoryInternalReport(active, nil, func(keyFile string) ([]byte, error) {
 		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)

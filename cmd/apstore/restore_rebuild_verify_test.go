@@ -160,10 +160,10 @@ func TestCmdRebuildRoleOverrideRestoresCosignerBackup(t *testing.T) {
 	}
 	env, ok, err := apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
 	if err != nil {
-		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
+		t.Fatalf("ReadWitnessPublicMetadataActive(genstoretest.Active(t, )) error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ReadWitnessPublicMetadata() ok = false, want restored sidecar")
+		t.Fatal("ReadWitnessPublicMetadataActive(genstoretest.Active(t, )) ok = false, want restored sidecar")
 	}
 	if env.WitnessKeyID != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, componentKey)
@@ -352,7 +352,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	if firstType != "ed25519" || secondType != "ed25519" {
 		t.Fatalf("restoreKey() key types = %q, %q, want ed25519 both times", firstType, secondType)
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); err != nil {
 		t.Fatalf("restored key file missing after repeated restore: %v", err)
 	}
 }
@@ -420,7 +420,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); err != nil {
 		t.Fatalf("restored key file missing: %v", err)
 	}
 }
@@ -449,7 +449,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if !strings.Contains(err.Error(), "signing_metadata_version") {
 		t.Fatalf("restoreKey() error = %v, want signing metadata context", err)
 	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(boundKeystorePaths(t), address)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no key file written after missing signing metadata, got stat err=%v", statErr)
 	}
 }

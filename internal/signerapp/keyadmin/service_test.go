@@ -587,7 +587,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	if list[0].Address != address || list[0].KeyType != keyType {
 		t.Fatalf("ListKeys()[0] = %+v, want address %s key type %s", list[0], address, keyType)
 	}
-	if list[0].TemplateProvenanceStatus != keys.TemplateProvenanceStatusConflict || list[0].TemplateProvenanceNote == "" {
+	if list[0].TemplateProvenanceStatus != lsigprovider.TemplateProvenanceStatusConflict || list[0].TemplateProvenanceNote == "" {
 		t.Fatalf("ListKeys() template provenance = (%q, %q), want conflict note", list[0].TemplateProvenanceStatus, list[0].TemplateProvenanceNote)
 	}
 
@@ -595,7 +595,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	if svcErr != nil {
 		t.Fatalf("GetKeyDetails() error = %v", svcErr)
 	}
-	if details.TemplateProvenanceStatus != keys.TemplateProvenanceStatusConflict || details.TemplateProvenanceNote == "" {
+	if details.TemplateProvenanceStatus != lsigprovider.TemplateProvenanceStatusConflict || details.TemplateProvenanceNote == "" {
 		t.Fatalf("GetKeyDetails() template provenance = (%q, %q), want conflict note", details.TemplateProvenanceStatus, details.TemplateProvenanceNote)
 	}
 }

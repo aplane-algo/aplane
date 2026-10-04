@@ -145,3 +145,14 @@ func policed(pkg string) bool {
 		return false
 	}
 }
+
+// TestKeyFileFormatDoesNotImportTemplateRegistry keeps internal/keys a key
+// file format package. Comparing a key's stored template fingerprint with the
+// registered template is template provenance and lives in lsigprovider.
+func TestKeyFileFormatDoesNotImportTemplateRegistry(t *testing.T) {
+	for _, imp := range moduleImports(t)[modulePrefix+"/internal/keys"] {
+		if imp == modulePrefix+"/internal/lsigprovider" {
+			t.Errorf("internal/keys imports %s; template provenance belongs in lsigprovider", imp)
+		}
+	}
+}

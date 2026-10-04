@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/signingargs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -292,7 +293,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	km.Bytecode = bytes.Clone(payload.LogicSigBytecode)
 	km.PublicKey = bytes.Clone(payload.PublicKey)
 	km.Parameters = maps.Clone(signingMeta.Parameters)
-	km.SigningArgs = keys.SigningArgDefs(signingMeta.SigningArgs)
+	km.SigningArgs = signingargs.ToRuntimeDefs(signingMeta.SigningArgs)
 	km.BoundedAuthorization = boundedmeta.Clone(signingMeta.BoundedAuthorization)
 	km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
 	return km, nil
@@ -312,7 +313,7 @@ func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys
 		Category:               signingMeta.Category,
 		Bytecode:               bytes.Clone(payload.LogicSigBytecode),
 		Parameters:             maps.Clone(signingMeta.Parameters),
-		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
+		SigningArgs:            signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
 		BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 		Value:                  &GenericLsigData{BytecodeHex: hex.EncodeToString(payload.LogicSigBytecode)},
@@ -479,7 +480,7 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 			summary.LogicSigResources = &cloned
 		}
 		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {
-			summary.SigningArgs = keys.SigningArgDefs(v.SigningArgs)
+			summary.SigningArgs = signingargs.ToRuntimeDefs(v.SigningArgs)
 		}
 		result[k] = summary
 	}

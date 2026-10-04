@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/signingargs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -136,7 +137,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 
 	var signingArgs []keys.StoredSigningArg
 	if provider != nil {
-		signingArgs = keys.StoreSigningArgs(provider.RuntimeArgs())
+		signingArgs = signingargs.FromRuntimeDefs(provider.RuntimeArgs())
 	}
 	var boundedMetadata *boundedmeta.Metadata
 	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
@@ -153,12 +154,12 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if derived.CompilerAutoSalted {
 		payload = keys.NewAutoSaltedDSALSigPayload(
 			keyType, baseKeyType, pub, priv, params, lsigBytecode, tealSource,
-			signingArgs, keys.TemplateFingerprintForKeyType(keyType),
+			signingArgs, lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	} else {
 		payload = keys.NewDSALSigPayload(
 			keyType, baseKeyType, pub, priv, params, lsigBytecode, derived.Counter,
-			tealSource, signingArgs, keys.TemplateFingerprintForKeyType(keyType),
+			tealSource, signingArgs, lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	}
 	defer payload.ZeroSecrets()

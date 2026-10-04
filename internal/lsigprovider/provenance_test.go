@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package keys
+package lsigprovider_test
 
 import (
 	"strings"
@@ -37,18 +37,18 @@ func TestTemplateFingerprintComparison(t *testing.T) {
 	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 
-	if got := TemplateFingerprintForKeyType(keyType); got != fpA {
-		t.Fatalf("TemplateFingerprintForKeyType() = %q, want %q", got, fpA)
+	if got := lsigprovider.TemplateFingerprintForKeyType(keyType); got != fpA {
+		t.Fatalf("lsigprovider.TemplateFingerprintForKeyType() = %q, want %q", got, fpA)
 	}
-	if status, note := CompareTemplateFingerprint(keyType, fpA); status != "" || note != "" {
-		t.Fatalf("CompareTemplateFingerprint(match) = (%q, %q), want empty", status, note)
+	if status, note := lsigprovider.CompareTemplateFingerprint(keyType, fpA); status != "" || note != "" {
+		t.Fatalf("lsigprovider.CompareTemplateFingerprint(match) = (%q, %q), want empty", status, note)
 	}
-	status, note := CompareTemplateFingerprint(keyType, fpB)
-	if status != TemplateProvenanceStatusConflict {
-		t.Fatalf("CompareTemplateFingerprint(conflict) status = %q, want %q", status, TemplateProvenanceStatusConflict)
+	status, note := lsigprovider.CompareTemplateFingerprint(keyType, fpB)
+	if status != lsigprovider.TemplateProvenanceStatusConflict {
+		t.Fatalf("lsigprovider.CompareTemplateFingerprint(conflict) status = %q, want %q", status, lsigprovider.TemplateProvenanceStatusConflict)
 	}
 	if note == "" {
-		t.Fatal("CompareTemplateFingerprint(conflict) note is empty")
+		t.Fatal("lsigprovider.CompareTemplateFingerprint(conflict) note is empty")
 	}
 }
 
@@ -61,21 +61,21 @@ func TestTemplateFingerprintCrossVersionIsBenign(t *testing.T) {
 	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 
-	status, note := CompareTemplateFingerprint(keyType, "2:"+strings.Repeat("a", 64))
-	if status != TemplateProvenanceStatusUnavailable {
-		t.Fatalf("CompareTemplateFingerprint(cross-version) status = %q, want %q", status, TemplateProvenanceStatusUnavailable)
+	status, note := lsigprovider.CompareTemplateFingerprint(keyType, "2:"+strings.Repeat("a", 64))
+	if status != lsigprovider.TemplateProvenanceStatusUnavailable {
+		t.Fatalf("lsigprovider.CompareTemplateFingerprint(cross-version) status = %q, want %q", status, lsigprovider.TemplateProvenanceStatusUnavailable)
 	}
 	if note == "" {
-		t.Fatal("CompareTemplateFingerprint(cross-version) note is empty")
+		t.Fatal("lsigprovider.CompareTemplateFingerprint(cross-version) note is empty")
 	}
 }
 
 func TestTemplateFingerprintComparisonUnavailable(t *testing.T) {
-	status, note := CompareTemplateFingerprint("missing-fingerprint-test-v1", "semantic-a")
-	if status != TemplateProvenanceStatusUnavailable {
-		t.Fatalf("CompareTemplateFingerprint(unavailable) status = %q, want %q", status, TemplateProvenanceStatusUnavailable)
+	status, note := lsigprovider.CompareTemplateFingerprint("missing-fingerprint-test-v1", "semantic-a")
+	if status != lsigprovider.TemplateProvenanceStatusUnavailable {
+		t.Fatalf("lsigprovider.CompareTemplateFingerprint(unavailable) status = %q, want %q", status, lsigprovider.TemplateProvenanceStatusUnavailable)
 	}
 	if note == "" {
-		t.Fatal("CompareTemplateFingerprint(unavailable) note is empty")
+		t.Fatal("lsigprovider.CompareTemplateFingerprint(unavailable) note is empty")
 	}
 }

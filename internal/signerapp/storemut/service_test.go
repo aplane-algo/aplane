@@ -93,7 +93,7 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	paths := utilkeys.NewPaths(tmpDir)
 	paths = genstoretest.MintFirst(t, paths)
 
-	keyPath := keys.AccountKeyFilePath(paths, "ADDR")
+	keyPath := keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -192,7 +192,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
 	}
 
-	keyPath := keys.AccountKeyFilePath(paths, salted.Address.String())
+	keyPath := keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), salted.Address.String())
 	if _, err := os.Stat(keyPath); err != nil {
 		t.Fatalf("expected generic lsig file at %s: %v", keyPath, err)
 	}

@@ -575,13 +575,13 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(keys.CosignerCredentialFilePath(paths, componentKey), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(keys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 
-	report, err := keys.ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, testMasterKey))
+	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(genstoretest.Active(t, paths), cryptotest.Keyring(t, testMasterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(genstoretest.Active(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 		t.Fatalf("scan report = %#v, want one rejected key", report)

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -137,12 +138,12 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	if compilerAutoSalted {
 		payload = keys.NewAutoSaltedGenericLSigPayload(
 			keyType, parameters, bytecode, tealSource, signingArgs,
-			keys.TemplateFingerprintForKeyType(keyType),
+			lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	} else {
 		payload = keys.NewGenericLSigPayload(
 			keyType, parameters, bytecode, saltCounter, tealSource, signingArgs,
-			keys.TemplateFingerprintForKeyType(keyType),
+			lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	}
 	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, false); err != nil {

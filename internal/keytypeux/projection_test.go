@@ -6,7 +6,7 @@ package keytypeux
 import (
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
 func TestAvailabilityForCreation(t *testing.T) {
@@ -23,8 +23,8 @@ func TestTemplateProvenanceLabel(t *testing.T) {
 		status string
 		want   string
 	}{
-		{status: keys.TemplateProvenanceStatusConflict, want: TemplateMismatch},
-		{status: keys.TemplateProvenanceStatusUnavailable, want: TemplateMismatch},
+		{status: lsigprovider.TemplateProvenanceStatusConflict, want: TemplateMismatch},
+		{status: lsigprovider.TemplateProvenanceStatusUnavailable, want: TemplateMismatch},
 		{status: "", want: ""},
 		{status: "ok", want: ""},
 	}

@@ -13,37 +13,20 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const WitnessPublicMetadataSuffix = ".wit.json"
 
-// WitnessPublicMetadataPath returns the public-only metadata sidecar path for
-// a signer-custodied witness key.
-func WitnessPublicMetadataPath(paths storepaths.Paths, witnessKeyID string) string {
-	return WitnessPublicMetadataPathActive(mustResolveActive(paths), witnessKeyID)
-}
-
-// WitnessPublicMetadataPathActive is WitnessPublicMetadataPath against
-// resolved active-store paths.
+// WitnessPublicMetadataPathActive returns the public-only metadata sidecar
+// path for a signer-custodied witness key.
 func WitnessPublicMetadataPathActive(active storepaths.ActivePaths, witnessKeyID string) string {
 	return filepath.Join(active.KeysDir(), witnessKeyID+WitnessPublicMetadataSuffix)
 }
 
-// ReadWitnessPublicMetadata reads and validates a witness public metadata
-// sidecar. The boolean is false when the sidecar is absent.
-func ReadWitnessPublicMetadata(paths storepaths.Paths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		return cosignerrefs.ExportEnvelope{}, false, err
-	}
-	return ReadWitnessPublicMetadataActive(active, witnessKeyID)
-}
-
-// ReadWitnessPublicMetadataActive is ReadWitnessPublicMetadata against
-// resolved active-store paths.
+// ReadWitnessPublicMetadataActive reads and validates a witness public
+// metadata sidecar. The boolean is false when the sidecar is absent.
 func ReadWitnessPublicMetadataActive(active storepaths.ActivePaths, witnessKeyID string) (cosignerrefs.ExportEnvelope, bool, error) {
 	witnessKeyID, err := witness.NormalizeID(witnessKeyID)
 	if err != nil {

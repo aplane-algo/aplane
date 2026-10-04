@@ -5,11 +5,11 @@ package keys
 
 import (
 	"errors"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -66,7 +66,7 @@ func TestCanonicalManagedCredentialFilename(t *testing.T) {
 
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	path, err := CanonicalManagedCredentialPath(paths, witnessID, CategoryWitness)
+	path, err := CanonicalManagedCredentialPathActive(mustResolveActiveForTest(t, paths), witnessID, CategoryWitness)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
 	if err := os.WriteFile(contradictory, []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ManagedCredentialDestination(paths, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassConflict) {
-		t.Fatalf("ManagedCredentialDestination() error = %v, want class conflict", err)
+	if _, _, err := ManagedCredentialDestinationActive(mustResolveActiveForTest(t, paths), account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassConflict) {
+		t.Fatalf("ManagedCredentialDestinationActive(mustResolveActiveForTest(t, )) error = %v, want class conflict", err)
 	}
 }
