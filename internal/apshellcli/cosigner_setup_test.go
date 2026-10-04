@@ -97,7 +97,7 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	}
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
-		Config: cfg, AutoConfirm: true, currentCommandCtx: context.Background(),
+		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 	_, err = state.cmdCosigner([]string{
 		"add", documentPath, "--alias", "field", "--endpoint", "ssh://new.example", "--replace",
@@ -177,7 +177,7 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{
 		Out: &out, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
-		Config: cfg, AutoConfirm: true, currentCommandCtx: context.Background(),
+		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 	result, err := state.cmdCosigner([]string{
 		"add", documentPath, "--alias", "field", "--endpoint", "ssh://cosigner.example", "--dry-run",
@@ -209,7 +209,7 @@ func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T)
 	cfg := config.DefaultConfig()
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
-		Config: cfg, AutoConfirm: true, currentCommandCtx: context.Background(),
+		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 
 	_, err = state.cmdCosigner([]string{
@@ -218,7 +218,7 @@ func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T)
 	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
 		t.Fatalf("cmdCosigner() error = %v, want missing direct-endpoint token error", err)
 	}
-	endpoint, ok := state.Config.Endpoints.Endpoint("field")
+	endpoint, ok := state.App.Config.Endpoints.Endpoint("field")
 	if !ok || endpoint.URL != "http://127.0.0.1:1" {
 		t.Fatalf("REPL endpoint after partial setup = %#v/%v, want persisted field endpoint", endpoint, ok)
 	}
@@ -274,7 +274,7 @@ func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.DefaultConfig()
-	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, Config: cfg, AutoConfirm: true}
+	state := &REPLState{App: apshellapp.New(eng, cfg, dir), DataDir: dir, AutoConfirm: true}
 	result, err := state.cmdCosigner([]string{"status"}, nil)
 	if err != nil {
 		t.Fatal(err)

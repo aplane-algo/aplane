@@ -34,7 +34,6 @@ func NewSession(network string, cfg config.Config, dataDir string, out io.Writer
 	if err != nil {
 		return nil, err
 	}
-	state.Config = cfg
 	state.CommandRegistry = state.initCommandRegistry()
 	if out != nil {
 		state.SetOutput(out)

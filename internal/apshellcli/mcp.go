@@ -48,7 +48,6 @@ func runMCPMode(network string, cfg config.Config, dataDir string) {
 		os.Exit(1)
 	}
 
-	state.Config = cfg
 	state.AutoConfirm = true   // Non-interactive: skip confirmation prompts
 	state.SetOutput(os.Stderr) // stdout is MCP transport; all output goes to stderr
 

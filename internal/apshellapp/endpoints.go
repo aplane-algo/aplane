@@ -40,11 +40,10 @@ type EndpointDiscoverCosignersRequest struct{}
 
 // EndpointsList returns the resolved client endpoint registry.
 func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
-	cfg, registry, err := a.loadEndpointView()
+	registry, err := a.loadEndpointView()
 	if err != nil {
 		return nil, err
 	}
-	a.Config = cfg
 
 	aliases := make([]string, 0, len(registry.Endpoints))
 	for alias := range registry.Endpoints {
@@ -65,11 +64,10 @@ func (a *App) EndpointShow(_ context.Context, alias string) (*EndpointShowResult
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
-	cfg, registry, err := a.loadEndpointView()
+	registry, err := a.loadEndpointView()
 	if err != nil {
 		return nil, err
 	}
-	a.Config = cfg
 
 	endpoint, ok := registry.Endpoint(alias)
 	if !ok {
@@ -126,9 +124,8 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	if !req.DryRun {
-		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
-			a.Config = cfg
-			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+		if err := a.reloadConfigAfterEndpointChange(); err != nil {
+			return nil, err
 		}
 	}
 	result.RenderLines = endpointImportRenderLines(result)
@@ -178,9 +175,8 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 	}
 
 	if !req.DryRun {
-		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
-			a.Config = cfg
-			a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+		if err := a.reloadConfigAfterEndpointChange(); err != nil {
+			return nil, err
 		}
 	}
 	result.RenderLines = endpointCreateCosignerRenderLines(result)
@@ -203,7 +199,7 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 	if err != nil {
 		return nil, err
 	}
-	a.Config = cfg
+	a.adoptConfig(cfg)
 
 	aliases := make([]string, 0, len(cfg.Endpoints.Endpoints))
 	for alias, endpoint := range cfg.Endpoints.Endpoints {
@@ -275,9 +271,8 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}); err != nil {
 		return nil, err
 	}
-	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
-		a.Config = cfg
-		a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+	if err := a.reloadConfigAfterEndpointChange(); err != nil {
+		return nil, err
 	}
 	return &EndpointDefaultResult{
 		Alias:         alias,
@@ -297,9 +292,8 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	}); err != nil {
 		return nil, err
 	}
-	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
-		a.Config = cfg
-		a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+	if err := a.reloadConfigAfterEndpointChange(); err != nil {
+		return nil, err
 	}
 	return &EndpointDeleteResult{
 		Alias:       alias,
@@ -323,12 +317,36 @@ func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointC
 	return applied, err
 }
 
-func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, error) {
+// loadEndpointView reads the stored endpoint registry and adopts the loaded
+// config, so later commands see the same endpoints the view showed.
+func (a *App) loadEndpointView() (config.ClientEndpointRegistry, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
-		return config.Config{}, config.ClientEndpointRegistry{}, err
+		return config.ClientEndpointRegistry{}, err
 	}
-	return cfg, cfg.Endpoints, nil
+	a.adoptConfig(cfg)
+	return cfg.Endpoints, nil
+}
+
+// adoptConfig makes cfg the app's config and the engine's endpoint registry,
+// keeping alias resolution and guarded routing on one view of endpoints.yaml.
+func (a *App) adoptConfig(cfg config.Config) {
+	a.Config = cfg
+	if a.eng != nil {
+		a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+	}
+}
+
+// reloadConfigAfterEndpointChange adopts the stored config after a saved
+// endpoint change. A failed reload is reported rather than leaving the app on
+// the pre-change endpoints.
+func (a *App) reloadConfigAfterEndpointChange() error {
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return fmt.Errorf("endpoint change was saved, but reloading the client config failed: %w", err)
+	}
+	a.adoptConfig(cfg)
+	return nil
 }
 
 func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, isDefault bool) EndpointEntry {

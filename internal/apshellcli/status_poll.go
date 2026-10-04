@@ -13,7 +13,7 @@ import (
 
 func (r *REPLState) startSignerStatusPolling(onCacheChanged func()) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
-	interval := r.Config.SignerStatusPollIntervalDuration()
+	interval := r.app().Config.SignerStatusPollIntervalDuration()
 	if interval <= 0 {
 		return cancel
 	}

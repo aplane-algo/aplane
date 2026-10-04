@@ -120,3 +120,38 @@ func TestDecorateConnectResultOmitsLockedTranscriptLine(t *testing.T) {
 		t.Fatalf("RenderLines = %#v, want only tunnel and verification lines", result.RenderLines)
 	}
 }
+
+func TestResolveTokenRequestTarget(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Endpoints = config.ClientEndpointRegistry{
+		Default: "primary",
+		Endpoints: map[string]config.ClientEndpointConfig{
+			"primary":  {Role: config.ClientEndpointRoleSigner},
+			"cosigner": {Role: config.ClientEndpointRoleCosigner},
+		},
+	}
+	app := New(nil, cfg, t.TempDir())
+
+	for _, tc := range []struct {
+		alias, wantAlias string
+		wantAutoConnect  bool
+	}{
+		{alias: "", wantAlias: "primary", wantAutoConnect: true},
+		{alias: "primary", wantAlias: "primary", wantAutoConnect: true},
+		{alias: "cosigner", wantAlias: "cosigner", wantAutoConnect: false},
+	} {
+		target, err := app.ResolveTokenRequestTarget(tc.alias)
+		if err != nil || target.Alias != tc.wantAlias || target.AutoConnect != tc.wantAutoConnect {
+			t.Fatalf("ResolveTokenRequestTarget(%q) = %+v, %v; want alias %q, auto-connect %v",
+				tc.alias, target, err, tc.wantAlias, tc.wantAutoConnect)
+		}
+	}
+	if _, err := app.ResolveTokenRequestTarget("missing"); err == nil || !strings.Contains(err.Error(), `unknown endpoint alias "missing"`) {
+		t.Fatalf("ResolveTokenRequestTarget(missing) error = %v", err)
+	}
+
+	app.Config.Endpoints = config.ClientEndpointRegistry{}
+	if _, err := app.ResolveTokenRequestTarget(""); err == nil || !strings.Contains(err.Error(), "no default signer endpoint") {
+		t.Fatalf("ResolveTokenRequestTarget(no default) error = %v", err)
+	}
+}

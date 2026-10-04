@@ -105,7 +105,6 @@ func newHelpTestState(t *testing.T, dataDir string) *REPLState {
 	state := &REPLState{
 		App:             apshellapp.New(eng, config.DefaultConfig(), dataDir),
 		DataDir:         dataDir,
-		Config:          config.DefaultConfig(),
 		CommandRegistry: nil,
 	}
 	state.CommandRegistry = state.initCommandRegistry()

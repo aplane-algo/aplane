@@ -30,9 +30,6 @@ type REPLState struct {
 	// Data directory (for config file location)
 	DataDir string
 
-	// Configuration (for network restrictions, connection defaults, etc.)
-	Config config.Config
-
 	// UI-specific state (not shared with Engine)
 	CommandRegistry *command.Registry // Command registry for plugin-ready command system
 
@@ -85,7 +82,6 @@ func NewREPLState(network string, config *config.Config, dataDir string) (*REPLS
 	state := &REPLState{
 		App:     apshellapp.New(eng, *config, dataDir),
 		DataDir: dataDir,
-		Config:  *config,
 	}
 	state.SetOutput(os.Stdout)
 

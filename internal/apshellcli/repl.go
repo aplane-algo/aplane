@@ -70,7 +70,6 @@ func startREPL(network string, config config.Config, dataDir string) {
 		os.Exit(1)
 	}
 
-	state.Config = config                               // Store config for network restrictions
 	state.CommandRegistry = state.initCommandRegistry() // Initialize command registry with plugin support
 
 	if err := initPluginRuntime(state); err != nil {
@@ -169,7 +168,6 @@ func runScriptMode(network string, config config.Config, dataDir string, scriptP
 		os.Exit(1)
 	}
 
-	state.Config = config    // Store config for network restrictions
 	state.AutoConfirm = true // Non-interactive: skip confirmation prompts
 	state.CommandRegistry = state.initCommandRegistry()
 

@@ -113,10 +113,27 @@ func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.H
 	if !ok {
 		return nil, fmt.Errorf("no default signer endpoint in endpoints.yaml")
 	}
-	return a.ConnectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
+	return a.connectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
 }
 
-func (a *App) ConnectEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
+// ConnectEndpointAlias establishes an SSH tunnel to a configured endpoint alias.
+func (a *App) ConnectEndpointAlias(ctx context.Context, alias string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
+	endpoint, err := a.configuredEndpoint(alias)
+	if err != nil {
+		return nil, err
+	}
+	return a.connectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
+}
+
+func (a *App) configuredEndpoint(alias string) (config.ClientEndpointConfig, error) {
+	endpoint, ok := a.Config.ClientEndpointsOrDefault().Endpoint(alias)
+	if !ok {
+		return config.ClientEndpointConfig{}, fmt.Errorf("unknown endpoint alias %q", alias)
+	}
+	return endpoint, nil
+}
+
+func (a *App) connectEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return nil, err
@@ -149,10 +166,41 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func(string)) (*RequestTokenResult, error) {
-	var progress func(string)
-	if len(onProvisioningStarted) > 0 {
-		progress = onProvisioningStarted[0]
+// TokenRequestTarget is the endpoint a request-token run enrolls with.
+type TokenRequestTarget struct {
+	Alias string
+	// AutoConnect reports that the target is the default signer endpoint, so
+	// the shell replaces its current session with one using the new token.
+	AutoConnect bool
+}
+
+// ResolveTokenRequestTarget resolves a request-token alias; an empty alias
+// selects the default signer endpoint.
+func (a *App) ResolveTokenRequestTarget(alias string) (TokenRequestTarget, error) {
+	registry := a.Config.ClientEndpointsOrDefault()
+	defaultAlias, defaultEndpoint, hasDefault := registry.DefaultEndpoint()
+	if alias == "" {
+		if !hasDefault {
+			return TokenRequestTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-token")
+		}
+		alias = defaultAlias
+	}
+	if _, err := a.configuredEndpoint(alias); err != nil {
+		return TokenRequestTarget{}, err
+	}
+	return TokenRequestTarget{
+		Alias:       alias,
+		AutoConnect: hasDefault && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner,
+	}, nil
+}
+
+// RequestTokenEndpointAlias enrolls with a configured endpoint alias and saves
+// the issued token. progress, when set, receives the client key fingerprint
+// once the request is waiting for operator approval.
+func (a *App) RequestTokenEndpointAlias(ctx context.Context, alias string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, progress func(string)) (*RequestTokenResult, error) {
+	endpoint, err := a.configuredEndpoint(alias)
+	if err != nil {
+		return nil, err
 	}
 	wasConnected := a.eng.IsTunnelConnected()
 	result, err := clientenroll.RequestEndpointToken(

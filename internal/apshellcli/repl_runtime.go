@@ -53,11 +53,11 @@ func (r *REPLState) networkCompletions() []string {
 		seen[network] = struct{}{}
 	}
 
-	add(r.Config.Network)
-	for _, network := range r.Config.NetworksAllowed {
+	add(r.app().Config.Network)
+	for _, network := range r.app().Config.NetworksAllowed {
 		add(network)
 	}
-	for network := range r.Config.Algod {
+	for network := range r.app().Config.Algod {
 		add(network)
 	}
 	for _, network := range []string{apconfig.NetworkMainnet, apconfig.NetworkTestnet, apconfig.NetworkBetanet} {
