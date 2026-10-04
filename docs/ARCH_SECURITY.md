@@ -412,6 +412,11 @@ without credentials. It is bounded so that it cannot crowd out signing:
 - A `request-token` connection that has not started provisioning within 30
   seconds is closed
 - At most 8 `request-token` connections are open at once
+- Each `request-token` connection may have at most 2 open session channels;
+  further channels are rejected before they are accepted
+- A client must accept the provisioning response within 10 seconds; a client
+  that stops reading (for example by advertising a zero receive window) is
+  disconnected, which releases the pending-request slot
 - Signing has priority. Signing and client access share the coordinator's
   single delivery turn (one prompt at a time), but a queued signing request
   is delivered before any client access request, and a client access prompt

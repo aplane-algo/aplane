@@ -5,6 +5,8 @@ package sshtunnel
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -188,6 +190,67 @@ func TestRequestTokenConnectionsAreCapped(t *testing.T) {
 	extra := dialRequestToken(t, srv, addr)
 	if !closedWithin(extra, 2*time.Second) {
 		t.Fatalf("request-token connection %d beyond the cap stayed open", maxTokenProvisioningConns+1)
+	}
+}
+
+// stalledChannel models a client that never extends its receive window: a
+// write blocks until the connection closes.
+type stalledChannel struct {
+	ssh.Channel
+	closed chan struct{}
+}
+
+func (c *stalledChannel) Write([]byte) (int, error) {
+	<-c.closed
+	return 0, io.EOF
+}
+
+type closeRecordingConn struct {
+	ssh.Conn
+	closed chan struct{}
+}
+
+func (c *closeRecordingConn) Close() error {
+	close(c.closed)
+	return nil
+}
+
+// A client that stops reading cannot hold the provisioning slot: the response
+// deadline closes its connection, which fails the blocked write.
+func TestProvisioningResponseToStalledClientTimesOut(t *testing.T) {
+	srv, _ := testServer(t)
+	srv.tokenProvisioningRespDeadline = 50 * time.Millisecond
+	closed := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.respondProvisioning(&closeRecordingConn{closed: closed}, &stalledChannel{closed: closed}, "ERROR: rejected\n", 1)
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("respondProvisioning() error = %v, want the write to fail", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("response write to a stalled client blocked past its deadline")
+	}
+}
+
+// A request-token connection cannot open channels without bound: channels
+// beyond the cap are rejected before a handler is started.
+func TestRequestTokenChannelsAreCapped(t *testing.T) {
+	srv, _ := testServer(t)
+	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
+		ApproveContext: func(context.Context, string, string) (bool, error) { return false, nil },
+		Issue:          func() (string, error) { return "", nil },
+	})
+	client := dialRequestToken(t, srv, serveConnections(t, srv))
+	for i := 0; i < maxTokenProvisioningChannels; i++ {
+		if _, err := client.NewSession(); err != nil {
+			t.Fatalf("session %d: %v", i+1, err)
+		}
+	}
+	if _, err := client.NewSession(); err == nil || !strings.Contains(err.Error(), "too many channels") {
+		t.Fatalf("session beyond the cap error = %v, want a rejection", err)
 	}
 }
 
