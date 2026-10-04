@@ -73,10 +73,6 @@ type KeyCheckerFunc func(key ssh.PublicKey) bool
 // KeyEnrollerFunc enrolls a public key for the product.
 type KeyEnrollerFunc func(key ssh.PublicKey) error
 
-// AdminChannelCallback handles an accepted admin subsystem channel.
-// The channel is already authenticated at the SSH layer.
-type AdminChannelCallback func(channel ssh.Channel, remoteAddr string)
-
 // ProductHooks configures product token validation and SSH key storage.
 type ProductHooks struct {
 	ComputeTokenMACs TokenMACFunc
@@ -96,9 +92,6 @@ type TokenProvisioningHooks struct {
 }
 
 const (
-	// AdminSubsystemName is the SSH subsystem name used for remote adminproto.
-	AdminSubsystemName = "aplane-admin"
-
 	initialAcceptErrorBackoff = 25 * time.Millisecond
 	maxAcceptErrorBackoff     = time.Second
 	invalidTokenProofDelay    = 5 * time.Second
@@ -116,6 +109,12 @@ const (
 	tokenProvisioningExecDeadline     = 30 * time.Second
 	tokenProvisioningResponseDeadline = 10 * time.Second
 	maxLoggedClientTextBytes          = 64
+
+	// The server pings each client and closes a connection whose client
+	// stops answering. The library cannot cancel a pending request, so the
+	// reply is awaited with a timer rather than indefinitely.
+	keepaliveInterval     = 15 * time.Second
+	keepaliveReplyTimeout = 30 * time.Second
 )
 
 // Server represents an SSH server with mutual token proof and public-key auth.
@@ -140,8 +139,6 @@ type Server struct {
 	tokenMAC    TokenMACFunc    // If set, computes product token proof MACs
 	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
 	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
-
-	adminChannelCallback AdminChannelCallback
 
 	// Token provisioning callbacks
 	tokenApprovalCallback TokenApprovalContextCallback // Called to request operator approval
@@ -169,6 +166,8 @@ type Server struct {
 	tokenProvisioningConns        int           // Live request-token connections; protected by sshConnsMu
 	tokenProvisioningExecDeadline time.Duration // Tests may shorten the time a request-token connection has to start provisioning
 	tokenProvisioningRespDeadline time.Duration // Tests may shorten the time a client has to accept a provisioning response
+	keepaliveInterval             time.Duration // Tests may shorten keepaliveInterval
+	keepaliveTimeout              time.Duration // Tests may shorten keepaliveReplyTimeout
 	provisioningClaims            sync.Map      // *ssh.ServerConn -> struct{}: connections that already provisioned once
 	provisioningActive            atomic.Bool   // One client access request is pending at a time, server-wide
 }
@@ -291,16 +290,6 @@ func productHooksComplete(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyE
 	return tokenMAC != nil && keyChecker != nil && keyEnroller != nil
 }
 
-// SetAdminChannelCallback sets the callback used to handle remote admin
-// sessions over the dedicated SSH subsystem.
-// Callbacks are immutable after Start.
-func (s *Server) SetAdminChannelCallback(cb AdminChannelCallback) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.assertNotStartedLocked("SetAdminChannelCallback")
-	s.adminChannelCallback = cb
-}
-
 func (s *Server) assertNotStartedLocked(method string) {
 	if s.started {
 		panic(fmt.Sprintf("sshtunnel.Server.%s cannot be called after Start", method))
@@ -339,6 +328,8 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 
 		tokenProvisioningExecDeadline: tokenProvisioningExecDeadline,
 		tokenProvisioningRespDeadline: tokenProvisioningResponseDeadline,
+		keepaliveInterval:             keepaliveInterval,
+		keepaliveTimeout:              keepaliveReplyTimeout,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
@@ -1057,60 +1048,12 @@ func (s *Server) handleConnection(netConn net.Conn) {
 				defer s.activeConns.Done()
 				s.handleChannel(ch)
 			}(newChannel)
-		case "session":
-			s.activeConns.Add(1)
-			go func(ch ssh.NewChannel) {
-				defer s.activeConns.Done()
-				s.handleSessionChannel(sshConn, ch)
-			}(newChannel)
 		default:
 			if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil && !isClosedConnError(err) {
 				fmt.Printf("Failed to reject SSH channel: %v\n", err)
 			}
 		}
 	}
-}
-
-func (s *Server) handleSessionChannel(sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
-	channel, requests, err := newChannel.Accept()
-	if err != nil {
-		return
-	}
-
-	remoteAddr := sshConn.RemoteAddr().String()
-	for req := range requests {
-		switch req.Type {
-		case "subsystem":
-			var payload struct {
-				Name string
-			}
-			if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
-				if req.WantReply {
-					_ = req.Reply(false, nil)
-				}
-				_ = channel.Close()
-				return
-			}
-			if payload.Name != AdminSubsystemName || s.adminChannelCallback == nil {
-				if req.WantReply {
-					_ = req.Reply(false, nil)
-				}
-				_ = channel.Close()
-				return
-			}
-			if req.WantReply {
-				_ = req.Reply(true, nil)
-			}
-			s.adminChannelCallback(channel, remoteAddr)
-			return
-		default:
-			if req.WantReply {
-				_ = req.Reply(false, nil)
-			}
-		}
-	}
-
-	_ = channel.Close()
 }
 
 // handleGlobalRequests handles global SSH requests including keepalives.
@@ -1143,7 +1086,7 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 		}
 	}()
 
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(s.keepaliveInterval)
 	defer ticker.Stop()
 
 	for {
@@ -1151,13 +1094,26 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 		case <-done:
 			return
 		case <-ticker.C:
-			// Send keepalive request to client
-			_, _, err := sshConn.SendRequest("keepalive@openssh.com", true, nil)
-			if err != nil {
-				// Client is not responding - connection is dead
-				fmt.Printf("[SSH] Keepalive failed for %s: %v\n", remoteAddr, err)
-				// Close the connection to trigger cleanup
+			// SendRequest waits for the reply until the connection closes, so
+			// it runs aside and the reply is awaited under a timer. Closing
+			// the connection unblocks it.
+			replied := make(chan error, 1)
+			go func() {
+				_, _, err := sshConn.SendRequest("keepalive@openssh.com", true, nil)
+				replied <- err
+			}()
+			select {
+			case err := <-replied:
+				if err != nil {
+					fmt.Printf("[SSH] Keepalive failed for %s: %v\n", remoteAddr, err)
+					_ = sshConn.Close()
+					return
+				}
+			case <-time.After(s.keepaliveTimeout):
+				fmt.Printf("[SSH] No keepalive reply from %s within %v; closing\n", remoteAddr, s.keepaliveTimeout)
 				_ = sshConn.Close()
+				return
+			case <-done:
 				return
 			}
 		}

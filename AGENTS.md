@@ -58,7 +58,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `internal/signerapp/`: Signer runtime, approval, identity, signing, and template lifecycle
 - `internal/keystore/`, `internal/keys/`, `internal/crypto/`: Keystore storage, key scanning, encryption, passphrase handling
 - `internal/signing/`, `internal/lsigprovider/`, `lsig/`: Native signing and LogicSig provider registries/families
-- `internal/protocol/`: IPC/SSH admin message catalog and envelope definitions
+- `internal/protocol/`: IPC admin message catalog and envelope definitions
 - `internal/adminproto/`: Transport-neutral admin request/result types and framed connections
 - `internal/signerapp/adminserver/`: Server-side admin sessions, dispatch, and handlers
 - `internal/transport/`: Admin client transport and request/response dispatch

@@ -69,7 +69,7 @@ APlane is a **single-operator, single-signing-identity product**. Every
 `apsigner` process owns exactly one signing-state aggregate. The aggregate owns
 the keystore, lock state, approval coordinator, token authority, SSH enrollment,
 configuration, and watcher; it has no runtime ID, registry, or selector. IPC
-and SSH admin clients compete for one process-wide admin session.
+admin clients compete for one process-wide admin session.
 
 The durable namespace is `identities/default/`, with managed archives under
 `backups/default/`. `default` is the fixed on-disk directory name, not a runtime
@@ -155,7 +155,7 @@ aplane/
 │   ├── apshell/                   # Thin shell binary entrypoint
 │   ├── aprekey/                   # External witness and bounded admin ceremonies
 │   ├── apsigner/                 # Thin signer entrypoint: flags, providers, handoff
-│   ├── apadmin/                   # Admin TUI over IPC or SSH admin transport
+│   ├── apadmin/                   # Admin TUI over IPC
 │   ├── apconsole/                 # Secure-machine console wrapper
 │   ├── apapprover/                # Approval-only IPC client
 │   ├── apstore/                   # Stopped-daemon bootstrap and rescue flows
@@ -199,7 +199,7 @@ aplane/
 │   │   └── templates/             # Template reload and state reporting
 │   ├── adminproto/                # Admin service vocabulary and framed server connection
 │   ├── protocol/                  # IPC/admin wire message definitions
-│   ├── transport/                 # IPC/SSH admin client transports
+│   ├── transport/                 # IPC admin client transport
 │   ├── sshtunnel/                 # SSH server and client tunnel support
 │   ├── signerclient/              # Signer REST client
 │   ├── signerapi/                 # Internal aliases for pkg/signerapi DTOs
@@ -378,24 +378,23 @@ generation commit lives under the selected `generations/<gen-id>/`: keys under
 key/template/policy archives under `deleted/`, and node-role policy at
 `policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner
 nodes). `store-root.enc` selects the generation. HTTP authentication authorizes access
-to that one aggregate; admin sessions over IPC or the SSH `aplane-admin`
-subsystem bind to the same aggregate at authentication time. The aggregate has
+to that one aggregate; admin sessions over IPC bind to the same aggregate at
+authentication time. The aggregate has
 no runtime selector or registry.
 
 **Admin protocol architecture:**
 
 The admin protocol is split into wire, server, and transport layers:
 
-- `internal/protocol` owns the IPC/SSH admin message catalog and envelope
+- `internal/protocol` owns the IPC admin message catalog and envelope
   definitions;
 - `internal/adminproto` owns transport-neutral admin request/result types and
   the framed `AdminConn` abstraction;
 - `internal/signerapp/adminserver` owns authentication, session lifecycle,
   active-session tracking, displacement, dispatch, handlers, and service
   interfaces;
-- `internal/signerapp/daemon` adapts and wires the process transports; and
-- `internal/sshtunnel` carries the same admin protocol over the SSH
-  `aplane-admin` subsystem.
+- `internal/signerapp/daemon` adapts and wires the IPC transport. SSH
+  (`internal/sshtunnel`) does not carry the admin protocol.
 
 Non-transport code reaches the admin channel through
 `internal/signerapp/adminserver.AdminHub`, implemented by the daemon

@@ -353,7 +353,7 @@ This layer includes:
 
 - HTTP auth and authorization vocabulary/interfaces: `internal/auth`
 - grant-backed authorization decisions: `internal/authz`
-- IPC/SSH admin wire protocol and envelope definitions: `internal/protocol`
+- IPC admin wire protocol and envelope definitions: `internal/protocol`
 - transport-neutral admin request/result types and framed `AdminConn`:
   `internal/adminproto`
 - server-side admin session lifecycle, dispatch, and handlers:
@@ -365,7 +365,7 @@ This layer includes:
 
 Admin transport model:
 
-- the IPC and SSH admin channels share the same line-delimited JSON admin protocol,
+- the admin protocol is line-delimited JSON over local IPC only; SSH refuses session channels and does not carry it,
 - every admin message carries an explicit envelope `kind` (`request`, `response`, `notification`),
 - `internal/transport` owns one dispatcher-backed reader per post-auth connection,
 - request/response correlation is by request `id`,
@@ -452,7 +452,7 @@ minisign-signed.
 ## Deployment Model
 
 - One `apsigner` on the signer host
-- Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires a pre-enrolled default signer endpoint, its token, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
+- Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC. For remote administration, log in to the signer host and run `apadmin` there.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; cosigner enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
 - Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or token-provisioning client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
@@ -689,7 +689,7 @@ Operationally:
 The system has two main auth channels:
 
 - HTTP token auth for shell/API callers
-- passphrase auth for admin sessions over IPC or the SSH `aplane-admin` subsystem
+- passphrase auth for admin sessions over local IPC
 
 Optional SSH provides transport-level authentication for remote shell access, but HTTP requests require the API token.
 
@@ -719,7 +719,7 @@ Important secret-handling contracts:
 `apsigner` has three relevant session concepts:
 
 - unlock state of the signer,
-- active admin client connection state across IPC and SSH admin transport,
+- active admin client connection state,
 - apadmin's configured local idle disconnect timeout.
 
 Admin protocol sessions carry `adminserver.SessionContext`: session ID,
@@ -732,7 +732,7 @@ admin client.
 
 `adminserver.SessionManager` owns one pre-auth pending slot, one authenticated
 pending slot during displacement, and one active slot for the process. Local
-IPC and SSH admin sessions contend for those same slots. Displacement, pending
+IPC admin sessions contend for those slots. Displacement, pending
 cleanup, lock-on-disconnect, approval delivery, and notification delivery all
 address the active product session.
 
@@ -1977,8 +1977,7 @@ Weaker or more coupled areas:
   fully owned by `internal/clientstate`,
 - shell commands execute once and return one result with human and machine presentations,
 - the runtime core is product-store-owned and the operator/control-plane surface
-  is single-operator, even though the product admin workflow may arrive over
-  IPC or the SSH `aplane-admin` subsystem.
+  is single-operator; the product admin workflow arrives over local IPC.
 
 Product-level boundaries:
 

@@ -129,9 +129,10 @@ it.
 
 ### 2. Admin Protocol (Passphrase-Based Session)
 
-Used by apadmin for interactive key management and signer control over either:
-- local IPC Unix socket
-- remote SSH `aplane-admin` subsystem
+Used by apadmin for interactive key management and signer control over the
+local IPC Unix socket. SSH does not carry the admin protocol: it refuses
+session channels, so a client holding an enrolled key and the token still
+cannot reach the passphrase prompt remotely.
 
 ```
 ┌──────────────┐                              ┌──────────────┐
@@ -169,7 +170,7 @@ Used by apadmin for interactive key management and signer control over either:
 - **Persistent session**: Authenticate once, connection stays trusted
 - **Interactive login**: Human enters passphrase
 - **Dual-purpose passphrase**: Authentication + unwrapping the store's keyring
-- **Single active admin**: Only one admin client connection is allowed at a time across IPC and SSH admin transport
+- **Single active admin**: Only one admin client connection is allowed at a time
 
 **Passphrase Verification (Keyring):**
 1. The store root (`store-root.enc`) carries the Argon2id parameters and salt in
@@ -423,6 +424,9 @@ the flow is reachable without credentials. It is bounded so that it cannot crowd
 - Independent of the username, one remote IP may hold at most 8 of the 64
   pending SSH handshake slots, so a single host cannot keep every slot busy
   for the 60-second handshake timeout
+- The server sends each SSH client a keepalive every 15 seconds and closes a
+  connection that does not reply within 30 seconds, so a client that keeps
+  TCP open but stops answering does not hold its connection indefinitely
 - Each `request-token` connection may have at most 2 open session channels;
   further channels are rejected before they are accepted
 - A client must accept the provisioning response within 10 seconds; a client
