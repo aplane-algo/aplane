@@ -237,7 +237,12 @@ lock that follows that disconnect is decided by the signer-owned
 returns to the authentication view and starts a fresh pre-auth reconnect so the
 operator sees the login screen instead of the stale authenticated view.
 Disconnect, reconnect, reauthentication, and server lock notifications clear
-pending activity and idle state.
+pending activity and idle state. Every end of an admin session (disconnect,
+reconnect, reauthentication, local idle disconnect, or displacement by another
+apadmin) also zeroes the restore passphrase and drops cosigner workflow state,
+pending approvals, and a pending manual lock. Every path into the unlocked
+state (signer status, unlock, or a completed recovery reconcile) loads the same
+keys, key types, cosigner references, and settings.
 
 ## Error Handling
 

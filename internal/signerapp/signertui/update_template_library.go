@@ -180,3 +180,33 @@ func (m Model) ensureTemplateVisible() Model {
 	}
 	return m
 }
+
+// finishLibraryAction applies the result of installing, enabling, or disabling
+// a KeyType Library entry.
+func (m Model) finishLibraryAction(success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+	if !success {
+		m.library.installError = errText
+		if m.library.installError == "" {
+			m.library.installError = fallbackErr
+		}
+		m.viewState = ViewTemplateInstallConfirm
+		return m, m.waitForMessageCmd()
+	}
+	m.library.installError = ""
+	m.library.installStatus = status
+	m.library.pendingTemplate = nil
+	m.viewState = ViewTemplateLibrary
+	return m, tea.Batch(
+		m.waitForMessageCmd(),
+		m.sendListLibraryTemplatesCmd(),
+		m.sendListKeyTypesCmd(),
+		m.sendListKeysCmd(),
+	)
+}
+
+func libraryEnabledStatus(keyType string, alreadyExists bool) string {
+	if alreadyExists {
+		return displayKeyType(keyType) + " was already " + libraryPastTense()
+	}
+	return displayKeyType(keyType) + " " + libraryPastTense()
+}

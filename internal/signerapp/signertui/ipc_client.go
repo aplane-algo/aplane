@@ -297,477 +297,10 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			if !ok {
 				return
 			}
-			line := notification.Raw
-			switch notification.Base.Type {
-			case MsgTypeAuthRequired:
-				// Server requires authentication before any other operations
-				c.emit(sessionID, AuthRequiredMsg{})
-
-			case MsgTypeAuthResult:
-				var authResult AuthResultMessage
-				if err := json.Unmarshal(line, &authResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, AuthResultMsg{
-					Success: authResult.Success,
-					Code:    authResult.Code,
-					Error:   authResult.Error,
-				})
-
-			case MsgTypeStatus:
-				var status StatusMessage
-				if err := json.Unmarshal(line, &status); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, SignerStatusMsg{
-					State:    status.State,
-					KeyCount: status.KeyCount,
-				})
-
-			case MsgTypeUnlockResult:
-				var result UnlockResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, UnlockResultMsg{
-					Success:  result.Success,
-					KeyCount: result.KeyCount,
-					Code:     result.Code,
-					Error:    result.Error,
-				})
-
-			case MsgTypeLockIdentityResult:
-				var result LockIdentityResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, LockIdentityResultMsg{
-					Success: result.Success,
-					Error:   result.Error,
-				})
-
-			case MsgTypeSignRequest:
-				var req SignRequestMessage
-				if err := json.Unmarshal(line, &req); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, SignRequestReceivedMsg{
-					Request: PendingSignRequest{
-						ID:          req.ID,
-						Address:     req.Address,
-						TxnSender:   req.TxnSender,
-						Description: req.Description,
-						Timestamp:   time.Unix(req.Timestamp, 0),
-						FirstValid:  req.FirstValid,
-						LastValid:   req.LastValid,
-						Violations:  req.Violations,
-					},
-				})
-
-			case MsgTypeSignRequestCanceled:
-				var canceled SignRequestCanceledMessage
-				if err := json.Unmarshal(line, &canceled); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, SignRequestCanceledMsg{
-					ID:     canceled.ID,
-					Reason: canceled.Reason,
-				})
-
-			case MsgTypeError:
-				var errMsg ErrorMessage
-				if err := json.Unmarshal(line, &errMsg); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, ErrorMsg{ID: errMsg.ID, Error: fmt.Errorf("%s", errMsg.Error)})
-
-			case MsgTypeKeysList:
-				var keysList KeysListMessage
-				if err := json.Unmarshal(line, &keysList); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				keys := make([]KeyInfo, 0, len(keysList.Keys))
-				for _, k := range keysList.Keys {
-					keys = append(keys, KeyInfo{
-						Address:                  k.Address,
-						KeyType:                  k.KeyType,
-						TemplateProvenanceStatus: k.TemplateProvenanceStatus,
-						TemplateProvenanceNote:   k.TemplateProvenanceNote,
-					})
-				}
-				c.emit(sessionID, KeysListMsg{Keys: keys})
-
-			case MsgTypeGenerateResult:
-				var genResult GenerateResultMessage
-				if err := json.Unmarshal(line, &genResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, GenerateResultMsg{
-					Success: genResult.Success,
-					Address: genResult.Address,
-					KeyType: genResult.KeyType,
-					Error:   genResult.Error,
-				})
-
-			case MsgTypeBackupResult:
-				var backupResult BackupResultMessage
-				if err := json.Unmarshal(line, &backupResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, BackupResultMsg{
-					Success:     backupResult.Success,
-					ArchivePath: backupResult.ArchivePath,
-					Error:       backupResult.Error,
-				})
-
-			case MsgTypeBackupsList:
-				var backupsList BackupsListMessage
-				if err := json.Unmarshal(line, &backupsList); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, BackupsListMsg{
-					Backups: backupsList.Backups,
-					Error:   backupsList.Error,
-				})
-
-			case MsgTypeRestorePreview:
-				var preview RestorePreviewMessage
-				if err := json.Unmarshal(line, &preview); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, RestorePreviewMsg{
-					ArchivePath: preview.ArchivePath,
-					Keys:        preview.Keys,
-					Errors:      preview.Errors,
-					Error:       preview.Error,
-				})
-
-			case MsgTypeRestoreBackupResult:
-				var restored RestoreBackupResultMessage
-				if err := json.Unmarshal(line, &restored); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, RestoreBackupResultMsg{Result: restored})
-
-			case MsgTypeRollbackRestoreResult:
-				var result RollbackRestoreResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, RollbackRestoreResultMsg{Result: result})
-
-			case MsgTypeReconcileStoreResult:
-				var result ReconcileStoreResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, ReconcileStoreResultMsg{Result: result})
-
-			case MsgTypeDeleteResult:
-				var delResult DeleteResultMessage
-				if err := json.Unmarshal(line, &delResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, DeleteResultMsg{
-					Success: delResult.Success,
-					Error:   delResult.Error,
-				})
-
-			case MsgTypeRevokeTokenResult:
-				var revokeResult RevokeTokenResultMessage
-				if err := json.Unmarshal(line, &revokeResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, RevokeTokenResultMsg{
-					Success: revokeResult.Success,
-					Error:   revokeResult.Error,
-				})
-
-			case MsgTypeImportResult:
-				var impResult ImportResultMessage
-				if err := json.Unmarshal(line, &impResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, ImportResultMsg{
-					Success: impResult.Success,
-					Address: impResult.Address,
-					KeyType: impResult.KeyType,
-					Error:   impResult.Error,
-				})
-
-			case MsgTypeKeyDetails:
-				var detailsResult KeyDetailsMessage
-				if err := json.Unmarshal(line, &detailsResult); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, KeyDetailsMsg{
-					Success:                  detailsResult.Success,
-					Address:                  detailsResult.Address,
-					KeyType:                  detailsResult.KeyType,
-					PublicKeyHex:             detailsResult.PublicKeyHex,
-					Parameters:               detailsResult.Parameters,
-					DisplayTEAL:              detailsResult.DisplayTEAL,
-					TemplateProvenanceStatus: detailsResult.TemplateProvenanceStatus,
-					TemplateProvenanceNote:   detailsResult.TemplateProvenanceNote,
-					Error:                    detailsResult.Error,
-				})
-
-			case MsgTypeLibraryTemplates:
-				var library LibraryTemplatesMessage
-				if err := json.Unmarshal(line, &library); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, LibraryTemplatesMsg{
-					Templates: library.Templates,
-					Error:     library.Error,
-				})
-
-			case MsgTypeInstallLibraryTemplateResult:
-				var result InstallLibraryTemplateResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, InstallLibraryTemplateResultMsg{
-					Success:       result.Success,
-					KeyType:       result.KeyType,
-					TemplateType:  result.TemplateType,
-					AlreadyExists: result.AlreadyExists,
-					Error:         result.Error,
-				})
-
-			case MsgTypeShowLibraryTemplateResult:
-				var result ShowLibraryTemplateResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, ShowLibraryTemplateResultMsg{
-					Success:       result.Success,
-					KeyType:       result.KeyType,
-					TemplateType:  result.TemplateType,
-					SourcePath:    result.SourcePath,
-					SourceSHA256:  result.SourceSHA256,
-					SourceModTime: result.SourceModTime,
-					TemplateYAML:  result.TemplateYAML,
-					Error:         result.Error,
-				})
-
-			case MsgTypeActivateKeyTypeResult:
-				var result ActivateKeyTypeResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, ActivateKeyTypeResultMsg{
-					Success:       result.Success,
-					KeyType:       result.KeyType,
-					AlreadyExists: result.AlreadyExists,
-					Error:         result.Error,
-				})
-
-			case MsgTypeDeactivateKeyTypeResult:
-				var result DeactivateKeyTypeResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, DeactivateKeyTypeResultMsg{
-					Success: result.Success,
-					KeyType: result.KeyType,
-					Removed: result.Removed,
-					Error:   result.Error,
-				})
-
-			case MsgTypeKeyTypes:
-				var keyTypes KeyTypesMessage
-				if err := json.Unmarshal(line, &keyTypes); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, KeyTypesMsg{
-					KeyTypes: keyTypes.KeyTypes,
-					Error:    keyTypes.Error,
-				})
-
-			case MsgTypeCosignerReferencesList:
-				var references CosignerReferencesListMessage
-				if err := json.Unmarshal(line, &references); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, CosignerReferencesMsg{
-					References: references.References,
-					Error:      references.Error,
-				})
-
-			case MsgTypeImportCosignerReferenceResult:
-				var result ImportCosignerReferenceResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, CosignerImportResultMsg{
-					Success:   result.Success,
-					Reference: result.Reference,
-					Error:     result.Error,
-				})
-
-			case MsgTypeRemoveCosignerReferenceResult:
-				var result RemoveCosignerReferenceResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, CosignerRemoveResultMsg{
-					Success: result.Success,
-					Name:    result.Name,
-					Removed: result.Removed,
-					Error:   result.Error,
-				})
-
-			case MsgTypeExportCosignerPublicResult:
-				var result ExportCosignerPublicResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, CosignerExportResultMsg{
-					Success:      result.Success,
-					WitnessKeyID: result.WitnessKeyID,
-					EnvelopeJSON: result.EnvelopeJSON,
-					Error:        result.Error,
-				})
-
-			case MsgTypeKeysChanged:
-				var keysChanged KeysChangedMessage
-				if err := json.Unmarshal(line, &keysChanged); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, KeysChangedMsg{
-					KeyCount: keysChanged.KeyCount,
-				})
-
-			case MsgTypeSignerLocked:
-				// Server locked - transition to unlock screen.
-				c.emit(sessionID, SignerStatusMsg{
-					State:    "locked",
-					KeyCount: 0,
-				})
-
-			case MsgTypeTokenProvisioningRequest:
-				var req TokenProvisioningRequestMessage
-				if err := json.Unmarshal(line, &req); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, TokenProvisioningRequestReceivedMsg{
-					Request: PendingTokenRequest{
-						ID:             req.ID,
-						SSHFingerprint: req.SSHFingerprint,
-						RemoteAddr:     req.RemoteAddr,
-						Timestamp:      time.Unix(req.Timestamp, 0),
-					},
-				})
-
-			case MsgTypePolicy:
-				var policyMsg PolicyMessage
-				if err := json.Unmarshal(line, &policyMsg); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, PolicyLoadedMsg{Policy: policyMsg})
-
-			case MsgTypePolicyDocument:
-				var documentMsg PolicyDocumentMessage
-				if err := json.Unmarshal(line, &documentMsg); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, PolicyDocumentLoadedMsg{Document: documentMsg})
-
-			case MsgTypeCheckPolicyResult:
-				var result CheckPolicyResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, PolicyCheckResultMsg{Result: result})
-
-			case MsgTypeApplyPolicyResult:
-				var result ApplyPolicyResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, PolicyApplyResultMsg{Result: result})
-
-			case MsgTypeAdminSettings:
-				var settings AdminSettingsMessage
-				if err := json.Unmarshal(line, &settings); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, AdminSettingsMsg{
-					Settings: AdminSettings{
-						UserAutoApprove:      settings.UserAutoApprove,
-						LockOnDisconnect:     settings.LockOnDisconnect,
-						PassphraseTimeout:    settings.PassphraseTimeout,
-						PassphraseMethod:     settings.PassphraseMethod,
-						NodeRole:             settings.NodeRole,
-						SSHEnabled:           settings.SSHEnabled,
-						SSHListenAddress:     settings.SSHListenAddress,
-						SSHPort:              settings.SSHPort,
-						SSHFingerprint:       settings.SSHFingerprint,
-						SSHClients:           settings.SSHClients,
-						SignerPort:           settings.SignerPort,
-						TEALCompileNet:       settings.TEALCompileNet,
-						EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
-						EndpointDisplayURL:   settings.EndpointDisplayURL,
-						Theme:                settings.Theme,
-					},
-				})
-
-			case MsgTypeUpdateAdminSettingResult:
-				var result UpdateAdminSettingResultMessage
-				if err := json.Unmarshal(line, &result); err != nil {
-					c.emitUndecodable(sessionID, notification, err)
-					continue
-				}
-				c.emit(sessionID, AdminSettingUpdatedMsg{
-					Success: result.Success,
-					Key:     result.Key,
-					Value:   result.Value,
-					Error:   result.Error,
-				})
-
-			case MsgTypeClientExists:
-				c.emit(sessionID, ClientExistsMsg{})
-
-			case MsgTypeDisplaced:
+			if notification.Base.Type == MsgTypeDisplaced {
+				// Displacement ends the session without a reconnect.
 				var displaced DisplacedMessage
-				if err := json.Unmarshal(line, &displaced); err != nil {
+				if err := json.Unmarshal(notification.Raw, &displaced); err != nil {
 					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
@@ -777,8 +310,311 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, DisplacedMsg{Reason: displaced.Reason})
 				return
 			}
+			decode, ok := signerMessageDecoders[notification.Base.Type]
+			if !ok {
+				continue
+			}
+			msg, err := decode(notification.Raw)
+			if err != nil {
+				c.emitUndecodable(sessionID, notification, err)
+				continue
+			}
+			c.emit(sessionID, msg)
 		}
 	}
+}
+
+// signerMessageDecoders turns each signer message type into the TUI message
+// the update loop handles. A type with no entry is ignored.
+var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
+	// Server requires authentication before any other operations.
+	MsgTypeAuthRequired: noBody(AuthRequiredMsg{}),
+	// Server locked: transition to the unlock screen.
+	MsgTypeSignerLocked: noBody(SignerStatusMsg{State: "locked"}),
+	MsgTypeClientExists: noBody(ClientExistsMsg{}),
+	MsgTypeAuthResult: decodeAs(func(authResult AuthResultMessage) tea.Msg {
+		return AuthResultMsg{
+			Success: authResult.Success,
+			Code:    authResult.Code,
+			Error:   authResult.Error,
+		}
+	}),
+	MsgTypeStatus: decodeAs(func(status StatusMessage) tea.Msg {
+		return SignerStatusMsg{
+			State:    status.State,
+			KeyCount: status.KeyCount,
+		}
+	}),
+	MsgTypeUnlockResult: decodeAs(func(result UnlockResultMessage) tea.Msg {
+		return UnlockResultMsg{
+			Success:  result.Success,
+			KeyCount: result.KeyCount,
+			Code:     result.Code,
+			Error:    result.Error,
+		}
+	}),
+	MsgTypeLockIdentityResult: decodeAs(func(result LockIdentityResultMessage) tea.Msg {
+		return LockIdentityResultMsg{
+			Success: result.Success,
+			Error:   result.Error,
+		}
+	}),
+	MsgTypeSignRequest: decodeAs(func(req SignRequestMessage) tea.Msg {
+		return SignRequestReceivedMsg{
+			Request: PendingSignRequest{
+				ID:          req.ID,
+				Address:     req.Address,
+				TxnSender:   req.TxnSender,
+				Description: req.Description,
+				Timestamp:   time.Unix(req.Timestamp, 0),
+				FirstValid:  req.FirstValid,
+				LastValid:   req.LastValid,
+				Violations:  req.Violations,
+			},
+		}
+	}),
+	MsgTypeSignRequestCanceled: decodeAs(func(canceled SignRequestCanceledMessage) tea.Msg {
+		return SignRequestCanceledMsg{
+			ID:     canceled.ID,
+			Reason: canceled.Reason,
+		}
+	}),
+	MsgTypeError: decodeAs(func(errMsg ErrorMessage) tea.Msg {
+		return ErrorMsg{ID: errMsg.ID, Error: fmt.Errorf("%s", errMsg.Error)}
+	}),
+	MsgTypeKeysList: decodeAs(func(keysList KeysListMessage) tea.Msg {
+		keys := make([]KeyInfo, 0, len(keysList.Keys))
+		for _, k := range keysList.Keys {
+			keys = append(keys, KeyInfo{
+				Address:                  k.Address,
+				KeyType:                  k.KeyType,
+				TemplateProvenanceStatus: k.TemplateProvenanceStatus,
+				TemplateProvenanceNote:   k.TemplateProvenanceNote,
+			})
+		}
+		return KeysListMsg{Keys: keys}
+	}),
+	MsgTypeGenerateResult: decodeAs(func(genResult GenerateResultMessage) tea.Msg {
+		return GenerateResultMsg{
+			Success: genResult.Success,
+			Address: genResult.Address,
+			KeyType: genResult.KeyType,
+			Error:   genResult.Error,
+		}
+	}),
+	MsgTypeBackupResult: decodeAs(func(backupResult BackupResultMessage) tea.Msg {
+		return BackupResultMsg{
+			Success:     backupResult.Success,
+			ArchivePath: backupResult.ArchivePath,
+			Error:       backupResult.Error,
+		}
+	}),
+	MsgTypeBackupsList: decodeAs(func(backupsList BackupsListMessage) tea.Msg {
+		return BackupsListMsg{
+			Backups: backupsList.Backups,
+			Error:   backupsList.Error,
+		}
+	}),
+	MsgTypeRestorePreview: decodeAs(func(preview RestorePreviewMessage) tea.Msg {
+		return RestorePreviewMsg{
+			ArchivePath: preview.ArchivePath,
+			Keys:        preview.Keys,
+			Errors:      preview.Errors,
+			Error:       preview.Error,
+		}
+	}),
+	MsgTypeRestoreBackupResult: decodeAs(func(restored RestoreBackupResultMessage) tea.Msg {
+		return RestoreBackupResultMsg{Result: restored}
+	}),
+	MsgTypeRollbackRestoreResult: decodeAs(func(result RollbackRestoreResultMessage) tea.Msg {
+		return RollbackRestoreResultMsg{Result: result}
+	}),
+	MsgTypeReconcileStoreResult: decodeAs(func(result ReconcileStoreResultMessage) tea.Msg {
+		return ReconcileStoreResultMsg{Result: result}
+	}),
+	MsgTypeDeleteResult: decodeAs(func(delResult DeleteResultMessage) tea.Msg {
+		return DeleteResultMsg{
+			Success: delResult.Success,
+			Error:   delResult.Error,
+		}
+	}),
+	MsgTypeRevokeTokenResult: decodeAs(func(revokeResult RevokeTokenResultMessage) tea.Msg {
+		return RevokeTokenResultMsg{
+			Success: revokeResult.Success,
+			Error:   revokeResult.Error,
+		}
+	}),
+	MsgTypeImportResult: decodeAs(func(impResult ImportResultMessage) tea.Msg {
+		return ImportResultMsg{
+			Success: impResult.Success,
+			Address: impResult.Address,
+			KeyType: impResult.KeyType,
+			Error:   impResult.Error,
+		}
+	}),
+	MsgTypeKeyDetails: decodeAs(func(detailsResult KeyDetailsMessage) tea.Msg {
+		return KeyDetailsMsg{
+			Success:                  detailsResult.Success,
+			Address:                  detailsResult.Address,
+			KeyType:                  detailsResult.KeyType,
+			PublicKeyHex:             detailsResult.PublicKeyHex,
+			Parameters:               detailsResult.Parameters,
+			DisplayTEAL:              detailsResult.DisplayTEAL,
+			TemplateProvenanceStatus: detailsResult.TemplateProvenanceStatus,
+			TemplateProvenanceNote:   detailsResult.TemplateProvenanceNote,
+			Error:                    detailsResult.Error,
+		}
+	}),
+	MsgTypeLibraryTemplates: decodeAs(func(library LibraryTemplatesMessage) tea.Msg {
+		return LibraryTemplatesMsg{
+			Templates: library.Templates,
+			Error:     library.Error,
+		}
+	}),
+	MsgTypeInstallLibraryTemplateResult: decodeAs(func(result InstallLibraryTemplateResultMessage) tea.Msg {
+		return InstallLibraryTemplateResultMsg{
+			Success:       result.Success,
+			KeyType:       result.KeyType,
+			TemplateType:  result.TemplateType,
+			AlreadyExists: result.AlreadyExists,
+			Error:         result.Error,
+		}
+	}),
+	MsgTypeShowLibraryTemplateResult: decodeAs(func(result ShowLibraryTemplateResultMessage) tea.Msg {
+		return ShowLibraryTemplateResultMsg{
+			Success:       result.Success,
+			KeyType:       result.KeyType,
+			TemplateType:  result.TemplateType,
+			SourcePath:    result.SourcePath,
+			SourceSHA256:  result.SourceSHA256,
+			SourceModTime: result.SourceModTime,
+			TemplateYAML:  result.TemplateYAML,
+			Error:         result.Error,
+		}
+	}),
+	MsgTypeActivateKeyTypeResult: decodeAs(func(result ActivateKeyTypeResultMessage) tea.Msg {
+		return ActivateKeyTypeResultMsg{
+			Success:       result.Success,
+			KeyType:       result.KeyType,
+			AlreadyExists: result.AlreadyExists,
+			Error:         result.Error,
+		}
+	}),
+	MsgTypeDeactivateKeyTypeResult: decodeAs(func(result DeactivateKeyTypeResultMessage) tea.Msg {
+		return DeactivateKeyTypeResultMsg{
+			Success: result.Success,
+			KeyType: result.KeyType,
+			Removed: result.Removed,
+			Error:   result.Error,
+		}
+	}),
+	MsgTypeKeyTypes: decodeAs(func(keyTypes KeyTypesMessage) tea.Msg {
+		return KeyTypesMsg{
+			KeyTypes: keyTypes.KeyTypes,
+			Error:    keyTypes.Error,
+		}
+	}),
+	MsgTypeCosignerReferencesList: decodeAs(func(references CosignerReferencesListMessage) tea.Msg {
+		return CosignerReferencesMsg{
+			References: references.References,
+			Error:      references.Error,
+		}
+	}),
+	MsgTypeImportCosignerReferenceResult: decodeAs(func(result ImportCosignerReferenceResultMessage) tea.Msg {
+		return CosignerImportResultMsg{
+			Success:   result.Success,
+			Reference: result.Reference,
+			Error:     result.Error,
+		}
+	}),
+	MsgTypeRemoveCosignerReferenceResult: decodeAs(func(result RemoveCosignerReferenceResultMessage) tea.Msg {
+		return CosignerRemoveResultMsg{
+			Success: result.Success,
+			Name:    result.Name,
+			Removed: result.Removed,
+			Error:   result.Error,
+		}
+	}),
+	MsgTypeExportCosignerPublicResult: decodeAs(func(result ExportCosignerPublicResultMessage) tea.Msg {
+		return CosignerExportResultMsg{
+			Success:      result.Success,
+			WitnessKeyID: result.WitnessKeyID,
+			EnvelopeJSON: result.EnvelopeJSON,
+			Error:        result.Error,
+		}
+	}),
+	MsgTypeKeysChanged: decodeAs(func(keysChanged KeysChangedMessage) tea.Msg {
+		return KeysChangedMsg{
+			KeyCount: keysChanged.KeyCount,
+		}
+	}),
+	MsgTypeTokenProvisioningRequest: decodeAs(func(req TokenProvisioningRequestMessage) tea.Msg {
+		return TokenProvisioningRequestReceivedMsg{
+			Request: PendingTokenRequest{
+				ID:             req.ID,
+				SSHFingerprint: req.SSHFingerprint,
+				RemoteAddr:     req.RemoteAddr,
+				Timestamp:      time.Unix(req.Timestamp, 0),
+			},
+		}
+	}),
+	MsgTypePolicy: decodeAs(func(policyMsg PolicyMessage) tea.Msg {
+		return PolicyLoadedMsg{Policy: policyMsg}
+	}),
+	MsgTypePolicyDocument: decodeAs(func(documentMsg PolicyDocumentMessage) tea.Msg {
+		return PolicyDocumentLoadedMsg{Document: documentMsg}
+	}),
+	MsgTypeCheckPolicyResult: decodeAs(func(result CheckPolicyResultMessage) tea.Msg {
+		return PolicyCheckResultMsg{Result: result}
+	}),
+	MsgTypeApplyPolicyResult: decodeAs(func(result ApplyPolicyResultMessage) tea.Msg {
+		return PolicyApplyResultMsg{Result: result}
+	}),
+	MsgTypeAdminSettings: decodeAs(func(settings AdminSettingsMessage) tea.Msg {
+		return AdminSettingsMsg{
+			Settings: AdminSettings{
+				UserAutoApprove:      settings.UserAutoApprove,
+				LockOnDisconnect:     settings.LockOnDisconnect,
+				PassphraseTimeout:    settings.PassphraseTimeout,
+				PassphraseMethod:     settings.PassphraseMethod,
+				NodeRole:             settings.NodeRole,
+				SSHEnabled:           settings.SSHEnabled,
+				SSHListenAddress:     settings.SSHListenAddress,
+				SSHPort:              settings.SSHPort,
+				SSHFingerprint:       settings.SSHFingerprint,
+				SSHClients:           settings.SSHClients,
+				SignerPort:           settings.SignerPort,
+				TEALCompileNet:       settings.TEALCompileNet,
+				EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
+				EndpointDisplayURL:   settings.EndpointDisplayURL,
+				Theme:                settings.Theme,
+			},
+		}
+	}),
+	MsgTypeUpdateAdminSettingResult: decodeAs(func(result UpdateAdminSettingResultMessage) tea.Msg {
+		return AdminSettingUpdatedMsg{
+			Success: result.Success,
+			Key:     result.Key,
+			Value:   result.Value,
+			Error:   result.Error,
+		}
+	}),
+}
+
+// decodeAs decodes a message body as wire type T and converts it.
+func decodeAs[T any](convert func(T) tea.Msg) func([]byte) (tea.Msg, error) {
+	return func(raw []byte) (tea.Msg, error) {
+		var wire T
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			return nil, err
+		}
+		return convert(wire), nil
+	}
+}
+
+// noBody maps a message whose body carries nothing the TUI reads.
+func noBody(msg tea.Msg) func([]byte) (tea.Msg, error) {
+	return func([]byte) (tea.Msg, error) { return msg, nil }
 }
 
 // reconnect attempts to reconnect with exponential backoff
