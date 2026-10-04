@@ -544,6 +544,13 @@ type SignRequestCanceledMsg struct {
 	Reason string
 }
 
+// TokenProvisioningCanceledMsg is sent when apsigner withdraws a delivered
+// client access request.
+type TokenProvisioningCanceledMsg struct {
+	ID     string
+	Reason string
+}
+
 // TokenProvisioningRequestReceivedMsg is sent when a token provisioning request is received
 type TokenProvisioningRequestReceivedMsg struct {
 	Request PendingTokenRequest

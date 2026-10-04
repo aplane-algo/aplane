@@ -55,6 +55,13 @@ func (fs *Signer) productBuildHooks() signerstartup.ProductBuildHooks {
 			}
 			return hub.SendSignRequestCanceled(msg)
 		},
+		SendTokenProvisioningCanceled: func(msg *signerapproval.TokenProvisioningCanceled) bool {
+			hub := fs.adminHub()
+			if hub == nil {
+				return false
+			}
+			return hub.SendTokenProvisioningCanceled(msg)
+		},
 		SendTokenProvisioningRequest: func(msg *signerapproval.TokenProvisioningRequest) bool {
 			hub := fs.adminHub()
 			if hub == nil {

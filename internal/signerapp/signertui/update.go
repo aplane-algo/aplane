@@ -219,6 +219,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
 
+	case TokenProvisioningCanceledMsg:
+		var warningCmd tea.Cmd
+		if m.tokenApproval.request != nil && m.tokenApproval.request.ID == msg.ID {
+			m.tokenApproval.request = nil
+			warningCmd = m.setTransientWarning(tokenProvisioningCanceledWarning(msg.Reason))
+		}
+		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
+
 	case TokenProvisioningRequestReceivedMsg:
 		m.tokenApproval.request = &msg.Request
 		m.tokenApproval.focus = 1 // Default to reject button (safety-first)

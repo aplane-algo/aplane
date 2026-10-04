@@ -14,6 +14,9 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
+	// ErrTokenProvisioningPreempted reports that a signing request took the
+	// approval turn from a client access request; the client may retry.
+	ErrTokenProvisioningPreempted = errors.New("the operator is handling a signing request; try again")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -22,6 +25,7 @@ type HasClientFunc func() bool
 type SendSignRequestFunc func(*SignRequest) bool
 type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
 type SendTokenProvisioningRequestFunc func(*TokenProvisioningRequest) bool
+type SendTokenProvisioningCanceledFunc func(*TokenProvisioningCanceled) bool
 
 type activeSignRequest struct {
 	cancel context.CancelFunc
@@ -31,6 +35,7 @@ type deliveryWaiter struct {
 	ready    chan struct{}
 	granted  bool
 	canceled bool
+	signing  bool
 }
 
 // Coordinator owns pending approval queues for signing and token provisioning.
@@ -49,9 +54,24 @@ type Coordinator struct {
 	pendingTokenRequests     map[string]chan TokenProvisioningResponse
 	pendingTokenRequestsLock sync.Mutex
 
+	// One request is delivered at a time (AP4). Signing takes priority over
+	// token provisioning: a signing request queues ahead of waiting token
+	// requests and withdraws a delivered one, so an unauthenticated client
+	// access request can never hold up a signing approval.
 	deliveryMu       sync.Mutex
 	deliveryInFlight bool
 	deliveryQueue    []*deliveryWaiter
+	tokenHolder      chan struct{} // closed to preempt the delivered token request; nil when none holds the turn
+
+	sendTokenProvisioningCanceled SendTokenProvisioningCanceledFunc
+}
+
+// SetTokenProvisioningCanceledSender sets how a preempted token provisioning
+// request is withdrawn from the approval client.
+func (c *Coordinator) SetTokenProvisioningCanceledSender(send SendTokenProvisioningCanceledFunc) {
+	c.deliveryMu.Lock()
+	defer c.deliveryMu.Unlock()
+	c.sendTokenProvisioningCanceled = send
 }
 
 func trySendSignResponse(ch chan SignResponse, msg SignResponse) {
@@ -239,7 +259,7 @@ func isCancellationResponse(response SignResponse) bool {
 		response.Reason == SignRequestCancelReasonTimeout
 }
 
-func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
+func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bool) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -247,14 +267,32 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
 		return err
 	}
 
-	waiter := &deliveryWaiter{ready: make(chan struct{})}
+	waiter := &deliveryWaiter{ready: make(chan struct{}), signing: signing}
 	c.deliveryMu.Lock()
 	if !c.deliveryInFlight && len(c.deliveryQueue) == 0 {
 		c.deliveryInFlight = true
 		c.deliveryMu.Unlock()
 		return nil
 	}
-	c.deliveryQueue = append(c.deliveryQueue, waiter)
+	if signing {
+		// Queue ahead of token requests and withdraw a delivered one.
+		at := len(c.deliveryQueue)
+		for i, queued := range c.deliveryQueue {
+			if !queued.signing {
+				at = i
+				break
+			}
+		}
+		c.deliveryQueue = append(c.deliveryQueue, nil)
+		copy(c.deliveryQueue[at+1:], c.deliveryQueue[at:])
+		c.deliveryQueue[at] = waiter
+		if c.tokenHolder != nil {
+			close(c.tokenHolder)
+			c.tokenHolder = nil
+		}
+	} else {
+		c.deliveryQueue = append(c.deliveryQueue, waiter)
+	}
 	c.deliveryMu.Unlock()
 
 	select {
@@ -341,7 +379,7 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
 
-	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
+	if err := c.acquireDeliveryTurnContext(ctx, true); err != nil {
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	defer c.releaseDeliveryTurn()
@@ -462,10 +500,15 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 		return false, fmt.Errorf("no apadmin client connected")
 	}
 
-	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
+	if err := c.acquireDeliveryTurnContext(ctx, false); err != nil {
 		return false, fmt.Errorf("token provisioning request canceled: %w", err)
 	}
 	defer c.releaseDeliveryTurn()
+	preempted, holding := c.holdTokenTurn()
+	if !holding {
+		return false, ErrTokenProvisioningPreempted
+	}
+	defer c.dropTokenTurn(preempted)
 
 	if c.hasClient == nil || !c.hasClient() {
 		return false, fmt.Errorf("no apadmin client connected")
@@ -500,9 +543,47 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 			return false, nil
 		}
 		return true, nil
+	case <-preempted:
+		// Withdraw the prompt before releasing the turn, so the operator
+		// never has two requests delivered at once.
+		c.notifyTokenProvisioningCanceled(requestID, TokenProvisioningCancelReasonPreempted)
+		return false, ErrTokenProvisioningPreempted
 	case <-time.After(timeout):
 		return false, fmt.Errorf("approval timeout - no response from apadmin within %v", timeout)
 	case <-ctx.Done():
 		return false, fmt.Errorf("token provisioning canceled: %w", ctx.Err())
 	}
+}
+
+// holdTokenTurn registers the token request that now holds the delivery
+// turn. It reports false when a signing request is already waiting, which
+// takes the turn before the token request is delivered.
+func (c *Coordinator) holdTokenTurn() (<-chan struct{}, bool) {
+	c.deliveryMu.Lock()
+	defer c.deliveryMu.Unlock()
+	for _, queued := range c.deliveryQueue {
+		if queued.signing && !queued.canceled {
+			return nil, false
+		}
+	}
+	c.tokenHolder = make(chan struct{})
+	return c.tokenHolder, true
+}
+
+func (c *Coordinator) dropTokenTurn(preempt <-chan struct{}) {
+	c.deliveryMu.Lock()
+	defer c.deliveryMu.Unlock()
+	if c.tokenHolder != nil && (<-chan struct{})(c.tokenHolder) == preempt {
+		c.tokenHolder = nil
+	}
+}
+
+func (c *Coordinator) notifyTokenProvisioningCanceled(requestID, reason string) {
+	c.deliveryMu.Lock()
+	send := c.sendTokenProvisioningCanceled
+	c.deliveryMu.Unlock()
+	if send == nil {
+		return
+	}
+	_ = send(&TokenProvisioningCanceled{ID: requestID, Reason: reason})
 }

@@ -47,6 +47,13 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func tokenProvisioningCanceledWarning(reason string) string {
+	if reason == protocol.TokenProvisioningCancelReasonPreempted {
+		return "Client access request withdrawn for a signing request; the client can retry"
+	}
+	return "Client access request withdrawn"
+}
+
 func signRequestCanceledWarning(reason string) string {
 	switch reason {
 	case protocol.SignRequestCancelReasonClientCanceled:

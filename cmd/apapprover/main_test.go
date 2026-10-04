@@ -221,7 +221,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		},
 	}
 
-	next, removed, active := removeCanceledSignRequest(queue, "sign-2")
+	next, removed, active := removeCanceledRequest(queue, approvalKindSign, "sign-2")
 	if !removed {
 		t.Fatal("removed = false, want true")
 	}
@@ -235,7 +235,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		t.Fatalf("queue after removal = %#v", next)
 	}
 
-	next, removed, active = removeCanceledSignRequest(next, "sign-1")
+	next, removed, active = removeCanceledRequest(next, approvalKindSign, "sign-1")
 	if !removed || !active {
 		t.Fatalf("removed, active = %v, %v; want true, true", removed, active)
 	}
@@ -243,7 +243,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 		t.Fatalf("queue after active removal = %#v", next)
 	}
 
-	unchanged, removed, active := removeCanceledSignRequest(next, "missing")
+	unchanged, removed, active := removeCanceledRequest(next, approvalKindSign, "missing")
 	if removed || active {
 		t.Fatalf("removed, active = %v, %v; want false, false", removed, active)
 	}
@@ -301,5 +301,31 @@ func TestDecodeNotificationErrorMessage(t *testing.T) {
 	}
 	if decoded.errMsg == nil || decoded.errMsg.Error != "boom" {
 		t.Fatalf("decoded.errMsg = %#v, want error message boom", decoded.errMsg)
+	}
+}
+
+func TestTokenProvisioningCancellationRemovesOnlyThatRequest(t *testing.T) {
+	raw, err := protocol.MarshalAdminMessage(protocol.TokenProvisioningRequestCanceledMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeTokenProvisioningRequestCanceled, ID: "token-1"},
+		Reason:      protocol.TokenProvisioningCancelReasonPreempted,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, handled, err := decodeNotification(transport.Notification{
+		Base: protocol.BaseMessage{Type: protocol.MsgTypeTokenProvisioningRequestCanceled, ID: "token-1"},
+		Raw:  raw,
+	})
+	if err != nil || !handled || decoded.tokenCanceled == nil || decoded.tokenCanceled.ID != "token-1" {
+		t.Fatalf("decodeNotification() = %+v, %v, %v", decoded, handled, err)
+	}
+
+	queue := []approvalRequest{
+		{kind: approvalKindTokenProvisioning, tokenRequest: &protocol.TokenProvisioningRequestMessage{BaseMessage: protocol.BaseMessage{ID: "token-1"}}},
+		{kind: approvalKindSign, signRequest: &protocol.SignRequestMessage{BaseMessage: protocol.BaseMessage{ID: "token-1"}}},
+	}
+	next, removed, active := removeCanceledRequest(queue, approvalKindTokenProvisioning, "token-1")
+	if !removed || !active || len(next) != 1 || next[0].kind != approvalKindSign {
+		t.Fatalf("removeCanceledRequest() = %#v, %v, %v; want only the token request removed", next, removed, active)
 	}
 }

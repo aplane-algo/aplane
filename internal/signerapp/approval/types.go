@@ -76,6 +76,17 @@ type TokenProvisioningRequest struct {
 	Timestamp      int64
 }
 
+// TokenProvisioningCanceled withdraws a delivered token provisioning request
+// from the approval client.
+type TokenProvisioningCanceled struct {
+	ID     string
+	Reason string
+}
+
+// TokenProvisioningCancelReasonPreempted means a signing request took the
+// approval turn from the token provisioning request.
+const TokenProvisioningCancelReasonPreempted = protocol.TokenProvisioningCancelReasonPreempted
+
 // TokenProvisioningResponse is the domain-level approval response for token issuance.
 type TokenProvisioningResponse struct {
 	ID       string

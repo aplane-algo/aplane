@@ -37,10 +37,22 @@ type approvalRequest struct {
 	tokenRequest *protocol.TokenProvisioningRequestMessage
 }
 
+func (r approvalRequest) id() string {
+	switch {
+	case r.kind == approvalKindSign && r.signRequest != nil:
+		return r.signRequest.ID
+	case r.kind == approvalKindTokenProvisioning && r.tokenRequest != nil:
+		return r.tokenRequest.ID
+	}
+	return ""
+}
+
 type decodedNotification struct {
 	request  *approvalRequest
 	canceled *protocol.SignRequestCanceledMessage
-	errMsg   *protocol.ErrorMessage
+	// tokenCanceled withdraws a delivered client access request.
+	tokenCanceled *protocol.TokenProvisioningRequestCanceledMessage
+	errMsg        *protocol.ErrorMessage
 }
 
 const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
@@ -184,11 +196,18 @@ func main() {
 				logErrorf("%s", decoded.errMsg.Error)
 				continue
 			}
-			if decoded.canceled != nil {
+			if decoded.canceled != nil || decoded.tokenCanceled != nil {
+				kind, id, reason, label := approvalKindSign, "", "", "Signing request"
+				if decoded.canceled != nil {
+					id, reason = decoded.canceled.ID, decoded.canceled.Reason
+				} else {
+					kind, label = approvalKindTokenProvisioning, "Client access request"
+					id, reason = decoded.tokenCanceled.ID, decoded.tokenCanceled.Reason
+				}
 				var removed, active bool
-				requestQueue, removed, active = removeCanceledSignRequest(requestQueue, decoded.canceled.ID)
+				requestQueue, removed, active = removeCanceledRequest(requestQueue, kind, id)
 				if removed {
-					fmt.Printf("\n⚠ Signing request %s canceled (%s)\n", decoded.canceled.ID, approvalCancelReason(decoded.canceled.Reason))
+					fmt.Printf("\n⚠ %s %s canceled (%s)\n", label, id, approvalCancelReason(reason))
 					if active {
 						if len(requestQueue) > 0 {
 							displayRequest(requestQueue[0], len(requestQueue))
@@ -233,6 +252,12 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 			return decodedNotification{}, true, fmt.Errorf("malformed sign request cancellation: %w", err)
 		}
 		return decodedNotification{canceled: &canceled}, true, nil
+	case protocol.MsgTypeTokenProvisioningRequestCanceled:
+		var canceled protocol.TokenProvisioningRequestCanceledMessage
+		if err := json.Unmarshal(notification.Raw, &canceled); err != nil {
+			return decodedNotification{}, true, fmt.Errorf("malformed token provisioning cancellation: %w", err)
+		}
+		return decodedNotification{tokenCanceled: &canceled}, true, nil
 	case protocol.MsgTypeTokenProvisioningRequest:
 		var req protocol.TokenProvisioningRequestMessage
 		if err := json.Unmarshal(notification.Raw, &req); err != nil {
@@ -255,9 +280,11 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 	}
 }
 
-func removeCanceledSignRequest(queue []approvalRequest, requestID string) ([]approvalRequest, bool, bool) {
+// removeCanceledRequest drops a withdrawn request of the given kind. It
+// reports whether the request was found and whether it was the active one.
+func removeCanceledRequest(queue []approvalRequest, kind approvalKind, requestID string) ([]approvalRequest, bool, bool) {
 	for i, req := range queue {
-		if req.kind != approvalKindSign || req.signRequest == nil || req.signRequest.ID != requestID {
+		if req.kind != kind || req.id() != requestID {
 			continue
 		}
 		out := append(queue[:i:i], queue[i+1:]...)
@@ -274,6 +301,8 @@ func approvalCancelReason(reason string) string {
 		return "requester canceled"
 	case "timeout":
 		return "timed out"
+	case protocol.TokenProvisioningCancelReasonPreempted:
+		return "withdrawn for a signing request; the client can retry"
 	default:
 		return reason
 	}

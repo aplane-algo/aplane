@@ -931,6 +931,16 @@ func ProtocolSignRequestCanceledMessage(msg signerapproval.SignRequestCanceled) 
 	}
 }
 
+func ProtocolTokenProvisioningRequestCanceledMessage(msg signerapproval.TokenProvisioningCanceled) protocol.TokenProvisioningRequestCanceledMessage {
+	return protocol.TokenProvisioningRequestCanceledMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeTokenProvisioningRequestCanceled,
+			ID:   msg.ID,
+		},
+		Reason: msg.Reason,
+	}
+}
+
 func ProtocolTokenProvisioningRequestMessage(req signerapproval.TokenProvisioningRequest) protocol.TokenProvisioningRequestMessage {
 	return protocol.TokenProvisioningRequestMessage{
 		BaseMessage: protocol.BaseMessage{

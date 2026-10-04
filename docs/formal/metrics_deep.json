@@ -14,8 +14,8 @@
   {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_deep",
-    "distinct_states": 294,
-    "depth": 13
+    "distinct_states": 4681,
+    "depth": 16
   },
   {
     "spec": "approval_composition",
@@ -38,7 +38,7 @@
   {
     "spec": "approval_coordinator",
     "cfg": "approval_coordinator_liveness_deep",
-    "distinct_states": 3773,
+    "distinct_states": 4776,
     "depth": 13
   }
 ]

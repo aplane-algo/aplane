@@ -548,6 +548,9 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			KeyCount: keysChanged.KeyCount,
 		}
 	}),
+	MsgTypeTokenProvisioningRequestCanceled: decodeAs(func(canceled TokenProvisioningRequestCanceledMessage) tea.Msg {
+		return TokenProvisioningCanceledMsg{ID: canceled.ID, Reason: canceled.Reason}
+	}),
 	MsgTypeTokenProvisioningRequest: decodeAs(func(req TokenProvisioningRequestMessage) tea.Msg {
 		return TokenProvisioningRequestReceivedMsg{
 			Request: PendingTokenRequest{

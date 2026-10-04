@@ -323,6 +323,16 @@ func (s *IPCServer) SendSignRequestCanceled(msg *signerapproval.SignRequestCance
 	return active.WriteJSON(adminserver.ProtocolSignRequestCanceledMessage(*msg)) == nil
 }
 
+// SendTokenProvisioningCanceled tells the IPC client that a delivered client
+// access request was withdrawn.
+func (s *IPCServer) SendTokenProvisioningCanceled(msg *signerapproval.TokenProvisioningCanceled) bool {
+	active := s.activeSession()
+	if active == nil || msg == nil {
+		return false
+	}
+	return active.WriteJSON(adminserver.ProtocolTokenProvisioningRequestCanceledMessage(*msg)) == nil
+}
+
 // SendTokenProvisioningRequest sends a token provisioning request to the IPC client.
 func (s *IPCServer) SendTokenProvisioningRequest(req *signerapproval.TokenProvisioningRequest) bool {
 	active := s.activeSession()

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -103,6 +104,13 @@ const (
 	invalidTokenProofDelay    = 5 * time.Second
 	sshHandshakeTimeout       = 60 * time.Second
 	maxPendingSSHHandshakes   = 64
+
+	// request-token connections are unauthenticated, so their footprint is
+	// bounded: a few concurrent connections, each of which must start
+	// provisioning promptly and may provision only once.
+	maxTokenProvisioningConns     = 8
+	tokenProvisioningExecDeadline = 30 * time.Second
+	maxLoggedClientTextBytes      = 64
 )
 
 // Server represents an SSH server with mutual token proof and public-key auth.
@@ -151,6 +159,11 @@ type Server struct {
 	sshConnsMu               sync.Mutex    // Protects connection maps, pendingHandshakes, and minimumTokenGeneration
 	testAfterAuthBeforeTrack func()        // Test hook for auth/revocation race coverage
 	invalidTokenDelay        time.Duration // Tests may set this to zero to avoid the production rejection delay
+
+	tokenProvisioningConns        int           // Live request-token connections; protected by sshConnsMu
+	tokenProvisioningExecDeadline time.Duration // Tests may shorten the time a request-token connection has to start provisioning
+	provisioningClaims            sync.Map      // *ssh.ServerConn -> struct{}: connections that already provisioned once
+	provisioningActive            atomic.Bool   // One client access request is pending at a time, server-wide
 }
 
 type sshConnInfo struct {
@@ -315,6 +328,8 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 		invalidTokenDelay:  invalidTokenProofDelay,
 		rawConns:           make(map[net.Conn]struct{}),
 		handshakeTimeout:   sshHandshakeTimeout,
+
+		tokenProvisioningExecDeadline: tokenProvisioningExecDeadline,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
@@ -949,6 +964,22 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	connCtx, cancelConnCtx := context.WithCancel(context.Background())
 	defer cancelConnCtx()
 
+	if isTokenProvisioning {
+		if !s.admitTokenProvisioningConn() {
+			fmt.Printf("[SSH] Too many pending client access requests; closing %s\n", remoteAddr)
+			return
+		}
+		defer s.releaseTokenProvisioningConn(sshConn)
+		// A request-token connection that has not started provisioning by the
+		// deadline is closed, so idle unauthenticated connections cannot pile up.
+		deadline := time.AfterFunc(s.tokenProvisioningExecDeadline, func() {
+			if _, claimed := s.provisioningClaims.Load(sshConn); !claimed {
+				_ = sshConn.Close()
+			}
+		})
+		defer deadline.Stop()
+	}
+
 	// Handle channel requests
 	for newChannel := range chans {
 		if isTokenProvisioning {
@@ -1091,9 +1122,17 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 	if err != nil {
 		return
 	}
+	// claimed is set once this channel takes the connection's single
+	// provisioning request; the connection then closes when the request
+	// finishes, whatever the outcome, so a refused or rejected client cannot
+	// keep holding one of the few request-token connection slots.
+	claimed := false
 	defer func() {
 		if err := channel.Close(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close token provisioning channel: %v\n", err)
+		}
+		if claimed {
+			_ = sshConn.Close()
 		}
 	}()
 	approvalCtx, cancelApproval := context.WithCancel(connCtx)
@@ -1120,7 +1159,7 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 
 			// We only handle "provision" command
 			if command != "provision" {
-				fmt.Printf("[SSH] Unknown provisioning command: %s\n", command)
+				fmt.Printf("[SSH] Unknown provisioning command from %s: %s\n", remoteAddr, quoteClientText(command))
 				if req.WantReply {
 					_ = req.Reply(false, nil)
 				}
@@ -1148,6 +1187,23 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 				_ = s.sendExitStatus(channel, 1)
 				return
 			}
+
+			// One provisioning request per connection, and one pending client
+			// access request server-wide: an unauthenticated client cannot
+			// queue a stream of operator prompts.
+			if _, already := s.provisioningClaims.LoadOrStore(sshConn, struct{}{}); already {
+				_, _ = channel.Write([]byte("ERROR: only one provisioning request is allowed per connection\n"))
+				_ = s.sendExitStatus(channel, 1)
+				return
+			}
+			claimed = true
+			if !s.provisioningActive.CompareAndSwap(false, true) {
+				fmt.Printf("[SSH] Client access request from %s refused: another request is pending\n", remoteAddr)
+				_, _ = channel.Write([]byte("ERROR: another client access request is pending; try again later\n"))
+				_ = s.sendExitStatus(channel, 1)
+				return
+			}
+			defer s.provisioningActive.Store(false)
 
 			fmt.Printf("[SSH] Processing product token provisioning from %s\n", remoteAddr)
 			fmt.Printf("[SSH] Waiting for operator approval in apadmin for token provisioning request from %s\n", remoteAddr)
@@ -1233,6 +1289,34 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 			}
 		}
 	}
+}
+
+// admitTokenProvisioningConn counts a live request-token connection, refusing
+// one beyond the cap.
+func (s *Server) admitTokenProvisioningConn() bool {
+	s.sshConnsMu.Lock()
+	defer s.sshConnsMu.Unlock()
+	if s.tokenProvisioningConns >= maxTokenProvisioningConns {
+		return false
+	}
+	s.tokenProvisioningConns++
+	return true
+}
+
+func (s *Server) releaseTokenProvisioningConn(sshConn *ssh.ServerConn) {
+	s.sshConnsMu.Lock()
+	s.tokenProvisioningConns--
+	s.sshConnsMu.Unlock()
+	s.provisioningClaims.Delete(sshConn)
+}
+
+// quoteClientText renders unauthenticated client text for a log line: quoted
+// so control characters and terminal escapes print as escapes, and truncated.
+func quoteClientText(text string) string {
+	if len(text) > maxLoggedClientTextBytes {
+		return strconv.Quote(text[:maxLoggedClientTextBytes]) + "..."
+	}
+	return strconv.Quote(text)
 }
 
 func parseExecCommand(payload []byte) (string, bool) {
