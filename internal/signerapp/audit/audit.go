@@ -22,12 +22,24 @@ type AuditEventType string
 
 const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 
+// Unauthenticated authentication failures are rate limited: retention is a
+// few rotated files, so an unbounded stream of AUTH_FAILED entries would
+// rotate every earlier entry out of the log. A burst is logged individually;
+// beyond it, one entry is logged per refill interval and the rest are counted
+// in an AUTH_FAILURES_SUPPRESSED summary written within one summary interval.
+const (
+	authFailureBurst           = 20
+	authFailureRefillInterval  = 6 * time.Second
+	authFailureSummaryInterval = time.Minute
+)
+
 const (
 	AuditSignRequest                      AuditEventType = "SIGN_REQUEST"
 	AuditSignApproved                     AuditEventType = "SIGN_APPROVED"
 	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
 	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
 	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
+	AuditAuthFailuresSuppressed           AuditEventType = "AUTH_FAILURES_SUPPRESSED"
 	AuditAuthorizationDenied              AuditEventType = "AUTHORIZATION_DENIED"
 	AuditServerStart                      AuditEventType = "SERVER_START"
 	AuditServerStop                       AuditEventType = "SERVER_STOP"
@@ -102,6 +114,7 @@ type AuditEntry struct {
 	TermUnavailable      int            `json:"term_unavailable,omitempty"`
 	TermFailed           int            `json:"term_failed,omitempty"`
 	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
+	SuppressedCount      int            `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
 }
 
 // AuditLogger handles append-only audit logging
@@ -110,6 +123,22 @@ type AuditLogger struct {
 	mu      sync.Mutex
 	path    string
 	written uint64
+
+	authFailures authFailureLimiter
+}
+
+// authFailureLimiter is a token bucket over unauthenticated AUTH_FAILED
+// entries, with a pending count of the failures it suppressed.
+type authFailureLimiter struct {
+	mu              sync.Mutex
+	now             func() time.Time // tests may replace the clock
+	summaryAfter    time.Duration    // tests may shorten authFailureSummaryInterval
+	tokens          int
+	refilledAt      time.Time
+	suppressed      int
+	suppressedSince time.Time
+	summary         *time.Timer
+	closed          bool
 }
 
 // NewAuditLogger creates a new audit logger
@@ -127,7 +156,11 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 		written = uint64(info.Size())
 	}
 
-	return &AuditLogger{file: file, path: path, written: written}, nil
+	logger := &AuditLogger{file: file, path: path, written: written}
+	logger.authFailures.now = time.Now
+	logger.authFailures.summaryAfter = authFailureSummaryInterval
+	logger.authFailures.tokens = authFailureBurst
+	return logger, nil
 }
 
 // Log writes an audit entry
@@ -269,6 +302,10 @@ func (a *AuditLogger) reopenCurrent() {
 
 // Close closes the audit log file
 func (a *AuditLogger) Close() error {
+	a.authFailures.mu.Lock()
+	a.authFailures.closed = true
+	a.authFailures.mu.Unlock()
+	a.flushAuthFailureSummary()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.file.Close()
@@ -441,7 +478,61 @@ func (a *AuditLogger) LogSignFailedAttributed(attr Attribution, address, txnSend
 
 // LogAuthFailed logs an authentication failure before a principal is known.
 func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
+	if !a.admitAuthFailure() {
+		return
+	}
 	a.LogAuthFailedAttributed("", remoteAddr, reason)
+}
+
+// admitAuthFailure reports whether an unauthenticated failure is logged
+// individually; otherwise it is counted toward the next summary.
+func (a *AuditLogger) admitAuthFailure() bool {
+	l := &a.authFailures
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if l.refilledAt.IsZero() {
+		l.refilledAt = now
+	}
+	if refills := int(now.Sub(l.refilledAt) / authFailureRefillInterval); refills > 0 {
+		l.tokens = min(authFailureBurst, l.tokens+refills)
+		l.refilledAt = l.refilledAt.Add(time.Duration(refills) * authFailureRefillInterval)
+	}
+	if l.tokens > 0 {
+		l.tokens--
+		return true
+	}
+	if l.suppressed == 0 {
+		l.suppressedSince = now
+		if !l.closed {
+			l.summary = time.AfterFunc(l.summaryAfter, a.flushAuthFailureSummary)
+		}
+	}
+	l.suppressed++
+	return false
+}
+
+// flushAuthFailureSummary records how many failures were suppressed since
+// the first one that was not logged individually.
+func (a *AuditLogger) flushAuthFailureSummary() {
+	l := &a.authFailures
+	l.mu.Lock()
+	count, since := l.suppressed, l.suppressedSince
+	l.suppressed = 0
+	if l.summary != nil {
+		l.summary.Stop()
+		l.summary = nil
+	}
+	l.mu.Unlock()
+	if count == 0 {
+		return
+	}
+	a.Log(AuditEntry{
+		Event:           AuditAuthFailuresSuppressed,
+		Outcome:         "suppressed",
+		SuppressedCount: count,
+		Reason:          fmt.Sprintf("%d authentication failures since %s were not logged individually", count, since.UTC().Format(time.RFC3339)),
+	})
 }
 
 // LogAuthFailedAttributed logs a failed authorization attempt by an

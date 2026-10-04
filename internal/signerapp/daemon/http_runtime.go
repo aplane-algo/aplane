@@ -5,8 +5,10 @@ package daemon
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -14,6 +16,16 @@ import (
 )
 
 const signerHTTPWriteTimeout = serverconfig.MaxApprovalWait + 2*time.Minute
+
+// The REST API listens on loopback, where any local process can connect
+// before authenticating. Concurrent connections and header size are bounded
+// so unauthenticated connections cannot grow the signer's memory, which
+// mlockall keeps resident: beyond the cap, new connections wait in the
+// kernel accept queue.
+const (
+	maxHTTPConnections = 64
+	maxHTTPHeaderBytes = 64 << 10
+)
 
 func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux := http.NewServeMux()
@@ -37,7 +49,61 @@ func buildHTTPServer(server *Signer, port int) *http.Server {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      signerHTTPWriteTimeout,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    maxHTTPHeaderBytes,
 	}
+}
+
+// listenHTTP opens the REST listener with at most maxHTTPConnections
+// connections open at once.
+func listenHTTP(addr string) (net.Listener, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return newLimitListener(ln, maxHTTPConnections), nil
+}
+
+// limitListener blocks Accept while n accepted connections are still open.
+type limitListener struct {
+	net.Listener
+	slots chan struct{}
+	done  chan struct{}
+	once  sync.Once
+}
+
+func newLimitListener(ln net.Listener, n int) *limitListener {
+	return &limitListener{Listener: ln, slots: make(chan struct{}, n), done: make(chan struct{})}
+}
+
+func (l *limitListener) Accept() (net.Conn, error) {
+	select {
+	case l.slots <- struct{}{}:
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		<-l.slots
+		return nil, err
+	}
+	return &limitListenerConn{Conn: conn, release: func() { <-l.slots }}, nil
+}
+
+func (l *limitListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return l.Listener.Close()
+}
+
+type limitListenerConn struct {
+	net.Conn
+	once    sync.Once
+	release func()
+}
+
+func (c *limitListenerConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
 }
 
 func httpBindAddr(port int) string {

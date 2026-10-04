@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -59,6 +60,7 @@ type Signer struct {
 	config            *serverconfig.ServerConfig         // Server configuration (includes policy settings)
 	configMu          sync.RWMutex                       // Protects live-mutable ServerConfig fields.
 	configMutationMu  sync.Mutex                         // Serializes process-owned config.yaml mutations
+	storeHealth       signerrest.StoreHealthCache        // Bounds the unauthenticated /health store inspection
 	storeMutationLock sync.Mutex                         // Product key/template/config/policy mutation serialization
 	restoreAttemptMu  sync.Mutex                         // Protects restoreAttempts lazy initialization
 	restoreAttempts   *backupadmin.RestoreAttemptLimiter // Per-archive restore backoff state

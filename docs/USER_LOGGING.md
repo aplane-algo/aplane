@@ -108,6 +108,7 @@ principal/transport attribution.
 | Event | Description |
 |-------|-------------|
 | `AUTH_FAILED` | Authentication attempt failed; `remote_addr` identifies the client |
+| `AUTH_FAILURES_SUPPRESSED` | Unauthenticated failures beyond the rate limit (a burst of 20, then one per 6 seconds) were counted instead of logged individually; `suppressed_count` is the number |
 | `AUTHORIZATION_DENIED` | Authenticated admin principal lacked authorization for the requested action/resource |
 
 ### Sessions

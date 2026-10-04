@@ -45,6 +45,7 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 				},
 			},
 			GenerateGenericLSig: fs.generateGenericLSigForRuntimeContext,
+			StoreHealth:         &fs.storeHealth,
 		},
 	}
 }

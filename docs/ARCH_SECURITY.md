@@ -634,6 +634,14 @@ Denial behavior:
 - HTTP authentication failures and HTTP authorization denials are recorded as
   `AUTH_FAILED` with a reason such as `missing_credentials`,
   `invalid_credentials`, or `unauthorized:<action>`.
+- Unauthenticated `AUTH_FAILED` entries are rate limited, because audit
+  retention is a few rotated 10 MB files and any local process can reach the
+  loopback REST API: a burst of 20 is logged individually, then one per 6
+  seconds, and the rest are counted in an `AUTH_FAILURES_SUPPRESSED` entry
+  (`suppressed_count`) written within a minute of the first suppressed
+  failure, and on shutdown. A flood stays visible without rotating earlier
+  entries out of the log. Authorization denials of an authenticated
+  principal are not rate limited.
 - Admin protocol authorization denials are recorded as
   `AUTHORIZATION_DENIED` with the admin session context, action/resource details,
   principal attribution, transport, and denial reason.

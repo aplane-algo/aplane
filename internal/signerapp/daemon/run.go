@@ -335,8 +335,12 @@ func Run(dataDir string) int {
 			{
 				Name: "HTTP server",
 				Start: func(ctx context.Context, errs chan<- error) error {
+					ln, err := listenHTTP(httpServer.Addr)
+					if err != nil {
+						return err
+					}
 					go func() {
-						if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 							errs <- err
 						}
 					}()
