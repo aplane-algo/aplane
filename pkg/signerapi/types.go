@@ -104,19 +104,6 @@ type AppCallInfo struct {
 	Method string `json:"method,omitempty"` // ABI method signature when available
 }
 
-// SignResponse is the legacy single-transaction response shape.
-//
-// The HTTP /sign endpoint returns GroupSignResponse. This type is retained for
-// source compatibility with older client code.
-type SignResponse struct {
-	Approved        bool     `json:"approved"`                    // True if user approved the request
-	Signature       string   `json:"signature,omitempty"`         // Cryptographic signature (ed25519 or DSA lsig)
-	LsigBytecode    string   `json:"lsig_bytecode,omitempty"`     // LogicSig bytecode (all lsig types)
-	LsigArgsOrdered []string `json:"lsig_args_ordered,omitempty"` // Ordered runtime args (hex), ready for LogicSig.Args
-	SignedTxn       string   `json:"signed_txn,omitempty"`        // Complete signed transaction (msgpack, hex-encoded)
-	Error           string   `json:"error,omitempty"`
-}
-
 // GroupSignRequest is the request payload for the /sign endpoint.
 // Contains an array of transactions to be signed as a group.
 type GroupSignRequest struct {

@@ -3073,10 +3073,10 @@ Go SDK specifics:
 - `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly
 - raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
   `PlanGroupResponse`, `GroupSignResponse`) rather
-  than the base64-returning convenience layer. `SignResponse` is a
-  source-compatibility type; the live `/sign` response is `GroupSignResponse`.
+  than the base64-returning convenience layer. The `/sign` response is
+  `GroupSignResponse`.
 - `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
-- `GroupPlanResponse`, `RuntimeArgInfo`, and `SigningArgInfo` are compatibility aliases for `PlanGroupResponse`, `RuntimeArg`, and `SigningArg`
+- `SigningArg` is the `/keys` name for `RuntimeArg`
 - input uses `go-algorand-sdk` `types.Transaction`
 
 TypeScript and Python SDKs preserve the same broad behaviors:
