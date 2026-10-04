@@ -461,13 +461,18 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewStore(tmpDir)
 
-	// Create cache directory
-	_ = os.MkdirAll("cache", 0750)
-
-	// Write invalid JSON
+	// Write invalid JSON where the store reads the auth cache.
 	network := "testnet"
 	filename := GetAuthCacheFilenameForStore(store, network)
-	_ = os.WriteFile(filename, []byte("{invalid json"), 0600)
+	if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filename, []byte("{invalid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadSignedCache(filename, nil, &AuthAddressCache{}); err == nil {
+		t.Fatal("fixture loaded cleanly; want malformed cache JSON")
+	}
 
 	// Should return empty cache without crashing
 	cache := LoadAuthCacheFromStore(store, network)
