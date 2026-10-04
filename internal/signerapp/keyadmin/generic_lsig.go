@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signingargs"
 
 	"github.com/aplane-algo/aplane/internal/genericlsig"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -87,7 +87,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 		return "", err
 	}
 	mut := storemut.New(activeKeyPaths, nil, nil)
-	signingArgs := keys.StoreSigningArgs(template.RuntimeArgs())
+	signingArgs := signingargs.FromRuntimeDefs(template.RuntimeArgs())
 	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(template, false)
 	if err != nil {
 		return "", fmt.Errorf("%w: invalid LogicSig opcode profile: %v", errBadRequest, err)

@@ -30,7 +30,7 @@ func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := keys.CosignerCredentialFilePath(paths, selector)
+	source := keys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector)
 	if err := os.WriteFile(source, encrypted, 0o600); err != nil {
 		t.Fatal(err)
 	}

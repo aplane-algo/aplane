@@ -266,9 +266,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		writeManagedCredentialFile(t, paths, selector+CosignerCredentialExtension, keyJSON, masterKey)
 
-		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+		report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 		if err != nil {
-			t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+			t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 		}
 		if len(report.Warnings) != 0 {
 			t.Fatalf("warnings = %#v, want none", report.Warnings)
@@ -277,7 +277,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if !ok {
 			t.Fatalf("cosigner credential %s not loaded", selector)
 		}
-		if info.Category != CategoryWitness || info.KeyFile != CosignerCredentialFilePath(paths, selector) {
+		if info.Category != CategoryWitness || info.KeyFile != CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), selector) {
 			t.Fatalf("loaded cosigner credential = %#v", info)
 		}
 	})
@@ -299,9 +299,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 		legacyPath := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
 
-		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+		report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 		if err != nil {
-			t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+			t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 		}
 		if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 			t.Fatalf("report = %#v, want one rejection", report)
@@ -324,9 +324,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		keyJSON, address := testEd25519Key(t)
 		writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
 
-		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+		report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 		if err != nil {
-			t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+			t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 		}
 		if len(report.Keys) != 0 || len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningFilenameClassMismatch {
 			t.Fatalf("report = %#v, want filename class rejection", report)
@@ -448,9 +448,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			t.Fatalf("write duplicate key file: %v", err)
 		}
 
-		report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+		report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 		if err != nil {
-			t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+			t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 		}
 		if len(report.Keys) != 1 {
 			t.Fatalf("loaded keys = %d, want only canonical key", len(report.Keys))
@@ -480,7 +480,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 
 		writeKeyFile(t, paths, address, keyJSON, nil)
 
-		report, err := ScanKeysDirectoryWithKeyringReport(paths, nil)
+		report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -616,9 +616,9 @@ func TestScanKeysDirectoryWithKeyringReportRecordsSaltWarnings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 {
 		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
@@ -705,9 +705,9 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 
 	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", report.Warnings)
@@ -735,9 +735,9 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 
 	writeKeyFile(t, paths, "NOT_DERIVED", keyJSON, masterKey)
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 {
 		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
@@ -774,9 +774,9 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigWithoutBytecode(t *testing.T)
 
 	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 {
 		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
@@ -810,9 +810,9 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 
 	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 {
 		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
@@ -858,9 +858,9 @@ func TestScanKeysDirectoryWithKeyringReportRecordsIncompatibleFormatWarnings(t *
 		t.Fatal(err)
 	}
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReport() error = %v", err)
+		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, )) error = %v", err)
 	}
 	if len(report.Keys) != 0 {
 		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
@@ -902,7 +902,7 @@ func TestScanKeysDirectoryWithKeyringRejectsEd25519WithoutPublicKey(t *testing.T
 	keyJSON, _ := json.MarshalIndent(keyData, "", "  ")
 	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
-	report, err := ScanKeysDirectoryWithKeyringReport(paths, cryptotest.Keyring(t, masterKey))
+	report, err := ScanKeysDirectoryWithKeyringReportActive(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

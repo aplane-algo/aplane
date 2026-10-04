@@ -3,7 +3,7 @@
 
 package keytypeux
 
-import "github.com/aplane-algo/aplane/internal/keys"
+import "github.com/aplane-algo/aplane/internal/lsigprovider"
 
 const (
 	AvailableToCreate    = "Enabled"
@@ -20,7 +20,7 @@ func AvailabilityForCreation(enabled bool) string {
 
 func TemplateProvenanceLabel(templateProvenanceStatus string) string {
 	switch templateProvenanceStatus {
-	case keys.TemplateProvenanceStatusConflict, keys.TemplateProvenanceStatusUnavailable:
+	case lsigprovider.TemplateProvenanceStatusConflict, lsigprovider.TemplateProvenanceStatusUnavailable:
 		return TemplateMismatch
 	default:
 		return ""

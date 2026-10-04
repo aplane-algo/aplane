@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -154,16 +153,8 @@ func CanonicalManagedCredentialFilename(selector, category string) (string, erro
 	return selector + class.Extension(), nil
 }
 
-func CanonicalManagedCredentialPath(paths storepaths.Paths, selector, category string) (string, error) {
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		return "", err
-	}
-	return CanonicalManagedCredentialPathActive(active, selector, category)
-}
-
-// CanonicalManagedCredentialPathActive is CanonicalManagedCredentialPath
-// against an authenticated generation capability.
+// CanonicalManagedCredentialPathActive returns the canonical credential path
+// for selector and category in an authenticated generation.
 func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selector, category string) (string, error) {
 	name, err := CanonicalManagedCredentialFilename(selector, category)
 	if err != nil {
@@ -172,54 +163,22 @@ func CanonicalManagedCredentialPathActive(active storepaths.ActivePaths, selecto
 	return filepath.Join(active.KeysDir(), name), nil
 }
 
-// AccountKeyFilePath is for code that already owns a validated Algorand
-// account address. Canonical writers should prefer CanonicalManagedCredentialPath.
-func AccountKeyFilePath(paths storepaths.Paths, address string) string {
-	return AccountKeyFilePathActive(mustResolveActive(paths), address)
-}
-
-// AccountKeyFilePathActive is AccountKeyFilePath against resolved
-// active-store paths.
+// AccountKeyFilePathActive is for code that already owns a validated Algorand
+// account address. Canonical writers should prefer
+// CanonicalManagedCredentialPathActive.
 func AccountKeyFilePathActive(active storepaths.ActivePaths, address string) string {
 	return filepath.Join(active.KeysDir(), address+AccountKeyExtension)
 }
 
-// CosignerCredentialFilePath is for code that already owns a validated Witness
-// Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
-func CosignerCredentialFilePath(paths storepaths.Paths, witnessKeyID string) string {
-	return CosignerCredentialFilePathActive(mustResolveActive(paths), witnessKeyID)
-}
-
-// mustResolveActive backs the string-returning convenience path builders,
-// which have no production callers (writers use the Active variants); a
-// present-but-invalid store-root selection panics rather than inventing an
-// active path.
-func mustResolveActive(paths storepaths.Paths) storepaths.ActivePaths {
-	generationID, ok := paths.BoundActiveGeneration()
-	if !ok {
-		panic("active generation capability is not bound; authenticate store-root.enc first")
-	}
-	return paths.GenerationPaths(generationID)
-}
-
-// CosignerCredentialFilePathActive is CosignerCredentialFilePath against
-// resolved active-store paths.
+// CosignerCredentialFilePathActive is for code that already owns a validated
+// Witness Key ID. Canonical writers should prefer
+// CanonicalManagedCredentialPathActive.
 func CosignerCredentialFilePathActive(active storepaths.ActivePaths, witnessKeyID string) string {
 	return filepath.Join(active.KeysDir(), witnessKeyID+CosignerCredentialExtension)
 }
 
-// ManagedCredentialDestination reports the canonical destination and whether
-// it exists, while rejecting an active file in the contradictory class.
-func ManagedCredentialDestination(paths storepaths.Paths, selector, category string) (string, bool, error) {
-	active, err := genstore.ResolveActive(paths)
-	if err != nil {
-		return "", false, err
-	}
-	return ManagedCredentialDestinationActive(active, selector, category)
-}
-
-// ManagedCredentialDestinationActive is ManagedCredentialDestination against
-// resolved active-store paths.
+// ManagedCredentialDestinationActive reports the canonical destination and
+// whether it exists, while rejecting an active file in the contradictory class.
 func ManagedCredentialDestinationActive(active storepaths.ActivePaths, selector, category string) (string, bool, error) {
 	class, err := ManagedCredentialClassForCategory(category)
 	if err != nil {

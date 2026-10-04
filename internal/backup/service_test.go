@@ -6,6 +6,7 @@ package backup
 import (
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
@@ -101,7 +102,7 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.CosignerCredentialFilePath(paths, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
@@ -200,7 +201,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
@@ -212,7 +213,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
@@ -258,7 +259,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	badFile := apkeys.AccountKeyFilePath(paths, badAddress)
+	badFile := apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), badAddress)
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
@@ -286,7 +287,7 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("ResolveActive() error = %v", err)
 	}
 	srcDir := active.KeysDir()
-	corruptFile := apkeys.AccountKeyFilePath(paths, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	corruptFile := apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -36,7 +35,7 @@ func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
 			var templateProvenanceStatus, templateProvenanceNote string
 			if info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk); err == nil {
 				keyType = info.Type
-				templateProvenanceStatus, templateProvenanceNote = keys.CompareTemplateFingerprint(keyType, info.TemplateFingerprint)
+				templateProvenanceStatus, templateProvenanceNote = lsigprovider.CompareTemplateFingerprint(keyType, info.TemplateFingerprint)
 			}
 			keysList = append(keysList, ListKeyInfo{
 				Address:                  addr,
@@ -77,7 +76,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 				result.PublicKeyHex = info.PublicKeyHex
 			}
 			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
-			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = keys.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
+			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
 			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk)
 		}
 		return nil
