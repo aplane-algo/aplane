@@ -87,7 +87,12 @@ type MintRequest struct {
 	// written or any staged state is published. Generation-owning application
 	// workflows must supply this hook; genstore cannot import signer policy,
 	// template, credential, or node-role semantics without inverting ownership.
+	// Mint refuses a request without it unless SkipCandidateValidation is set.
 	ValidateCandidate func(staged storepaths.GenPaths) error
+	// SkipCandidateValidation lets a test helper mint with structural
+	// validation only. Production code never sets it (test/arch enforces
+	// this).
+	SkipCandidateValidation bool
 	// AfterPublication runs after the complete successor directory and its
 	// parent-directory entry are durable, but before the store root changes.
 	// It exists for semantic process checkpoints and must not mutate the store.
@@ -114,6 +119,9 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 	}
 	if req.Operation == "" || req.OperationID == "" {
 		return storepaths.GenPaths{}, fmt.Errorf("mint requires a durable operation identity")
+	}
+	if req.ValidateCandidate == nil && !req.SkipCandidateValidation {
+		return storepaths.GenPaths{}, fmt.Errorf("mint requires candidate validation")
 	}
 	if req.StartEmpty {
 		if req.Parent == "" || req.Apply == nil {

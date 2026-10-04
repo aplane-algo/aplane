@@ -33,12 +33,13 @@ func buildGenerationChain(t *testing.T, paths storepaths.Paths) {
 			parent = testGenB
 		}
 		if _, err := Mint(paths, MintRequest{
-			GenerationID: id,
-			Parent:       parent,
-			Integrity:    testKeyring(t),
-			Operation:    "test-activation",
-			OperationID:  "op-" + id,
-			CreatedAt:    time.Unix(1_753_500_100+int64(i), 0),
+			SkipCandidateValidation: true,
+			GenerationID:            id,
+			Parent:                  parent,
+			Integrity:               testKeyring(t),
+			Operation:               "test-activation",
+			OperationID:             "op-" + id,
+			CreatedAt:               time.Unix(1_753_500_100+int64(i), 0),
 		}); err != nil {
 			t.Fatalf("Mint(%s) error = %v", id, err)
 		}
@@ -100,13 +101,14 @@ func TestReconcileStoreRootAuthenticatesSelectionAndQuarantinesAttempt(t *testin
 	kr := testKeyring(t)
 	passphrase := []byte("reconcile-store-root-passphrase")
 	if _, err := Mint(paths, MintRequest{
-		GenerationID:      testGenA,
-		FirstGeneration:   true,
-		InitialPassphrase: passphrase,
-		Integrity:         kr,
-		Operation:         "test-initialize",
-		OperationID:       "op-" + testGenA,
-		CreatedAt:         time.Unix(1_753_500_000, 0),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenA,
+		FirstGeneration:         true,
+		InitialPassphrase:       passphrase,
+		Integrity:               kr,
+		Operation:               "test-initialize",
+		OperationID:             "op-" + testGenA,
+		CreatedAt:               time.Unix(1_753_500_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			if err := writeTestGenerationAuthority(staged); err != nil {
 				return err
@@ -145,14 +147,15 @@ func TestReconcileStoreRootPreservesResidueWhenRootIsInvalid(t *testing.T) {
 	kr := testKeyring(t)
 	passphrase := []byte("reconcile-invalid-root-passphrase")
 	if _, err := Mint(paths, MintRequest{
-		GenerationID:      testGenA,
-		FirstGeneration:   true,
-		InitialPassphrase: passphrase,
-		Integrity:         kr,
-		Operation:         "test-initialize",
-		OperationID:       "op-" + testGenA,
-		CreatedAt:         time.Unix(1_753_500_000, 0),
-		Apply:             writeTestGenerationAuthority,
+		SkipCandidateValidation: true,
+		GenerationID:            testGenA,
+		FirstGeneration:         true,
+		InitialPassphrase:       passphrase,
+		Integrity:               kr,
+		Operation:               "test-initialize",
+		OperationID:             "op-" + testGenA,
+		CreatedAt:               time.Unix(1_753_500_000, 0),
+		Apply:                   writeTestGenerationAuthority,
 	}); err != nil {
 		t.Fatalf("Mint(first atomic generation) error = %v", err)
 	}
@@ -464,12 +467,13 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 
 	t.Run("mint rejects self-parent", func(t *testing.T) {
 		_, err := Mint(paths, MintRequest{
-			GenerationID: testGenD,
-			Parent:       testGenD,
-			Integrity:    testKeyring(t),
-			Operation:    "test-activation",
-			OperationID:  "op-self",
-			CreatedAt:    time.Unix(1_753_500_700, 0),
+			SkipCandidateValidation: true,
+			GenerationID:            testGenD,
+			Parent:                  testGenD,
+			Integrity:               testKeyring(t),
+			Operation:               "test-activation",
+			OperationID:             "op-self",
+			CreatedAt:               time.Unix(1_753_500_700, 0),
 		})
 		if err == nil {
 			t.Fatal("Mint accepted a self-parent request")
@@ -478,12 +482,13 @@ func TestSelfParentLineageIsRejectedEverywhere(t *testing.T) {
 
 	t.Run("mint rejects nonexistent parent", func(t *testing.T) {
 		_, err := Mint(paths, MintRequest{
-			GenerationID: testGenD,
-			Parent:       "gen-1753500009-99999999",
-			Integrity:    testKeyring(t),
-			Operation:    "test-activation",
-			OperationID:  "op-ghost",
-			CreatedAt:    time.Unix(1_753_500_701, 0),
+			SkipCandidateValidation: true,
+			GenerationID:            testGenD,
+			Parent:                  "gen-1753500009-99999999",
+			Integrity:               testKeyring(t),
+			Operation:               "test-activation",
+			OperationID:             "op-ghost",
+			CreatedAt:               time.Unix(1_753_500_701, 0),
 		})
 		if err == nil {
 			t.Fatal("Mint accepted a nonexistent parent; copyNamespaces would silently mint an empty generation")
@@ -519,12 +524,13 @@ func TestMintRequiresParentToBeCurrent(t *testing.T) {
 		// flip to D, leaving the real outgoing generation C unsealed for
 		// reconciliation to delete as an uncommitted attempt.
 		_, err := Mint(paths, MintRequest{
-			GenerationID: testGenD,
-			Parent:       testGenA,
-			Integrity:    testKeyring(t),
-			Operation:    "test-activation",
-			OperationID:  "op-stale",
-			CreatedAt:    time.Unix(1_753_500_800, 0),
+			SkipCandidateValidation: true,
+			GenerationID:            testGenD,
+			Parent:                  testGenA,
+			Integrity:               testKeyring(t),
+			Operation:               "test-activation",
+			OperationID:             "op-stale",
+			CreatedAt:               time.Unix(1_753_500_800, 0),
 		})
 		if err == nil {
 			t.Fatal("Mint accepted a parent that is not the current generation")
@@ -536,10 +542,11 @@ func TestMintRequiresParentToBeCurrent(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		buildGenerationChain(t, paths)
 		_, err := Mint(paths, MintRequest{
-			GenerationID: testGenD,
-			Operation:    "test-activation",
-			OperationID:  "op-parentless",
-			CreatedAt:    time.Unix(1_753_500_801, 0),
+			SkipCandidateValidation: true,
+			GenerationID:            testGenD,
+			Operation:               "test-activation",
+			OperationID:             "op-parentless",
+			CreatedAt:               time.Unix(1_753_500_801, 0),
 		})
 		if err == nil {
 			t.Fatal("Mint accepted a parentless request on a store that already has a current generation")
@@ -576,11 +583,12 @@ func assertChainUntouched(t *testing.T, paths storepaths.Paths) {
 func TestMintRefusesFirstMintWhenCurrentMissingOnEstablishedStore(t *testing.T) {
 	mintD := func(paths storepaths.Paths, first bool) error {
 		_, err := Mint(paths, MintRequest{
-			GenerationID:    testGenD,
-			FirstGeneration: first,
-			Operation:       "test-activation",
-			OperationID:     "op-relineage",
-			CreatedAt:       time.Unix(1_753_500_900, 0),
+			SkipCandidateValidation: true,
+			GenerationID:            testGenD,
+			FirstGeneration:         first,
+			Operation:               "test-activation",
+			OperationID:             "op-relineage",
+			CreatedAt:               time.Unix(1_753_500_900, 0),
 		})
 		return err
 	}
@@ -720,12 +728,13 @@ func TestMintPreservesStoreModesUnderUmask(t *testing.T) {
 		t.Fatalf("chmod source key: %v", err)
 	}
 	if _, err := Mint(paths, MintRequest{
-		GenerationID: testGenB,
-		Parent:       testGenA,
-		Integrity:    testKeyring(t),
-		Operation:    "test-activation",
-		OperationID:  "op-umask",
-		CreatedAt:    time.Unix(1_754_200_000, 0),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB,
+		Parent:                  testGenA,
+		Integrity:               testKeyring(t),
+		Operation:               "test-activation",
+		OperationID:             "op-umask",
+		CreatedAt:               time.Unix(1_754_200_000, 0),
 	}); err != nil {
 		t.Fatalf("Mint(child) error = %v", err)
 	}
@@ -791,12 +800,13 @@ func TestMintRefusesMissingParentNamespace(t *testing.T) {
 	}
 
 	_, err := Mint(paths, MintRequest{
-		GenerationID: testGenB,
-		Parent:       testGenA,
-		Integrity:    testKeyring(t),
-		Operation:    "test-activation",
-		OperationID:  "op-damaged-parent",
-		CreatedAt:    time.Unix(1_754_200_100, 0),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB,
+		Parent:                  testGenA,
+		Integrity:               testKeyring(t),
+		Operation:               "test-activation",
+		OperationID:             "op-damaged-parent",
+		CreatedAt:               time.Unix(1_754_200_100, 0),
 	})
 	if err == nil {
 		t.Fatal("Mint silently propagated a damaged parent: child would commit with an empty keys namespace")
@@ -862,12 +872,13 @@ func TestMintRejectsStagedSeal(t *testing.T) {
 	// generation is pre-publish by definition and must never carry the
 	// final content record.
 	_, err := Mint(paths, MintRequest{
-		GenerationID: testGenB,
-		Parent:       testGenA,
-		Integrity:    testKeyring(t),
-		Operation:    "test-activation",
-		OperationID:  "op-staged-seal",
-		CreatedAt:    time.Unix(1_754_300_000, 0),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB,
+		Parent:                  testGenA,
+		Integrity:               testKeyring(t),
+		Operation:               "test-activation",
+		OperationID:             "op-staged-seal",
+		CreatedAt:               time.Unix(1_754_300_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			return os.WriteFile(staged.SealPath(), []byte("{}"), 0o660)
 		},

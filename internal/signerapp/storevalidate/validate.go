@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -34,6 +35,19 @@ type Options struct {
 	ExpectedRole noderole.Role
 	DataDir      string
 	Config       *serverconfig.ServerConfig
+}
+
+// FirstGeneration validates a store's staged first generation, for
+// initialization and apstore rebuild.
+func FirstGeneration(c storeinit.FirstGenerationCandidate) error {
+	cfg, err := serverconfig.LoadServerConfig(c.DataDir)
+	if err != nil {
+		return fmt.Errorf("load signer config: %w", err)
+	}
+	return Candidate(Options{
+		Paths: c.Paths, Candidate: c.Staged, Keyring: c.Keyring,
+		ExpectedRole: c.Role, DataDir: c.DataDir, Config: &cfg,
+	})
 }
 
 // Candidate verifies all destination authority and every managed credential

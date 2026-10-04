@@ -5,6 +5,7 @@ package backupadmin
 
 import (
 	"bytes"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,7 @@ func cosignerPolicyForRestoreTest(key, description string) []byte {
 func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 	t.Helper()
 	lsig.RegisterClient()
-	if _, err := storeinit.Initialize(backupAdminTestPassphrase, storeinit.Options{DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
+	if _, err := storeinit.Initialize(backupAdminTestPassphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
 		t.Fatal(err)
 	}
 	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)

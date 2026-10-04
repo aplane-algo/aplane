@@ -5,6 +5,7 @@ package admin
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 	lsig.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
-	if _, err := storeinit.Initialize([]byte(adminPolicyPassphrase), storeinit.Options{DataDir: root, Paths: paths, Role: role}); err != nil {
+	if _, err := storeinit.Initialize([]byte(adminPolicyPassphrase), storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: root, Paths: paths, Role: role}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := serverconfig.DefaultServerConfig()

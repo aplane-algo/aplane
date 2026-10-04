@@ -43,7 +43,7 @@ func TestRecoveryDestinationRefusesDamageOutsideSelectedCredential(t *testing.T)
 			root := t.TempDir()
 			paths := storepaths.NewPaths(root)
 			passphrase := []byte("storevalidate-test-passphrase")
-			if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+			if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 				DataDir: root, Paths: paths, Role: noderole.RoleSigner,
 			}); err != nil {
 				t.Fatal(err)

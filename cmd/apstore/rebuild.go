@@ -14,6 +14,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
+	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -132,6 +134,9 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	if err != nil {
 		return err
 	}
+	// Validate the complete rebuilt store before committing it: once a
+	// generation exists, rebuild refuses to run again, so an invalid commit
+	// could only be repaired by hand.
 	if _, err := genstore.Mint(keystorePaths(), genstore.MintRequest{
 		GenerationID:      generationID,
 		FirstGeneration:   true,
@@ -140,6 +145,11 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		OperationID:       "rebuild-" + generationID,
 		CreatedAt:         time.Now(),
 		Integrity:         kr,
+		ValidateCandidate: func(staged storepaths.GenPaths) error {
+			return storevalidate.FirstGeneration(storeinit.FirstGenerationCandidate{
+				Paths: keystorePaths(), Staged: staged, Keyring: kr, Role: nodeRole, DataDir: dataDirectory,
+			})
+		},
 		Apply: func(staged storepaths.GenPaths) error {
 			if err := noderole.SaveGenerationSidecarWithKeyring(
 				staged,

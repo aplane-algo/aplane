@@ -38,7 +38,8 @@ func TestDeletedArchiveMaintenanceFollowsTheStoreRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := genstore.Mint(ir.KeyPaths(), genstore.MintRequest{
-		GenerationID: next, Parent: cached.GenerationID(), Operation: "test", OperationID: "test-" + next,
+		SkipCandidateValidation: true,
+		GenerationID:            next, Parent: cached.GenerationID(), Operation: "test", OperationID: "test-" + next,
 		CreatedAt: time.Now(), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			return os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(archived)), []byte("archived"), 0o600)

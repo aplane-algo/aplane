@@ -29,7 +29,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	passphrase := []byte("init-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 
-	result, err := Initialize(passphrase, Options{
+	result, err := Initialize(passphrase, Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir,
 		Paths:   paths,
 	})
@@ -101,7 +101,7 @@ func TestInitializeCreatesExplicitCosignerNodeRole(t *testing.T) {
 	passphrase := []byte("init-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 
-	if _, err := Initialize(passphrase, Options{
+	if _, err := Initialize(passphrase, Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir,
 		Paths:   paths,
 		Role:    noderole.RoleCosigner,
@@ -143,7 +143,7 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 		t.Fatalf("MkdirAll(aplane.token dir) error = %v", err)
 	}
 
-	_, err := Initialize([]byte("init-passphrase"), Options{
+	_, err := Initialize([]byte("init-passphrase"), Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir,
 		Paths:   paths,
 		Role:    noderole.RoleCosigner,
@@ -159,14 +159,14 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 func TestInitializeRejectsExistingStoreRoot(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	if _, err := Initialize([]byte("existing-passphrase"), Options{
+	if _, err := Initialize([]byte("existing-passphrase"), Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir,
 		Paths:   paths,
 	}); err != nil {
 		t.Fatalf("first Initialize() error = %v", err)
 	}
 
-	_, err := Initialize([]byte("new-passphrase"), Options{
+	_, err := Initialize([]byte("new-passphrase"), Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir,
 		Paths:   paths,
 	})
@@ -261,7 +261,7 @@ func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Initialize([]byte("init-passphrase"), Options{
+	_, err := Initialize([]byte("init-passphrase"), Options{ValidateCandidate: acceptCandidate,
 		DataDir: dataDir, Paths: paths,
 	})
 	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
@@ -279,4 +279,19 @@ func fileOwnershipForTest(t *testing.T, info os.FileInfo) (uint32, uint32) {
 		t.Skip("ownership metadata unavailable")
 	}
 	return stat.Uid, stat.Gid
+}
+
+// acceptCandidate stands in for storevalidate.FirstGeneration, which these
+// mechanics tests cannot import without a cycle; it covers the semantics.
+func acceptCandidate(FirstGenerationCandidate) error { return nil }
+
+func TestInitializeRequiresCandidateValidation(t *testing.T) {
+	root := t.TempDir()
+	paths := storepaths.NewPaths(root)
+	if _, err := Initialize([]byte("initialize-passphrase"), Options{DataDir: root, Paths: paths}); err == nil {
+		t.Fatal("Initialize() without ValidateCandidate succeeded")
+	}
+	if _, err := os.Stat(paths.StoreRootPath()); !os.IsNotExist(err) {
+		t.Fatalf("refused Initialize() created a store root: %v", err)
+	}
 }
