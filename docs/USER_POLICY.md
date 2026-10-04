@@ -221,6 +221,14 @@ Cosigner policy never produces review verdicts: there is no `review_above`, no
 `on_no_route` (an unmatched movement, close-out, or clawback is always
 rejected), and no operator setting.
 
+Cosigner policy is evaluated one request at a time and keeps no history. A
+route's `limits` cap each transaction, not a total over time, and nothing
+limits how many allowed transactions are signed. If the signer side is
+compromised, it can repeat allowed transfers as often as it likes. A route to a
+short list of `destinations` you control bounds where funds can go; a route
+that allows any destination with only a per-transaction limit does not bound
+total loss. Prefer explicit destinations for cosigner routes.
+
 Limits are keyed by network, then by asset:
 
 ```json

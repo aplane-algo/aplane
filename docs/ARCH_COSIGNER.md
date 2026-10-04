@@ -461,6 +461,16 @@ policy. Current cosigner policy is transaction-focused and DSA-agnostic: it
 examines decoded transaction details and transfer movements, not which DSA
 mechanism produced the user component signature.
 
+Cosigner policy is stateless. Each `/sign/component` request is judged on its
+own transaction facts; the cosigner keeps no record of earlier signatures, so
+route `limits` are per-transaction and there is no cumulative or velocity limit
+(no spend window per period, no count of signed transactions). A compromised
+signer side holding the user key and the cosigner token can therefore repeat
+any allowed transfer without bound. Routes restricted to explicit destinations
+bound where value can go; a route with wildcard destinations and only a
+per-transaction limit does not bound total loss. A spend window would need
+durable, replay-safe cosigner state and is not part of v1.
+
 Cosigner transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
 shapes that cannot be represented as supported cosigner movements fail closed.
