@@ -316,12 +316,6 @@ func (m Model) renderKeyListView() string {
 		}
 	}
 
-	// If there's a pending signing request, show indicator
-	if m.signing.request != nil {
-		sb.WriteString("\n")
-		sb.WriteString(statusLockedStyle.Render("! Signing request pending - press any key to view"))
-	}
-
 	return sb.String()
 }
 

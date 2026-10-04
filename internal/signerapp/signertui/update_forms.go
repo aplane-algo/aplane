@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -49,8 +50,8 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backup.exportPassphrase = ""
 		m.backup.confirmPassphrase = ""
 		m.backup.confirmError = ""
-		m.viewState = ViewBackingUp
-		return m, tea.Batch(m.sendBackupCmd(passphrase), m.waitForMessageCmd())
+		id := m.beginOperation(ViewBackingUp)
+		return m, tea.Batch(m.sendBackupCmd(passphrase, id), m.waitForMessageCmd())
 	case "backspace":
 		if m.backup.confirmFocus == 0 {
 			if len(m.backup.exportPassphrase) > 0 {
@@ -262,8 +263,8 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.
 func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
-	submitFn := func(keyType string, params map[string]string) tea.Cmd {
-		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params), m.waitForMessageCmd())
+	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
+		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id), m.waitForMessageCmd())
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
@@ -330,8 +331,8 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// For non-parameterized keys, generate immediately
 		m.forms.generateError = ""
-		m.viewState = ViewGenerating // Show loading state
-		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, ""), m.waitForMessageCmd())
+		id := m.beginOperation(ViewGenerating)
+		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, "", id), m.waitForMessageCmd())
 	}
 
 	return m, nil
@@ -374,8 +375,8 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewCosignerReferenceDetails
 		return m, nil
 	}
-	submitFn := func(keyType string, params map[string]string) tea.Cmd {
-		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params), m.waitForMessageCmd())
+	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
+		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params, id), m.waitForMessageCmd())
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == ViewGenerateForm {
@@ -390,7 +391,7 @@ func (m Model) handleParamModalKeys(
 	msg tea.KeyMsg,
 	keyTypeIndex int,
 	escView, submitView ViewState,
-	submitFn func(string, map[string]string) tea.Cmd,
+	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
 ) (Model, tea.Cmd, string) {
 	keyType := getKeyTypeByIndex(keyTypeIndex)
 	if escView == ViewImportForm {
@@ -406,11 +407,6 @@ func (m Model) handleParamModalKeys(
 	maxFocus := len(params)
 	if m.forms.generateFocus >= 0 && m.forms.generateFocus < len(params) {
 		param := params[m.forms.generateFocus]
-		if isContractAdminReferenceParam(param) && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 &&
-			(msg.Runes[0] == 'j' || msg.Runes[0] == 'k') {
-			m = m.appendToCurrentParam(string(msg.Runes), params)
-			return m, nil, ""
-		}
 		if m.isCosignerSelectorParam(keyType, param) {
 			switch msg.String() {
 			case "enter", " ":
@@ -424,6 +420,13 @@ func (m Model) handleParamModalKeys(
 				}
 			}
 		}
+	}
+	if input, ok := paramTextInput(msg, m.forms.generateFocus, params); ok {
+		if !isASCIIText(input) {
+			return m, nil, errParamNonASCII
+		}
+		m = m.appendToCurrentParam(input, params)
+		return m, nil, ""
 	}
 
 	switch msg.String() {
@@ -518,16 +521,8 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "enter", " ":
-		if msg.String() == " " && m.forms.generateFocus < len(params) && isContractAdminReferenceParam(params[m.forms.generateFocus]) {
-			m = m.appendToCurrentParam(" ", params)
-			return m, nil, ""
-		}
 		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			if msg.String() == "enter" {
-				m = m.appendToCurrentParam("\n", params)
-			} else {
-				m = m.appendToCurrentParam(" ", params)
-			}
+			m = m.appendToCurrentParam("\n", params)
 			return m, nil, ""
 		}
 		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
@@ -543,8 +538,8 @@ func (m Model) handleParamModalKeys(
 			if err := spec.Validate(transformedParams); err != nil {
 				return m, nil, err.Error()
 			}
-			m.viewState = submitView
-			return m, submitFn(keyType, transformedParams), ""
+			id := m.beginOperation(submitView)
+			return m, submitFn(keyType, transformedParams, id), ""
 		}
 		if m.forms.generateFocus < maxFocus {
 			m.forms.generateFocus++
@@ -599,11 +594,42 @@ func (m Model) handleParamModalKeys(
 			input = string(msg.Runes)
 		}
 		if len(input) > 0 && m.forms.generateFocus < len(params) {
+			if !isASCIIText(input) {
+				return m, nil, errParamNonASCII
+			}
 			m = m.appendToCurrentParam(input, params)
 		}
 	}
 
 	return m, nil, ""
+}
+
+const errParamNonASCII = "Parameters accept ASCII characters only"
+
+// paramTextInput returns the text a key types into the focused parameter when
+// that key would otherwise navigate. j, k, space, < and > move focus or cycle
+// choices elsewhere, but type into a free-text field. Choice fields and the
+// submit button keep the navigation meaning.
+func paramTextInput(msg tea.KeyMsg, focus int, params []lsigprovider.ParameterDef) (string, bool) {
+	if focus < 0 || focus >= len(params) || len(params[focus].Options) > 0 || msg.Paste {
+		return "", false
+	}
+	switch key := msg.String(); key {
+	case "j", "k", " ":
+		return key, true
+	case "<", ">":
+		return key, len(params[focus].InputModes) <= 1
+	}
+	return "", false
+}
+
+func isASCIIText(input string) bool {
+	for _, r := range input {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 // initGenericLSigParams initializes the parameter map for a generic LogicSig.
@@ -718,6 +744,10 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	}
 
 	for _, r := range input {
+		if r > unicode.MaxASCII {
+			// Never narrow a wider rune to the ASCII byte it happens to end in.
+			continue
+		}
 		char := byte(r)
 		allowed := false
 
@@ -924,13 +954,13 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Delete selected - send delete request
-		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
+		id := m.beginOperation(ViewDeleting)
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
 
 	case "y":
 		// Quick confirm delete
-		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
+		id := m.beginOperation(ViewDeleting)
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
 	}
 
 	return m, nil

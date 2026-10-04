@@ -238,6 +238,15 @@ func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
 	}
 }
 
+// emitUndecodable reports a signer message the TUI cannot decode. Dropping it
+// would leave a screen waiting for a result that never arrives.
+func (c *IPCClient) emitUndecodable(sessionID uint64, notification transport.Notification, err error) {
+	c.emit(sessionID, ErrorMsg{
+		ID:    notification.Base.ID,
+		Error: fmt.Errorf("cannot decode %s message from signer: %w", notification.Base.Type, err),
+	})
+}
+
 // forwardMessages receives dispatcher notifications/lifecycle events and
 // forwards them to the TUI while preserving reconnect/displacement semantics.
 func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, notifications <-chan transport.Notification, lifecycle <-chan transport.LifecycleEvent) {
@@ -297,6 +306,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeAuthResult:
 				var authResult AuthResultMessage
 				if err := json.Unmarshal(line, &authResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, AuthResultMsg{
@@ -308,6 +318,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeStatus:
 				var status StatusMessage
 				if err := json.Unmarshal(line, &status); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, SignerStatusMsg{
@@ -318,6 +329,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeUnlockResult:
 				var result UnlockResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, UnlockResultMsg{
@@ -330,6 +342,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeLockIdentityResult:
 				var result LockIdentityResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, LockIdentityResultMsg{
@@ -340,6 +353,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeSignRequest:
 				var req SignRequestMessage
 				if err := json.Unmarshal(line, &req); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, SignRequestReceivedMsg{
@@ -358,6 +372,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeSignRequestCanceled:
 				var canceled SignRequestCanceledMessage
 				if err := json.Unmarshal(line, &canceled); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, SignRequestCanceledMsg{
@@ -368,6 +383,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeError:
 				var errMsg ErrorMessage
 				if err := json.Unmarshal(line, &errMsg); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, ErrorMsg{ID: errMsg.ID, Error: fmt.Errorf("%s", errMsg.Error)})
@@ -375,6 +391,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeKeysList:
 				var keysList KeysListMessage
 				if err := json.Unmarshal(line, &keysList); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				keys := make([]KeyInfo, 0, len(keysList.Keys))
@@ -391,6 +408,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeGenerateResult:
 				var genResult GenerateResultMessage
 				if err := json.Unmarshal(line, &genResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, GenerateResultMsg{
@@ -403,6 +421,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeBackupResult:
 				var backupResult BackupResultMessage
 				if err := json.Unmarshal(line, &backupResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, BackupResultMsg{
@@ -414,6 +433,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeBackupsList:
 				var backupsList BackupsListMessage
 				if err := json.Unmarshal(line, &backupsList); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, BackupsListMsg{
@@ -424,6 +444,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeRestorePreview:
 				var preview RestorePreviewMessage
 				if err := json.Unmarshal(line, &preview); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, RestorePreviewMsg{
@@ -436,6 +457,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeRestoreBackupResult:
 				var restored RestoreBackupResultMessage
 				if err := json.Unmarshal(line, &restored); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, RestoreBackupResultMsg{Result: restored})
@@ -443,6 +465,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeRollbackRestoreResult:
 				var result RollbackRestoreResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, RollbackRestoreResultMsg{Result: result})
@@ -450,6 +473,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeReconcileStoreResult:
 				var result ReconcileStoreResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, ReconcileStoreResultMsg{Result: result})
@@ -457,6 +481,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeDeleteResult:
 				var delResult DeleteResultMessage
 				if err := json.Unmarshal(line, &delResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, DeleteResultMsg{
@@ -467,6 +492,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeRevokeTokenResult:
 				var revokeResult RevokeTokenResultMessage
 				if err := json.Unmarshal(line, &revokeResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, RevokeTokenResultMsg{
@@ -477,6 +503,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeImportResult:
 				var impResult ImportResultMessage
 				if err := json.Unmarshal(line, &impResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, ImportResultMsg{
@@ -489,6 +516,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeKeyDetails:
 				var detailsResult KeyDetailsMessage
 				if err := json.Unmarshal(line, &detailsResult); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, KeyDetailsMsg{
@@ -506,6 +534,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeLibraryTemplates:
 				var library LibraryTemplatesMessage
 				if err := json.Unmarshal(line, &library); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, LibraryTemplatesMsg{
@@ -516,6 +545,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeInstallLibraryTemplateResult:
 				var result InstallLibraryTemplateResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, InstallLibraryTemplateResultMsg{
@@ -529,6 +559,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeShowLibraryTemplateResult:
 				var result ShowLibraryTemplateResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, ShowLibraryTemplateResultMsg{
@@ -545,6 +576,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeActivateKeyTypeResult:
 				var result ActivateKeyTypeResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, ActivateKeyTypeResultMsg{
@@ -557,6 +589,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeDeactivateKeyTypeResult:
 				var result DeactivateKeyTypeResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, DeactivateKeyTypeResultMsg{
@@ -569,6 +602,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeKeyTypes:
 				var keyTypes KeyTypesMessage
 				if err := json.Unmarshal(line, &keyTypes); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, KeyTypesMsg{
@@ -579,6 +613,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeCosignerReferencesList:
 				var references CosignerReferencesListMessage
 				if err := json.Unmarshal(line, &references); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, CosignerReferencesMsg{
@@ -589,6 +624,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeImportCosignerReferenceResult:
 				var result ImportCosignerReferenceResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, CosignerImportResultMsg{
@@ -600,6 +636,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeRemoveCosignerReferenceResult:
 				var result RemoveCosignerReferenceResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, CosignerRemoveResultMsg{
@@ -612,6 +649,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeExportCosignerPublicResult:
 				var result ExportCosignerPublicResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, CosignerExportResultMsg{
@@ -624,6 +662,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeKeysChanged:
 				var keysChanged KeysChangedMessage
 				if err := json.Unmarshal(line, &keysChanged); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, KeysChangedMsg{
@@ -640,6 +679,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeTokenProvisioningRequest:
 				var req TokenProvisioningRequestMessage
 				if err := json.Unmarshal(line, &req); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, TokenProvisioningRequestReceivedMsg{
@@ -654,6 +694,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypePolicy:
 				var policyMsg PolicyMessage
 				if err := json.Unmarshal(line, &policyMsg); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, PolicyLoadedMsg{Policy: policyMsg})
@@ -661,6 +702,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypePolicyDocument:
 				var documentMsg PolicyDocumentMessage
 				if err := json.Unmarshal(line, &documentMsg); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, PolicyDocumentLoadedMsg{Document: documentMsg})
@@ -668,6 +710,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeCheckPolicyResult:
 				var result CheckPolicyResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, PolicyCheckResultMsg{Result: result})
@@ -675,6 +718,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeApplyPolicyResult:
 				var result ApplyPolicyResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, PolicyApplyResultMsg{Result: result})
@@ -682,6 +726,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeAdminSettings:
 				var settings AdminSettingsMessage
 				if err := json.Unmarshal(line, &settings); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, AdminSettingsMsg{
@@ -707,6 +752,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeUpdateAdminSettingResult:
 				var result UpdateAdminSettingResultMessage
 				if err := json.Unmarshal(line, &result); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.emit(sessionID, AdminSettingUpdatedMsg{
@@ -722,6 +768,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			case MsgTypeDisplaced:
 				var displaced DisplacedMessage
 				if err := json.Unmarshal(line, &displaced); err != nil {
+					c.emitUndecodable(sessionID, notification, err)
 					continue
 				}
 				c.mu.Lock()
@@ -843,6 +890,20 @@ func ipcCmd(client *IPCClient, fn func(*IPCClient) error) tea.Cmd {
 	}
 }
 
+// operationCmd is ipcCmd for a request an in-progress screen waits on: a send
+// failure carries the request's ID so it fails that operation.
+func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return ErrorMsg{ID: id, Error: fmt.Errorf("not connected")}
+		}
+		if err := fn(client); err != nil {
+			return ErrorMsg{ID: id, Error: err}
+		}
+		return nil
+	}
+}
+
 // SendAuthCmd returns a tea.Cmd that sends an authentication request
 func (m Model) sendAuthCmd(passphrase string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendAuth(passphrase) })
@@ -912,11 +973,11 @@ func (c *IPCClient) SendListKeys() error {
 }
 
 // SendGenerateKey sends a request to generate a new key
-func (c *IPCClient) SendGenerateKey(keyType, name string) error {
+func (c *IPCClient) SendGenerateKey(keyType, name string, id string) error {
 	msg := GenerateKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeGenerateKey,
-			ID:   fmt.Sprintf("gen-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 		Name:    name,
@@ -925,11 +986,11 @@ func (c *IPCClient) SendGenerateKey(keyType, name string) error {
 }
 
 // SendBackup requests signer-managed creation of a backup archive.
-func (c *IPCClient) SendBackup(exportPassphrase string) error {
+func (c *IPCClient) SendBackup(exportPassphrase string, id string) error {
 	msg := BackupMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeBackup,
-			ID:   fmt.Sprintf("backup-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		ExportPassphrase: SensitiveBytes([]byte(exportPassphrase)),
 	}
@@ -999,11 +1060,11 @@ func (c *IPCClient) SendReconcileStore() error {
 
 // SendGenerateKeyWithParams sends a request to generate a new key with parameters
 // Used for generic LogicSigs like timelock that require additional configuration
-func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string) error {
+func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string, id string) error {
 	msg := GenerateKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeGenerateKey,
-			ID:   fmt.Sprintf("gen-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:    keyType,
 		Name:       name,
@@ -1013,11 +1074,11 @@ func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[s
 }
 
 // SendDeleteKey sends a request to delete a key
-func (c *IPCClient) SendDeleteKey(address string) error {
+func (c *IPCClient) SendDeleteKey(address string, id string) error {
 	msg := DeleteKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeDeleteKey,
-			ID:   fmt.Sprintf("del-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		Address: address,
 	}
@@ -1030,12 +1091,12 @@ func (m Model) sendListKeysCmd() tea.Cmd {
 }
 
 // SendGenerateKeyCmd returns a tea.Cmd that sends a generate key request
-func (m Model) sendGenerateKeyCmd(keyType, name string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name) })
+func (m Model) sendGenerateKeyCmd(keyType, name, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name, id) })
 }
 
-func (m Model) sendBackupCmd(exportPassphrase string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendBackup(exportPassphrase) })
+func (m Model) sendBackupCmd(exportPassphrase, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendBackup(exportPassphrase, id) })
 }
 
 func (m Model) sendListBackupsCmd() tea.Cmd {
@@ -1087,13 +1148,13 @@ func (m Model) sendReconcileStoreCmd() tea.Cmd {
 }
 
 // SendGenerateKeyWithParamsCmd returns a tea.Cmd that sends a generate key request with parameters
-func (m Model) sendGenerateKeyWithParamsCmd(keyType, name string, params map[string]string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGenerateKeyWithParams(keyType, name, params) })
+func (m Model) sendGenerateKeyWithParamsCmd(keyType, name string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKeyWithParams(keyType, name, params, id) })
 }
 
 // SendDeleteKeyCmd returns a tea.Cmd that sends a delete key request
-func (m Model) sendDeleteKeyCmd(address string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendDeleteKey(address) })
+func (m Model) sendDeleteKeyCmd(address, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeleteKey(address, id) })
 }
 
 // SendRevokeToken sends a request to revoke and regenerate the API token
@@ -1126,11 +1187,11 @@ func (c *IPCClient) SendImportKey(keyType, mnemonic string) error {
 }
 
 // SendImportKeyWithParams sends a request to import a key with additional parameters.
-func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string) error {
+func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string, id string) error {
 	msg := ImportKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeImportKey,
-			ID:   fmt.Sprintf("imp-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:    keyType,
 		Mnemonic:   mnemonic,
@@ -1145,8 +1206,8 @@ func (m Model) sendImportKeyCmd(keyType, mnemonic string) tea.Cmd {
 }
 
 // SendImportKeyWithParamsCmd returns a tea.Cmd that sends an import key request with parameters.
-func (m Model) sendImportKeyWithParamsCmd(keyType, mnemonic string, params map[string]string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, params) })
+func (m Model) sendImportKeyWithParamsCmd(keyType, mnemonic string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, params, id) })
 }
 
 // SendGetAdminSettings sends a request to get the current admin settings
@@ -1214,11 +1275,11 @@ func (m Model) sendListLibraryTemplatesCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListLibraryTemplates() })
 }
 
-func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string) error {
+func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string, id string) error {
 	msg := InstallLibraryTemplateMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeInstallLibraryTemplate,
-			ID:   fmt.Sprintf("tmpl-install-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:      keyType,
 		TemplateType: templateType,
@@ -1226,8 +1287,8 @@ func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string) err
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType) })
+func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType, id) })
 }
 
 func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType string) error {
@@ -1246,34 +1307,34 @@ func (m Model) sendShowLibraryTemplateCmd(keyType, templateType string) tea.Cmd 
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendShowLibraryTemplate(keyType, templateType) })
 }
 
-func (c *IPCClient) SendActivateKeyType(keyType string) error {
+func (c *IPCClient) SendActivateKeyType(keyType string, id string) error {
 	msg := ActivateKeyTypeMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeActivateKeyType,
-			ID:   fmt.Sprintf("keytype-activate-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendActivateKeyTypeCmd(keyType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendActivateKeyType(keyType) })
+func (m Model) sendActivateKeyTypeCmd(keyType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendActivateKeyType(keyType, id) })
 }
 
-func (c *IPCClient) SendDeactivateKeyType(keyType string) error {
+func (c *IPCClient) SendDeactivateKeyType(keyType string, id string) error {
 	msg := DeactivateKeyTypeMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeDeactivateKeyType,
-			ID:   fmt.Sprintf("keytype-deactivate-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendDeactivateKeyTypeCmd(keyType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendDeactivateKeyType(keyType) })
+func (m Model) sendDeactivateKeyTypeCmd(keyType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeactivateKeyType(keyType, id) })
 }
 
 func (c *IPCClient) SendListKeyTypes() error {

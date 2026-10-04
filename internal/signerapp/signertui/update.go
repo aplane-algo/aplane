@@ -58,8 +58,24 @@ func (m *Model) setTransientWarning(warning string) tea.Cmd {
 	return clearWarningTickCmd(m.lastWarningGeneration)
 }
 
-// Update handles all TUI events and messages
+// Update handles all TUI events and messages. A pending approval popup stays
+// in front of whatever screen a message selects.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	preferred := m.viewState
+	if _, isKey := msg.(tea.KeyMsg); !isKey && isApprovalView(m.viewState) {
+		// Background messages apply to the screen under the popup, so
+		// handlers that act on the current screen see the one the operator
+		// left.
+		m.viewState = m.screenUnderApproval()
+	}
+	next, cmd := m.update(msg)
+	if got, ok := next.(Model); ok {
+		return got.keepApprovalOnTop(preferred), cmd
+	}
+	return next, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		var activityCmd tea.Cmd
@@ -76,7 +92,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.standalone {
 			m.height--
 		}
-		if m.viewState == ViewSigningPopup {
+		if m.signing.request != nil {
 			m.resizeSigningViewport()
 		}
 		return m, nil
@@ -93,6 +109,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
 		m.clearRestorePassphrase()
+		m.clearPendingApprovals()
 		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.viewState = ViewAuth
@@ -125,6 +142,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DisconnectedMsg:
 		m.clearRestorePassphrase()
+		m.clearPendingApprovals()
 		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
@@ -136,6 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case localIdleDisconnectedMsg:
 		m.clearRestorePassphrase()
+		m.clearPendingApprovals()
 		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.manualLock.pending = false
@@ -210,7 +229,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SignRequestReceivedMsg:
 		m.signing.request = &msg.Request
 		m.signing.focus = 1 // Default to reject button (safety-first)
-		m.viewState = ViewSigningPopup
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())
 		// Continue listening for messages
@@ -220,7 +238,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var warningCmd tea.Cmd
 		if m.signing.request != nil && m.signing.request.ID == msg.ID {
 			m.signing.request = nil
-			m.viewState = ViewKeyList
 			warningCmd = m.setTransientWarning(signRequestCanceledWarning(msg.Reason))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
@@ -228,7 +245,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TokenProvisioningRequestReceivedMsg:
 		m.tokenApproval.request = &msg.Request
 		m.tokenApproval.focus = 1 // Default to reject button (safety-first)
-		m.viewState = ViewTokenProvisioningPopup
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
 
@@ -272,6 +288,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
+		if next, ok := m.failOperationInProgress(msg.ID, msg.Error); ok {
+			return next, next.waitForMessageCmd()
+		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
 			m.restore.previewing = false
@@ -300,6 +319,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ReconnectingMsg:
 		m.clearRestorePassphrase()
+		m.clearPendingApprovals()
 		m.clearCosignerWorkflowState()
 		m.resetActivityState()
 		m.connectionState = ConnectionConnecting
@@ -516,6 +536,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
+		m.clearPendingApprovals()
 		m.resetActivityState()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
@@ -1122,4 +1143,59 @@ func isSeriousUnlockError(code, message string) bool {
 		strings.Contains(text, "reload pre-scan hook failed") ||
 		strings.Contains(text, "policy integrity") ||
 		strings.Contains(text, "hmac mismatch")
+}
+
+// pendingOperation is the request an in-progress screen waits on.
+type pendingOperation struct {
+	id   string
+	view ViewState
+}
+
+// beginOperation shows a progress screen for a new request and returns the
+// request's ID, which the request must carry.
+func (m *Model) beginOperation(view ViewState) string {
+	prefix := map[ViewState]string{
+		ViewGenerating: "gen", ViewImporting: "imp", ViewDeleting: "del",
+		ViewTemplateInstalling: "keytype", ViewBackingUp: "backup",
+	}[view]
+	id := newRequestID(prefix)
+	m.operation = pendingOperation{id: id, view: view}
+	m.viewState = view
+	return id
+}
+
+// failOperationInProgress returns an untyped failure (an authorization
+// denial, an undecodable result, a send error) to the screen an in-progress
+// operation started from, as that operation's own failure result would. A
+// progress screen ignores Esc, so staying on it would strand the operator. id
+// must name the operation's request: an error for any other request, such as
+// a background refresh, leaves the operation waiting for its own result.
+func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
+	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+		return m, false
+	}
+	m.operation = pendingOperation{}
+	switch m.viewState {
+	case ViewGenerating:
+		m.forms.generateError = err.Error()
+		m.viewState = ViewGenerateForm
+		if m.forms.genericLSigParams != nil {
+			m.viewState = ViewGenerateParams
+		}
+	case ViewImporting:
+		m.forms.importError = err.Error()
+		m.viewState = ViewImportParams
+	case ViewDeleting:
+		m.lastError = err.Error()
+		m.viewState = ViewDeleteConfirm
+	case ViewTemplateInstalling:
+		m.library.installError = err.Error()
+		m.viewState = ViewTemplateInstallConfirm
+	case ViewBackingUp:
+		m.backup.confirmError = err.Error()
+		m.viewState = ViewBackupConfirm
+	default:
+		return m, false
+	}
+	return m, true
 }

@@ -371,9 +371,14 @@ func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 		t.Fatalf("address[] scroll after down = %d, want %d", got, want)
 	}
 
+	// j types into the list; Tab leaves the field.
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if got := m.forms.genericLSigParams["recipients"]; !strings.HasSuffix(got, "addr8j") || m.forms.generateFocus != 0 {
+		t.Fatalf("after j: value %q focus %d, want j typed and focus kept", got, m.forms.generateFocus)
+	}
+	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	if got, want := m.forms.generateFocus, 1; got != want {
-		t.Fatalf("focus after j = %d, want %d", got, want)
+		t.Fatalf("focus after tab = %d, want %d", got, want)
 	}
 }
 
@@ -716,4 +721,56 @@ func keyRunes(s string) []tea.KeyMsg {
 		msgs = append(msgs, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	return msgs
+}
+
+func TestParamTextFieldsTypeNavigationCharacters(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "text-test-v1", DisplayName: "Text Test",
+		CreationParams: []protocol.TemplateParamInfo{
+			{Name: "label", Type: "string"},
+			{Name: "mode", Type: "select", Options: []string{"a", "b"}},
+		},
+	}})
+	m := Model{viewState: ViewGenerateParams, height: 60, forms: formsState{
+		genericLSigParams:     map[string]string{"label": "", "mode": "a"},
+		genericLSigParamOrder: []string{"label", "mode"},
+	}}
+	for _, r := range "jk <x>" {
+		m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := m.forms.genericLSigParams["label"]; got != "jk <x>" || m.forms.generateFocus != 0 {
+		t.Fatalf("label = %q focus %d, want every character typed and focus kept", got, m.forms.generateFocus)
+	}
+
+	// On a choice field, j still moves focus.
+	m.forms.generateFocus = 1
+	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.forms.generateFocus != 2 {
+		t.Fatalf("focus after j on a choice field = %d, want 2", m.forms.generateFocus)
+	}
+}
+
+// A non-ASCII rune must never be narrowed to the ASCII byte it ends in:
+// "1ĵ0" once became the amount "150".
+func TestParamFieldsRejectNonASCIIInput(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "amount-test-v1", DisplayName: "Amount Test",
+		CreationParams: []protocol.TemplateParamInfo{{Name: "limit", Type: "uint64"}},
+	}})
+	m := Model{viewState: ViewGenerateParams, height: 60, forms: formsState{
+		genericLSigParams:     map[string]string{"limit": "7"},
+		genericLSigParamOrder: []string{"limit"},
+	}}
+	next, _ := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1ĵ0"), Paste: true})
+	got := next.(Model)
+	if got.forms.genericLSigParams["limit"] != "7" || got.forms.generateError != errParamNonASCII {
+		t.Fatalf("limit = %q error %q, want the paste refused", got.forms.genericLSigParams["limit"], got.forms.generateError)
+	}
+
+	params := []lsigprovider.ParameterDef{{Name: "limit", Type: "uint64"}}
+	if v := m.appendToCurrentParam("1ĵ0", params).forms.genericLSigParams["limit"]; v != "710" {
+		t.Fatalf("appendToCurrentParam narrowed a non-ASCII rune: %q", v)
+	}
 }

@@ -134,7 +134,7 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 	apply.file = filepath.Base(path)
 	apply.err = ""
 	apply.busy = "Checking policy..."
-	apply.pendingCheckID = newPolicyRequestID("policy-check")
+	apply.pendingCheckID = newRequestID("policy-check")
 	return m, tea.Batch(m.sendCheckPolicyCmd(doc, apply.pendingCheckID), m.waitForMessageCmd())
 }
 
@@ -211,7 +211,7 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m.reviewPolicyApply(false, "")
 	}
 	apply.busy = "Loading active policy..."
-	apply.pendingDocumentID = newPolicyRequestID("policy-apply-doc")
+	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	key, id := apply.doc.Key, apply.pendingDocumentID
 	return m, tea.Batch(
 		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
@@ -271,7 +271,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return m, nil
 		}
 		apply.applying = true
-		apply.pendingApplyID = newPolicyRequestID("policy-apply")
+		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, tea.Batch(
 			m.sendApplyPolicyCmd(apply.doc, m.policies.policy.PolicySetSHA256, apply.pendingApplyID),
 			m.waitForMessageCmd(),

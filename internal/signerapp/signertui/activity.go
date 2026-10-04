@@ -57,6 +57,7 @@ func (m *Model) resetActivityState() {
 
 func (m *Model) applySignerLockedState() {
 	m.clearRestorePassphrase()
+	m.clearPendingApprovals()
 	m.manualLock.pending = false
 	m.manualLock.focus = 0
 	m.manualLock.returnView = ViewKeyList

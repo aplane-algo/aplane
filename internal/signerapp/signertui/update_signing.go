@@ -24,7 +24,7 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.signing.focus, requestID,
 		func(m Model, id string, approved bool) (Model, tea.Cmd) {
 			m.signing.request = nil
-			m.viewState = ViewKeyList
+			m.viewState = m.screenUnderApproval()
 			return m, m.sendSignResponse(id, approved)
 		})
 	m.signing.focus = focus

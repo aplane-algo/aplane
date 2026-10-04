@@ -24,7 +24,7 @@ func (m Model) handleTokenProvisioningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.
 				m.viewState = ViewStoreRecovery
 				return m, tea.Batch(m.sendTokenProvisioningResponse(id, approved), m.waitForMessageCmd())
 			}
-			m.viewState = ViewKeyList
+			m.viewState = m.screenUnderApproval()
 			return m, m.sendTokenProvisioningResponse(id, approved)
 		})
 	m.tokenApproval.focus = focus

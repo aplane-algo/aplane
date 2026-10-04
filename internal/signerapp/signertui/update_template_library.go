@@ -128,9 +128,9 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 			return m, nil
 		}
 		tmpl := *m.library.pendingTemplate
-		m.viewState = ViewTemplateInstalling
+		id := m.beginOperation(ViewTemplateInstalling)
 		return m, tea.Batch(
-			m.libraryActionCmd(tmpl),
+			m.libraryActionCmd(tmpl, id),
 			m.waitForMessageCmd(),
 		)
 
@@ -141,9 +141,9 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 			return m, nil
 		}
 		tmpl := *m.library.pendingTemplate
-		m.viewState = ViewTemplateInstalling
+		id := m.beginOperation(ViewTemplateInstalling)
 		return m, tea.Batch(
-			m.libraryActionCmd(tmpl),
+			m.libraryActionCmd(tmpl, id),
 			m.waitForMessageCmd(),
 		)
 	}
@@ -151,20 +151,20 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 	return m, nil
 }
 
-func (m Model) libraryActionCmd(tmpl LibraryTemplateInfo) tea.Cmd {
+func (m Model) libraryActionCmd(tmpl LibraryTemplateInfo, id string) tea.Cmd {
 	if isCompiledProviderLibraryEntry(tmpl) {
 		if tmpl.Installed {
-			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType)
+			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType, id)
 		}
-		return m.sendActivateKeyTypeCmd(tmpl.KeyType)
+		return m.sendActivateKeyTypeCmd(tmpl.KeyType, id)
 	}
 	if tmpl.Installed {
 		if tmpl.Enabled {
-			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType)
+			return m.sendDeactivateKeyTypeCmd(tmpl.KeyType, id)
 		}
-		return m.sendActivateKeyTypeCmd(tmpl.KeyType)
+		return m.sendActivateKeyTypeCmd(tmpl.KeyType, id)
 	}
-	return m.sendInstallLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType)
+	return m.sendInstallLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType, id)
 }
 
 func (m Model) ensureTemplateVisible() Model {
