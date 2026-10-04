@@ -82,13 +82,16 @@ Root-changing operations repeat a fresh exact root read under the store
 mutation lock. A cached runtime generation or serialized root is never commit
 authority.
 
-Reload binds whatever the authenticated root selects, even when that
-generation then fails validation, so a failed reload after a commit never
-leaves the runtime bound to the superseded, sealed generation. A root that no
+Reload binds whatever the authenticated root selects as its first step,
+before any validation or scan can fail, so a failed reload after a commit
+never leaves the runtime bound to the superseded, sealed generation. A root that no
 longer authenticates clears the binding. Deleted-archive list and prune, which
 run in recovery, read and authenticate the root themselves rather than trust
 the cached binding. Every post-commit failure enters recovery before the
-store mutation lock is released.
+store mutation lock is released, and every in-place writer (key generate,
+import, and delete; template and key-type changes) rechecks under the lock
+that the runtime is still unlocked, so a request queued behind a failed
+commit cannot resume into the superseded generation.
 
 ## Generation manifest and seal
 

@@ -111,6 +111,9 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	// Authenticate a fresh exact root read once per scan, so every reload
 	// after a root commit rebuilds against the newly selected generation.
 	selected, selectErr := genstore.AuthenticateStoreRootSelection(f.paths, keyring)
+	if selectErr != nil {
+		selectErr = fmt.Errorf("authenticate store root selection: %w", selectErr)
+	}
 	var report *keys.KeyScanReport
 	var err error
 	switch {
@@ -173,6 +176,26 @@ func (f *FileKeyStore) ClearKeys() {
 	}
 	f.active = nil
 	f.cacheLock.Unlock()
+}
+
+// BindStoreRootSelection binds the keystore to the generation store-root.enc
+// selects now, authenticated with the held keyring and not yet validated. A
+// reload calls it before any step that can fail, so a failure after a root
+// commit never leaves the store bound to the superseded, sealed generation. A
+// root that no longer authenticates clears the binding.
+func (f *FileKeyStore) BindStoreRootSelection() error {
+	f.cacheLock.Lock()
+	defer f.cacheLock.Unlock()
+	if f.keyring == nil {
+		return fmt.Errorf("store is not unlocked: %w", ErrStoreLocked)
+	}
+	selected, err := genstore.AuthenticateStoreRootSelection(f.paths, f.keyring)
+	if err != nil {
+		f.active = nil
+		return fmt.Errorf("authenticate store root selection: %w", err)
+	}
+	f.active = &selected
+	return nil
 }
 
 // ActivePaths returns the generation authenticated by the most recent atomic
