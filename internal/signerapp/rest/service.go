@@ -28,6 +28,7 @@ type Dependencies struct {
 	EncodeTxnHex        func(types.Transaction) string
 	KeyAdmin            keyadmin.Service
 	GenerateGenericLSig keyadmin.GenerateGenericLSigFunc
+	StoreHealth         *StoreHealthCache // optional; bounds the health endpoint's store inspection
 }
 
 type Service struct {

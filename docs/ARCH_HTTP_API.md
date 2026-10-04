@@ -79,10 +79,20 @@ meaning.
 
 Timeout behavior:
 
-- `apsigner` sets HTTP `ReadHeaderTimeout` to 10 seconds, `ReadTimeout` to 30
+- `apsigner` sets HTTP `ReadHeaderTimeout` to 5 seconds, `ReadTimeout` to 30
   seconds, `IdleTimeout` to 120 seconds, and `WriteTimeout` to
   `MaxApprovalWait + 2m` so a valid manual approval wait can complete before
   the server write deadline.
+- The REST listener accepts at most 64 concurrent connections; further
+  connections wait in the kernel accept queue until one closes. Request
+  headers are limited to 64 KiB (`431 Request Header Fields Too Large`
+  beyond that). Both bound what unauthenticated loopback clients can make the
+  signer allocate; `mlockall` keeps that memory resident.
+- Only authenticated requests keep their connection alive. Every response to
+  an unauthenticated request (`/health`, authentication failures, unknown
+  routes) carries `Connection: close`, so an unauthenticated client holds a
+  connection slot for at most one request and its header timeout and cannot
+  keep every slot busy with keep-alive requests.
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations 60 seconds, `/plan` 60 seconds,
@@ -478,7 +488,10 @@ neither is accepted as a separate creation input.
 - `ready_for_signing`
 - `ssh_enabled`
 - `ipc_enabled`
-- `warnings`: optional persistent operator-facing health warnings
+- `warnings`: optional persistent operator-facing health warnings. `/health`
+  is unauthenticated, so its warnings omit error detail such as store paths
+  (the authenticated `/status` warnings keep it), and the store inspection
+  behind them is reused for 5 seconds.
 
 ## HTTP Status Mapping
 

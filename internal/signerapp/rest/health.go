@@ -5,6 +5,7 @@ package rest
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -33,7 +34,7 @@ func (s Service) Health(ir *productruntime.Runtime, sshEnabled, ipcEnabled bool)
 		ReadyForSigning: readyForSigning,
 		SSHEnabled:      sshEnabled,
 		IPCEnabled:      ipcEnabled,
-		Warnings:        storeHealthWarnings(ir),
+		Warnings:        s.publicStoreHealthWarnings(ir),
 	}
 }
 
@@ -70,6 +71,68 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 	}
 }
 
+// storeHealthCacheTTL bounds how often the unauthenticated health endpoint
+// inspects the store: it lists and stats every deleted-archive member.
+const storeHealthCacheTTL = 5 * time.Second
+
+// StoreHealthCache reuses the health endpoint's store inspection for
+// storeHealthCacheTTL per active generation.
+type StoreHealthCache struct {
+	mu            sync.Mutex
+	now           func() time.Time // tests may replace the clock
+	generationDir string
+	checkedAt     time.Time
+	warnings      []string
+}
+
+func (c *StoreHealthCache) get(generationDir string, compute func() []string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	if c.now != nil {
+		now = c.now()
+	}
+	if c.generationDir == generationDir && !c.checkedAt.IsZero() && now.Sub(c.checkedAt) < storeHealthCacheTTL {
+		return c.warnings
+	}
+	c.generationDir, c.checkedAt, c.warnings = generationDir, now, compute()
+	return c.warnings
+}
+
+// publicStoreHealthWarnings is the unauthenticated form of the store
+// warnings: cached, and without error detail such as store paths, which the
+// authenticated /status response carries.
+func (s Service) publicStoreHealthWarnings(ir *productruntime.Runtime) []string {
+	if ir == nil {
+		return nil
+	}
+	active, err := ir.ActivePaths()
+	if err != nil {
+		return nil
+	}
+	compute := func() []string {
+		usage, err := genstore.InspectDeletedArchive(active)
+		if err != nil {
+			return []string{"deleted archive health check failed; authenticated /status has details"}
+		}
+		return deletedArchiveWarnings(usage)
+	}
+	if s.Deps.StoreHealth == nil {
+		return compute()
+	}
+	return s.Deps.StoreHealth.get(active.Dir(), compute)
+}
+
+func deletedArchiveWarnings(usage genstore.DeletedArchiveUsage) []string {
+	if usage.Warning() {
+		return []string{fmt.Sprintf(
+			"deleted archive emergency reserve is consumed (%d entries, %d encoded bytes); authenticated prune is required",
+			usage.Entries, usage.EncodedBytes,
+		)}
+	}
+	return nil
+}
+
 func storeHealthWarnings(ir *productruntime.Runtime) []string {
 	if ir == nil {
 		return nil
@@ -82,11 +145,5 @@ func storeHealthWarnings(ir *productruntime.Runtime) []string {
 	if err != nil {
 		return []string{fmt.Sprintf("deleted archive health check failed: %v", err)}
 	}
-	if usage.Warning() {
-		return []string{fmt.Sprintf(
-			"deleted archive emergency reserve is consumed (%d entries, %d encoded bytes); authenticated prune is required",
-			usage.Entries, usage.EncodedBytes,
-		)}
-	}
-	return nil
+	return deletedArchiveWarnings(usage)
 }

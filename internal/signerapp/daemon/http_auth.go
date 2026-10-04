@@ -62,6 +62,8 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 			}
 		}
 
+		// An authenticated client may keep its connection alive.
+		w.Header().Del("Connection")
 		next(w, r.WithContext(authCtx))
 	}
 }
