@@ -132,7 +132,9 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	// Capture TEAL source if DSA supports it
 	var tealSource string
 	if tg, ok := dsa.(logicsigdsa.TEALGenerator); ok {
-		tealSource, _ = tg.GenerateTEAL(pub, params)
+		if tealSource, err = tg.GenerateTEAL(pub, params); err != nil {
+			return nil, fmt.Errorf("failed to generate TEAL source: %w", err)
+		}
 	}
 
 	var signingArgs []keys.StoredSigningArg

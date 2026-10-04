@@ -739,3 +739,36 @@ func mustCredentialContextForTest(t *testing.T, path string) crypto.ObjectContex
 	}
 	return ctx
 }
+
+type tealFailureTestDSA struct{ testFalcon1024V1 }
+
+func (*tealFailureTestDSA) KeyType() string       { return "test.generator-teal-failure.v1" }
+func (*tealFailureTestDSA) RoutingFamily() string { return "generator-teal-failure" }
+func (*tealFailureTestDSA) GenerateTEAL([]byte, map[string]string) (string, error) {
+	return "", fmt.Errorf("template render failed")
+}
+
+// A DSA that cannot render its TEAL source fails key generation instead of
+// saving a key whose details show no TEAL.
+func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	const keyType = "test.generator-teal-failure.v1"
+	logicsigdsa.Register(&tealFailureTestDSA{})
+	generator := NewLogicSigGenerator("generator-teal-failure", map[string]LogicSigKeygenOps{keyType: &testFalcon1024V1{}})
+	seed := make([]byte, 64)
+	for i := range seed {
+		seed[i] = byte(i + 7)
+	}
+	_, err := generator.GenerateFromSeed(context.Background(), paths, seed, cryptotest.Keyring(t, testMasterKey), keyType, nil)
+	if err == nil || !strings.Contains(err.Error(), "template render failed") {
+		t.Fatalf("GenerateFromSeed() error = %v, want the TEAL generation failure", err)
+	}
+	active, resolveErr := genstore.ResolveActive(paths)
+	if resolveErr != nil {
+		t.Fatal(resolveErr)
+	}
+	if entries, _ := os.ReadDir(active.KeysDir()); len(entries) != 0 {
+		t.Fatalf("failed generation saved %d key file(s)", len(entries))
+	}
+}

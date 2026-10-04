@@ -761,6 +761,9 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	dirs := []string{ir.keyPaths.ProductDir()}
 	if active, err := ir.ActivePaths(); err == nil {
 		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
+	} else {
+		fmt.Printf("⚠️  Warning: cannot watch the active generation's keys: %v\n", err)
+		fmt.Println("Only store-root replacement will trigger a key reload")
 	}
 
 	// The reload callback either reloads (if unlocked) or marks dirty (if locked)

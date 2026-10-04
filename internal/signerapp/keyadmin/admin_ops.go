@@ -29,17 +29,18 @@ func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
 	keysSnapshot, _ := ir.KeySnapshot()
 	keysList := make([]ListKeyInfo, 0, len(keysSnapshot))
 
+	// Every listed key was validated when the generation loaded, so a key that
+	// no longer reads is an integrity failure to report, not an unknown type.
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		for addr, keyFile := range keysSnapshot {
-			keyType := "unknown"
-			var templateProvenanceStatus, templateProvenanceNote string
-			if info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk); err == nil {
-				keyType = info.Type
-				templateProvenanceStatus, templateProvenanceNote = lsigprovider.CompareTemplateFingerprint(keyType, info.TemplateFingerprint)
+			info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk)
+			if err != nil {
+				return fmt.Errorf("read key %s: %w", addr, err)
 			}
+			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
 			keysList = append(keysList, ListKeyInfo{
 				Address:                  addr,
-				KeyType:                  keyType,
+				KeyType:                  info.Type,
 				TemplateProvenanceStatus: templateProvenanceStatus,
 				TemplateProvenanceNote:   templateProvenanceNote,
 			})
@@ -64,20 +65,20 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found"}
 	}
 
-	result := &KeyDetailsResult{
-		Address: address,
-		KeyType: "unknown",
-	}
+	result := &KeyDetailsResult{Address: address}
 	err = ir.WithKeyring(func(mk *crypto.Keyring) error {
 		info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk)
-		if err == nil {
-			result.KeyType = info.Type
-			if witness.IsKeyType(info.Type) {
-				result.PublicKeyHex = info.PublicKeyHex
-			}
-			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
-			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
-			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk)
+		if err != nil {
+			return fmt.Errorf("read key %s: %w", address, err)
+		}
+		result.KeyType = info.Type
+		if witness.IsKeyType(info.Type) {
+			result.PublicKeyHex = info.PublicKeyHex
+		}
+		result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
+		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
+		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
+			return fmt.Errorf("read TEAL for key %s: %w", address, err)
 		}
 		return nil
 	})
