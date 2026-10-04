@@ -144,3 +144,45 @@ func TestAuthFailureSummaryIsWrittenWithoutClose(t *testing.T) {
 	}
 	t.Fatal("suppressed failures were not summarized on the timer")
 }
+
+// Close waits for a timer-driven summary that is already being written, so
+// the suppressed count is never lost to a concurrent shutdown.
+func TestCloseKeepsInFlightAuthFailureSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.authFailures.summaryAfter = time.Hour // only the explicit flush below runs
+	for j := 0; j < authFailureBurst+1; j++ {
+		a.LogAuthFailed("127.0.0.1:1", "invalid_credentials")
+	}
+	writing := make(chan struct{})
+	release := make(chan struct{})
+	a.authFailures.beforeSummary = func() {
+		close(writing)
+		<-release
+	}
+	flushed := make(chan struct{})
+	go func() {
+		a.flushAuthFailureSummary()
+		close(flushed)
+	}()
+	<-writing
+
+	closed := make(chan error, 1)
+	go func() { closed <- a.Close() }()
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned (%v) while a summary was being written", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-flushed
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if got := countEvents(readAuditEntries(t, path), AuditAuthFailuresSuppressed); got != 1 {
+		t.Fatalf("summary entries = %d, want 1", got)
+	}
+}

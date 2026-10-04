@@ -133,6 +133,7 @@ type authFailureLimiter struct {
 	mu              sync.Mutex
 	now             func() time.Time // tests may replace the clock
 	summaryAfter    time.Duration    // tests may shorten authFailureSummaryInterval
+	beforeSummary   func()           // test hook: runs after the count is taken, before it is written
 	tokens          int
 	refilledAt      time.Time
 	suppressed      int
@@ -513,19 +514,25 @@ func (a *AuditLogger) admitAuthFailure() bool {
 }
 
 // flushAuthFailureSummary records how many failures were suppressed since
-// the first one that was not logged individually.
+// the first one that was not logged individually. It holds the limiter lock
+// through the write, so Close, which flushes under the same lock, cannot
+// close the file while a timer-driven summary is still being written. Lock
+// order is limiter, then file (a.mu), as in every other path.
 func (a *AuditLogger) flushAuthFailureSummary() {
 	l := &a.authFailures
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	count, since := l.suppressed, l.suppressedSince
 	l.suppressed = 0
 	if l.summary != nil {
 		l.summary.Stop()
 		l.summary = nil
 	}
-	l.mu.Unlock()
 	if count == 0 {
 		return
+	}
+	if l.beforeSummary != nil {
+		l.beforeSummary()
 	}
 	a.Log(AuditEntry{
 		Event:           AuditAuthFailuresSuppressed,

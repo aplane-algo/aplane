@@ -79,7 +79,7 @@ meaning.
 
 Timeout behavior:
 
-- `apsigner` sets HTTP `ReadHeaderTimeout` to 10 seconds, `ReadTimeout` to 30
+- `apsigner` sets HTTP `ReadHeaderTimeout` to 5 seconds, `ReadTimeout` to 30
   seconds, `IdleTimeout` to 120 seconds, and `WriteTimeout` to
   `MaxApprovalWait + 2m` so a valid manual approval wait can complete before
   the server write deadline.
@@ -88,6 +88,11 @@ Timeout behavior:
   headers are limited to 64 KiB (`431 Request Header Fields Too Large`
   beyond that). Both bound what unauthenticated loopback clients can make the
   signer allocate; `mlockall` keeps that memory resident.
+- Only authenticated requests keep their connection alive. Every response to
+  an unauthenticated request (`/health`, authentication failures, unknown
+  routes) carries `Connection: close`, so an unauthenticated client holds a
+  connection slot for at most one request and its header timeout and cannot
+  keep every slot busy with keep-alive requests.
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations 60 seconds, `/plan` 60 seconds,

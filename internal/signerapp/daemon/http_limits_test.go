@@ -119,3 +119,57 @@ func TestHTTPServerRefusesOversizedHeaders(t *testing.T) {
 		t.Fatalf("status = %d, want 431", resp.StatusCode)
 	}
 }
+
+// An unauthenticated client cannot hold a connection slot with keep-alive
+// requests: the server closes its connection after the response, so an
+// authenticated client waiting for the slot is served.
+func TestUnauthenticatedKeepAliveDoesNotHoldConnectionSlot(t *testing.T) {
+	server, cleanup := newAuthTestSigner(t)
+	defer cleanup()
+	srv := buildHTTPServer(server, 0)
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve(newLimitListener(inner, 1)) }()
+	defer func() { _ = srv.Close() }()
+	addr := inner.Addr().String()
+
+	// Take the only slot with a keep-alive /health request and keep the
+	// connection open.
+	squatter, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = squatter.Close() }()
+	_ = squatter.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := fmt.Fprint(squatter, "GET /health HTTP/1.1\r\nHost: x\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(squatter), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if !resp.Close {
+		t.Fatal("unauthenticated response kept the connection alive")
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "aplane test-token")
+	authed, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("authenticated request while an unauthenticated client held the slot: %v", err)
+	}
+	_ = authed.Body.Close()
+	if authed.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated status = %d, want 200", authed.StatusCode)
+	}
+	if authed.Close {
+		t.Fatal("authenticated response closed the connection")
+	}
+}
