@@ -72,7 +72,7 @@ This split is a hard dependency boundary, not only a startup preference:
   compatibility-bearing metadata, not signer execution.
 - LogicSig private-key execution is wired through explicit signer-side handles
   such as `internal/signing.LogicSigSignerOps`,
-  `lsig/falcon1024/keygen.LogicSigKeygenOps`, and provider `signerops`
+  `lsig/dsafamily/signerreg.LogicSigKeygenOps`, and provider `signerops`
   packages.
 
 Client-only binaries can therefore render key-type and LogicSig metadata

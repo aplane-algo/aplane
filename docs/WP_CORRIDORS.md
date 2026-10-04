@@ -299,11 +299,13 @@ through supported, audited tooling.
 
 ### 5.2 What gate rules express
 
-Movement authorization by sender, receiver, asset, and amount; deny rules;
-network scoping; and per-guard-key overrides — approved classes, active
+Movement authorization by sender, receiver, asset, and amount; blocked
+destinations and amount ceilings; network scoping; and a separate,
+self-contained rule set for each guard key — approved classes, active
 assets, and compliance gating expressed as gate rules rather than as
-on-chain state anywhere. Updating gate rules is an authenticated policy edit
-on the cosigner node; it takes effect on the next signing request with no on-chain
+on-chain state anywhere. Updating gate rules means applying a new policy
+document for that guard key on the cosigner node through an authenticated
+admin command; it takes effect on the next signing request with no on-chain
 transaction and no effect on any account's program. Gate rules can narrow
 which traffic passes through a corridor; they can never authorize travel
 where no corridor exists.

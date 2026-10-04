@@ -961,7 +961,7 @@ execution, output decoding, environment filtering, and validation.
       keys/*.wit.json       # derived public witness reference; not private authority
       keytypes/<key_type>.json      # key type state record
       keytypes/<key_type>.template  # encrypted key type template
-      deleted/keys/*.{key,sen}
+      deleted/keys/*.{key,cos}
       deleted/keytypes/<key_type>.template
       deleted/policies/<WitnessKeyID>.json[.hmac]  # cosigner: policy archived with its key
       node.yaml.hmac

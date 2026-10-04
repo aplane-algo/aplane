@@ -459,9 +459,9 @@ Always Approve verdict.
 For cosigner, routing is the positive authorization surface. A cosigner
 component request is eligible to sign only when all evaluated target
 transactions are supported transfer shapes, every extracted target movement is
-covered by a matching route, no route or transaction guard produces a deny
-verdict, and the effective cosigner routing block contains no
-review-producing behavior. In other words: for client signing, routing is a
+covered by a matching route, and no route or transaction guard produces a deny
+verdict. The key's document cannot express review-producing behavior, so a
+cosigner route outcome is always sign or reject. In other words: for client signing, routing is a
 guardrail; for cosigner, routing is an allow-list.
 
 Always Deny and deterministic transaction guards run before cosigner
@@ -495,8 +495,9 @@ Routing's shape is deliberately conservative:
 - For cosigner, it is an allow-list: every target movement must be covered
   by a matching route, and any deny verdict rejects the request.
 - It denies by absence rather than by general explicit deny routes. In v1,
-  operators grant allowed source/asset/destination paths and use `on_no_route`
-  to decide what a miss means. The narrow exception is `blocked_destinations`,
+  operators grant allowed source/asset/destination paths. In the signer
+  document, `on_no_route` decides what a miss means; in a cosigner document,
+  every miss rejects. The narrow exception is `blocked_destinations`,
   a global concrete-address deny list that runs before route matching. This
   avoids source-scoped and route-local deny/allow precedence rules.
   `on_no_route: review` lets client signing send route misses to operator review.
@@ -600,14 +601,16 @@ when the transaction `GenesisHash` is unknown.
 
 After that check, routing resolves the transaction `GenesisHash` to a network
 token. If the hash cannot be resolved, routing emits
-`transfer_policy:unknown_genesis_hash` at the tier selected by `on_no_route`:
-Always Deny for `reject`, Always Review for `review`, and no routing verdict
-for `operator_default`.
+`transfer_policy:unknown_genesis_hash`. In the signer document its tier follows
+`on_no_route`: Always Deny for `reject`, Always Review for `review`, and no
+routing verdict for `operator_default`. In a cosigner document it is always
+Always Deny.
 
 Verdict production for each movement:
 
-1. Routing sits out when `transfer_policy` is absent, disabled, or the movement
-   is routing-exempt.
+1. Routing sits out when the signer document's `transfer_policy` is absent or
+   disabled, or the movement is routing-exempt. A cosigner document always
+   carries an enforced `transfer_policy`.
 2. If the movement kind is covered by `blocked_destinations` and the movement
    destination is blocked, Always Deny.
 3. Matching routes are collected by network, source, asset, destination, and,
@@ -615,6 +618,9 @@ Verdict production for each movement:
 4. If no route matches a close-out movement, apply `close_on_no_route`.
 5. If no route matches a clawback movement, apply `clawback_on_no_route`.
 6. If no route matches any other movement, apply `on_no_route`.
+
+   A cosigner document has none of these three fields; every miss in steps 4
+   to 6 is Always Deny.
 7. A close-out movement with matching routes is Always Deny unless at least one
    matching route has `allow_close:true`.
 8. A clawback movement with matching routes is Always Deny unless at least one
@@ -744,7 +750,7 @@ documents are written outside the node, reviewed with
 FILE...` (or `apadmin policy rescue check|apply` while the daemon is stopped).
 There is no policy editor in the node and no scalar policy-settings IPC.
 
-The admin protocol and `internal/signerapp/admin` expose three policy messages:
+The admin protocol and `internal/signerapp/admin` expose four policy messages:
 `get_policy`, `get_policy_document`, `check_policy`, and `apply_policy`. The
 node role decides which documents a request may carry; there is no target
 selector. `get_policy` returns a summary: each document's SHA-256, size, and
