@@ -28,6 +28,13 @@ type AuditRejectPolicyRuleLogger interface {
 	LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string)
 }
 
+// AuditCosignerRejectLogger records cosigner policy rejections under the
+// audit log's rate limit, so a caller provoking rejections cannot rotate the
+// record of what the cosigner signed out of the log.
+type AuditCosignerRejectLogger interface {
+	LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string)
+}
+
 type GenerateTxnDescriptionFromTxnFunc func(txn types.Transaction) string
 type KnownAddressesFunc func() map[string]bool
 type HasClientFunc func() bool

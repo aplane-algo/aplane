@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 const auditTransportHTTP = "http"
@@ -18,6 +19,7 @@ type signingAuditLogger struct {
 }
 
 var _ signingAudit = (*signingAuditLogger)(nil)
+var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
 
 func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	attr := auditAttribution{
@@ -75,6 +77,13 @@ func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSende
 		return
 	}
 	l.log.LogSignRejectedAttributedWithPolicyRule(l.attribution, authAddress, txnSender, reason, policyRuleID)
+}
+
+func (l *signingAuditLogger) LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string) {
+	if l == nil || l.log == nil {
+		return
+	}
+	l.log.LogCosignerComponentRejectedAttributed(l.attribution, witnessKeyID, txnSender, reason, policyRuleID)
 }
 
 func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string) {

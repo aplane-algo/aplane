@@ -1622,3 +1622,44 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 		t.Fatal("keystore error passthrough: expected fail-closed error, got nil")
 	}
 }
+
+type limitedCosignerAuditLogger struct {
+	testAuditLogger
+	limited []testAuditEntry
+}
+
+func (l *limitedCosignerAuditLogger) LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string) {
+	l.limited = append(l.limited, testAuditEntry{authAddress: witnessKeyID, txnSender: txnSender, reason: reason, policyRule: policyRuleID})
+}
+
+// Cosigner policy rejections go through the rate-limited audit path when the
+// audit log offers one, so a caller provoking rejections cannot rotate the
+// cosigner's signing record out of the log.
+func TestCosignerPolicyRejectionUsesLimitedAuditPath(t *testing.T) {
+	source := types.Address{28}.String()
+	dest := types.Address{29}.String()
+	txn := testnetPaymentTransaction(t, source, dest, 1)
+	txn.RekeyTo = types.Address{30}
+	audit := &limitedCosignerAuditLogger{}
+
+	_, err := (&Service{
+		CosignerPolicies: testCosignerPolicies(t, cosignerRoutePolicy(t, source, dest)),
+		HoldsCosignerKey: holdsAllCosignerKeys,
+		AuditLog:         audit,
+	}).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-limited-audit",
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(&componentKeyStore{}))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if len(audit.rejected) != 0 {
+		t.Fatalf("unlimited rejection entries = %#v, want none", audit.rejected)
+	}
+	if len(audit.limited) != 1 || audit.limited[0].policyRule != policy.CosignerRekeyRuleID || audit.limited[0].txnSender != source {
+		t.Fatalf("limited rejection entries = %#v, want one rekey rejection for %s", audit.limited, source)
+	}
+}

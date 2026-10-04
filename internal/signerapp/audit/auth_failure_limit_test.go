@@ -186,3 +186,52 @@ func TestCloseKeepsInFlightAuthFailureSummary(t *testing.T) {
 		t.Fatalf("summary entries = %d, want 1", got)
 	}
 }
+
+// A flood of cosigner policy rejections cannot rotate the record of what the
+// cosigner signed out of the log: rejections beyond the burst are summarized,
+// while signatures are always logged.
+func TestCosignerRejectionFloodIsSummarized(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_760_000_000, 0)
+	a.cosignerRejections.now = func() time.Time { return now }
+
+	a.LogSignApproved("WITNESS", "SENDER", "cosigner component signature target 0 signed")
+	const flood = 5_000
+	for i := 0; i < flood; i++ {
+		a.LogCosignerComponentRejectedAttributed(Attribution{}, "WITNESS", "SENDER", "cosigner_policy_rejected: no route", "cosigner_transfer_no_route")
+	}
+	for i := 0; i < authFailureBurst*2; i++ {
+		a.LogSignApproved("WITNESS", "SENDER", "cosigner component signature target 0 signed")
+	}
+	a.LogAuthFailed("127.0.0.1:1", "invalid_credentials")
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readAuditEntries(t, path)
+	if got := countEvents(entries, AuditSignApproved); got != 1+authFailureBurst*2 {
+		t.Fatalf("SIGN_APPROVED entries = %d, want every signature logged (%d)", got, 1+authFailureBurst*2)
+	}
+	if got := countEvents(entries, AuditSignRejected); got != authFailureBurst {
+		t.Fatalf("individual rejections = %d, want the burst of %d", got, authFailureBurst)
+	}
+	if got := countEvents(entries, AuditAuthFailed); got != 1 {
+		t.Fatalf("AUTH_FAILED entries = %d, want 1: the limiters are independent", got)
+	}
+	var summary *AuditEntry
+	for i := range entries {
+		if entries[i].Event == AuditCosignerRejectionsSuppressed {
+			if summary != nil {
+				t.Fatal("more than one cosigner rejection summary")
+			}
+			summary = &entries[i]
+		}
+	}
+	if summary == nil || summary.SuppressedCount != flood-authFailureBurst {
+		t.Fatalf("summary = %+v, want %d suppressed", summary, flood-authFailureBurst)
+	}
+}
