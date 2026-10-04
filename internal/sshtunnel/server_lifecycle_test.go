@@ -30,7 +30,6 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		CheckKey:         func(key ssh.PublicKey) bool { return true },
 		EnrollKey:        func(key ssh.PublicKey) error { return nil },
 	})
-	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {})
 
 	if srv.sessionCallback == nil ||
 		srv.tokenApprovalCallback == nil ||
@@ -39,8 +38,7 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		srv.operatorCheckCallback == nil ||
 		srv.tokenMAC == nil ||
 		srv.keyChecker == nil ||
-		srv.keyEnroller == nil ||
-		srv.adminChannelCallback == nil {
+		srv.keyEnroller == nil {
 		t.Fatal("expected all callback setters to apply before Start")
 	}
 }
@@ -258,10 +256,6 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 					EnrollKey:        func(key ssh.PublicKey) error { return nil },
 				})
 			},
-		},
-		{
-			name: "SetAdminChannelCallback",
-			call: func() { srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr string) {}) },
 		},
 	}
 

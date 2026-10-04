@@ -9,8 +9,7 @@ orchestration. The engine provides reusable transaction logic, cache-backed
 runtime state, signer connectivity, and network operations that can be shared
 across `apshell` REPL, MCP, scripting, and CLI one-shot flows. It is not the
 backend for `apadmin` or `apapprover`, which talk to `apsigner` over the admin
-protocol (`apadmin` over local IPC or SSH admin transport; `apapprover` over
-local IPC).
+protocol over local IPC.
 
 ## Design Philosophy
 

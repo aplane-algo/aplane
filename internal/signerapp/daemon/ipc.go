@@ -154,14 +154,8 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session
-	var ok bool
-	if transport == "ssh" {
-		ok = s.sessionManager().RegisterPending(session)
-		active = s.activeSession()
-	} else {
-		ok = s.sessionManager().RegisterPreAuthPending(session)
-		active = s.activeSession()
-	}
+	ok := s.sessionManager().RegisterPreAuthPending(session)
+	active = s.activeSession()
 	if !ok {
 		errMsg := protocol.ErrorMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError},

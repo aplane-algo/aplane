@@ -1,6 +1,6 @@
 # Admin Protocol Contract
 
-> Compatibility-bearing wire shapes for the apsigner admin RPC carried over local IPC and the SSH `aplane-admin` subsystem.
+> Compatibility-bearing wire shapes for the apsigner admin RPC carried over local IPC.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the principal/grant authorization model that gates these messages, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
@@ -14,7 +14,7 @@ Line-delimited JSON over the admin transport stream. Messages carry:
 - `type`
 - `id` for requests/responses
 
-This envelope applies to the IPC and SSH admin protocol only, not the HTTP API.
+This envelope applies to the IPC admin protocol only, not the HTTP API.
 `kind` is mandatory on admin-protocol messages; missing `kind` is a protocol error.
 
 ## Transport and Handshake
@@ -36,7 +36,7 @@ passphrase has been verified.
 
 Transport notes:
 
-- the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
+- the line-delimited JSON admin protocol is carried only over local IPC; SSH does not carry it,
 - local client discovery precedence is explicit `--ipc-path`, explicit `-d`
   discovery, `APSIGNER_IPC_PATH`, environment/profile-selected data-directory
   discovery, then the system runtime path; an inherited socket override cannot
@@ -327,9 +327,9 @@ checks and locked/unlocked/recovery-state interlocks.
 - `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted over IPC and SSH because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
-- `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC or SSH admin transport
-- `import_installed_template`: sensitive `template_yaml` -> `import_installed_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`; available through authenticated IPC or SSH admin transport
-- `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC or SSH admin transport
+- `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions
+- `import_installed_template`: sensitive `template_yaml` -> `import_installed_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`; available through authenticated IPC admin sessions
+- `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC admin sessions
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
 - `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `cosigner_component_key_type` so `apadmin` can filter enrolled public cosigner references for guarded-account generation without changing the public HTTP/SDK DTO

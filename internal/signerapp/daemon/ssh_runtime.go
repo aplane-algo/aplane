@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -77,10 +76,6 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		})
 	}
 
-	sshServer.SetAdminChannelCallback(func(channel gossh.Channel, remoteAddr string) {
-		logInfof("apadmin client connected via SSH from %s", remoteAddr)
-		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase")
-	})
 	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
 		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
 			return provisioning.ApproveContext(ctx, sshFingerprint, remoteAddr)

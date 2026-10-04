@@ -39,8 +39,7 @@ Credential types include:
 
 - HTTP API token from `identities/default/aplane.token`
 - admin passphrase over local IPC
-- SSH public key plus token for tunnel access
-- SSH public key plus token plus passphrase for the `aplane-admin` subsystem
+- SSH public key plus token for tunnel access to the HTTP API
 
 Credentials authenticate access. They are not themselves the authorization
 subject.
@@ -176,22 +175,13 @@ Admin disconnect cleanup applies the product runtime's `lock_on_disconnect`
 setting. Local admin idle timeout is enforced by `apadmin` as a disconnect,
 not by a signer-side activity grant.
 
-### SSH Admin Subsystem
+### No Remote Admin Transport
 
-Remote admin sessions add SSH transport authentication before the same admin
-protocol:
-
-```text
-SSH key + token for default
-  -> product runtime binding
-  -> admin passphrase
-  -> system:product-admin principal
-  -> auth.Authorizer
-  -> admin operation
-```
-
-The SSH layer authenticates the transport. The admin protocol
-authorizes the operation before sensitive work.
+The admin protocol is carried only over the local IPC socket. SSH carries
+port forwarding to the HTTP API and `request-token` enrollment; it refuses
+session channels, so no admin subsystem is reachable over SSH. Remote
+administration means logging in to the signer host and running `apadmin`
+there.
 
 Recovery-material operations are narrower than normal admin
 operations: `keys.import` is accepted only on local IPC admin sessions,
@@ -263,7 +253,7 @@ the single-product authorizer.
 Principal resolution maps authenticated credentials to authorization principals:
 
 ```text
-admin passphrase / SSH admin auth / product token
+admin passphrase / product token
   -> system:product-admin
 ```
 

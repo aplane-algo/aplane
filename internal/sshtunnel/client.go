@@ -66,33 +66,6 @@ func HostKeyApprovalTimeoutNotice() string {
 	return fmt.Sprintf("Timeout %.0f seconds", sshHandshakeTimeout.Seconds())
 }
 
-type subsystemStream struct {
-	channel ssh.Channel
-	client  *Client
-	once    sync.Once
-}
-
-func (s *subsystemStream) Read(p []byte) (int, error) {
-	return s.channel.Read(p)
-}
-
-func (s *subsystemStream) Write(p []byte) (int, error) {
-	return s.channel.Write(p)
-}
-
-func (s *subsystemStream) Close() error {
-	var err error
-	s.once.Do(func() {
-		if closeErr := s.channel.Close(); closeErr != nil {
-			err = closeErr
-		}
-		if closeErr := s.client.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-	})
-	return err
-}
-
 type keepaliveStopSignal struct {
 	ch   chan struct{}
 	once sync.Once
@@ -742,43 +715,6 @@ func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("invalid signer API port %d", remotePort)
 	}
 	return sshClient.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(remotePort)))
-}
-
-// OpenSubsystem opens a session channel and starts the named subsystem.
-// The client must already be connected.
-func (c *Client) OpenSubsystem(subsystem string) (io.ReadWriteCloser, error) {
-	c.mu.Lock()
-	sshClient := c.sshClient
-	connected := c.connected
-	c.mu.Unlock()
-
-	if !connected || sshClient == nil {
-		return nil, fmt.Errorf("not connected")
-	}
-
-	channel, requests, err := sshClient.OpenChannel("session", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open session channel: %w", err)
-	}
-
-	ok, err := channel.SendRequest("subsystem", true, ssh.Marshal(struct {
-		Name string
-	}{Name: subsystem}))
-	if err != nil {
-		_ = channel.Close()
-		return nil, fmt.Errorf("failed to request subsystem %q: %w", subsystem, err)
-	}
-	if !ok {
-		_ = channel.Close()
-		return nil, fmt.Errorf("remote server rejected subsystem %q", subsystem)
-	}
-
-	go ssh.DiscardRequests(requests)
-
-	return &subsystemStream{
-		channel: channel,
-		client:  c,
-	}, nil
 }
 
 // RequestToken connects to the SSH server and requests a token via the exec channel.
