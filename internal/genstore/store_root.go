@@ -69,6 +69,25 @@ func ResolveStoreRootWithKeyring(
 	paths storepaths.Paths,
 	kr *crypto.Keyring,
 ) (storepaths.GenPaths, error) {
+	gen, err := AuthenticateStoreRootSelection(paths, kr)
+	if err != nil {
+		return storepaths.GenPaths{}, err
+	}
+	if err := ValidateStoreRootSelection(gen); err != nil {
+		return storepaths.GenPaths{}, err
+	}
+	return gen, nil
+}
+
+// AuthenticateStoreRootSelection reads store-root.enc, authenticates it with
+// an open keyring, and returns the generation it selects without validating
+// that generation's content. A reload binds this selection even when the
+// generation then fails validation, so recovery never acts on a superseded
+// generation.
+func AuthenticateStoreRootSelection(
+	paths storepaths.Paths,
+	kr *crypto.Keyring,
+) (storepaths.GenPaths, error) {
 	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
 	if err != nil {
 		return storepaths.GenPaths{}, err
@@ -77,9 +96,11 @@ func ResolveStoreRootWithKeyring(
 	if err != nil {
 		return storepaths.GenPaths{}, fmt.Errorf("authenticate store root: %w", err)
 	}
-	gen := paths.GenerationPaths(selection.CurrentGenerationID)
-	if err := validateStoreRootSelectionTarget(gen); err != nil {
-		return storepaths.GenPaths{}, err
-	}
-	return gen, nil
+	return paths.GenerationPaths(selection.CurrentGenerationID), nil
+}
+
+// ValidateStoreRootSelection checks that a selected generation is a real,
+// structurally valid current generation.
+func ValidateStoreRootSelection(gen storepaths.GenPaths) error {
+	return validateStoreRootSelectionTarget(gen)
 }

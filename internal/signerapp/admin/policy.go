@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // GetPolicy returns the node's active policy documents.
@@ -38,26 +39,15 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 	ir := s.Runtime
 	var outcome policyapply.Outcome
 	err := s.Deps.WithStoreMutation(func() error {
-		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-			var err error
-			outcome, err = policyapply.Commit(s.policyEnv(kr), req)
-			return err
-		}); err != nil {
-			return err
+		err := s.commitAndReload(ir, req, &outcome)
+		// Enter recovery before releasing the mutation lock, as restore does.
+		// Until reload succeeds the runtime may still serve the superseded
+		// generation, so no key write or signing request may run in between.
+		if outcome.Uncertain {
+			ir.SetRecovery()
 		}
-		if outcome.GenerationID == "" {
-			return nil
-		}
-		if _, err := ir.Reload(); err != nil {
-			outcome.Uncertain = true
-			return policyapply.Error{Code: "policy_reload_failed", Msg: "policy committed as generation " +
-				outcome.GenerationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
-		}
-		return nil
+		return err
 	})
-	if outcome.Uncertain {
-		ir.SetRecovery()
-	}
 	if err != nil {
 		if errors.Is(err, keystore.ErrStoreLocked) {
 			return adminproto.ApplyPolicyResult{Code: "identity_locked", Error: "identity is locked; unlock the signer before applying policy"}
@@ -71,6 +61,28 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 	}
 	view := policyapply.View(ir.NodePolicy(), s.heldCosignerKeys(), outcome.GenerationID)
 	return adminproto.ApplyPolicyResult{Success: true, Policy: &view}
+}
+
+// commitAndReload commits the change and reloads the runtime from the
+// committed generation. outcome.Uncertain reports a commit that may have
+// landed without the runtime following it.
+func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.ApplyPolicyRequest, outcome *policyapply.Outcome) error {
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		var err error
+		*outcome, err = policyapply.Commit(s.policyEnv(kr), req)
+		return err
+	}); err != nil {
+		return err
+	}
+	if outcome.GenerationID == "" {
+		return nil
+	}
+	if _, err := ir.Reload(); err != nil {
+		outcome.Uncertain = true
+		return policyapply.Error{Code: "policy_reload_failed", Msg: "policy committed as generation " +
+			outcome.GenerationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
+	}
+	return nil
 }
 
 func (s Service) policyEnv(kr *crypto.Keyring) policyapply.Env {

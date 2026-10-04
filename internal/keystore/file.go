@@ -103,30 +103,51 @@ func (f *FileKeyStore) Scan(passphrase []byte) error {
 	// ClearKeys() from zeroing the terms mid-operation. This also closes the
 	// gap after Unlock returns.
 	f.cacheLock.RLock()
-	if f.keyring == nil {
+	keyring := f.keyring
+	if keyring == nil {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked after unlock")
 	}
-	// Resolve the active layout once per scan. Atomic stores authenticate a
-	// fresh exact root read while the keyring is held, so every reload after a
-	// root commit rebuilds the cache against the newly selected generation.
-	resolvedAtomic, resolveErr := genstore.ResolveStoreRootWithKeyring(f.paths, f.keyring)
-	if resolveErr != nil {
-		f.cacheLock.RUnlock()
-		return fmt.Errorf("failed to resolve active key store layout: %w", resolveErr)
+	// Authenticate a fresh exact root read once per scan, so every reload
+	// after a root commit rebuilds against the newly selected generation.
+	selected, selectErr := genstore.AuthenticateStoreRootSelection(f.paths, keyring)
+	var report *keys.KeyScanReport
+	var err error
+	switch {
+	case selectErr != nil:
+		err = fmt.Errorf("failed to resolve active key store layout: %w", selectErr)
+	default:
+		if validateErr := genstore.ValidateStoreRootSelection(selected); validateErr != nil {
+			err = fmt.Errorf("failed to resolve active key store layout: %w", validateErr)
+		} else if report, err = keys.ScanKeysDirectoryWithKeyringReportActive(selected, keyring); err != nil {
+			err = fmt.Errorf("failed to scan keys directory: %w", err)
+		}
 	}
-	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(resolvedAtomic, f.keyring)
 	f.cacheLock.RUnlock()
-	if err != nil {
-		return fmt.Errorf("failed to scan keys directory: %w", err)
-	}
 
 	f.cacheLock.Lock()
-	f.active = &resolvedAtomic
+	defer f.cacheLock.Unlock()
+	if f.keyring != keyring {
+		// Locked or re-unlocked meanwhile; that transition owns the binding.
+		if err == nil {
+			err = fmt.Errorf("keystore changed during scan: %w", ErrStoreLocked)
+		}
+		return err
+	}
+	// Bind what the authenticated root selects even when that generation
+	// then fails validation, as Unlock does: a failed reload must never leave
+	// the store bound to a superseded, sealed generation. A root that no
+	// longer authenticates leaves no authority to bind.
+	if selectErr != nil {
+		f.active = nil
+	} else {
+		f.active = &selected
+	}
+	if err != nil {
+		return err
+	}
 	f.cache = report.Keys
 	f.scanWarnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
-	f.cacheLock.Unlock()
-
 	return nil
 }
 
