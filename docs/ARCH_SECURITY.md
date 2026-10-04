@@ -403,8 +403,8 @@ New clients without a token can request one through the SSH tunnel using the `re
 - Token is transmitted over the encrypted SSH channel
 - Once provisioned, client can connect normally
 
-**Limits.** `request-token` accepts any client key, so the flow is reachable
-without credentials. It is bounded so that it cannot crowd out signing:
+**Limits.** `request-token` accepts any client key it has not seen before, so
+the flow is reachable without credentials. It is bounded so that it cannot crowd out signing:
 - At most one client access request is pending server-wide; a concurrent
   request is refused with a retry message
 - Each `request-token` connection may make one provisioning request, and the
@@ -412,6 +412,13 @@ without credentials. It is bounded so that it cannot crowd out signing:
 - A `request-token` connection that has not started provisioning within 30
   seconds is closed
 - At most 8 `request-token` connections are open at once
+- The client key must be Ed25519, ECDSA (P-256/384/521), a hardware-backed
+  `sk-` Ed25519/ECDSA key, or RSA of 3072-8192 bits. Other keys (DSA, short
+  or oversized RSA, certificates) are refused in the public-key callback,
+  before the signature is verified and before any prompt
+- Independent of the username, one remote IP may hold at most 8 of the 64
+  pending SSH handshake slots, so a single host cannot keep every slot busy
+  for the 60-second handshake timeout
 - Each `request-token` connection may have at most 2 open session channels;
   further channels are rejected before they are accepted
 - A client must accept the provisioning response within 10 seconds; a client
