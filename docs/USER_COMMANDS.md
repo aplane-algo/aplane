@@ -658,10 +658,10 @@ connect only when the selected endpoint is the default signer; cosigner
 access provisioning leaves the primary signer connection unchanged. For normal
 cosigner setup, use [cosigner add](#cosigner-add), which obtains access as part of setup.
 
-The client SSH key must be Ed25519, ECDSA (P-256/384/521), a hardware-backed
-`sk-` Ed25519/ECDSA key, or RSA of 3072-8192 bits. The default generated key
-is Ed25519. Other keys, including DSA and shorter RSA keys, fail
-authentication before any approval prompt.
+The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
+hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
+Ed25519. RSA and DSA keys fail SSH authentication, for `request-token` and
+`connect` alike, before any approval prompt.
 
 The positional one-off host form is no longer supported. Import or configure
 the endpoint first, then request its token:

@@ -814,7 +814,7 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	sshClient, err := dialWithContext(ctx, "tcp", addr, config)
 	if err != nil {
 		if strings.Contains(err.Error(), "unable to authenticate") {
-			return "", fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, enrollmentKeyRequirement)
+			return "", fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, clientKeyRequirement)
 		}
 		return "", fmt.Errorf("SSH connection failed: %w", err)
 	}

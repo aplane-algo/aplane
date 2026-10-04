@@ -56,8 +56,7 @@ func TestCheckEnrollmentKey(t *testing.T) {
 	}{
 		{"ed25519", edPub, true},
 		{"ecdsa-p256", &ecKey.PublicKey, true},
-		{"rsa-3072", rsaKey(3072), true},
-		{"rsa-2048", rsaKey(2048), false},
+		{"rsa-3072", rsaKey(3072), false},
 		{"dsa", typedKey("ssh-dss"), false},
 		{"certificate", typedKey(ssh.CertAlgoED25519v01), false},
 	} {
@@ -74,16 +73,25 @@ func TestCheckEnrollmentKey(t *testing.T) {
 	}
 }
 
-// A refused key fails request-token authentication, before any approval
-// prompt, and the client error names the accepted key types.
-func TestRequestTokenRefusesWeakKey(t *testing.T) {
+// An RSA key is refused by the algorithm allowlist, before the server parses
+// it, consults PublicKeyCallback, or verifies a signature. The allowlist check
+// precedes the query/signed split in the SSH library, so this also covers a
+// client that sends a signed request without a preliminary query, which the
+// Go client cannot be made to do.
+func TestRSAClientKeyRefusedBeforeVerification(t *testing.T) {
 	srv, _ := testServer(t)
 	prompted := false
+	consulted := false
+	callback := srv.sshConfig.PublicKeyCallback
+	srv.sshConfig.PublicKeyCallback = func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		consulted = true
+		return callback(conn, key)
+	}
 	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
 		ApproveContext: func(context.Context, string, string) (bool, error) { prompted = true; return false, nil },
 		Issue:          func() (string, error) { return "", nil },
 	})
-	weak, err := rsa.GenerateKey(rand.Reader, 2048)
+	weak, err := rsa.GenerateKey(rand.Reader, 3072)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,9 +106,9 @@ func TestRequestTokenRefusesWeakKey(t *testing.T) {
 		Timeout:         5 * time.Second,
 	})
 	if err == nil {
-		t.Fatal("request-token accepted a 2048-bit RSA key")
+		t.Fatal("request-token accepted an RSA key")
 	}
-	if prompted {
-		t.Fatal("a refused key reached the operator")
+	if consulted || prompted {
+		t.Fatalf("RSA key got past the algorithm allowlist (callback=%v, prompt=%v)", consulted, prompted)
 	}
 }

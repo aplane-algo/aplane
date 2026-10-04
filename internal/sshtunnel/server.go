@@ -342,6 +342,7 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
+		PublicKeyAuthAlgorithms:   clientKeyAlgorithms,
 		PublicKeyCallback:         server.handlePublicKeyAuth,
 		VerifiedPublicKeyCallback: server.handleVerifiedPublicKeyAuth,
 		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
@@ -646,9 +647,8 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 		return nil, fmt.Errorf("unsupported token provisioning username")
 	}
 
-	// Refuse unsuitable keys here, before SSH verifies the signature, so an
-	// unauthenticated client cannot enroll a weak key or make the server
-	// verify against an oversized one.
+	// clientKeyAlgorithms has already refused other key types before
+	// verification; this keeps enrollment to the same set.
 	if err := checkEnrollmentKey(key); err != nil {
 		fmt.Printf("[SSH] Token provisioning key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
 		return nil, err

@@ -412,10 +412,14 @@ the flow is reachable without credentials. It is bounded so that it cannot crowd
 - A `request-token` connection that has not started provisioning within 30
   seconds is closed
 - At most 8 `request-token` connections are open at once
-- The client key must be Ed25519, ECDSA (P-256/384/521), a hardware-backed
-  `sk-` Ed25519/ECDSA key, or RSA of 3072-8192 bits. Other keys (DSA, short
-  or oversized RSA, certificates) are refused in the public-key callback,
-  before the signature is verified and before any prompt
+- The client key must be Ed25519, ECDSA (P-256/384/521), or a
+  hardware-backed `sk-` Ed25519/ECDSA key. This applies to every SSH client,
+  not only `request-token`: the server's public-key algorithm list refuses
+  other keys (RSA, DSA, certificates) before the key is parsed or any
+  signature is verified. RSA is excluded because its verification cost grows
+  with a modulus size the client chooses, and a key refused only in the
+  public-key callback is still verified when the client sends a signed
+  request without a preliminary query
 - Independent of the username, one remote IP may hold at most 8 of the 64
   pending SSH handshake slots, so a single host cannot keep every slot busy
   for the 60-second handshake timeout
