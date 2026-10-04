@@ -163,15 +163,20 @@ resolved only by apshell.
 
 ## Admin Panel
 
-The admin panel is accessible from the key list via `a` and exposes live
+The admin panel (Settings) opens from the key list with `s` and exposes live
 signer settings and status:
 
 - `user_auto_approve`
 - `lock_on_disconnect`
 - `passphrase_timeout`
-- Signer-managed backup creation and managed backup restore
+- Color theme
+- Admin transport, node role, passphrase unlock method, and TEAL compile network
+- A `Policies` row that opens the policies view
 - SSH enabled state, port, fingerprint, and connected-client count
-- Signer port, TEAL compile network, and theme
+- Build information
+
+Backup creation and managed restore open directly from the key list with `b`
+and `r`.
 
 ## Policies View
 
@@ -188,7 +193,8 @@ sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
 Enter fetches that document with `get_policy_document` and opens a read-only
 scrollable view of its exact bytes; Esc returns.
 
-The TUI does not edit policy documents. `a` loads one policy file through the
+The TUI does not edit policy documents. In the policies view, `a` loads one
+policy file through the
 same steps as `apadmin policy apply FILE`
 (`internal/signerapp/signertui/policy_apply.go`):
 

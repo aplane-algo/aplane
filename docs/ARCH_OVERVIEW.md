@@ -371,10 +371,13 @@ The process owns one `productruntime.Runtime` signing-state aggregate containing
 - file watcher lifecycle
 - product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
 
-The on-disk namespace is rooted at `identities/default/`: keys live
-under `keys/`, encrypted templates and state records under `keytypes/`, deleted
-key/template/policy archives under `deleted/`, node-role policy at `policy.json`
-or `policies/`, and runtime configuration at `config.yaml`. HTTP authentication authorizes access
+The on-disk namespace is rooted at `identities/default/`. Runtime
+configuration lives at `config.yaml` there. Everything that changes through a
+generation commit lives under the selected `generations/<gen-id>/`: keys under
+`keys/`, encrypted templates and state records under `keytypes/`, deleted
+key/template/policy archives under `deleted/`, and node-role policy at
+`policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner
+nodes). `store-root.enc` selects the generation. HTTP authentication authorizes access
 to that one aggregate; admin sessions over IPC or the SSH `aplane-admin`
 subsystem bind to the same aggregate at authentication time. The aggregate has
 no runtime selector or registry.
