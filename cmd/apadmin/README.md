@@ -87,6 +87,10 @@ and `remove` deletes keys' documents. `apply` runs `check` first, prints
 warnings, stops on errors, and then applies against the current
 `policy_set_sha256`. Each apply commits a new generation.
 
+The TUI's Policies view (`p`, then `a`) loads one policy file through the same
+check, diff, and apply steps. It refuses a cosigner file for a key the node
+does not hold.
+
 `APSIGNER_DATA` can be used instead of `-d`; `--ipc-path` selects a socket
 explicitly. apadmin does not use `APCLIENT_DATA`, client tokens, or endpoint files.
 

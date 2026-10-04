@@ -649,8 +649,9 @@ IPC failure semantics:
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-The `apadmin` TUI has a read-only Policies view; the `apadmin policy` verbs
-(`status`, `export`, `check`, `apply`, `remove`) change policy. Policy reads,
+The `apadmin` TUI Policies view lists documents and can load one policy file
+through check, diff, and apply; it never edits a document. The `apadmin policy`
+verbs (`status`, `export`, `check`, `diff`, `apply`, `remove`) cover the full surface. Policy reads,
 validation, and mutation use exact v1 JSON documents through `get_policy`
 (summary), `get_policy_document`, `check_policy`, and `apply_policy`; there is no parallel scalar policy RPC
 surface.

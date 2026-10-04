@@ -653,21 +653,82 @@ YAML
 configure_cosigner_policy() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     # Each cosigner key has its own policy document; a key without one
-    # rejects every request. Apply it online once the key exists.
-    docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
-        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply --yes - <<'JSON'
+    # rejects every request. Apply it online once the key exists, exercising
+    # the apadmin policy verbs an operator uses along the way.
+    local script_file
+    script_file="$(mktemp)"
+    cat > "$script_file" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="$1"
+data="$2"
+policy="$(mktemp -d)/$key.json"
+
+fail() {
+    printf 'cosigner policy smoke: %s\n' "$*" >&2
+    exit 1
+}
+
+admin() {
+    apadmin -d "$data" "$@"
+}
+
+# Capture output before matching it: a matcher that exits early would break
+# the pipe and fail the command under pipefail.
+expect() {
+    local pattern="$1" what="$2" out
+    shift 2
+    out="$("$@")" || fail "$what: command failed"
+    grep -Eq -- "$pattern" <<<"$out" || fail "$what: output did not match '$pattern': $out"
+}
+
+cat > "$policy" <<JSON
 {
-  \"format\": \"aplane.cosigner-policy.v1\",
-  \"key\": \"$COSIGNER_COMPONENT_KEY\",
-  \"transfer_policy\": {
-    \"routes\": [
-      {\"id\": \"docker_smoke_allow_all\", \"networks\": [\"*\"], \"sources\": [\"*\"], \"assets\": [\"*\"], \"destinations\": [\"*\"]}
+  "format": "aplane.cosigner-policy.v1",
+  "key": "$key",
+  "transfer_policy": {
+    "routes": [
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
     ]
   }
 }
 JSON
-    "
+
+expect "^  $key +no policy" "status of a new key" admin policy status
+expect '^policy OK$' "check" admin policy check "$policy"
+expect 'new policy' "diff of a first policy" admin policy diff "$policy"
+
+# Without --yes and without a terminal, apply refuses and writes nothing.
+if admin policy apply "$policy" </dev/null >/dev/null 2>&1; then
+    fail "apply without --yes succeeded without a terminal"
+fi
+expect "^  $key +no policy" "status after a refused apply" admin policy status
+
+expect '^policy applied as generation ' "apply from a file" admin policy apply --yes "$policy"
+expect "^  $key +active" "status after apply" admin policy status
+admin policy export --key "$key" | cmp -s - "$policy" || fail "export is not the applied file"
+if admin policy export >/dev/null 2>&1; then
+    fail "export without --key succeeded on a cosigner node"
+fi
+expect '^policy unchanged$' "re-applying the active policy" admin policy apply --yes "$policy"
+
+# Removing the policy returns the key to rejecting every request; the stdin
+# form of apply restores it for the guarded transactions that follow.
+expect '^policy applied as generation ' "remove" admin policy remove --yes "$key"
+expect "^  $key +no policy" "status after remove" admin policy status
+out="$(admin policy apply --yes - < "$policy")" || fail "apply from stdin: command failed"
+grep -q '^policy applied as generation ' <<<"$out" || fail "apply from stdin: $out"
+expect "^  $key +active" "status after stdin apply" admin policy status
+admin policy export --key "$key" | cmp -s - "$policy" || fail "export after stdin apply is not the applied document"
+SCRIPT
+    docker cp "$script_file" "$COSIGNER_CONTAINER:/tmp/cosigner-policy-smoke.sh"
+    rm -f "$script_file"
+    docker_exec "$COSIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-policy-smoke.sh
+    docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
+        bash /tmp/cosigner-policy-smoke.sh '$COSIGNER_COMPONENT_KEY' /home/$TEST_USER/aplane/apsigner" \
+        || die "cosigner policy CLI checks failed"
 }
 
 verify_localnet_reachable_from_nodes() {
@@ -1790,7 +1851,7 @@ main() {
     log "Importing cosigner public reference through local IPC"
     enroll_cosigner_reference_to_signer
 
-    log "Applying the cosigner key's policy for guarded smoke transactions"
+    log "Checking apadmin policy verbs and applying the cosigner key's policy for guarded smoke transactions"
     configure_cosigner_policy
 
     # Local IPC export, import, and policy apply displace the node approval sessions.

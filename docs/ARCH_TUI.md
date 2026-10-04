@@ -155,7 +155,7 @@ signer settings and status:
 ## Policies View
 
 `p` on the key list or Settings, and the Settings `Policies` row, open a
-read-only list of the node's active policy documents, loaded with the
+list of the node's active policy documents, loaded with the
 `get_policy` admin message (`internal/signerapp/signertui/policy_view.go`):
 
 - signer nodes show one `policy.json` row,
@@ -165,9 +165,39 @@ read-only list of the node's active policy documents, loaded with the
 Each row with a document shows its size, SHA-256, and applied time from the
 sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
 Enter fetches that document with `get_policy_document` and opens a read-only
-scrollable view of its exact bytes; Esc returns. The TUI does not edit or apply policy. Changes go through the
-`apadmin policy` verbs (`status`, `export`, `check`, `diff`, `apply`, `remove`) online,
-or `apadmin policy rescue` while the daemon is stopped.
+scrollable view of its exact bytes; Esc returns.
+
+The TUI does not edit policy documents. `a` loads one policy file through the
+same steps as `apadmin policy apply FILE`
+(`internal/signerapp/signertui/policy_apply.go`):
+
+1. A path prompt reads the file with the shared reader in
+   `internal/signerapp/policyreview`. The read happens inside the event loop,
+   so the path must be a regular file: a symlink, FIFO, or device is refused
+   rather than opened. On a cosigner node the file's `"key"`
+   field selects the document. The TUI refuses a file for a Witness Key ID the
+   node does not hold, which the batch command only warns about; pre-staging a
+   policy for a key that is not yet held stays a batch operation.
+2. `check_policy` validates the exact bytes. Errors are shown on the prompt
+   and stop the load; warnings carry into the review.
+3. If the key has an active document, `get_policy_document` fetches it and
+   `policyreview` produces the same tightened/loosened/changed diff the batch
+   command prints. A file that decodes equal to the active document reports
+   `Policy unchanged` and cannot be applied.
+4. Only `y` confirms. `apply_policy` carries the `policy_set_sha256` from the
+   list as its concurrency base, so the daemon rejects the apply if the active
+   policy changed after the list was loaded. On success the list reloads and
+   shows the new generation ID; on failure the review shows the daemon's error
+   and must be left and restarted. A `commit_uncertain` result means the
+   daemon has entered recovery without sending a status message, so the TUI
+   opens the Store Recovery screen with the daemon's error.
+
+Request IDs tie each response to the pending step. An untyped failure such as
+an authorization denial releases the pending step only when its request ID
+names that step; an error for another request, such as a background key-list
+refresh, leaves the step waiting for its own response. A request that cannot
+be sent fails its own step the same way. `diff` without applying, `remove`, multi-file applies, and stdin
+remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
 
 ## Local Activity And Idle Locking
 

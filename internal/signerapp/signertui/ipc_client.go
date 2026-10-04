@@ -370,7 +370,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				if err := json.Unmarshal(line, &errMsg); err != nil {
 					continue
 				}
-				c.emit(sessionID, ErrorMsg{Error: fmt.Errorf("%s", errMsg.Error)})
+				c.emit(sessionID, ErrorMsg{ID: errMsg.ID, Error: fmt.Errorf("%s", errMsg.Error)})
 
 			case MsgTypeKeysList:
 				var keysList KeysListMessage
@@ -664,6 +664,20 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					continue
 				}
 				c.emit(sessionID, PolicyDocumentLoadedMsg{Document: documentMsg})
+
+			case MsgTypeCheckPolicyResult:
+				var result CheckPolicyResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, PolicyCheckResultMsg{Result: result})
+
+			case MsgTypeApplyPolicyResult:
+				var result ApplyPolicyResultMessage
+				if err := json.Unmarshal(line, &result); err != nil {
+					continue
+				}
+				c.emit(sessionID, PolicyApplyResultMsg{Result: result})
 
 			case MsgTypeAdminSettings:
 				var settings AdminSettingsMessage

@@ -4,24 +4,16 @@
 package policycmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"reflect"
 	"time"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 )
-
-// maxPolicyFileBytes bounds what a policy file read accepts; the node
-// rejects larger documents.
-const maxPolicyFileBytes = 1 << 20
 
 // ErrPolicyInvalid reports that check found errors; they have been printed.
 var ErrPolicyInvalid = errors.New("policy is invalid")
@@ -58,7 +50,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		docs, names, err := readDocuments(command.Args, view.NodeRole, streams.Stdin)
+		docs, names, err := policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin)
 		if err != nil {
 			return err
 		}
@@ -68,7 +60,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		docs, names, err := readDocuments(command.Args, view.NodeRole, streams.Stdin)
+		docs, names, err := policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin)
 		if err != nil {
 			return err
 		}
@@ -76,7 +68,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		printDiffs(streams.Stdout, diffs)
+		policyreview.PrintDiffs(streams.Stdout, diffs)
 		return nil
 	case VerbApply, VerbRemove:
 		view, err := getPolicy(ctx, backend)
@@ -86,7 +78,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		var req adminproto.ApplyPolicyRequest
 		names := map[string]string{}
 		if command.Verb == VerbApply {
-			if req.Documents, names, err = readDocuments(command.Args, view.NodeRole, streams.Stdin); err != nil {
+			if req.Documents, names, err = policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin); err != nil {
 				return err
 			}
 		} else {
@@ -102,11 +94,11 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		if unchanged(diffs) {
+		if policyreview.Unchanged(diffs) {
 			_, _ = fmt.Fprintln(streams.Stdout, "policy unchanged")
 			return nil
 		}
-		printDiffs(streams.Stdout, diffs)
+		policyreview.PrintDiffs(streams.Stdout, diffs)
 		if !command.Yes {
 			confirmed, err := ConfirmApply()
 			if err != nil {
@@ -122,7 +114,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 			return err
 		}
 		if !result.Success {
-			printProblems(streams.Stderr, "error", result.Errors, names)
+			policyreview.PrintProblems(streams.Stderr, "error", result.Errors, names)
 			return resultError(result.Code, result.Error)
 		}
 		if result.Policy == nil || result.Policy.GenerationID == "" {
@@ -158,8 +150,8 @@ func checkDocuments(ctx context.Context, backend Backend, streams Streams, req a
 	if !result.Success {
 		return resultError(result.Code, result.Error)
 	}
-	printProblems(streams.Stderr, "error", result.Errors, names)
-	printProblems(streams.Stderr, "warning", result.Warnings, names)
+	policyreview.PrintProblems(streams.Stderr, "error", result.Errors, names)
+	policyreview.PrintProblems(streams.Stderr, "warning", result.Warnings, names)
 	if !result.Valid {
 		return ErrPolicyInvalid
 	}
@@ -167,64 +159,6 @@ func checkDocuments(ctx context.Context, backend Backend, streams Streams, req a
 		_, _ = fmt.Fprintln(streams.Stdout, "policy OK")
 	}
 	return nil
-}
-
-// readDocuments reads policy files for the node's role. A signer node takes
-// one file; each cosigner file names its key in its "key" field. names maps a
-// document's key to the file it came from, for messages.
-func readDocuments(files []string, role string, stdin io.Reader) ([]adminproto.PolicyDocument, map[string]string, error) {
-	if role == "signer" && len(files) != 1 {
-		return nil, nil, fmt.Errorf("a signer node takes exactly one policy file")
-	}
-	docs := make([]adminproto.PolicyDocument, 0, len(files))
-	names := make(map[string]string, len(files))
-	for _, file := range files {
-		data, err := readPolicyFile(file, stdin)
-		if err != nil {
-			return nil, nil, err
-		}
-		doc := adminproto.PolicyDocument{Document: string(data)}
-		if role == "cosigner" {
-			var head struct {
-				Key string `json:"key"`
-			}
-			if err := json.Unmarshal(data, &head); err != nil || head.Key == "" {
-				return nil, nil, fmt.Errorf("%s: a cosigner policy file must be a JSON object with a \"key\" field", file)
-			}
-			doc.Key = head.Key
-		}
-		if other, dup := names[doc.Key]; dup {
-			return nil, nil, fmt.Errorf("%s and %s are both policies for %s", other, file, doc.Key)
-		}
-		names[doc.Key] = file
-		docs = append(docs, doc)
-	}
-	return docs, names, nil
-}
-
-func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
-	r := stdin
-	if file != "-" {
-		f, err := os.Open(file)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = f.Close() }()
-		r = f
-	}
-	data, err := io.ReadAll(io.LimitReader(r, maxPolicyFileBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", file, err)
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return nil, fmt.Errorf("%s is empty", file)
-	}
-	// JSON encoding would replace invalid UTF-8, so the node would not
-	// receive the file's exact bytes.
-	if !utf8.Valid(data) {
-		return nil, fmt.Errorf("%s is not valid UTF-8", file)
-	}
-	return data, nil
 }
 
 func printStatus(w io.Writer, view adminproto.PolicyView) {
@@ -261,22 +195,6 @@ func documentSummary(doc adminproto.PolicyDocumentInfo) string {
 	return summary
 }
 
-func printProblems(w io.Writer, label string, problems []adminproto.PolicyProblem, names map[string]string) {
-	for _, problem := range problems {
-		where := names[problem.Key]
-		if where == "" {
-			where = problem.Key
-		}
-		if problem.Pointer != "" {
-			where += " " + problem.Pointer
-		}
-		if where != "" {
-			where += ": "
-		}
-		_, _ = fmt.Fprintf(w, "%s: %s%s\n", label, where, problem.Message)
-	}
-}
-
 func resultError(code, msg string) error {
 	if msg == "" {
 		msg = "policy request failed"
@@ -287,18 +205,10 @@ func resultError(code, msg string) error {
 	return fmt.Errorf("%s (%s)", msg, code)
 }
 
-// documentDiff is the reviewed change to one policy document. identical
-// means the decoded documents are equal, so applying changes nothing.
-type documentDiff struct {
-	label     string
-	changes   []policy.PolicyChange
-	identical bool
-}
-
 // diffChange compares each submitted document, and each removal, with the
 // node's active document for the same key.
-func diffChange(ctx context.Context, backend Backend, role string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]documentDiff, error) {
-	var out []documentDiff
+func diffChange(ctx context.Context, backend Backend, role string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+	var out []policyreview.DocumentDiff
 	for _, doc := range docs {
 		current, err := backend.Document(ctx, doc.Key)
 		if err != nil {
@@ -308,11 +218,11 @@ func diffChange(ctx context.Context, backend Backend, role string, docs []adminp
 			return nil, resultError(current.Code, current.Error)
 		}
 		label := names[doc.Key]
-		changes, identical, err := diffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
+		changes, identical, err := policyreview.DiffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", label, err)
 		}
-		out = append(out, documentDiff{label: label, changes: changes, identical: identical})
+		out = append(out, policyreview.DocumentDiff{Label: label, Changes: changes, Identical: identical})
 	}
 	for _, key := range remove {
 		current, err := backend.Document(ctx, key)
@@ -326,77 +236,7 @@ func diffChange(ctx context.Context, backend Backend, role string, docs []adminp
 		if err != nil {
 			return nil, fmt.Errorf("active policy for %s: %w", key, err)
 		}
-		out = append(out, documentDiff{label: key, changes: policy.DiffCosignerPolicyV1(previous, nil)})
+		out = append(out, policyreview.DocumentDiff{Label: key, Changes: policy.DiffCosignerPolicyV1(previous, nil)})
 	}
 	return out, nil
-}
-
-func diffDocument(role, key string, hasCurrent bool, current, next string) ([]policy.PolicyChange, bool, error) {
-	if role == "cosigner" {
-		nextDoc, err := policy.DecodeCosignerPolicyV1([]byte(next), key)
-		if err != nil {
-			return nil, false, err
-		}
-		if !hasCurrent {
-			return policy.DiffCosignerPolicyV1(nil, nextDoc), false, nil
-		}
-		currentDoc, err := policy.DecodeCosignerPolicyV1([]byte(current), key)
-		if err != nil {
-			return nil, false, fmt.Errorf("active policy: %w", err)
-		}
-		return policy.DiffCosignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
-	}
-	nextDoc, err := policy.DecodeSignerPolicyV1([]byte(next))
-	if err != nil {
-		return nil, false, err
-	}
-	if !hasCurrent {
-		return nil, false, fmt.Errorf("the node has no active signer policy")
-	}
-	currentDoc, err := policy.DecodeSignerPolicyV1([]byte(current))
-	if err != nil {
-		return nil, false, fmt.Errorf("active policy: %w", err)
-	}
-	return policy.DiffSignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
-}
-
-// unchanged reports whether applying would change no document: every
-// submitted document decodes equal to the active one and nothing is removed.
-func unchanged(diffs []documentDiff) bool {
-	for _, d := range diffs {
-		if !d.identical {
-			return false
-		}
-	}
-	return true
-}
-
-func printDiffs(w io.Writer, diffs []documentDiff) {
-	total, loosened := 0, 0
-	for _, d := range diffs {
-		if len(d.changes) == 0 {
-			if d.identical {
-				_, _ = fmt.Fprintf(w, "%s: no changes\n", d.label)
-			} else {
-				_, _ = fmt.Fprintf(w, "%s: no change to what the policy allows; the document differs only in order\n", d.label)
-			}
-			continue
-		}
-		_, _ = fmt.Fprintf(w, "%s:\n", d.label)
-		for _, c := range d.changes {
-			_, _ = fmt.Fprintf(w, "  %-9s  %s: %s\n", c.Effect, c.Path, c.Summary)
-			total++
-			if c.Effect == policy.PolicyChangeLoosened {
-				loosened++
-			}
-		}
-	}
-	switch {
-	case total == 0:
-		_, _ = fmt.Fprintln(w, "no changes")
-	case loosened > 0:
-		_, _ = fmt.Fprintf(w, "%d changes; %d loosen the policy\n", total, loosened)
-	default:
-		_, _ = fmt.Fprintf(w, "%d changes\n", total)
-	}
 }

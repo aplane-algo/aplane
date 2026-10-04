@@ -71,6 +71,14 @@ apadmin policy apply policy.json
 apadmin policy apply - < policy.json
 ```
 
+The apadmin TUI can also load one policy file: open Policies (`p`), press `a`,
+and enter the file path. The TUI checks the file, shows the same diff as
+`apadmin policy diff`, and applies it only after you press `y`. On a cosigner
+node the file's `"key"` field selects the key, and the TUI refuses a file for
+a key the node does not hold; generate or import the key first. The path must
+name a regular file, not a symlink. The TUI does not edit documents, remove
+them, or take several files at once.
+
 `apadmin policy` requires a verb:
 
 | Verb | Meaning |

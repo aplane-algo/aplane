@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -144,6 +146,62 @@ func (v *ApAdminHarness) RunWithInput(input string, args ...string) (string, err
 	}
 
 	return output, nil
+}
+
+// PolicyResult is one apadmin policy invocation's separated output.
+type PolicyResult struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
+// RunPolicy executes `apadmin policy ARGS` the way an operator's script
+// would: the passphrase comes from APSIGNER_PASSPHRASE and stdin carries only
+// what the verb reads. The process has no controlling terminal, so an apply
+// or remove without --yes fails instead of waiting for a confirmation. A
+// nonzero exit is reported in ExitCode, not as an error.
+func (v *ApAdminHarness) RunPolicy(stdin string, args ...string) (PolicyResult, error) {
+	var result PolicyResult
+	if err := v.Build(); err != nil {
+		return result, err
+	}
+	passphrase, err := v.testPassphrase()
+	if err != nil {
+		return result, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, v.binaryPath, append([]string{"policy"}, args...)...)
+	cmd.Dir = v.dataDir
+	cmd.Env = append(
+		os.Environ(),
+		fmt.Sprintf("APSIGNER_DATA=%s", v.dataDir),
+		fmt.Sprintf("APSIGNER_PASSPHRASE=%s", passphrase),
+		"DISABLE_MEMORY_LOCK=1",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	result.Stdout, result.Stderr = stdout.String(), stderr.String()
+	if testing.Verbose() {
+		v.t.Logf("apadmin policy %s\nstdout: %s\nstderr: %s", strings.Join(args, " "), result.Stdout, result.Stderr)
+	}
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return result, nil
+	case errors.As(err, &exitErr) && ctx.Err() == nil:
+		result.ExitCode = exitErr.ExitCode()
+		return result, nil
+	default:
+		return result, fmt.Errorf("apadmin policy %s did not run to completion: %w", strings.Join(args, " "), err)
+	}
 }
 
 // GenerateKey generates a new Falcon key using apadmin test mode
