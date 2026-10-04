@@ -598,6 +598,22 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	if details.TemplateProvenanceStatus != lsigprovider.TemplateProvenanceStatusConflict || details.TemplateProvenanceNote == "" {
 		t.Fatalf("GetKeyDetails() template provenance = (%q, %q), want conflict note", details.TemplateProvenanceStatus, details.TemplateProvenanceNote)
 	}
+
+	// A listed key that no longer reads is reported, never shown as an
+	// unknown key type.
+	keyFile, err := ir.FindKeyFile(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("not an encrypted key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if list, svcErr := (Service{Runtime: ir}).ListKeys(); svcErr == nil || !strings.Contains(svcErr.Message, address) {
+		t.Fatalf("ListKeys() with an unreadable key = (%+v, %v), want an error naming the key", list, svcErr)
+	}
+	if details, svcErr := (Service{Runtime: ir}).GetKeyDetails(address); svcErr == nil || !strings.Contains(svcErr.Message, address) {
+		t.Fatalf("GetKeyDetails() with an unreadable key = (%+v, %v), want an error naming the key", details, svcErr)
+	}
 }
 
 func TestServiceGenerateKeyGenericPassesThroughSuccessAndErrors(t *testing.T) {

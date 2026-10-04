@@ -203,8 +203,12 @@ func loadCosignerComponentKey(ctx context.Context, session componentKeyGetter, c
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal("loaded Witness Key ID does not match requested Witness Key ID")
 	}
-	publicKeySize, _ := witness.PublicKeySize(keyMaterial.Type)
-	privateKeySize, _ := witness.PrivateKeySize(keyMaterial.Type)
+	publicKeySize, publicOK := witness.PublicKeySize(keyMaterial.Type)
+	privateKeySize, privateOK := witness.PrivateKeySize(keyMaterial.Type)
+	if !publicOK || !privateOK {
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, nil, internal(fmt.Sprintf("loaded cosigner key has unsupported witness key type %q", keyMaterial.Type))
+	}
 	if len(componentKey.PrivateKey) != privateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(fmt.Sprintf("loaded cosigner key has private key length %d", len(componentKey.PrivateKey)))
