@@ -813,6 +813,9 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	addr := net.JoinHostPort(c.host, fmt.Sprint(c.sshPort))
 	sshClient, err := dialWithContext(ctx, "tcp", addr, config)
 	if err != nil {
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			return "", fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, clientKeyRequirement)
+		}
 		return "", fmt.Errorf("SSH connection failed: %w", err)
 	}
 	defer func() { _ = sshClient.Close() }()

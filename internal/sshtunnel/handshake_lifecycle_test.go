@@ -6,6 +6,7 @@ package sshtunnel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -116,13 +117,13 @@ func TestServerBoundsHandshakeAdmission(t *testing.T) {
 		}
 	}()
 	for i := 0; i < maxPendingSSHHandshakes; i++ {
-		a, b := net.Pipe()
+		a, b := pipeFrom(fmt.Sprintf("192.0.2.%d", i+1))
 		conns = append(conns, a, b)
 		if !srv.admitConnection(a) {
 			t.Fatalf("rejected slot %d", i)
 		}
 	}
-	a, b := net.Pipe()
+	a, b := pipeFrom("198.51.100.1")
 	defer func() { _ = a.Close() }()
 	defer func() { _ = b.Close() }()
 	if srv.admitConnection(a) {
@@ -134,5 +135,58 @@ func TestServerBoundsHandshakeAdmission(t *testing.T) {
 	srv.sshConnsMu.Unlock()
 	if srv.admitConnection(a) {
 		t.Fatal("admitted after shutdown")
+	}
+}
+
+// remoteAddrConn reports a chosen remote address, so admission tests can
+// model connections from distinct hosts.
+type remoteAddrConn struct {
+	net.Conn
+	remote net.Addr
+}
+
+func (c remoteAddrConn) RemoteAddr() net.Addr { return c.remote }
+
+func pipeFrom(ip string) (net.Conn, net.Conn) {
+	a, b := net.Pipe()
+	return remoteAddrConn{Conn: a, remote: &net.TCPAddr{IP: net.ParseIP(ip), Port: 40000}}, b
+}
+
+// One host cannot take every handshake slot: its pending handshakes are
+// capped, other hosts are still admitted, and a finished handshake frees the
+// host's slot.
+func TestServerBoundsHandshakeAdmissionPerHost(t *testing.T) {
+	srv, _ := testServer(t)
+	var conns []net.Conn
+	defer func() {
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	}()
+	var fromBusyHost []net.Conn
+	for i := 0; i < maxPendingSSHHandshakesPerHost; i++ {
+		a, b := pipeFrom("192.0.2.7")
+		conns = append(conns, a, b)
+		fromBusyHost = append(fromBusyHost, a)
+		if !srv.admitConnection(a) {
+			t.Fatalf("rejected slot %d for one host", i)
+		}
+	}
+	extra, peer := pipeFrom("192.0.2.7")
+	conns = append(conns, extra, peer)
+	if srv.admitConnection(extra) {
+		t.Fatal("admitted a host beyond its handshake share")
+	}
+	other, otherPeer := pipeFrom("192.0.2.8")
+	conns = append(conns, other, otherPeer)
+	if !srv.admitConnection(other) {
+		t.Fatal("rejected another host while one host was at its share")
+	}
+
+	srv.sshConnsMu.Lock()
+	srv.finishPendingHandshakeLocked(fromBusyHost[0])
+	srv.sshConnsMu.Unlock()
+	if !srv.admitConnection(extra) {
+		t.Fatal("finished handshake did not free the host's slot")
 	}
 }

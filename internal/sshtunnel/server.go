@@ -104,6 +104,9 @@ const (
 	invalidTokenProofDelay    = 5 * time.Second
 	sshHandshakeTimeout       = 60 * time.Second
 	maxPendingSSHHandshakes   = 64
+	// One remote address may hold only a share of the handshake slots, so a
+	// single host cannot keep every slot busy for the handshake timeout.
+	maxPendingSSHHandshakesPerHost = 8
 
 	// request-token connections are unauthenticated, so their footprint is
 	// bounded: a few concurrent connections, each of which must start
@@ -156,6 +159,7 @@ type Server struct {
 	sshConns                 map[*ssh.ServerConn]sshConnInfo // Active SSH connections for explicit close
 	rawConns                 map[net.Conn]struct{}           // Sockets not yet tracked as active SSH connections; protected by sshConnsMu.
 	pendingHandshakes        int
+	pendingHandshakesByHost  map[string]int // Pending handshakes per remote IP; protected by sshConnsMu
 	handshakeTimeout         time.Duration
 	minimumTokenGeneration   uint64        // Minimum accepted product token generation
 	sshConnsMu               sync.Mutex    // Protects connection maps, pendingHandshakes, and minimumTokenGeneration
@@ -320,23 +324,25 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 	}
 
 	server := &Server{
-		listenAddr:         listenAddr,
-		targetAddr:         targetAddr,
-		hostKey:            hostKey,
-		authKeys:           authKeys,
-		authorizedKeysPath: authorizedKeysPath,
-		expectedToken:      expectedToken,
-		closeChan:          make(chan struct{}),
-		sshConns:           make(map[*ssh.ServerConn]sshConnInfo),
-		invalidTokenDelay:  invalidTokenProofDelay,
-		rawConns:           make(map[net.Conn]struct{}),
-		handshakeTimeout:   sshHandshakeTimeout,
+		listenAddr:              listenAddr,
+		targetAddr:              targetAddr,
+		hostKey:                 hostKey,
+		authKeys:                authKeys,
+		authorizedKeysPath:      authorizedKeysPath,
+		expectedToken:           expectedToken,
+		closeChan:               make(chan struct{}),
+		sshConns:                make(map[*ssh.ServerConn]sshConnInfo),
+		invalidTokenDelay:       invalidTokenProofDelay,
+		rawConns:                make(map[net.Conn]struct{}),
+		pendingHandshakesByHost: make(map[string]int),
+		handshakeTimeout:        sshHandshakeTimeout,
 
 		tokenProvisioningExecDeadline: tokenProvisioningExecDeadline,
 		tokenProvisioningRespDeadline: tokenProvisioningResponseDeadline,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
+		PublicKeyAuthAlgorithms:   clientKeyAlgorithms,
 		PublicKeyCallback:         server.handlePublicKeyAuth,
 		VerifiedPublicKeyCallback: server.handleVerifiedPublicKeyAuth,
 		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
@@ -641,6 +647,13 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 		return nil, fmt.Errorf("unsupported token provisioning username")
 	}
 
+	// clientKeyAlgorithms has already refused other key types before
+	// verification; this keeps enrollment to the same set.
+	if err := checkEnrollmentKey(key); err != nil {
+		fmt.Printf("[SSH] Token provisioning key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
+		return nil, err
+	}
+
 	// Note: Operator and callback checks moved to session handler so error messages
 	// can be sent through the channel (SSH auth errors don't preserve the message)
 
@@ -841,9 +854,39 @@ func (s *Server) admitConnection(conn net.Conn) bool {
 	if s.pendingHandshakes >= maxPendingSSHHandshakes {
 		return false
 	}
+	host := remoteHost(conn)
+	if s.pendingHandshakesByHost[host] >= maxPendingSSHHandshakesPerHost {
+		return false
+	}
 	s.rawConns[conn] = struct{}{}
 	s.pendingHandshakes++
+	s.pendingHandshakesByHost[host]++
 	return true
+}
+
+// finishPendingHandshakeLocked releases conn's handshake slot. The caller
+// holds sshConnsMu.
+func (s *Server) finishPendingHandshakeLocked(conn net.Conn) {
+	s.pendingHandshakes--
+	host := remoteHost(conn)
+	if s.pendingHandshakesByHost[host] <= 1 {
+		delete(s.pendingHandshakesByHost, host)
+	} else {
+		s.pendingHandshakesByHost[host]--
+	}
+}
+
+// remoteHost is the IP a connection came from, without its port.
+func remoteHost(conn net.Conn) string {
+	addr := conn.RemoteAddr()
+	if addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	return host
 }
 
 // handleConnection processes a single SSH connection
@@ -868,7 +911,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		s.sshConnsMu.Lock()
 		delete(s.rawConns, netConn)
 		if pending {
-			s.pendingHandshakes--
+			s.finishPendingHandshakeLocked(netConn)
 		}
 		s.sshConnsMu.Unlock()
 	}()
@@ -883,7 +926,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		return
 	}
 	s.sshConnsMu.Lock()
-	s.pendingHandshakes--
+	s.finishPendingHandshakeLocked(netConn)
 	pending = false
 	s.sshConnsMu.Unlock()
 	if s.testAfterAuthBeforeTrack != nil {
