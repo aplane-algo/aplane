@@ -9,7 +9,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -33,13 +32,8 @@ func connectConfigured(r *REPLState) error {
 }
 
 func executeConnectEndpointAlias(r *REPLState, alias string) (*apshellapp.ConnectResult, error) {
-	registry := r.Config.ClientEndpointsOrDefault()
-	endpoint, ok := registry.Endpoint(alias)
-	if !ok {
-		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
-	}
 	hostKeyApproval := buildHostKeyApproval(r)
-	return r.app().ConnectEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, func() {
+	return r.app().ConnectEndpointAlias(r.commandContext(), alias, hostKeyApproval, func() {
 		r.println("⚠️  Disconnected from signer")
 		r.print("> ")
 	})
@@ -81,24 +75,16 @@ func disconnectTunnel(r *REPLState) error {
 	return nil
 }
 
-func requestTokenConfigured(r *REPLState) error {
-	registry := r.Config.ClientEndpointsOrDefault()
-	alias, _, ok := registry.DefaultEndpoint()
-	if !ok {
-		return fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-token")
+// requestToken enrolls with alias, or with the default signer endpoint when
+// alias is empty.
+func requestToken(r *REPLState, alias string) error {
+	target, err := r.app().ResolveTokenRequestTarget(alias)
+	if err != nil {
+		return err
 	}
-	return requestTokenEndpointAlias(r, alias)
-}
+	alias = target.Alias
 
-func requestTokenEndpointAlias(r *REPLState, alias string) error {
-	registry := r.Config.ClientEndpointsOrDefault()
-	endpoint, ok := registry.Endpoint(alias)
-	if !ok {
-		return fmt.Errorf("unknown endpoint alias %q", alias)
-	}
-	autoConnect := shouldAutoConnectAfterEnrollment(registry, alias)
-
-	if autoConnect && r.app().IsTunnelConnected() {
+	if target.AutoConnect && r.app().IsTunnelConnected() {
 		r.println("Disconnecting current session...")
 		_ = disconnectTunnel(r)
 	}
@@ -108,14 +94,14 @@ func requestTokenEndpointAlias(r *REPLState, alias string) error {
 	r.println()
 
 	hostKeyApproval := buildHostKeyApproval(r)
-	result, err := r.app().RequestTokenEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, r.printTokenProvisioningWait)
+	result, err := r.app().RequestTokenEndpointAlias(r.commandContext(), alias, hostKeyApproval, r.printTokenProvisioningWait)
 	if err != nil {
 		return err
 	}
 	for _, line := range result.RenderLines {
 		r.println(line)
 	}
-	if autoConnect {
+	if target.AutoConnect {
 		r.println("Connecting to signer with new token...")
 		connectResult, err := executeConnectEndpointAlias(r, alias)
 		if err != nil {
@@ -124,11 +110,6 @@ func requestTokenEndpointAlias(r *REPLState, alias string) error {
 		return r.renderConnectResult(connectResult)
 	}
 	return nil
-}
-
-func shouldAutoConnectAfterEnrollment(registry config.ClientEndpointRegistry, alias string) bool {
-	defaultAlias, defaultEndpoint, ok := registry.DefaultEndpoint()
-	return ok && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner
 }
 
 func (r *REPLState) printTokenProvisioningWait(clientFingerprint string) {

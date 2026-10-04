@@ -420,3 +420,20 @@ func newEndpointKeysStatusServer(t *testing.T, token string, status int, body st
 	t.Cleanup(server.Close)
 	return server
 }
+
+func TestEndpointChangeReportsFailedConfigReload(t *testing.T) {
+	dataDir := t.TempDir()
+	app := New(nil, config.DefaultConfig(), dataDir)
+	if err := os.WriteFile(config.GetConfigPath(dataDir), []byte("network: [unclosed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
+		Alias: "cosigner", URL: "ssh://127.0.0.1:2223", CosignerPort: 12270,
+	})
+	if err == nil || !strings.Contains(err.Error(), "endpoint change was saved, but reloading the client config failed") {
+		t.Fatalf("EndpointCreateCosigner() error = %v, want the failed reload reported", err)
+	}
+	if _, ok := app.Config.Endpoints.Endpoint("cosigner"); ok {
+		t.Fatal("app adopted a config it could not reload")
+	}
+}

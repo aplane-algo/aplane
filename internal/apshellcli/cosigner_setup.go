@@ -126,9 +126,6 @@ func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, e
 	if err != nil {
 		return nil, err
 	}
-	if !plan.DryRun {
-		r.Config = r.app().Config
-	}
 	result, err := r.app().CompleteCosignerSetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printCosignerProvisioningWait)
 	if err != nil {
 		completed := "endpoint configuration retained"

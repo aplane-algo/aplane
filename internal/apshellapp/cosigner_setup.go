@@ -175,8 +175,7 @@ func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (
 	if !ok {
 		return config.ClientEndpointConfig{}, fmt.Errorf("configured endpoint %q is missing", plan.Alias)
 	}
-	a.Config = cfg
-	a.eng.EndpointRegistry = cfg.Endpoints.Clone()
+	a.adoptConfig(cfg)
 	resolved = endpoint
 	return resolved, nil
 }

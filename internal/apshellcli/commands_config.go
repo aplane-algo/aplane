@@ -98,10 +98,10 @@ func (r *REPLState) cmdRequestToken(args []string, ctx interface{}) (command.Res
 
 func (r *REPLState) runRequestToken(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return requestTokenConfigured(r)
+		return requestToken(r, "")
 	}
 	if len(args) == 2 && (args[0] == "--endpoint" || args[0] == "-e") {
-		return requestTokenEndpointAlias(r, args[1])
+		return requestToken(r, args[1])
 	}
 	return fmt.Errorf("usage: request-token [--endpoint <alias>]")
 }
@@ -137,7 +137,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() { r.renderEndpointShow(result) })
 		}, projectEndpointEntry(result.Endpoint))
-	case "create", "create-cosigner":
+	case "create":
 		req, err := parseEndpointCreateCosignerArgs(args[1:])
 		if err != nil {
 			return nil, err
@@ -145,12 +145,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		result, err := r.app().EndpointCreateCosigner(r.commandContext(), req)
 		if err != nil {
 			return nil, err
-		}
-		if !result.DryRun {
-			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
-				r.Config = cfg
-				r.app().Config = cfg
-			}
 		}
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() {
@@ -173,12 +167,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		result, err := r.app().EndpointImport(r.commandContext(), req)
 		if err != nil {
 			return nil, err
-		}
-		if !result.DryRun {
-			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
-				r.Config = cfg
-				r.app().Config = cfg
-			}
 		}
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() {
@@ -230,10 +218,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		if err != nil {
 			return nil, err
 		}
-		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
-			r.Config = cfg
-			r.app().Config = cfg
-		}
 		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
 			Mode: "default", Alias: result.Alias, PreviousDefault: result.PreviousAlias, DefaultChanged: true,
 		})
@@ -244,10 +228,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		result, err := r.app().EndpointDelete(r.commandContext(), args[1])
 		if err != nil {
 			return nil, err
-		}
-		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
-			r.Config = cfg
-			r.app().Config = cfg
 		}
 		return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
 			Mode: "delete", Alias: result.Alias, Deleted: true,
@@ -282,28 +262,14 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 	var req apshellapp.EndpointImportRequest
 	const usage = "usage: endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>"
 	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
+		var err error
+		switch arg := args[i]; arg {
 		case "--dry-run":
-			req.DryRun = true
+			err = setEndpointFlag(&req.DryRun, usage)
 		case "--alias", "-a":
-			if req.Alias != "" {
-				return req, errors.New(usage)
-			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
-			}
-			req.Alias = args[i]
+			req.Alias, err = endpointFlagValue(args, &i, req.Alias, usage)
 		case "--role", "-r":
-			if req.Role != "" {
-				return req, errors.New(usage)
-			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
-			}
-			req.Role = args[i]
+			req.Role, err = endpointFlagValue(args, &i, req.Role, usage)
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return req, fmt.Errorf("unknown endpoints import flag %q", arg)
@@ -312,6 +278,9 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 				return req, errors.New(usage)
 			}
 			req.Path = arg
+		}
+		if err != nil {
+			return req, err
 		}
 	}
 	if req.Alias == "" || req.Role == "" || req.Path == "" {
@@ -324,52 +293,58 @@ func parseEndpointCreateCosignerArgs(args []string) (apshellapp.EndpointCreateCo
 	var req apshellapp.EndpointCreateCosignerRequest
 	const usage = "usage: endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]"
 	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
+		var err error
+		switch arg := args[i]; arg {
 		case "--dry-run":
-			if req.DryRun {
-				return req, errors.New(usage)
-			}
-			req.DryRun = true
+			err = setEndpointFlag(&req.DryRun, usage)
 		case "--alias", "-a":
-			if req.Alias != "" {
-				return req, errors.New(usage)
-			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
-			}
-			req.Alias = args[i]
+			req.Alias, err = endpointFlagValue(args, &i, req.Alias, usage)
 		case "--endpoint", "--url":
-			if req.URL != "" {
-				return req, errors.New(usage)
-			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
-			}
-			req.URL = args[i]
+			req.URL, err = endpointFlagValue(args, &i, req.URL, usage)
 		case "--cosignerport", "--cosigner-port":
+			var port string
 			if req.CosignerPort != 0 {
 				return req, errors.New(usage)
 			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
+			if port, err = endpointFlagValue(args, &i, "", usage); err == nil {
+				req.CosignerPort, err = strconv.Atoi(port)
+				if err != nil || req.CosignerPort <= 0 || req.CosignerPort > 65535 {
+					return req, errors.New(usage)
+				}
 			}
-			port, err := strconv.Atoi(args[i])
-			if err != nil || port <= 0 || port > 65535 {
-				return req, errors.New(usage)
-			}
-			req.CosignerPort = port
 		default:
+			if strings.HasPrefix(arg, "-") {
+				return req, fmt.Errorf("unknown endpoints create flag %q", arg)
+			}
 			return req, errors.New(usage)
+		}
+		if err != nil {
+			return req, err
 		}
 	}
 	if req.Alias == "" || req.URL == "" || req.CosignerPort == 0 {
 		return req, errors.New(usage)
 	}
 	return req, nil
+}
+
+// endpointFlagValue consumes the value that follows the flag at args[*i]. A
+// flag given twice, or missing its value, is a usage error.
+func endpointFlagValue(args []string, i *int, current, usage string) (string, error) {
+	*i++
+	if current != "" || *i >= len(args) || args[*i] == "" || strings.HasPrefix(args[*i], "-") {
+		return "", errors.New(usage)
+	}
+	return args[*i], nil
+}
+
+// setEndpointFlag sets a boolean flag, rejecting a repeated flag.
+func setEndpointFlag(flag *bool, usage string) error {
+	if *flag {
+		return errors.New(usage)
+	}
+	*flag = true
+	return nil
 }
 
 func parseEndpointDiscoverCosignersArgs(args []string) (apshellapp.EndpointDiscoverCosignersRequest, error) {

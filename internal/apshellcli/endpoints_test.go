@@ -60,7 +60,6 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 		Out:               &out,
 		App:               apshellapp.New(eng, cfg, dataDir),
 		DataDir:           dataDir,
-		Config:            cfg,
 		currentCommandCtx: context.Background(),
 	}
 
@@ -94,7 +93,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	if endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
 		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint with signer_port 12270", endpoint)
 	}
-	if live, ok := state.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
+	if live, ok := state.App.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
 		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve cosigner-local", live, ok)
 	}
 }
@@ -118,7 +117,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	}
 	state := &REPLState{
 		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
-		Config: cfg, currentCommandCtx: context.Background(),
+		currentCommandCtx: context.Background(),
 	}
 
 	result, err := state.cmdEndpoints([]string{
@@ -130,7 +129,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	if err := result.RenderText(state.Out); err != nil {
 		t.Fatalf("RenderText() error = %v", err)
 	}
-	endpoint, ok := state.Config.Endpoints.Endpoint("local-cosigner")
+	endpoint, ok := state.App.Config.Endpoints.Endpoint("local-cosigner")
 	if !ok || endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
 		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-cosigner", endpoint, ok)
 	}
@@ -205,5 +204,71 @@ func TestRenderEndpointsListOmitsCachedCosignerInventory(t *testing.T) {
 	rendered := out.String()
 	if strings.Contains(rendered, "COSIGNER KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
 		t.Fatalf("rendered endpoint list header = %q, want no cached inventory columns", rendered)
+	}
+}
+
+// TestEndpointAliasCommandsSeeEndpointsAddedElsewhere covers an endpoint that
+// another process adds after this shell started: once the shell has read the
+// registry, alias lookups and guarded routing must see the same endpoints.
+func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	eng, err := newIsolatedTestEngine(t, "testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	state := &REPLState{
+		Out: &bytes.Buffer{}, App: apshellapp.New(eng, cfg, dataDir), DataDir: dataDir,
+		currentCommandCtx: context.Background(),
+	}
+	other := apshellapp.New(eng, cfg, dataDir)
+	if _, err := other.EndpointCreateCosigner(context.Background(), apshellapp.EndpointCreateCosignerRequest{
+		Alias: "added", URL: "ssh://127.0.0.1:2223", CosignerPort: 12270,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng.EndpointRegistry = config.ClientEndpointRegistry{}
+
+	if _, err := state.cmdEndpoints([]string{"list"}, nil); err != nil {
+		t.Fatalf("cmdEndpoints(list) error = %v", err)
+	}
+	if _, err := state.App.ResolveTokenRequestTarget("added"); err != nil {
+		t.Fatalf("alias listed by endpoints list is unknown to request-token: %v", err)
+	}
+	if _, ok := eng.EndpointRegistry.Endpoint("added"); !ok {
+		t.Fatal("endpoints list left the engine's routing registry without the listed endpoint")
+	}
+}
+
+func TestEndpointArgParsersShareFlagRules(t *testing.T) {
+	importArgs := []string{"--alias", "a", "--role", "signer", "env.json"}
+	createArgs := []string{"--alias", "a", "--endpoint", "ssh://h:22", "--cosignerport", "12270"}
+	parse := map[string]func([]string) error{
+		"import": func(args []string) error { _, err := parseEndpointImportArgs(args); return err },
+		"create": func(args []string) error { _, err := parseEndpointCreateCosignerArgs(args); return err },
+	}
+	base := map[string][]string{"import": importArgs, "create": createArgs}
+	for name, run := range parse {
+		args := base[name]
+		if err := run(append(append([]string{}, args...), "--dry-run")); err != nil {
+			t.Errorf("%s with --dry-run: %v", name, err)
+		}
+		for label, bad := range map[string][]string{
+			"repeated --dry-run": append(append([]string{}, args...), "--dry-run", "--dry-run"),
+			"repeated --alias":   append(append([]string{}, args...), "--alias", "b"),
+			"missing value":      append(append([]string{}, args...), "--alias"),
+			"flag as value":      {"--alias", "--dry-run"},
+		} {
+			if err := run(bad); err == nil || !strings.HasPrefix(err.Error(), "usage: endpoints "+name) {
+				t.Errorf("%s %s: error = %v, want usage", name, label, err)
+			}
+		}
+		if err := run(append(append([]string{}, args...), "--bogus")); err == nil ||
+			err.Error() != `unknown endpoints `+name+` flag "--bogus"` {
+			t.Errorf("%s unknown flag: error = %v", name, err)
+		}
+	}
+	if err := parse["create"]([]string{"--alias", "a", "--endpoint", "u", "--cosignerport", "70000"}); err == nil {
+		t.Error("create accepted an out-of-range cosigner port")
 	}
 }

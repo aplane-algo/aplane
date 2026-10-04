@@ -40,7 +40,6 @@ type REPLState struct {
     Out               io.Writer
     App               *apshellapp.App
     DataDir           string
-    Config            config.Config
     CommandRegistry   *command.Registry
     Scripts           ScriptSession
     LineReader        func() (string, error)
@@ -51,6 +50,11 @@ type REPLState struct {
     currentCommandCtx context.Context
 }
 ```
+
+`REPLState` holds no copy of the client config. The app owns it: commands read
+`App.Config`, and endpoint aliases resolve in `apshellapp`, which keeps the
+config and the engine's endpoint registry on the same view of
+`endpoints.yaml`. `test/arch` enforces this.
 
 Command text rendering flows through an injected `io.Writer`. MCP does not
 capture that writer: it marshals the already-computed command result. The

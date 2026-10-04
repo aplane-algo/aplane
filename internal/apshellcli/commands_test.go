@@ -9,7 +9,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
-	"github.com/aplane-algo/aplane/internal/config"
 )
 
 func TestRequestTokenRejectsPositionalHost(t *testing.T) {
@@ -23,22 +22,6 @@ func TestRequestTokenRejectsPositionalHost(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "<host>") {
 		t.Fatalf("cmdRequestToken() retained positional host usage: %v", err)
-	}
-}
-
-func TestTokenEnrollmentAutoConnectsOnlyDefaultSigner(t *testing.T) {
-	registry := config.ClientEndpointRegistry{
-		Default: "primary",
-		Endpoints: map[string]config.ClientEndpointConfig{
-			"primary":  {Role: config.ClientEndpointRoleSigner},
-			"cosigner": {Role: config.ClientEndpointRoleCosigner},
-		},
-	}
-	if !shouldAutoConnectAfterEnrollment(registry, "primary") {
-		t.Fatal("default signer enrollment should auto-connect")
-	}
-	if shouldAutoConnectAfterEnrollment(registry, "cosigner") {
-		t.Fatal("cosigner enrollment should not auto-connect")
 	}
 }
 
