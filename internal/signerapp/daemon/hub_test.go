@@ -361,6 +361,10 @@ func (h *recordingAdminHub) SendTokenProvisioningRequest(_ *signerapproval.Token
 	return false
 }
 
+func (h *recordingAdminHub) SendTokenProvisioningCanceled(_ *signerapproval.TokenProvisioningCanceled) bool {
+	return false
+}
+
 func (h *recordingAdminHub) NotifyLocked(_ adminproto.SignerLockedNotification) {
 	h.lockedCalled = true
 }

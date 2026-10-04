@@ -41,10 +41,13 @@ type ProductBuildHooks struct {
 	SendSignRequest              func(req *approval.SignRequest) bool
 	SendSignRequestCanceled      func(msg *approval.SignRequestCanceled) bool
 	SendTokenProvisioningRequest func(req *approval.TokenProvisioningRequest) bool
-	NotifyLocked                 func()
-	NotifyKeysChanged            func(keyCount int)
-	ReloadAuditLog               signertemplates.AuditLogger
-	NodeFailClosed               func(error)
+	// SendTokenProvisioningCanceled withdraws a delivered client access
+	// request; a signing request preempts one.
+	SendTokenProvisioningCanceled func(msg *approval.TokenProvisioningCanceled) bool
+	NotifyLocked                  func()
+	NotifyKeysChanged             func(keyCount int)
+	ReloadAuditLog                signertemplates.AuditLogger
+	NodeFailClosed                func(error)
 	// ReloadMutationLock returns the process-wide store mutation lock that
 	// watcher-triggered reloads must hold while scanning disk.
 	ReloadMutationLock func() sync.Locker
@@ -157,6 +160,12 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 			return hooks.SendTokenProvisioningRequest(msg)
 		},
 	)
+	coordinator.SetTokenProvisioningCanceledSender(func(msg *approval.TokenProvisioningCanceled) bool {
+		if hooks.SendTokenProvisioningCanceled == nil {
+			return false
+		}
+		return hooks.SendTokenProvisioningCanceled(msg)
+	})
 	ir.SetApprovalCoordinator(coordinator)
 }
 

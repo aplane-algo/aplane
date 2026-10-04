@@ -768,3 +768,84 @@ func waitForDeliveryQueueLength(t *testing.T, c *Coordinator, want int) {
 	c.deliveryMu.Unlock()
 	t.Fatalf("delivery queue length = %d, want %d", got, want)
 }
+
+// A signing request withdraws a delivered client access request: the
+// operator never has two requests delivered at once (AP4), and an
+// unauthenticated enrollment request cannot hold up signing.
+func TestSigningPreemptsDeliveredTokenRequest(t *testing.T) {
+	sent := make(chan string, 4)
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool { sent <- "sign:" + req.ID; return true },
+		nil,
+		func(req *TokenProvisioningRequest) bool { sent <- "token:" + req.ID; return true },
+	)
+	c.SetTokenProvisioningCanceledSender(func(canceled *TokenProvisioningCanceled) bool {
+		sent <- "token-canceled:" + canceled.ID + ":" + canceled.Reason
+		return true
+	})
+
+	tokenErr := make(chan error, 1)
+	go func() {
+		_, err := c.RequestTokenProvisioning("token-1", "fp", "addr", time.Minute)
+		tokenErr <- err
+	}()
+	if got := <-sent; got != "token:token-1" {
+		t.Fatalf("first delivery = %q, want the token request", got)
+	}
+
+	signResult := make(chan bool, 1)
+	go func() {
+		ok, _ := c.RequestSigningApproval("sign-1", "A", "A", "pay", 0, 0, nil, time.Second)
+		signResult <- ok
+	}()
+	if got := <-sent; got != "token-canceled:token-1:"+TokenProvisioningCancelReasonPreempted {
+		t.Fatalf("second message = %q, want the token request withdrawn first", got)
+	}
+	if got := <-sent; got != "sign:sign-1" {
+		t.Fatalf("third message = %q, want the signing request delivered", got)
+	}
+	if err := <-tokenErr; !errors.Is(err, ErrTokenProvisioningPreempted) {
+		t.Fatalf("token request error = %v, want ErrTokenProvisioningPreempted", err)
+	}
+	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
+	if !<-signResult {
+		t.Fatal("signing approval was not granted")
+	}
+}
+
+// A signing request waits ahead of a queued client access request.
+func TestSigningQueuesAheadOfTokenRequests(t *testing.T) {
+	sent := make(chan string, 4)
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool { sent <- "sign:" + req.ID; return true },
+		nil,
+		func(req *TokenProvisioningRequest) bool { sent <- "token:" + req.ID; return true },
+	)
+	go func() { _, _ = c.RequestSigningApproval("sign-hold", "A", "A", "pay", 0, 0, nil, time.Second) }()
+	if got := <-sent; got != "sign:sign-hold" {
+		t.Fatalf("first delivery = %q", got)
+	}
+	tokenErr := make(chan error, 1)
+	go func() {
+		_, err := c.RequestTokenProvisioning("token-1", "fp", "addr", time.Second)
+		tokenErr <- err
+	}()
+	waitForDeliveryQueueLength(t, c, 1)
+	go func() { _, _ = c.RequestSigningApproval("sign-next", "A", "A", "pay", 0, 0, nil, time.Second) }()
+	waitForDeliveryQueueLength(t, c, 2)
+
+	c.HandleSignResponse(&SignResponse{ID: "sign-hold", Approved: true})
+	if got := <-sent; got != "sign:sign-next" {
+		t.Fatalf("delivery after the first signing response = %q, want the second signing request", got)
+	}
+	c.HandleSignResponse(&SignResponse{ID: "sign-next", Approved: true})
+	if got := <-sent; got != "token:token-1" {
+		t.Fatalf("delivery after signing drained = %q, want the token request", got)
+	}
+	c.HandleTokenProvisioningResponse(&TokenProvisioningResponse{ID: "token-1", Approved: true})
+	if err := <-tokenErr; err != nil {
+		t.Fatalf("token request error = %v", err)
+	}
+}

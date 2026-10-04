@@ -403,6 +403,30 @@ New clients without a token can request one through the SSH tunnel using the `re
 - Token is transmitted over the encrypted SSH channel
 - Once provisioned, client can connect normally
 
+**Limits.** `request-token` accepts any client key, so the flow is reachable
+without credentials. It is bounded so that it cannot crowd out signing:
+- At most one client access request is pending server-wide; a concurrent
+  request is refused with a retry message
+- Each `request-token` connection may make one provisioning request, and the
+  connection closes when that request ends, whatever the outcome
+- A `request-token` connection that has not started provisioning within 30
+  seconds is closed
+- At most 8 `request-token` connections are open at once
+- Each `request-token` connection may have at most 2 open session channels;
+  further channels are rejected before they are accepted
+- A client must accept the provisioning response within 10 seconds; a client
+  that stops reading (for example by advertising a zero receive window) is
+  disconnected, which releases the pending-request slot
+- Signing has priority. Signing and client access share the coordinator's
+  single delivery turn (one prompt at a time), but a queued signing request
+  is delivered before any client access request, and a client access prompt
+  already shown is withdrawn (`token_provisioning_request_canceled`, reason
+  `preempted`) as soon as a signing request arrives. The SSH client is told
+  the operator is handling a signing request and to try again
+- Client-supplied text (for example an unknown exec command) is quoted and
+  truncated before it is logged, so it cannot inject terminal escapes into an
+  operator console
+
 ### Token Revocation
 
 The operator can revoke the current API token from the apadmin TUI Admin panel

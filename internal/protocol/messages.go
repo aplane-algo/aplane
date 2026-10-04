@@ -74,9 +74,12 @@ const (
 	MsgTypeReconcileStoreResult     = "reconcile_store_result"
 	MsgTypeSignRequest              = "sign_request"
 	MsgTypeSignRequestCanceled      = "sign_request_canceled"
-	MsgTypeSignResponse             = "sign_response"
-	MsgTypeStatus                   = "status"
-	MsgTypeError                    = "error"
+	// MsgTypeTokenProvisioningRequestCanceled withdraws a delivered client
+	// access request, for example when a signing request takes the turn.
+	MsgTypeTokenProvisioningRequestCanceled = "token_provisioning_request_canceled"
+	MsgTypeSignResponse                     = "sign_response"
+	MsgTypeStatus                           = "status"
+	MsgTypeError                            = "error"
 
 	// Token provisioning message types (SSH-based token request approval)
 	MsgTypeTokenProvisioningRequest  = "token_provisioning_request"
@@ -201,6 +204,10 @@ const (
 
 	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
 	SignRequestCancelReasonTimeout = "timeout"
+
+	// TokenProvisioningCancelReasonPreempted means a signing request took the
+	// approval turn from a delivered client access request.
+	TokenProvisioningCancelReasonPreempted = "preempted"
 )
 
 // AuthResultMessage is sent back after an authentication attempt
@@ -525,6 +532,14 @@ type SignRequestMessage struct {
 // is no longer actionable, for example because the HTTP requester disconnected
 // or apsigner's approval wait timed out.
 type SignRequestCanceledMessage struct {
+	BaseMessage
+	Reason string `json:"reason,omitempty"`
+}
+
+// TokenProvisioningRequestCanceledMessage is sent to apadmin when a delivered
+// client access request is no longer actionable. Reason "preempted" means a
+// signing request took the approval turn; the SSH client is told to retry.
+type TokenProvisioningRequestCanceledMessage struct {
 	BaseMessage
 	Reason string `json:"reason,omitempty"`
 }

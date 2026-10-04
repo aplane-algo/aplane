@@ -15,6 +15,7 @@ type AdminHub interface {
 	SendSignRequest(req *signerapproval.SignRequest) bool
 	SendSignRequestCanceled(msg *signerapproval.SignRequestCanceled) bool
 	SendTokenProvisioningRequest(req *signerapproval.TokenProvisioningRequest) bool
+	SendTokenProvisioningCanceled(msg *signerapproval.TokenProvisioningCanceled) bool
 	NotifyLocked(notification adminproto.SignerLockedNotification)
 	NotifyKeysChanged(notification adminproto.KeysChangedNotification)
 	NotifyStatus(state string, keyCount int)

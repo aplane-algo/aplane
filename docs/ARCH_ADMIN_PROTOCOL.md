@@ -173,6 +173,7 @@ Server to Client:
 - `sign_request`
 - `sign_request_canceled`
 - `token_provisioning_request`
+- `token_provisioning_request_canceled`
 - `revoke_token_result`
 
 ### Backup and Restore
@@ -340,6 +341,7 @@ checks and locked/unlocked/recovery-state interlocks.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
 - `token_provisioning_request`: `ssh_fingerprint`, `remote_addr`, `timestamp`
 - `token_provisioning_response`: `approved`, optional `reason`
+- `token_provisioning_request_canceled`: `reason`; server-originated notification that a delivered `token_provisioning_request` was withdrawn. The only reason is `preempted`: a signing request is waiting, and signing has priority over client access. The coordinator sends it before releasing the delivery turn, so it precedes the next `sign_request`. Admin clients must close the matching prompt and must not send a later `token_provisioning_response` for it; the SSH client is told to retry.
 - `revoke_token` / `revoke_token_result`: `success`, optional `code`, `error`
 
 ### Backup and Restore

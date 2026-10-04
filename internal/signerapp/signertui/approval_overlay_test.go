@@ -143,3 +143,18 @@ func TestUnrelatedErrorKeepsOperationInProgress(t *testing.T) {
 		t.Fatalf("view after the generate result = %v, want the result", m.viewState)
 	}
 }
+
+// A signing request withdraws a pending client access request; its popup
+// closes and the operator returns to the screen underneath.
+func TestWithdrawnClientAccessRequestClosesItsPopup(t *testing.T) {
+	m := approvalTestModel(ViewKeyDetails)
+	m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
+	m = updateModel(t, m, TokenProvisioningCanceledMsg{ID: "other", Reason: "preempted"})
+	if m.viewState != ViewTokenProvisioningPopup || m.tokenApproval.request == nil {
+		t.Fatalf("withdrawal for another request closed the popup: view %v", m.viewState)
+	}
+	m = updateModel(t, m, TokenProvisioningCanceledMsg{ID: "token-1", Reason: "preempted"})
+	if m.tokenApproval.request != nil || m.viewState != ViewKeyDetails {
+		t.Fatalf("after withdrawal: view %v, request %+v; want key details and no pending request", m.viewState, m.tokenApproval.request)
+	}
+}

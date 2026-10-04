@@ -5,9 +5,17 @@ Status: implemented and machine-checked by
 
 ## Scope
 
-The approval coordinator serializes delivery to one operator. A request moves
+The approval coordinator serializes delivery to one operator. Requests are
+transaction signing or SSH client-access token provisioning. A request moves
 from `New` to `Queued` to `Delivered`, then to exactly one terminal state:
-`Approved`, `Rejected`, `TimedOut`, `Canceled`, or `Failed`.
+`Approved`, `Rejected`, `TimedOut`, `Canceled`, `Failed`, or, for token
+requests only, `Preempted`.
+
+Signing has priority. A token request is not delivered while a signing request
+is queued, and `Preempt` withdraws a delivered token prompt once one is.
+Token requests come from unauthenticated SSH clients; without priority, one
+could hold the delivery turn for its full timeout ahead of every signing
+request.
 
 The model includes operator decisions, timeout, cancellation, operator-client
 disconnect, and authenticated client displacement. Disconnect and displacement
@@ -27,6 +35,7 @@ contract even though their reason strings are not separate model states.
 | AP5 | Every non-terminal request can be canceled. | `AP5_CancelAlwaysEnabled` |
 | AP6 | Every modeled fail-all leaves no delivered request. | `AP6_FailAllLeavesNoPending` |
 | AP7 | Displacement cannot orphan a delivered request. | `AP7_NoOrphanedDelivery` |
+| AP8 | A token request is never delivered while a signing request is queued. | `AP8_SigningNotOvertaken` |
 
 AP6 uses the sticky `badPendingAfterFailAll` history flag. Both
 `OperatorDisconnect` and `Displace` update it from the post-action delivered
@@ -36,7 +45,7 @@ it retains the security-specific head-of-line blocking regression guard.
 
 ## Liveness
 
-`LiveSpec` assumes weak fairness for `Deliver` and `Timeout`. Under those
+`LiveSpec` assumes weak fairness for `Deliver`, `Timeout`, and `Preempt`. Under those
 runtime guarantees, every request that reaches `Queued` or `Delivered`
 eventually reaches a terminal state. Operator approve/reject and client cancel
 are choices and intentionally carry no fairness.
@@ -50,8 +59,12 @@ liveness configurations are all recorded in `formal/metrics*.json`.
 - `internal/signerapp/approval/coordinator.go`: serialized request delivery,
   cancellation, terminal resolution, and `FailAllPendingRequests`.
 - `internal/signerapp/approval/coordinator_test.go`:
-  `TestCoordinatorFailAllClearsPendingMaps` and
-  `TestCoordinatorFailAllUnblocksPendingRequest`.
+  `TestCoordinatorFailAllClearsPendingMaps`,
+  `TestCoordinatorFailAllUnblocksPendingRequest`,
+  `TestSigningPreemptsDeliveredTokenRequest`, and
+  `TestSigningQueuesAheadOfTokenRequests`.
+- `internal/sshtunnel/token_provisioning_bounds_test.go`: the SSH-side limit
+  of one pending token request, which only shrinks the modeled token set.
 - `internal/signerapp/daemon/hub_test.go`: daemon-level fail-all forwarding.
 - `internal/signerapp/daemon/ipc.go`: displacement fails pending approvals
   before changing the active operator session.
