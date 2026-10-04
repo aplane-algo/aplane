@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -406,11 +407,6 @@ func (m Model) handleParamModalKeys(
 	maxFocus := len(params)
 	if m.forms.generateFocus >= 0 && m.forms.generateFocus < len(params) {
 		param := params[m.forms.generateFocus]
-		if isContractAdminReferenceParam(param) && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 &&
-			(msg.Runes[0] == 'j' || msg.Runes[0] == 'k') {
-			m = m.appendToCurrentParam(string(msg.Runes), params)
-			return m, nil, ""
-		}
 		if m.isCosignerSelectorParam(keyType, param) {
 			switch msg.String() {
 			case "enter", " ":
@@ -424,6 +420,13 @@ func (m Model) handleParamModalKeys(
 				}
 			}
 		}
+	}
+	if input, ok := paramTextInput(msg, m.forms.generateFocus, params); ok {
+		if !isASCIIText(input) {
+			return m, nil, errParamNonASCII
+		}
+		m = m.appendToCurrentParam(input, params)
+		return m, nil, ""
 	}
 
 	switch msg.String() {
@@ -518,16 +521,8 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "enter", " ":
-		if msg.String() == " " && m.forms.generateFocus < len(params) && isContractAdminReferenceParam(params[m.forms.generateFocus]) {
-			m = m.appendToCurrentParam(" ", params)
-			return m, nil, ""
-		}
 		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			if msg.String() == "enter" {
-				m = m.appendToCurrentParam("\n", params)
-			} else {
-				m = m.appendToCurrentParam(" ", params)
-			}
+			m = m.appendToCurrentParam("\n", params)
 			return m, nil, ""
 		}
 		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
@@ -599,11 +594,42 @@ func (m Model) handleParamModalKeys(
 			input = string(msg.Runes)
 		}
 		if len(input) > 0 && m.forms.generateFocus < len(params) {
+			if !isASCIIText(input) {
+				return m, nil, errParamNonASCII
+			}
 			m = m.appendToCurrentParam(input, params)
 		}
 	}
 
 	return m, nil, ""
+}
+
+const errParamNonASCII = "Parameters accept ASCII characters only"
+
+// paramTextInput returns the text a key types into the focused parameter when
+// that key would otherwise navigate. j, k, space, < and > move focus or cycle
+// choices elsewhere, but type into a free-text field. Choice fields and the
+// submit button keep the navigation meaning.
+func paramTextInput(msg tea.KeyMsg, focus int, params []lsigprovider.ParameterDef) (string, bool) {
+	if focus < 0 || focus >= len(params) || len(params[focus].Options) > 0 || msg.Paste {
+		return "", false
+	}
+	switch key := msg.String(); key {
+	case "j", "k", " ":
+		return key, true
+	case "<", ">":
+		return key, len(params[focus].InputModes) <= 1
+	}
+	return "", false
+}
+
+func isASCIIText(input string) bool {
+	for _, r := range input {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 // initGenericLSigParams initializes the parameter map for a generic LogicSig.
@@ -718,6 +744,10 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	}
 
 	for _, r := range input {
+		if r > unicode.MaxASCII {
+			// Never narrow a wider rune to the ASCII byte it happens to end in.
+			continue
+		}
 		char := byte(r)
 		allowed := false
 

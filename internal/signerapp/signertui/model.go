@@ -395,6 +395,7 @@ type Model struct {
 	keylist       keyListState
 	signing       signingState
 	tokenApproval tokenApprovalState
+	approval      approvalOverlay
 	backup        backupState
 	restore       restoreState
 	forms         formsState

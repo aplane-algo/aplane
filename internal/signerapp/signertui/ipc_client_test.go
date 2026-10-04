@@ -569,3 +569,31 @@ func TestIPCClientManualDisconnectDoesNotEmitReconnectLifecycle(t *testing.T) {
 
 	assertNoClientMsg(t, client, 100*time.Millisecond)
 }
+
+func TestIPCClientReportsUndecodableMessage(t *testing.T) {
+	client := &IPCClient{msgChan: make(chan queuedMsg, 2), done: make(chan struct{}), sessionID: 1}
+	notifications := make(chan transport.Notification, 1)
+	lifecycle := make(chan transport.LifecycleEvent)
+	go client.forwardMessages(1, client.done, notifications, lifecycle)
+	defer close(client.done)
+
+	notifications <- transport.Notification{
+		Base: protocol.BaseMessage{Type: protocol.MsgTypeGenerateResult, ID: "gen-1"},
+		Raw:  []byte(`{"type":"generate_result","success":"not-a-bool"}`),
+	}
+	forwarded := make(chan tea.Msg, 1)
+	go func() { forwarded <- client.ListenForMessages()() }()
+	var msg tea.Msg
+	select {
+	case msg = <-forwarded:
+	case <-time.After(2 * time.Second):
+		t.Fatal("undecodable message was dropped instead of reported")
+	}
+	errMsg, ok := msg.(ErrorMsg)
+	if !ok {
+		t.Fatalf("forwarded message type = %T, want ErrorMsg", msg)
+	}
+	if errMsg.ID != "gen-1" || errMsg.Error == nil {
+		t.Fatalf("ErrorMsg = %#v, want the failed request's ID and a decode error", errMsg)
+	}
+}

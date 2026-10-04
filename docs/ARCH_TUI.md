@@ -43,6 +43,24 @@ jump to its boundaries. The popup displays its visible line range whenever it
 overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
 
+Signing and client-enrollment approval popups stay in front of every other
+screen until the operator answers them or apsigner withdraws the request.
+Results that arrive meanwhile update the screen underneath, and answering or a
+withdrawal returns to that screen; a second pending approval shows next.
+apsigner rejects every pending approval when the admin session ends or the
+signer locks, so disconnect, reconnect, reauthentication, displacement, and lock
+drop them from the TUI as well.
+
+An untyped failure (an authorization denial, a send error, or a signer message
+the TUI cannot decode) returns an in-progress generate, import, delete, key-type
+install, or backup to the screen it started from, as that operation's own
+failure result would. Progress screens ignore Esc, so nothing may strand them.
+
+In parameter forms, `j`, `k`, space, `<`, and `>` type into free-text fields;
+they navigate or cycle only on choice fields and the submit button. Tab and the
+arrow keys always navigate. Parameter fields accept ASCII only and refuse other
+input with an error rather than rewriting it.
+
 Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
 instead of an editable multi-line field. Activating the control accepts the
 next terminal bracketed-paste event, stores the complete validated value, and
