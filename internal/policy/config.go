@@ -4,11 +4,9 @@
 package policy
 
 import (
-	"fmt"
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -95,42 +93,22 @@ func (c *Config) Clone() *Config {
 	return &cp
 }
 
-// ForKey returns the effective config for the given concrete signing authority
-// key. If no override is defined for the key, the base config is returned.
-func (c *Config) ForKey(key string) *Config {
-	if c == nil || key == "" {
+// ForKey returns the effective config for the given signing auth address. If
+// no override is defined for the address, the base config is returned.
+// Override keys are canonical auth addresses; the lookup canonicalizes the
+// request's address the same way, so its formatting cannot bypass an override.
+func (c *Config) ForKey(authAddress string) *Config {
+	if c == nil || authAddress == "" {
 		return c
 	}
-	lookupKey := strings.TrimSpace(key)
-	if canonical, err := NormalizeKeyOverrideKey(lookupKey); err == nil {
-		lookupKey = canonical
+	lookupKey := strings.TrimSpace(authAddress)
+	if addr, err := types.DecodeAddress(strings.ToUpper(lookupKey)); err == nil {
+		lookupKey = addr.String()
 	}
 	if override, ok := c.KeyOverrides[lookupKey]; ok {
 		return override
 	}
 	return c
-}
-
-// NormalizeKeyOverrideKey canonicalizes a runtime key-override lookup selector.
-// It accepts both signer auth addresses and Witness Key IDs because Config.ForKey
-// is shared by signer and cosigner effective policy snapshots. Policy document
-// validation must use the role-specific normalizers below instead.
-func NormalizeKeyOverrideKey(key string) (string, error) {
-	raw := strings.TrimSpace(key)
-	if raw == "" {
-		return "", fmt.Errorf("key override selector is required")
-	}
-	if selector, err := witness.NormalizeID(raw); err == nil {
-		return selector, nil
-	}
-	if len(raw) == witness.IDLength {
-		return "", fmt.Errorf("invalid Witness Key ID %q", raw)
-	}
-	addr, err := types.DecodeAddress(strings.ToUpper(raw))
-	if err != nil {
-		return "", fmt.Errorf("key override selector must be an Algorand address or Witness Key ID")
-	}
-	return addr.String(), nil
 }
 
 func cloneUintMap(in map[string]uint64) map[string]uint64 {

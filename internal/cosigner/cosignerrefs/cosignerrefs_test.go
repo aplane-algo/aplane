@@ -4,7 +4,6 @@
 package cosignerrefs
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -252,87 +251,9 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	}
 }
 
-func TestGetReadsV1ManualRecordWithoutWriting(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	writeV1Record(t, paths, "manual-v1", recordSourceManualV1)
-	path := paths.CosignerRefPath("manual-v1")
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(paths.CosignerRefsDir(), 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(paths.CosignerRefsDir(), 0o700) })
-
-	record, found, err := Get(paths, "manual-v1")
-	if err != nil || !found {
-		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
-	}
-	if record.Schema != RecordSchema || record.MigrationOrigin != "" {
-		t.Fatalf("migrated record = %#v", record)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, before) {
-		t.Fatalf("Get() rewrote v1 record:\nbefore=%s\nafter=%s", before, after)
-	}
-}
-
-func TestGetReadsV1DiscoveryRecordAsPinnedWithoutWriting(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	writeV1Record(t, paths, "endpoint-old", recordSourceDiscoveryV1)
-	path := paths.CosignerRefPath("endpoint-old")
-	var raw map[string]any
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	delete(raw, "endpoint_alias")
-	raw["future_compatible_field"] = "ignored"
-	writeRawRecord(t, paths, "endpoint-old", raw)
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	record, found, err := Get(paths, "endpoint-old")
-	if err != nil || !found {
-		t.Fatalf("Get() = (%#v, %v, %v)", record, found, err)
-	}
-	if record.Schema != RecordSchema || record.Name != "endpoint-old" || record.MigrationOrigin != MigrationOriginV1ClientDiscovery {
-		t.Fatalf("migrated record = %#v", record)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, before) {
-		t.Fatalf("Get() rewrote v1 discovery record:\nbefore=%s\nafter=%s", before, after)
-	}
-
-	identical, err := Import(paths, "endpoint-old", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
-	if err != nil {
-		t.Fatalf("identical Import() error = %v", err)
-	}
-	if identical.MigrationOrigin != MigrationOriginV1ClientDiscovery {
-		t.Fatalf("identical import erased migration marker: %#v", identical)
-	}
-	unchanged, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(unchanged, before) {
-		t.Fatalf("idempotent Import() rewrote existing v1 record:\nbefore=%s\nafter=%s", before, unchanged)
-	}
-}
-
-func TestV2RejectsRetiredDiscoveryFieldsAndUnknownMigrationOrigin(t *testing.T) {
+// Only the current record schema is read. Earlier schemas and their fields
+// are rejected rather than migrated.
+func TestGetRejectsRetiredSchemaAndFields(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	record, err := ParseImport("strict", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
 	if err != nil {
@@ -343,66 +264,21 @@ func TestV2RejectsRetiredDiscoveryFieldsAndUnknownMigrationOrigin(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
+	for name, mutate := range map[string]func(map[string]any){
+		"v1 schema":        func(raw map[string]any) { raw["schema"] = "aplane.cosigner-public-key-ref.v1" },
+		"source":           func(raw map[string]any) { raw["source"] = "discovery" },
+		"migration_origin": func(raw map[string]any) { raw["migration_origin"] = "v1_client_discovery" },
+	} {
+		var raw map[string]any
+		if err := json.Unmarshal(data, &raw); err != nil {
+			t.Fatal(err)
+		}
+		mutate(raw)
+		writeRawRecord(t, paths, "strict", raw)
+		if _, _, err := Get(paths, "strict"); err == nil {
+			t.Errorf("Get() accepted a record with a retired %s", name)
+		}
 	}
-	raw["source"] = recordSourceDiscoveryV1
-	writeRawRecord(t, paths, "strict", raw)
-	if _, _, err := Get(paths, "strict"); err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("Get(v2 source) error = %v, want unknown-field rejection", err)
-	}
-
-	delete(raw, "source")
-	raw["migration_origin"] = "future"
-	writeRawRecord(t, paths, "strict", raw)
-	if _, _, err := Get(paths, "strict"); err == nil || !strings.Contains(err.Error(), "unsupported cosigner reference migration_origin") {
-		t.Fatalf("Get(unknown migration origin) error = %v", err)
-	}
-}
-
-func TestV2PreservesClosedMigrationMarker(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	record, err := ParseImport("preserved", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	record.MigrationOrigin = MigrationOriginV1ClientDiscovery
-	if err := putRecord(paths, *record); err != nil {
-		t.Fatal(err)
-	}
-	got, found, err := Get(paths, "preserved")
-	if err != nil || !found || got.MigrationOrigin != MigrationOriginV1ClientDiscovery {
-		t.Fatalf("Get() = (%#v, %v, %v)", got, found, err)
-	}
-}
-
-func writeV1Record(t *testing.T, paths storepaths.Paths, name, source string) {
-	t.Helper()
-	record, err := ParseImport(name, testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := recordV1{
-		Schema:            recordSchemaV1,
-		Name:              record.Name,
-		ComponentKey:      record.ComponentKey,
-		KeyType:           record.KeyType,
-		PublicKeyEncoding: record.PublicKeyEncoding,
-		PublicKeyHex:      record.PublicKeyHex,
-		PublicKeySize:     record.PublicKeySize,
-		PublicKeySHA256:   record.PublicKeySHA256,
-		Source:            source,
-		EndpointAlias:     "cosigner-old",
-		LastSeenAt:        "2026-06-04T00:00:00Z",
-		SyncedAt:          "2026-06-04T00:01:00Z",
-		ImportedAt:        record.ImportedAt,
-	}
-	data, err := json.Marshal(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeRawRecordBytes(t, paths, name, data)
 }
 
 func writeRawRecord(t *testing.T, paths storepaths.Paths, name string, raw map[string]any) {

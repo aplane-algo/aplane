@@ -168,19 +168,14 @@ with "/". Appends .js extension if not already present. Fails if the file
 already exists unless overwrite is true. Set last to true to save the most
 recently executed JavaScript code instead of providing code.`),
 		mcp.WithString("path", mcp.Required(), mcp.Description("A single filename to save under the data directory's scripts/ folder, or an absolute path starting with '/'.")),
-		mcp.WithString("filename", mcp.Description("Deprecated alias for path.")),
 		mcp.WithString("code", mcp.Description("JavaScript code to save (required unless last is true)")),
 		mcp.WithBoolean("last", mcp.Description("Save the last executed JavaScript code (default false)")),
 		mcp.WithBoolean("overwrite", mcp.Description("Overwrite existing file (default false)")),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		scriptPath, _ := request.Params.Arguments["path"].(string)
-		filename, _ := request.Params.Arguments["filename"].(string)
 		code, _ := request.Params.Arguments["code"].(string)
 		last, _ := request.Params.Arguments["last"].(bool)
 		overwrite, _ := request.Params.Arguments["overwrite"].(bool)
-		if strings.TrimSpace(scriptPath) == "" {
-			scriptPath = filename
-		}
 		if strings.TrimSpace(scriptPath) == "" {
 			return mcp.NewToolResultError("path is required"), nil
 		}

@@ -348,3 +348,16 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	registry.Default = signerAlias
 	return nil
 }
+
+// decodeClientEndpointRegistry reads endpoints.yaml, which must carry the
+// current schema_version.
+func decodeClientEndpointRegistry(data []byte) (ClientEndpointRegistry, error) {
+	var registry ClientEndpointRegistry
+	if err := UnmarshalKnownFields(data, &registry); err != nil {
+		return ClientEndpointRegistry{}, err
+	}
+	if registry.SchemaVersion != ClientEndpointSchemaVersion {
+		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
+	}
+	return registry, nil
+}

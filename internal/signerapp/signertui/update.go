@@ -9,7 +9,6 @@ package tui
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -129,7 +128,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.auth.passphraseError == "" {
 				m.auth.passphraseError = "Authentication failed"
 			}
-			if isSeriousUnlockError(msg.Code, msg.Error) {
+			if isSeriousUnlockError(msg.Code) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewAuth)
 				m.auth.passphraseInput = ""
 				m.auth.loggingIn = false
@@ -187,7 +186,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.enterUnlocked(msg.KeyCount)
 		} else {
 			m.auth.passphraseError = msg.Error
-			if isSeriousUnlockError(msg.Code, msg.Error) {
+			if isSeriousUnlockError(msg.Code) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
 				m.auth.passphraseInput = ""
 				m.auth.loggingIn = false
@@ -1029,28 +1028,10 @@ func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // isSeriousUnlockError reports whether an auth/unlock failure is a server-side
 // fault that deserves a popup rather than the inline "try again" treatment a
-// wrong passphrase gets. The structured code from the IPC result is
-// authoritative; the text heuristic remains only for older signers that do
-// not send codes.
-func isSeriousUnlockError(code, message string) bool {
-	switch code {
-	case protocol.ErrCodeUnlockFailed:
-		return true
-	case protocol.ErrCodeInvalidPassphrase, protocol.ErrCodeAuthenticationFailed:
-		return false
-	}
-	text := strings.ToLower(strings.TrimSpace(message))
-	if text == "" {
-		return false
-	}
-	if strings.Contains(text, "invalid passphrase") || strings.Contains(text, "authentication failed") {
-		return false
-	}
-	return strings.Contains(text, "auth ok but unlock failed") ||
-		strings.Contains(text, "failed to load keys") ||
-		strings.Contains(text, "reload pre-scan hook failed") ||
-		strings.Contains(text, "policy integrity") ||
-		strings.Contains(text, "hmac mismatch")
+// wrong passphrase gets. apsigner codes every unlock failure: a wrong
+// passphrase is invalid_passphrase and anything else is unlock_failed.
+func isSeriousUnlockError(code string) bool {
+	return code == protocol.ErrCodeUnlockFailed
 }
 
 // pendingOperation is the request an in-progress screen waits on.

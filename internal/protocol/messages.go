@@ -1102,7 +1102,6 @@ type CosignerReferenceInfo struct {
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
 	ImportedAt        string `json:"imported_at,omitempty"`
-	MigrationOrigin   string `json:"migration_origin,omitempty"`
 }
 
 type ListCosignerReferencesMessage struct{ BaseMessage }

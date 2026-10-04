@@ -69,7 +69,6 @@ type CloseParams struct {
 // KeyRegParams holds parsed parameters for keyreg command
 type KeyRegParams struct {
 	From              string
-	Mode              string // "online" or "offline" (for compatibility)
 	Online            bool
 	VoteKey           string
 	SelKey            string
@@ -340,10 +339,8 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	switch strings.ToLower(args[1]) {
 	case "online":
 		params.Online = true
-		params.Mode = "online"
 	case "offline":
 		params.Online = false
-		params.Mode = "offline"
 	default:
 		return params, fmt.Errorf("second argument must be 'online' or 'offline', got: %s", args[1])
 	}

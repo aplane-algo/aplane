@@ -88,6 +88,12 @@ func TestPolicyV1KeyOverridesInheritBase(t *testing.T) {
 	if got := cfg.ForKey(types.Address{3}.String()); got != cfg {
 		t.Error("ForKey for unknown key should return the base config")
 	}
+
+	// A differently formatted auth address still selects its override, so
+	// formatting cannot bypass a tightening override.
+	if got := cfg.ForKey("  " + strings.ToLower(strictKey) + " "); got != strict {
+		t.Error("ForKey did not canonicalize a lowercase, padded auth address")
+	}
 }
 
 func TestCheckTxnPolicyLints(t *testing.T) {

@@ -23,9 +23,12 @@ import (
 // indicating the file has been modified outside of the application.
 var ErrCacheTampered = errors.New("cache integrity check failed")
 
+// errNoCacheStore marks a load from a cache with no client data directory.
+// Such caches live in memory only: loads start empty and saves do nothing.
+var errNoCacheStore = errors.New("cache has no client data directory")
+
 const (
 	signedCacheEnvelopeVersion      = 1
-	legacyCachePayloadSchemaVersion = 1
 	cachePayloadSchemaVersion       = 1
 	signerCachePayloadSchemaVersion = 2
 )
@@ -37,9 +40,6 @@ type cachePayloadVersioner interface {
 }
 
 func storePath(store *Store, filename string) string {
-	if store == nil {
-		return NewStore("").path(filename)
-	}
 	return store.path(filename)
 }
 
@@ -51,9 +51,6 @@ type SignedCache struct {
 }
 
 func cacheDir(store *Store) string {
-	if store == nil {
-		return NewStore("").dir()
-	}
 	return store.dir()
 }
 
@@ -165,10 +162,10 @@ func VerifyHMAC(data []byte, signatureHex string, key []byte) error {
 
 // SaveSignedCache saves cache data with HMAC signature.
 func SaveSignedCache(filePath string, data interface{}, key []byte) error {
-	return saveSignedCache(filePath, data, key, nil)
+	return saveSignedCache(filePath, data, key)
 }
 
-func saveSignedCache(filePath string, data interface{}, key []byte, store *Store) error {
+func saveSignedCache(filePath string, data interface{}, key []byte) error {
 	ensureCachePayloadSchemaVersion(data)
 
 	dataBytes, err := json.Marshal(data)
@@ -187,18 +184,21 @@ func saveSignedCache(filePath string, data interface{}, key []byte, store *Store
 		return fmt.Errorf("failed to marshal signed cache: %w", err)
 	}
 
-	if err := fsutil.MkdirAll(cacheDir(store)); err != nil {
+	if err := fsutil.MkdirAll(filepath.Dir(filePath)); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 	return fsutil.WriteFile(filePath, output)
 }
 
 func saveSignedCacheWithoutClientLock(store *Store, filePath string, data interface{}) error {
+	if !store.persistent() {
+		return nil // memory-only cache
+	}
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
 		return fmt.Errorf("failed to get cache key: %w", err)
 	}
-	return saveSignedCache(filePath, data, key, store)
+	return saveSignedCache(filePath, data, key)
 }
 
 func ensureCacheDir(store *Store) error {
@@ -209,6 +209,9 @@ func ensureCacheDir(store *Store) error {
 }
 
 func warnCacheLoadError(cacheName string, err error) {
+	if errors.Is(err, errNoCacheStore) {
+		return
+	}
 	if errors.Is(err, ErrCacheTampered) {
 		warnf("SECURITY: %s may have been tampered with — starting with empty cache: %v", cacheName, err)
 	} else {
@@ -217,6 +220,9 @@ func warnCacheLoadError(cacheName string, err error) {
 }
 
 func loadSignedCacheWithKey(store *Store, filePath string, target interface{}) error {
+	if !store.persistent() {
+		return errNoCacheStore
+	}
 	if err := ensureCacheDir(store); err != nil {
 		return err
 	}
@@ -299,9 +305,6 @@ func validateCachePayloadSchemaVersion(dataBytes []byte, target interface{}) err
 		return fmt.Errorf("failed to inspect cache payload schema_version: %w", err)
 	}
 	version := header.SchemaVersion
-	if version == 0 {
-		version = legacyCachePayloadSchemaVersion
-	}
 	supported := payload.supportedCachePayloadSchemaVersion()
 	if version != supported {
 		return fmt.Errorf("unsupported cache payload schema_version %d (supported %d)", version, supported)

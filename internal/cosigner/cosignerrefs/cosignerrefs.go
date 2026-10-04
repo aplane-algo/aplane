@@ -29,8 +29,6 @@ const (
 	ExportSchema = witness.PublicReferenceSchema
 	RecordSchema = "aplane.cosigner-public-key-ref.v2"
 
-	MigrationOriginV1ClientDiscovery = "v1_client_discovery"
-
 	// ParamCosignerName is the generation parameter that selects an imported
 	// cosigner reference by name.
 	ParamCosignerName = "cosigner"
@@ -50,7 +48,6 @@ type Record struct {
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
 	ImportedAt        string `json:"imported_at"`
-	MigrationOrigin   string `json:"migration_origin,omitempty"`
 }
 
 func NormalizeName(name string) (string, error) {
@@ -289,29 +286,12 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, 
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {
-	var header struct {
-		Schema string `json:"schema"`
-	}
-	if err := json.Unmarshal(data, &header); err != nil {
-		return Record{}, fmt.Errorf("failed to parse record: %w", err)
-	}
 	var rec Record
-	switch header.Schema {
-	case recordSchemaV1:
-		legacy, err := decodeRecordV1(data)
-		if err != nil {
-			return Record{}, err
-		}
-		rec, err = recordFromV1(legacy)
-		if err != nil {
-			return Record{}, err
-		}
-	case RecordSchema:
-		if err := decodeRecordStrict(data, &rec); err != nil {
-			return Record{}, err
-		}
-	default:
-		return Record{}, fmt.Errorf("unsupported schema %q", header.Schema)
+	if err := decodeRecordStrict(data, &rec); err != nil {
+		return Record{}, err
+	}
+	if rec.Schema != RecordSchema {
+		return Record{}, fmt.Errorf("unsupported schema %q", rec.Schema)
 	}
 	rec, err := normalizeRecord(rec)
 	if err != nil {
@@ -360,10 +340,6 @@ func normalizeRecord(rec Record) (Record, error) {
 	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
 		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
 	}
-	migrationOrigin := strings.TrimSpace(rec.MigrationOrigin)
-	if migrationOrigin != "" && migrationOrigin != MigrationOriginV1ClientDiscovery {
-		return Record{}, fmt.Errorf("unsupported cosigner reference migration_origin %q", migrationOrigin)
-	}
 	return Record{
 		Schema:            RecordSchema,
 		Name:              name,
@@ -374,7 +350,6 @@ func normalizeRecord(rec Record) (Record, error) {
 		PublicKeySize:     len(publicKeyBytes),
 		PublicKeySHA256:   publicKeySHA256,
 		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
-		MigrationOrigin:   migrationOrigin,
 	}, nil
 }
 
