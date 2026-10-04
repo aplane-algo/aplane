@@ -36,7 +36,7 @@ type policiesState struct {
 	apply  policyApplyState
 }
 
-func newPolicyRequestID(prefix string) string {
+func newRequestID(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 }
 
@@ -65,7 +65,7 @@ func (m Model) openPolicies() (tea.Model, tea.Cmd) {
 
 func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 	m.policies.loading = true
-	m.policies.pendingPolicyID = newPolicyRequestID("policy")
+	m.policies.pendingPolicyID = newRequestID("policy")
 	return m, tea.Batch(m.sendGetPolicyCmd(m.policies.pendingPolicyID), m.waitForMessageCmd())
 }
 
@@ -133,7 +133,7 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.policies.scrollOffset = 0
 			m.policies.document = protocol.PolicyDocumentMessage{}
 			m.policies.docLoading = true
-			m.policies.pendingDocumentID = newPolicyRequestID("policy-doc")
+			m.policies.pendingDocumentID = newRequestID("policy-doc")
 			m.viewState = ViewPolicyDocument
 			key := rows[m.policies.selected].doc.Key
 			return m, tea.Batch(m.sendGetPolicyDocumentCmd(key, m.policies.pendingDocumentID), m.waitForMessageCmd())

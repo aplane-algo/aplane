@@ -288,7 +288,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if next, ok := m.failPendingPolicyApply(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
-		if next, ok := m.failOperationInProgress(msg.Error); ok {
+		if next, ok := m.failOperationInProgress(msg.ID, msg.Error); ok {
 			return next, next.waitForMessageCmd()
 		}
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
@@ -1145,11 +1145,36 @@ func isSeriousUnlockError(code, message string) bool {
 		strings.Contains(text, "hmac mismatch")
 }
 
+// pendingOperation is the request an in-progress screen waits on.
+type pendingOperation struct {
+	id   string
+	view ViewState
+}
+
+// beginOperation shows a progress screen for a new request and returns the
+// request's ID, which the request must carry.
+func (m *Model) beginOperation(view ViewState) string {
+	prefix := map[ViewState]string{
+		ViewGenerating: "gen", ViewImporting: "imp", ViewDeleting: "del",
+		ViewTemplateInstalling: "keytype", ViewBackingUp: "backup",
+	}[view]
+	id := newRequestID(prefix)
+	m.operation = pendingOperation{id: id, view: view}
+	m.viewState = view
+	return id
+}
+
 // failOperationInProgress returns an untyped failure (an authorization
 // denial, an undecodable result, a send error) to the screen an in-progress
 // operation started from, as that operation's own failure result would. A
-// progress screen ignores Esc, so staying on it would strand the operator.
-func (m Model) failOperationInProgress(err error) (Model, bool) {
+// progress screen ignores Esc, so staying on it would strand the operator. id
+// must name the operation's request: an error for any other request, such as
+// a background refresh, leaves the operation waiting for its own result.
+func (m Model) failOperationInProgress(id string, err error) (Model, bool) {
+	if id == "" || id != m.operation.id || m.viewState != m.operation.view {
+		return m, false
+	}
+	m.operation = pendingOperation{}
 	switch m.viewState {
 	case ViewGenerating:
 		m.forms.generateError = err.Error()

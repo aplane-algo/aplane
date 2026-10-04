@@ -91,7 +91,7 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		}
 		backupLineCh <- line
 	}()
-	if err := client.SendBackup("backup-passphrase"); err != nil {
+	if err := client.SendBackup("backup-passphrase", "backup-1"); err != nil {
 		t.Fatalf("SendBackup() error = %v", err)
 	}
 	var line []byte

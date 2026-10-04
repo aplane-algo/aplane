@@ -51,10 +51,13 @@ apsigner rejects every pending approval when the admin session ends or the
 signer locks, so disconnect, reconnect, reauthentication, displacement, and lock
 drop them from the TUI as well.
 
-An untyped failure (an authorization denial, a send error, or a signer message
-the TUI cannot decode) returns an in-progress generate, import, delete, key-type
-install, or backup to the screen it started from, as that operation's own
-failure result would. Progress screens ignore Esc, so nothing may strand them.
+Each in-progress generate, import, delete, key-type install, or backup records
+its request ID. An untyped failure (an authorization denial, a send error, or a
+signer message the TUI cannot decode) whose ID names that request returns the
+operation to the screen it started from, as its own failure result would.
+Progress screens ignore Esc, so nothing may strand them. An error for any other
+request, such as a background refresh, leaves the operation waiting for its own
+result, matching the policy-load flow.
 
 In parameter forms, `j`, `k`, space, `<`, and `>` type into free-text fields;
 they navigate or cycle only on choice fields and the submit button. Tab and the

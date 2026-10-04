@@ -59,9 +59,10 @@ func TestCanceledSigningRequestReturnsToScreenUnderneath(t *testing.T) {
 
 // Handlers that act on the current screen see the screen under the popup.
 func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) {
-	m := approvalTestModel(ViewImporting)
+	m := approvalTestModel(ViewImportParams)
+	id := m.beginOperation(ViewImporting)
 	m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
-	m = updateModel(t, m, ErrorMsg{Error: errors.New("authorization denied")})
+	m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("authorization denied")})
 	if m.viewState != ViewTokenProvisioningPopup {
 		t.Fatalf("error replaced the enrollment popup: view %v", m.viewState)
 	}
@@ -116,9 +117,29 @@ func TestUntypedFailureLeavesProgressScreens(t *testing.T) {
 		ViewTemplateInstalling: ViewTemplateInstallConfirm,
 		ViewBackingUp:          ViewBackupConfirm,
 	} {
-		m := updateModel(t, approvalTestModel(progress), ErrorMsg{Error: errors.New("cannot decode result")})
+		m := approvalTestModel(ViewKeyList)
+		id := m.beginOperation(progress)
+		m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("cannot decode result")})
 		if m.viewState != want {
 			t.Errorf("failure on %v: view %v, want %v", progress, m.viewState, want)
 		}
+	}
+}
+
+// An error for another request, such as a background key-list refresh, must
+// not fail the operation in progress: leaving its screen would invite a second
+// submission while the first still runs.
+func TestUnrelatedErrorKeepsOperationInProgress(t *testing.T) {
+	m := approvalTestModel(ViewGenerateForm)
+	m.beginOperation(ViewGenerating)
+	for _, id := range []string{"", "keys-1"} {
+		m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("list keys failed")})
+		if m.viewState != ViewGenerating {
+			t.Fatalf("error for request %q left the generate progress screen: view %v", id, m.viewState)
+		}
+	}
+	m = updateModel(t, m, GenerateResultMsg{Success: true, Address: "ADDR", KeyType: "ed25519"})
+	if m.viewState != ViewGenerateDisplay {
+		t.Fatalf("view after the generate result = %v, want the result", m.viewState)
 	}
 }

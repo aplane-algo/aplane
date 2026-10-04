@@ -50,8 +50,8 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backup.exportPassphrase = ""
 		m.backup.confirmPassphrase = ""
 		m.backup.confirmError = ""
-		m.viewState = ViewBackingUp
-		return m, tea.Batch(m.sendBackupCmd(passphrase), m.waitForMessageCmd())
+		id := m.beginOperation(ViewBackingUp)
+		return m, tea.Batch(m.sendBackupCmd(passphrase, id), m.waitForMessageCmd())
 	case "backspace":
 		if m.backup.confirmFocus == 0 {
 			if len(m.backup.exportPassphrase) > 0 {
@@ -263,8 +263,8 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.
 func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
-	submitFn := func(keyType string, params map[string]string) tea.Cmd {
-		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params), m.waitForMessageCmd())
+	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
+		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id), m.waitForMessageCmd())
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
@@ -331,8 +331,8 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// For non-parameterized keys, generate immediately
 		m.forms.generateError = ""
-		m.viewState = ViewGenerating // Show loading state
-		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, ""), m.waitForMessageCmd())
+		id := m.beginOperation(ViewGenerating)
+		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, "", id), m.waitForMessageCmd())
 	}
 
 	return m, nil
@@ -375,8 +375,8 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewCosignerReferenceDetails
 		return m, nil
 	}
-	submitFn := func(keyType string, params map[string]string) tea.Cmd {
-		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params), m.waitForMessageCmd())
+	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
+		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params, id), m.waitForMessageCmd())
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == ViewGenerateForm {
@@ -391,7 +391,7 @@ func (m Model) handleParamModalKeys(
 	msg tea.KeyMsg,
 	keyTypeIndex int,
 	escView, submitView ViewState,
-	submitFn func(string, map[string]string) tea.Cmd,
+	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
 ) (Model, tea.Cmd, string) {
 	keyType := getKeyTypeByIndex(keyTypeIndex)
 	if escView == ViewImportForm {
@@ -538,8 +538,8 @@ func (m Model) handleParamModalKeys(
 			if err := spec.Validate(transformedParams); err != nil {
 				return m, nil, err.Error()
 			}
-			m.viewState = submitView
-			return m, submitFn(keyType, transformedParams), ""
+			id := m.beginOperation(submitView)
+			return m, submitFn(keyType, transformedParams, id), ""
 		}
 		if m.forms.generateFocus < maxFocus {
 			m.forms.generateFocus++
@@ -954,13 +954,13 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Delete selected - send delete request
-		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
+		id := m.beginOperation(ViewDeleting)
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
 
 	case "y":
 		// Quick confirm delete
-		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
+		id := m.beginOperation(ViewDeleting)
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address, id), m.waitForMessageCmd())
 	}
 
 	return m, nil

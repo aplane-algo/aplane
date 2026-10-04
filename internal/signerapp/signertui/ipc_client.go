@@ -890,6 +890,20 @@ func ipcCmd(client *IPCClient, fn func(*IPCClient) error) tea.Cmd {
 	}
 }
 
+// operationCmd is ipcCmd for a request an in-progress screen waits on: a send
+// failure carries the request's ID so it fails that operation.
+func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return ErrorMsg{ID: id, Error: fmt.Errorf("not connected")}
+		}
+		if err := fn(client); err != nil {
+			return ErrorMsg{ID: id, Error: err}
+		}
+		return nil
+	}
+}
+
 // SendAuthCmd returns a tea.Cmd that sends an authentication request
 func (m Model) sendAuthCmd(passphrase string) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendAuth(passphrase) })
@@ -959,11 +973,11 @@ func (c *IPCClient) SendListKeys() error {
 }
 
 // SendGenerateKey sends a request to generate a new key
-func (c *IPCClient) SendGenerateKey(keyType, name string) error {
+func (c *IPCClient) SendGenerateKey(keyType, name string, id string) error {
 	msg := GenerateKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeGenerateKey,
-			ID:   fmt.Sprintf("gen-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 		Name:    name,
@@ -972,11 +986,11 @@ func (c *IPCClient) SendGenerateKey(keyType, name string) error {
 }
 
 // SendBackup requests signer-managed creation of a backup archive.
-func (c *IPCClient) SendBackup(exportPassphrase string) error {
+func (c *IPCClient) SendBackup(exportPassphrase string, id string) error {
 	msg := BackupMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeBackup,
-			ID:   fmt.Sprintf("backup-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		ExportPassphrase: SensitiveBytes([]byte(exportPassphrase)),
 	}
@@ -1046,11 +1060,11 @@ func (c *IPCClient) SendReconcileStore() error {
 
 // SendGenerateKeyWithParams sends a request to generate a new key with parameters
 // Used for generic LogicSigs like timelock that require additional configuration
-func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string) error {
+func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[string]string, id string) error {
 	msg := GenerateKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeGenerateKey,
-			ID:   fmt.Sprintf("gen-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:    keyType,
 		Name:       name,
@@ -1060,11 +1074,11 @@ func (c *IPCClient) SendGenerateKeyWithParams(keyType, name string, params map[s
 }
 
 // SendDeleteKey sends a request to delete a key
-func (c *IPCClient) SendDeleteKey(address string) error {
+func (c *IPCClient) SendDeleteKey(address string, id string) error {
 	msg := DeleteKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeDeleteKey,
-			ID:   fmt.Sprintf("del-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		Address: address,
 	}
@@ -1077,12 +1091,12 @@ func (m Model) sendListKeysCmd() tea.Cmd {
 }
 
 // SendGenerateKeyCmd returns a tea.Cmd that sends a generate key request
-func (m Model) sendGenerateKeyCmd(keyType, name string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name) })
+func (m Model) sendGenerateKeyCmd(keyType, name, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, name, id) })
 }
 
-func (m Model) sendBackupCmd(exportPassphrase string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendBackup(exportPassphrase) })
+func (m Model) sendBackupCmd(exportPassphrase, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendBackup(exportPassphrase, id) })
 }
 
 func (m Model) sendListBackupsCmd() tea.Cmd {
@@ -1134,13 +1148,13 @@ func (m Model) sendReconcileStoreCmd() tea.Cmd {
 }
 
 // SendGenerateKeyWithParamsCmd returns a tea.Cmd that sends a generate key request with parameters
-func (m Model) sendGenerateKeyWithParamsCmd(keyType, name string, params map[string]string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGenerateKeyWithParams(keyType, name, params) })
+func (m Model) sendGenerateKeyWithParamsCmd(keyType, name string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKeyWithParams(keyType, name, params, id) })
 }
 
 // SendDeleteKeyCmd returns a tea.Cmd that sends a delete key request
-func (m Model) sendDeleteKeyCmd(address string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendDeleteKey(address) })
+func (m Model) sendDeleteKeyCmd(address, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeleteKey(address, id) })
 }
 
 // SendRevokeToken sends a request to revoke and regenerate the API token
@@ -1173,11 +1187,11 @@ func (c *IPCClient) SendImportKey(keyType, mnemonic string) error {
 }
 
 // SendImportKeyWithParams sends a request to import a key with additional parameters.
-func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string) error {
+func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string, id string) error {
 	msg := ImportKeyMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeImportKey,
-			ID:   fmt.Sprintf("imp-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:    keyType,
 		Mnemonic:   mnemonic,
@@ -1192,8 +1206,8 @@ func (m Model) sendImportKeyCmd(keyType, mnemonic string) tea.Cmd {
 }
 
 // SendImportKeyWithParamsCmd returns a tea.Cmd that sends an import key request with parameters.
-func (m Model) sendImportKeyWithParamsCmd(keyType, mnemonic string, params map[string]string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, params) })
+func (m Model) sendImportKeyWithParamsCmd(keyType, mnemonic string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, params, id) })
 }
 
 // SendGetAdminSettings sends a request to get the current admin settings
@@ -1261,11 +1275,11 @@ func (m Model) sendListLibraryTemplatesCmd() tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListLibraryTemplates() })
 }
 
-func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string) error {
+func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string, id string) error {
 	msg := InstallLibraryTemplateMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeInstallLibraryTemplate,
-			ID:   fmt.Sprintf("tmpl-install-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType:      keyType,
 		TemplateType: templateType,
@@ -1273,8 +1287,8 @@ func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string) err
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType) })
+func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType, id) })
 }
 
 func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType string) error {
@@ -1293,34 +1307,34 @@ func (m Model) sendShowLibraryTemplateCmd(keyType, templateType string) tea.Cmd 
 	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendShowLibraryTemplate(keyType, templateType) })
 }
 
-func (c *IPCClient) SendActivateKeyType(keyType string) error {
+func (c *IPCClient) SendActivateKeyType(keyType string, id string) error {
 	msg := ActivateKeyTypeMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeActivateKeyType,
-			ID:   fmt.Sprintf("keytype-activate-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendActivateKeyTypeCmd(keyType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendActivateKeyType(keyType) })
+func (m Model) sendActivateKeyTypeCmd(keyType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendActivateKeyType(keyType, id) })
 }
 
-func (c *IPCClient) SendDeactivateKeyType(keyType string) error {
+func (c *IPCClient) SendDeactivateKeyType(keyType string, id string) error {
 	msg := DeactivateKeyTypeMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeDeactivateKeyType,
-			ID:   fmt.Sprintf("keytype-deactivate-%d", time.Now().UnixNano()),
+			ID:   id,
 		},
 		KeyType: keyType,
 	}
 	return c.sendMessage(msg)
 }
 
-func (m Model) sendDeactivateKeyTypeCmd(keyType string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendDeactivateKeyType(keyType) })
+func (m Model) sendDeactivateKeyTypeCmd(keyType, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeactivateKeyType(keyType, id) })
 }
 
 func (c *IPCClient) SendListKeyTypes() error {
