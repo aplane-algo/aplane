@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"io"
 	"os"
 	"path/filepath"
@@ -437,7 +438,7 @@ func initializedPolicyStore(t *testing.T, role noderole.Role) (string, string) {
 	lsig.RegisterClient()
 	root := t.TempDir()
 	passphrase := "policycmd-test-passphrase"
-	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
+	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root, Paths: storepaths.NewPaths(root), Role: role,
 	})
 	if err != nil {

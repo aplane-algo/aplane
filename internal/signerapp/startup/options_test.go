@@ -204,14 +204,15 @@ func createAtomicStoreRootForOptionsTest(t *testing.T, paths storepaths.Paths, p
 	defer kr.Zero()
 	const generationID = "gen-1785200000-00000001"
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:      generationID,
-		FirstGeneration:   true,
-		InitialPassphrase: passphrase,
-		Operation:         "test-initialize",
-		OperationID:       "test-init-" + generationID,
-		CreatedAt:         time.Unix(1_785_200_000, 0),
-		Integrity:         kr,
-		Apply:             genstoretest.ApplyAuthorityPlaceholders,
+		SkipCandidateValidation: true,
+		GenerationID:            generationID,
+		FirstGeneration:         true,
+		InitialPassphrase:       passphrase,
+		Operation:               "test-initialize",
+		OperationID:             "test-init-" + generationID,
+		CreatedAt:               time.Unix(1_785_200_000, 0),
+		Integrity:               kr,
+		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(atomic test store) error = %v", err)
 	}

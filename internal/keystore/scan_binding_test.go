@@ -4,6 +4,7 @@
 package keystore_test
 
 import (
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ import (
 func initializedStore(t *testing.T, passphrase []byte) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
 		t.Fatal(err)
 	}
 	return paths
@@ -36,7 +37,8 @@ func mintSuccessor(t *testing.T, paths storepaths.Paths, passphrase []byte, pare
 		t.Fatal(err)
 	}
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: next, Parent: parent, Operation: "test", OperationID: "test-" + next,
+		SkipCandidateValidation: true,
+		GenerationID:            next, Parent: parent, Operation: "test", OperationID: "test-" + next,
 		CreatedAt: time.Now(), Integrity: kr,
 	}); err != nil {
 		t.Fatal(err)

@@ -142,14 +142,15 @@ func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
 
 	firstID := "gen-1785200000-00000001"
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:      firstID,
-		FirstGeneration:   true,
-		InitialPassphrase: passphrase,
-		Operation:         "store-initialize",
-		OperationID:       "init-" + firstID,
-		CreatedAt:         time.Unix(1_785_200_000, 0),
-		Integrity:         kr,
-		Apply:             genstoretest.ApplyAuthorityPlaceholders,
+		SkipCandidateValidation: true,
+		GenerationID:            firstID,
+		FirstGeneration:         true,
+		InitialPassphrase:       passphrase,
+		Operation:               "store-initialize",
+		OperationID:             "init-" + firstID,
+		CreatedAt:               time.Unix(1_785_200_000, 0),
+		Integrity:               kr,
+		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first generation) error = %v", err)
 	}
@@ -169,12 +170,13 @@ func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
 
 	secondID := "gen-1785200001-00000002"
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: secondID,
-		Parent:       firstID,
-		Operation:    "test-successor",
-		OperationID:  "successor-" + secondID,
-		CreatedAt:    time.Unix(1_785_200_001, 0),
-		Integrity:    kr,
+		SkipCandidateValidation: true,
+		GenerationID:            secondID,
+		Parent:                  firstID,
+		Operation:               "test-successor",
+		OperationID:             "successor-" + secondID,
+		CreatedAt:               time.Unix(1_785_200_001, 0),
+		Integrity:               kr,
 	}); err != nil {
 		t.Fatalf("Mint(successor) error = %v", err)
 	}

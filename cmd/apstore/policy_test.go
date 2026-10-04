@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"strings"
 	"testing"
@@ -161,7 +162,7 @@ func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(ro
 	config = serverconfig.DefaultServerConfig()
 	stdinReader = nil
 	passphrase := []byte("policy-passphrase")
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root,
 		Paths:   storepaths.NewPaths(root),
 		Role:    role,

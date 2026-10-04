@@ -34,7 +34,8 @@ func MintFirst(t testing.TB, paths storepaths.Paths) storepaths.Paths {
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	active, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: generationID, FirstGeneration: true,
+		SkipCandidateValidation: true,
+		GenerationID:            generationID, FirstGeneration: true,
 		InitialPassphrase: defaultPassphrase, Integrity: kr,
 		Operation: "store-initialize", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_785_200_000, 0), Apply: ApplyAuthorityPlaceholders,
@@ -63,7 +64,8 @@ func MintFirstAtomic(t testing.TB, paths storepaths.Paths, passphrase []byte) (*
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	active, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID: generationID, FirstGeneration: true,
+		SkipCandidateValidation: true,
+		GenerationID:            generationID, FirstGeneration: true,
 		InitialPassphrase: passphrase, Integrity: kr,
 		Operation: "store-initialize", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_785_200_000, 0), Apply: ApplyAuthorityPlaceholders,

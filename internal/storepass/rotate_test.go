@@ -48,13 +48,14 @@ func newRotateFixture(t *testing.T) rotateFixture {
 	stateBytes := []byte("{\"state\":\"enabled\"}\n")
 	fixture := rotateFixture{paths: paths, oldPassphrase: oldPassphrase, stateBytes: stateBytes}
 	_, err = genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:      rotateFirstGeneration,
-		FirstGeneration:   true,
-		InitialPassphrase: oldPassphrase,
-		Integrity:         kr,
-		Operation:         "store-initialize",
-		OperationID:       "init-" + rotateFirstGeneration,
-		CreatedAt:         time.Unix(1_785_200_000, 0),
+		SkipCandidateValidation: true,
+		GenerationID:            rotateFirstGeneration,
+		FirstGeneration:         true,
+		InitialPassphrase:       oldPassphrase,
+		Integrity:               kr,
+		Operation:               "store-initialize",
+		OperationID:             "init-" + rotateFirstGeneration,
+		CreatedAt:               time.Unix(1_785_200_000, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			if err := noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err

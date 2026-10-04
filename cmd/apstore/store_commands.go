@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 )
 
@@ -118,10 +119,11 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 	}
 
 	initResult, err := storeinit.Initialize(passphrase, storeinit.Options{
-		DataDir: dataDirectory,
-		Paths:   keystorePaths(),
-		Role:    role,
-		Logf:    logInfof,
+		DataDir:           dataDirectory,
+		Paths:             keystorePaths(),
+		Role:              role,
+		Logf:              logInfof,
+		ValidateCandidate: storevalidate.FirstGeneration,
 		// New stores use generation-based active storage
 		// (docs/ARCH_GENERATIONS.md); older binaries reject them via the
 		// keystore metadata version gate.

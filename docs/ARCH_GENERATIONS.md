@@ -144,6 +144,13 @@ The commit order is:
 9. durably replace `store-root.enc` once;
 10. reload and validate the selected generation.
 
+Step 5 includes the caller's complete semantic validation of the candidate
+(`storevalidate.Candidate`: deleted archive, node role, policy, templates, and
+every credential). Every commit runs it, including initialization and
+`apstore rebuild`; `genstore.Mint` refuses a request without it. Rebuild
+matters most: once any generation exists a second rebuild is refused, so an
+invalid first generation could otherwise only be repaired by hand.
+
 A failure before root replacement leaves the old root authoritative. A visible
 candidate after a replacement or directory-sync error is commit-uncertain and
 enters recovery; callers do not blindly retry. Once the one root rename is

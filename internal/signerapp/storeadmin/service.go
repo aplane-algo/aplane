@@ -76,9 +76,10 @@ func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminpro
 	err = s.Deps.WithStoreMutation(func() error {
 		var initErr error
 		initResult, initErr = storeinit.Initialize(req.Passphrase, storeinit.Options{
-			DataDir: s.Deps.DataDir(),
-			Paths:   s.Deps.KeyPaths(),
-			Logf:    s.Deps.Logf,
+			DataDir:           s.Deps.DataDir(),
+			Paths:             s.Deps.KeyPaths(),
+			Logf:              s.Deps.Logf,
+			ValidateCandidate: storevalidate.FirstGeneration,
 		})
 		if initErr != nil {
 			return initErr

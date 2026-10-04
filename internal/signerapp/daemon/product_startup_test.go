@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"path/filepath"
 	"strings"
@@ -296,7 +297,7 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root,
 		Paths:   server.keyPaths,
 	}); err != nil {
@@ -355,7 +356,7 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root,
 		Paths:   server.keyPaths,
 	}); err != nil {
@@ -401,7 +402,7 @@ func TestBuildProductRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("role-passphrase")
 	defer crypto.ZeroBytes(passphrase)
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root,
 		Paths:   server.keyPaths,
 	}); err != nil {
@@ -440,7 +441,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
-	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
 		DataDir: root,
 		Paths:   server.keyPaths,
 	}); err != nil {

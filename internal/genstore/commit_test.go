@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +22,8 @@ var testStoreRootPassphrase = []byte("atomic-root-mint-passphrase")
 func mintFirst(t *testing.T, paths storepaths.Paths, files map[string]string) storepaths.GenPaths {
 	t.Helper()
 	gen, err := Mint(paths, MintRequest{
-		GenerationID: testGenA, FirstGeneration: true,
+		SkipCandidateValidation: true,
+		GenerationID:            testGenA, FirstGeneration: true,
 		InitialPassphrase: testStoreRootPassphrase, Integrity: testKeyring(t),
 		Operation: "test-init", OperationID: "op-init",
 		CreatedAt: time.Unix(1_753_500_000, 0),
@@ -75,7 +77,8 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "original"})
 	second, err := Mint(paths, MintRequest{
-		GenerationID: testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
 		Operation: "test-activation", OperationID: "op-2", CreatedAt: time.Unix(1_753_500_100, 0),
 		Apply: func(staged storepaths.GenPaths) error {
 			return os.WriteFile(filepath.Join(staged.KeysDir(), "B.key"), []byte("new"), 0o600)
@@ -110,7 +113,8 @@ func TestMintApplyFailureLeavesRootExact(t *testing.T) {
 	}
 	injected := errors.New("apply failed")
 	_, err = Mint(paths, MintRequest{
-		GenerationID: testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
 		Operation: "test-activation", OperationID: "op-2", CreatedAt: time.Unix(1_753_500_100, 0),
 		Apply: func(storepaths.GenPaths) error { return injected },
 	})
@@ -163,7 +167,8 @@ func TestMintCrashBeforeRootReplacementLeavesParentSelected(t *testing.T) {
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
 	_, err := Mint(paths, MintRequest{
-		GenerationID: testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB, Parent: first.GenerationID(), Integrity: testKeyring(t),
 		Operation: "test-activation", OperationID: "op-2", CreatedAt: time.Unix(1_753_500_100, 0),
 	})
 	if !errors.Is(err, injected) {
@@ -172,5 +177,25 @@ func TestMintCrashBeforeRootReplacementLeavesParentSelected(t *testing.T) {
 	fsutil.TestHook = nil
 	if selectedForTest(t, paths).GenerationID() != first.GenerationID() {
 		t.Fatal("pre-rename failure changed selection")
+	}
+}
+
+// Mint refuses a commit that skips semantic validation: genstore checks
+// structure only, so a workflow without the hook could publish a store that
+// signing then rejects.
+func TestMintRequiresCandidateValidation(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	_, err := Mint(paths, MintRequest{
+		GenerationID: testGenA, FirstGeneration: true,
+		InitialPassphrase: testStoreRootPassphrase, Integrity: testKeyring(t),
+		Operation: "test-init", OperationID: "op-init",
+		CreatedAt: time.Unix(1_753_500_000, 0),
+		Apply:     writeTestGenerationAuthority,
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires candidate validation") {
+		t.Fatalf("Mint() without ValidateCandidate error = %v", err)
+	}
+	if _, statErr := os.Stat(paths.GenerationsDir()); !os.IsNotExist(statErr) {
+		t.Fatalf("refused mint created generation state: %v", statErr)
 	}
 }

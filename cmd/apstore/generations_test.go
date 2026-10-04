@@ -30,14 +30,15 @@ func newGenerationalTestStore(t *testing.T, passphrase string) storepaths.Paths 
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:      generationID,
-		FirstGeneration:   true,
-		InitialPassphrase: []byte(passphrase),
-		Integrity:         kr,
-		Operation:         "store-initialize",
-		OperationID:       "init-" + generationID,
-		CreatedAt:         time.Unix(1_785_100_000, 0),
-		Apply:             genstoretest.ApplyAuthorityPlaceholders,
+		SkipCandidateValidation: true,
+		GenerationID:            generationID,
+		FirstGeneration:         true,
+		InitialPassphrase:       []byte(passphrase),
+		Integrity:               kr,
+		Operation:               "store-initialize",
+		OperationID:             "init-" + generationID,
+		CreatedAt:               time.Unix(1_785_100_000, 0),
+		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first) error = %v", err)
 	}

@@ -130,14 +130,15 @@ func mintFirstGenerationForBackupTest(t *testing.T, paths storepaths.Paths) stor
 		t.Fatalf("NewGenerationID: %v", err)
 	}
 	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		GenerationID:      generationID,
-		FirstGeneration:   true,
-		InitialPassphrase: []byte("backup-test-store-passphrase"),
-		Operation:         "store-initialize",
-		OperationID:       "init-" + generationID,
-		CreatedAt:         time.Unix(1_785_200_000, 0),
-		Integrity:         cryptotest.Keyring(t, testExportMasterKey),
-		Apply:             genstoretest.ApplyAuthorityPlaceholders,
+		SkipCandidateValidation: true,
+		GenerationID:            generationID,
+		FirstGeneration:         true,
+		InitialPassphrase:       []byte("backup-test-store-passphrase"),
+		Operation:               "store-initialize",
+		OperationID:             "init-" + generationID,
+		CreatedAt:               time.Unix(1_785_200_000, 0),
+		Integrity:               cryptotest.Keyring(t, testExportMasterKey),
+		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(first): %v", err)
 	}

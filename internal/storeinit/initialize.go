@@ -25,6 +25,19 @@ type Options struct {
 	Paths   storepaths.Paths
 	Role    noderole.Role
 	Logf    func(format string, args ...any)
+	// ValidateCandidate runs the complete semantic validation of the staged
+	// first generation before it is committed (storevalidate.FirstGeneration).
+	// It is required: storeinit cannot import signer validation itself.
+	ValidateCandidate func(FirstGenerationCandidate) error
+}
+
+// FirstGenerationCandidate is a staged first generation awaiting validation.
+type FirstGenerationCandidate struct {
+	Paths   storepaths.Paths
+	Staged  storepaths.GenPaths
+	Keyring *crypto.Keyring
+	Role    noderole.Role
+	DataDir string
 }
 
 type Result struct {
@@ -35,6 +48,9 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	var result Result
 	if len(passphrase) == 0 {
 		return result, fmt.Errorf("passphrase cannot be empty")
+	}
+	if opts.ValidateCandidate == nil {
+		return result, fmt.Errorf("store initialization requires candidate validation")
 	}
 	if opts.DataDir == "" {
 		return result, fmt.Errorf("data directory is required")
@@ -114,6 +130,11 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 			OperationID:       "init-" + generationID,
 			CreatedAt:         time.Now(),
 			Integrity:         keyring,
+			ValidateCandidate: func(staged storepaths.GenPaths) error {
+				return opts.ValidateCandidate(FirstGenerationCandidate{
+					Paths: opts.Paths, Staged: staged, Keyring: keyring, Role: role, DataDir: opts.DataDir,
+				})
+			},
 			Apply: func(staged storepaths.GenPaths) error {
 				if err := noderole.SaveGenerationSidecarWithKeyring(
 					staged,
