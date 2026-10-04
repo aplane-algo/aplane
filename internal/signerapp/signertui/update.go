@@ -108,10 +108,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
-		m.clearRestorePassphrase()
-		m.clearPendingApprovals()
-		m.clearCosignerWorkflowState()
-		m.resetActivityState()
+		m.endAdminSession()
 		m.viewState = ViewAuth
 		m.auth.passphraseInput = ""
 		m.auth.passphraseError = ""
@@ -141,11 +138,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case DisconnectedMsg:
-		m.clearRestorePassphrase()
-		m.clearPendingApprovals()
-		m.clearCosignerWorkflowState()
-		m.resetActivityState()
-		m.manualLock.pending = false
+		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
 		if msg.Error != nil {
 			m.lastError = msg.Error.Error()
@@ -153,11 +146,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case localIdleDisconnectedMsg:
-		m.clearRestorePassphrase()
-		m.clearPendingApprovals()
-		m.clearCosignerWorkflowState()
-		m.resetActivityState()
-		m.manualLock.pending = false
+		m.endAdminSession()
 		m.connectionState = ConnectionConnecting
 		m.signerStatusKnown = false
 		m.viewState = ViewAuth
@@ -171,15 +160,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SignerStatusMsg:
 		switch signerRuntimeStateFromWire(msg.State) {
 		case signerRuntimeUnlocked:
-			m.applySignerUnlockedState(msg.KeyCount)
-			idleCmd := m.armLocalIdleTimer()
-			// If signer is already unlocked, request key list
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListCosignerReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, m.enterUnlocked(msg.KeyCount)
 		case signerRuntimeRecovery:
 			// Signing is blocked by store damage or an unresolved generation
 			// transition; open the general recovery screen.
-			m.applySignerRecoveryState()
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+			return m, m.enterRecovery()
 		default:
 			// Signer locked; show unlock screen immediately regardless of
 			// current view. Any in-progress operation would fail anyway since
@@ -197,13 +182,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Code == protocol.ResultCodeRecoveryBlocked {
 				// Unlock succeeded into recovery mode; signing stays blocked
 				// until a strict reconcile/reload succeeds.
-				m.applySignerRecoveryState()
-				return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+				return m, m.enterRecovery()
 			}
-			m.applySignerUnlockedState(msg.KeyCount)
-			idleCmd := m.armLocalIdleTimer()
-			// Request the key list after unlocking
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendListCosignerReferencesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
+			return m, m.enterUnlocked(msg.KeyCount)
 		} else {
 			m.auth.passphraseError = msg.Error
 			if isSeriousUnlockError(msg.Code, msg.Error) {
@@ -220,9 +201,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.manualLock.pending = false
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
-		}
-		if m.manualLock.pending {
-			return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 
@@ -318,10 +296,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd())
 
 	case ReconnectingMsg:
-		m.clearRestorePassphrase()
-		m.clearPendingApprovals()
-		m.clearCosignerWorkflowState()
-		m.resetActivityState()
+		m.endAdminSession()
 		m.connectionState = ConnectionConnecting
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
@@ -500,12 +475,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewState = ViewStoreRecovery
 			return m, m.waitForMessageCmd()
 		}
-		m.applySignerUnlockedState(msg.Result.KeyCount)
 		m.restore.recoveryError = ""
-		m.viewState = ViewKeyList
-		return m, tea.Batch(
-			m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.armLocalIdleTimer(),
-		)
+		return m, m.enterUnlocked(msg.Result.KeyCount)
 
 	case ImportResultMsg:
 		if msg.Success {
@@ -536,8 +507,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DisplacedMsg:
 		// We've been displaced by another apadmin client
-		m.clearPendingApprovals()
-		m.resetActivityState()
+		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
 		m.lastError = msg.Reason
 		// Do NOT issue WaitForMessageCmd - no reconnect
@@ -603,9 +573,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			errText = msg.Error.Error()
 		}
-		if m.manualLock.pending {
-			return m, m.handleManualLockFailed(errText)
-		}
 		return m, m.handleManualLockFailed(errText)
 
 	case KeyDetailsMsg:
@@ -641,28 +608,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case InstallLibraryTemplateResultMsg:
-		if msg.Success {
-			m.library.installError = ""
-			if msg.AlreadyExists {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense()
-			} else {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense()
-			}
-			m.library.pendingTemplate = nil
-			m.viewState = ViewTemplateLibrary
-			return m, tea.Batch(
-				m.waitForMessageCmd(),
-				m.sendListLibraryTemplatesCmd(),
-				m.sendListKeyTypesCmd(),
-				m.sendListKeysCmd(),
-			)
-		}
-		m.library.installError = msg.Error
-		if m.library.installError == "" {
-			m.library.installError = "Key type enable failed"
-		}
-		m.viewState = ViewTemplateInstallConfirm
-		return m, m.waitForMessageCmd()
+		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, "Key type enable failed")
 
 	case ShowLibraryTemplateResultMsg:
 		// Only adopt the result if we're still waiting for it; ignore late replies
@@ -692,52 +638,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ActivateKeyTypeResultMsg:
-		if msg.Success {
-			m.library.installError = ""
-			if msg.AlreadyExists {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense()
-			} else {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense()
-			}
-			m.library.pendingTemplate = nil
-			m.viewState = ViewTemplateLibrary
-			return m, tea.Batch(
-				m.waitForMessageCmd(),
-				m.sendListLibraryTemplatesCmd(),
-				m.sendListKeyTypesCmd(),
-				m.sendListKeysCmd(),
-			)
-		}
-		m.library.installError = msg.Error
-		if m.library.installError == "" {
-			m.library.installError = libraryActivateFailure()
-		}
-		m.viewState = ViewTemplateInstallConfirm
-		return m, m.waitForMessageCmd()
+		return m.finishLibraryAction(msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryActivateFailure())
 
 	case DeactivateKeyTypeResultMsg:
-		if msg.Success {
-			m.library.installError = ""
-			if msg.Removed {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
-			} else {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " was already disabled"
-			}
-			m.library.pendingTemplate = nil
-			m.viewState = ViewTemplateLibrary
-			return m, tea.Batch(
-				m.waitForMessageCmd(),
-				m.sendListLibraryTemplatesCmd(),
-				m.sendListKeyTypesCmd(),
-				m.sendListKeysCmd(),
-			)
+		status := displayKeyType(msg.KeyType) + " was already disabled"
+		if msg.Removed {
+			status = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
 		}
-		m.library.installError = msg.Error
-		if m.library.installError == "" {
-			m.library.installError = libraryDeactivateFailure()
-		}
-		m.viewState = ViewTemplateInstallConfirm
-		return m, m.waitForMessageCmd()
+		return m.finishLibraryAction(msg.Success, status, msg.Error, libraryDeactivateFailure())
 
 	case KeyTypesMsg:
 		if msg.Error != "" {

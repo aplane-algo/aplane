@@ -82,6 +82,38 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 	m.activity.lastInputAt = time.Now()
 }
 
+// endAdminSession clears everything tied to an admin session that has ended.
+// apsigner has already failed the session's pending approvals and requests, and
+// the restore passphrase must not outlive the session.
+func (m *Model) endAdminSession() {
+	m.clearRestorePassphrase()
+	m.clearPendingApprovals()
+	m.clearCosignerWorkflowState()
+	m.resetActivityState()
+	m.manualLock.pending = false
+}
+
+// enterUnlocked shows the unlocked signer and loads everything its screens
+// read. Every path into the unlocked state goes through here.
+func (m *Model) enterUnlocked(keyCount int) tea.Cmd {
+	m.applySignerUnlockedState(keyCount)
+	return tea.Batch(
+		m.waitForMessageCmd(),
+		m.sendListKeysCmd(),
+		m.sendListKeyTypesCmd(),
+		m.sendListCosignerReferencesCmd(),
+		m.sendGetAdminSettingsCmd(),
+		m.armLocalIdleTimer(),
+	)
+}
+
+// enterRecovery opens the blocking recovery screen and loads the settings it
+// shows.
+func (m *Model) enterRecovery() tea.Cmd {
+	m.applySignerRecoveryState()
+	return tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), m.armLocalIdleTimer())
+}
+
 // applySignerRecoveryState opens the blocking recovery screen: an incomplete
 // store validation blocks signing server-side, so ordinary navigation is disabled
 // until every marker is resolved.
