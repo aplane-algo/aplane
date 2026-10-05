@@ -154,20 +154,26 @@ library instead:
 apadmin -d $APSIGNER_DATA template import library/templates/aplane.corridor.v1.yaml
 ```
 
-Before generating a guarded or bounded-cosigner account, choose **Export Cosigner
-Key** on the cosigner and **Import Cosigner Key** on the primary signer. In
-signer-side `apadmin`, press `e` for **Cosigners**, import the public file, and
-compare the complete Witness Key ID. `Generate account` then
-shows only enabled account key types compatible with that witness type. The UI
-submits the stable Witness Key ID and the signer resolves it to the full public
-key; the normal workflow does not ask the operator to paste Falcon hex.
+Before generating a guarded or bounded-cosigner account, choose **Export Setup
+File** on the cosigner. On the primary signer, start **Generate account** in
+`apadmin`, open the **Cosigner** field, and choose **Use setup file...** or
+**Paste public JSON...**. Compare the complete Witness Key ID with the value
+shown on the cosigner and import; the form returns with that key selected. A
+key that is already imported is offered under its existing name rather than
+imported again. The UI submits the stable Witness Key ID and the signer
+resolves it to the full public key; the normal workflow does not ask the
+operator to paste Falcon hex.
 
-The Cosigners manager also offers `p: Paste JSON`: paste either public document
-using your terminal's paste shortcut, review or edit the proposed reference
-name, and compare the full Witness Key ID. Multiline JSON is accepted up to 64 KiB. It uses the same
-validation and signer-reference import as file import.
+The **Cosigners** manager (`e` in signer-side `apadmin`) remains available for
+managing imported keys directly. Press `i` to import a setup file or
+`p: Paste JSON` to paste either public document using your terminal's paste
+shortcut, review or edit the proposed reference name, and compare the full
+Witness Key ID. Multiline JSON is accepted up to 64 KiB, with the same
+validation and signer-reference import as file import. Choosing
+`Generate account` from an imported key shows only enabled account key types
+compatible with that witness type.
 
-The cosigner key file contains public information only. Its endpoint is client
+The setup file contains public information only. Its endpoint is client
 routing metadata; client access provisioning and SSH host trust remain
 separate explicit steps in apshell. apadmin imports only the public reference.
 
@@ -176,11 +182,6 @@ the full JSON directly in the terminal for manual copying without creating
 a file. Press Enter to return to the export screen. This uses terminal
 scrollback and natural wrapping without inserting newlines into JSON values.
 File export and the batch stdout command also preserve the original JSON bytes.
-
-The account-generation **Cosigner** field offers the same import directly:
-choose **Use setup file...** or **Paste public JSON...** there to import a key
-and return to the form with it selected. A key that is already imported is
-offered under its existing name rather than imported again.
 
 In apshell, run `endpoints add <setup-file>`, or `endpoints add` to paste JSON.
 Exports from the apadmin TUI always carry the endpoint; supply `--endpoint`
