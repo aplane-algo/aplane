@@ -1063,7 +1063,6 @@ def main() -> int:
             amount=0,
             note=b"aplane python sdk guarded validate",
             fee=MIN_TXN_FEE,
-            use_flat_fee=True,
         )
         result = sign_prepared_guarded_group(
             user_client=user_client,
@@ -1164,7 +1163,6 @@ def main() -> int:
             amount=0,
             note=b"aplane python sdk corridor allow",
             fee=MIN_TXN_FEE,
-            use_flat_fee=True,
         )
         result = sign_prepared_bounded_cosigner_group(
             user_client=user_client,
@@ -1194,7 +1192,6 @@ def main() -> int:
             amount=0,
             note=b"aplane python sdk corridor deny",
             fee=MIN_TXN_FEE,
-            use_flat_fee=True,
         )
         try:
             sign_prepared_bounded_cosigner_group(
@@ -1283,7 +1280,6 @@ async function main() {
       amount: 0,
       note: new TextEncoder().encode("aplane typescript sdk guarded validate"),
       fee: MIN_TXN_FEE,
-      useFlatFee: true,
     });
     const result = await signPreparedGuardedGroup({
       userClient,
