@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 var ErrUnsupportedClientEndpointConfig = errors.New("unsupported apclient endpoint config")
@@ -101,6 +103,14 @@ type StoredClientEndpointUpsertPlan struct {
 	Created        bool
 	Updated        bool
 	DefaultChanged bool
+	// DestinationChanged reports that Alias already existed and would now
+	// present its token to a different service.
+	DestinationChanged bool
+	// RetireTokenPath is the resolved token file that applying the plan removes
+	// before the new route is written. It is set whenever DestinationChanged is.
+	RetireTokenPath string
+	// RetiresExistingToken reports that RetireTokenPath currently holds a file.
+	RetiresExistingToken bool
 }
 
 // PlanStoredClientEndpointUpsert validates one endpoint upsert and returns the
@@ -126,25 +136,122 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
+	plan := StoredClientEndpointUpsertPlan{Alias: alias}
+	if exists && ClientEndpointDestinationChanged(existing, normalized) {
+		tokenPath := resolvedClientEndpointTokenPath(dataDir, normalized)
+		for otherAlias, other := range registry.Endpoints {
+			if otherAlias == alias {
+				continue
+			}
+			if sameClientEndpointTokenFile(tokenPath, resolvedClientEndpointTokenPath(dataDir, other)) {
+				return StoredClientEndpointUpsertPlan{}, fmt.Errorf(
+					"endpoint alias %q shares token file %s with alias %q; changing its destination would retire a shared credential, so give %q its own token_file first",
+					alias, tokenPath, otherAlias, alias,
+				)
+			}
+		}
+		plan.DestinationChanged = true
+		plan.RetireTokenPath = tokenPath
+		if _, err := os.Lstat(tokenPath); err == nil {
+			plan.RetiresExistingToken = true
+		}
+	}
 	oldDefault := registry.Default
 	registry.Endpoints[alias] = normalized
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return StoredClientEndpointUpsertPlan{}, err
 	}
-	return StoredClientEndpointUpsertPlan{
-		Registry:       registry,
-		Alias:          alias,
-		Endpoint:       registry.Endpoints[alias],
-		Created:        !exists,
-		Updated:        exists && !storedClientEndpointsEqual(existing, normalized),
-		DefaultChanged: oldDefault != registry.Default,
-	}, nil
+	plan.Registry = registry
+	plan.Endpoint = registry.Endpoints[alias]
+	plan.Created = !exists
+	plan.Updated = exists && !storedClientEndpointsEqual(existing, normalized)
+	plan.DefaultChanged = oldDefault != registry.Default
+	return plan, nil
 }
 
 // ApplyStoredClientEndpointUpsert writes a previously planned endpoint
-// registry change.
+// registry change. Callers hold the client-data lock.
+//
+// A token is only ever presented to the destination that issued it. When the
+// plan moves an alias to another destination, its token is retired durably
+// before the new route is written, so an interruption between the two steps
+// leaves the old route without a token rather than the new route with the old
+// one.
 func ApplyStoredClientEndpointUpsert(dataDir string, plan StoredClientEndpointUpsertPlan) error {
+	if plan.RetireTokenPath != "" {
+		if err := tokenfile.RetireToken(plan.RetireTokenPath); err != nil {
+			return fmt.Errorf("retire token for endpoint %q before changing its destination: %w", plan.Alias, err)
+		}
+	}
 	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
+}
+
+// ClientEndpointDestinationChanged reports whether next would present a token
+// to a different service than previous. A destination is the URL plus, for
+// ssh:// endpoints, the REST port reached through the SSH connection.
+func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool {
+	previousURL := strings.TrimRight(strings.TrimSpace(previous.URL), "/")
+	nextURL := strings.TrimRight(strings.TrimSpace(next.URL), "/")
+	if previousURL != nextURL {
+		return true
+	}
+	if !strings.HasPrefix(nextURL, "ssh://") {
+		return false
+	}
+	return effectiveClientEndpointSignerPort(previous) != effectiveClientEndpointSignerPort(next)
+}
+
+func effectiveClientEndpointSignerPort(endpoint ClientEndpointConfig) int {
+	if endpoint.SignerPort == 0 {
+		return DefaultRESTPort
+	}
+	return endpoint.SignerPort
+}
+
+// SameClientEndpointTokenFile reports whether two token_file settings name
+// one file once resolved against dataDir. Different spellings of a path, and
+// symlinks to it, are the same credential.
+func SameClientEndpointTokenFile(dataDir string, a, b ClientEndpointConfig) bool {
+	return sameClientEndpointTokenFile(resolvedClientEndpointTokenPath(dataDir, a), resolvedClientEndpointTokenPath(dataDir, b))
+}
+
+// resolvedClientEndpointTokenPath returns the absolute, cleaned token path for
+// a normalized endpoint profile.
+func resolvedClientEndpointTokenPath(dataDir string, endpoint ClientEndpointConfig) string {
+	path := ResolvePath(endpoint.TokenFile, dataDir)
+	if path == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return filepath.Clean(path)
+}
+
+func sameClientEndpointTokenFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	if errA == nil && errB == nil {
+		return os.SameFile(infoA, infoB)
+	}
+	// One or both files are absent; fall back to their resolved locations.
+	return evalClientEndpointTokenDir(a) == evalClientEndpointTokenDir(b)
+}
+
+// evalClientEndpointTokenDir resolves symlinks in the directory part of a
+// token path, which exists even when the token file does not.
+func evalClientEndpointTokenDir(path string) string {
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return path
+	}
+	return filepath.Join(dir, filepath.Base(path))
 }
 
 // UpsertStoredClientEndpoint adds one endpoint profile to endpoints.yaml. When

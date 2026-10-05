@@ -4,11 +4,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
@@ -345,5 +348,175 @@ ssh:
 signer_port: 12270
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+}
+
+func writeTestEndpointToken(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("issued-by-previous-destination\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpsertStoredClientEndpointRetiresTokenWhenDestinationChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		previous ClientEndpointConfig
+		next     ClientEndpointConfig
+		retired  bool
+	}{
+		{
+			name:     "url",
+			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://old.example:22"},
+			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://new.example:22"},
+			retired:  true,
+		},
+		{
+			name:     "ssh api port",
+			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: 11270},
+			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: 12270},
+			retired:  true,
+		},
+		{
+			name:     "https url",
+			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "https://old.example"},
+			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "https://new.example"},
+			retired:  true,
+		},
+		{
+			name:     "default ssh api port spelled out",
+			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"},
+			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: DefaultRESTPort},
+			retired:  false,
+		},
+		{
+			name:     "client-local settings only",
+			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"},
+			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", IdentityFile: "/custom/id"},
+			retired:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			if _, err := UpsertStoredClientEndpoint(dataDir, "field", tt.previous, true); err != nil {
+				t.Fatal(err)
+			}
+			tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+			writeTestEndpointToken(t, tokenPath)
+
+			plan, err := PlanStoredClientEndpointUpsert(dataDir, "field", tt.next, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.DestinationChanged != tt.retired || plan.RetiresExistingToken != tt.retired {
+				t.Fatalf("plan = %#v, want destination change %v", plan, tt.retired)
+			}
+			if _, err := os.Stat(tokenPath); err != nil {
+				t.Fatalf("planning touched the token file: %v", err)
+			}
+			if err := ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+				t.Fatal(err)
+			}
+			_, statErr := os.Stat(tokenPath)
+			if tt.retired && !os.IsNotExist(statErr) {
+				t.Fatalf("token stat error = %v, want the previous destination's token removed", statErr)
+			}
+			if !tt.retired && statErr != nil {
+				t.Fatalf("token stat error = %v, want the token kept for an unchanged destination", statErr)
+			}
+		})
+	}
+}
+
+func TestUpsertStoredClientEndpointRetiresTokenBeforePublishingRoute(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://old.example",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+	writeTestEndpointToken(t, tokenPath)
+	plan, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://new.example",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Interrupt the route publication. The token removal must already be
+	// synced by then, so the interruption leaves the old route without a
+	// token rather than the new route with the old one.
+	interrupted := errors.New("interrupted before the route was published")
+	tokenDirSynced := false
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == filepath.Dir(tokenPath) {
+			tokenDirSynced = true
+		}
+		if op == fsutil.OpRename {
+			if !tokenDirSynced {
+				t.Errorf("route publication began before the token removal was synced")
+			}
+			return interrupted
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+
+	if err := ApplyStoredClientEndpointUpsert(dataDir, plan); !errors.Is(err, interrupted) {
+		t.Fatalf("ApplyStoredClientEndpointUpsert() error = %v, want the injected interruption", err)
+	}
+	fsutil.TestHook = nil
+	if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+		t.Fatalf("token stat error = %v, want the token retired", err)
+	}
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint := registry.Endpoints["field"]; endpoint.URL != "ssh://old.example" {
+		t.Fatalf("endpoint after interruption = %#v, want the old route", endpoint)
+	}
+}
+
+func TestUpsertStoredClientEndpointRefusesToRetireSharedTokenFile(t *testing.T) {
+	dataDir := t.TempDir()
+	shared := filepath.Join(dataDir, "tokens", "shared.token")
+	// The two profiles name one file through different spellings.
+	if _, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://old.example", TokenFile: filepath.Join("tokens", "shared.token"),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpsertStoredClientEndpoint(dataDir, "other", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://other.example", TokenFile: shared,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	writeTestEndpointToken(t, shared)
+
+	_, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://new.example", TokenFile: filepath.Join("tokens", "shared.token"),
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), `shares token file`) || !strings.Contains(err.Error(), `"other"`) {
+		t.Fatalf("PlanStoredClientEndpointUpsert() error = %v, want shared token refusal naming the other alias", err)
+	}
+	if _, statErr := os.Stat(shared); statErr != nil {
+		t.Fatalf("shared token stat error = %v, want the shared credential kept", statErr)
+	}
+
+	// A symlinked spelling of the same file is the same credential.
+	link := filepath.Join(dataDir, "linked.token")
+	if err := os.Symlink(shared, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://new.example", TokenFile: link,
+	}, true); err == nil || !strings.Contains(err.Error(), `shares token file`) {
+		t.Fatalf("PlanStoredClientEndpointUpsert() via symlink error = %v, want shared token refusal", err)
 	}
 }
