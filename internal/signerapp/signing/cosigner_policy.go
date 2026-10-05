@@ -188,6 +188,10 @@ func (s *Service) logCosignerPolicyRejections(plan *ComponentSignPlan, reason, p
 		if sender == "" && plan.Group != nil && target.TargetIndex >= 0 && target.TargetIndex < len(plan.Group.Entries) {
 			sender = plan.Group.Entries[target.TargetIndex].Txn.Sender.String()
 		}
+		if limited, ok := s.AuditLog.(AuditCosignerRejectLogger); ok && limited != nil {
+			limited.LogCosignerComponentRejected(plan.ComponentKey, sender, "cosigner_policy_rejected: "+reason, policyRuleID)
+			continue
+		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
 				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, sender, "cosigner_policy_rejected: "+reason, policyRuleID)

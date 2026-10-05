@@ -22,11 +22,15 @@ type AuditEventType string
 
 const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 
-// Unauthenticated authentication failures are rate limited: retention is a
-// few rotated files, so an unbounded stream of AUTH_FAILED entries would
-// rotate every earlier entry out of the log. A burst is logged individually;
-// beyond it, one entry is logged per refill interval and the rest are counted
-// in an AUTH_FAILURES_SUPPRESSED summary written within one summary interval.
+// Entries a caller can generate without bound are rate limited: retention is a
+// few rotated files, so an unbounded stream of them would rotate every earlier
+// entry out of the log. Two streams are limited, each separately:
+// unauthenticated AUTH_FAILED entries, and cosigner component rejections
+// (which an authenticated but compromised signer side can provoke at will;
+// cosigner signatures themselves are never limited). A burst is logged
+// individually; beyond it, one entry is logged per refill interval and the
+// rest are counted in a *_SUPPRESSED summary written within one summary
+// interval.
 const (
 	authFailureBurst           = 20
 	authFailureRefillInterval  = 6 * time.Second
@@ -40,6 +44,7 @@ const (
 	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
 	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
 	AuditAuthFailuresSuppressed           AuditEventType = "AUTH_FAILURES_SUPPRESSED"
+	AuditCosignerRejectionsSuppressed     AuditEventType = "COSIGNER_REJECTIONS_SUPPRESSED"
 	AuditAuthorizationDenied              AuditEventType = "AUTHORIZATION_DENIED"
 	AuditServerStart                      AuditEventType = "SERVER_START"
 	AuditServerStop                       AuditEventType = "SERVER_STOP"
@@ -124,12 +129,15 @@ type AuditLogger struct {
 	path    string
 	written uint64
 
-	authFailures authFailureLimiter
+	authFailures       entryLimiter
+	cosignerRejections entryLimiter
 }
 
-// authFailureLimiter is a token bucket over unauthenticated AUTH_FAILED
-// entries, with a pending count of the failures it suppressed.
-type authFailureLimiter struct {
+// entryLimiter is a token bucket over one stream of audit entries, with a
+// pending count of the entries it suppressed.
+type entryLimiter struct {
+	summaryEvent    AuditEventType
+	subject         string // "authentication failures", used in the summary reason
 	mu              sync.Mutex
 	now             func() time.Time // tests may replace the clock
 	summaryAfter    time.Duration    // tests may shorten authFailureSummaryInterval
@@ -158,9 +166,8 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	}
 
 	logger := &AuditLogger{file: file, path: path, written: written}
-	logger.authFailures.now = time.Now
-	logger.authFailures.summaryAfter = authFailureSummaryInterval
-	logger.authFailures.tokens = authFailureBurst
+	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
+	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
 }
 
@@ -303,10 +310,12 @@ func (a *AuditLogger) reopenCurrent() {
 
 // Close closes the audit log file
 func (a *AuditLogger) Close() error {
-	a.authFailures.mu.Lock()
-	a.authFailures.closed = true
-	a.authFailures.mu.Unlock()
-	a.flushAuthFailureSummary()
+	for _, l := range []*entryLimiter{&a.authFailures, &a.cosignerRejections} {
+		l.mu.Lock()
+		l.closed = true
+		l.mu.Unlock()
+		l.flush(a)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.file.Close()
@@ -467,6 +476,15 @@ func (a *AuditLogger) LogSignRejectedAttributedWithPolicyRule(attr Attribution, 
 	a.Log(signRejectedEntry(attr, address, txnSender, reason, policyRuleID))
 }
 
+// LogCosignerComponentRejectedAttributed logs a cosigner policy rejection of
+// one component target, subject to the cosigner-rejection rate limit.
+func (a *AuditLogger) LogCosignerComponentRejectedAttributed(attr Attribution, witnessKeyID, txnSender, reason, policyRuleID string) {
+	if !a.cosignerRejections.admit(a) {
+		return
+	}
+	a.Log(signRejectedEntry(attr, witnessKeyID, txnSender, reason, policyRuleID))
+}
+
 // LogSignFailed logs when a signing attempt fails due to technical errors.
 func (a *AuditLogger) LogSignFailed(address, txnSender, reason string) {
 	a.Log(signFailedEntry(Attribution{}, address, txnSender, reason))
@@ -485,10 +503,23 @@ func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
 	a.LogAuthFailedAttributed("", remoteAddr, reason)
 }
 
+func (l *entryLimiter) init(summaryEvent AuditEventType, subject string) {
+	l.summaryEvent = summaryEvent
+	l.subject = subject
+	l.now = time.Now
+	l.summaryAfter = authFailureSummaryInterval
+	l.tokens = authFailureBurst
+}
+
 // admitAuthFailure reports whether an unauthenticated failure is logged
 // individually; otherwise it is counted toward the next summary.
-func (a *AuditLogger) admitAuthFailure() bool {
-	l := &a.authFailures
+func (a *AuditLogger) admitAuthFailure() bool { return a.authFailures.admit(a) }
+
+func (a *AuditLogger) flushAuthFailureSummary() { a.authFailures.flush(a) }
+
+// admit reports whether the next entry of this stream is logged
+// individually; otherwise it is counted toward the next summary.
+func (l *entryLimiter) admit(a *AuditLogger) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
@@ -506,20 +537,19 @@ func (a *AuditLogger) admitAuthFailure() bool {
 	if l.suppressed == 0 {
 		l.suppressedSince = now
 		if !l.closed {
-			l.summary = time.AfterFunc(l.summaryAfter, a.flushAuthFailureSummary)
+			l.summary = time.AfterFunc(l.summaryAfter, func() { l.flush(a) })
 		}
 	}
 	l.suppressed++
 	return false
 }
 
-// flushAuthFailureSummary records how many failures were suppressed since
-// the first one that was not logged individually. It holds the limiter lock
-// through the write, so Close, which flushes under the same lock, cannot
-// close the file while a timer-driven summary is still being written. Lock
-// order is limiter, then file (a.mu), as in every other path.
-func (a *AuditLogger) flushAuthFailureSummary() {
-	l := &a.authFailures
+// flush records how many entries were suppressed since the first one that
+// was not logged individually. It holds the limiter lock through the write,
+// so Close, which flushes under the same lock, cannot close the file while a
+// timer-driven summary is still being written. Lock order is limiter, then
+// file (a.mu), as in every other path.
+func (l *entryLimiter) flush(a *AuditLogger) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	count, since := l.suppressed, l.suppressedSince
@@ -535,10 +565,10 @@ func (a *AuditLogger) flushAuthFailureSummary() {
 		l.beforeSummary()
 	}
 	a.Log(AuditEntry{
-		Event:           AuditAuthFailuresSuppressed,
+		Event:           l.summaryEvent,
 		Outcome:         "suppressed",
 		SuppressedCount: count,
-		Reason:          fmt.Sprintf("%d authentication failures since %s were not logged individually", count, since.UTC().Format(time.RFC3339)),
+		Reason:          fmt.Sprintf("%d %s since %s were not logged individually", count, l.subject, since.UTC().Format(time.RFC3339)),
 	})
 }
 

@@ -568,6 +568,12 @@ the current projection:
 This is an MVP projection. It preserves event visibility without introducing a
 separate audit event family for component signing.
 
+Rejections are rate limited (a burst of 20, then one per 6 seconds), with the
+rest counted in a `COSIGNER_REJECTIONS_SUPPRESSED` entry, so a compromised
+signer side cannot provoke enough rejections to rotate the record of what the
+cosigner signed out of the audit log. Signatures are always logged
+individually.
+
 ## Implementation Map
 
 Primary packages and files:
