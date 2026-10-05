@@ -76,25 +76,16 @@ func (m Model) openCosignerPicker(keyType, paramName string) (Model, string) {
 		return m, "Cosigner references are still loading; try again"
 	}
 	choices := m.compatibleCosignerChoices(info.CosignerComponentKeyType)
+	m.cosigner.paramName = paramName
+	m.cosigner.returnView = m.viewState
+	m.cosigner.requiredKeyType = info.CosignerComponentKeyType
 	if len(choices) == 0 {
-		m.clearCosignerImportTransient()
-		m.cosigner.importPath = ""
-		m.cosigner.importName = ""
-		m.cosigner.importNameDefault = ""
-		m.cosigner.importFocus = 0
-		m.cosigner.importError = ""
-		m.cosigner.paramName = paramName
-		m.cosigner.returnView = m.viewState
-		m.cosigner.requiredKeyType = info.CosignerComponentKeyType
-		m.clearCosignerImportEnvelope()
-		m.viewState = ViewCosignerImportForm
-		return m, ""
+		// Nothing to choose from yet, so go straight to the setup file.
+		return m.beginGenerationCosignerImport(false), ""
 	}
 
 	m.cosigner.choices = choices
 	m.cosigner.selected = 0
-	m.cosigner.paramName = paramName
-	m.cosigner.returnView = m.viewState
 	if current := m.forms.genericLSigParams[paramName]; current != "" {
 		for index, choice := range choices {
 			if choice.WitnessKeyID == current {
@@ -107,11 +98,53 @@ func (m Model) openCosignerPicker(keyType, paramName string) (Model, string) {
 	return m, ""
 }
 
+// Rows the account-creation picker offers after the imported references, so a
+// setup file can be chosen without visiting the Cosigners manager first.
+const (
+	cosignerPickerUseFileRow = iota
+	cosignerPickerPasteRow
+	cosignerPickerActionRows
+)
+
+// beginGenerationCosignerImport opens the import form from account creation.
+// The parameter, return view, and required key type chosen by the picker are
+// kept so a successful import fills the account's cosigner field.
+func (m Model) beginGenerationCosignerImport(paste bool) Model {
+	requiredKeyType := m.cosigner.requiredKeyType
+	m.clearCosignerImportTransient()
+	m.cosigner.requiredKeyType = requiredKeyType
+	m.cosigner.importPaste = paste
+	m.cosigner.importFocus = 0
+	m.cosigner.choices = nil
+	m.viewState = ViewCosignerImportForm
+	return m
+}
+
 func (m *Model) clearCosignerImportEnvelope() {
 	m.cosigner.envelopeJSON = ""
 	m.cosigner.previewWitnessID = ""
 	m.cosigner.previewKeyType = ""
 	m.cosigner.previewEndpoint = nil
+	m.cosigner.reuseAliases = nil
+}
+
+// referenceAliasesForWitness returns the local names that already hold the
+// given public key, sorted for a stable display.
+func (m Model) referenceAliasesForWitness(witnessKeyID, keyType string) []string {
+	var aliases []string
+	for _, reference := range m.cosigner.references {
+		if reference.ComponentKey == witnessKeyID && reference.KeyType == keyType && reference.Name != "" {
+			aliases = append(aliases, reference.Name)
+		}
+	}
+	sort.Slice(aliases, func(i, j int) bool {
+		left, right := strings.ToLower(aliases[i]), strings.ToLower(aliases[j])
+		if left != right {
+			return left < right
+		}
+		return aliases[i] < aliases[j]
+	})
+	return aliases
 }
 
 func (m *Model) clearCosignerImportTransient() {
@@ -217,6 +250,12 @@ func (m Model) prepareCosignerImportReview() Model {
 	if err != nil {
 		m.cosigner.importError = fmt.Sprintf("invalid public witness envelope: %v", err)
 		return m
+	}
+	m.cosigner.reuseAliases = nil
+	if m.cosigner.paramName != "" {
+		// Account creation reuses a key that is already imported instead of
+		// importing it again under another name.
+		m.cosigner.reuseAliases = m.referenceAliasesForWitness(reference.WitnessKeyID, reference.KeyType)
 	}
 	m.cosigner.envelopeJSON = string(witnessJSON)
 	m.cosigner.previewWitnessID = reference.WitnessKeyID
@@ -384,9 +423,27 @@ func (m Model) handleCosignerImportReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 	case "esc", "n":
 		m.viewState = ViewCosignerImportForm
 	case "enter", " ", "y":
+		if len(m.cosigner.reuseAliases) > 0 {
+			return m.useExistingCosignerReference(), nil
+		}
 		return m.submitCosignerImportReview()
 	}
 	return m, nil
+}
+
+// useExistingCosignerReference fills the account's cosigner field with a key
+// that is already imported and returns to the generation form. Nothing is
+// imported and no reference is rebound.
+func (m Model) useExistingCosignerReference() Model {
+	if m.forms.genericLSigParams == nil {
+		m.forms.genericLSigParams = make(map[string]string)
+	}
+	m.forms.genericLSigParams[m.cosigner.paramName] = m.cosigner.previewWitnessID
+	m.forms.generateError = ""
+	m.viewState = m.cosigner.returnView
+	m.clearCosignerImportTransient()
+	m.cosigner.paramName = ""
+	return m
 }
 
 func (m Model) submitCosignerImportReview() (tea.Model, tea.Cmd) {
@@ -412,7 +469,7 @@ func (m Model) completeCosignerImport(
 	m.clearCosignerImportEnvelope()
 	m.cosigner.importError = ""
 	if managerImport {
-		m.cosigner.managerStatus = "Imported " + reference.Name + ". Next: Generate account; configure its cosigner connection in apshell with cosigner add."
+		m.cosigner.managerStatus = "Imported " + reference.Name + ". Next: Generate account; configure its cosigner connection in apshell with endpoints add."
 		m.cosigner.returnView = ViewKeyList
 		m.viewState = ViewCosignerReferences
 		return m, tea.Batch(
@@ -441,16 +498,23 @@ func (m Model) handleCosignerPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = m.cosigner.returnView
 		m.cosigner.choices = nil
 		m.cosigner.paramName = ""
+		m.cosigner.requiredKeyType = ""
 		return m, nil
 	case "up", "k":
 		if m.cosigner.selected > 0 {
 			m.cosigner.selected--
 		}
 	case "down", "j":
-		if m.cosigner.selected+1 < len(m.cosigner.choices) {
+		if m.cosigner.selected+1 < len(m.cosigner.choices)+cosignerPickerActionRows {
 			m.cosigner.selected++
 		}
 	case "enter", " ":
+		switch m.cosigner.selected - len(m.cosigner.choices) {
+		case cosignerPickerUseFileRow:
+			return m.beginGenerationCosignerImport(false), nil
+		case cosignerPickerPasteRow:
+			return m.beginGenerationCosignerImport(true), nil
+		}
 		if m.cosigner.selected < 0 || m.cosigner.selected >= len(m.cosigner.choices) {
 			return m, nil
 		}
@@ -462,6 +526,7 @@ func (m Model) handleCosignerPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = m.cosigner.returnView
 		m.cosigner.choices = nil
 		m.cosigner.paramName = ""
+		m.cosigner.requiredKeyType = ""
 		m.forms.generateError = ""
 		return m, nil
 	}
@@ -497,7 +562,7 @@ func (m Model) renderCosignerPicker() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Choose Cosigner"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Select the enrolled witness authority for this guarded account."))
+	body.WriteString(subtitleStyle.Render("Select an imported cosigner key for this account, or use the setup file exported by the cosigner."))
 	body.WriteString("\n\n")
 	for index, choice := range m.cosigner.choices {
 		prefix := "  "
@@ -516,6 +581,17 @@ func (m Model) renderCosignerPicker() string {
 		body.WriteString("\n")
 	}
 	body.WriteString("\n")
+	for action, label := range [cosignerPickerActionRows]string{
+		cosignerPickerUseFileRow: "Use setup file...",
+		cosignerPickerPasteRow:   "Paste public JSON...",
+	} {
+		row := "  " + label
+		if m.cosigner.selected == len(m.cosigner.choices)+action {
+			row = selectedStyle.Render("> " + label)
+		}
+		body.WriteString(row + "\n")
+	}
+	body.WriteString("\n")
 	body.WriteString(helpStyle.Render("↑/↓ navigate  Enter select  Esc cancel"))
 	body.WriteString("\n")
 	return m.renderPopup(80, body.String())
@@ -526,9 +602,9 @@ func (m Model) renderCosignerImportForm() string {
 	body.WriteString(titleStyle.Render("Import Cosigner Key"))
 	body.WriteString("\n\n")
 	if m.cosigner.importPaste {
-		body.WriteString(subtitleStyle.Render("Paste the public JSON exported by the cosigner node (up to 64 KiB)."))
+		body.WriteString(subtitleStyle.Render("Paste the setup JSON exported by the cosigner node (up to 64 KiB)."))
 	} else {
-		body.WriteString(subtitleStyle.Render("Choose the cosigner key file exported by the cosigner node."))
+		body.WriteString(subtitleStyle.Render("Choose the setup file exported by the cosigner node."))
 	}
 	body.WriteString("\n\n")
 
@@ -571,6 +647,9 @@ func (m Model) renderCosignerImportForm() string {
 }
 
 func (m Model) renderCosignerImportReview() string {
+	if len(m.cosigner.reuseAliases) > 0 {
+		return m.renderCosignerReuseReview()
+	}
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Review Cosigner Key"))
 	body.WriteString("\n\n")
@@ -587,10 +666,36 @@ func (m Model) renderCosignerImportReview() string {
 	body.WriteString(button)
 	body.WriteString("\n")
 	body.WriteString(warningStyle.Render("Compare the complete Witness Key ID before importing."))
+	if m.cosigner.paramName != "" {
+		body.WriteString("\n" + helpStyle.Render("The imported key stays in Cosigners and is reused next time, even if account creation is cancelled."))
+	}
 	if m.cosigner.importError != "" {
 		body.WriteString("\n\n")
 		body.WriteString(errorStyle.Render(m.cosigner.importError))
 	}
+	body.WriteString("\n")
+	return m.renderPopup(90, body.String())
+}
+
+// renderCosignerReuseReview is shown when account creation chose a setup file
+// whose key is already imported. It offers the existing reference rather than
+// a second import.
+func (m Model) renderCosignerReuseReview() string {
+	var body strings.Builder
+	body.WriteString(titleStyle.Render("Cosigner Key Already Imported"))
+	body.WriteString("\n\n")
+	primary := m.cosigner.reuseAliases[0]
+	body.WriteString("This key is already imported as " + primary + ".")
+	if others := len(m.cosigner.reuseAliases) - 1; others > 0 {
+		body.WriteString(fmt.Sprintf(" (%d other name(s) refer to the same key.)", others))
+	}
+	body.WriteString("\nKey type: " + m.cosigner.previewKeyType + "\n\n")
+	body.WriteString("Witness Key ID:\n")
+	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
+	body.WriteString("\n\n")
+	body.WriteString(buttonActiveStyle.Render("USE " + strings.ToUpper(primary)))
+	body.WriteString("\n")
+	body.WriteString(helpStyle.Render("Nothing is imported or renamed. Esc goes back."))
 	body.WriteString("\n")
 	return m.renderPopup(90, body.String())
 }

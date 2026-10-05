@@ -40,7 +40,7 @@ func (m Model) viewFooterText() string {
 		return "Tab: Next | Enter: Create backup | Esc: Back"
 	case ViewGenerateDisplay:
 		if m.isCosignerNode() && witness.IsKeyType(m.forms.generatedKeyType) {
-			return "e: Export cosigner key | Enter/Esc: Back"
+			return "e: Export setup file | Enter/Esc: Back"
 		}
 		return "Enter/Esc: Back"
 	case ViewBackupDisplay, ViewImportDisplay:
@@ -73,6 +73,9 @@ func (m Model) viewFooterText() string {
 		}
 		return "Tab: Next | Enter: Review | Esc: Back"
 	case ViewCosignerImportReview:
+		if len(m.cosigner.reuseAliases) > 0 {
+			return "Enter/y: Use existing key | n/Esc: Back"
+		}
 		return "Enter/y: Enroll | n/Esc: Back"
 	case ViewCosignerReferences:
 		return "up/down: Select | enter: Details | i: Import file | p: Paste JSON | r: Refresh | esc/q: Back"
