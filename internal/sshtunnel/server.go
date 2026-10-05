@@ -1186,99 +1186,7 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 				_ = req.Reply(true, nil)
 			}
 			go cancelOnProvisioningChannelClosed(requests, cancelApproval)
-
-			// Check if operator is connected (moved here from auth so error message reaches client)
-			if s.operatorCheckCallback == nil || !s.operatorCheckCallback() {
-				fmt.Printf("[SSH] Token provisioning rejected from %s: no operator connected\n", remoteAddr)
-				_, _ = channel.Write([]byte("no operator (apadmin) connected to approve token request\n"))
-				_ = s.sendExitStatus(channel, 1)
-				return
-			}
-
-			// Check if token provisioning is configured
-			if s.tokenApprovalCallback == nil || s.tokenIssuanceCallback == nil {
-				_, _ = channel.Write([]byte("token provisioning not configured on server\n"))
-				_ = s.sendExitStatus(channel, 1)
-				return
-			}
-
-			// One provisioning request per connection, and one pending client
-			// access request server-wide: an unauthenticated client cannot
-			// queue a stream of operator prompts.
-			if _, already := s.provisioningClaims.LoadOrStore(sshConn, struct{}{}); already {
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: only one provisioning request is allowed per connection\n", 1)
-				return
-			}
-			claimed = true
-			if !s.provisioningActive.CompareAndSwap(false, true) {
-				fmt.Printf("[SSH] Client access request from %s refused: another request is pending\n", remoteAddr)
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: another client access request is pending; try again later\n", 1)
-				return
-			}
-			defer s.provisioningActive.Store(false)
-
-			fmt.Printf("[SSH] Processing product token provisioning from %s\n", remoteAddr)
-			fmt.Printf("[SSH] Waiting for operator approval in apadmin for token provisioning request from %s\n", remoteAddr)
-
-			// Step 1: Request operator approval (blocking — waits for apadmin response)
-			approved, err := s.tokenApprovalCallback(approvalCtx, fingerprint, remoteAddr)
-			if err != nil {
-				_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
-				return
-			}
-			if !approved {
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: token provisioning rejected by operator\n", 1)
-				return
-			}
-
-			// Step 2: Enroll the client's SSH key (after approval, before token issuance).
-			// Key enrollment is idempotent — registerAuthorizedKey checks for duplicates.
-			// A key in authorized_keys without a token is harmless (client cannot
-			// authenticate without a valid token). But a token on disk without the key
-			// enrolled would leave the client unable to connect.
-			pubKeyStr := provisioningPublicKeyString(sshConn.Permissions)
-			if pubKeyStr == "" {
-				fmt.Printf("[SSH] Missing public key for enrollment\n")
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-				return
-			}
-			pubKey, _, _, _, parseErr := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
-			if parseErr != nil {
-				fmt.Printf("[SSH] Failed to parse public key for enrollment: %v\n", parseErr)
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-				return
-			}
-			enrollErr := s.enrollKey(pubKey)
-			if enrollErr != nil {
-				fmt.Printf("[SSH] Failed to enroll product SSH key: %v\n", enrollErr)
-				_ = s.respondProvisioning(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-				return
-			}
-
-			// Step 3: Load or generate the token (persists to disk).
-			// If this fails, the key is enrolled but harmless without a token.
-			token, err := s.tokenIssuanceCallback()
-			if err != nil {
-				_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
-				return
-			}
-
-			// Step 4: Send the token. If disconnect or write completion fails,
-			// do not audit the request as successful.
-			if approvalCtx.Err() != nil {
-				fmt.Printf("[SSH] Token provisioning client disconnected before token delivery: %v\n", approvalCtx.Err())
-				return
-			}
-			if err := s.respondProvisioning(sshConn, channel, token+"\n", 0); err != nil {
-				fmt.Printf("[SSH] Failed to send product token to client: %v\n", err)
-				return
-			}
-
-			// Step 5: Audit and log success only after the send path completes.
-			if s.tokenAuditCallback != nil {
-				s.tokenAuditCallback(fingerprint, remoteAddr)
-			}
-			fmt.Printf("[SSH] Product token provisioned and SSH key enrolled to %s\n", remoteAddr)
+			claimed = s.provision(approvalCtx, sshConn, channel, fingerprint, remoteAddr)
 			return
 
 		default:
@@ -1288,6 +1196,115 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 			}
 		}
 	}
+}
+
+// provision runs the connection's single provisioning request. It reports
+// whether the request claimed the connection, which then closes when the
+// request ends.
+func (s *Server) provision(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, remoteAddr string) bool {
+	// Check if operator is connected (moved here from auth so error message reaches client)
+	if s.operatorCheckCallback == nil || !s.operatorCheckCallback() {
+		fmt.Printf("[SSH] Token provisioning rejected from %s: no operator connected\n", remoteAddr)
+		_, _ = channel.Write([]byte("no operator (apadmin) connected to approve token request\n"))
+		_ = s.sendExitStatus(channel, 1)
+		return false
+	}
+	if s.tokenApprovalCallback == nil || s.tokenIssuanceCallback == nil {
+		_, _ = channel.Write([]byte("token provisioning not configured on server\n"))
+		_ = s.sendExitStatus(channel, 1)
+		return false
+	}
+
+	// One provisioning request per connection, and one pending client
+	// access request server-wide: an unauthenticated client cannot
+	// queue a stream of operator prompts.
+	if _, already := s.provisioningClaims.LoadOrStore(sshConn, struct{}{}); already {
+		_ = s.respondProvisioning(sshConn, channel, "ERROR: only one provisioning request is allowed per connection\n", 1)
+		return false
+	}
+	if !s.provisioningActive.CompareAndSwap(false, true) {
+		fmt.Printf("[SSH] Client access request from %s refused: another request is pending\n", remoteAddr)
+		_ = s.respondProvisioning(sshConn, channel, "ERROR: another client access request is pending; try again later\n", 1)
+		return true
+	}
+	defer s.provisioningActive.Store(false)
+
+	s.approveEnrollAndIssue(ctx, sshConn, channel, fingerprint, remoteAddr)
+	return true
+}
+
+// approveEnrollAndIssue asks the operator to approve the client, then enrolls
+// its SSH key, issues the token, and delivers it. Each step runs only after
+// the previous one succeeds, and the request is audited as provisioned only
+// once the token has been delivered.
+func (s *Server) approveEnrollAndIssue(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, remoteAddr string) {
+	fmt.Printf("[SSH] Processing product token provisioning from %s\n", remoteAddr)
+	fmt.Printf("[SSH] Waiting for operator approval in apadmin for token provisioning request from %s\n", remoteAddr)
+
+	// Step 1: Request operator approval (blocking — waits for apadmin response)
+	approved, err := s.tokenApprovalCallback(ctx, fingerprint, remoteAddr)
+	if err != nil {
+		_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
+		return
+	}
+	if !approved {
+		_ = s.respondProvisioning(sshConn, channel, "ERROR: token provisioning rejected by operator\n", 1)
+		return
+	}
+
+	// Step 2: Enroll the client's SSH key (after approval, before token issuance).
+	// A key in authorized_keys without a token is harmless (client cannot
+	// authenticate without a valid token). But a token on disk without the key
+	// enrolled would leave the client unable to connect.
+	if !s.enrollProvisioningKey(sshConn.Permissions) {
+		_ = s.respondProvisioning(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
+		return
+	}
+
+	// Step 3: Load or generate the token (persists to disk).
+	// If this fails, the key is enrolled but harmless without a token.
+	token, err := s.tokenIssuanceCallback()
+	if err != nil {
+		_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
+		return
+	}
+
+	// Step 4: Send the token. If disconnect or write completion fails,
+	// do not audit the request as successful.
+	if ctx.Err() != nil {
+		fmt.Printf("[SSH] Token provisioning client disconnected before token delivery: %v\n", ctx.Err())
+		return
+	}
+	if err := s.respondProvisioning(sshConn, channel, token+"\n", 0); err != nil {
+		fmt.Printf("[SSH] Failed to send product token to client: %v\n", err)
+		return
+	}
+
+	// Step 5: Audit and log success only after the send path completes.
+	if s.tokenAuditCallback != nil {
+		s.tokenAuditCallback(fingerprint, remoteAddr)
+	}
+	fmt.Printf("[SSH] Product token provisioned and SSH key enrolled to %s\n", remoteAddr)
+}
+
+// enrollProvisioningKey enrolls the public key the client authenticated with.
+// Enrollment is idempotent: registerAuthorizedKey checks for duplicates.
+func (s *Server) enrollProvisioningKey(permissions *ssh.Permissions) bool {
+	pubKeyStr := provisioningPublicKeyString(permissions)
+	if pubKeyStr == "" {
+		fmt.Printf("[SSH] Missing public key for enrollment\n")
+		return false
+	}
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
+	if err != nil {
+		fmt.Printf("[SSH] Failed to parse public key for enrollment: %v\n", err)
+		return false
+	}
+	if err := s.enrollKey(pubKey); err != nil {
+		fmt.Printf("[SSH] Failed to enroll product SSH key: %v\n", err)
+		return false
+	}
+	return true
 }
 
 // admitTokenProvisioningConn counts a live request-token connection, refusing

@@ -58,36 +58,67 @@ type decodedNotification struct {
 const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
 
 func main() {
-	// Define flags
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
 
-	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
+	ipcClient, ok := connectApprover(*dataDir, *ipcPathFlag)
+	if !ok {
+		os.Exit(1)
+	}
+	defer ipcClient.Close()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	inputChan := make(chan string)
+	go readStdin(inputChan)
+
+	logInfof("waiting for approval requests (Ctrl+C to quit)")
+	a := &approver{send: ipcClient.WriteJSON}
+	notifications := ipcClient.Notifications()
+	lifecycle := ipcClient.LifecycleEvents()
+	for {
+		select {
+		case <-sigChan:
+			logInfof("shutting down")
+			return
+		case event := <-lifecycle:
+			if connectionEnded(event) {
+				return
+			}
+		case input := <-inputChan:
+			a.handleInput(input)
+		case notification := <-notifications:
+			a.handleNotification(notification)
+		}
+	}
+}
+
+// connectApprover reads the passphrase, connects to the signer's admin IPC
+// socket, and authenticates, which also unlocks a locked signer. It logs the
+// failure and reports false if any step fails.
+func connectApprover(dataDir, ipcPathFlag string) (*transport.IPCClient, bool) {
 	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
+		DataDir: serverconfig.GetSignerDataDir(dataDir), IPCPath: ipcPathFlag, DataDirExplicit: dataDir != "",
 	})
 	if err != nil {
 		logErrorf("%v", err)
-		os.Exit(1)
+		return nil, false
 	}
 
 	logInfof("APApprover - Interactive Signing Approval CLI")
 	logInfof("================================================")
 
-	// Prompt for passphrase
 	fmt.Print("Enter passphrase: ")
 	passphraseBytes, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
 		logErrorf("error reading passphrase: %v", err)
-		os.Exit(1)
+		return nil, false
 	}
 	fmt.Println() // newline after password input
 	passphrase := string(passphraseBytes)
 
-	// Connect via IPC
 	logInfof("connecting to signer via IPC")
-
 	ipcClient := transport.NewIPC(ipcPath)
 	if err := ipcClient.Dial(); err != nil {
 		if errors.Is(err, transport.ErrAlreadyConnected) {
@@ -95,141 +126,130 @@ func main() {
 		} else {
 			logErrorf("IPC connection failed: %v", err)
 		}
-		os.Exit(1)
+		return nil, false
 	}
-	defer ipcClient.Close()
 	logInfof("connected via IPC (%s)", ipcPath)
 
-	// Authenticate (also unlocks signer if locked)
 	if err := ipcClient.Authenticate(passphrase, 10*time.Second); err != nil {
 		logErrorf("%v", err)
-		os.Exit(1)
+		ipcClient.Close()
+		return nil, false
 	}
 	logInfof("authenticated and signer unlocked")
+	return ipcClient, true
+}
 
-	// Setup signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Channel for stdin input
-	inputChan := make(chan string)
-	go readStdin(inputChan)
-
-	// Queue of pending approval requests (FIFO)
-	var requestQueue []approvalRequest
-
-	logInfof("waiting for approval requests (Ctrl+C to quit)")
-
-	notifications := ipcClient.Notifications()
-	lifecycle := ipcClient.LifecycleEvents()
-
-	for {
-		select {
-		case <-sigChan:
-			logInfof("shutting down")
-			return
-
-		case event := <-lifecycle:
-			switch event.Type {
-			case transport.LifecycleConnectionLost:
-				if errors.Is(event.Err, io.EOF) {
-					logWarnf("connection closed by server")
-				} else {
-					logErrorf("connection error: %v", event.Err)
-				}
-				return
-			case transport.LifecycleProtocolError:
-				logErrorf("protocol error: %v", event.Err)
-				return
-			case transport.LifecycleReaderStopped:
-				return
-			}
-
-		case input := <-inputChan:
-			if len(requestQueue) == 0 {
-				continue
-			}
-			approved, reason, ok := parseApprovalInput(input)
-			if !ok {
-				fmt.Print("Please enter y/yes or n/no or n <reason>: ")
-				continue
-			}
-			if approved {
-				fmt.Println("✓ APPROVED")
-			} else {
-				fmt.Println("✗ REJECTED")
-			}
-
-			currentRequest := requestQueue[0]
-			respMsg, err := buildApprovalResponse(currentRequest, approved, reason)
-			if err != nil {
-				logErrorf("error building response: %v", err)
-				fmt.Print(approvalPrompt)
-				continue
-			}
-			if err := ipcClient.WriteJSON(respMsg); err != nil {
-				logErrorf("error sending response: %v", err)
-				logWarnf("request remains pending; retry your response")
-				fmt.Print(approvalPrompt)
-				continue
-			}
-
-			requestQueue = requestQueue[1:]
-
-			if len(requestQueue) > 0 {
-				displayRequest(requestQueue[0], len(requestQueue))
-			} else {
-				logInfof("waiting for approval requests")
-			}
-
-		case notification := <-notifications:
-			decoded, handled, err := decodeNotification(notification)
-			if err != nil {
-				logWarnf("%v", err)
-				continue
-			}
-			if !handled {
-				logWarnf("ignoring unknown IPC message type %q", notification.Base.Type)
-				continue
-			}
-			if decoded.errMsg != nil {
-				logErrorf("%s", decoded.errMsg.Error)
-				continue
-			}
-			if decoded.canceled != nil || decoded.tokenCanceled != nil {
-				kind, id, reason, label := approvalKindSign, "", "", "Signing request"
-				if decoded.canceled != nil {
-					id, reason = decoded.canceled.ID, decoded.canceled.Reason
-				} else {
-					kind, label = approvalKindTokenProvisioning, "Client access request"
-					id, reason = decoded.tokenCanceled.ID, decoded.tokenCanceled.Reason
-				}
-				var removed, active bool
-				requestQueue, removed, active = removeCanceledRequest(requestQueue, kind, id)
-				if removed {
-					fmt.Printf("\n⚠ %s %s canceled (%s)\n", label, id, approvalCancelReason(reason))
-					if active {
-						if len(requestQueue) > 0 {
-							displayRequest(requestQueue[0], len(requestQueue))
-						} else {
-							logInfof("waiting for approval requests")
-						}
-					} else if len(requestQueue) > 0 {
-						fmt.Print(approvalPrompt)
-					}
-				}
-				continue
-			}
-			if decoded.request != nil {
-				requestQueue = append(requestQueue, *decoded.request)
-				if len(requestQueue) == 1 {
-					displayRequest(requestQueue[0], 1)
-				} else {
-					fmt.Printf("\n⏳ New request queued (%d total pending). Current prompt still applies to the active request.\n", len(requestQueue))
-					fmt.Print(approvalPrompt)
-				}
-			}
+// connectionEnded logs a connection lifecycle event and reports whether it
+// ends the session.
+func connectionEnded(event transport.LifecycleEvent) bool {
+	switch event.Type {
+	case transport.LifecycleConnectionLost:
+		if errors.Is(event.Err, io.EOF) {
+			logWarnf("connection closed by server")
+		} else {
+			logErrorf("connection error: %v", event.Err)
 		}
+		return true
+	case transport.LifecycleProtocolError:
+		logErrorf("protocol error: %v", event.Err)
+		return true
+	case transport.LifecycleReaderStopped:
+		return true
+	}
+	return false
+}
+
+// approver holds the FIFO queue of approval requests. The operator answers
+// the request at the head; later requests wait their turn.
+type approver struct {
+	send  func(any) error
+	queue []approvalRequest
+}
+
+// handleInput applies the operator's answer to the request at the head of the
+// queue. A request stays queued if its response cannot be sent.
+func (a *approver) handleInput(input string) {
+	if len(a.queue) == 0 {
+		return
+	}
+	approved, reason, ok := parseApprovalInput(input)
+	if !ok {
+		fmt.Print("Please enter y/yes or n/no or n <reason>: ")
+		return
+	}
+	if approved {
+		fmt.Println("✓ APPROVED")
+	} else {
+		fmt.Println("✗ REJECTED")
+	}
+
+	respMsg, err := buildApprovalResponse(a.queue[0], approved, reason)
+	if err != nil {
+		logErrorf("error building response: %v", err)
+		fmt.Print(approvalPrompt)
+		return
+	}
+	if err := a.send(respMsg); err != nil {
+		logErrorf("error sending response: %v", err)
+		logWarnf("request remains pending; retry your response")
+		fmt.Print(approvalPrompt)
+		return
+	}
+	a.queue = a.queue[1:]
+	a.showHeadOrWait()
+}
+
+// handleNotification routes a server notification: an error, a withdrawn
+// request, or a new request.
+func (a *approver) handleNotification(notification transport.Notification) {
+	decoded, handled, err := decodeNotification(notification)
+	switch {
+	case err != nil:
+		logWarnf("%v", err)
+	case !handled:
+		logWarnf("ignoring unknown IPC message type %q", notification.Base.Type)
+	case decoded.errMsg != nil:
+		logErrorf("%s", decoded.errMsg.Error)
+	case decoded.canceled != nil:
+		a.handleCanceled(approvalKindSign, "Signing request", decoded.canceled.ID, decoded.canceled.Reason)
+	case decoded.tokenCanceled != nil:
+		a.handleCanceled(approvalKindTokenProvisioning, "Client access request", decoded.tokenCanceled.ID, decoded.tokenCanceled.Reason)
+	case decoded.request != nil:
+		a.enqueue(*decoded.request)
+	}
+}
+
+// handleCanceled removes a request the server withdrew. If it was the one
+// being answered, the next request is shown.
+func (a *approver) handleCanceled(kind approvalKind, label, id, reason string) {
+	var removed, active bool
+	a.queue, removed, active = removeCanceledRequest(a.queue, kind, id)
+	if !removed {
+		return
+	}
+	fmt.Printf("\n⚠ %s %s canceled (%s)\n", label, id, approvalCancelReason(reason))
+	if active {
+		a.showHeadOrWait()
+	} else if len(a.queue) > 0 {
+		fmt.Print(approvalPrompt)
+	}
+}
+
+func (a *approver) enqueue(req approvalRequest) {
+	a.queue = append(a.queue, req)
+	if len(a.queue) == 1 {
+		displayRequest(a.queue[0], 1)
+		return
+	}
+	fmt.Printf("\n⏳ New request queued (%d total pending). Current prompt still applies to the active request.\n", len(a.queue))
+	fmt.Print(approvalPrompt)
+}
+
+func (a *approver) showHeadOrWait() {
+	if len(a.queue) > 0 {
+		displayRequest(a.queue[0], len(a.queue))
+	} else {
+		logInfof("waiting for approval requests")
 	}
 }
 
