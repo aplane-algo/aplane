@@ -254,17 +254,47 @@ witness reference through authorized local IPC. Endpoint metadata is
 informational; apshell owns endpoint configuration, token enrollment, host
 trust, and live discovery. apadmin does not access client state.
 
-The client-side `cosigner add` workflow accepts either public document. It treats
-the witness reference as the expected authority and any combined endpoint as a
-portable route suggestion. Under the shared client-data lock it revalidates and
-writes only the chosen endpoint alias, then releases the lock before any SSH
-trust, token enrollment, or network operation. Token enrollment uses a
-standalone SSH connection and does not disturb the primary signer tunnel.
-Cosigner HTTP requests use restricted direct channels on that authenticated SSH
-connection instead of a transient local forwarding listener. Verification
-queries only the chosen endpoint and requires its validated, deduplicated
-`/keys` inventory to contain the exact key type, public key, and derived
-Witness Key ID from the document.
+The client-side `endpoints add` workflow (formerly `cosigner add`, which still
+forwards to it) accepts either public document, an endpoint-only
+`aplane.endpoint.v1` envelope, or an explicit URL. It treats a witness
+reference as the expected authority and any endpoint as a portable route
+suggestion. The client stores only the route: it keeps no witness key and no
+key-to-endpoint mapping, so the unit it manages is a connection to a cosigner
+node, and a later key on the same node needs no client change.
+
+Before prompting, the workflow resolves the destination and reuses a cosigner
+profile already configured for that URL; only a new profile needs a name, for
+which it suggests one derived from the endpoint host. Under the shared
+client-data lock it revalidates and writes only the chosen endpoint alias, then
+releases the lock before any SSH trust, token enrollment, or network operation.
+Token enrollment uses a standalone SSH connection and does not disturb the
+primary signer tunnel. Cosigner HTTP requests use restricted direct channels on
+that authenticated SSH connection instead of a transient local forwarding
+listener.
+
+Setup then makes three separate observations on its own connection to the
+chosen endpoint:
+
+1. **Node role.** It reads `node_role` from authenticated `/status` and
+   continues only for `cosigner`. A `signer`, an absent or unrecognized role,
+   or a failed read stops setup. Sweeps and signing do not check the role;
+   setup does because an endpoint-only handoff carries nothing else that
+   distinguishes a cosigner from a signer.
+2. **Key from the document.** When the input carries a witness, the validated,
+   deduplicated `/keys` inventory must contain the exact key type, public key,
+   and derived Witness Key ID. Endpoint-only input has no key to compare and
+   reports only the inventory count.
+3. **Routes.** It runs the signing resolver's bounded sweep and reports the
+   result in the resolver's own classifications. An endpoint that was tried and
+   failed is ignored by routing, so routes through answering endpoints stand
+   but are qualified. A sweep that stopped early (an SSH host-key mismatch, or
+   a timeout) supports no positive route conclusion; the mismatching endpoint
+   is reported as a mismatch and the remaining ones as never contacted.
+
+Setup fails only for the connection being added: no access, a node that is not
+a cosigner, a document key that is not advertised, or a witness that this
+endpoint and another both advertise. The state of other endpoints, and of
+accounts that need other cosigners, is reported without failing it.
 
 Reference aliases are security-bearing generation inputs: resolving
 `cosigner=<name>` selects the witness public key embedded into a newly generated
@@ -292,6 +322,33 @@ Client endpoint routing lives in:
 $APCLIENT_DATA/endpoints.yaml
 ```
 
+### Token And Destination Invariant
+
+An endpoint token is a bearer credential for the destination that issued it,
+and is only ever presented to that destination. A destination is the endpoint
+URL plus, for `ssh://` endpoints, the REST port reached through SSH.
+
+- **Retire before publishing.** When an upsert moves an alias to another
+  destination, the alias's token file is removed and its directory synced
+  before the new route is written, in the same client-data lock. An
+  interruption between the two steps leaves the old route without a token,
+  never the new route with the old one. This holds for `endpoints add`,
+  `endpoints import`, and `endpoints create`, which share one upsert.
+- **Shared token files block the change.** If another alias resolves to the
+  same token file, the upsert is refused. Paths are compared after resolution
+  against the client data directory, so a relative path, its absolute form, and
+  a symlink to it are one file.
+- **Late tokens are discarded.** Enrollment waits for operator approval with
+  the client lock released. Before an issued token is saved, the alias is
+  re-read under the lock; if it was removed, now names another destination, or
+  now uses another token file, the token is discarded. This applies to
+  `request-token` as well.
+- **A newly created guided connection requests fresh access over SSH** rather
+  than trusting a token file left over under the same alias.
+
+Hand-editing `endpoints.yaml` bypasses these write-side rules; `endpoints
+delete` leaves the alias's token file in place.
+
 The registry may contain one signer endpoint and at most 12 cosigner endpoints.
 Cosigner endpoint records carry connection metadata only and do not accept a
 `local_port` setting.
@@ -317,7 +374,7 @@ verification fails unless that endpoint controls the embedded cosigner private
 key. Deleting an advertised cosigner key causes guarded signing to fail before
 submission with a missing-advertised-key error.
 
-Use `apshell cosigner add` for guided setup of one public handoff. Use
+Use `apshell endpoints add` for guided setup of one cosigner connection. Use
 `apshell cosigner status` for point-in-time endpoint observations and account
 requirements, including unmatched witnesses. It shares the signing resolver's
 bounded sweep and uniqueness rules, closes all probe connections, and does not

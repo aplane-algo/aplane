@@ -177,12 +177,19 @@ a file. Press Enter to return to the export screen. This uses terminal
 scrollback and natural wrapping without inserting newlines into JSON values.
 File export and the batch stdout command also preserve the original JSON bytes.
 
-In apshell, run `cosigner add <cosigner-key-json> --alias <connection-name>`, or
-`cosigner add` to paste JSON. Exports from the apadmin TUI always carry the
-endpoint; supply `--endpoint` only for a batch export that omitted it.
-Approve the **Client Access Request** in cosigner-side apadmin after comparing the
-complete client SSH key fingerprint on both screens. Apshell configures the
-connection, obtains access, and checks for the expected witness.
+The account-generation **Cosigner** field offers the same import directly:
+choose **Use setup file...** or **Paste public JSON...** there to import a key
+and return to the form with it selected. A key that is already imported is
+offered under its existing name rather than imported again.
+
+In apshell, run `endpoints add <setup-file>`, or `endpoints add` to paste JSON.
+Exports from the apadmin TUI always carry the endpoint; supply `--endpoint`
+only for a batch export that omitted it. Approve the **Client Access Request**
+in cosigner-side apadmin after comparing the complete client SSH key
+fingerprint on both screens. Apshell configures the connection, obtains access,
+confirms the node is a cosigner, and checks for the key from the file. The
+client stores the connection, not the key: another key on the same cosigner
+needs no client change.
 
 Connect apshell to the primary signer and run `cosigner status` to inspect the
 guarded account's cosigner route. apadmin uses local IPC and never reads or

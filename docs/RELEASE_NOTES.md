@@ -1,5 +1,42 @@
 # Release Notes
 
+## Cosigner setup in three actions and `endpoints add`
+
+Setting up a cosigner-protected account now takes three actions with one public
+setup file: export it on the cosigner, choose it while generating the account
+on the signer, and run `endpoints add <file>` on each client.
+
+- apshell `endpoints add` replaces `cosigner add`, which still works and
+  forwards with a notice. The command stores a connection to a cosigner, not a
+  key, so a later key on the same cosigner needs no client change and running
+  the command again reuses the existing connection without prompts. The
+  connection name is suggested from the endpoint host.
+- Guided setup confirms through `/status` that the node is a cosigner, and
+  reports the connection, the key from the file, and account routes as separate
+  results. It fails only for the connection being added, so cosigners can be
+  set up one at a time.
+- apadmin's account-generation **Cosigner** field offers **Use setup file...**
+  and **Paste public JSON...**, and reuses a key that is already imported. The
+  Cosigners manager is no longer a required step. The cosigner-side export is
+  labelled **Export Setup File**.
+- `endpoints add` is blocked through MCP; other `endpoints` subcommands are
+  unchanged.
+
+No file format, admin RPC, HTTP API, or SDK contract changed.
+
+### Fix: a replaced endpoint no longer inherits the previous token
+
+An endpoint token is now presented only to the destination that issued it.
+Previously, replacing an alias's URL or SSH-backed API port left the previous
+destination's token in place, so `endpoints import`, `endpoints create`, or an
+interrupted and rerun `cosigner add` could present it to the new destination.
+
+Replacing a destination now removes the alias's token before the new route is
+written, and `request-token` discards a token whose endpoint changed while the
+request awaited approval. After changing a destination, request or install a
+token for the new one. A replacement is refused when another alias shares the
+same token file.
+
 ## Unified guarded and bounded-cosigner signing flow
 
 Guarded and bounded-cosigner signing now share `/plan`, `/sign/component`, and
