@@ -498,7 +498,7 @@ docker-systemd-test:
 # End-to-end local install test. Builds a release tarball, boots signer, cosigner,
 # client/admin, and LocalNet algod containers on one Docker network, then
 # verifies SSH token provisioning, shared LocalNet reachability, the complete
-# remote apadmin ID-first cosigner enrollment ceremony, guarded signing, corridor
+# local-IPC apadmin ID-first cosigner enrollment ceremony, guarded signing, corridor
 # allowlist enforcement, and local Python SDK guarded signing across the Docker
 # network.
 # Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.
