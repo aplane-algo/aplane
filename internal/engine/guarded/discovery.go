@@ -456,7 +456,7 @@ func unresolvedCosignerDiscoveryError(required []cosignerRequestKey, selected ma
 func cosignerDiscoveryFailureLabel(err error) string {
 	switch {
 	case errors.Is(err, connect.ErrSSHHostKeyMismatch):
-		return "SSH host-key mismatch"
+		return ConnectionStateHostKeyMismatch
 	case errors.Is(err, connect.ErrSSHUnknownHostKey):
 		return "SSH host is not enrolled"
 	case errors.Is(err, connect.ErrSSHKnownHostsFile):

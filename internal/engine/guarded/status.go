@@ -10,6 +10,20 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
+// Connection and account observation states. They are display text as well as
+// classifications, so callers compare against these names rather than literals.
+const (
+	ConnectionStateNotChecked      = "not checked"
+	ConnectionStateReachable       = "reachable; authenticated"
+	ConnectionStateHostKeyMismatch = "SSH host-key mismatch"
+
+	AccountRouteAvailable       = "cosigner route available"
+	AccountRouteMissing         = "no matching live route observed"
+	AccountRouteDuplicate       = "duplicate witness route"
+	AccountRouteCheckIncomplete = "route check incomplete"
+	AccountRouteInvalidMetadata = "invalid metadata"
+)
+
 // RouteStatus is a point-in-time observation, not permission to sign.
 type RouteStatus struct {
 	Connections     []ConnectionObservation   `json:"connections"`
@@ -44,14 +58,14 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 		result.DiscoveryError = sweepErr.Error()
 	}
 	for i, alias := range aliases {
-		row := ConnectionObservation{Alias: alias, URL: s.endpointRegistry.Endpoints[alias].URL, State: "not checked", Witnesses: []string{}}
+		row := ConnectionObservation{Alias: alias, URL: s.endpointRegistry.Endpoints[alias].URL, State: ConnectionStateNotChecked, Witnesses: []string{}}
 		if i < len(states) && states[i] != nil {
 			state := states[i]
 			if state.err != nil {
 				row.State = cosignerDiscoveryFailureLabel(state.err)
 				row.Error = state.err.Error()
 			} else {
-				row.State = "reachable; authenticated"
+				row.State = ConnectionStateReachable
 				for _, key := range state.keys {
 					row.Witnesses = append(row.Witnesses, key.ComponentKey)
 				}
@@ -79,7 +93,7 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 		if route == flowRoutePlain {
 			continue
 		}
-		row := AccountRouteObservation{Address: key.Address, Routes: []string{}, State: "invalid metadata"}
+		row := AccountRouteObservation{Address: key.Address, Routes: []string{}, State: AccountRouteInvalidMetadata}
 		if route != flowRouteGuarded && route != flowRouteBoundedCosigner {
 			row.Error = "unsupported signing flow: " + key.SigningFlow
 			result.Accounts = append(result.Accounts, row)
@@ -103,15 +117,15 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			_, matched, selectionErr := uniqueCosignerSelections([]cosignerRequestKey{required}, states)
 			switch {
 			case sweepErr != nil:
-				row.State = "route check incomplete"
+				row.State = AccountRouteCheckIncomplete
 				row.Error = sweepErr.Error()
 			case selectionErr != nil:
-				row.State = "duplicate witness route"
+				row.State = AccountRouteDuplicate
 				row.Error = selectionErr.Error()
 			case matched:
-				row.State = "cosigner route available"
+				row.State = AccountRouteAvailable
 			default:
-				row.State = "no matching live route observed"
+				row.State = AccountRouteMissing
 			}
 		}
 		result.Accounts = append(result.Accounts, row)

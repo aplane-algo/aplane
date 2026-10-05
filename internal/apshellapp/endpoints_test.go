@@ -89,6 +89,34 @@ func TestEndpointImportRejectsLocalPortForCosignerRole(t *testing.T) {
 	}
 }
 
+func TestEndpointImportPointsCosignerKeyDocumentsAtEndpointsAdd(t *testing.T) {
+	documents := map[string]string{
+		"enrollment": `{"schema":"aplane.cosigner-enrollment.v1","witness":{},` +
+			`"endpoint":{"schema":"aplane.endpoint.v1","url":"ssh://127.0.0.1:2223"}}`,
+		"witness": `{"schema":"aplane.witness-key-public.v1","key_type":"aplane.witness-falcon1024.v1"}`,
+	}
+	for name, document := range documents {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			path := filepath.Join(dataDir, "lab.aplane-cosigner.json")
+			if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
+				Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner, Path: path,
+			})
+			want := "use 'endpoints add " + path + " --alias cosigner-local' instead"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("EndpointImport() error = %v, want hint %q", err, want)
+			}
+			if _, statErr := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(statErr) {
+				t.Fatalf("endpoints.yaml stat error = %v, want absent", statErr)
+			}
+		})
+	}
+}
+
 func TestEndpointCreateCosignerAndListContainNoCachedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
@@ -391,8 +419,15 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 
 func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo) *httptest.Server {
 	t.Helper()
+	return newEndpointRoleKeysServer(t, token, "cosigner", keys)
+}
+
+// newEndpointRoleKeysServer serves /status with nodeRole and /keys with keys,
+// and records every bearer token presented to it.
+func newEndpointRoleKeysServer(t *testing.T, token, nodeRole string, keys []signerapi.KeyInfo) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
+		if r.Method != http.MethodGet || (r.URL.Path != "/keys" && r.URL.Path != "/status") {
 			http.NotFound(w, r)
 			return
 		}
@@ -401,6 +436,10 @@ func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/status" {
+			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{NodeRole: nodeRole, State: "unlocked", ReadyForSigning: true})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
 	}))
 	t.Cleanup(server.Close)

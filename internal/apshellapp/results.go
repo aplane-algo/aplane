@@ -735,7 +735,10 @@ type EndpointImportResult struct {
 	Created        bool
 	Updated        bool
 	DefaultChanged bool
-	RenderLines    []string
+	// TokenRetired reports that the alias moved to another destination and the
+	// token issued by the previous one was removed (or would be, in a dry run).
+	TokenRetired bool
+	RenderLines  []string
 }
 
 // EndpointCreateCosignerResult describes manual creation of a cosigner endpoint
@@ -749,6 +752,9 @@ type EndpointCreateCosignerResult struct {
 	DryRun       bool
 	Created      bool
 	Updated      bool
+	// TokenRetired reports that the alias moved to another destination and the
+	// token issued by the previous one was removed (or would be, in a dry run).
+	TokenRetired bool
 	RenderLines  []string
 }
 
