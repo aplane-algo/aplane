@@ -254,9 +254,9 @@ func (m Model) cosignerExportReturnView() ViewState {
 
 func (m Model) renderCosignerExportPath() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Export Cosigner Key"))
+	body.WriteString(titleStyle.Render("Export Setup File"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Save the public cosigner key on this machine. No private key or access token is included."))
+	body.WriteString(subtitleStyle.Render("Save this cosigner key's public setup file on this machine. No private key or access token is included."))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
@@ -287,9 +287,9 @@ func (m Model) renderCosignerExportPath() string {
 		}
 	}
 	body.WriteString("\n\n")
-	button := buttonInactiveStyle.Render("EXPORT COSIGNER KEY")
+	button := buttonInactiveStyle.Render("EXPORT SETUP FILE")
 	if m.cosigner.exportFocus == m.cosignerExportButtonFocus() {
-		button = buttonActiveStyle.Render("EXPORT COSIGNER KEY")
+		button = buttonActiveStyle.Render("EXPORT SETUP FILE")
 	}
 	body.WriteString(button)
 	body.WriteString("\n\n")
@@ -306,17 +306,17 @@ func (m Model) renderCosignerExportPath() string {
 }
 
 func (m Model) renderCosignerExporting() string {
-	action := "Exporting Cosigner Key"
+	action := "Exporting Setup File"
 	if m.cosigner.exportShowJSON {
-		action = "Loading Cosigner Key JSON"
+		action = "Loading Setup JSON"
 	}
 	return m.renderPopup(60, titleStyle.Render(action)+"\n\n"+subtitleStyle.Render("Please wait...")+"\n")
 }
 
 func (m Model) renderCosignerExportResult() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Cosigner Key Exported"))
-	body.WriteString("\n\nPublic cosigner key saved to:\n")
+	body.WriteString(titleStyle.Render("Setup File Exported"))
+	body.WriteString("\n\nPublic setup file saved to:\n")
 	body.WriteString(m.cosigner.exportWrittenPath)
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
@@ -324,7 +324,10 @@ func (m Model) renderCosignerExportResult() string {
 		body.WriteString("\n\nIncluded endpoint: " + endpoint.URL)
 	}
 	body.WriteString("\n")
-	body.WriteString("\nNext: import this file in primary-signer apadmin, then use cosigner add in apshell.\n")
+	body.WriteString("\nOn the signer: Generate account -> Cosigner -> Use setup file.")
+	body.WriteString("\nOn each client: endpoints add " + m.cosigner.exportWrittenPath)
+	body.WriteString("\nAlready connected this cosigner on a client? Nothing more is needed there")
+	body.WriteString("\nfor another key on the same cosigner.\n")
 	return m.renderPopup(90, body.String())
 }
 

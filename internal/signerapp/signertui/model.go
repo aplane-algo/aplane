@@ -279,9 +279,12 @@ type cosignerState struct {
 	previewWitnessID  string
 	previewKeyType    string
 	previewEndpoint   *endpointrefs.Envelope
-	requiredKeyType   string
-	pendingKeyType    string
-	pendingWitnessID  string
+	// reuseAliases names the references that already hold the previewed key
+	// when account creation chose a setup file whose key is already imported.
+	reuseAliases     []string
+	requiredKeyType  string
+	pendingKeyType   string
+	pendingWitnessID string
 
 	managerSelected int
 	managerScroll   int

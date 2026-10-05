@@ -16,7 +16,8 @@ import (
 
 // guardedSanctionedExports is the reviewed public API of the isolated guarded
 // (cosigner) signing package: construction, the two routing/submission entry
-// points, endpoint discovery, and the discovery types and error sentinels.
+// points, endpoint discovery and read-only inspection, and the discovery
+// types, observation state names, and error sentinels.
 // Everything else in the package is choreography internals that must stay
 // unexported so callers cannot compose mid-flow steps out of sequence and skip
 // SignAndSubmitGroup's frozen-bytes verification. Adding an entry here must be
@@ -39,6 +40,23 @@ var guardedSanctionedExports = map[string]bool{
 	"Signer.HasGuardedEffectiveSigner":     true,
 	"Signer.SignAndSubmitGroup":            true,
 	"Signer.DiscoverCosignerComponentKeys": true,
+
+	// Read-only setup inspection: the node role and key inventory of one
+	// endpoint, on its own connection. It signs nothing and routes nothing.
+	"Signer.InspectCosignerEndpoint": true,
+	"EndpointInspection":             true,
+	"NodeRoleCosigner":               true,
+
+	// Names of the states InspectRoutes reports, so callers classify an
+	// observation without matching display text.
+	"ConnectionStateNotChecked":      true,
+	"ConnectionStateReachable":       true,
+	"ConnectionStateHostKeyMismatch": true,
+	"AccountRouteAvailable":          true,
+	"AccountRouteMissing":            true,
+	"AccountRouteDuplicate":          true,
+	"AccountRouteCheckIncomplete":    true,
+	"AccountRouteInvalidMetadata":    true,
 }
 
 // TestGuardedExportSurfaceStaysSanctioned pins the guarded package's exported

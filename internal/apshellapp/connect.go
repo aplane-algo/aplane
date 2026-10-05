@@ -205,7 +205,7 @@ func (a *App) RequestTokenEndpointAlias(ctx context.Context, alias string, hostK
 	wasConnected := a.eng.IsTunnelConnected()
 	result, err := clientenroll.RequestEndpointToken(
 		ctx,
-		a.eng,
+		currentDestinationTokenClient{TokenClient: a.eng, app: a, alias: alias, requested: endpoint},
 		a.DataDir,
 		alias,
 		endpoint,
@@ -223,6 +223,19 @@ func (a *App) RequestTokenEndpointAlias(ctx context.Context, alias string, hostK
 	}
 	requestResult.RenderLines = []string{fmt.Sprintf("✓ %s", requestResult.Summary.Message)}
 	return requestResult, nil
+}
+
+// currentDestinationTokenClient requests a token through the engine and saves
+// it only while the alias still names the destination that issued it.
+type currentDestinationTokenClient struct {
+	clientenroll.TokenClient
+	app       *App
+	alias     string
+	requested config.ClientEndpointConfig
+}
+
+func (c currentDestinationTokenClient) SaveApshellTokenToPath(_, token string) (string, error) {
+	return c.app.saveEndpointTokenIfCurrent(c.alias, c.requested, token)
 }
 
 func (a *App) tokenPathForRequest(tokenPath string) (string, error) {

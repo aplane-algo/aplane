@@ -31,7 +31,7 @@ func (a *App) CosignerStatus(ctx context.Context, _ CosignerStatusRequest) (*Cos
 	result := &CosignerStatusResult{CosignerStatusResult: a.eng.CosignerStatus(ctx, cfg.Endpoints)}
 	lines := []string{"Cosigner status (point-in-time check)", "", "Connections"}
 	if len(result.Connections) == 0 {
-		lines = append(lines, "  No cosigner connections configured; use cosigner add.")
+		lines = append(lines, "  No cosigner connections configured; use endpoints add.")
 	}
 	for _, connection := range result.Connections {
 		lines = append(lines, fmt.Sprintf("  %s: %s", connection.Alias, connection.State), "    endpoint: "+connection.URL)

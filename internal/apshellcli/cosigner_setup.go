@@ -15,12 +15,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-const cosignerUsage = "cosigner status | " + cosignerSetupUsage
+const cosignerUsage = "cosigner status | cosigner add ... (now: endpoints add)"
 
-const cosignerSetupUsage = "cosigner add [public-json] [--alias <alias>] [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]"
+const endpointsAddUsage = "endpoints add [public-json] [--alias <alias>] [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]"
+
+// cosignerAddForwardNotice is printed when the former command name is used.
+const cosignerAddForwardNotice = "Note: 'cosigner add' is now 'endpoints add'; continuing."
 
 type cosignerSetupCLIOptions struct {
 	request apshellapp.CosignerSetupRequest
@@ -29,14 +31,20 @@ type cosignerSetupCLIOptions struct {
 }
 
 type cosignerSetupProjection struct {
-	Alias        string `json:"alias"`
-	WitnessKeyID string `json:"witness_key_id"`
-	URL          string `json:"url"`
-	Created      bool   `json:"created,omitempty"`
-	Updated      bool   `json:"updated,omitempty"`
-	TokenIssued  bool   `json:"token_issued,omitempty"`
-	Verified     bool   `json:"verified,omitempty"`
-	DryRun       bool   `json:"dry_run,omitempty"`
+	Alias          string                          `json:"alias"`
+	WitnessKeyID   string                          `json:"witness_key_id,omitempty"`
+	URL            string                          `json:"url"`
+	Created        bool                            `json:"created,omitempty"`
+	Updated        bool                            `json:"updated,omitempty"`
+	TokenIssued    bool                            `json:"token_issued,omitempty"`
+	TokenRetired   bool                            `json:"token_retired,omitempty"`
+	Connected      bool                            `json:"connected,omitempty"`
+	NodeRole       string                          `json:"node_role,omitempty"`
+	KeyCheck       string                          `json:"key_check,omitempty"`
+	AdvertisedKeys int                             `json:"advertised_keys,omitempty"`
+	Verified       bool                            `json:"verified,omitempty"`
+	Routes         *apshellapp.CosignerSetupRoutes `json:"routes,omitempty"`
+	DryRun         bool                            `json:"dry_run,omitempty"`
 }
 
 func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, error) {
@@ -56,31 +64,58 @@ func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, e
 			})
 		}, result.CosignerStatusResult)
 	}
+	if len(args) > 0 && args[0] == "add" {
+		r.println(cosignerAddForwardNotice)
+		return r.runEndpointsAdd(args[1:])
+	}
+	return nil, errors.New("usage: " + cosignerUsage)
+}
 
-	options, err := parseCosignerSetupArgs(args)
+// runEndpointsAdd is the guided cosigner connection setup. It resolves the
+// destination and connection name before asking anything, reuses an existing
+// connection without prompts, and reports connection, key, and route results
+// separately.
+func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
+	options, err := parseEndpointsAddArgs(args)
 	if err != nil {
 		return nil, err
 	}
-	if options.path == "" {
+	switch {
+	case options.path != "":
+		options.request.Document, err = readBoundedCosignerSetupFile(options.path)
+	case options.request.URL == "":
 		if r.AutoConfirm || !r.hasInteractiveLineReader() {
-			return nil, fmt.Errorf("interactive cosigner JSON paste is unavailable; provide a file: %s", cosignerSetupUsage)
+			return nil, fmt.Errorf("interactive setup JSON paste is unavailable; provide a file or --endpoint: %s", endpointsAddUsage)
 		}
 		options.request.Document, err = r.readCosignerSetupPaste()
-	} else {
-		options.request.Document, err = readBoundedCosignerSetupFile(options.path)
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	if options.request.Alias == "" {
-		if r.AutoConfirm {
-			return nil, errors.New("--alias is required in script mode")
+		target, resolveErr := r.app().ResolveCosignerSetupTarget(options.request)
+		if resolveErr != nil && errors.Is(resolveErr, apshellapp.ErrCosignerEndpointURLRequired) && !r.AutoConfirm {
+			options.request.URL, err = r.readRequiredSetupValue("Cosigner endpoint (ssh://, https://, or loopback http://): ")
+			if err != nil {
+				return nil, err
+			}
+			target, resolveErr = r.app().ResolveCosignerSetupTarget(options.request)
 		}
-		r.println("Choose a name for this cosigner connection on this client; it does not need to match the signer reference name.")
-		options.request.Alias, err = r.readRequiredSetupValue("Client endpoint alias: ")
-		if err != nil {
-			return nil, err
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		switch {
+		case target.ExistingAlias != "":
+			options.request.Alias = target.ExistingAlias
+		case r.AutoConfirm:
+			return nil, errors.New("--alias is required in script mode")
+		default:
+			r.printf("Cosigner at %s\n", target.URL)
+			options.request.Alias, err = r.readSetupValueWithDefault("Connection name", target.SuggestedAlias)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	plan, err := r.app().PrepareCosignerSetup(options.request)
@@ -111,9 +146,14 @@ func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, e
 		}
 	}
 
-	if !plan.DryRun && !r.AutoConfirm {
+	switch {
+	case plan.DryRun:
+	case plan.Unchanged():
+		// An unchanged connection needs no name, review, or confirmation.
+		r.printf("Already configured as %s. Checking access...\n", plan.Alias)
+	case !r.AutoConfirm:
 		r.renderCosignerSetupReview(plan)
-		response, promptErr := r.readPromptResponse("Configure this cosigner endpoint and verify it? [y/N]: ")
+		response, promptErr := r.readPromptResponse("Configure this connection and verify it? [y/N]: ")
 		if promptErr != nil {
 			return nil, promptErr
 		}
@@ -128,32 +168,76 @@ func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, e
 	}
 	result, err := r.app().CompleteCosignerSetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printCosignerProvisioningWait)
 	if err != nil {
-		completed := "endpoint configuration retained"
-		if plan.Created {
-			completed = "endpoint created"
-		} else if plan.Updated {
-			completed = "endpoint updated"
+		if result != nil {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
 		}
-		if result != nil && result.TokenIssued {
-			completed += " and access token saved"
+		completed := cosignerSetupCompletedEffects(plan, result)
+		if r.offerCreatedConnectionRemoval(plan, err) {
+			completed = "the connection created by this run was removed"
 		}
-		return nil, fmt.Errorf("%s; live witness verification did not complete: %w", completed, err)
+		return nil, fmt.Errorf("%s; setup did not complete: %w", completed, err)
 	}
 	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutput(w, func() { r.renderCosignerSetupResult(result) })
+		return r.withOutput(w, func() {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
+		})
 	}, cosignerSetupProjection{
 		Alias: result.Alias, WitnessKeyID: result.WitnessKeyID, URL: result.URL,
 		Created: result.Created, Updated: result.Updated, TokenIssued: result.TokenIssued,
-		Verified: result.Verified, DryRun: result.DryRun,
+		TokenRetired: result.TokenRetired, Connected: result.Connected, NodeRole: result.NodeRole,
+		KeyCheck: result.KeyCheck, AdvertisedKeys: result.AdvertisedKeys, Verified: result.Verified,
+		Routes: result.Routes, DryRun: result.DryRun,
 	})
 }
 
-func parseCosignerSetupArgs(args []string) (cosignerSetupCLIOptions, error) {
-	var out cosignerSetupCLIOptions
-	if len(args) == 0 || args[0] != "add" {
-		return out, errors.New("usage: " + cosignerSetupUsage)
+// cosignerSetupCompletedEffects names what a failed setup run left in place,
+// so a partial setup is never described as complete or as nothing.
+func cosignerSetupCompletedEffects(plan apshellapp.CosignerSetupPlan, result *apshellapp.CosignerSetupResult) string {
+	completed := "connection configuration retained"
+	if plan.Created {
+		completed = "connection created"
+	} else if plan.Updated {
+		completed = "connection updated"
 	}
-	for i := 1; i < len(args); i++ {
+	if result != nil && result.TokenRetired {
+		completed += ", earlier stored token removed"
+	}
+	if result != nil && result.TokenIssued {
+		completed += " and access token saved"
+	}
+	return completed
+}
+
+// offerCreatedConnectionRemoval offers to remove a connection only when this
+// run created it and it cannot be used as it stands: the node is not a
+// cosigner, or it duplicates another connection's route. Existing connections
+// are never offered for removal here.
+func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupPlan, setupErr error) bool {
+	if !plan.Created || r.AutoConfirm || !r.hasInteractiveLineReader() {
+		return false
+	}
+	if !errors.Is(setupErr, apshellapp.ErrCosignerSetupNotCosigner) && !errors.Is(setupErr, apshellapp.ErrCosignerSetupDuplicateRoute) {
+		return false
+	}
+	r.println(setupErr.Error())
+	response, err := r.readPromptResponse(fmt.Sprintf("Remove the connection %s that this run created? [y/N]: ", plan.Alias))
+	if err != nil || (response != "y" && response != "yes") {
+		return false
+	}
+	if err := r.app().RemoveCreatedCosignerConnection(plan); err != nil {
+		r.printf("Could not remove connection %s: %v\n", plan.Alias, err)
+		return false
+	}
+	return true
+}
+
+func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
+	var out cosignerSetupCLIOptions
+	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--dry-run":
 			out.request.DryRun = true
@@ -162,19 +246,19 @@ func parseCosignerSetupArgs(args []string) (cosignerSetupCLIOptions, error) {
 		case "--alias", "-a":
 			i++
 			if i >= len(args) {
-				return out, errors.New("usage: " + cosignerSetupUsage)
+				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			out.request.Alias = args[i]
 		case "--endpoint", "--url":
 			i++
 			if i >= len(args) {
-				return out, errors.New("usage: " + cosignerSetupUsage)
+				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			out.request.URL = args[i]
 		case "--cosignerport", "--cosigner-port":
 			i++
 			if i >= len(args) {
-				return out, errors.New("usage: " + cosignerSetupUsage)
+				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			port, err := parseSetupPort(args[i])
 			if err != nil {
@@ -183,7 +267,7 @@ func parseCosignerSetupArgs(args []string) (cosignerSetupCLIOptions, error) {
 			out.request.SignerPort = port
 		default:
 			if strings.HasPrefix(args[i], "-") || out.path != "" {
-				return out, errors.New("usage: " + cosignerSetupUsage)
+				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			out.path = args[i]
 		}
@@ -216,7 +300,7 @@ func readBoundedCosignerSetupFile(path string) ([]byte, error) {
 }
 
 func (r *REPLState) readCosignerSetupPaste() ([]byte, error) {
-	r.println("Paste cosigner key JSON. The command continues when one complete document is received; Ctrl+C cancels.")
+	r.println("Paste the cosigner setup JSON. The command continues when one complete document is received; Ctrl+C cancels.")
 	var document strings.Builder
 	var boundary jsonDocumentBoundary
 	blankLines := 0
@@ -240,7 +324,7 @@ func (r *REPLState) readCosignerSetupPaste() ([]byte, error) {
 				return nil, fmt.Errorf("cosigner key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
 			}
 			data := []byte(document.String())
-			if _, parseErr := enrollment.ParseArtifact(data); parseErr != nil {
+			if parseErr := apshellapp.ValidateCosignerSetupDocument(data); parseErr != nil {
 				return nil, fmt.Errorf("invalid cosigner key JSON: %w", parseErr)
 			}
 			return data, nil
@@ -327,9 +411,28 @@ func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {
 	return value, nil
 }
 
+// readSetupValueWithDefault prompts for a value and accepts an empty answer as
+// the offered default.
+func (r *REPLState) readSetupValueWithDefault(label, fallback string) (string, error) {
+	prompt := fmt.Sprintf("%s [%s]: ", label, fallback)
+	restorePrompt := r.setTemporaryPrompt(prompt)
+	defer restorePrompt()
+	if !r.hasInteractiveLineReader() {
+		r.print("\n" + prompt)
+	}
+	value, err := r.readInteractiveLine()
+	if err != nil {
+		return "", err
+	}
+	if value = strings.TrimSpace(value); value == "" {
+		return fallback, nil
+	}
+	return value, nil
+}
+
 func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan) {
-	r.println("Cosigner setup review:")
-	r.printf("  alias: %s\n", plan.Alias)
+	r.println("Cosigner connection review:")
+	r.printf("  connection name: %s\n", plan.Alias)
 	r.printf("  endpoint: %s\n", plan.Endpoint.URL)
 	if strings.HasPrefix(plan.Endpoint.URL, "ssh://") {
 		signerPort := plan.Endpoint.SignerPort
@@ -338,9 +441,14 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 		}
 		r.printf("  Cosigner API port through SSH: %d\n", signerPort)
 	}
-	r.printf("  Witness Key ID: %s\n", witness.GroupedID(plan.Witness.WitnessKeyID))
+	if !plan.HasWitness {
+		r.println("  key: none in the input; the connection is set up without a key comparison")
+	}
 	if plan.Created {
 		r.println("  endpoint change: create")
+		if plan.RetiresToken {
+			r.println("  access token: a token file left over under this name predates the connection and will be removed")
+		}
 	} else if plan.Updated {
 		r.println("  endpoint change: replace")
 		if plan.ExistingEndpoint != nil {
@@ -353,31 +461,17 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 				r.printf("  previous Cosigner API port: %d\n", previousPort)
 			}
 		}
+		if plan.RetiresToken {
+			r.println("  access token: the stored token was issued by the previous destination and will be removed")
+		}
 	} else {
 		r.println("  endpoint change: none")
 	}
 }
 
 func (r *REPLState) printCosignerProvisioningWait(clientFingerprint string) {
-	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
-	r.progressPrintln("Compare this complete fingerprint with the Client Access Request in apadmin.")
-	r.progressPrintln("Waiting for approval in apadmin on the cosigner...")
+	r.progressPrintln("Waiting for approval. In apadmin on the cosigner, open the Client Access Request")
+	r.progressPrintln("and compare its full fingerprint with this one before approving:")
+	r.progressPrintln("  " + clientFingerprint)
 	r.progressPrintln("Leave this shell open while the cosigner operator approves or rejects the request.")
-}
-
-func (r *REPLState) renderCosignerSetupResult(result *apshellapp.CosignerSetupResult) {
-	if result.DryRun {
-		r.println("Cosigner setup dry run:")
-		r.printf("  endpoint: %s (%s)\n", result.Alias, result.URL)
-		r.printf("  expected Witness Key ID: %s\n", witness.GroupedID(result.WitnessKeyID))
-		r.println("  no files changed; no network or trust checks performed")
-		return
-	}
-	r.println("✓ Connected; expected witness found")
-	r.printf("  endpoint: %s (%s)\n", result.Alias, result.URL)
-	r.printf("  Witness Key ID: %s\n", witness.GroupedID(result.WitnessKeyID))
-	if result.TokenIssued {
-		r.println("  access token: received and saved")
-	}
-	r.println("Import the same public JSON in signer-side apadmin before creating a guarded account.")
 }

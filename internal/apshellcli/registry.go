@@ -59,7 +59,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"simulate":      command.StructuredAutomation,
 	"connect":       command.StructuredAutomation,
 	"disconnect":    command.StructuredAutomation,
-	"endpoints":     command.StructuredAutomation,
+	"endpoints":     command.GuardedStructuredAutomation(guardAutomatedEndpoints),
 	"cosigner":      command.BlockedAutomation("cosigner add and cosigner status are unavailable through MCP; use apshell directly"),
 	"help":          command.BlockedAutomation("use the mcp_reference MCP tool instead"),
 	"config":        command.BlockedAutomation("use the safe status command instead"),
@@ -70,6 +70,16 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"request-token": command.BlockedAutomation("token enrollment requires an interactive apshell session"),
 	"clear":         command.BlockedAutomation("terminal clearing has no machine meaning"),
 	"quit":          command.BlockedAutomation("Use MCP disconnect instead"),
+}
+
+// guardAutomatedEndpoints blocks the guided setup subcommand, which needs
+// interactive host trust and an operator approval wait, while leaving the
+// other endpoints subcommands available.
+func guardAutomatedEndpoints(args []string) error {
+	if len(args) > 0 && args[0] == "add" {
+		return fmt.Errorf("endpoints add is unavailable through MCP; use apshell directly")
+	}
+	return nil
 }
 
 func guardAutomatedKeyreg(args []string) error {
@@ -416,7 +426,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	mustRegister(registry, &command.Command{
 		Name:        "cosigner",
 		Usage:       cosignerUsage,
-		Description: "Add cosigner connections or inspect current cosigner routes",
+		Description: "Inspect current cosigner routes (add connections with 'endpoints add')",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdCosigner),
 	})

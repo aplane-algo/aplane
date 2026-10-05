@@ -94,3 +94,38 @@ func (e *Engine) DiscoverCosignerComponentKeys(ctx context.Context, endpoint con
 func (e *Engine) DiscoverCosignerComponentKeysWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) ([]DiscoveredCosignerComponentKey, error) {
 	return e.guardedSignerWithHostKeyApproval(approve).DiscoverCosignerComponentKeys(ctx, endpoint)
 }
+
+// CosignerEndpointInspection is the node role and cosigner key inventory one
+// endpoint reported during guided setup.
+type CosignerEndpointInspection = guarded.EndpointInspection
+
+// NodeRoleCosigner is the node role a cosigner endpoint reports.
+const NodeRoleCosigner = guarded.NodeRoleCosigner
+
+// Route observation types and state names, re-exported so callers classify a
+// CosignerStatus result through the engine facade.
+type (
+	CosignerRouteStatus             = guarded.RouteStatus
+	CosignerConnectionObservation   = guarded.ConnectionObservation
+	CosignerAccountRouteObservation = guarded.AccountRouteObservation
+)
+
+const (
+	CosignerConnectionNotChecked      = guarded.ConnectionStateNotChecked
+	CosignerConnectionReachable       = guarded.ConnectionStateReachable
+	CosignerConnectionHostKeyMismatch = guarded.ConnectionStateHostKeyMismatch
+
+	CosignerAccountRouteAvailable       = guarded.AccountRouteAvailable
+	CosignerAccountRouteMissing         = guarded.AccountRouteMissing
+	CosignerAccountRouteDuplicate       = guarded.AccountRouteDuplicate
+	CosignerAccountRouteCheckIncomplete = guarded.AccountRouteCheckIncomplete
+	CosignerAccountRouteInvalidMetadata = guarded.AccountRouteInvalidMetadata
+)
+
+// InspectCosignerEndpointWithHostKeyApproval performs the explicit setup probe:
+// it may confirm an unknown SSH host, reads the node role, and reads the key
+// inventory only from a node that reports the cosigner role. It uses its own
+// connection and never touches the primary signer connection.
+func (e *Engine) InspectCosignerEndpointWithHostKeyApproval(ctx context.Context, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler) (CosignerEndpointInspection, error) {
+	return e.guardedSignerWithHostKeyApproval(approve).InspectCosignerEndpoint(ctx, endpoint)
+}

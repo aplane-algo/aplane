@@ -967,6 +967,12 @@ cat $APCLIENT_DATA/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh
 cp $APSIGNER_DATA/identities/default/aplane.token $APCLIENT_DATA/
 ```
 
+Copy the token **after** the client endpoint exists (`endpoints import` or
+`endpoints create`). Creating an endpoint, or changing its destination, removes
+any token file already at that endpoint's token path, because such a file was
+issued for an earlier endpoint. Copy it to the endpoint's `token_file`, shown
+by `endpoints show <alias>`.
+
 > **Note:** The `request-token` flow is preferred — it handles both key enrollment and token delivery in a single operator-approved step.
 After approval, interactive `apshell` writes the token to the selected endpoint's
 configured token file and immediately attempts to establish the signer SSH tunnel

@@ -20,6 +20,7 @@ import (
 
 const endpointsUsage = "endpoints list | " +
 	"endpoints show <alias> | " +
+	endpointsAddUsage + " | " +
 	"endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run] | " +
 	"endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json> | " +
 	"endpoints discover-cosigners | " +
@@ -137,6 +138,8 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 		return newShellCommandResult(func(w io.Writer) error {
 			return r.withOutput(w, func() { r.renderEndpointShow(result) })
 		}, projectEndpointEntry(result.Endpoint))
+	case "add":
+		return r.runEndpointsAdd(args[1:])
 	case "create":
 		req, err := parseEndpointCreateCosignerArgs(args[1:])
 		if err != nil {

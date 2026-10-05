@@ -5,6 +5,7 @@ package apshellapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,9 +13,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // EndpointImportRequest imports one public endpoint handoff envelope.
@@ -94,6 +97,10 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 	env, err := endpointrefs.Parse(data)
 	if err != nil {
+		if isCosignerEnrollmentDocument(data) {
+			return nil, fmt.Errorf("%s is a cosigner key document, not an endpoint envelope; "+
+				"use 'endpoints add %s --alias %s' instead", req.Path, req.Path, req.Alias)
+		}
 		return nil, err
 	}
 
@@ -121,6 +128,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		Created:        endpointPlan.Created,
 		Updated:        endpointPlan.Updated,
 		DefaultChanged: endpointPlan.DefaultChanged,
+		TokenRetired:   endpointPlan.RetiresExistingToken,
 	}
 
 	if !req.DryRun {
@@ -130,6 +138,19 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 	result.RenderLines = endpointImportRenderLines(result)
 	return result, nil
+}
+
+// isCosignerEnrollmentDocument reports whether data carries one of the public
+// cosigner key schemas that 'endpoints add' accepts, so a misdirected endpoint
+// import can point at the right command.
+func isCosignerEnrollmentDocument(data []byte) bool {
+	var discriminator struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &discriminator); err != nil {
+		return false
+	}
+	return discriminator.Schema == enrollment.Schema || discriminator.Schema == witness.PublicReferenceSchema
 }
 
 // EndpointCreateCosigner creates or replaces a client-local cosigner endpoint
@@ -172,6 +193,7 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 		DryRun:       req.DryRun,
 		Created:      endpointPlan.Created,
 		Updated:      endpointPlan.Updated,
+		TokenRetired: endpointPlan.RetiresExistingToken,
 	}
 
 	if !req.DryRun {
@@ -281,13 +303,16 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}, nil
 }
 
-// EndpointDelete deletes a stored endpoint alias when it is not the default.
+// EndpointDelete deletes a stored endpoint alias when it is not the default,
+// and retires its token so a later endpoint of the same name cannot inherit it.
 func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteResult, error) {
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
+	var removal config.StoredClientEndpointRemoval
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		_, err := config.DeleteStoredClientEndpoint(a.DataDir, alias)
+		var err error
+		removal, err = config.RemoveStoredClientEndpoint(a.DataDir, alias)
 		return err
 	}); err != nil {
 		return nil, err
@@ -295,9 +320,17 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := a.reloadConfigAfterEndpointChange(); err != nil {
 		return nil, err
 	}
+	lines := []string{fmt.Sprintf("Deleted endpoint %s", alias)}
+	switch {
+	case removal.TokenRetired:
+		lines = append(lines, "  token: removed with the endpoint")
+	case removal.TokenShared:
+		lines = append(lines, "  token: left in place; another endpoint uses the same token file")
+	}
 	return &EndpointDeleteResult{
-		Alias:       alias,
-		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},
+		Alias:        alias,
+		TokenRetired: removal.TokenRetired,
+		RenderLines:  lines,
 	}, nil
 }
 
@@ -398,7 +431,24 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	if result.DefaultChanged {
 		lines = append(lines, "  default: yes")
 	}
-	return lines
+	return append(lines, endpointTokenRetiredLines(result.TokenRetired, result.Created, result.DryRun)...)
+}
+
+// endpointTokenRetiredLines explains why a stored token is gone: it was issued
+// by the previous destination, or was left over under the name of an endpoint
+// that has just been created.
+func endpointTokenRetiredLines(retired, created, dryRun bool) []string {
+	if !retired {
+		return nil
+	}
+	origin := "the stored token was issued by the previous destination"
+	if created {
+		origin = "a token file left over under this name predates the endpoint"
+	}
+	if dryRun {
+		return []string{"  token: " + origin + " and would be removed"}
+	}
+	return []string{"  token: " + origin + " and was removed"}
 }
 
 func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []string {
@@ -414,12 +464,12 @@ func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []s
 		state = "updated"
 	}
 
-	return []string{
+	return append([]string{
 		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
 		fmt.Sprintf("  url: %s", result.URL),
 		fmt.Sprintf("  cosigner port: %d", result.CosignerPort),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
-	}
+	}, endpointTokenRetiredLines(result.TokenRetired, result.Created, result.DryRun)...)
 }
 
 func endpointDiscoverCosignersRenderLines(result *EndpointDiscoverCosignersResult) []string {
