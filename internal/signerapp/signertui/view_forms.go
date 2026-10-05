@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
 func (m Model) renderBackupConfirm() string {
@@ -245,209 +247,195 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	sb.WriteString("\n\n")
 
 	params := spec.Params
-	totalParams := len(params)
-
-	// Calculate visible parameters based on terminal height
-	reservedLines := 12 // title + button + help + error + margins
-	availableHeight := m.height - reservedLines
-	if availableHeight < 12 {
-		availableHeight = 12
-	}
-	maxVisibleParams := availableHeight / 8
-	if maxVisibleParams < 1 {
-		maxVisibleParams = 1
-	}
-
 	sb.WriteString(scrollMoreAboveLine(m.forms.generateParamScrollOffset))
 	sb.WriteString("\n")
 
-	// Calculate visible range
+	// Render only the fields that fit the terminal.
 	startIdx := m.forms.generateParamScrollOffset
-	endIdx := startIdx + maxVisibleParams
-	if endIdx > totalParams {
-		endIdx = totalParams
-	}
-
-	// Render only visible parameter fields
+	endIdx := min(startIdx+m.visibleParamModalFields(), len(params))
 	for i := startIdx; i < endIdx; i++ {
-		paramDef := params[i]
-		isFieldFocused := m.forms.generateFocus == i
-		isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
-		isAdminReference := isContractAdminReferenceParam(paramDef)
-
-		// Determine label - use input mode label if multiple modes exist
-		labelText := paramDef.Label
-		if isAdminReference {
-			labelText = "Contract Admin Reference File (.wit.json)"
-		}
-		var modeHint string
-		if len(paramDef.InputModes) > 1 {
-			modeIdx := 0
-			if m.forms.genericLSigParamModes != nil {
-				modeIdx = m.forms.genericLSigParamModes[paramDef.Name]
-			}
-			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
-				labelText = paramDef.InputModes[modeIdx].Label
-			}
-			// Show mode toggle hint when focused
-			if isFieldFocused {
-				modeHint = fmt.Sprintf("  [</> to switch: %d/%d]", modeIdx+1, len(paramDef.InputModes))
-			}
-		}
-		if isCosignerSelector && isFieldFocused {
-			modeHint = "  [Enter to choose]"
-		} else if len(paramDef.Options) > 0 && isFieldFocused {
-			optionIdx := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
-			if optionIdx < 0 {
-				optionIdx = 0
-			}
-			modeHint = fmt.Sprintf("  [</> to choose: %d/%d]", optionIdx+1, len(paramDef.Options))
-		}
-
-		// Label with focus indicator
-		labelText = parameterRequirementLabel(labelText, paramDef.Required)
-		label := "  " + labelText + ":"
-		if isFieldFocused {
-			label = "> " + labelText + ":"
-		}
-		sb.WriteString(label)
-		if modeHint != "" {
-			sb.WriteString(subtitleStyle.Render(modeHint))
-		}
-		sb.WriteString("\n")
-
-		// Pad to field width - use mode's byte length if available, but keep
-		// the rendered input box inside the popup body.
-		fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
-		if isAdminReference {
-			fieldWidth = 62
-		}
-		if len(paramDef.Options) > 0 {
-			fieldWidth = optionFieldWidth(paramDef.Options)
-		}
-		if isCosignerSelector {
-			fieldWidth = 50
-		}
-		if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
-			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
-			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
-				mode := paramDef.InputModes[modeIdx]
-				if mode.ByteLength > 0 {
-					fieldWidth = mode.ByteLength * 2 // hex encoding
-				}
-			}
-		}
-		fieldWidth = m.constrainParameterFieldWidth(fieldWidth)
-		fieldHeight := getFieldHeightForType(paramDef.Type)
-		fieldHeight = m.constrainParameterFieldHeight(fieldHeight, sb.String())
-
-		value := ""
-		if m.forms.genericLSigParams != nil {
-			value = m.forms.genericLSigParams[paramDef.Name]
-		}
-		if value == "" && len(paramDef.Options) > 0 {
-			value = defaultParamValue(paramDef)
-		}
-		if value == "" {
-			if isAdminReference {
-				value = "Path to public .wit.json on this machine"
-			} else {
-				value = getPlaceholderForType(paramDef.Type)
-			}
-		}
-		if isCosignerSelector {
-			value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
-		}
-		if isAdminReference && !isFieldFocused {
-			value = middleEllipsize(value, fieldWidth)
-		}
-
-		lines := paramInputLines(value)
-		if isFieldFocused && m.forms.genericLSigParams != nil {
-			currentValue := m.forms.genericLSigParams[paramDef.Name]
-			if currentValue == "" && len(paramDef.Options) > 0 {
-				currentValue = defaultParamValue(paramDef)
-			}
-			if isCosignerSelector {
-				currentValue = m.cosignerSelectionDisplay(currentValue)
-			}
-			if isAdminReference {
-				currentRunes := []rune(currentValue)
-				if len(currentRunes) >= fieldWidth {
-					currentValue = string(currentRunes[len(currentRunes)-fieldWidth+1:])
-				}
-			}
-			currentLines := paramInputLines(currentValue)
-			currentLines[len(currentLines)-1] += "_"
-			lines = currentLines
-		}
-		aboveCount, belowCount := 0, 0
-		if isMultilineParamType(paramDef.Type) {
-			offset := 0
-			maxOffset := maxParamInputScrollOffset(lines, fieldHeight)
-			if m.forms.genericLSigParamScroll != nil {
-				offset = m.forms.genericLSigParamScroll[paramDef.Name]
-			}
-			if offset < 0 {
-				offset = 0
-			}
-			if offset > maxOffset {
-				offset = maxOffset
-			}
-			aboveCount = offset
-			end := offset + fieldHeight
-			if end > len(lines) {
-				end = len(lines)
-			}
-			belowCount = len(lines) - end
-			lines = append([]string(nil), lines[offset:end]...)
-		}
-		if len(lines) < fieldHeight {
-			for len(lines) < fieldHeight {
-				lines = append(lines, "")
-			}
-		} else if len(lines) > fieldHeight {
-			lines = lines[:fieldHeight]
-		}
-
-		for i, line := range lines {
-			lines[i] = fixedWidthFieldLine(line, fieldWidth)
-		}
-		displayValue := strings.Join(lines, "\n")
-
-		if isFieldFocused {
-			sb.WriteString(inputActiveStyle.Render(displayValue))
-		} else {
-			sb.WriteString(inputInactiveStyle.Render(displayValue))
-		}
-		sb.WriteString("\n\n")
-		if isMultilineParamType(paramDef.Type) && (aboveCount > 0 || belowCount > 0) {
-			sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  %d above, %d below", aboveCount, belowCount)))
-			sb.WriteString("\n")
-		}
+		m.renderParamField(&sb, keyType, params[i], m.forms.generateFocus == i)
 	}
 
-	sb.WriteString(scrollMoreBelowLine(totalParams - endIdx))
+	sb.WriteString(scrollMoreBelowLine(len(params) - endIdx))
 	sb.WriteString("\n")
 
 	// Action button
-	buttonFocus := len(params)
-	var btn string
-	if m.forms.generateFocus == buttonFocus {
-		btn = buttonActiveStyle.Render(fmt.Sprintf("> [ %s %s ] <", buttonVerb, strings.ToUpper(spec.DisplayName)))
+	if m.forms.generateFocus == len(params) {
+		sb.WriteString(buttonActiveStyle.Render(fmt.Sprintf("> [ %s %s ] <", buttonVerb, strings.ToUpper(spec.DisplayName))))
 	} else {
-		btn = buttonInactiveStyle.Render(fmt.Sprintf("  [ %s %s ]  ", buttonVerb, strings.ToUpper(spec.DisplayName)))
+		sb.WriteString(buttonInactiveStyle.Render(fmt.Sprintf("  [ %s %s ]  ", buttonVerb, strings.ToUpper(spec.DisplayName))))
 	}
-	sb.WriteString(btn)
 	sb.WriteString("\n\n")
 
-	// Error message
 	if errorMsg != "" {
 		sb.WriteString(errorStyle.Render(errorMsg))
 		sb.WriteString("\n\n")
 	}
 
 	return m.renderPopup(80, sb.String())
+}
+
+// visibleParamModalFields is how many parameter fields the modal renders at
+// the current terminal height.
+func (m Model) visibleParamModalFields() int {
+	const reservedLines = 12 // title + button + help + error + margins
+	availableHeight := max(m.height-reservedLines, 12)
+	return max(availableHeight/8, 1)
+}
+
+// renderParamField writes one parameter field: its label line, the input box,
+// and, for a scrolled multi-line field, how many lines are hidden.
+func (m Model) renderParamField(sb *strings.Builder, keyType string, paramDef lsigprovider.ParameterDef, focused bool) {
+	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
+	isAdminReference := isContractAdminReferenceParam(paramDef)
+
+	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector, isAdminReference)
+	if focused {
+		sb.WriteString("> " + labelText + ":")
+	} else {
+		sb.WriteString("  " + labelText + ":")
+	}
+	if modeHint != "" {
+		sb.WriteString(subtitleStyle.Render(modeHint))
+	}
+	sb.WriteString("\n")
+
+	fieldWidth := m.constrainParameterFieldWidth(m.paramFieldWidth(paramDef, isCosignerSelector, isAdminReference))
+	fieldHeight := m.constrainParameterFieldHeight(getFieldHeightForType(paramDef.Type), sb.String())
+
+	lines := m.paramFieldLines(paramDef, focused, fieldWidth, isCosignerSelector, isAdminReference)
+	aboveCount, belowCount := 0, 0
+	if isMultilineParamType(paramDef.Type) {
+		lines, aboveCount, belowCount = m.scrollParamFieldLines(paramDef.Name, lines, fieldHeight)
+	}
+	for len(lines) < fieldHeight {
+		lines = append(lines, "")
+	}
+	lines = lines[:fieldHeight]
+	for i, line := range lines {
+		lines[i] = fixedWidthFieldLine(line, fieldWidth)
+	}
+	displayValue := strings.Join(lines, "\n")
+
+	if focused {
+		sb.WriteString(inputActiveStyle.Render(displayValue))
+	} else {
+		sb.WriteString(inputInactiveStyle.Render(displayValue))
+	}
+	sb.WriteString("\n\n")
+	if isMultilineParamType(paramDef.Type) && (aboveCount > 0 || belowCount > 0) {
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  %d above, %d below", aboveCount, belowCount)))
+		sb.WriteString("\n")
+	}
+}
+
+// paramFieldLabel returns a field's label, with its required marker, and the
+// key hint shown while it is focused.
+func (m Model) paramFieldLabel(paramDef lsigprovider.ParameterDef, focused, isCosignerSelector, isAdminReference bool) (string, string) {
+	labelText := paramDef.Label
+	if isAdminReference {
+		labelText = "Contract Admin Reference File (.wit.json)"
+	}
+	var modeHint string
+	if len(paramDef.InputModes) > 1 {
+		modeIdx := 0
+		if m.forms.genericLSigParamModes != nil {
+			modeIdx = m.forms.genericLSigParamModes[paramDef.Name]
+		}
+		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
+			labelText = paramDef.InputModes[modeIdx].Label
+		}
+		if focused {
+			modeHint = fmt.Sprintf("  [</> to switch: %d/%d]", modeIdx+1, len(paramDef.InputModes))
+		}
+	}
+	if isCosignerSelector && focused {
+		modeHint = "  [Enter to choose]"
+	} else if len(paramDef.Options) > 0 && focused {
+		optionIdx := max(indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name]), 0)
+		modeHint = fmt.Sprintf("  [</> to choose: %d/%d]", optionIdx+1, len(paramDef.Options))
+	}
+	return parameterRequirementLabel(labelText, paramDef.Required), modeHint
+}
+
+// paramFieldWidth is the unconstrained input box width: the type's width,
+// widened or narrowed for special fields, or the selected input mode's hex
+// length.
+func (m Model) paramFieldWidth(paramDef lsigprovider.ParameterDef, isCosignerSelector, isAdminReference bool) int {
+	fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
+	if isAdminReference {
+		fieldWidth = 62
+	}
+	if len(paramDef.Options) > 0 {
+		fieldWidth = optionFieldWidth(paramDef.Options)
+	}
+	if isCosignerSelector {
+		fieldWidth = 50
+	}
+	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
+		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
+		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) && paramDef.InputModes[modeIdx].ByteLength > 0 {
+			fieldWidth = paramDef.InputModes[modeIdx].ByteLength * 2 // hex encoding
+		}
+	}
+	return fieldWidth
+}
+
+// paramFieldLines is the field's content as lines: its value or placeholder,
+// or, while focused, its value with a cursor.
+func (m Model) paramFieldLines(paramDef lsigprovider.ParameterDef, focused bool, fieldWidth int, isCosignerSelector, isAdminReference bool) []string {
+	if focused && m.forms.genericLSigParams != nil {
+		currentValue := m.forms.genericLSigParams[paramDef.Name]
+		if currentValue == "" && len(paramDef.Options) > 0 {
+			currentValue = defaultParamValue(paramDef)
+		}
+		if isCosignerSelector {
+			currentValue = m.cosignerSelectionDisplay(currentValue)
+		}
+		if isAdminReference {
+			if currentRunes := []rune(currentValue); len(currentRunes) >= fieldWidth {
+				currentValue = string(currentRunes[len(currentRunes)-fieldWidth+1:])
+			}
+		}
+		lines := paramInputLines(currentValue)
+		lines[len(lines)-1] += "_"
+		return lines
+	}
+
+	value := ""
+	if m.forms.genericLSigParams != nil {
+		value = m.forms.genericLSigParams[paramDef.Name]
+	}
+	if value == "" && len(paramDef.Options) > 0 {
+		value = defaultParamValue(paramDef)
+	}
+	if value == "" {
+		if isAdminReference {
+			value = "Path to public .wit.json on this machine"
+		} else {
+			value = getPlaceholderForType(paramDef.Type)
+		}
+	}
+	if isCosignerSelector {
+		value = m.cosignerSelectionDisplay(m.forms.genericLSigParams[paramDef.Name])
+	}
+	if isAdminReference && !focused {
+		value = middleEllipsize(value, fieldWidth)
+	}
+	return paramInputLines(value)
+}
+
+// scrollParamFieldLines returns the window of a multi-line field's lines at
+// its scroll offset, and how many lines are hidden above and below.
+func (m Model) scrollParamFieldLines(name string, lines []string, fieldHeight int) ([]string, int, int) {
+	offset := 0
+	if m.forms.genericLSigParamScroll != nil {
+		offset = m.forms.genericLSigParamScroll[name]
+	}
+	offset = min(max(offset, 0), maxParamInputScrollOffset(lines, fieldHeight))
+	end := min(offset+fieldHeight, len(lines))
+	return append([]string(nil), lines[offset:end]...), offset, len(lines) - end
 }
 
 func middleEllipsize(value string, width int) string {

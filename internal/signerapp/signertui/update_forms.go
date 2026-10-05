@@ -387,6 +387,7 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleParamModalKeys is the shared handler for parameter input modals (generate and import).
 // Returns the updated model, a tea.Cmd, and an error string for the caller to assign.
+// Focus 0..len(params)-1 are the fields; len(params) is the submit button.
 func (m Model) handleParamModalKeys(
 	msg tea.KeyMsg,
 	keyTypeIndex int,
@@ -402,206 +403,201 @@ func (m Model) handleParamModalKeys(
 		m.viewState = escView
 		return m, nil, "Parameters not found"
 	}
-
 	params := spec.Params
-	maxFocus := len(params)
-	if m.forms.generateFocus >= 0 && m.forms.generateFocus < len(params) {
-		param := params[m.forms.generateFocus]
-		if m.isCosignerSelectorParam(keyType, param) {
-			switch msg.String() {
-			case "enter", " ":
-				next, errText := m.openCosignerPicker(keyType, param.Name)
-				return next, nil, errText
-			case "left", "right", "<", ">", "backspace", "delete", "insert":
-				return m, nil, ""
-			default:
-				if msg.Type == tea.KeyRunes {
-					return m, nil, ""
-				}
-			}
+
+	if param, ok := focusedParam(m.forms.generateFocus, params); ok && m.isCosignerSelectorParam(keyType, param) {
+		if next, handled, errText := m.handleCosignerSelectorKey(msg, keyType, param); handled {
+			return next, nil, errText
 		}
 	}
 	if input, ok := paramTextInput(msg, m.forms.generateFocus, params); ok {
-		if !isASCIIText(input) {
-			return m, nil, errParamNonASCII
-		}
-		m = m.appendToCurrentParam(input, params)
-		return m, nil, ""
+		return m.typeIntoCurrentParam(input, params)
 	}
 
-	switch msg.String() {
+	focused, onField := focusedParam(m.forms.generateFocus, params)
+	multiline := onField && isMultilineParamType(focused.Type)
+	switch key := msg.String(); key {
 	case "esc":
 		m.viewState = escView
-		return m, nil, ""
-
 	case "tab":
-		m.forms.generateFocus = (m.forms.generateFocus + 1) % (maxFocus + 1)
-		if m.forms.generateFocus < len(params) {
-			m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
+		m = m.wrapParamFocusForward(params)
+	case "up", "down":
+		delta := 1
+		if key == "up" {
+			delta = -1
 		}
-		return m, nil, ""
-
-	case "up":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			m = m.scrollCurrentParamInput(params, -1)
-			return m, nil, ""
-		}
-		if m.forms.generateFocus > 0 {
-			m.forms.generateFocus--
-			if m.forms.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
-			}
-		}
-		return m, nil, ""
-
-	case "shift+tab", "k":
-		if m.forms.generateFocus > 0 {
-			m.forms.generateFocus--
-			if m.forms.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
-			}
-		}
-		return m, nil, ""
-
-	case "down":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			m = m.scrollCurrentParamInput(params, 1)
-			return m, nil, ""
-		}
-		if m.forms.generateFocus < maxFocus {
-			m.forms.generateFocus++
-			if m.forms.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
-			}
-		}
-		return m, nil, ""
-
-	case "j":
-		if m.forms.generateFocus < maxFocus {
-			m.forms.generateFocus++
-			if m.forms.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
-			}
-		}
-		return m, nil, ""
-
-	case "<", ">":
-		if m.forms.generateFocus < len(params) {
-			paramDef := params[m.forms.generateFocus]
-			if len(paramDef.Options) > 0 {
-				delta := 1
-				if msg.String() == "<" {
-					delta = -1
-				}
-				m = m.cycleCurrentParamOption(params, delta)
-			} else if len(paramDef.InputModes) > 1 {
-				currentMode := m.forms.genericLSigParamModes[paramDef.Name]
-				if msg.String() == ">" {
-					currentMode = (currentMode + 1) % len(paramDef.InputModes)
-				} else {
-					currentMode = (currentMode - 1 + len(paramDef.InputModes)) % len(paramDef.InputModes)
-				}
-				m.forms.genericLSigParamModes[paramDef.Name] = currentMode
-				m.forms.genericLSigParams[paramDef.Name] = ""
-				m.setParamScroll(paramDef.Name, 0)
-			}
-		}
-		return m, nil, ""
-
-	case "backspace":
-		if m.forms.generateFocus < len(params) {
-			paramName := params[m.forms.generateFocus].Name
-			if m.forms.genericLSigParams != nil {
-				if val, ok := m.forms.genericLSigParams[paramName]; ok && len(val) > 0 {
-					m.forms.genericLSigParams[paramName] = val[:len(val)-1]
-				}
-			}
-			m = m.ensureCurrentParamInputVisible(params)
-		}
-		return m, nil, ""
-
-	case "enter", " ":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			m = m.appendToCurrentParam("\n", params)
-			return m, nil, ""
-		}
-		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
-			for _, param := range params {
-				if m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
-					return m, nil, "Choose a cosigner before continuing"
-				}
-			}
-			transformedParams, err := m.applyInputModeTransforms(params)
-			if err != nil {
-				return m, nil, err.Error()
-			}
-			if err := spec.Validate(transformedParams); err != nil {
-				return m, nil, err.Error()
-			}
-			id := m.beginOperation(submitView)
-			return m, submitFn(keyType, transformedParams, id), ""
-		}
-		if m.forms.generateFocus < maxFocus {
-			m.forms.generateFocus++
-			if m.forms.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
-			}
-		}
-		return m, nil, ""
-
-	case "pgup", "pgdown":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
-			paramDef := params[m.forms.generateFocus]
-			delta := -getFieldHeightForType(paramDef.Type)
-			if msg.String() == "pgdown" {
-				delta = getFieldHeightForType(paramDef.Type)
-			}
+		if multiline {
 			m = m.scrollCurrentParamInput(params, delta)
+		} else {
+			m = m.moveParamFocus(delta, params)
 		}
-		return m, nil, ""
-
+	case "shift+tab", "k":
+		m = m.moveParamFocus(-1, params)
+	case "j":
+		m = m.moveParamFocus(1, params)
+	case "<", ">":
+		if onField {
+			m = m.cycleParamChoiceOrMode(focused, params, key == ">")
+		}
+	case "left", "right":
+		if onField && len(focused.Options) > 0 {
+			m = m.cycleCurrentParamOption(params, choiceDelta(key == "right"))
+		}
+	case "backspace":
+		if onField {
+			m = m.deleteLastParamChar(focused.Name, params)
+		}
+	case "enter", " ":
+		switch {
+		case multiline:
+			m = m.appendToCurrentParam("\n", params)
+		case m.forms.generateFocus == len(params) || key == "enter":
+			return m.submitParamModal(keyType, spec, submitView, submitFn)
+		default:
+			m = m.moveParamFocus(1, params)
+		}
+	case "pgup", "pgdown":
+		if multiline {
+			page := getFieldHeightForType(focused.Type)
+			if key == "pgup" {
+				page = -page
+			}
+			m = m.scrollCurrentParamInput(params, page)
+		}
 	case "home":
-		if m.forms.generateFocus < len(params) {
-			m.setParamScroll(params[m.forms.generateFocus].Name, 0)
+		if onField {
+			m.setParamScroll(focused.Name, 0)
 		}
-		return m, nil, ""
-
 	case "end":
-		if m.forms.generateFocus < len(params) {
+		if onField {
 			m = m.ensureCurrentParamInputVisible(params)
 		}
-		return m, nil, ""
-
-	case "left", "right":
-		if m.forms.generateFocus < len(params) && len(params[m.forms.generateFocus].Options) > 0 {
-			delta := -1
-			if msg.String() == "right" {
-				delta = 1
-			}
-			m = m.cycleCurrentParamOption(params, delta)
-		}
-		return m, nil, ""
-
-	case "insert":
-		return m, nil, ""
-
-	case "delete":
-		return m, nil, ""
-
+	case "insert", "delete":
 	default:
-		input := msg.String()
+		input := key
 		if msg.Type == tea.KeyRunes {
 			input = string(msg.Runes)
 		}
-		if len(input) > 0 && m.forms.generateFocus < len(params) {
-			if !isASCIIText(input) {
-				return m, nil, errParamNonASCII
-			}
-			m = m.appendToCurrentParam(input, params)
+		if input != "" && onField {
+			return m.typeIntoCurrentParam(input, params)
 		}
 	}
-
 	return m, nil, ""
+}
+
+// focusedParam returns the field at focus, or false when focus is on the
+// submit button or out of range.
+func focusedParam(focus int, params []lsigprovider.ParameterDef) (lsigprovider.ParameterDef, bool) {
+	if focus < 0 || focus >= len(params) {
+		return lsigprovider.ParameterDef{}, false
+	}
+	return params[focus], true
+}
+
+func choiceDelta(forward bool) int {
+	if forward {
+		return 1
+	}
+	return -1
+}
+
+// handleCosignerSelectorKey handles a key on a cosigner selector field, which
+// is chosen from a picker rather than typed. It reports false for keys the
+// generic handler should process (navigation).
+func (m Model) handleCosignerSelectorKey(msg tea.KeyMsg, keyType string, param lsigprovider.ParameterDef) (Model, bool, string) {
+	switch msg.String() {
+	case "enter", " ":
+		next, errText := m.openCosignerPicker(keyType, param.Name)
+		return next, true, errText
+	case "left", "right", "<", ">", "backspace", "delete", "insert":
+		return m, true, ""
+	}
+	if msg.Type == tea.KeyRunes {
+		return m, true, ""
+	}
+	return m, false, ""
+}
+
+// typeIntoCurrentParam appends typed text to the focused field.
+func (m Model) typeIntoCurrentParam(input string, params []lsigprovider.ParameterDef) (Model, tea.Cmd, string) {
+	if !isASCIIText(input) {
+		return m, nil, errParamNonASCII
+	}
+	return m.appendToCurrentParam(input, params), nil, ""
+}
+
+// moveParamFocus moves focus one step toward the fields' end (delta > 0) or
+// start (delta < 0), stopping at the submit button and the first field, and
+// keeps a newly focused field scrolled into view.
+func (m Model) moveParamFocus(delta int, params []lsigprovider.ParameterDef) Model {
+	switch {
+	case delta < 0 && m.forms.generateFocus > 0:
+		m.forms.generateFocus--
+	case delta > 0 && m.forms.generateFocus < len(params):
+		m.forms.generateFocus++
+	default:
+		return m
+	}
+	if m.forms.generateFocus < len(params) {
+		m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
+	}
+	return m
+}
+
+// wrapParamFocusForward moves focus forward, wrapping from the submit button
+// to the first field.
+func (m Model) wrapParamFocusForward(params []lsigprovider.ParameterDef) Model {
+	m.forms.generateFocus = (m.forms.generateFocus + 1) % (len(params) + 1)
+	if m.forms.generateFocus < len(params) {
+		m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
+	}
+	return m
+}
+
+// cycleParamChoiceOrMode steps a choice field to its next or previous option,
+// or a field with several input modes to its next or previous mode, clearing
+// the value typed in the old mode.
+func (m Model) cycleParamChoiceOrMode(param lsigprovider.ParameterDef, params []lsigprovider.ParameterDef, forward bool) Model {
+	if len(param.Options) > 0 {
+		return m.cycleCurrentParamOption(params, choiceDelta(forward))
+	}
+	if modes := len(param.InputModes); modes > 1 {
+		mode := (m.forms.genericLSigParamModes[param.Name] + choiceDelta(forward) + modes) % modes
+		m.forms.genericLSigParamModes[param.Name] = mode
+		m.forms.genericLSigParams[param.Name] = ""
+		m.setParamScroll(param.Name, 0)
+	}
+	return m
+}
+
+func (m Model) deleteLastParamChar(name string, params []lsigprovider.ParameterDef) Model {
+	if val := m.forms.genericLSigParams[name]; val != "" {
+		m.forms.genericLSigParams[name] = val[:len(val)-1]
+	}
+	return m.ensureCurrentParamInputVisible(params)
+}
+
+// submitParamModal validates the form and starts the submit operation.
+func (m Model) submitParamModal(
+	keyType string,
+	spec *paramSpec,
+	submitView ViewState,
+	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
+) (Model, tea.Cmd, string) {
+	for _, param := range spec.Params {
+		if m.isCosignerSelectorParam(keyType, param) && strings.TrimSpace(m.forms.genericLSigParams[param.Name]) == "" {
+			return m, nil, "Choose a cosigner before continuing"
+		}
+	}
+	transformedParams, err := m.applyInputModeTransforms(spec.Params)
+	if err != nil {
+		return m, nil, err.Error()
+	}
+	if err := spec.Validate(transformedParams); err != nil {
+		return m, nil, err.Error()
+	}
+	id := m.beginOperation(submitView)
+	return m, submitFn(keyType, transformedParams, id), ""
 }
 
 const errParamNonASCII = "Parameters accept ASCII characters only"
@@ -716,95 +712,85 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	}
 	currentVal := m.forms.genericLSigParams[paramDef.Name]
 
-	// Determine effective input type (mode's InputType overrides paramDef.Type)
-	effectiveType := paramDef.Type
-	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
-		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
-		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
-			mode := paramDef.InputModes[modeIdx]
-			if mode.InputType != "" {
-				effectiveType = mode.InputType
-			}
-		}
-	}
-	if isContractAdminReferenceParam(paramDef) {
-		effectiveType = "string"
-	}
-
+	effectiveType := m.effectiveParamInputType(paramDef)
 	maxLen := getMaxInputLengthForType(effectiveType, paramDef.MaxLength)
 	if isContractAdminReferenceParam(paramDef) {
 		maxLen = 4096
 	}
 	lineMaxLen := 0
 	if effectiveType == "address[]" {
-		lineMaxLen = getFieldWidthForType(effectiveType, paramDef.MaxLength) - 1
-		if lineMaxLen < 1 {
-			lineMaxLen = 1
-		}
+		lineMaxLen = max(getFieldWidthForType(effectiveType, paramDef.MaxLength)-1, 1)
 	}
 
 	for _, r := range input {
-		if r > unicode.MaxASCII {
-			// Never narrow a wider rune to the ASCII byte it happens to end in.
+		char, allowed := paramInputChar(effectiveType, r)
+		if !allowed || len(currentVal) >= maxLen {
 			continue
 		}
-		char := byte(r)
-		allowed := false
-
-		switch effectiveType {
-		case "address":
-			// Algorand addresses are base32 - uppercase alphanumeric
-			if char >= 'a' && char <= 'z' {
-				char = char - 'a' + 'A'
-			}
-			if (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') {
-				allowed = true
-			}
-		case "address[]":
-			if char == '\r' {
-				continue
-			}
-			if char == ',' || char == ' ' {
-				char = '\n'
-			}
-			if char == '\n' || char == '@' {
-				allowed = true
-				break
-			}
-			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
-				allowed = true
-			}
-		case "uint64":
-			// Numbers only
-			if char >= '0' && char <= '9' {
-				allowed = true
-			}
-		case "bytes":
-			// Hex characters only (0-9, a-f, A-F)
-			if char >= 'A' && char <= 'F' {
-				char = char - 'A' + 'a'
-			}
-			if (char >= 'a' && char <= 'f') || (char >= '0' && char <= '9') {
-				allowed = true
-			}
-		default:
-			// Accept printable ASCII characters only (strips escape sequences, brackets from paste, etc.)
-			if char >= 32 && char <= 126 {
-				allowed = true
-			}
+		if lineMaxLen > 0 && char != '\n' && currentParamLineLength(currentVal) >= lineMaxLen {
+			continue
 		}
-
-		if allowed && len(currentVal) < maxLen {
-			if lineMaxLen > 0 && char != '\n' && currentParamLineLength(currentVal) >= lineMaxLen {
-				continue
-			}
-			currentVal += string(char)
-		}
+		currentVal += string(char)
 	}
 
 	m.forms.genericLSigParams[paramDef.Name] = currentVal
 	m = m.ensureCurrentParamInputVisible(params)
 	return m
+}
+
+// effectiveParamInputType is the type that governs what may be typed into a
+// field: the selected input mode's type overrides the declared type, and a
+// contract-admin reference is a free-text file path.
+func (m Model) effectiveParamInputType(paramDef lsigprovider.ParameterDef) string {
+	if isContractAdminReferenceParam(paramDef) {
+		return "string"
+	}
+	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
+		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
+		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) && paramDef.InputModes[modeIdx].InputType != "" {
+			return paramDef.InputModes[modeIdx].InputType
+		}
+	}
+	return paramDef.Type
+}
+
+// paramInputChar normalizes one typed rune for a field of the given type and
+// reports whether the field accepts it. Non-ASCII runes are never accepted,
+// so a wider rune is never narrowed to the ASCII byte it happens to end in.
+func paramInputChar(inputType string, r rune) (byte, bool) {
+	if r > unicode.MaxASCII {
+		return 0, false
+	}
+	char := byte(r)
+	isDigit := char >= '0' && char <= '9'
+	switch inputType {
+	case "address":
+		// Algorand addresses are base32: uppercase alphanumeric.
+		if char >= 'a' && char <= 'z' {
+			char = char - 'a' + 'A'
+		}
+		return char, (char >= 'A' && char <= 'Z') || isDigit
+	case "address[]":
+		switch char {
+		case '\r':
+			return 0, false
+		case ',', ' ':
+			char = '\n'
+		}
+		isLetter := (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')
+		return char, char == '\n' || char == '@' || isLetter || isDigit
+	case "uint64":
+		return char, isDigit
+	case "bytes":
+		// Hex, normalized to lowercase.
+		if char >= 'A' && char <= 'F' {
+			char = char - 'A' + 'a'
+		}
+		return char, (char >= 'a' && char <= 'f') || isDigit
+	default:
+		// Printable ASCII only: strips escape sequences and paste brackets.
+		return char, char >= 32 && char <= 126
+	}
 }
 
 func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
