@@ -881,7 +881,7 @@ func TestProvisioningRejectsUnknownExecCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read signer logs: %v", err)
 	}
-	if !strings.Contains(logs, "Unknown provisioning command: bogus") {
+	if !strings.Contains(logs, "Unknown provisioning command from ") || !strings.Contains(logs, `: "bogus"`) {
 		t.Fatalf("expected unknown-command log entry, got logs:\n%s", logs)
 	}
 	if data := readFileIfExists(t, env.AuthorizedKeysPath); strings.TrimSpace(data) != "" {
