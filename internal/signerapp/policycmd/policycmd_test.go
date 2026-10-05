@@ -470,10 +470,13 @@ func TestOnlineDiffDescribesChangesWithoutApplying(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := stdout.String()
-	for _, want := range []string{file + ":", "loosened   /max_fee_microalgos: 0.002 ALGO → 0.009 ALGO", "tightened  /reject_clawback: false → true", "2 changes; 1 loosen the policy"} {
+	for _, want := range []string{file + ":", "loosened   /max_fee_microalgos: 0.002 ALGO → 0.009 ALGO", "tightened  /reject_clawback: false → true"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("diff output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "changes;") || strings.Contains(out, "2 changes") {
+		t.Fatalf("diff output repeats its changes in a closing count:\n%s", out)
 	}
 	if len(session.applies) != 0 || len(session.checks) != 0 {
 		t.Fatal("diff checked or applied")

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/policy"
 )
 
 const (
@@ -95,7 +97,24 @@ func TestDiffDocumentClassifiesNewAndIdenticalDocuments(t *testing.T) {
 
 	var out bytes.Buffer
 	PrintDiffs(&out, []DocumentDiff{{Label: "a.json", Identical: true}})
-	if got := out.String(); got != "a.json: no changes\nno changes\n" || !Unchanged([]DocumentDiff{{Identical: true}}) {
+	if got := out.String(); got != "a.json: no changes\n" || !Unchanged([]DocumentDiff{{Identical: true}}) {
 		t.Fatalf("identical diff output = %q", got)
+	}
+
+	// Each change carries its own mark; no closing count repeats them.
+	out.Reset()
+	PrintDiffs(&out, []DocumentDiff{{Label: "b.json", Changes: []policy.PolicyChange{
+		{Effect: policy.PolicyChangeLoosened, Path: "/", Summary: "new policy"},
+		{Effect: policy.PolicyChangeTightened, Path: "/reject_clawback", Summary: "false → true"},
+	}}})
+	want := "b.json:\n  loosened   /: new policy\n  tightened  /reject_clawback: false → true\n"
+	if got := out.String(); got != want {
+		t.Fatalf("diff output = %q, want %q", got, want)
+	}
+
+	out.Reset()
+	PrintDiffs(&out, nil)
+	if got := out.String(); got != "no changes\n" {
+		t.Fatalf("empty diff output = %q", got)
 	}
 }

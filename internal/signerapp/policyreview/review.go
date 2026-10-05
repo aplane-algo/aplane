@@ -176,9 +176,13 @@ func Unchanged(diffs []DocumentDiff) bool {
 }
 
 // PrintDiffs writes each document's changes, marked tightened, loosened, or
-// changed, followed by a one-line total.
+// changed. There is no closing total: every change already carries its own
+// mark, so a count would only repeat the lines above it.
 func PrintDiffs(w io.Writer, diffs []DocumentDiff) {
-	total, loosened := 0, 0
+	if len(diffs) == 0 {
+		_, _ = fmt.Fprintln(w, "no changes")
+		return
+	}
 	for _, d := range diffs {
 		if len(d.Changes) == 0 {
 			if d.Identical {
@@ -191,18 +195,6 @@ func PrintDiffs(w io.Writer, diffs []DocumentDiff) {
 		_, _ = fmt.Fprintf(w, "%s:\n", d.Label)
 		for _, c := range d.Changes {
 			_, _ = fmt.Fprintf(w, "  %-9s  %s: %s\n", c.Effect, c.Path, c.Summary)
-			total++
-			if c.Effect == policy.PolicyChangeLoosened {
-				loosened++
-			}
 		}
-	}
-	switch {
-	case total == 0:
-		_, _ = fmt.Fprintln(w, "no changes")
-	case loosened > 0:
-		_, _ = fmt.Fprintf(w, "%d changes; %d loosen the policy\n", total, loosened)
-	default:
-		_, _ = fmt.Fprintf(w, "%d changes\n", total)
 	}
 }
