@@ -735,8 +735,9 @@ type EndpointImportResult struct {
 	Created        bool
 	Updated        bool
 	DefaultChanged bool
-	// TokenRetired reports that the alias moved to another destination and the
-	// token issued by the previous one was removed (or would be, in a dry run).
+	// TokenRetired reports that a stored token was removed (or would be, in a
+	// dry run): the alias moved to another destination, or was created over a
+	// token file left under its name.
 	TokenRetired bool
 	RenderLines  []string
 }
@@ -752,8 +753,9 @@ type EndpointCreateCosignerResult struct {
 	DryRun       bool
 	Created      bool
 	Updated      bool
-	// TokenRetired reports that the alias moved to another destination and the
-	// token issued by the previous one was removed (or would be, in a dry run).
+	// TokenRetired reports that a stored token was removed (or would be, in a
+	// dry run): the alias moved to another destination, or was created over a
+	// token file left under its name.
 	TokenRetired bool
 	RenderLines  []string
 }
@@ -767,8 +769,10 @@ type EndpointDefaultResult struct {
 
 // EndpointDeleteResult describes an endpoint deletion.
 type EndpointDeleteResult struct {
-	Alias       string
-	RenderLines []string
+	Alias string
+	// TokenRetired reports that the endpoint's token file was removed with it.
+	TokenRetired bool
+	RenderLines  []string
 }
 
 // DiscoveredEndpointCosignerKey describes one cosigner key advertised by an

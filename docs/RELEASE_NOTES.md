@@ -31,11 +31,23 @@ Previously, replacing an alias's URL or SSH-backed API port left the previous
 destination's token in place, so `endpoints import`, `endpoints create`, or an
 interrupted and rerun `cosigner add` could present it to the new destination.
 
-Replacing a destination now removes the alias's token before the new route is
-written, and `request-token` discards a token whose endpoint changed while the
-request awaited approval. After changing a destination, request or install a
-token for the new one. A replacement is refused when another alias shares the
-same token file.
+A token now lives and dies with one endpoint:
+
+- Creating an endpoint removes any token file already at its path.
+- Changing an endpoint's destination removes its token before the new route is
+  written.
+- `endpoints delete` removes the endpoint's token with it.
+- `request-token` discards a token whose endpoint changed while the request
+  awaited approval.
+
+A token file that another endpoint also uses is never removed; creating or
+re-pointing an endpoint onto it is refused instead.
+
+**Action needed for manually installed tokens:** install the token file after
+the endpoint exists. A token copied into place before `endpoints import`,
+`endpoints create`, or `endpoints add` creates the endpoint is removed, and the
+output says so. After changing a destination, request or install a token for
+the new one.
 
 ## Unified guarded and bounded-cosigner signing flow
 

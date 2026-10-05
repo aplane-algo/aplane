@@ -615,7 +615,7 @@ connect primary
 
 `known_hosts_path` is optional; if omitted, apshell uses the default client-data known-hosts path.
 
-**Setup:** Obtain a token with `request-token` or place `aplane.token` in your `$APCLIENT_DATA` directory.
+**Setup:** Obtain a token with `request-token`, or place the endpoint's token file in your `$APCLIENT_DATA` directory after the endpoint has been created or imported.
 
 ---
 
@@ -770,21 +770,31 @@ commands (`endpoints import --role signer`, `request-token`, `connect`).
 **Replacing a destination.** Changing the URL or the SSH-backed API port of an
 existing connection requires interactive replacement consent. The token issued
 by the previous destination is removed before the new route is written, so it
-is never presented to the new one. The same applies to `endpoints import` and
-`endpoints create`. If another connection uses the same token file, the
-replacement is refused; give the connection its own `token_file` first.
+is never presented to the new one. If another connection uses the same token
+file, the replacement is refused; give the connection its own `token_file`
+first.
+
+**Tokens belong to one endpoint.** A token is only ever presented to the
+destination that issued it. `endpoints add`, `endpoints import`, and
+`endpoints create` all follow the same rules:
+
+- Creating an endpoint removes any token file already at its path. Such a file
+  was left by an earlier endpoint of the same name.
+- Changing an endpoint's destination removes its token.
+- `endpoints delete` removes the endpoint's token with it.
+
+For HTTPS and loopback HTTP endpoints, which cannot enroll automatically,
+install the token file **after** the endpoint exists. A token placed before the
+endpoint is created is removed, and the output says so.
 
 | Situation | Behavior |
 |---|---|
 | Same URL and API port | The connection is reused with its custom key, token, and known-hosts paths |
 | No token, `ssh://` | Access is requested; compare the full client fingerprint with the Client Access Request before approving |
 | Stored token rejected, `ssh://` | Explained, with `request-token --endpoint <alias>` to re-enroll |
-| No token, HTTPS or loopback HTTP | Install the endpoint token file and rerun; automatic enrollment requires SSH |
+| No token, HTTPS or loopback HTTP | Install the endpoint token file now that the endpoint exists, then rerun; automatic enrollment requires SSH |
 | Cosigner locked | Configuration is kept; unlock it in apadmin and rerun |
 | Cancelled midway | Completed effects are reported and kept for the rerun |
-
-A connection that this run created never reuses a token file left over under
-the same name; over SSH it requests fresh access.
 
 **Results.** Three outcomes are reported separately:
 
@@ -896,7 +906,8 @@ admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
 Re-importing with the same alias replaces that alias's endpoint data. If that
 changes the destination (the URL, or the SSH-backed API port), the token issued
-by the previous destination is removed, and the output says so.
+by the previous destination is removed. Importing a new alias likewise removes
+any token file already at its path. The output reports either removal.
 
 `endpoints create` manually writes a `role: cosigner` endpoint profile without an
 exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
@@ -928,7 +939,9 @@ endpoints delete old-signer
 ```
 
 `endpoints delete` refuses to remove the signer endpoint. Cosigner routing has no
-persisted key inventory to retain.
+persisted key inventory to retain. Deleting an endpoint also removes its token
+file, unless another endpoint uses the same file; SSH host trust is left as it
+is.
 
 ---
 

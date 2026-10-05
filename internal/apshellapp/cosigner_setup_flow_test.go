@@ -125,6 +125,29 @@ func TestEndpointImportAndCreateRetireTokenWhenDestinationChanges(t *testing.T) 
 			t.Fatalf("token stat error = %v, want a dry run to keep the token", err)
 		}
 	})
+	t.Run("create over a leftover token", func(t *testing.T) {
+		dataDir := t.TempDir()
+		tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+		if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(tokenPath, []byte("old-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result, err := newEndpointTestApp(t, dataDir).EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{
+			Alias: "field", URL: "ssh://new.example:2223", CosignerPort: 12270,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Created || !result.TokenRetired ||
+			!strings.Contains(strings.Join(result.RenderLines, "\n"), "left over under this name predates the endpoint and was removed") {
+			t.Fatalf("result = %#v, want the leftover token reported as removed", result)
+		}
+		if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+			t.Fatalf("token stat error = %v, want the leftover token removed", err)
+		}
+	})
 	t.Run("create", func(t *testing.T) {
 		dataDir := t.TempDir()
 		writeLiveCosignerEndpoint(t, dataDir, "field", "ssh://old.example:2223", "old-token")
@@ -195,6 +218,79 @@ func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *t
 			t.Fatalf("new destination was presented %q, want only its own token", presented)
 		}
 	}
+}
+
+// Deleting a connection and creating one of the same name for another
+// destination must not carry the old token across, on the first attempt or on
+// a rerun after the first attempt stopped early.
+func TestCosignerSetupNeverPresentsTokenLeftByDeletedConnection(t *testing.T) {
+	document, reference := testCosignerEnrollmentDocument(t, nil)
+	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
+
+	t.Run("direct connection", func(t *testing.T) {
+		dataDir := t.TempDir()
+		writeLiveCosignerEndpoint(t, dataDir, "field", "https://old.example", "old-token")
+		app := newEndpointTestApp(t, dataDir)
+		deleted, err := app.EndpointDelete(context.Background(), "field")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+		if !deleted.TokenRetired || !strings.Contains(strings.Join(deleted.RenderLines, "\n"), "token: removed with the endpoint") {
+			t.Fatalf("delete result = %#v, want the token retired with the endpoint", deleted)
+		}
+		if _, statErr := os.Stat(tokenPath); !os.IsNotExist(statErr) {
+			t.Fatalf("token stat error = %v, want the deleted endpoint's token removed", statErr)
+		}
+
+		// Even a token file that survives from before this fix is not carried
+		// into a newly created connection.
+		if err := os.WriteFile(tokenPath, []byte("old-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fresh := newRecordingEndpoint(t, "new-token", "cosigner", keys)
+		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: fresh.URL})
+		if !plan.Created || !plan.RetiresToken {
+			t.Fatalf("plan = %#v, want a create that retires the leftover token", plan)
+		}
+		if err == nil || !strings.Contains(err.Error(), "a token file left over under this name was removed") {
+			t.Fatalf("first attempt error = %v, want leftover-token guidance", err)
+		}
+		_, _, err = runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: fresh.URL})
+		if err == nil || !strings.Contains(err.Error(), "has no token") {
+			t.Fatalf("rerun error = %v, want missing-token guidance", err)
+		}
+		if presented := fresh.tokens(); len(presented) != 0 {
+			t.Fatalf("new destination was presented %q, want no request carrying the old token", presented)
+		}
+	})
+
+	t.Run("ssh connection whose enrollment stops", func(t *testing.T) {
+		dataDir := t.TempDir()
+		tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+		if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(tokenPath, []byte("old-token\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		app := newEndpointTestApp(t, dataDir)
+		// Nothing listens here, so the access request fails.
+		request := CosignerSetupRequest{Document: document, Alias: "field", URL: "ssh://127.0.0.1:1"}
+		plan, _, err := runCosignerSetup(t, app, request)
+		if !plan.Created || err == nil || !strings.Contains(err.Error(), "request token from endpoint") {
+			t.Fatalf("plan = %#v error = %v, want a create whose access request failed", plan, err)
+		}
+		if _, statErr := os.Stat(tokenPath); !os.IsNotExist(statErr) {
+			t.Fatalf("token stat error = %v, want the leftover token gone before the rerun", statErr)
+		}
+		// The rerun sees an existing, unchanged connection. With no token left
+		// it must request access again rather than skip enrollment.
+		rerun, _, err := runCosignerSetup(t, app, request)
+		if !rerun.Unchanged() || err == nil || !strings.Contains(err.Error(), "request token from endpoint") {
+			t.Fatalf("rerun plan = %#v error = %v, want another access request", rerun, err)
+		}
+	})
 }
 
 func TestSaveEndpointTokenIfCurrentDiscardsTokenForReplacedDestination(t *testing.T) {
@@ -421,14 +517,22 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		second := newRecordingEndpoint(t, "token", "cosigner", keys)
 		writeLiveCosignerEndpoint(t, dataDir, "first", first.URL, "token")
 		app := newEndpointTestApp(t, dataDir)
-		// The second connection does not exist yet, so its token is installed
-		// before setup creates the route.
+		// A direct connection cannot enroll, so its token is installed once
+		// setup has created the route, standing in for the token an SSH
+		// enrollment would deliver during the same run.
+		plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Document: document, Alias: "second", URL: second.URL})
+		if err != nil {
+			t.Fatal(err)
+		}
+		endpoint, err := app.ApplyCosignerSetupEndpoint(plan, false)
+		if err != nil {
+			t.Fatal(err)
+		}
 		tokenPath := filepath.Join(dataDir, "tokens", "second.token")
 		if err := os.WriteFile(tokenPath, []byte("token\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-
-		plan, result, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "second", URL: second.URL})
+		result, err := app.CompleteCosignerSetup(context.Background(), plan, endpoint, nil, nil)
 		if !errors.Is(err, ErrCosignerSetupDuplicateRoute) {
 			t.Fatalf("CompleteCosignerSetup() error = %v, want %v", err, ErrCosignerSetupDuplicateRoute)
 		}
@@ -439,7 +543,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 			t.Fatalf("error = %v, want both connection names", err)
 		}
 
-		if err := app.RemoveCreatedCosignerConnection(plan, result); err != nil {
+		if err := app.RemoveCreatedCosignerConnection(plan); err != nil {
 			t.Fatal(err)
 		}
 		registry, _, err := config.LoadStoredClientEndpointRegistry(dataDir)
@@ -452,9 +556,12 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		if _, ok := registry.Endpoint("first"); !ok {
 			t.Fatal("existing connection was removed")
 		}
-		// This run did not obtain the token, so it is not this run's to retire.
-		if _, err := os.Stat(tokenPath); err != nil {
-			t.Fatalf("token stat error = %v, want a token this run did not obtain left in place", err)
+		// A token's lifetime ends with its connection.
+		if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+			t.Fatalf("token stat error = %v, want the removed connection's token retired", err)
+		}
+		if _, err := os.Stat(filepath.Join(dataDir, "tokens", "first.token")); err != nil {
+			t.Fatalf("token stat error = %v, want the existing connection's token kept", err)
 		}
 	})
 
@@ -463,11 +570,11 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		server := newRecordingEndpoint(t, "token", "cosigner", keys)
 		writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
 		app := newEndpointTestApp(t, dataDir)
-		plan, result, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field"})
+		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := app.RemoveCreatedCosignerConnection(plan, result); err == nil {
+		if err := app.RemoveCreatedCosignerConnection(plan); err == nil {
 			t.Fatal("RemoveCreatedCosignerConnection() succeeded for a connection this run did not create")
 		}
 	})

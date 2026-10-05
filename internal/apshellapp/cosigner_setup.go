@@ -96,8 +96,9 @@ type CosignerSetupPlan struct {
 	Updated             bool
 	ReplacementRequired bool
 	DestinationChanged  bool
-	// RetiresToken reports that applying the plan removes a stored token issued
-	// by the previous destination.
+	// RetiresToken reports that applying the plan removes a stored token: one
+	// issued by the previous destination, or one left over under the name of a
+	// connection this plan creates.
 	RetiresToken    bool
 	DryRun          bool
 	BundledEndpoint bool
@@ -366,8 +367,8 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 
 // ApplyCosignerSetupEndpoint revalidates and applies a reviewed route under the
 // shared client lock. Network and token operations must run after it returns.
-// A destination change retires the alias's stored token in the same locked
-// step, before the new route is written.
+// Creating the alias or changing its destination retires any stored token in
+// the same locked step, before the new route is written.
 func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (config.ClientEndpointConfig, error) {
 	if plan.DryRun {
 		return plan.Endpoint, nil
@@ -439,14 +440,15 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	if err != nil {
 		return result, fmt.Errorf("read cosigner endpoint token: %w", err)
 	}
-	isSSH := strings.HasPrefix(endpoint.URL, "ssh://")
-	// A token file that predates a connection this run created was issued for
-	// some earlier use of the name, so it is never presented to an SSH
-	// destination that can issue its own.
-	if token == "" || plan.DestinationChanged || (plan.Created && isSSH) {
-		if !isSSH {
-			if plan.DestinationChanged {
+	// Applying the plan already retired any token that predates this route, so
+	// a token found here was issued for it.
+	if token == "" || plan.DestinationChanged {
+		if !strings.HasPrefix(endpoint.URL, "ssh://") {
+			switch {
+			case plan.DestinationChanged:
 				return result, fmt.Errorf("endpoint %q changed destinations; the previous destination's token was retired; install a token for the new endpoint and rerun", plan.Alias)
+			case plan.Created && plan.RetiresToken:
+				return result, fmt.Errorf("endpoint %q has no token; a token file left over under this name was removed; automatic enrollment requires ssh://; install this endpoint's token and rerun", plan.Alias)
 			}
 			return result, fmt.Errorf("endpoint %q has no token; automatic enrollment requires ssh://; install its token and rerun", plan.Alias)
 		}
@@ -523,10 +525,10 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 
 // RemoveCreatedCosignerConnection removes a connection that this setup run
 // created and that turned out not to be usable. It revalidates under the client
-// lock that the route is still the one this run wrote, and retires the token
-// only when this run obtained it and no other connection uses the file. Host
-// trust is left for separate cleanup.
-func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan, result *CosignerSetupResult) error {
+// lock that the route is still the one this run wrote. Its token is retired
+// with it, as for any deleted endpoint. Host trust is left for separate
+// cleanup.
+func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 	if !plan.Created || plan.DryRun {
 		return fmt.Errorf("connection %q was not created by this setup run", plan.Alias)
 	}
@@ -542,20 +544,7 @@ func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan, result *Co
 		if current != plan.Endpoint {
 			return fmt.Errorf("connection %q changed since setup; it was not removed", plan.Alias)
 		}
-		if result != nil && result.TokenIssued {
-			shared := false
-			for otherAlias, other := range registry.Endpoints {
-				if otherAlias != plan.Alias && config.SameClientEndpointTokenFile(a.DataDir, current, other) {
-					shared = true
-				}
-			}
-			if !shared {
-				if err := tokenfile.RetireToken(config.ResolvePath(current.TokenFile, a.DataDir)); err != nil {
-					return fmt.Errorf("retire token for connection %q: %w", plan.Alias, err)
-				}
-			}
-		}
-		_, err = config.DeleteStoredClientEndpoint(a.DataDir, plan.Alias)
+		_, err = config.RemoveStoredClientEndpoint(a.DataDir, plan.Alias)
 		return err
 	})
 	if err != nil {

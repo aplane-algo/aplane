@@ -328,26 +328,36 @@ An endpoint token is a bearer credential for the destination that issued it,
 and is only ever presented to that destination. A destination is the endpoint
 URL plus, for `ssh://` endpoints, the REST port reached through SSH.
 
-- **Retire before publishing.** When an upsert moves an alias to another
-  destination, the alias's token file is removed and its directory synced
-  before the new route is written, in the same client-data lock. An
-  interruption between the two steps leaves the old route without a token,
-  never the new route with the old one. This holds for `endpoints add`,
-  `endpoints import`, and `endpoints create`, which share one upsert.
-- **Shared token files block the change.** If another alias resolves to the
-  same token file, the upsert is refused. Paths are compared after resolution
-  against the client data directory, so a relative path, its absolute form, and
-  a symlink to it are one file.
+- **Retire before publishing.** When an upsert creates an alias or moves one
+  to another destination, any token file at the alias's path is removed and its
+  directory synced before the new route is written, in the same client-data
+  lock. A token that predates the alias was left by an earlier profile of the
+  same name; one that predates a destination change was issued by the previous
+  destination. An interruption between the two steps leaves no route with a
+  token it did not issue. This holds for `endpoints add`, `endpoints import`,
+  and `endpoints create`, which share one upsert.
+- **The sync is unconditional.** Retirement syncs the directory even when the
+  file is already absent, so a retry after a failed sync does not treat an
+  unsynced removal as durable.
+- **A token's lifetime ends with its alias.** `endpoints delete` retires the
+  alias's token before removing the route.
+- **Shared token files are never retired.** If another alias resolves to the
+  same token file, creating or re-pointing the alias is refused, and deleting
+  it leaves the file in place. Paths are compared after resolution against the
+  client data directory, so a relative path, its absolute form, and a symlink
+  to it are one file.
+- **Install a token after its profile exists.** Because creation retires
+  whatever is at the path, a manually supplied token (the only option for
+  HTTPS and loopback HTTP endpoints) must be placed after the endpoint is
+  created. No stored record distinguishes a deliberate early install from an
+  orphan, so the order is the rule.
 - **Late tokens are discarded.** Enrollment waits for operator approval with
   the client lock released. Before an issued token is saved, the alias is
   re-read under the lock; if it was removed, now names another destination, or
   now uses another token file, the token is discarded. This applies to
   `request-token` as well.
-- **A newly created guided connection requests fresh access over SSH** rather
-  than trusting a token file left over under the same alias.
 
-Hand-editing `endpoints.yaml` bypasses these write-side rules; `endpoints
-delete` leaves the alias's token file in place.
+Hand-editing `endpoints.yaml` bypasses these write-side rules.
 
 The registry may contain one signer endpoint and at most 12 cosigner endpoints.
 Cosigner endpoint records carry connection metadata only and do not accept a

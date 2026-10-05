@@ -174,7 +174,7 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 			}
 		}
 		completed := cosignerSetupCompletedEffects(plan, result)
-		if r.offerCreatedConnectionRemoval(plan, result, err) {
+		if r.offerCreatedConnectionRemoval(plan, err) {
 			completed = "the connection created by this run was removed"
 		}
 		return nil, fmt.Errorf("%s; setup did not complete: %w", completed, err)
@@ -204,7 +204,7 @@ func cosignerSetupCompletedEffects(plan apshellapp.CosignerSetupPlan, result *ap
 		completed = "connection updated"
 	}
 	if result != nil && result.TokenRetired {
-		completed += ", previous destination's token removed"
+		completed += ", earlier stored token removed"
 	}
 	if result != nil && result.TokenIssued {
 		completed += " and access token saved"
@@ -216,7 +216,7 @@ func cosignerSetupCompletedEffects(plan apshellapp.CosignerSetupPlan, result *ap
 // run created it and it cannot be used as it stands: the node is not a
 // cosigner, or it duplicates another connection's route. Existing connections
 // are never offered for removal here.
-func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupPlan, result *apshellapp.CosignerSetupResult, setupErr error) bool {
+func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupPlan, setupErr error) bool {
 	if !plan.Created || r.AutoConfirm || !r.hasInteractiveLineReader() {
 		return false
 	}
@@ -228,7 +228,7 @@ func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupP
 	if err != nil || (response != "y" && response != "yes") {
 		return false
 	}
-	if err := r.app().RemoveCreatedCosignerConnection(plan, result); err != nil {
+	if err := r.app().RemoveCreatedCosignerConnection(plan); err != nil {
 		r.printf("Could not remove connection %s: %v\n", plan.Alias, err)
 		return false
 	}
@@ -446,6 +446,9 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 	}
 	if plan.Created {
 		r.println("  endpoint change: create")
+		if plan.RetiresToken {
+			r.println("  access token: a token file left over under this name predates the connection and will be removed")
+		}
 	} else if plan.Updated {
 		r.println("  endpoint change: replace")
 		if plan.ExistingEndpoint != nil {

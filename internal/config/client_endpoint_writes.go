@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -107,10 +108,22 @@ type StoredClientEndpointUpsertPlan struct {
 	// present its token to a different service.
 	DestinationChanged bool
 	// RetireTokenPath is the resolved token file that applying the plan removes
-	// before the new route is written. It is set whenever DestinationChanged is.
+	// before the new route is written. It is set when the alias is created and
+	// when its destination changes: in both cases any token already at that
+	// path was issued for some other use of the name.
 	RetireTokenPath string
 	// RetiresExistingToken reports that RetireTokenPath currently holds a file.
 	RetiresExistingToken bool
+}
+
+// StoredClientEndpointRemoval describes a completed endpoint deletion.
+type StoredClientEndpointRemoval struct {
+	Registry ClientEndpointRegistry
+	// TokenRetired reports that the alias's token file existed and was removed.
+	TokenRetired bool
+	// TokenShared reports that the token file was left in place because
+	// another alias uses it.
+	TokenShared bool
 }
 
 // PlanStoredClientEndpointUpsert validates one endpoint upsert and returns the
@@ -137,20 +150,24 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
 	plan := StoredClientEndpointUpsertPlan{Alias: alias}
-	if exists && ClientEndpointDestinationChanged(existing, normalized) {
+	plan.DestinationChanged = exists && ClientEndpointDestinationChanged(existing, normalized)
+	// A token is only ever presented to the destination that issued it. A token
+	// already at this alias's path when the alias is created was left by an
+	// earlier profile of the same name, and one that predates a destination
+	// change was issued by the previous destination. Neither may reach the new
+	// route, so both are retired before it is published.
+	if !exists || plan.DestinationChanged {
 		tokenPath := resolvedClientEndpointTokenPath(dataDir, normalized)
-		for otherAlias, other := range registry.Endpoints {
-			if otherAlias == alias {
-				continue
+		if otherAlias, shared := clientEndpointTokenFileUser(dataDir, registry, alias, tokenPath); shared {
+			action := "changing its destination"
+			if !exists {
+				action = "creating it"
 			}
-			if sameClientEndpointTokenFile(tokenPath, resolvedClientEndpointTokenPath(dataDir, other)) {
-				return StoredClientEndpointUpsertPlan{}, fmt.Errorf(
-					"endpoint alias %q shares token file %s with alias %q; changing its destination would retire a shared credential, so give %q its own token_file first",
-					alias, tokenPath, otherAlias, alias,
-				)
-			}
+			return StoredClientEndpointUpsertPlan{}, fmt.Errorf(
+				"endpoint alias %q shares token file %s with alias %q; %s would retire a shared credential, so give %q its own token_file first",
+				alias, tokenPath, otherAlias, action, alias,
+			)
 		}
-		plan.DestinationChanged = true
 		plan.RetireTokenPath = tokenPath
 		if _, err := os.Lstat(tokenPath); err == nil {
 			plan.RetiresExistingToken = true
@@ -173,14 +190,13 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 // registry change. Callers hold the client-data lock.
 //
 // A token is only ever presented to the destination that issued it. When the
-// plan moves an alias to another destination, its token is retired durably
-// before the new route is written, so an interruption between the two steps
-// leaves the old route without a token rather than the new route with the old
-// one.
+// plan creates an alias or moves one to another destination, any token at its
+// path is retired durably before the new route is written, so an interruption
+// between the two steps leaves no route with a token it did not issue.
 func ApplyStoredClientEndpointUpsert(dataDir string, plan StoredClientEndpointUpsertPlan) error {
 	if plan.RetireTokenPath != "" {
 		if err := tokenfile.RetireToken(plan.RetireTokenPath); err != nil {
-			return fmt.Errorf("retire token for endpoint %q before changing its destination: %w", plan.Alias, err)
+			return fmt.Errorf("retire token for endpoint %q before publishing its route: %w", plan.Alias, err)
 		}
 	}
 	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
@@ -289,25 +305,69 @@ func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegist
 	return registry, nil
 }
 
+// DeleteStoredClientEndpoint removes an endpoint alias and retires its token.
 func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, error) {
+	removal, err := RemoveStoredClientEndpoint(dataDir, alias)
+	return removal.Registry, err
+}
+
+// RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
+// client-data lock.
+//
+// A token's lifetime ends with its alias: the token file is retired before the
+// route is removed, so a later profile of the same name cannot inherit it and
+// an interruption leaves the route without a token rather than an orphaned
+// token without a route. A token file that another alias also uses is left in
+// place.
+func RemoveStoredClientEndpoint(dataDir, alias string) (StoredClientEndpointRemoval, error) {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return ClientEndpointRegistry{}, err
+		return StoredClientEndpointRemoval{}, err
 	}
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return ClientEndpointRegistry{}, err
+		return StoredClientEndpointRemoval{}, err
 	}
 	if registry.Default == alias {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
+		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
-	if _, ok := registry.Endpoints[alias]; !ok {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+	endpoint, ok := registry.Endpoints[alias]
+	if !ok {
+		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+	}
+	var removal StoredClientEndpointRemoval
+	tokenPath := resolvedClientEndpointTokenPath(dataDir, endpoint)
+	if _, shared := clientEndpointTokenFileUser(dataDir, registry, alias, tokenPath); shared {
+		removal.TokenShared = true
+	} else {
+		if _, statErr := os.Lstat(tokenPath); statErr == nil {
+			removal.TokenRetired = true
+		}
+		if err := tokenfile.RetireToken(tokenPath); err != nil {
+			return StoredClientEndpointRemoval{}, fmt.Errorf("retire token for endpoint %q before removing it: %w", alias, err)
+		}
 	}
 	delete(registry.Endpoints, alias)
 	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		return ClientEndpointRegistry{}, err
+		return StoredClientEndpointRemoval{}, err
 	}
-	return registry, nil
+	removal.Registry = registry
+	return removal, nil
+}
+
+// clientEndpointTokenFileUser returns another alias whose token file resolves
+// to tokenPath, if any.
+func clientEndpointTokenFileUser(dataDir string, registry ClientEndpointRegistry, alias, tokenPath string) (string, bool) {
+	others := make([]string, 0, len(registry.Endpoints))
+	for otherAlias, other := range registry.Endpoints {
+		if otherAlias != alias && sameClientEndpointTokenFile(tokenPath, resolvedClientEndpointTokenPath(dataDir, other)) {
+			others = append(others, otherAlias)
+		}
+	}
+	if len(others) == 0 {
+		return "", false
+	}
+	sort.Strings(others)
+	return others[0], true
 }
 
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {

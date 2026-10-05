@@ -486,17 +486,9 @@ func TestUpsertStoredClientEndpointRetiresTokenBeforePublishingRoute(t *testing.
 func TestUpsertStoredClientEndpointRefusesToRetireSharedTokenFile(t *testing.T) {
 	dataDir := t.TempDir()
 	shared := filepath.Join(dataDir, "tokens", "shared.token")
-	// The two profiles name one file through different spellings.
-	if _, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
-		Role: ClientEndpointRoleCosigner, URL: "ssh://old.example", TokenFile: filepath.Join("tokens", "shared.token"),
-	}, true); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := UpsertStoredClientEndpoint(dataDir, "other", ClientEndpointConfig{
-		Role: ClientEndpointRoleCosigner, URL: "ssh://other.example", TokenFile: shared,
-	}, true); err != nil {
-		t.Fatal(err)
-	}
+	// The two profiles name one file through different spellings. The upsert
+	// refuses to create such a pair, so this is a hand-written registry.
+	writeSharedTokenRegistry(t, dataDir, shared)
 	writeTestEndpointToken(t, shared)
 
 	_, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
@@ -519,4 +511,209 @@ func TestUpsertStoredClientEndpointRefusesToRetireSharedTokenFile(t *testing.T) 
 	}, true); err == nil || !strings.Contains(err.Error(), `shares token file`) {
 		t.Fatalf("PlanStoredClientEndpointUpsert() via symlink error = %v, want shared token refusal", err)
 	}
+}
+
+// writeSharedTokenRegistry stores two cosigner profiles, field and other, that
+// name one token file through a relative and an absolute spelling.
+func writeSharedTokenRegistry(t *testing.T, dataDir, shared string) {
+	t.Helper()
+	rel, err := filepath.Rel(dataDir, shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveStoredClientEndpointRegistry(dataDir, ClientEndpointRegistry{
+		SchemaVersion: ClientEndpointSchemaVersion,
+		Endpoints: map[string]ClientEndpointConfig{
+			"field": {Role: ClientEndpointRoleCosigner, URL: "ssh://old.example", TokenFile: rel},
+			"other": {Role: ClientEndpointRoleCosigner, URL: "ssh://other.example", TokenFile: shared},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A token file already at a new alias's path was left by an earlier profile of
+// that name. Creating the alias retires it, whatever the scheme, so it is never
+// presented to the new destination.
+func TestUpsertStoredClientEndpointRetiresLeftoverTokenOnCreate(t *testing.T) {
+	for _, rawURL := range []string{"ssh://new.example", "https://new.example", "http://127.0.0.1:9"} {
+		t.Run(rawURL, func(t *testing.T) {
+			dataDir := t.TempDir()
+			tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+			writeTestEndpointToken(t, tokenPath)
+
+			plan, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+				Role: ClientEndpointRoleCosigner, URL: rawURL,
+			}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !plan.Created || plan.DestinationChanged || !plan.RetiresExistingToken || plan.RetireTokenPath != tokenPath {
+				t.Fatalf("plan = %#v, want a create that retires the leftover token", plan)
+			}
+			if err := ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+				t.Fatalf("token stat error = %v, want the leftover token removed", err)
+			}
+
+			// A token installed after the profile exists is kept by a rerun.
+			writeTestEndpointToken(t, tokenPath)
+			rerun, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+				Role: ClientEndpointRoleCosigner, URL: rawURL,
+			}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rerun.Created || rerun.RetireTokenPath != "" || rerun.RetiresExistingToken {
+				t.Fatalf("rerun plan = %#v, want no retirement for an unchanged profile", rerun)
+			}
+			if err := ApplyStoredClientEndpointUpsert(dataDir, rerun); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(tokenPath); err != nil {
+				t.Fatalf("token stat error = %v, want a token installed after creation kept", err)
+			}
+		})
+	}
+}
+
+func TestUpsertStoredClientEndpointRefusesCreateOverSharedTokenFile(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := UpsertStoredClientEndpoint(dataDir, "other", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://other.example", TokenFile: filepath.Join("tokens", "shared.token"),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(dataDir, "tokens", "shared.token")
+	writeTestEndpointToken(t, shared)
+
+	_, err := PlanStoredClientEndpointUpsert(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://new.example", TokenFile: shared,
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "creating it would retire a shared credential") || !strings.Contains(err.Error(), `"other"`) {
+		t.Fatalf("PlanStoredClientEndpointUpsert() error = %v, want shared token refusal naming the other alias", err)
+	}
+	if _, statErr := os.Stat(shared); statErr != nil {
+		t.Fatalf("shared token stat error = %v, want the shared credential kept", statErr)
+	}
+}
+
+// A retry after a failed directory sync must sync again: the earlier attempt
+// removed the file without making the removal durable.
+func TestUpsertStoredClientEndpointResyncsRetirementAfterSyncFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://old.example",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+	writeTestEndpointToken(t, tokenPath)
+	next := ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://new.example"}
+
+	syncFailed := errors.New("injected directory sync failure")
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == filepath.Dir(tokenPath) {
+			return syncFailed
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
+	plan, err := PlanStoredClientEndpointUpsert(dataDir, "field", next, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyStoredClientEndpointUpsert(dataDir, plan); !errors.Is(err, syncFailed) {
+		t.Fatalf("ApplyStoredClientEndpointUpsert() error = %v, want the injected sync failure", err)
+	}
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.Endpoints["field"].URL != "ssh://old.example" {
+		t.Fatalf("endpoint after failed sync = %#v, want the old route", registry.Endpoints["field"])
+	}
+
+	tokenDirSynced := false
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == filepath.Dir(tokenPath) {
+			tokenDirSynced = true
+		}
+		if op == fsutil.OpRename && !tokenDirSynced {
+			t.Errorf("route publication began before the token removal was synced")
+		}
+		return nil
+	}
+	plan, err = PlanStoredClientEndpointUpsert(dataDir, "field", next, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.DestinationChanged || plan.RetiresExistingToken {
+		t.Fatalf("retry plan = %#v, want a destination change with the file already gone", plan)
+	}
+	if err := ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+		t.Fatal(err)
+	}
+	if !tokenDirSynced {
+		t.Fatal("retry published the route without syncing the token directory")
+	}
+}
+
+func TestRemoveStoredClientEndpointRetiresItsToken(t *testing.T) {
+	t.Run("own token", func(t *testing.T) {
+		dataDir := t.TempDir()
+		if _, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
+			Role: ClientEndpointRoleCosigner, URL: "ssh://old.example",
+		}, true); err != nil {
+			t.Fatal(err)
+		}
+		tokenPath := filepath.Join(dataDir, "tokens", "field.token")
+		writeTestEndpointToken(t, tokenPath)
+
+		// The token is retired before the route is removed.
+		tokenDirSynced := false
+		fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+			if op == fsutil.OpDirSync && path == filepath.Dir(tokenPath) {
+				tokenDirSynced = true
+			}
+			if op == fsutil.OpRename && !tokenDirSynced {
+				t.Errorf("route removal began before the token removal was synced")
+			}
+			return nil
+		}
+		t.Cleanup(func() { fsutil.TestHook = nil })
+
+		removal, err := RemoveStoredClientEndpoint(dataDir, "field")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !removal.TokenRetired || removal.TokenShared {
+			t.Fatalf("removal = %#v, want the alias's token retired", removal)
+		}
+		if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+			t.Fatalf("token stat error = %v, want the token removed with its alias", err)
+		}
+		if _, ok := removal.Registry.Endpoints["field"]; ok {
+			t.Fatal("alias was not removed")
+		}
+	})
+	t.Run("shared token is kept", func(t *testing.T) {
+		dataDir := t.TempDir()
+		shared := filepath.Join(dataDir, "tokens", "shared.token")
+		writeSharedTokenRegistry(t, dataDir, shared)
+		writeTestEndpointToken(t, shared)
+
+		removal, err := RemoveStoredClientEndpoint(dataDir, "field")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if removal.TokenRetired || !removal.TokenShared {
+			t.Fatalf("removal = %#v, want the shared token left in place", removal)
+		}
+		if _, err := os.Stat(shared); err != nil {
+			t.Fatalf("shared token stat error = %v, want the other alias's credential kept", err)
+		}
+	})
 }

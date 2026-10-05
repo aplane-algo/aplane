@@ -303,13 +303,16 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	}, nil
 }
 
-// EndpointDelete deletes a stored endpoint alias when it is not the default.
+// EndpointDelete deletes a stored endpoint alias when it is not the default,
+// and retires its token so a later endpoint of the same name cannot inherit it.
 func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteResult, error) {
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
+	var removal config.StoredClientEndpointRemoval
 	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		_, err := config.DeleteStoredClientEndpoint(a.DataDir, alias)
+		var err error
+		removal, err = config.RemoveStoredClientEndpoint(a.DataDir, alias)
 		return err
 	}); err != nil {
 		return nil, err
@@ -317,9 +320,17 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := a.reloadConfigAfterEndpointChange(); err != nil {
 		return nil, err
 	}
+	lines := []string{fmt.Sprintf("Deleted endpoint %s", alias)}
+	switch {
+	case removal.TokenRetired:
+		lines = append(lines, "  token: removed with the endpoint")
+	case removal.TokenShared:
+		lines = append(lines, "  token: left in place; another endpoint uses the same token file")
+	}
 	return &EndpointDeleteResult{
-		Alias:       alias,
-		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},
+		Alias:        alias,
+		TokenRetired: removal.TokenRetired,
+		RenderLines:  lines,
 	}, nil
 }
 
@@ -420,19 +431,24 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	if result.DefaultChanged {
 		lines = append(lines, "  default: yes")
 	}
-	return append(lines, endpointTokenRetiredLines(result.TokenRetired, result.DryRun)...)
+	return append(lines, endpointTokenRetiredLines(result.TokenRetired, result.Created, result.DryRun)...)
 }
 
-// endpointTokenRetiredLines explains why a stored token is gone after an alias
-// moved to another destination: it was issued by the previous one.
-func endpointTokenRetiredLines(retired, dryRun bool) []string {
+// endpointTokenRetiredLines explains why a stored token is gone: it was issued
+// by the previous destination, or was left over under the name of an endpoint
+// that has just been created.
+func endpointTokenRetiredLines(retired, created, dryRun bool) []string {
 	if !retired {
 		return nil
 	}
-	if dryRun {
-		return []string{"  token: the stored token was issued by the previous destination and would be removed"}
+	origin := "the stored token was issued by the previous destination"
+	if created {
+		origin = "a token file left over under this name predates the endpoint"
 	}
-	return []string{"  token: the stored token was issued by the previous destination and was removed"}
+	if dryRun {
+		return []string{"  token: " + origin + " and would be removed"}
+	}
+	return []string{"  token: " + origin + " and was removed"}
 }
 
 func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []string {
@@ -453,7 +469,7 @@ func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []s
 		fmt.Sprintf("  url: %s", result.URL),
 		fmt.Sprintf("  cosigner port: %d", result.CosignerPort),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
-	}, endpointTokenRetiredLines(result.TokenRetired, result.DryRun)...)
+	}, endpointTokenRetiredLines(result.TokenRetired, result.Created, result.DryRun)...)
 }
 
 func endpointDiscoverCosignersRenderLines(result *EndpointDiscoverCosignersResult) []string {

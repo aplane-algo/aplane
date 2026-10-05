@@ -107,13 +107,27 @@ func WriteToken(path, token string) error {
 // RetireToken removes a client token file and syncs its directory, so the
 // removal is durable before a caller publishes a route to another destination.
 // A token is a bearer credential for the destination that issued it; retiring
-// it is how an endpoint profile stops presenting it elsewhere. A missing file
-// is already retired.
+// it is how an endpoint profile stops presenting it elsewhere.
+//
+// The directory is synced even when the file is already absent. An earlier
+// attempt may have removed the file and then failed to sync, and a retry must
+// not treat that unsynced removal as durable.
 func RetireToken(path string) error {
 	if path == "" {
 		return nil
 	}
-	return fsutil.RemoveDurable(path)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			// No directory, so there is no entry whose removal could be lost.
+			return nil
+		}
+		return err
+	}
+	return fsutil.SyncDir(dir)
 }
 
 func writeTokenIfAbsent(path, token string) (bool, error) {
