@@ -329,3 +329,75 @@ func TestTokenProvisioningCancellationRemovesOnlyThatRequest(t *testing.T) {
 		t.Fatalf("removeCanceledRequest() = %#v, %v, %v; want only the token request removed", next, removed, active)
 	}
 }
+
+func signApproval(id string) approvalRequest {
+	return approvalRequest{kind: approvalKindSign, signRequest: &protocol.SignRequestMessage{BaseMessage: protocol.BaseMessage{ID: id}}}
+}
+
+func tokenApproval(id string) approvalRequest {
+	return approvalRequest{kind: approvalKindTokenProvisioning, tokenRequest: &protocol.TokenProvisioningRequestMessage{BaseMessage: protocol.BaseMessage{ID: id}}}
+}
+
+// The operator answers the head of the queue; a failed send keeps the
+// request so the operator can retry, and invalid input changes nothing.
+func TestApproverAnswersHeadOfQueue(t *testing.T) {
+	var sent []any
+	sendErr := error(nil)
+	a := &approver{send: func(v any) error {
+		if sendErr != nil {
+			return sendErr
+		}
+		sent = append(sent, v)
+		return nil
+	}}
+	a.enqueue(signApproval("sign-1"))
+	a.enqueue(tokenApproval("token-1"))
+
+	a.handleInput("maybe")
+	if len(sent) != 0 || len(a.queue) != 2 {
+		t.Fatalf("invalid input sent %d responses, queue %d; want none sent, 2 queued", len(sent), len(a.queue))
+	}
+
+	sendErr = os.ErrClosed
+	a.handleInput("y")
+	if len(a.queue) != 2 {
+		t.Fatalf("queue after failed send = %d, want the request kept", len(a.queue))
+	}
+
+	sendErr = nil
+	a.handleInput("y")
+	if len(sent) != 1 || len(a.queue) != 1 || a.queue[0].id() != "token-1" {
+		t.Fatalf("after approval: sent %d, queue %+v; want sign-1 answered and token-1 next", len(sent), a.queue)
+	}
+	resp, ok := sent[0].(protocol.SignResponseMessage)
+	if !ok || resp.ID != "sign-1" || !resp.Approved {
+		t.Fatalf("response = %#v, want approval of sign-1", sent[0])
+	}
+
+	a.handleInput("n not today")
+	if len(sent) != 2 || len(a.queue) != 0 {
+		t.Fatalf("after rejection: sent %d, queue %d; want token-1 answered and queue empty", len(sent), len(a.queue))
+	}
+}
+
+// A withdrawal removes only the matching request; answering continues with
+// the next one.
+func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
+	var sent []any
+	a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+	a.enqueue(tokenApproval("token-1"))
+	a.enqueue(signApproval("sign-1"))
+
+	a.handleCanceled(approvalKindSign, "Signing request", "token-1", "")
+	if len(a.queue) != 2 {
+		t.Fatalf("queue after a cancellation of another kind = %d, want 2", len(a.queue))
+	}
+	a.handleCanceled(approvalKindTokenProvisioning, "Client access request", "token-1", protocol.TokenProvisioningCancelReasonPreempted)
+	if len(a.queue) != 1 || a.queue[0].id() != "sign-1" {
+		t.Fatalf("queue after withdrawal = %+v, want only sign-1", a.queue)
+	}
+	a.handleInput("y")
+	if len(sent) != 1 || len(a.queue) != 0 {
+		t.Fatalf("after answering: sent %d, queue %d", len(sent), len(a.queue))
+	}
+}
