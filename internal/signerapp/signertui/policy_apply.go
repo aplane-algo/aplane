@@ -40,6 +40,12 @@ type policyApplyState struct {
 	warnings  []string
 	diffLines []string
 	unchanged bool
+	// reviewedSetSHA256 is the policy set the review was built against: the
+	// summary that decided whether the key has an active document to diff. The
+	// apply names this set, never a later summary, so a policy that changed
+	// after the review was built is rejected by the node instead of replaced
+	// unseen.
+	reviewedSetSHA256 string
 
 	applying     bool
 	applyErr     string
@@ -212,6 +218,7 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, m.waitForMessageCmd()
 	}
 	apply.warnings = warnings
+	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
 	if !m.policyHasActiveDocument(apply.doc.Key) {
 		return m.reviewPolicyApply(false, "")
 	}
@@ -288,7 +295,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, tea.Batch(
-			m.sendApplyPolicyCmd(apply.doc, m.policies.policy.PolicySetSHA256, apply.pendingApplyID),
+			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.pendingApplyID),
 			m.waitForMessageCmd(),
 		)
 	case "up", "k":

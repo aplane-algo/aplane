@@ -107,6 +107,11 @@ only after you press `y`. Nothing is stored before that.
   editor with the text as you left it.
 - **Leaving.** `esc` closes the editor. If the text changed, it asks once
   before discarding.
+- **Pasting.** Use your terminal's paste (for example `ctrl+shift+v` or
+  `cmd+v`). `ctrl+v` inside the editor does nothing.
+- **Very large policies.** A policy of more than 10,000 lines is not opened in
+  the editor; export it with `apadmin policy export`, edit the file, and load
+  it with `a`.
 - **One key at a time.** On a cosigner node the `"key"` field must stay the key
   you opened; to set another key's policy, load a file or open that key.
 

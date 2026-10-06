@@ -24,6 +24,12 @@ import (
 // document yet opens on the locked starting document, which rejects every
 // request, so an edit always starts from zero permissions.
 
+// policyEditMaxLines is the text area's fixed capacity for inserted text.
+// Setting its value or pasting drops every line past this count without
+// notice, whatever its height settings, so the editor refuses a document that
+// does not fit and reports a paste that was cut short.
+const policyEditMaxLines = 10000
+
 // policyEditMaxProblemLines bounds the lines of check problems shown under
 // the editor, so a long list cannot push the text off the screen. The first
 // problem is always shown in full.
@@ -55,11 +61,28 @@ func newPolicyEditorInput() textarea.Model {
 	input.ShowLineNumbers = true
 	input.EndOfBufferCharacter = ' '
 	input.CharLimit = policyreview.MaxPolicyBytes
-	// The defaults cap the editor at 99 rows and 500 columns.
+	// The defaults cap the displayed editor at 99 rows and 500 columns. They
+	// do not lift policyEditMaxLines.
 	input.MaxHeight = 0
 	input.MaxWidth = 0
 	input.Cursor.SetMode(cursor.CursorStatic)
+	// Pasted text arrives from the terminal as key input. The component's own
+	// ctrl+v binding would instead read this machine's clipboard through an
+	// external helper program, and its answer is a message this view never
+	// receives; an admin console should not run that helper at all.
+	input.KeyMap.Paste.SetEnabled(false)
 	return input
+}
+
+// policyTextEquivalent reports whether the editor holds the whole document.
+// The text area may normalize whitespace, which changes nothing a policy
+// says, so JSON documents are compared without it.
+func policyTextEquivalent(document, held string) bool {
+	var want, got bytes.Buffer
+	if json.Compact(&want, []byte(document)) != nil || json.Compact(&got, []byte(held)) != nil {
+		return strings.TrimSpace(document) == strings.TrimSpace(held)
+	}
+	return bytes.Equal(want.Bytes(), got.Bytes())
 }
 
 // policyEditLabel names the edited document in problems, diffs, and status.
@@ -148,10 +171,21 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 	return m.startPolicyEditor(key, msg.Document.Document, false), m.waitForMessageCmd()
 }
 
-// startPolicyEditor opens the editor on text with the cursor at the top.
+// startPolicyEditor opens the editor on text with the cursor at the top. A
+// document the editor cannot hold completely is not opened: editing a silently
+// shortened copy would look unmodified and could be applied.
 func (m Model) startPolicyEditor(key, document string, isNew bool) Model {
 	input := newPolicyEditorInput()
-	input.SetValue(editablePolicyText(document))
+	text := editablePolicyText(document)
+	input.SetValue(text)
+	if !policyTextEquivalent(text, input.Value()) {
+		m = m.closePolicyApply()
+		m.policies.status = fmt.Sprintf(
+			"This policy is too large to edit here (more than %d lines). Export it with apadmin policy export, edit the file, and load it with a.",
+			policyEditMaxLines,
+		)
+		return m
+	}
 	_ = input.Focus()
 	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
 	m.policies.apply = policyApplyState{edit: policyEditState{
@@ -210,8 +244,18 @@ func (m Model) handlePolicyEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
 	}
 	input := m.sizedPolicyEditor()
+	linesBefore := input.LineCount()
+	pastedLines := strings.Count(string(msg.Runes), "\n")
 	var cmd tea.Cmd
 	edit.input, cmd = input.Update(msg)
+	switch {
+	case edit.input.LineCount() < linesBefore+pastedLines:
+		apply.problems = nil
+		apply.err = fmt.Sprintf("That paste would take the text past %d lines, so its end was not inserted. Check the end of the text.", policyEditMaxLines)
+	case edit.input.Length() >= policyreview.MaxPolicyBytes:
+		apply.problems = nil
+		apply.err = fmt.Sprintf("The editor is full: a policy document is at most %d bytes.", policyreview.MaxPolicyBytes)
+	}
 	return m, cmd
 }
 
@@ -223,7 +267,14 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 	edit := &apply.edit
 	apply.problems = nil
 	apply.err = ""
-	if !m.policies.policy.Success {
+	// The review is built from the policy summary: whether the key has an
+	// active document to diff against, and the policy set the apply names. A
+	// summary that is still reloading is not yet the node's current state.
+	if m.policies.loading {
+		apply.err = "The policy summary is reloading; press ctrl+s again in a moment."
+		return m, nil
+	}
+	if m.policies.err != "" || !m.policies.policy.Success {
 		apply.err = "The policy summary is unavailable; press esc and reopen Policies."
 		return m, nil
 	}

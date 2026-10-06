@@ -402,3 +402,138 @@ func TestPolicyJSONSyntaxErrorNamesLineAndColumn(t *testing.T) {
 		t.Fatalf("truncated document = %q", got)
 	}
 }
+
+// After a failed apply the summary reloads in the background. Nothing may be
+// checked against the stale summary meanwhile, and an apply always names the
+// policy set its review was built from.
+func TestPolicyEditCannotApplyAgainstAPolicySetItDidNotReview(t *testing.T) {
+	m := cosignerPoliciesModel("no_policy")
+	m.width, m.height = 120, 40
+	m, _ = pressPolicyKey(t, m, "e")
+	m, _ = pressPolicyKey(t, m, "ctrl+s")
+	m = deliverPolicyCheck(m, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
+	if m.policies.apply.reviewedSetSHA256 != "set-digest" {
+		t.Fatalf("review base = %q, want the summary the review was built from", m.policies.apply.reviewedSetSHA256)
+	}
+	m, _ = pressPolicyKey(t, m, "y")
+	next, _ := m.handlePolicyApplyResult(PolicyApplyResultMsg{Result: protocol.ApplyPolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{ID: m.policies.apply.pendingApplyID},
+		Code:        "policy_snapshot_changed", Error: "active policy changed",
+	}})
+	m, _ = pressPolicyKey(t, next.(Model), "esc")
+	if m.viewState != ViewPolicyEdit || !m.policies.loading {
+		t.Fatalf("after a failed apply: view %v loading %v, want the editor with the summary reloading", m.viewState, m.policies.loading)
+	}
+
+	// While the summary reloads, a check is refused rather than built on it.
+	blocked, cmd := pressPolicyKey(t, m, "ctrl+s")
+	if cmd != nil || blocked.policies.apply.pendingCheckID != "" || !strings.Contains(blocked.policies.apply.err, "summary is reloading") {
+		t.Fatalf("ctrl+s during reload: cmd %v apply %+v, want it refused", cmd, blocked.policies.apply)
+	}
+
+	// The reload shows that another operator gave the key a policy meanwhile.
+	activeDoc := policyApplyCosignerDoc(policyViewKeyA, `"reject_clawback":true,`)
+	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: protocol.PolicyMessage{
+		BaseMessage: protocol.BaseMessage{ID: m.policies.pendingPolicyID}, Success: true, NodeRole: "cosigner",
+		Documents:       []protocol.PolicyDocumentInfoWire{{Key: policyViewKeyA, SHA256: "other", Size: 99}},
+		Keys:            []protocol.PolicyKeyStatusWire{{Key: policyViewKeyA, Status: "active"}},
+		PolicySetSHA256: "newer-digest",
+	}})
+	m = next.(Model)
+	m, _ = pressPolicyKey(t, m, "ctrl+s")
+	m = deliverPolicyCheck(m, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
+	if m.viewState != ViewPolicyEdit || m.policies.apply.pendingDocumentID == "" {
+		t.Fatalf("check after reload: view %v apply %+v, want the existing document fetched for the diff", m.viewState, m.policies.apply)
+	}
+	next, _ = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{ID: m.policies.apply.pendingDocumentID}, Success: true, Key: policyViewKeyA, Document: activeDoc,
+	}})
+	m = next.(Model)
+	rendered := stripANSI(m.renderPolicyApplyReview())
+	if m.viewState != ViewPolicyApplyReview || strings.Contains(rendered, "new policy") || !strings.Contains(rendered, "/reject_clawback") {
+		t.Fatalf("review after reload must diff against the existing document:\n%s", rendered)
+	}
+	if m.policies.apply.reviewedSetSHA256 != "newer-digest" {
+		t.Fatalf("review base = %q, want the reloaded policy set", m.policies.apply.reviewedSetSHA256)
+	}
+
+	// A summary that changes while the review is open does not move the base:
+	// the apply still names the set that was reviewed, so the node rejects it.
+	next, _ = m.requestPolicy()
+	m = next.(Model)
+	next, _ = m.handlePolicyLoaded(PolicyLoadedMsg{Policy: protocol.PolicyMessage{
+		BaseMessage: protocol.BaseMessage{ID: m.policies.pendingPolicyID}, Success: true, NodeRole: "cosigner",
+		Keys: []protocol.PolicyKeyStatusWire{{Key: policyViewKeyA, Status: "active"}}, PolicySetSHA256: "newest-digest",
+	}})
+	m, cmd = pressPolicyKey(t, next.(Model), "y")
+	if !m.policies.apply.applying || cmd == nil || m.policies.apply.reviewedSetSHA256 != "newer-digest" || m.policies.policy.PolicySetSHA256 != "newest-digest" {
+		t.Fatalf("y: apply %+v summary set %q, want the apply bound to the reviewed set", m.policies.apply, m.policies.policy.PolicySetSHA256)
+	}
+}
+
+// The text area drops lines past its capacity without notice. A document that
+// does not fit is not opened, so a shortened copy can never pass as unmodified.
+func TestPolicyEditRefusesDocumentItCannotHoldCompletely(t *testing.T) {
+	oversized := `{"format":"aplane.signer-policy.v1",` + strings.Repeat("\n", policyEditMaxLines+10) + `"max_fee_microalgos":"2000"}`
+	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
+		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc", Size: len(oversized)}}, PolicySetSHA256: "set-digest"})
+	m, _ = pressPolicyKey(t, m, "e")
+	next, _ := m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+		BaseMessage: protocol.BaseMessage{ID: m.policies.apply.edit.pendingDocumentID}, Success: true, Document: oversized,
+	}})
+	m = next.(Model)
+	if m.viewState != ViewPolicies || m.policies.apply.edit.active || !strings.Contains(m.policies.status, "too large to edit here") {
+		t.Fatalf("oversized document: view %v status %q, want it refused on the list", m.viewState, m.policies.status)
+	}
+
+	// Whitespace the text area normalizes is not a loss: tabs become spaces.
+	tabbed := "{\n\t\"format\": \"aplane.signer-policy.v1\"\n}\n"
+	opened := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer", PolicySetSHA256: "set-digest"}).startPolicyEditor("", tabbed, false)
+	if opened.viewState != ViewPolicyEdit || !strings.Contains(policyEditText(opened), `"format": "aplane.signer-policy.v1"`) {
+		t.Fatalf("tab-indented document: view %v status %q, want it opened", opened.viewState, opened.policies.status)
+	}
+}
+
+func TestPolicyEditReportsPasteCutOffAtTheLineLimit(t *testing.T) {
+	m := cosignerPoliciesModel("no_policy")
+	m.width, m.height = 120, 40
+	m, _ = pressPolicyKey(t, m, "e")
+	next, _ := m.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune(strings.Repeat("\n", policyEditMaxLines+50))})
+	m = next.(Model)
+	if m.policies.apply.edit.input.LineCount() > policyEditMaxLines || !strings.Contains(m.policies.apply.err, "was not inserted") {
+		t.Fatalf("oversized paste: lines %d err %q, want the cut-off reported", m.policies.apply.edit.input.LineCount(), m.policies.apply.err)
+	}
+	if rendered := stripANSI(m.renderPolicyEdit()); !strings.Contains(rendered, "its end was not inserted") {
+		t.Fatalf("editor does not show the cut-off:\n%s", rendered)
+	}
+
+	// A paste that fits reports nothing.
+	small := cosignerPoliciesModel("no_policy")
+	small.width, small.height = 120, 40
+	small, _ = pressPolicyKey(t, small, "e")
+	next, _ = small.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("\n\n\n")})
+	if got := next.(Model); got.policies.apply.err != "" {
+		t.Fatalf("small paste reported %q", got.policies.apply.err)
+	}
+}
+
+// Paste comes from the terminal as key input. The component's ctrl+v binding,
+// which would read this machine's clipboard through a helper program and
+// return an answer the view never receives, is off.
+func TestPolicyEditTakesTerminalPasteAndIgnoresClipboardBinding(t *testing.T) {
+	m := cosignerPoliciesModel("no_policy")
+	m.width, m.height = 120, 40
+	m, _ = pressPolicyKey(t, m, "e")
+	before := policyEditText(m)
+
+	next, cmd := m.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd != nil || policyEditText(next.(Model)) != before {
+		t.Fatalf("ctrl+v: cmd %v text changed %v, want the clipboard binding inert", cmd, policyEditText(next.(Model)) != before)
+	}
+
+	pasted := "// first\n// second\n"
+	next, _ = m.handlePolicyEditKeys(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune(pasted)})
+	if got := policyEditText(next.(Model)); !strings.HasPrefix(got, pasted+"{") || next.(Model).policies.apply.err != "" {
+		t.Fatalf("terminal paste: text %q err %q, want the pasted lines inserted", got, next.(Model).policies.apply.err)
+	}
+}

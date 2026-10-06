@@ -212,9 +212,12 @@ For a loaded file:
    `policyreview` produces the same tightened/loosened/changed diff the batch
    command prints. A file that decodes equal to the active document reports
    `Policy unchanged` and cannot be applied.
-4. Only `y` confirms. `apply_policy` carries the `policy_set_sha256` from the
-   list as its concurrency base, so the daemon rejects the apply if the active
-   policy changed after the list was loaded. On success the list reloads and
+4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the
+   `policy_set_sha256` of the summary the review was built from: the one that
+   decided in step 3 whether the key has an active document. It is captured
+   when the check returns and is never replaced by a later summary, so the
+   daemon rejects the apply if the active policy changed after the review was
+   built. On success the list reloads and
    shows the new generation ID; on failure the review shows the daemon's error
    and must be left and restarted. A `commit_uncertain` result means the
    daemon has entered recovery without sending a status message, so the TUI
@@ -251,8 +254,20 @@ confirmed apply.
   or failed, returns to the editor with the text intact; after a failed apply
   the policy summary is reloaded so the next attempt names the current policy
   set. Esc on changed text asks once before discarding.
+- **No check against a reloading summary.** `ctrl+s` is refused while the
+  summary is reloading. Together with the captured concurrency base in step 4,
+  this keeps a review from being built on one policy state and applied against
+  another.
+- **Nothing is silently shortened.** The text area drops inserted lines past
+  10,000 without notice. A document is opened only if the editor holds all of
+  it (compared as JSON, since the component normalizes whitespace); otherwise
+  editing is refused in favor of export, edit, and load. A paste that is cut
+  off at that limit is reported.
 - **Keys.** Every key except `ctrl+s` and `esc` goes to the text area, so the
-  list's single-letter shortcuts are inert while editing.
+  list's single-letter shortcuts are inert while editing. Paste is the
+  terminal's own paste, which arrives as key input. The component's `ctrl+v`
+  binding is disabled: it would read the machine's clipboard through an
+  external helper program and return a message the view does not receive.
 
 ## Local Activity And Idle Locking
 
