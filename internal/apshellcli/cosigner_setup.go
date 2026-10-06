@@ -7,17 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
-	"github.com/aplane-algo/aplane/internal/config"
 )
 
 const cosignerUsage = "cosigner status | cosigner add ... (now: endpoints add)"
 
-const endpointsAddUsage = "endpoints add [<cosigner-url>] [--alias <alias>] [--cosigner-port <port>] [--replace] [--dry-run]"
+const endpointsAddUsage = "endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]"
 
 // endpointsAddFileHint answers an operator who hands the client the cosigner's
 // key file, which belongs on the signer.
@@ -243,16 +241,6 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
 			out.request.URL = args[i]
-		case "--cosignerport", "--cosigner-port":
-			i++
-			if i >= len(args) {
-				return out, errors.New("usage: " + endpointsAddUsage)
-			}
-			port, err := parseSetupPort(args[i])
-			if err != nil {
-				return out, err
-			}
-			out.request.SignerPort = port
 		default:
 			if strings.HasPrefix(args[i], "-") || out.request.URL != "" {
 				return out, errors.New("usage: " + endpointsAddUsage)
@@ -264,14 +252,6 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 		}
 	}
 	return out, nil
-}
-
-func parseSetupPort(value string) (int, error) {
-	port, err := strconv.Atoi(value)
-	if err != nil || port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("invalid port %q", value)
-	}
-	return port, nil
 }
 
 func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {
@@ -314,13 +294,6 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 	r.println("Cosigner connection review:")
 	r.printf("  connection name: %s\n", plan.Alias)
 	r.printf("  endpoint: %s\n", plan.Endpoint.URL)
-	if strings.HasPrefix(plan.Endpoint.URL, "ssh://") {
-		signerPort := plan.Endpoint.SignerPort
-		if signerPort == 0 {
-			signerPort = config.DefaultRESTPort
-		}
-		r.printf("  Cosigner API port through SSH: %d\n", signerPort)
-	}
 	if plan.Created {
 		r.println("  endpoint change: create")
 		if plan.RetiresToken {
@@ -330,13 +303,6 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 		r.println("  endpoint change: replace")
 		if plan.ExistingEndpoint != nil {
 			r.printf("  previous endpoint: %s\n", plan.ExistingEndpoint.URL)
-			if strings.HasPrefix(plan.ExistingEndpoint.URL, "ssh://") {
-				previousPort := plan.ExistingEndpoint.SignerPort
-				if previousPort == 0 {
-					previousPort = config.DefaultRESTPort
-				}
-				r.printf("  previous Cosigner API port: %d\n", previousPort)
-			}
 		}
 		if plan.RetiresToken {
 			r.println("  access token: the stored token was issued by the previous destination and will be removed")

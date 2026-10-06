@@ -320,14 +320,12 @@ func (m Model) adminHeaderMeta() string {
 	if m.admin.settings == nil {
 		return ""
 	}
-	var parts []string
-	if m.admin.settings.SignerPort != 0 {
-		parts = append(parts, fmt.Sprintf("%s: %d", m.rolePortLabel(), m.admin.settings.SignerPort))
-	}
+	// The REST port is a loopback detail behind the SSH endpoint; the header
+	// shows only what a client needs.
 	if endpoint := m.adminEndpointDisplayURL(); endpoint != "" {
-		parts = append(parts, "Endpoint: "+endpoint)
+		return "Endpoint: " + endpoint
 	}
-	return strings.Join(parts, "  ")
+	return ""
 }
 
 func (m Model) adminEndpointDisplayURL() string {

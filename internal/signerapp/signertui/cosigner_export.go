@@ -6,11 +6,9 @@ package tui
 import (
 	"bufio"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -143,22 +141,16 @@ func composeCosignerExportArtifact(witnessJSON string) (string, error) {
 }
 
 // cosignerClientEndpointHint is what a client types after endpoints add: the
-// configured advertise_url, or a placeholder when none is configured, plus
-// --cosigner-port when an SSH endpoint's REST port is not the default, since
-// that port is reached through the tunnel and the client cannot discover it.
+// configured advertise_url, or a placeholder when none is configured. The
+// REST port behind an SSH endpoint is not part of it: the node's SSH server
+// forwards every channel to its own listener.
 func (m Model) cosignerClientEndpointHint() string {
-	address := "ssh://<this cosigner's host>:<ssh port>"
-	signerPort := 0
 	if m.admin.settings != nil {
 		if advertised := strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL); advertised != "" {
-			address = advertised
+			return advertised
 		}
-		signerPort = m.admin.settings.SignerPort
 	}
-	if strings.HasPrefix(strings.ToLower(address), "ssh://") && signerPort != 0 && signerPort != apconfig.DefaultRESTPort {
-		address += " --cosigner-port " + strconv.Itoa(signerPort)
-	}
-	return address
+	return "ssh://<this cosigner's host>:<ssh port>"
 }
 
 func (m Model) handleCosignerExportResultKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

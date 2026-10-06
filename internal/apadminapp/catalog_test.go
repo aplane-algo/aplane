@@ -498,17 +498,16 @@ func TestCatalogCosignerExportRejectsSpendingKeyBeforeRequest(t *testing.T) {
 
 func TestCatalogEndpointExportPrecedenceAndDefaults(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		settings   protocol.AdminSettingsMessage
-		wantURL    string
-		wantSigner int
-		wantErr    string
+		name     string
+		args     []string
+		settings protocol.AdminSettingsMessage
+		wantURL  string
+		wantErr  string
 	}{
 		{
-			name: "host uses configured ports", args: []string{"export", "--host", "signer.example"},
+			name: "host uses configured ssh port", args: []string{"export", "--host", "signer.example"},
 			settings: protocol.AdminSettingsMessage{SSHPort: 2223, SignerPort: 12345},
-			wantURL:  "ssh://signer.example:2223", wantSigner: 12345,
+			wantURL:  "ssh://signer.example:2223",
 		},
 		{
 			name: "explicit URL wins", args: []string{"export", "--host", "ignored.example", "--url", "https://signer.example:8443"},
@@ -518,11 +517,11 @@ func TestCatalogEndpointExportPrecedenceAndDefaults(t *testing.T) {
 		{
 			name: "advertised URL", args: []string{"export"},
 			settings: protocol.AdminSettingsMessage{EndpointAdvertiseURL: "ssh://advertised.example:2200", SignerPort: 1111},
-			wantURL:  "ssh://advertised.example:2200", wantSigner: 1111,
+			wantURL:  "ssh://advertised.example:2200",
 		},
 		{
 			name: "default ports", args: []string{"export", "--host", "127.0.0.1"},
-			wantURL: "ssh://127.0.0.1:" + fmt.Sprint(config.DefaultSSHPort), wantSigner: config.DefaultRESTPort,
+			wantURL: "ssh://127.0.0.1:" + fmt.Sprint(config.DefaultSSHPort),
 		},
 		{name: "missing routing", args: []string{"export"}, wantErr: "advertise_url"},
 		{name: "self rejected", args: []string{"export", "--url", "self"}, wantErr: "not allowed"},
@@ -551,8 +550,12 @@ func TestCatalogEndpointExportPrecedenceAndDefaults(t *testing.T) {
 			if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
 				t.Fatalf("output = %q: %v", stdout.String(), err)
 			}
-			if envelope.URL != tt.wantURL || envelope.SignerPort != tt.wantSigner {
-				t.Fatalf("envelope = %#v, want URL=%q signer=%d", envelope, tt.wantURL, tt.wantSigner)
+			if envelope.URL != tt.wantURL {
+				t.Fatalf("envelope = %#v, want URL=%q", envelope, tt.wantURL)
+			}
+			// The REST port behind an SSH endpoint is the node's own business.
+			if strings.Contains(stdout.String(), "port") {
+				t.Fatalf("envelope carries a port field: %s", stdout.String())
 			}
 		})
 	}

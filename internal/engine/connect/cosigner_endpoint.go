@@ -34,7 +34,6 @@ type HostKeyApproval = sshtunnel.HostKeyApprovalHandler
 type CosignerSSHConfig struct {
 	Host            string
 	SSHPort         int
-	SignerPort      int
 	Token           string
 	IdentityFile    string
 	KnownHostsPath  string
@@ -62,7 +61,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	// retained connection to that context would make the subsequent component call
 	// fail on an already-canceled connection.
 	sshCtx, cancelSSH, detachSetup := newCosignerSSHLifetime(ctx)
-	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, 0, cfg.SignerPort, cfg.IdentityFile, cfg.KnownHostsPath)
+	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, 0, cfg.IdentityFile, cfg.KnownHostsPath)
 	if cfg.HostKeyApproval != nil {
 		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	}

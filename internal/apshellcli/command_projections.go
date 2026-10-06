@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/asa"
-	"github.com/aplane-algo/aplane/internal/config"
 )
 
 type aliasProjection struct {
@@ -151,21 +150,14 @@ type endpointProjection struct {
 	Alias        string `json:"alias"`
 	Role         string `json:"role"`
 	URL          string `json:"url"`
-	SignerPort   int    `json:"signer_port,omitempty"`
-	LocalPort    int    `json:"local_port,omitempty"`
 	TokenPresent bool   `json:"token_present"`
 	TokenStatus  string `json:"token_status"`
 	Default      bool   `json:"default"`
 }
 
 func projectEndpointEntry(endpoint apshellapp.EndpointEntry) endpointProjection {
-	localPort := 0
-	if endpoint.Role == config.ClientEndpointRoleSigner {
-		localPort = endpoint.LocalPort
-	}
 	return endpointProjection{
 		Alias: endpoint.Alias, Role: endpoint.Role, URL: endpoint.URL,
-		SignerPort: endpoint.SignerPort, LocalPort: localPort,
 		TokenPresent: endpoint.TokenPresent, TokenStatus: tokenStatusLabel(endpoint),
 		Default: endpoint.IsDefault,
 	}
@@ -176,7 +168,6 @@ type endpointMutationProjection struct {
 	Alias           string `json:"alias"`
 	Role            string `json:"role,omitempty"`
 	URL             string `json:"url,omitempty"`
-	Port            int    `json:"port,omitempty"`
 	DryRun          bool   `json:"dry_run,omitempty"`
 	Created         bool   `json:"created,omitempty"`
 	Updated         bool   `json:"updated,omitempty"`

@@ -62,14 +62,14 @@ func TestClientDialSignerAPIUsesAuthenticatedDirectChannel(t *testing.T) {
 	defer func() { _ = srv.Stop() }()
 
 	host, sshPort := splitHostPort(t, srv.listener.Addr().String())
-	_, targetPort := splitHostPort(t, target.Addr().String())
+	// The client names no destination port; the server forwards to target itself.
 	knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 	knownHost := knownhosts.Line([]string{hostWithPort(host, sshPort)}, srv.hostKey.PublicKey()) + "\n"
 	if err := os.WriteFile(knownHostsPath, []byte(knownHost), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	client := NewClient(host, sshPort, 0, targetPort, identityPath, knownHostsPath)
+	client := NewClient(host, sshPort, 0, identityPath, knownHostsPath)
 	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(t.Context()); err != nil {
 		t.Fatal(err)

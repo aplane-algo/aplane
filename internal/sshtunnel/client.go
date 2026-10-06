@@ -14,7 +14,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,10 +97,9 @@ type HostKeyApprovalHandler func(host string, fingerprint string) (bool, error)
 // Client represents an SSH tunnel client with public-key authentication and
 // mutual token proof.
 type Client struct {
-	host       string // remote host
-	sshPort    int    // SSH port on remote host
-	localPort  int    // local port to forward from (auto-selected)
-	remotePort int    // remote port to forward to (Signer's HTTP API)
+	host      string // remote host
+	sshPort   int    // SSH port on remote host
+	localPort int    // local port to forward from (auto-selected)
 
 	sshClient *ssh.Client
 	listener  net.Listener
@@ -124,19 +122,23 @@ type Client struct {
 	disconnectReason string               // Set by server before closing (e.g. "token-revoked")
 }
 
+// forwardedAPIAddress is the destination named in every direct-tcpip channel
+// request. The server (see handleDirectTCPIP) checks only that the address is
+// loopback and always dials its own REST listener, so the port here is
+// nominal: a client never chooses the remote port.
+const forwardedAPIAddress = "127.0.0.1:11270"
+
 // NewClient creates a new SSH tunnel client.
 // host: remote host address
 // sshPort: SSH port on remote host
 // localPort: local port for tunnel (auto-selected by caller)
-// signerPort: remote Signer REST API port
 // identityFile: path to SSH private key (optional; if empty, use SSH agent)
 // knownHostsPath: path to known_hosts file
-func NewClient(host string, sshPort, localPort, signerPort int, identityFile, knownHostsPath string) *Client {
+func NewClient(host string, sshPort, localPort int, identityFile, knownHostsPath string) *Client {
 	return &Client{
 		host:           host,
 		sshPort:        sshPort,
 		localPort:      localPort,
-		remotePort:     signerPort,
 		identityFile:   identityFile,
 		knownHostsPath: knownHostsPath,
 		closeChan:      make(chan struct{}),
@@ -569,9 +571,8 @@ func (c *Client) handleConnection(localConn net.Conn) {
 		return
 	}
 
-	// Connect to remote port through SSH tunnel
-	remoteAddr := fmt.Sprintf("127.0.0.1:%d", c.remotePort)
-	remoteConn, err := sshClient.Dial("tcp", remoteAddr)
+	// Open a channel to the node's REST API through the SSH connection.
+	remoteConn, err := sshClient.Dial("tcp", forwardedAPIAddress)
 	if err != nil {
 		_, _ = fmt.Fprintf(status(), "Failed to dial remote port: %v\n", err)
 		return
@@ -705,16 +706,12 @@ func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 	c.mu.Lock()
 	sshClient := c.sshClient
 	connected := c.connected
-	remotePort := c.remotePort
 	c.mu.Unlock()
 
 	if !connected || sshClient == nil {
 		return nil, fmt.Errorf("not connected")
 	}
-	if remotePort <= 0 || remotePort > 65535 {
-		return nil, fmt.Errorf("invalid signer API port %d", remotePort)
-	}
-	return sshClient.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(remotePort)))
+	return sshClient.DialContext(ctx, "tcp", forwardedAPIAddress)
 }
 
 // RequestToken connects to the SSH server and requests a token via the exec channel.

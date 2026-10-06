@@ -12,8 +12,7 @@ import (
 func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 	data := []byte(`{
   "schema": "aplane.endpoint.v1",
-  "url": "ssh://signer.example:2223/",
-  "signer_port": 11270
+  "url": "ssh://signer.example:2223/"
 }`)
 
 	env, err := Parse(data)
@@ -25,9 +24,6 @@ func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 	}
 	if env.URL != "ssh://signer.example:2223" {
 		t.Fatalf("URL = %q, want trimmed URL", env.URL)
-	}
-	if env.SignerPort != 11270 {
-		t.Fatalf("SignerPort = %d, want 11270", env.SignerPort)
 	}
 }
 
@@ -55,6 +51,16 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 		{
 			name:    "stale schema version field",
 			data:    strings.Replace(valid, `"url":`, `"schema_version": 1, "url":`, 1),
+			wantErr: "unknown field",
+		},
+		{
+			name:    "retired signer_port field",
+			data:    strings.Replace(valid, `"url":`, `"signer_port": 11270, "url":`, 1),
+			wantErr: "unknown field",
+		},
+		{
+			name:    "retired local_port field",
+			data:    strings.Replace(valid, `"url":`, `"local_port": 18080, "url":`, 1),
 			wantErr: "unknown field",
 		},
 		{
@@ -119,10 +125,8 @@ func TestMarshalValidatesEnvelope(t *testing.T) {
 
 func TestMarshalParseRoundTripStable(t *testing.T) {
 	env := Envelope{
-		Schema:     Schema,
-		URL:        "ssh://signer.example:2223",
-		SignerPort: 11270,
-		LocalPort:  12001,
+		Schema: Schema,
+		URL:    "ssh://signer.example:2223",
 	}
 
 	first, err := Marshal(env)

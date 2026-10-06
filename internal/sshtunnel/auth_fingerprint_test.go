@@ -101,7 +101,7 @@ func TestProvisioningFingerprintMatchesApprovedKey(t *testing.T) {
 			if err := os.WriteFile(known, []byte(line), 0600); err != nil {
 				t.Fatal(err)
 			}
-			client := NewClient(host, port, 0, 0, identity, known)
+			client := NewClient(host, port, 0, identity, known)
 			var displayed string
 			client.SetProvisioningStartCallback(func(fingerprint string) { displayed = fingerprint })
 			token, err := client.RequestToken(ctx)

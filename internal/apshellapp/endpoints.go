@@ -30,10 +30,9 @@ type EndpointImportRequest struct {
 // EndpointCreateCosignerRequest creates or replaces one client-local cosigner
 // endpoint profile without requiring an exported endpoint envelope.
 type EndpointCreateCosignerRequest struct {
-	Alias        string
-	URL          string
-	CosignerPort int
-	DryRun       bool
+	Alias  string
+	URL    string
+	DryRun bool
 }
 
 // EndpointDiscoverCosignersRequest requests a read-only sweep of configured
@@ -103,9 +102,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
-	endpoint := config.ClientEndpointConfig{
-		Role: req.Role, URL: env.URL, SignerPort: env.SignerPort, LocalPort: env.LocalPort,
-	}
+	endpoint := config.ClientEndpointConfig{Role: req.Role, URL: env.URL}
 	var endpointPlan config.StoredClientEndpointUpsertPlan
 	if req.DryRun {
 		endpointPlan, err = config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
@@ -120,8 +117,6 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		Alias:          req.Alias,
 		Role:           endpointPlan.Endpoint.Role,
 		URL:            endpointPlan.Endpoint.URL,
-		SignerPort:     endpointPlan.Endpoint.SignerPort,
-		LocalPort:      endpointPlan.Endpoint.LocalPort,
 		TokenFile:      endpointPlan.Endpoint.TokenFile,
 		DryRun:         req.DryRun,
 		Created:        endpointPlan.Created,
@@ -161,15 +156,8 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 	if req.URL == "" {
 		return nil, fmt.Errorf("endpoint URL is required")
 	}
-	if req.CosignerPort <= 0 || req.CosignerPort > 65535 {
-		return nil, fmt.Errorf("cosigner port must be 1-65535")
-	}
 
-	endpoint := config.ClientEndpointConfig{
-		Role:       config.ClientEndpointRoleCosigner,
-		URL:        req.URL,
-		SignerPort: req.CosignerPort,
-	}
+	endpoint := config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: req.URL}
 	var (
 		endpointPlan config.StoredClientEndpointUpsertPlan
 		err          error
@@ -187,7 +175,6 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 		Alias:        req.Alias,
 		Role:         endpointPlan.Endpoint.Role,
 		URL:          endpointPlan.Endpoint.URL,
-		CosignerPort: endpointPlan.Endpoint.SignerPort,
 		TokenFile:    endpointPlan.Endpoint.TokenFile,
 		DryRun:       req.DryRun,
 		Created:      endpointPlan.Created,
@@ -387,8 +374,6 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 		Alias:          alias,
 		Role:           endpoint.Role,
 		URL:            endpoint.URL,
-		SignerPort:     endpoint.SignerPort,
-		LocalPort:      endpoint.LocalPort,
 		IdentityFile:   endpoint.IdentityFile,
 		KnownHostsPath: endpoint.KnownHostsPath,
 		TokenFile:      endpoint.TokenFile,
@@ -466,7 +451,6 @@ func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []s
 	return append([]string{
 		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
 		fmt.Sprintf("  url: %s", result.URL),
-		fmt.Sprintf("  cosigner port: %d", result.CosignerPort),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
 	}, endpointTokenRetiredLines(result.TokenRetired, result.Created, result.DryRun)...)
 }

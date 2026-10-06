@@ -1,5 +1,24 @@
 # Release Notes
 
+## Client endpoints name only the address
+
+The client-side `signer_port` and `local_port` fields are gone from
+`endpoints.yaml`, together with `--cosigner-port` on `endpoints add`,
+`--cosignerport` on `endpoints create`, and the `signer_port` / `local_port`
+members of the `aplane.endpoint.v1` envelope that `apadmin endpoint export`
+writes. They never did anything: a node's SSH server accepts only loopback
+channel destinations and forwards every channel to its own REST listener, so
+the client never chose the remote port, and the signer-role tunnel always
+bound a free local port at connect time. A connection is now identified by its
+URL alone, which is also what the token rules compare.
+
+Existing `endpoints.yaml` files keep working: the two retired keys are ignored
+on load and dropped by the next write. An endpoint envelope that still carries
+them is refused as having unknown fields. The signer-side `endpoint.signer_port`
+in `config.yaml`, the daemon's real REST bind port, is unchanged, and the apadmin
+settings panel still shows it. The apadmin header no longer shows it, since a
+client has no use for it; the header keeps the endpoint address.
+
 ## The cosigner export is the key only; clients are given the address
 
 A cosigner's exported file is now the public key reference

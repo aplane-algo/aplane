@@ -409,7 +409,7 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 		t.Fatalf("WriteFile(known_hosts) error = %v", err)
 	}
 
-	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	client := NewClient(host, port, 0, identityPath, knownHostsPath)
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	resultCh := make(chan error, 1)
 	go func() {

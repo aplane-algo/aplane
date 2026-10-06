@@ -140,7 +140,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	clientApp := apshellapp.New(clientEngine, config.DefaultConfig(), clientDataDir)
 	if _, err := clientApp.EndpointCreateCosigner(context.Background(), apshellapp.EndpointCreateCosignerRequest{
-		Alias: cosignerEndpointAlias, URL: cosigner.URL, CosignerPort: 11270,
+		Alias: cosignerEndpointAlias, URL: cosigner.URL,
 	}); err != nil {
 		t.Fatal(err)
 	}

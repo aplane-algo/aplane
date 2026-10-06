@@ -35,7 +35,6 @@ func isAuthenticationFailure(err error) bool {
 type ConnectRequest struct {
 	Host            string
 	SSHPort         int
-	SignerPort      int
 	IdentityFile    string
 	KnownHostsPath  string
 	TokenFile       string
@@ -60,13 +59,12 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 		return nil, fmt.Errorf("failed to find available local port: %w", err)
 	}
 
-	target := fmt.Sprintf("%s (ssh:%d, signer:%d)", req.Host, req.SSHPort, req.SignerPort)
+	target := fmt.Sprintf("%s (ssh:%d)", req.Host, req.SSHPort)
 	connectResult, err := a.eng.ConnectWithTunnel(
 		target,
 		req.Host,
 		req.SSHPort,
 		localPort,
-		req.SignerPort,
 		token,
 		req.IdentityFile,
 		req.KnownHostsPath,
@@ -141,7 +139,6 @@ func (a *App) connectEndpoint(ctx context.Context, alias string, endpoint config
 	return a.Connect(ctx, ConnectRequest{
 		Host:            endpointSSH.Host,
 		SSHPort:         endpointSSH.Port,
-		SignerPort:      endpointSSH.SignerPort,
 		IdentityFile:    endpointSSH.IdentityFile,
 		KnownHostsPath:  endpointSSH.KnownHostsPath,
 		TokenFile:       endpointSSH.TokenFile,

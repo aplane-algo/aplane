@@ -18,11 +18,11 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestPrepareCosignerSetupUsesURLAndPort(t *testing.T) {
+func TestPrepareCosignerSetupUsesURL(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Alias: "field", URL: "ssh://cosigner.example:2224", SignerPort: 13270,
+		Alias: "field", URL: "ssh://cosigner.example:2224",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,8 +30,8 @@ func TestPrepareCosignerSetupUsesURLAndPort(t *testing.T) {
 	if !plan.Created || plan.ReplacementRequired {
 		t.Fatalf("plan = %#v, want a new route", plan)
 	}
-	if plan.Endpoint.URL != "ssh://cosigner.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 0 {
-		t.Fatalf("endpoint = %#v, want the given URL and port", plan.Endpoint)
+	if plan.Endpoint.URL != "ssh://cosigner.example:2224" {
+		t.Fatalf("endpoint = %#v, want the given URL", plan.Endpoint)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestPrepareCosignerSetupReusesUnchangedCustomEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	want := config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example:2223",
-		SignerPort: 12270, IdentityFile: "/custom/id",
+		IdentityFile:   "/custom/id",
 		KnownHostsPath: "/custom/known_hosts", TokenFile: "/custom/token",
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {
@@ -90,24 +90,6 @@ func TestPrepareCosignerSetupMarksDestinationReplacement(t *testing.T) {
 	}
 	if !plan.Updated || !plan.ReplacementRequired || !plan.DestinationChanged {
 		t.Fatalf("plan = %#v, want destination replacement", plan)
-	}
-}
-
-func TestPrepareCosignerSetupTreatsChangedSSHRESTPortAsDestinationChange(t *testing.T) {
-	dataDir := t.TempDir()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: 11270,
-	}, true); err != nil {
-		t.Fatal(err)
-	}
-	plan, err := newEndpointTestApp(t, dataDir).PrepareCosignerSetup(CosignerSetupRequest{
-		Alias: "field", SignerPort: 12270,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !plan.DestinationChanged || !plan.ReplacementRequired {
-		t.Fatalf("plan = %#v, want signer REST port destination replacement", plan)
 	}
 }
 

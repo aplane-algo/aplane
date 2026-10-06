@@ -66,7 +66,6 @@ func TestRequestEndpointTokenResolvesAndPersistsEndpointScope(t *testing.T) {
 		config.ClientEndpointConfig{
 			Role:           config.ClientEndpointRoleCosigner,
 			URL:            "ssh://cosigner.example:2222",
-			SignerPort:     9443,
 			IdentityFile:   filepath.Join(dataDir, ".ssh", "id_ed25519"),
 			KnownHostsPath: filepath.Join(dataDir, ".ssh", "known_hosts"),
 			TokenFile:      filepath.Join(dataDir, "tokens", "east.token"),

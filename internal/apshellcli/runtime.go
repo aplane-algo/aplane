@@ -54,8 +54,7 @@ func printInteractiveStartupConnectionStatus(r *REPLState) {
 		return
 	}
 
-	fmt.Printf("Verifying Signer via SSH: %s (SSH port: %d, signer port: %d)\n",
-		decision.Host, decision.SSHPort, decision.SignerPort)
+	fmt.Printf("Verifying Signer via SSH: %s (SSH port: %d)\n", decision.Host, decision.SSHPort)
 	if err := connectConfigured(r); err != nil {
 		fmt.Printf("\nWarning: Signer verification failed: %v\n", err)
 		fmt.Println("Signer not available (run 'connect' to retry)")

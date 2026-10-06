@@ -543,8 +543,7 @@ result, err := engine.ConnectWithTunnel(
     target,      // "user@host"
     host,        // "host.example.com"
     sshPort,     // 1127
-    localPort,   // 11270
-    signerPort,  // 11270
+    localPort,   // free loopback port chosen by the caller
     token,       // API token (HTTP auth)
     identityFile,    // SSH private key path (optional, uses agent if empty)
     knownHostsPath,  // known_hosts file for SSH verification

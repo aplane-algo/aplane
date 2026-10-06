@@ -19,7 +19,7 @@ func TestConnectWithTunnelReturnsConnectedWhenAlreadyConnectedToTarget(t *testin
 	state.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
 	state.ConnectionTarget = "remote-a"
 
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, 8080, "token", "", "", nil, nil, nil)
+	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, "token", "", "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ConnectWithTunnel() error = %v", err)
 	}
@@ -33,7 +33,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, 8080, "token", "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, "token", "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "connection to remote-a already in progress") {
 			t.Fatalf("error = %v, want same-target in-progress error", err)
 		}
@@ -43,7 +43,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state := NewState()
 		state.connectingTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, 8080, "token", "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, "token", "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connecting to remote-a") {
 			t.Fatalf("error = %v, want different-target in-progress error", err)
 		}
@@ -54,7 +54,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 		state.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
 		state.ConnectionTarget = "remote-a"
 
-		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, 8080, "token", "", "", nil, nil, nil)
+		_, err := state.ConnectWithTunnel("remote-b", "host", 22, 12345, "token", "", "", nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "already connected to remote-a") {
 			t.Fatalf("error = %v, want already-connected error", err)
 		}
@@ -64,7 +64,7 @@ func TestConnectWithTunnelRejectsConcurrentStates(t *testing.T) {
 func TestConnectWithTunnelRejectsMissingToken(t *testing.T) {
 	state := NewState()
 
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, 8080, "", "", "", nil, nil, nil)
+	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 12345, "", "", "", nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no API token configured") {
 		t.Fatalf("error = %v, want no token configured", err)
 	}
@@ -87,7 +87,7 @@ func TestConnectWithTunnelRejectsPortAlreadyInUse(t *testing.T) {
 		}
 		return stubConn{}, nil
 	}
-	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 14001, 8080, "token", "", "", nil, nil, nil)
+	result, err := state.ConnectWithTunnel("remote-a", "host", 22, 14001, "token", "", "", nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "already in use locally") {
 		t.Fatalf("error = %v, want port in use", err)
 	}
@@ -113,7 +113,7 @@ func (stubConn) SetWriteDeadline(time.Time) error { return nil }
 func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
-	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, 8080, "", "")
+	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
 	state.TunnelConnected = true
 	cancelled := false
 	state.TunnelCancel = func() { cancelled = true }
@@ -153,7 +153,7 @@ func TestDisconnectReturnsNilWhenAlreadyDisconnected(t *testing.T) {
 func TestClearLockedResetsConnectionState(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
-	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, 8080, "", "")
+	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
 	state.TunnelConnected = true
 	state.ConnectionTarget = "remote-a"
 	state.connectingTarget = "remote-b"

@@ -17,9 +17,8 @@ import (
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
 	registry, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
-		Role:       ClientEndpointRoleCosigner,
-		URL:        "ssh://127.0.0.1:2223",
-		SignerPort: 11270,
+		Role: ClientEndpointRoleCosigner,
+		URL:  "ssh://127.0.0.1:2223",
 	}, false)
 	if err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
@@ -44,30 +43,13 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	}
 }
 
-func TestStoredClientEndpointLocalPortIsSignerOnly(t *testing.T) {
-	dataDir := t.TempDir()
-	_, err := UpsertStoredClientEndpoint(dataDir, "field", ClientEndpointConfig{
-		Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", LocalPort: 12271,
-	}, false)
-	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for cosigner endpoints") {
-		t.Fatalf("UpsertStoredClientEndpoint(cosigner local_port) error = %v, want role error", err)
-	}
-
-	if _, err := UpsertStoredClientEndpoint(dataDir, "primary", ClientEndpointConfig{
-		Role: ClientEndpointRoleSigner, URL: "ssh://signer.example", LocalPort: 12272,
-	}, false); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(signer local_port) error = %v", err)
-	}
-}
-
 func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForCosigner(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
 	registry, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
-		Role:       ClientEndpointRoleCosigner,
-		URL:        "ssh://127.0.0.1:2223",
-		SignerPort: 11271,
+		Role: ClientEndpointRoleCosigner,
+		URL:  "ssh://127.0.0.1:2223",
 	}, false)
 	if err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(cosigner) error = %v", err)
@@ -375,22 +357,10 @@ func TestUpsertStoredClientEndpointRetiresTokenWhenDestinationChanges(t *testing
 			retired:  true,
 		},
 		{
-			name:     "ssh api port",
-			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: 11270},
-			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: 12270},
-			retired:  true,
-		},
-		{
 			name:     "https url",
 			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "https://old.example"},
 			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "https://new.example"},
 			retired:  true,
-		},
-		{
-			name:     "default ssh api port spelled out",
-			previous: ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example"},
-			next:     ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example", SignerPort: DefaultRESTPort},
-			retired:  false,
 		},
 		{
 			name:     "client-local settings only",
@@ -716,4 +686,89 @@ func TestRemoveStoredClientEndpointRetiresItsToken(t *testing.T) {
 			t.Fatalf("shared token stat error = %v, want the other alias's credential kept", err)
 		}
 	})
+}
+
+// Earlier builds wrote signer_port and local_port into endpoints.yaml. They
+// are ignored on load and dropped by the next write, so an existing registry
+// keeps working and cleans itself up.
+func TestLoadClientEndpointRegistryDropsRetiredPortFields(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 2
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example:2222
+    signer_port: 12270
+    local_port: 18080
+  cosigner-local:
+    role: cosigner
+    url: ssh://cosigner.example:2223
+    signer_port: 12271
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := LoadClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatalf("LoadClientEndpointRegistry() error = %v, want the retired fields ignored", err)
+	}
+	if endpoint, ok := registry.Endpoint("primary"); !ok || endpoint.URL != "ssh://signer.example:2222" {
+		t.Fatalf("primary = %#v, %v", endpoint, ok)
+	}
+	if _, err := UpsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
+		Role: ClientEndpointRoleCosigner, URL: "ssh://cosigner.example:2223", IdentityFile: "/custom/id",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dataDir, ClientEndpointsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "signer_port") || strings.Contains(string(data), "local_port") {
+		t.Fatalf("retired fields survived a write:\n%s", data)
+	}
+	// Removal keeps every other value exactly as written: a numeric alias
+	// stays a key, and a token_file that looks like a date stays that text.
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 2
+endpoints:
+  123:
+    role: cosigner
+    url: ssh://cosigner.example:2223
+    signer_port: 12271
+    token_file: 2026-10-06
+  "quoted.alias":
+    role: cosigner
+    url: "ssh://other.example:2223"
+    local_port: 0
+    identity_file: 007
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatalf("LoadClientEndpointRegistry() error = %v, want numeric alias and date-like values preserved", err)
+	}
+	if endpoint, ok := registry.Endpoint("123"); !ok || endpoint.TokenFile != filepath.Join(dataDir, "2026-10-06") {
+		t.Fatalf("numeric alias = %#v, %v, want token_file 2026-10-06 as written", endpoint, ok)
+	}
+	if endpoint, ok := registry.Endpoint("quoted.alias"); !ok || endpoint.IdentityFile != filepath.Join(dataDir, "007") || endpoint.URL != "ssh://other.example:2223" {
+		t.Fatalf("quoted.alias = %#v, %v, want identity_file 007 as written", endpoint, ok)
+	}
+
+	// Any other unknown field is still an error.
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 2
+endpoints:
+  cosigner-local:
+    role: cosigner
+    url: ssh://cosigner.example:2223
+    cosigner_port: 12271
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadClientEndpointRegistry(dataDir); err == nil || !strings.Contains(err.Error(), "cosigner_port") {
+		t.Fatalf("LoadClientEndpointRegistry() error = %v, want unknown field cosigner_port", err)
+	}
 }

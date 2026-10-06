@@ -531,10 +531,10 @@ Current client config includes:
 Signer and cosigner routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `cosigner` endpoints. Endpoint records carry URL, remote REST port,
-identity file, `known_hosts`, and token file. Signer-role SSH endpoints may
-also select a local forwarding port; cosigner-role SSH endpoints use direct
-channels and reject `local_port`. Live cosigner-key discovery is operation-scoped
+or more `cosigner` endpoints. Endpoint records carry URL, identity file,
+`known_hosts`, and token file; no port beyond the one in the URL, because the
+node's SSH server forwards every channel to its own REST listener and the
+signer-role forward binds a free local port at connect time. Live cosigner-key discovery is operation-scoped
 and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apadmin endpoint export` and
 `apshell endpoints import`.
@@ -1487,9 +1487,8 @@ Operator handoff and manual endpoint setup use two paths:
   SSH listener bind address.
 - `apshell endpoints import --alias <name> --role signer|cosigner`
   writes client-local endpoint routing.
-- `apshell endpoints create --alias <name> --endpoint <url> --cosignerport
-  <port>` writes a manual cosigner endpoint profile when no exported endpoint
-  envelope is used.
+- `apshell endpoints create --alias <name> --endpoint <url>` writes a manual
+  cosigner endpoint profile when no exported endpoint envelope is used.
 - bearer tokens are obtained separately with `request-token --endpoint`.
 - SSH host trust remains owned by the existing known-hosts flow.
 

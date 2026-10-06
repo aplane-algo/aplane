@@ -57,32 +57,29 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	if !strings.Contains(string(data), "schema_version: 2") || strings.Contains(string(data), "published_cosigners") {
 		t.Fatalf("endpoints.yaml = %q, want v2 connection profile only", data)
 	}
-	if result.LocalPort != 0 || strings.Contains(string(data), "local_port") {
-		t.Fatalf("import retained cosigner local port: result = %#v, endpoints.yaml = %q", result, data)
+	if strings.Contains(string(data), "port") {
+		t.Fatalf("import wrote a port field: result = %#v, endpoints.yaml = %q", result, data)
 	}
 	if _, ok := app.eng.EndpointRegistry.Endpoint("cosigner-local"); !ok {
 		t.Fatal("live engine endpoint registry was not refreshed")
 	}
 }
 
-func TestEndpointImportRejectsLocalPortForCosignerRole(t *testing.T) {
+// An envelope from before the port fields were retired is refused: the
+// envelope is strict, and nothing could honor the ports anyway.
+func TestEndpointImportRejectsEnvelopeWithRetiredPortFields(t *testing.T) {
 	dataDir := t.TempDir()
-	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270, LocalPort: 12271,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dataDir, "cosigner-with-local-port.endpoint.json")
+	data := []byte(`{"schema":"aplane.endpoint.v1","url":"ssh://127.0.0.1:2223","signer_port":11270,"local_port":12271}`)
+	path := filepath.Join(dataDir, "cosigner-with-ports.endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
+	_, err := newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
 		Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner, Path: path,
 	})
-	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for cosigner endpoints") {
-		t.Fatalf("EndpointImport() error = %v, want cosigner local_port rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("EndpointImport() error = %v, want unknown field rejection", err)
 	}
 	if _, statErr := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(statErr) {
 		t.Fatalf("endpoints.yaml stat error = %v, want absent", statErr)
@@ -119,7 +116,7 @@ func TestEndpointCreateCosignerAndListContainNoCachedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	_, err := app.EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{
-		Alias: "cosigner-local", URL: "ssh://127.0.0.1:2223", CosignerPort: 11270,
+		Alias: "cosigner-local", URL: "ssh://127.0.0.1:2223",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +271,7 @@ func TestConcurrentEndpointCreatesPreserveBothAliases(t *testing.T) {
 			defer wg.Done()
 			<-start
 			_, err := item.app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
-				Alias: item.alias, URL: item.url, CosignerPort: 11270,
+				Alias: item.alias, URL: item.url,
 			})
 			errs <- err
 		}(item)
@@ -316,7 +313,7 @@ func TestConcurrentEndpointCreatesReportAppliedPlan(t *testing.T) {
 			defer wg.Done()
 			<-start
 			result, err := app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
-				Alias: "shared", URL: "ssh://cosigner.example:2223", CosignerPort: 11270,
+				Alias: "shared", URL: "ssh://cosigner.example:2223",
 			})
 			if err != nil {
 				errs <- err
@@ -359,7 +356,7 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 func writeEndpointEnvelope(t *testing.T, dir string) string {
 	t.Helper()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 11270,
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -465,7 +462,7 @@ func TestEndpointChangeReportsFailedConfigReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := app.EndpointCreateCosigner(context.Background(), EndpointCreateCosignerRequest{
-		Alias: "cosigner", URL: "ssh://127.0.0.1:2223", CosignerPort: 12270,
+		Alias: "cosigner", URL: "ssh://127.0.0.1:2223",
 	})
 	if err == nil || !strings.Contains(err.Error(), "endpoint change was saved, but reloading the client config failed") {
 		t.Fatalf("EndpointCreateCosigner() error = %v, want the failed reload reported", err)

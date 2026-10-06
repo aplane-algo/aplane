@@ -203,25 +203,13 @@ func ApplyStoredClientEndpointUpsert(dataDir string, plan StoredClientEndpointUp
 }
 
 // ClientEndpointDestinationChanged reports whether next would present a token
-// to a different service than previous. A destination is the URL plus, for
-// ssh:// endpoints, the REST port reached through the SSH connection.
+// to a different service than previous. A destination is the URL: for ssh://
+// endpoints the node's SSH server forwards to its own REST listener, so no
+// other field selects the service.
 func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool {
 	previousURL := strings.TrimRight(strings.TrimSpace(previous.URL), "/")
 	nextURL := strings.TrimRight(strings.TrimSpace(next.URL), "/")
-	if previousURL != nextURL {
-		return true
-	}
-	if !strings.HasPrefix(nextURL, "ssh://") {
-		return false
-	}
-	return effectiveClientEndpointSignerPort(previous) != effectiveClientEndpointSignerPort(next)
-}
-
-func effectiveClientEndpointSignerPort(endpoint ClientEndpointConfig) int {
-	if endpoint.SignerPort == 0 {
-		return DefaultRESTPort
-	}
-	return endpoint.SignerPort
+	return previousURL != nextURL
 }
 
 // SameClientEndpointTokenFile reports whether two token_file settings name
@@ -424,8 +412,6 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
 	if a.Role != b.Role ||
 		a.URL != b.URL ||
-		a.SignerPort != b.SignerPort ||
-		a.LocalPort != b.LocalPort ||
 		a.IdentityFile != b.IdentityFile ||
 		a.KnownHostsPath != b.KnownHostsPath ||
 		a.TokenFile != b.TokenFile {
