@@ -118,3 +118,24 @@ func TestDiffDocumentClassifiesNewAndIdenticalDocuments(t *testing.T) {
 		t.Fatalf("empty diff output = %q", got)
 	}
 }
+
+func TestDocumentFromTextAppliesTheFileRules(t *testing.T) {
+	doc, err := DocumentFromText("cosigner", "edited.json", `{"format":"aplane.cosigner-policy.v1","key":"`+testKeyA+`","transfer_policy":{"routes":[]}}`)
+	if err != nil || doc.Key != testKeyA || !strings.Contains(doc.Document, testKeyA) {
+		t.Fatalf("cosigner text: doc %+v err %v", doc, err)
+	}
+	doc, err = DocumentFromText("signer", "policy.json", testSignerDoc)
+	if err != nil || doc.Key != "" || doc.Document != testSignerDoc {
+		t.Fatalf("signer text: doc %+v err %v", doc, err)
+	}
+	for name, text := range map[string]string{
+		"empty":        " \n",
+		"no key":       `{"format":"aplane.cosigner-policy.v1"}`,
+		"not utf-8":    "{\"key\":\"" + testKeyA + "\xff\"}",
+		"over the cap": strings.Repeat(" ", MaxPolicyBytes+1),
+	} {
+		if _, err := DocumentFromText("cosigner", "edited.json", text); err == nil {
+			t.Fatalf("%s: text accepted", name)
+		}
+	}
+}

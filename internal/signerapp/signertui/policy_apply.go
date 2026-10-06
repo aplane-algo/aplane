@@ -15,13 +15,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// The policies view can load one policy file through the same check, diff,
-// confirm, and apply steps as apadmin policy apply. The TUI never edits a
-// document: the file's exact bytes are what the node stores. Unlike the batch
-// command, a cosigner file for a key the node does not hold is an error here.
+// The policies view takes one candidate document through the same check,
+// diff, confirm, and apply steps as apadmin policy apply. The candidate is a
+// policy file, or text from the editor in policy_edit.go; either way the node
+// stores exactly the bytes that were reviewed. Unlike the batch command, a
+// cosigner document for a key the node does not hold is an error here.
 
-// policyApplyState is the load-policy-file workflow.
+// policyApplyState is the check, review, and apply workflow for one candidate.
 type policyApplyState struct {
+	// edit is the in-place editor; when edit.active the candidate comes from it
+	// rather than from a file, and leaving the review returns to it.
+	edit policyEditState
+
 	path string
 	// busy names the request the form is waiting for; keys other than esc are
 	// ignored until it resolves.
@@ -35,6 +40,12 @@ type policyApplyState struct {
 	warnings  []string
 	diffLines []string
 	unchanged bool
+	// reviewedSetSHA256 is the policy set the review was built against: the
+	// summary that decided whether the key has an active document to diff. The
+	// apply names this set, never a later summary, so a policy that changed
+	// after the review was built is rejected by the node instead of replaced
+	// unseen.
+	reviewedSetSHA256 string
 
 	applying     bool
 	applyErr     string
@@ -207,6 +218,7 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 		return m, m.waitForMessageCmd()
 	}
 	apply.warnings = warnings
+	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
 	if !m.policyHasActiveDocument(apply.doc.Key) {
 		return m.reviewPolicyApply(false, "")
 	}
@@ -260,6 +272,16 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	switch msg.String() {
 	case "esc", "n", "q":
 		failed := apply.applyErr != ""
+		if apply.edit.active {
+			// Keep the text: the operator may want to change it and try again.
+			m = m.returnToPolicyEditor()
+			if failed {
+				// A failed apply may mean the active policy moved; reload the
+				// summary so the next attempt names the current policy set.
+				return m.requestPolicy()
+			}
+			return m, nil
+		}
 		m = m.closePolicyApply()
 		if failed {
 			// A failed apply may mean the active policy moved; show it fresh.
@@ -273,7 +295,7 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, tea.Batch(
-			m.sendApplyPolicyCmd(apply.doc, m.policies.policy.PolicySetSHA256, apply.pendingApplyID),
+			m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.pendingApplyID),
 			m.waitForMessageCmd(),
 		)
 	case "up", "k":
@@ -350,11 +372,16 @@ func policyRequestCmd(client *IPCClient, id string, send func(*IPCClient) error)
 // waiting for its own response.
 func (m Model) failPendingPolicyApply(id string, err error) (Model, bool) {
 	apply := &m.policies.apply
+	if id != "" && id == apply.edit.pendingDocumentID {
+		m = m.closePolicyApply()
+		m.policies.status = "Could not open the policy for editing: " + err.Error()
+		return m, true
+	}
 	if id == "" || (id != apply.pendingCheckID && id != apply.pendingDocumentID && id != apply.pendingApplyID) {
 		return m, false
 	}
 	switch {
-	case m.viewState == ViewPolicyApplyForm && apply.busy != "":
+	case (m.viewState == ViewPolicyApplyForm || m.viewState == ViewPolicyEdit) && apply.busy != "":
 		apply.busy = ""
 		apply.pendingCheckID = ""
 		apply.pendingDocumentID = ""
@@ -512,10 +539,14 @@ func (m Model) renderPolicyApplyReview() string {
 	switch {
 	case apply.applying:
 		sb.WriteString(subtitleStyle.Render("Applying policy..."))
+	case apply.applyErr != "" && apply.edit.active:
+		sb.WriteString(errorStyle.Render("Nothing more can be applied from this review; go back to the editor and check again."))
 	case apply.applyErr != "":
 		sb.WriteString(errorStyle.Render("Nothing more can be applied from this review; go back and load the file again."))
 	case apply.unchanged:
 		sb.WriteString(subtitleStyle.Render("Policy unchanged; there is nothing to apply."))
+	case apply.edit.active:
+		sb.WriteString(warningStyle.Render("Apply these changes? The node stores the edited text exactly and activates it immediately."))
 	default:
 		sb.WriteString(warningStyle.Render("Apply these changes? The node stores the file's exact bytes and activates them immediately."))
 	}
@@ -535,8 +566,14 @@ func (m Model) policyApplyFooterText() string {
 		return "Applying..."
 	}
 	footer := "n/esc: Cancel"
+	if apply.edit.active {
+		footer = "n/esc: Back to editor"
+	}
 	if apply.unchanged || apply.applyErr != "" {
 		footer = "esc: Back"
+		if apply.edit.active {
+			footer = "esc: Back to editor"
+		}
 	} else {
 		footer = "y: Apply | " + footer
 	}

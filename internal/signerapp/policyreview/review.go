@@ -26,6 +26,10 @@ import (
 // rejects larger documents.
 const maxPolicyFileBytes = 1 << 20
 
+// MaxPolicyBytes is the largest policy document a review accepts, for callers
+// that collect a document some other way than reading a file.
+const MaxPolicyBytes = maxPolicyFileBytes
+
 // ReadDocuments reads policy files for the node's role. A signer node takes
 // one file; each cosigner file names its key in its "key" field. names maps a
 // document's key to the file it came from, for messages. The file "-" reads
@@ -59,15 +63,9 @@ func readDocuments(files []string, role string, read func(file string) ([]byte, 
 		if err != nil {
 			return nil, nil, err
 		}
-		doc := adminproto.PolicyDocument{Document: string(data)}
-		if role == "cosigner" {
-			var head struct {
-				Key string `json:"key"`
-			}
-			if err := json.Unmarshal(data, &head); err != nil || head.Key == "" {
-				return nil, nil, fmt.Errorf("%s: a cosigner policy file must be a JSON object with a \"key\" field", file)
-			}
-			doc.Key = head.Key
+		doc, err := documentFromBytes(file, role, data)
+		if err != nil {
+			return nil, nil, err
 		}
 		if other, dup := names[doc.Key]; dup {
 			return nil, nil, fmt.Errorf("%s and %s are both policies for %s", other, file, doc.Key)
@@ -76,6 +74,36 @@ func readDocuments(files []string, role string, read func(file string) ([]byte, 
 		docs = append(docs, doc)
 	}
 	return docs, names, nil
+}
+
+// documentFromBytes turns one candidate's bytes into the document sent to the
+// node. A cosigner document names its key in its "key" field.
+func documentFromBytes(label, role string, data []byte) (adminproto.PolicyDocument, error) {
+	doc := adminproto.PolicyDocument{Document: string(data)}
+	if role == "cosigner" {
+		var head struct {
+			Key string `json:"key"`
+		}
+		if err := json.Unmarshal(data, &head); err != nil || head.Key == "" {
+			return adminproto.PolicyDocument{}, fmt.Errorf("%s: a cosigner policy file must be a JSON object with a \"key\" field", label)
+		}
+		doc.Key = head.Key
+	}
+	return doc, nil
+}
+
+// DocumentFromText builds the candidate document for text that did not come
+// from a file, such as an edit made in the apadmin TUI. label names it in
+// messages. The same emptiness, UTF-8, size, and key rules apply as for files.
+func DocumentFromText(role, label, text string) (adminproto.PolicyDocument, error) {
+	if len(text) > MaxPolicyBytes {
+		return adminproto.PolicyDocument{}, fmt.Errorf("%s is larger than %d bytes", label, MaxPolicyBytes)
+	}
+	data, err := validPolicyBytes(label, []byte(text))
+	if err != nil {
+		return adminproto.PolicyDocument{}, err
+	}
+	return documentFromBytes(label, role, data)
 }
 
 func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {

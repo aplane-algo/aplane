@@ -193,10 +193,11 @@ sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
 Enter fetches that document with `get_policy_document` and opens a read-only
 scrollable view of its exact bytes; Esc returns.
 
-The TUI does not edit policy documents. In the policies view, `a` loads one
-policy file through the
-same steps as `apadmin policy apply FILE`
-(`internal/signerapp/signertui/policy_apply.go`):
+A policy document changes only through one check, review, and apply workflow
+(`internal/signerapp/signertui/policy_apply.go`), which follows the same steps
+as `apadmin policy apply FILE`. It has two sources for the candidate document:
+`a` loads one policy file, and `e` opens the in-place editor described below.
+For a loaded file:
 
 1. A path prompt reads the file with the shared reader in
    `internal/signerapp/policyreview`. The read happens inside the event loop,
@@ -211,9 +212,12 @@ same steps as `apadmin policy apply FILE`
    `policyreview` produces the same tightened/loosened/changed diff the batch
    command prints. A file that decodes equal to the active document reports
    `Policy unchanged` and cannot be applied.
-4. Only `y` confirms. `apply_policy` carries the `policy_set_sha256` from the
-   list as its concurrency base, so the daemon rejects the apply if the active
-   policy changed after the list was loaded. On success the list reloads and
+4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the
+   `policy_set_sha256` of the summary the review was built from: the one that
+   decided in step 3 whether the key has an active document. It is captured
+   when the check returns and is never replaced by a later summary, so the
+   daemon rejects the apply if the active policy changed after the review was
+   built. On success the list reloads and
    shows the new generation ID; on failure the review shows the daemon's error
    and must be left and restarted. A `commit_uncertain` result means the
    daemon has entered recovery without sending a status message, so the TUI
@@ -225,6 +229,45 @@ names that step; an error for another request, such as a background key-list
 refresh, leaves the step waiting for its own response. A request that cannot
 be sent fails its own step the same way. `diff` without applying, `remove`, multi-file applies, and stdin
 remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
+
+### Policy Editor
+
+`e` in the policies list or the document view opens `ViewPolicyEdit`
+(`internal/signerapp/signertui/policy_edit.go`), a `bubbles/textarea` holding
+one document's JSON. The editor is only another source for the workflow above:
+`ctrl+s` sends the text through steps 2 to 4, and nothing is stored before the
+confirmed apply.
+
+- **What it opens on.** An active document is fetched with
+  `get_policy_document`. A single-line document is indented for editing;
+  whitespace does not change what a policy allows, so an unedited reformat
+  still reports `Policy unchanged`. A cosigner key with no document opens on
+  the locked starting document from `policy.LockedCosignerDocumentV1`: a valid
+  document with no routes, which rejects every request exactly as a missing
+  document does. An edit therefore always starts from zero permissions.
+- **Local checks before the daemon's.** A JSON syntax error is reported with
+  its line and column without a request. On a cosigner node the `"key"` field
+  must stay the key being edited; setting another key's policy is a file load.
+  The node must hold the key, as for file loads.
+- **The text is never lost to an error.** A rejected check keeps the editor
+  open with the daemon's problems under the text. Leaving the review, declined
+  or failed, returns to the editor with the text intact; after a failed apply
+  the policy summary is reloaded so the next attempt names the current policy
+  set. Esc on changed text asks once before discarding.
+- **No check against a reloading summary.** `ctrl+s` is refused while the
+  summary is reloading. Together with the captured concurrency base in step 4,
+  this keeps a review from being built on one policy state and applied against
+  another.
+- **Nothing is silently shortened.** The text area drops inserted lines past
+  10,000 without notice. A document is opened only if the editor holds all of
+  it (compared as JSON, since the component normalizes whitespace); otherwise
+  editing is refused in favor of export, edit, and load. A paste that is cut
+  off at that limit is reported.
+- **Keys.** Every key except `ctrl+s` and `esc` goes to the text area, so the
+  list's single-letter shortcuts are inert while editing. Paste is the
+  terminal's own paste, which arrives as key input. The component's `ctrl+v`
+  binding is disabled: it would read the machine's clipboard through an
+  external helper program and return a message the view does not receive.
 
 ## Local Activity And Idle Locking
 

@@ -64,6 +64,7 @@ const (
 	ViewPolicyDocument     // Read-only view of one policy document
 	ViewPolicyApplyForm    // File path prompt for loading a policy file
 	ViewPolicyApplyReview  // Diff review and confirmation before a policy apply
+	ViewPolicyEdit         // In-place JSON editor for one policy document
 	ViewTemplateLibrary    // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling

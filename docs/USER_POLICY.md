@@ -76,8 +76,48 @@ and enter the file path. The TUI checks the file, shows the same diff as
 `apadmin policy diff`, and applies it only after you press `y`. On a cosigner
 node the file's `"key"` field selects the key, and the TUI refuses a file for
 a key the node does not hold; generate or import the key first. The path must
-name a regular file, not a symlink. The TUI does not edit documents, remove
-them, or take several files at once.
+name a regular file, not a symlink. The TUI does not remove documents or take
+several files at once.
+
+### Editing a policy in apadmin
+
+To change a policy without a file, open Policies (`p`), select the policy, and
+press `e`. The document's JSON opens in an editor. Edit it, then press `ctrl+s`:
+apadmin checks the text, shows the same diff as a file load, and applies it
+only after you press `y`. Nothing is stored before that.
+
+- **A new cosigner key starts locked.** A cosigner key with no policy opens on
+  a starting document with no routes:
+
+  ```json
+  {
+    "format": "aplane.cosigner-policy.v1",
+    "key": "<WitnessKeyID>",
+    "transfer_policy": {
+      "routes": []
+    }
+  }
+  ```
+
+  With no routes it rejects every request, the same as having no policy. Add
+  routes to allow transfers, then check and apply.
+- **Errors keep your text.** A JSON syntax error is reported with its line and
+  column. If the node rejects the document, its problems appear under the
+  text. Pressing `n` in the review, or leaving a failed apply, returns to the
+  editor with the text as you left it.
+- **Leaving.** `esc` closes the editor. If the text changed, it asks once
+  before discarding.
+- **Pasting.** Use your terminal's paste (for example `ctrl+shift+v` or
+  `cmd+v`). `ctrl+v` inside the editor does nothing.
+- **Very large policies.** A policy of more than 10,000 lines is not opened in
+  the editor; export it with `apadmin policy export`, edit the file, and load
+  it with `a`.
+- **One key at a time.** On a cosigner node the `"key"` field must stay the key
+  you opened; to set another key's policy, load a file or open that key.
+
+Editing in apadmin uses the session you are already logged in to. Unlike the
+batch `apadmin policy` commands, it does not take over from a running apadmin
+or lock the node when it finishes.
 
 `apadmin policy` requires a verb:
 
