@@ -4,15 +4,43 @@ Signer policy is the product-scoped safety layer that decides whether a
 signing request should be rejected, forced through operator review, explicitly
 approved, or left to the operator default.
 
+## Policies Govern Account Sets
+
+A policy document is a rulebook for a set of accounts. Both node roles use
+the same document format and the same rules; they differ only in which
+accounts the set holds.
+
+- **On a signer node, the set is the accounts the node holds.** There is one
+  document, `policy.json`, and it governs every key on the node, whatever
+  its type, including the user side of a guarded (cosigner-backed) key.
+  Generating or importing a key adds it to the set; nothing is written per
+  key. A rule for one account is a route whose `sources` name that address
+  or an address set containing it.
+- **On a cosigner node, the set is the accounts that use a cosigner key.**
+  There is one document per cosigner key, `policies/<WitnessKeyID>.json`,
+  and it governs every account whose guarded key was composed with that
+  cosigner key. This set is virtual: the cosigner does not hold those
+  accounts and cannot list them. Any signer holding the key's public
+  reference can compose new accounts with it, and the cosigner learns of
+  one when a request for it arrives. Routes with `sources: ["*"]` accept
+  every such account; routes naming addresses or sets pin the document to
+  accounts the operator has agreed to witness for.
+
+A guarded account is in both sets at once, and a transfer must be allowed by
+both documents: the signer's `policy.json` and the cosigner's document for
+the key. The stricter document decides. The aPlane client asks the signer
+first, so a rejection reported as a signer error means the signer's document
+said no and the cosigner was not consulted.
+
 Policy is a v1 JSON document stored beside the product keys in the selected
-store generation. The node role decides which documents exist:
+store generation:
 
 ```text
-# signer node: one document governs all signing
+# signer node: one document for every account the node holds
 identities/default/generations/<selected-generation>/policy.json
 identities/default/generations/<selected-generation>/policy.json.hmac
 
-# cosigner node: one document per cosigner key
+# cosigner node: one document per cosigner key, for every account using it
 identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json
 identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json.hmac
 ```
@@ -21,11 +49,12 @@ Each `.hmac` sidecar authenticates the exact document bytes. A missing or
 mismatched sidecar, or a document that does not decode, makes the node refuse
 to load rather than silently loading defaults.
 
-A new signer store starts with the empty signer document
-`{"format": "aplane.signer-policy.v1"}`, which applies product defaults. A new
-cosigner store has no policy documents, so every cosigner key rejects every
-request until its policy is applied. Deleting a cosigner key archives its
-policy document with it.
+A new signer store starts with the self-transfer-only document: routing on
+with one route, `self-transfer`, which lets any account send any asset to
+itself, and `on_no_route: reject`. A new cosigner store has no policy
+documents, so every cosigner key rejects every request until its policy is
+applied; the document offered for a new key holds the same `self-transfer`
+route. Deleting a cosigner key archives its policy document with it.
 
 The document format, field types, and acceptance rules are specified in
 [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md); the machine-readable schema is

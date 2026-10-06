@@ -11,7 +11,8 @@ editing workflow, top-level fields, and key override overview, start with
 [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
 
 Routing is configured in the node's v1 JSON policy document. A signer node has
-one document; a cosigner node has one document per cosigner key:
+one document, governing every account the node holds; a cosigner node has one
+document per cosigner key, governing every account composed with that key:
 
 ```text
 identities/default/generations/<selected-generation>/policy.json

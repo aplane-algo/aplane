@@ -513,7 +513,15 @@ On a cosigner node, each cosigner key has its own v1 policy document,
 bad request, and a held key with no document rejects with
 `cosigner_policy:key_has_no_policy`. There is no node-wide cosigner policy, so a
 new key rejects every request until its document is applied. Policy is
-evaluated before the cosigner key is loaded. The verdict model is direct
+evaluated before the cosigner key is loaded.
+
+A key's document governs a virtual account set: every account whose guarded
+key was composed with that cosigner key, on any signer that holds the key's
+public reference. The cosigner does not hold those accounts and cannot
+enumerate them; it learns of one when a request names it. The document's
+route `sources` are therefore the operator's only control over membership:
+`["*"]` accepts every account composed with the key, while named addresses
+or sets restrict the key to accounts the operator agreed to witness for. The verdict model is direct
 authorization:
 
 - matching deterministic allow policy signs,
