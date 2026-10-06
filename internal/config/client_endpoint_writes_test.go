@@ -728,6 +728,35 @@ endpoints:
 	if strings.Contains(string(data), "signer_port") || strings.Contains(string(data), "local_port") {
 		t.Fatalf("retired fields survived a write:\n%s", data)
 	}
+	// Removal keeps every other value exactly as written: a numeric alias
+	// stays a key, and a token_file that looks like a date stays that text.
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 2
+endpoints:
+  123:
+    role: cosigner
+    url: ssh://cosigner.example:2223
+    signer_port: 12271
+    token_file: 2026-10-06
+  "quoted.alias":
+    role: cosigner
+    url: "ssh://other.example:2223"
+    local_port: 0
+    identity_file: 007
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatalf("LoadClientEndpointRegistry() error = %v, want numeric alias and date-like values preserved", err)
+	}
+	if endpoint, ok := registry.Endpoint("123"); !ok || endpoint.TokenFile != filepath.Join(dataDir, "2026-10-06") {
+		t.Fatalf("numeric alias = %#v, %v, want token_file 2026-10-06 as written", endpoint, ok)
+	}
+	if endpoint, ok := registry.Endpoint("quoted.alias"); !ok || endpoint.IdentityFile != filepath.Join(dataDir, "007") || endpoint.URL != "ssh://other.example:2223" {
+		t.Fatalf("quoted.alias = %#v, %v, want identity_file 007 as written", endpoint, ok)
+	}
+
 	// Any other unknown field is still an error.
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
 schema_version: 2
