@@ -151,6 +151,30 @@ func TestCosignerExportCarriesNoEndpoint(t *testing.T) {
 	}
 }
 
+// The REST port behind an SSH endpoint is reached through the tunnel, so a
+// non-default one must be part of what the client is told; a default port,
+// or a direct HTTPS endpoint, needs nothing more.
+func TestCosignerClientEndpointHintCarriesNonDefaultAPIPort(t *testing.T) {
+	for name, tt := range map[string]struct {
+		settings *AdminSettings
+		want     string
+	}{
+		"ssh non-default port": {&AdminSettings{EndpointAdvertiseURL: "ssh://cosigner.example:2223", SignerPort: 12270}, "ssh://cosigner.example:2223 --cosigner-port 12270"},
+		"ssh default port":     {&AdminSettings{EndpointAdvertiseURL: "ssh://cosigner.example:2223", SignerPort: 11270}, "ssh://cosigner.example:2223"},
+		"ssh port unknown":     {&AdminSettings{EndpointAdvertiseURL: "ssh://cosigner.example:2223"}, "ssh://cosigner.example:2223"},
+		"https":                {&AdminSettings{EndpointAdvertiseURL: "https://cosigner.example", SignerPort: 12270}, "https://cosigner.example"},
+		"placeholder":          {&AdminSettings{SignerPort: 12270}, "ssh://<this cosigner's host>:<ssh port> --cosigner-port 12270"},
+		"no settings":          {nil, "ssh://<this cosigner's host>:<ssh port>"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := Model{admin: adminPanelState{settings: tt.settings}}
+			if got := m.cosignerClientEndpointHint(); got != tt.want {
+				t.Fatalf("hint = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestComposeCosignerExportArtifactIsTheKeyOnly(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
 	witnessJSON, err := witness.MarshalPublicReference(reference)
