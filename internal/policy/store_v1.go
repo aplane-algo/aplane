@@ -165,12 +165,8 @@ func CosignerPolicyKeys(active storepaths.ActivePaths) ([]string, error) {
 	return keys, nil
 }
 
-// InitialSignerPolicy is the signer document a new store starts with: every
-// setting at its default and transfer routing off.
-var InitialSignerPolicy = []byte("{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n")
-
-// WriteInitialSignerPolicy writes InitialSignerPolicy into a new signer
-// generation. Cosigner generations start with no documents.
+// WriteInitialSignerPolicy writes InitialSignerPolicy (see starting.go) into
+// a new signer generation. Cosigner generations start with no documents.
 func WriteInitialSignerPolicy(active storepaths.ActivePaths, kr *crypto.Keyring, signedAt time.Time) error {
 	return WriteSignerPolicy(active, InitialSignerPolicy, kr, signedAt)
 }

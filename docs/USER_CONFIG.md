@@ -570,10 +570,11 @@ $APSIGNER_DATA/identities/default/generations/<selected-generation>/policies/<Wi
 ```
 
 Each document has a sibling `.hmac` sidecar that authenticates its exact bytes.
-`apstore initialize` creates a signer node with the signed empty document
-`{"format": "aplane.signer-policy.v1"}`; a new cosigner node has no policy
-documents, so every cosigner key rejects every request until its policy is
-applied. The signer verifies every policy document on unlock/reload before it
+`apstore initialize` creates a signer node with a signed starting document
+that allows self-transfers only: one route lets any account send any asset
+to itself, and every other transfer is rejected until a route allows it. A
+new cosigner node has no policy documents, so every cosigner key rejects
+every request until its policy is applied. The signer verifies every policy document on unlock/reload before it
 loads keys. A missing or mismatched sidecar, or a document that does not
 decode, makes the node refuse to load instead of falling back to default
 policy.

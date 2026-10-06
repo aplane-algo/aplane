@@ -1,5 +1,40 @@
 # Release Notes
 
+## Policies start with self-transfers only
+
+A new signer store now starts with routing enabled and one route,
+`self-transfer`, which lets any account send any asset to itself on any
+network, with `on_no_route: reject`. Opt-ins and self-sends pass; a transfer
+to any other address, a close-out, or a clawback is rejected until a route
+allows it. Before, a new store had routing off and every transfer went to the
+operator's approval default. The cosigner starting document that the apadmin
+editor and `apadmin policy template` begin from holds the same route; a
+cosigner key still has no stored document until one is applied.
+
+Existing stores are not changed: the starting document is written only at
+`apstore initialize` and `apstore rebuild`. The integration test environment
+applies its own permissive policy, as before.
+
+## Comments in policy files and an annotated starting template
+
+Policy files may now carry `//` and `/* */` comments outside strings. The
+`apadmin policy` commands and the apadmin TUI (file load and editor) remove
+them before the document reaches the node, so the node still accepts, digests,
+and stores strict JSON and `apadmin policy export` returns the document without
+them. `apstore policy check|sign` read the store directly and still require
+plain JSON there.
+
+`apadmin policy template signer|cosigner` writes the node's starting document
+with every field explained in comments and an example route commented out
+above the real one; each block ends with a comma, so enabling one is removing
+its `// `. It needs
+no node and no passphrase; `--key` fills in a cosigner key. The TUI editor
+opens a cosigner key with no policy, or a signer whose policy is still the
+initial one, on the same template; stripped of comments it decodes equal to
+the starting document, so applying it unedited changes nothing.
+
+No policy format, admin RPC, or stored state changed.
+
 ## Edit policy JSON in apadmin
 
 The apadmin TUI can now edit a policy document in place. In Policies (`p`),

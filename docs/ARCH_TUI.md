@@ -242,13 +242,22 @@ confirmed apply.
   `get_policy_document`. A single-line document is indented for editing;
   whitespace does not change what a policy allows, so an unedited reformat
   still reports `Policy unchanged`. A cosigner key with no document opens on
-  the locked starting document from `policy.LockedCosignerDocumentV1`: a valid
-  document with no routes, which rejects every request exactly as a missing
-  document does. An edit therefore always starts from zero permissions.
+  the annotated template from `policyreview.CosignerTemplate`, which strips
+  to the starting document (`policy.StartingCosignerDocumentV1`): one
+  `self-transfer` route and nothing else, so the key would witness opt-ins
+  and self-sends and reject every other transfer. An edit therefore always
+  starts from the least that is useful, never from a permissive policy. A stored document that decodes equal to the node's starting
+  document (`policyreview.IsStartingDocument`) opens as its template too;
+  every other document opens as its exact bytes.
+- **Comments.** The text may carry `//` and `/* */` comments outside strings.
+  `policyreview.DocumentFromText` removes them before the check, so the
+  daemon receives and stores strict JSON; the review's "stores the edited
+  text exactly" is the text without its comments.
 - **Local checks before the daemon's.** A JSON syntax error is reported with
-  its line and column without a request. On a cosigner node the `"key"` field
-  must stay the key being edited; setting another key's policy is a file load.
-  The node must hold the key, as for file loads.
+  its line and column without a request; comments are blanked in place for
+  that check so the position is the one in the text shown. On a cosigner
+  node the `"key"` field must stay the key being edited; setting another
+  key's policy is a file load. The node must hold the key, as for file loads.
 - **The text is never lost to an error.** A rejected check keeps the editor
   open with the daemon's problems under the text. Leaving the review, declined
   or failed, returns to the editor with the text intact; after a failed apply

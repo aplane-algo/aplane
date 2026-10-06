@@ -20,12 +20,13 @@ import (
 type Verb string
 
 const (
-	VerbStatus Verb = "status"
-	VerbExport Verb = "export"
-	VerbCheck  Verb = "check"
-	VerbDiff   Verb = "diff"
-	VerbApply  Verb = "apply"
-	VerbRemove Verb = "remove"
+	VerbStatus   Verb = "status"
+	VerbExport   Verb = "export"
+	VerbCheck    Verb = "check"
+	VerbDiff     Verb = "diff"
+	VerbApply    Verb = "apply"
+	VerbRemove   Verb = "remove"
+	VerbTemplate Verb = "template"
 )
 
 var ProductionVerbs = []Verb{
@@ -35,6 +36,7 @@ var ProductionVerbs = []Verb{
 	VerbDiff,
 	VerbApply,
 	VerbRemove,
+	VerbTemplate,
 }
 
 func ParseVerb(raw string) (Verb, error) {
@@ -48,8 +50,10 @@ func ParseVerb(raw string) (Verb, error) {
 }
 
 // Command is one parsed apadmin policy invocation. Args holds policy files
-// for check, diff, and apply, or Witness Key IDs for remove. Key selects one
-// cosigner document for export. Yes applies without asking for confirmation.
+// for check, diff, and apply, Witness Key IDs for remove, or the node role
+// for template. Key selects one cosigner document for export, or fills in
+// the key of a cosigner template. Yes applies without asking for
+// confirmation.
 type Command struct {
 	Verb    Verb
 	Args    []string
@@ -80,9 +84,16 @@ func (c Command) Validate() error {
 		if len(c.Args) == 0 {
 			return fmt.Errorf("policy remove requires at least one Witness Key ID")
 		}
+	case VerbTemplate:
+		if len(c.Args) != 1 || (c.Args[0] != "signer" && c.Args[0] != "cosigner") {
+			return fmt.Errorf("policy template takes one node role: signer or cosigner")
+		}
+		if c.Key != "" && c.Args[0] != "cosigner" {
+			return fmt.Errorf("--key applies only to a cosigner template")
+		}
 	}
-	if c.Key != "" && c.Verb != VerbExport {
-		return fmt.Errorf("--key applies only to policy export")
+	if c.Key != "" && c.Verb != VerbExport && c.Verb != VerbTemplate {
+		return fmt.Errorf("--key applies only to policy export and template")
 	}
 	if c.Yes && !c.mutates() {
 		return fmt.Errorf("--yes applies only to policy apply and remove")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -50,8 +51,9 @@ func setPolicyEditText(m Model, text string) Model {
 	return m
 }
 
-// A cosigner key with no policy opens on the locked document, and the edit
-// goes through the same check, review, and apply as a loaded file.
+// A cosigner key with no policy opens on the starting document's template,
+// and the edit goes through the same check, review, and apply as a loaded
+// file.
 func TestPolicyEditStartsKeyWithoutPolicyFromLockedDocument(t *testing.T) {
 	m := cosignerPoliciesModel("no_policy")
 	m.width, m.height = 120, 40
@@ -59,15 +61,17 @@ func TestPolicyEditStartsKeyWithoutPolicyFromLockedDocument(t *testing.T) {
 	if m.viewState != ViewPolicyEdit || !m.policies.apply.edit.isNew || m.policies.apply.edit.key != policyViewKeyA || cmd != nil {
 		t.Fatalf("e: view %v edit %+v cmd %v, want the editor on a new document without a request", m.viewState, m.policies.apply.edit, cmd)
 	}
-	locked, err := policy.LockedCosignerDocumentV1(policyViewKeyA)
+	// The editor opens on the annotated template, which strips to the
+	// starting document.
+	template, err := policyreview.CosignerTemplate(policyViewKeyA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := policyEditText(m); got != strings.TrimRight(locked, "\n") {
-		t.Fatalf("editor text = %q, want the locked document", got)
+	if got := policyEditText(m); got != strings.TrimRight(template, "\n") || !m.policies.apply.edit.annotated {
+		t.Fatalf("editor text = %q, want the cosigner template", got)
 	}
 	rendered := stripANSI(m.renderPolicyEdit())
-	for _, want := range []string{"Edit Policy", "cosigner key " + policyViewKeyA, "No policy yet", `"routes": []`} {
+	for _, want := range []string{"Edit Policy", "cosigner key " + policyViewKeyA, "No policy yet", "remove //", "// Lines starting with //"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("editor missing %q:\n%s", want, rendered)
 		}
@@ -89,6 +93,13 @@ func TestPolicyEditStartsKeyWithoutPolicyFromLockedDocument(t *testing.T) {
 	}
 	if _, err := policy.DecodeCosignerPolicyV1([]byte(apply.doc.Document), policyViewKeyA); err != nil {
 		t.Fatalf("submitted document does not decode: %v\n%s", err, apply.doc.Document)
+	}
+	locked, err := policy.StartingCosignerDocumentV1(policyViewKeyA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(apply.doc.Document, "//") || !policyTextEquivalent(locked, apply.doc.Document) {
+		t.Fatalf("submitted document = %q, want the starting document without comments", apply.doc.Document)
 	}
 
 	m = deliverPolicyCheck(m, protocol.CheckPolicyResultMessage{Success: true, Valid: true})
@@ -258,7 +269,7 @@ func TestPolicyEditSignerDocumentFromDocumentView(t *testing.T) {
 	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
 		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc", Size: 34}}, PolicySetSHA256: "set-digest"})
 	m.width, m.height = 120, 40
-	m = openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: `{"format":"aplane.signer-policy.v1"}`})
+	m = openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: string(policy.InitialSignerPolicy)})
 	if footer := m.policiesFooterText(); !strings.Contains(footer, "e: Edit") {
 		t.Fatalf("document footer = %q", footer)
 	}
@@ -267,13 +278,65 @@ func TestPolicyEditSignerDocumentFromDocumentView(t *testing.T) {
 	if m.viewState != ViewPolicyEdit || edit.key != "" || edit.isNew || edit.loading || cmd != nil {
 		t.Fatalf("e: view %v edit %+v cmd %v", m.viewState, edit, cmd)
 	}
-	if rendered := stripANSI(m.renderPolicyEdit()); !strings.Contains(rendered, "policy.json") || !strings.Contains(rendered, `"format": "aplane.signer-policy.v1"`) {
+	// The initial signer policy is the starting document, so it opens as
+	// its annotated template.
+	if !edit.annotated || policyEditText(m) != strings.TrimRight(policyreview.SignerTemplate(), "\n") {
+		t.Fatalf("signer editor text = %q, want the signer template", policyEditText(m))
+	}
+	if rendered := stripANSI(m.renderPolicyEdit()); !strings.Contains(rendered, "policy.json") || !strings.Contains(rendered, "Starting policy") || !strings.Contains(rendered, "// Lines starting with //") {
 		t.Fatalf("signer editor:\n%s", rendered)
 	}
 	m = setPolicyEditText(m, `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"2000"}`)
 	m, cmd = pressPolicyKey(t, m, "ctrl+s")
 	if cmd == nil || m.policies.apply.doc.Key != "" || m.policies.apply.file != "policy.json" {
 		t.Fatalf("ctrl+s: apply %+v cmd %v", m.policies.apply, cmd)
+	}
+}
+
+// A signer document that is not the starting document opens on its stored
+// bytes, not the template.
+func TestPolicyEditOpensNonStartingDocumentAsStored(t *testing.T) {
+	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
+		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc", Size: 60}}, PolicySetSHA256: "set-digest"})
+	m.width, m.height = 120, 40
+	stored := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
+	m = openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: stored})
+	m, _ = pressPolicyKey(t, m, "e")
+	if edit := m.policies.apply.edit; edit.annotated || policyEditText(m) != strings.TrimRight(stored, "\n") {
+		t.Fatalf("editor text = %q annotated %v, want the stored bytes", policyEditText(m), edit.annotated)
+	}
+}
+
+// Comments in the editor are removed before the document reaches the node,
+// and a syntax error is still located in the text as shown.
+func TestPolicyEditStripsCommentsAndLocatesErrorsAroundThem(t *testing.T) {
+	m := cosignerPoliciesModel("no_policy")
+	m.width, m.height = 120, 40
+	m, _ = pressPolicyKey(t, m, "e")
+	commented := "{\n  // which document\n  \"format\": \"aplane.cosigner-policy.v1\",\n  \"key\": \"" + policyViewKeyA + "\", /* the key */\n  \"transfer_policy\": {\"routes\": []} // none yet\n}"
+	m = setPolicyEditText(m, commented)
+	m, cmd := pressPolicyKey(t, m, "ctrl+s")
+	apply := m.policies.apply
+	if cmd == nil || apply.err != "" || apply.doc.Key != policyViewKeyA {
+		t.Fatalf("ctrl+s: apply %+v cmd %v", apply, cmd)
+	}
+	want := "{\n  \"format\": \"aplane.cosigner-policy.v1\",\n  \"key\": \"" + policyViewKeyA + "\",\n  \"transfer_policy\": {\"routes\": []}\n}\n"
+	if apply.doc.Document != want {
+		t.Fatalf("submitted document = %q, want %q", apply.doc.Document, want)
+	}
+
+	// A missing comma after line 4 is reported on line 5, past the comments.
+	m.policies.apply.busy, m.policies.apply.pendingCheckID = "", ""
+	m = setPolicyEditText(m, "{\n  // which document\n  \"format\": \"aplane.cosigner-policy.v1\",\n  \"key\": \""+policyViewKeyA+"\" /* the key */\n  \"transfer_policy\": {\"routes\": []}\n}")
+	m, cmd = pressPolicyKey(t, m, "ctrl+s")
+	if cmd != nil || !strings.Contains(m.policies.apply.err, "line 5, column 3") {
+		t.Fatalf("syntax error = %q cmd %v, want line 5, column 3", m.policies.apply.err, cmd)
+	}
+
+	m = setPolicyEditText(m, "{\"format\": \"aplane.cosigner-policy.v1\" /* open")
+	m, cmd = pressPolicyKey(t, m, "ctrl+s")
+	if cmd != nil || !strings.Contains(m.policies.apply.err, "unterminated") {
+		t.Fatalf("unterminated comment error = %q cmd %v", m.policies.apply.err, cmd)
 	}
 }
 

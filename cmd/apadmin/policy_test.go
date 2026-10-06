@@ -43,6 +43,10 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "retired flag", args: []string{"--check"}, wantErr: "is retired"},
 		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "is retired"},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
+		{name: "template signer", args: []string{"template", "signer"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"signer"}},
+		{name: "template cosigner key", args: []string{"template", "--key", keyID, "cosigner"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"cosigner"}, wantKey: keyID},
+		{name: "template needs a role", args: []string{"template"}, wantErr: "one node role"},
+		{name: "template key only for cosigner", args: []string{"template", "--key", keyID, "signer"}, wantErr: "cosigner template"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

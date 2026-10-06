@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -21,8 +20,14 @@ import (
 // second source for the workflow in policy_apply.go: the edited text goes
 // through the same daemon check, diff review, and confirmed apply as a loaded
 // file, and nothing is stored until that apply. A cosigner key that has no
-// document yet opens on the locked starting document, which rejects every
-// request, so an edit always starts from zero permissions.
+// document yet opens on the starting document, which allows self-transfers
+// only, so an edit always starts from the least that is useful.
+//
+// The text may carry // and /* */ comments; policyreview removes them before
+// the document reaches the node. A starting document (the initial signer
+// policy, or a cosigner key's starting document) opens as its annotated
+// template, which explains each field and holds a commented-out example
+// route, and decodes equal to the document it stands for.
 
 // policyEditMaxLines is the text area's fixed capacity for inserted text.
 // Setting its value or pasting drops every line past this count without
@@ -44,8 +49,11 @@ type policyEditState struct {
 	// key is the cosigner key whose policy is edited; empty on a signer node.
 	key string
 	// isNew reports that the key had no document and the editor opened on the
-	// locked starting document.
+	// starting document.
 	isNew bool
+	// annotated reports that the editor opened on the starting document's
+	// annotated template rather than the stored bytes.
+	annotated bool
 	// original is the text the editor opened with, for the discard check.
 	original string
 	input    textarea.Model
@@ -76,13 +84,24 @@ func newPolicyEditorInput() textarea.Model {
 
 // policyTextEquivalent reports whether the editor holds the whole document.
 // The text area may normalize whitespace, which changes nothing a policy
-// says, so JSON documents are compared without it.
+// says, so JSON documents are compared without it or their comments.
 func policyTextEquivalent(document, held string) bool {
 	var want, got bytes.Buffer
-	if json.Compact(&want, []byte(document)) != nil || json.Compact(&got, []byte(held)) != nil {
+	if json.Compact(&want, policyJSONBytes(document)) != nil || json.Compact(&got, policyJSONBytes(held)) != nil {
 		return strings.TrimSpace(document) == strings.TrimSpace(held)
 	}
 	return bytes.Equal(want.Bytes(), got.Bytes())
+}
+
+// policyJSONBytes is text with its comments blanked, for JSON tools that
+// only need to see the JSON. Text whose comments cannot be blanked is
+// returned as is, for the tool to reject.
+func policyJSONBytes(text string) []byte {
+	blanked, err := policyreview.BlankComments([]byte(text))
+	if err != nil {
+		return []byte(text)
+	}
+	return blanked
 }
 
 // policyEditLabel names the edited document in problems, diffs, and status.
@@ -113,7 +132,7 @@ func (m Model) policyEditAvailable() bool {
 }
 
 // openPolicyEditForRow edits the document of the selected list row. A cosigner
-// key without a document opens on the locked starting document.
+// key without a document opens on the starting document's template.
 func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	if !m.policyEditAvailable() {
 		return m, nil
@@ -127,7 +146,7 @@ func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 		}
 	}
 	if row.doc == nil {
-		document, err := policy.LockedCosignerDocumentV1(key)
+		document, err := policyreview.CosignerTemplate(key)
 		if err != nil {
 			m.policies.status = "Cannot start a policy for this key: " + err.Error()
 			return m, nil
@@ -172,9 +191,19 @@ func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.
 }
 
 // startPolicyEditor opens the editor on text with the cursor at the top. A
-// document the editor cannot hold completely is not opened: editing a silently
-// shortened copy would look unmodified and could be applied.
+// stored document that is the node's starting document opens as its
+// annotated template instead, which says the same thing with the fields
+// explained. A document the editor cannot hold completely is not opened:
+// editing a silently shortened copy would look unmodified and could be
+// applied.
 func (m Model) startPolicyEditor(key, document string, isNew bool) Model {
+	role := m.policies.policy.NodeRole
+	annotated := isNew
+	if !isNew && policyreview.IsStartingDocument(role, key, document) {
+		if template, err := policyreview.StartingTemplate(role, key); err == nil {
+			document, annotated = template, true
+		}
+	}
 	input := newPolicyEditorInput()
 	text := editablePolicyText(document)
 	input.SetValue(text)
@@ -189,7 +218,7 @@ func (m Model) startPolicyEditor(key, document string, isNew bool) Model {
 	_ = input.Focus()
 	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
 	m.policies.apply = policyApplyState{edit: policyEditState{
-		active: true, key: key, isNew: isNew, original: input.Value(), input: input,
+		active: true, key: key, isNew: isNew, annotated: annotated, original: input.Value(), input: input,
 	}}
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
@@ -279,6 +308,10 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	text := strings.TrimRight(edit.input.Value(), "\n") + "\n"
+	if _, err := policyreview.BlankComments([]byte(text)); err != nil {
+		apply.err = "Invalid JSON: " + err.Error()
+		return m, nil
+	}
 	if problem := policyJSONSyntaxError(text); problem != "" {
 		apply.err = problem
 		return m, nil
@@ -301,10 +334,11 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 }
 
 // policyJSONSyntaxError reports a JSON syntax error with its line and column,
-// or "" when text parses.
+// or "" when text parses. Comments are blanked in place first, so the line
+// and column are those of the text as the operator sees it.
 func policyJSONSyntaxError(text string) string {
 	var value any
-	err := json.Unmarshal([]byte(text), &value)
+	err := json.Unmarshal(policyJSONBytes(text), &value)
 	if err == nil {
 		return ""
 	}
@@ -381,8 +415,11 @@ func (m Model) renderPolicyEdit() string {
 	sb.WriteString(subtitleStyle.Render(ellipsize(m.policyEditTargetLabel(), width)))
 	sb.WriteString("\n")
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
-	if edit.isNew {
-		hint = "No policy yet: this starting document has no routes and rejects every request."
+	switch {
+	case edit.isNew:
+		hint = "No policy yet: this starting document allows self-transfers only. Comments explain the fields; remove // to enable one."
+	case edit.annotated:
+		hint = "Starting policy: self-transfers only, all else rejected. Comments explain the fields; remove // to enable one."
 	}
 	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
 	sb.WriteString("\n\n")

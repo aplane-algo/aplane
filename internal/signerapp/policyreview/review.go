@@ -123,6 +123,10 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 	return validPolicyBytes(file, data)
 }
 
+// validPolicyBytes applies the rules every candidate meets before it is sent:
+// not empty, valid UTF-8, and free of comments. Comments are a convenience of
+// the producer tools; the node stores the exact bytes it receives, so they
+// are removed here and never reach it.
 func validPolicyBytes(file string, data []byte) ([]byte, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("%s is empty", file)
@@ -132,7 +136,14 @@ func validPolicyBytes(file string, data []byte) ([]byte, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("%s is not valid UTF-8", file)
 	}
-	return data, nil
+	stripped, err := StripComments(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	if len(bytes.TrimSpace(stripped)) == 0 {
+		return nil, fmt.Errorf("%s holds only comments", file)
+	}
+	return stripped, nil
 }
 
 // PrintProblems writes one line per validation problem. names maps a

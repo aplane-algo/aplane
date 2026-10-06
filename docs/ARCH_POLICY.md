@@ -54,10 +54,14 @@ identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.jso
 ```
 
 A signer generation holds exactly one `policy.json` and no `policies/`
-documents; a new signer store starts with `{"format":
-"aplane.signer-policy.v1"}`. A cosigner generation holds no `policy.json`; a
-new cosigner store has no documents, so every cosigner key rejects every
-request until its document is applied. Deleting a cosigner key archives its
+documents; a new signer store starts with `policy.InitialSignerPolicy`, which
+enables routing with one `self-transfer` route (any account to itself, any
+asset, any network) and `on_no_route: reject`, so a fresh signer allows
+self-sends and opt-ins and rejects every other transfer until a route is
+added. A cosigner generation holds no `policy.json`; a new cosigner store has
+no documents, so every cosigner key rejects every request until its document
+is applied, and the starting document offered for a key holds the same
+`self-transfer` route. Deleting a cosigner key archives its
 document pair under `deleted/policies/` in the same generation.
 
 Each `.hmac` sidecar covers the exact document bytes and uses a key derived

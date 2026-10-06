@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -345,8 +346,58 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 		}
 		seen[verb] = true
 	}
-	if !seen[VerbCheck] || !seen[VerbDiff] || !seen[VerbApply] || len(seen) != 6 {
+	if !seen[VerbCheck] || !seen[VerbDiff] || !seen[VerbApply] || !seen[VerbTemplate] || len(seen) != 7 {
 		t.Fatalf("production verbs = %#v", ProductionVerbs)
+	}
+}
+
+// template writes the producer side's own text: it reaches no node, reads no
+// passphrase, and needs no store.
+func TestTemplateWritesStartingDocumentWithoutANode(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"signer"}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != policyreview.SignerTemplate() {
+		t.Fatalf("signer template = %q", stdout.String())
+	}
+	stripped, err := policyreview.StripComments(stdout.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := policy.DecodeSignerPolicyV1(stripped); err != nil {
+		t.Fatalf("stripped signer template does not decode: %v", err)
+	}
+
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"cosigner"}, Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := policyreview.CosignerTemplate(testKeyA)
+	if err != nil || stdout.String() != want {
+		t.Fatalf("cosigner template = %q, %v", stdout.String(), err)
+	}
+
+	stdout.Reset()
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"cosigner"}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"key": "<Witness Key ID`) {
+		t.Fatalf("cosigner template without --key = %q, want a placeholder key", stdout.String())
+	}
+
+	for name, command := range map[string]Command{
+		"no role":            {Verb: VerbTemplate},
+		"unknown role":       {Verb: VerbTemplate, Args: []string{"operator"}},
+		"two roles":          {Verb: VerbTemplate, Args: []string{"signer", "cosigner"}},
+		"key for signer":     {Verb: VerbTemplate, Args: []string{"signer"}, Key: testKeyA},
+		"yes is for changes": {Verb: VerbTemplate, Args: []string{"signer"}, Yes: true},
+	} {
+		if err := (OnlineRunner{}).Run(context.Background(), command, Streams{}); err == nil {
+			t.Fatalf("%s: template accepted", name)
+		}
 	}
 }
 
@@ -382,6 +433,41 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyA}, DataDir: root},
 		Streams{Stderr: io.Discard}); err == nil || !strings.Contains(err.Error(), "cosigner nodes") {
 		t.Fatalf("rescue remove on a signer error = %v", err)
+	}
+}
+
+// A commented file applies as the document the comments annotate: the node
+// stores strict JSON, and export returns it without the comments.
+func TestRescueApplyStripsCommentsFromTheStoredDocument(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, passphrase)
+	commented := "{\n  // what the node signs under\n  \"format\": \"aplane.signer-policy.v1\",\n  /* a fee cap */\n  \"max_fee_microalgos\": \"2000\" // microAlgos\n}\n"
+	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
+	file := writePolicyFile(t, "policy.json", commented)
+	var stdout bytes.Buffer
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbCheck, Args: []string{file}, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || !strings.Contains(stdout.String(), "policy OK") {
+		t.Fatalf("rescue check of a commented file = %q, %v", stdout.String(), err)
+	}
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root, Yes: true},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if doc := verifiedSignerPolicy(t, root, passphrase); string(doc.Bytes) != want {
+		t.Fatalf("stored policy = %q, want the stripped document %q", doc.Bytes, want)
+	}
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbExport, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || stdout.String() != want {
+		t.Fatalf("rescue export = %q, %v", stdout.String(), err)
+	}
+	// Applying the commented file again changes nothing.
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root, Yes: true},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || !strings.Contains(stdout.String(), "policy unchanged") {
+		t.Fatalf("second apply = %q, %v", stdout.String(), err)
 	}
 }
 

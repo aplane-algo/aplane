@@ -31,6 +31,14 @@ apadmin policy check policy.json
 apadmin policy apply policy.json
 ```
 
+A new signer starts with routing on and one route, `self-transfer`, which lets
+any account send any asset to itself; every other transfer is rejected until
+a route allows it. `apadmin policy template signer` (or
+`template --key ID cosigner`) writes that starting document with every field
+explained in `//` comments and an example route commented out above the real
+one; remove the `// ` from the example to enable it. Comments are removed
+before the document reaches the node.
+
 A successful policy apply affects new signing requests after the signer
 publishes the replacement policy snapshot. Signing requests that are already in
 flight, including requests waiting for operator approval, continue under the

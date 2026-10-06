@@ -16,6 +16,7 @@ import (
 
 const (
 	testKeyA      = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	testKeyB      = "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZT"
 	testSignerDoc = `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"2000"}`
 )
 

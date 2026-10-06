@@ -29,6 +29,9 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err := command.Validate(); err != nil {
 		return err
 	}
+	if command.Verb == VerbTemplate {
+		return WriteTemplate(command, streams)
+	}
 	if err := RejectRetiredEnvironment(); err != nil {
 		return err
 	}
