@@ -241,8 +241,8 @@ flow to receive a client-side copy of that token.
 
 On a signer node, `apstore initialize` also creates the initial signed policy
 document inside the first selected generation:
-`identities/default/generations/<generation-id>/policy.json`, containing
-`{"format": "aplane.signer-policy.v1"}`, and its `policy.json.hmac` sidecar. A
+`identities/default/generations/<generation-id>/policy.json`, holding the
+self-transfer-only starting policy, and its `policy.json.hmac` sidecar. A
 cosigner node starts with no policy documents; each cosigner key rejects every
 request until its `policies/<WitnessKeyID>.json` document is applied with
 `apadmin policy apply`.

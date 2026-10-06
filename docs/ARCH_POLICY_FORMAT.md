@@ -51,10 +51,13 @@ accepts but the node's semantic rules reject in `semantic_invalid/`.
 
 | Node role | Files in the active generation | Governs |
 |-----------|--------------------------------|---------|
-| signer | `policy.json`, `policy.json.hmac` | All signing on the node |
-| cosigner | `policies/<WitnessKeyID>.json`, `policies/<WitnessKeyID>.json.hmac`, one pair per cosigner key | Component signing by that key only |
+| signer | `policy.json`, `policy.json.hmac` | Every account the node holds: all signing on the node, including the user side of guarded keys |
+| cosigner | `policies/<WitnessKeyID>.json`, `policies/<WitnessKeyID>.json.hmac`, one pair per cosigner key | Every account whose guarded key was composed with that cosigner key: component signing by that key only |
 
-Files live under `identities/default/generations/<generation-id>/`. A new
+Each document is a rulebook for a set of accounts; the roles differ in how
+the set is defined (held by the node, or composed with the key), not in the
+format or the rules. Files live under
+`identities/default/generations/<generation-id>/`. A new
 signer store starts with `policy.InitialSignerPolicy`: every setting at its
 default and routing on with one route, `self-transfer`, which lets any
 account send any asset to itself on any network, with `on_no_route: reject`.

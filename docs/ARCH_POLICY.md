@@ -27,6 +27,18 @@ apply to only one domain are tagged inline.
 
 ## Scope
 
+A policy document governs a set of accounts. On a signer node the set is the
+accounts the node holds, and one document (`policy.json`) covers them all,
+including the user side of guarded keys; membership changes with key
+generation, import, and deletion, and per-account rules are routes whose
+`sources` name the account. On a cosigner node the set is every account whose
+guarded key was composed with one cosigner key, and that key's document
+(`policies/<WitnessKeyID>.json`) covers them. The cosigner set is virtual:
+the node does not hold those accounts, cannot enumerate them, and learns of
+one when a `/sign/component` request names it, so the document's `sources`
+are the cosigner operator's only control over membership. A guarded account
+is in both sets, and both documents must allow a movement.
+
 Signer policy decides what `apsigner` may produce a signature for after
 request planning has identified the signable units. For client signing, the
 unit is a signer-controlled transaction; for cosigner, the unit is a
