@@ -1342,15 +1342,15 @@ enroll_cosigner_reference_to_signer() {
     local public_file out
     public_file="$(mktemp)"
     if ! docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner enrollment export '$COSIGNER_COMPONENT_KEY' --include-endpoint --out /tmp/cosigner-public.json"; then
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner export '$COSIGNER_COMPONENT_KEY' /tmp/cosigner-public.json"; then
         die "failed to export cosigner public reference over local IPC"
     fi
+    # The key file carries the public key only; it goes to the signer. The
+    # client is given the cosigner's address by hand in endpoints add.
     docker cp "$COSIGNER_CONTAINER:/tmp/cosigner-public.json" "$public_file"
     docker cp "$public_file" "$SIGNER_CONTAINER:/tmp/cosigner-public.json"
-    docker cp "$public_file" "$CLIENT_CONTAINER:/tmp/cosigner-public.json"
     rm -f "$public_file"
     docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.json
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-public.json
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner import /tmp/cosigner-public.json '$COSIGNER_REFERENCE_NAME' && \
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin cosigner show '$COSIGNER_REFERENCE_NAME' 2>&1")"; then
@@ -1363,9 +1363,12 @@ enroll_cosigner_reference_to_signer() {
 }
 
 verify_guided_cosigner_setup() {
-    local out client_data add_command token_check
+    local out client_data add_command token_check cosigner_ssh_port cosigner_port
 
     client_data="/home/$TEST_USER/aplane/apclient"
+    cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
+    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
+    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
     if [ "$RELEASE_INSTALL" = "1" ]; then
         # A release may predate 'endpoints add' and token retirement on
         # delete. 'cosigner add' works in both, and the token is removed by
@@ -1378,13 +1381,12 @@ verify_guided_cosigner_setup() {
         token_check="test ! -e $client_data/tokens/local-cosigner.token"
     fi
 
-    # The installer-recorded advertise_url travels in the export, so the client
-    # supplies no endpoint or port.
+    # The client is told the cosigner's address; the key file never reaches it.
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-cosigner\n' > /tmp/delete-cosigner-endpoint.script && \
         . $client_data/apenv.sh && \
         apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
         $token_check && \
-        echo '$add_command /tmp/cosigner-public.json --alias local-cosigner' > /tmp/add-cosigner.script" \
+        echo '$add_command ssh://cosigner:$cosigner_ssh_port --alias local-cosigner --cosigner-port $cosigner_port' > /tmp/add-cosigner.script" \
         || die "endpoints delete did not remove the cosigner endpoint and its token"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". $client_data/apenv.sh && \
         apshell -script /tmp/add-cosigner.script 2>&1")"; then
@@ -1393,13 +1395,13 @@ verify_guided_cosigner_setup() {
     fi
     printf '%s\n' "$out"
     if [ "$RELEASE_INSTALL" = "1" ]; then
-        grep -Fq -e 'Key from the setup file found.' -e 'Connected; expected witness found' <<<"$out" \
-            || die "guided cosigner setup did not report exact witness verification"
+        grep -Fq -e 'Connection local-cosigner ready' -e 'Connected; expected witness found' <<<"$out" \
+            || die "guided cosigner setup did not report a ready connection"
     else
         grep -Fq 'Connection local-cosigner ready; access token saved.' <<<"$out" \
             || die "guided cosigner setup did not report a ready connection with a new token"
-        grep -Fq 'Key from the setup file found.' <<<"$out" \
-            || die "guided cosigner setup did not report exact witness verification"
+        grep -Fq 'cosigner key(s) advertised.' <<<"$out" \
+            || die "guided cosigner setup did not report the advertised keys"
     fi
     docker_exec_as_tester "$CLIENT_CONTAINER" "test -s $client_data/tokens/local-cosigner.token" \
         || die "guided cosigner setup did not save the cosigner token"

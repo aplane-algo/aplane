@@ -1,5 +1,33 @@
 # Release Notes
 
+## The cosigner export is the key only; clients are given the address
+
+A cosigner's exported file is now the public key reference
+(`aplane.witness-key-public.v1`) and nothing else. The
+`aplane.cosigner-enrollment.v1` setup file that also carried the cosigner's
+endpoint is gone, with the `apadmin cosigner enrollment export|import`
+commands, the export screen's host field and loopback warning, and the
+signer-side `endpoint_import` result that never did anything. The signer
+imports the key file as before, with **Use key file...**, **Paste public
+JSON...**, or `apadmin cosigner import`, and refuses a file that carries
+anything more.
+
+The client is configured by hand with the cosigner's address:
+`endpoints add <cosigner-url>` (for example
+`endpoints add ssh://cosigner.example:1127`). It no longer takes a file or a
+pasted document, and no longer compares a key from a file against the node;
+it reports how many keys the cosigner advertises and leaves key trust to the
+signer. The guided checks are otherwise unchanged: a connection already
+configured for the URL is reused, the node must report the cosigner role,
+access is requested over SSH, and routes are reported. Handing the client the
+key file is refused with that guidance. The apadmin export result screen shows
+the address to give clients, from `endpoint.advertise_url` when it is
+configured, so the installer's client-reachable address prompt keeps its
+purpose.
+
+A client that has already added a cosigner needs no change for later keys on
+it. Two keys on one cosigner therefore never leave a client wondering which
+file to add: no file is added at all.
 ## Policies start with self-transfers only
 
 A new signer store now starts with routing enabled and one route,

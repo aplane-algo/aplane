@@ -13,7 +13,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -97,9 +96,9 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 	env, err := endpointrefs.Parse(data)
 	if err != nil {
-		if isCosignerEnrollmentDocument(data) {
-			return nil, fmt.Errorf("%s is a cosigner key document, not an endpoint envelope; "+
-				"use 'endpoints add %s --alias %s' instead", req.Path, req.Path, req.Alias)
+		if isCosignerKeyDocument(data) {
+			return nil, fmt.Errorf("%s is a cosigner key file, not an endpoint envelope; "+
+				"the signer imports it (apadmin cosigner import); on this client run 'endpoints add <cosigner-url> --alias %s'", req.Path, req.Alias)
 		}
 		return nil, err
 	}
@@ -140,17 +139,17 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	return result, nil
 }
 
-// isCosignerEnrollmentDocument reports whether data carries one of the public
-// cosigner key schemas that 'endpoints add' accepts, so a misdirected endpoint
-// import can point at the right command.
-func isCosignerEnrollmentDocument(data []byte) bool {
+// isCosignerKeyDocument reports whether data is a cosigner's public key file,
+// which belongs on the signer, so a misdirected endpoint import can say where
+// it goes.
+func isCosignerKeyDocument(data []byte) bool {
 	var discriminator struct {
 		Schema string `json:"schema"`
 	}
 	if err := json.Unmarshal(data, &discriminator); err != nil {
 		return false
 	}
-	return discriminator.Schema == enrollment.Schema || discriminator.Schema == witness.PublicReferenceSchema
+	return discriminator.Schema == witness.PublicReferenceSchema
 }
 
 // EndpointCreateCosigner creates or replaces a client-local cosigner endpoint

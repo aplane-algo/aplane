@@ -15,11 +15,27 @@ import (
 	"testing"
 	"time"
 
+	"encoding/hex"
+
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
+
+func testCosignerReference(t *testing.T) witness.PublicReference {
+	t.Helper()
+	publicKey := bytes.Repeat([]byte{0x24}, 1793)
+	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := witness.NewPublicReference(witness.Falcon1024V1, keyID, hex.EncodeToString(publicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reference
+}
 
 type fakeRequester struct {
 	requests []any
@@ -340,7 +356,7 @@ func TestCatalogKeyTypeEnableCanonicalizesAlias(t *testing.T) {
 
 func TestCatalogCosignerImportListShowAndRemoveRequests(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cosigner.json")
-	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
+	data, err := witness.MarshalPublicReference(testCosignerReference(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +408,7 @@ func TestCatalogCosignerImportListShowAndRemoveRequests(t *testing.T) {
 }
 
 func TestCatalogImportsCosignerEnvelopeFromStdin(t *testing.T) {
-	data, err := enrollment.MarshalWitness(testEnrollmentReference(t))
+	data, err := witness.MarshalPublicReference(testCosignerReference(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,21 +581,23 @@ func TestCatalogEndpointExportRefusesSymlinkOutput(t *testing.T) {
 	}
 }
 
-func TestSimpleCosignerImportNormalizesCombinedDocument(t *testing.T) {
-	reference := testEnrollmentReference(t)
-	canonical, err := enrollment.MarshalWitness(reference)
+// The signer stores the canonical key document whatever layout the file
+// used, and a file with anything beyond the public key never reaches the
+// daemon: the exported file is the key and nothing else.
+func TestCosignerImportNormalizesKeyFileAndRejectsExtraFields(t *testing.T) {
+	reference := testCosignerReference(t)
+	canonical, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := enrollment.Marshal(enrollment.Envelope{Schema: enrollment.Schema, Witness: reference})
+	compact, err := json.Marshal(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, invalid := range []bool{false, true} {
-		input := string(data)
-		if invalid {
-			input = strings.Replace(input, "\"witness\":", "\"unexpected\":true,\"witness\":", 1)
-		}
+	for name, input := range map[string]string{
+		"compact layout":    string(compact),
+		"endpoint included": strings.Replace(string(canonical), "{\n", "{\n  \"endpoint\": {\"url\": \"ssh://cosigner.example:2223\"},\n", 1),
+	} {
 		requester := &fakeRequester{handle: func(message, result any) error {
 			req := message.(protocol.ImportCosignerReferenceMessage)
 			if req.EnvelopeJSON != string(canonical) {
@@ -589,12 +607,14 @@ func TestSimpleCosignerImportNormalizesCombinedDocument(t *testing.T) {
 			return nil
 		}}
 		err := (Catalog{Client: requester, Streams: Streams{Stdin: strings.NewReader(input)}}).Run("cosigner", []string{"import", "-", "lab"})
-		if invalid {
+		if name == "endpoint included" {
 			if err == nil || len(requester.requests) != 0 {
-				t.Fatal("invalid combined input reached daemon")
+				t.Fatalf("%s: a key file with an endpoint reached the daemon", name)
 			}
-		} else if err != nil {
-			t.Fatal(err)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
 	}
 }

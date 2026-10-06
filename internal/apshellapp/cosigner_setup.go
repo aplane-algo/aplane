@@ -4,9 +4,7 @@
 package apshellapp
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -18,8 +16,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -45,26 +41,16 @@ var (
 	// ErrCosignerSetupRoleUnverified marks an endpoint whose node role could
 	// not be read, or was absent or unrecognized.
 	ErrCosignerSetupRoleUnverified = errors.New("could not verify that this endpoint is a cosigner")
-	// ErrCosignerSetupKeyNotFound marks a setup file whose key the endpoint
-	// does not advertise.
-	ErrCosignerSetupKeyNotFound = errors.New("key from the setup file not found")
 	// ErrCosignerSetupDuplicateRoute marks a key advertised by both the new
 	// connection and another one, which blocks signing for that key.
 	ErrCosignerSetupDuplicateRoute = errors.New("duplicate cosigner route")
 )
 
-// Key comparison outcomes for a guided setup run.
-const (
-	CosignerSetupKeyFound         = "found"
-	CosignerSetupKeyNotFound      = "not_found"
-	CosignerSetupKeyNotApplicable = "not_applicable"
-)
-
-// CosignerSetupRequest describes the public handoff and client-local route
-// choices used to prepare a guided cosigner setup. Document is optional: setup
-// can also start from an explicit URL.
+// CosignerSetupRequest describes the client-local route choices used to
+// prepare a guided cosigner setup. The client is told the cosigner's address;
+// it never handles the cosigner's key, which the signer imports from the
+// cosigner's exported key file.
 type CosignerSetupRequest struct {
-	Document   []byte
 	Alias      string
 	URL        string
 	SignerPort int
@@ -85,11 +71,7 @@ type CosignerSetupTarget struct {
 // CosignerSetupPlan is an immutable reviewed setup proposal. ExistingEndpoint is
 // compared again under the client lock before the route is changed.
 type CosignerSetupPlan struct {
-	Alias string
-	// Witness is the key from the setup file. It is meaningful only when
-	// HasWitness is set; endpoint-only input carries no key.
-	Witness             witness.PublicReference
-	HasWitness          bool
+	Alias               string
 	Endpoint            config.ClientEndpointConfig
 	ExistingEndpoint    *config.ClientEndpointConfig
 	Created             bool
@@ -99,9 +81,8 @@ type CosignerSetupPlan struct {
 	// RetiresToken reports that applying the plan removes a stored token: one
 	// issued by the previous destination, or one left over under the name of a
 	// connection this plan creates.
-	RetiresToken    bool
-	DryRun          bool
-	BundledEndpoint bool
+	RetiresToken bool
+	DryRun       bool
 }
 
 // Unchanged reports that the plan reuses an existing connection as it is.
@@ -110,11 +91,10 @@ func (p CosignerSetupPlan) Unchanged() bool {
 }
 
 // CosignerSetupResult reports completed client-owned effects without exposing
-// credential values or paths. Connection, key, and route outcomes are separate
-// and are never folded into one readiness flag.
+// credential values or paths. Connection and route outcomes are separate and
+// are never folded into one readiness flag.
 type CosignerSetupResult struct {
 	Alias        string
-	WitnessKeyID string
 	URL          string
 	Created      bool
 	Updated      bool
@@ -122,15 +102,11 @@ type CosignerSetupResult struct {
 	TokenRetired bool
 	// Connected reports that the endpoint was reached, authenticated, and
 	// reported the cosigner role.
-	Connected bool
-	NodeRole  string
-	// KeyCheck is one of the CosignerSetupKey* outcomes.
-	KeyCheck       string
+	Connected      bool
+	NodeRole       string
 	AdvertisedKeys int
-	// Verified reports that the key from the setup file was found.
-	Verified bool
-	Routes   *CosignerSetupRoutes
-	DryRun   bool
+	Routes         *CosignerSetupRoutes
+	DryRun         bool
 
 	RenderLines []string
 }
@@ -173,63 +149,13 @@ type CosignerSetupUnreadConnection struct {
 	State string
 }
 
-type cosignerSetupInput struct {
-	witness  *witness.PublicReference
-	endpoint *endpointrefs.Envelope
-}
-
-// ValidateCosignerSetupDocument reports whether data is one of the public
-// documents guided setup accepts.
-func ValidateCosignerSetupDocument(data []byte) error {
-	_, err := parseCosignerSetupInput(data)
-	return err
-}
-
-// parseCosignerSetupInput accepts a setup file (key plus endpoint), a key-only
-// file, an endpoint-only file, or no document at all.
-func parseCosignerSetupInput(document []byte) (cosignerSetupInput, error) {
-	if len(bytes.TrimSpace(document)) == 0 {
-		return cosignerSetupInput{}, nil
-	}
-	var discriminator struct {
-		Schema string `json:"schema"`
-	}
-	if err := json.Unmarshal(document, &discriminator); err == nil && discriminator.Schema == endpointrefs.Schema {
-		endpoint, err := endpointrefs.Parse(document)
-		if err != nil {
-			return cosignerSetupInput{}, err
-		}
-		return cosignerSetupInput{endpoint: &endpoint}, nil
-	}
-	artifact, err := enrollment.ParseArtifact(document)
-	if err != nil {
-		return cosignerSetupInput{}, err
-	}
-	reference := artifact.Witness
-	return cosignerSetupInput{witness: &reference, endpoint: artifact.Endpoint}, nil
-}
-
-func (in cosignerSetupInput) url(req CosignerSetupRequest) string {
-	if explicit := strings.TrimSpace(req.URL); explicit != "" {
-		return explicit
-	}
-	if in.endpoint != nil {
-		return in.endpoint.URL
-	}
-	return ""
-}
-
 // ResolveCosignerSetupTarget decides the destination and connection name
 // before any prompt. A cosigner connection already configured for the
 // destination is reused; otherwise a free name is suggested.
 func (a *App) ResolveCosignerSetupTarget(req CosignerSetupRequest) (CosignerSetupTarget, error) {
-	input, err := parseCosignerSetupInput(req.Document)
-	if err != nil {
-		return CosignerSetupTarget{}, err
-	}
-	target := CosignerSetupTarget{URL: strings.TrimRight(strings.TrimSpace(input.url(req)), "/")}
+	target := CosignerSetupTarget{URL: strings.TrimRight(strings.TrimSpace(req.URL), "/")}
 	if target.URL == "" {
-		return CosignerSetupTarget{}, fmt.Errorf("%w; pass --endpoint <url>", ErrCosignerEndpointURLRequired)
+		return CosignerSetupTarget{}, fmt.Errorf("%w; pass the cosigner URL", ErrCosignerEndpointURLRequired)
 	}
 	registry, _, err := config.LoadStoredClientEndpointRegistry(a.DataDir)
 	if err != nil {
@@ -297,13 +223,9 @@ func suggestCosignerAlias(registry config.ClientEndpointRegistry, rawURL string)
 	}
 }
 
-// PrepareCosignerSetup validates the public input and calculates the exact
-// client endpoint change. It performs no writes or network operations.
+// PrepareCosignerSetup validates the request and calculates the exact client
+// endpoint change. It performs no writes or network operations.
 func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan, error) {
-	input, err := parseCosignerSetupInput(req.Document)
-	if err != nil {
-		return CosignerSetupPlan{}, err
-	}
 	alias := strings.TrimSpace(req.Alias)
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return CosignerSetupPlan{}, fmt.Errorf("cosigner endpoint alias: %w", err)
@@ -319,20 +241,14 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 	candidate := existing
 	candidate.Role = config.ClientEndpointRoleCosigner
 
-	bundled := input.endpoint != nil
-	if resolved := input.url(req); resolved != "" {
+	if resolved := strings.TrimSpace(req.URL); resolved != "" {
 		candidate.URL = resolved
 	}
 	if candidate.URL == "" {
-		return CosignerSetupPlan{}, fmt.Errorf("%w; pass --endpoint <url>", ErrCosignerEndpointURLRequired)
+		return CosignerSetupPlan{}, fmt.Errorf("%w; pass the cosigner URL", ErrCosignerEndpointURLRequired)
 	}
 	if req.SignerPort != 0 {
 		candidate.SignerPort = req.SignerPort
-	} else if input.endpoint != nil && input.endpoint.SignerPort != 0 {
-		candidate.SignerPort = input.endpoint.SignerPort
-	}
-	if input.endpoint != nil {
-		candidate.LocalPort = input.endpoint.LocalPort
 	}
 
 	normalizedURL := strings.TrimRight(strings.TrimSpace(candidate.URL), "/")
@@ -352,11 +268,6 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 		Created: preview.Created, Updated: preview.Updated,
 		ReplacementRequired: exists && preview.Updated, DryRun: req.DryRun,
 		DestinationChanged: preview.DestinationChanged, RetiresToken: preview.RetiresExistingToken,
-		BundledEndpoint: bundled,
-	}
-	if input.witness != nil {
-		plan.Witness = *input.witness
-		plan.HasWitness = true
 	}
 	if exists {
 		copy := existing
@@ -416,19 +327,16 @@ func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (
 }
 
 // CompleteCosignerSetup establishes endpoint access when needed, confirms the
-// node is a cosigner, compares the key from the setup file, and reports the
-// route sweep. It never changes the primary tunnel.
+// node is a cosigner, and reports the route sweep. It never changes the
+// primary tunnel.
 //
-// The returned error covers only this connection: access, node role, the
-// file's key, and duplicate routes that involve it. The result is returned
-// alongside an error so callers can report completed effects.
+// The returned error covers only this connection: access, node role, and
+// duplicate routes that involve it. The result is returned alongside an error
+// so callers can report completed effects.
 func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) (*CosignerSetupResult, error) {
 	result := &CosignerSetupResult{
 		Alias: plan.Alias, URL: endpoint.URL, Created: plan.Created, Updated: plan.Updated,
-		DryRun: plan.DryRun, KeyCheck: CosignerSetupKeyNotApplicable,
-	}
-	if plan.HasWitness {
-		result.WitnessKeyID = plan.Witness.WitnessKeyID
+		DryRun: plan.DryRun,
 	}
 	if plan.DryRun {
 		result.RenderLines = cosignerSetupRenderLines(result, nil)
@@ -486,25 +394,6 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	}
 	result.Connected = true
 	result.AdvertisedKeys = len(inspection.Keys)
-
-	if plan.HasWitness {
-		matches := 0
-		for _, key := range inspection.Keys {
-			if key.ComponentKey == plan.Witness.WitnessKeyID && key.KeyType == plan.Witness.KeyType && key.PublicKey == plan.Witness.PublicKeyHex {
-				matches++
-			}
-		}
-		if matches != 1 {
-			result.KeyCheck = CosignerSetupKeyNotFound
-			result.RenderLines = cosignerSetupRenderLines(result, nil)
-			return result, fmt.Errorf(
-				"%w: endpoint %q does not advertise the expected Witness Key ID %s; the file may be stale, or this is the wrong cosigner",
-				ErrCosignerSetupKeyNotFound, plan.Alias, witness.GroupedID(plan.Witness.WitnessKeyID),
-			)
-		}
-		result.KeyCheck = CosignerSetupKeyFound
-		result.Verified = true
-	}
 
 	registry := a.Config.ClientEndpointsOrDefault()
 	if cfg, loadErr := config.LoadConfig(a.DataDir); loadErr == nil {
@@ -658,14 +547,11 @@ func cosignerSetupRoutes(alias string, status engine.CosignerStatusResult) *Cosi
 
 func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(string) string) []string {
 	if result.DryRun {
-		lines := []string{
+		return []string{
 			"Cosigner connection dry run:",
 			fmt.Sprintf("  connection: %s (%s)", result.Alias, result.URL),
+			"  no files changed; host trust, access, node role, and routes were not checked",
 		}
-		if result.WitnessKeyID != "" {
-			lines = append(lines, "  key from the setup file: "+witness.GroupedID(result.WitnessKeyID))
-		}
-		return append(lines, "  no files changed; host trust, access, node role, key, and routes were not checked")
 	}
 	if !result.Connected {
 		return nil
@@ -674,19 +560,7 @@ func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(str
 	if result.TokenIssued {
 		connection += "; access token saved"
 	}
-	lines := []string{connection + "."}
-	switch result.KeyCheck {
-	case CosignerSetupKeyFound:
-		lines = append(lines, "Key from the setup file found.")
-	case CosignerSetupKeyNotFound:
-		lines = append(lines,
-			"Key from the setup file NOT found: "+witness.GroupedID(result.WitnessKeyID)+".",
-			"The file may be stale, or this is the wrong cosigner.",
-		)
-		return lines
-	default:
-		lines = append(lines, fmt.Sprintf("%d cosigner key(s) advertised; no key in the input to compare.", result.AdvertisedKeys))
-	}
+	lines := []string{connection + ".", fmt.Sprintf("%d cosigner key(s) advertised.", result.AdvertisedKeys)}
 	routes := result.Routes
 	if routes == nil {
 		return lines
@@ -721,10 +595,8 @@ func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(str
 	case routes.AccountInventory != "available":
 		lines = append(lines, "Account routes not checked: "+routes.InventoryError+".", "Then run cosigner status.")
 	case routes.AccountsRequired == 0:
-		lines = append(lines, "No accounts requiring a cosigner on the connected signer.")
-		if result.KeyCheck == CosignerSetupKeyFound {
-			lines = append(lines, "Next: create an account in signer-side apadmin and choose this setup file.")
-		}
+		lines = append(lines, "No accounts requiring a cosigner on the connected signer.",
+			"Next: create an account in signer-side apadmin and choose this cosigner's key file.")
 	case len(routes.Unread) > 0:
 		lines = append(lines, fmt.Sprintf("Matching route observed for %d of %d accounts on the connected signer.", routes.AccountsRouted, routes.AccountsRequired))
 	default:

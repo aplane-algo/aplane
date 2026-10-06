@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -279,7 +278,6 @@ type cosignerState struct {
 	envelopeJSON      string
 	previewWitnessID  string
 	previewKeyType    string
-	previewEndpoint   *endpointrefs.Envelope
 	// reuseAliases names the references that already hold the previewed key
 	// when account creation chose a setup file whose key is already imported.
 	reuseAliases     []string
@@ -296,16 +294,13 @@ type cosignerState struct {
 	generateTypeSelected int
 	generateFromManager  bool
 
-	exportWitnessID     string
-	exportPath          string
-	exportError         string
-	exportEndpoint      *endpointrefs.Envelope // valid advertise_url, if configured
-	exportEndpointError string
-	exportHost          string // operator-entered host when exportEndpoint is nil
-	exportWrittenPath   string
-	exportReturnView    ViewState
-	exportFocus         int
-	exportShowJSON      bool
+	exportWitnessID   string
+	exportPath        string
+	exportError       string
+	exportWrittenPath string
+	exportReturnView  ViewState
+	exportFocus       int
+	exportShowJSON    bool
 }
 
 // deleteConfirmState is the key-deletion confirmation dialog.

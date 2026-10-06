@@ -1099,7 +1099,7 @@ Additional client-state notes:
 - `apshell endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--cosignerport` is stored as the endpoint `signer_port` REST port used behind SSH cosigner endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, copy tokens, or establish SSH host trust.
 - `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
 - `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, provisions tokens, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
-- `apshell endpoints add [public-json] [--alias <alias>] [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It accepts `aplane.witness-key-public.v1`, `aplane.cosigner-enrollment.v1`, an endpoint-only `aplane.endpoint.v1`, or an explicit `--endpoint` with no document; with neither a file nor `--endpoint` it captures one bounded document through the interactive line reader. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It rejects a bundled portable `local_port`, plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and token enrollment only after releasing that lock. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup); when the input carries a witness it requires the endpoint to advertise that exact validated witness; and it reports the resolver's route sweep. Its structured result carries `connected`, `node_role`, `key_check` (`found`, `not_found`, `not_applicable`), `advertised_keys`, `token_issued`, `token_retired`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, a document key that is not advertised, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and token request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, token requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
+- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--cosigner-port <port>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and token enrollment only after releasing that lock. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `token_issued`, `token_retired`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and token request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, token requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
 - an endpoint token is presented only to the destination that issued it, where a destination is the endpoint URL plus, for `ssh://` endpoints, the REST port reached through SSH. When `endpoints add`, `endpoints import`, or `endpoints create` creates an alias or moves one to another destination, any token file at the alias's path is removed and its directory synced before the new route is written, under the same lock; the result reports the retirement. The sync runs even when the file is already absent, so a retry after a failed sync is still durable. `endpoints delete` retires the alias's token before removing the route. A token file that another alias also resolves to is never retired: creating or re-pointing the alias is refused, and deleting it leaves the file, comparing paths after resolution against the client data directory. A manually supplied token must therefore be installed after its endpoint exists. A token issued by `request-token` or guided setup is saved only if, re-read under the lock, the alias still exists, names the same destination, and uses the same token file; otherwise it is discarded with an explanation. Hand edits to `endpoints.yaml` are outside these rules.
 - endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits and token persistence occur outside endpoint-write critical sections; token persistence acquires the same non-reentrant client lock independently and revalidates the alias's destination before writing.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
@@ -1852,70 +1852,42 @@ The admin access request already carries that fingerprint; this adds no wire
 field. It identifies the requesting client key, not an individual request,
 the server host key, or a Witness Key ID.
 
-#### Cosigner Enrollment Composition Envelope
+#### Cosigner Key File
 
-`apadmin cosigner enrollment export <witness-key-id> ... --out <file>` emits the
-additive public composition schema `aplane.cosigner-enrollment.v1`. It contains
-the canonical `aplane.witness-key-public.v1` document and may contain one
-canonical `aplane.endpoint.v1` document:
+`apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
+**Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
+document and nothing else:
 
 ```json
 {
-  "schema": "aplane.cosigner-enrollment.v1",
-  "witness": {
-    "schema": "aplane.witness-key-public.v1",
-    "key_type": "aplane.witness-falcon1024.v1",
-    "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
-    "public_key_hex": "0000...0000"
-  },
-  "endpoint": {
-    "schema": "aplane.endpoint.v1",
-    "url": "ssh://cosigner.example:2223",
-    "signer_port": 11270
-  }
+  "schema": "aplane.witness-key-public.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "public_key_hex": "0000...0000"
 }
 ```
 
-`endpoint` is optional. The outer document is strict JSON, is bounded to 64
-KiB before decoding, rejects unknown fields and trailing JSON, and delegates
-nested validation to the standalone witness and endpoint envelope contracts.
-An explicitly `null` witness or endpoint is invalid. Stable serialization uses
-the field order shown above and ends with one newline.
-
-Batch export includes `endpoint` when `--host` or `--url` supplies routing
-metadata, or when `--include-endpoint` selects the daemon's configured
-`endpoint.advertise_url`. Without one of those choices it emits a witness-only
-composition bundle even when an advertise URL exists.
-
-Cosigner-side TUI export offers the configured portable advertise URL as an
-explicit, default-on choice. The operator process composes it with the
-daemon-verified witness envelope and writes the result locally; opting out or
-lacking a valid advertised endpoint omits the endpoint member while retaining
-the composition schema.
-
-The outer envelope adds no authority claim. In particular it contains no
-reference alias, endpoint alias or role, token, SSH identity, `known_hosts`
-entry, cached live inventory, private witness material, policy, or proof of
-endpoint ownership. The operator still chooses local aliases and compares the
-complete Witness Key ID against an independently observed value. The signer
-re-derives that ID through the existing cosigner-reference import path.
-
-`apadmin cosigner enrollment import <file|-> --name <reference-name> [--dry-run]`
-accepts either the composition envelope or a standalone witness-public envelope.
-It validates the complete artifact before importing the reference through
-authorized local IPC. `--dry-run` validates without mutation. Bundled endpoint
-metadata is informational; apadmin does not read or write client state.
-The result retains `aplane.cosigner-enrollment-import-result.v1` and its
-`endpoint_import.status` is always `not_requested`. Configure client routes,
-tokens, and SSH host trust separately in apshell.
+The daemon returns the document over the admin protocol; the operator process
+validates it, re-serializes it canonically (`witness.MarshalPublicReference`:
+the field order above, two-space indentation, one trailing newline), and
+writes it locally with owner-private permissions. The file carries no
+endpoint, reference alias, endpoint alias or role, token, SSH identity,
+`known_hosts` entry, cached live inventory, private witness material, policy,
+or proof of endpoint ownership. The cosigner's address is not a file contract
+at all: the operator reads it from the export result screen (the configured
+`endpoint.advertise_url`, or a placeholder) or from the deployment, and gives
+it to each client for `endpoints add <url>`. The earlier
+`aplane.cosigner-enrollment.v1` composition envelope, which could carry an
+endpoint block, and the `apadmin cosigner enrollment export|import` commands
+are gone; the system is unreleased, so no reader for them remains.
 
 #### Cosigner Public Key Reference Library
 
 `apadmin cosigner import <public-json|-> <name>` imports an
-standalone `aplane.witness-key-public.v1` or combined
-`aplane.cosigner-enrollment.v1` document into the product store's public
-cosigner reference library. The operator-side adapter validates the complete
-document and sends only the canonical witness reference through IPC:
+`aplane.witness-key-public.v1` document into the product store's public
+cosigner reference library. The operator-side adapter validates the document,
+refusing any field beyond the public reference, and sends its canonical form
+through IPC:
 
 ```text
 identities/default/cosigners/<name>.json
@@ -1945,8 +1917,7 @@ When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
 controlling terminal. Unsupported
 headless combinations fail before authentication instead of sharing stdin
-between the envelope and passphrase. The same separation applies to
-`cosigner enrollment import -`.
+between the envelope and passphrase.
 
 Human list output leads with the operator-assigned reference name and a compact
 10-leading/10-trailing Witness Key ID. Detailed JSON retains the complete ID

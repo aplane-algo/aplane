@@ -4,34 +4,31 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
+	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestCosignerPasteUsesImportReview(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
-	witnessJSON, err := enrollment.MarshalWitness(reference)
+	witnessJSON, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundleJSON, err := enrollment.Marshal(enrollment.Envelope{
-		Schema: enrollment.Schema, Witness: reference,
-		Endpoint: &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:2223", SignerPort: 11270},
-	})
+	compact, err := json.Marshal(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name     string
-		data     []byte
-		endpoint bool
+		name string
+		data []byte
 	}{
-		{"witness", witnessJSON, false},
-		{"bundle", bundleJSON, true},
+		{"canonical", witnessJSON},
+		{"compact", compact},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := Model{viewState: ViewCosignerReferences, dataDir: t.TempDir()}
@@ -50,9 +47,6 @@ func TestCosignerPasteUsesImportReview(t *testing.T) {
 			if m.viewState != ViewCosignerImportReview || m.cosigner.previewWitnessID != reference.WitnessKeyID || m.cosigner.importName != "lab" {
 				t.Fatalf("unexpected review: %v, %s", m.viewState, m.cosigner.importError)
 			}
-			if (m.cosigner.previewEndpoint != nil) != tc.endpoint {
-				t.Fatal("endpoint review differs from file import")
-			}
 			if m.cosigner.envelopeJSON != string(witnessJSON) {
 				t.Fatal("paste did not produce the canonical import envelope")
 			}
@@ -70,13 +64,13 @@ func TestCosignerPasteUsesImportReview(t *testing.T) {
 }
 
 func TestCosignerPasteRejectsInvalidAndOversizedInput(t *testing.T) {
-	for _, data := range []string{"", "not JSON", `{"schema":"unknown"}`, `{"schema":"aplane.cosigner-enrollment.v1","witness":null}`, strings.Repeat("x", enrollment.MaxEnvelopeBytes+1)} {
+	for _, data := range []string{"", "not JSON", `{"schema":"unknown"}`, `{"schema":"aplane.cosigner-enrollment.v1","witness":null}`, strings.Repeat("x", apadminapp.MaxCosignerPublicEnvelopeBytes+1)} {
 		m := Model{}.beginManagerCosignerImport()
 		m.cosigner.importPaste = true
 		m.cosigner.importName = "lab"
 		next, cmd := m.handleCosignerImportFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(data), Paste: true})
 		m = next.(Model)
-		if cmd != nil || len(m.cosigner.importJSON) > enrollment.MaxEnvelopeBytes {
+		if cmd != nil || len(m.cosigner.importJSON) > apadminapp.MaxCosignerPublicEnvelopeBytes {
 			t.Fatal("paste exceeded buffer limit or issued a command")
 		}
 		m = m.prepareCosignerImportReview()
@@ -110,7 +104,7 @@ func TestCosignerPasteRoutesBracketedPasteToNameField(t *testing.T) {
 
 func TestCosignerImportDefaultFollowsSourceUnlessEdited(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
-	data, err := enrollment.MarshalWitness(reference)
+	data, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}

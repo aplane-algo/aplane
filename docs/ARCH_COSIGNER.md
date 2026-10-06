@@ -247,20 +247,18 @@ The signer-side cosigner reference catalog is populated by explicit operator
 handoff: `apadmin cosigner export` on the cosigner node followed by `apadmin cosigner
 import` on the signer node.
 
-The additive `aplane.cosigner-enrollment.v1` public handoff may compose that
-same canonical witness-public reference with an optional portable endpoint
-envelope. apadmin validates the complete bundle and imports only its public
-witness reference through authorized local IPC. Endpoint metadata is
-informational; apshell owns endpoint configuration, token enrollment, host
-trust, and live discovery. apadmin does not access client state.
+The exported file is that canonical `aplane.witness-key-public.v1` document
+and nothing else: the cosigner's address is not in it. apadmin imports the
+public witness reference through authorized local IPC and refuses a file that
+carries anything more. apshell owns endpoint configuration, token enrollment,
+host trust, and live discovery, and is given the cosigner's address by the
+operator; apadmin does not access client state.
 
-The client-side `endpoints add` workflow (formerly `cosigner add`, which still
-forwards to it) accepts either public document, an endpoint-only
-`aplane.endpoint.v1` envelope, or an explicit URL. It treats a witness
-reference as the expected authority and any endpoint as a portable route
-suggestion. The client stores only the route: it keeps no witness key and no
-key-to-endpoint mapping, so the unit it manages is a connection to a cosigner
-node, and a later key on the same node needs no client change.
+The client-side `endpoints add <url>` workflow (formerly `cosigner add`, which
+still forwards to it) takes the cosigner's URL and never a key. The client
+stores only the route: it keeps no witness key and no key-to-endpoint mapping,
+so the unit it manages is a connection to a cosigner node, and a later key on
+the same node needs no client change.
 
 Before prompting, the workflow resolves the destination and reuses a cosigner
 profile already configured for that URL; only a new profile needs a name, for

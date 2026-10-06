@@ -173,10 +173,7 @@ func catalogPassphrase(
 }
 
 func cosignerImportUsesStdin(args []string) bool {
-	if len(args) >= 2 && args[0] == "import" && args[1] == "-" {
-		return true
-	}
-	return len(args) >= 3 && args[0] == "enrollment" && args[1] == "import" && args[2] == "-"
+	return len(args) >= 2 && args[0] == "import" && args[1] == "-"
 }
 
 func runStoreCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {

@@ -14,45 +14,24 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func TestPrepareCosignerSetupUsesCombinedEndpointAndOverrides(t *testing.T) {
+func TestPrepareCosignerSetupUsesURLAndPort(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	document, reference := testCosignerEnrollmentDocument(t, &endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://bundle.example:2223", SignerPort: 12270,
-	})
-
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "ssh://override.example:2224", SignerPort: 13270,
+		Alias: "field", URL: "ssh://cosigner.example:2224", SignerPort: 13270,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Created || plan.ReplacementRequired || !plan.BundledEndpoint {
-		t.Fatalf("plan = %#v, want new bundled route", plan)
+	if !plan.Created || plan.ReplacementRequired {
+		t.Fatalf("plan = %#v, want a new route", plan)
 	}
-	if plan.Witness != reference {
-		t.Fatalf("witness = %#v, want %#v", plan.Witness, reference)
-	}
-	if plan.Endpoint.URL != "ssh://override.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 0 {
-		t.Fatalf("endpoint = %#v, want explicit URL/port", plan.Endpoint)
-	}
-}
-
-func TestPrepareCosignerSetupRejectsBundledLocalPort(t *testing.T) {
-	document, _ := testCosignerEnrollmentDocument(t, &endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://bundle.example:2223", SignerPort: 12270, LocalPort: 12271,
-	})
-	_, err := newEndpointTestApp(t, t.TempDir()).PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field",
-	})
-	if err == nil || !strings.Contains(err.Error(), "local_port is not supported for cosigner endpoints") {
-		t.Fatalf("PrepareCosignerSetup() error = %v, want cosigner local_port rejection", err)
+	if plan.Endpoint.URL != "ssh://cosigner.example:2224" || plan.Endpoint.SignerPort != 13270 || plan.Endpoint.LocalPort != 0 {
+		t.Fatalf("endpoint = %#v, want the given URL and port", plan.Endpoint)
 	}
 }
 
@@ -67,9 +46,8 @@ func TestPrepareCosignerSetupReusesUnchangedCustomEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field",
+		Alias: "field",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -104,9 +82,8 @@ func TestPrepareCosignerSetupMarksDestinationReplacement(t *testing.T) {
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	plan, err := newEndpointTestApp(t, dataDir).PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "ssh://new.example:22",
+		Alias: "field", URL: "ssh://new.example:22",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -123,9 +100,8 @@ func TestPrepareCosignerSetupTreatsChangedSSHRESTPortAsDestinationChange(t *test
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	plan, err := newEndpointTestApp(t, dataDir).PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", SignerPort: 12270,
+		Alias: "field", SignerPort: 12270,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +112,6 @@ func TestPrepareCosignerSetupTreatsChangedSSHRESTPortAsDestinationChange(t *test
 }
 
 func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T) {
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	tests := []struct {
 		name    string
 		prepare func(*testing.T) (*App, CosignerSetupRequest)
@@ -145,14 +120,14 @@ func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T)
 		{
 			name: "missing route",
 			prepare: func(t *testing.T) (*App, CosignerSetupRequest) {
-				return newEndpointTestApp(t, t.TempDir()), CosignerSetupRequest{Document: document, Alias: "field"}
+				return newEndpointTestApp(t, t.TempDir()), CosignerSetupRequest{Alias: "field"}
 			},
 			want: "endpoint URL is required",
 		},
 		{
 			name: "self",
 			prepare: func(t *testing.T) (*App, CosignerSetupRequest) {
-				return newEndpointTestApp(t, t.TempDir()), CosignerSetupRequest{Document: document, Alias: "field", URL: "self"}
+				return newEndpointTestApp(t, t.TempDir()), CosignerSetupRequest{Alias: "field", URL: "self"}
 			},
 			want: `url "self" is not supported`,
 		},
@@ -163,7 +138,7 @@ func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T)
 				if _, err := config.UpsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 					t.Fatal(err)
 				}
-				return newEndpointTestApp(t, dataDir), CosignerSetupRequest{Document: document, Alias: "primary", URL: "ssh://cosigner.example"}
+				return newEndpointTestApp(t, dataDir), CosignerSetupRequest{Alias: "primary", URL: "ssh://cosigner.example"}
 			},
 			want: "has role \"signer\"",
 		},
@@ -180,10 +155,8 @@ func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T)
 }
 
 func TestPrepareCosignerSetupClassifiesMissingEndpointURL(t *testing.T) {
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	_, err := newEndpointTestApp(t, t.TempDir()).PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document,
-		Alias:    "field",
+		Alias: "field",
 	})
 	if !errors.Is(err, ErrCosignerEndpointURLRequired) {
 		t.Fatalf("PrepareCosignerSetup() error = %v, want ErrCosignerEndpointURLRequired", err)
@@ -200,9 +173,8 @@ func TestPrepareCosignerSetupSurfacesCosignerEndpointLimit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	_, err := newEndpointTestApp(t, dataDir).PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "one-too-many", URL: "ssh://extra.example",
+		Alias: "one-too-many", URL: "ssh://extra.example",
 	})
 	if err == nil || !strings.Contains(err.Error(), "maximum is 12") {
 		t.Fatalf("PrepareCosignerSetup() error = %v, want cosigner endpoint limit", err)
@@ -212,9 +184,8 @@ func TestPrepareCosignerSetupSurfacesCosignerEndpointLimit(t *testing.T) {
 func TestApplyCosignerSetupRejectsStaleReviewedAlias(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "ssh://reviewed.example",
+		Alias: "field", URL: "ssh://reviewed.example",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,10 +210,9 @@ func TestApplyCosignerSetupRejectsStaleReviewedAlias(t *testing.T) {
 
 func TestApplyCosignerSetupDryRunDoesNotWrite(t *testing.T) {
 	dataDir := t.TempDir()
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "ssh://cosigner.example", DryRun: true,
+		Alias: "field", URL: "ssh://cosigner.example", DryRun: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -255,9 +225,11 @@ func TestApplyCosignerSetupDryRunDoesNotWrite(t *testing.T) {
 	}
 }
 
-func TestCompleteCosignerSetupVerifiesExactWitness(t *testing.T) {
+// The client never handles the cosigner's key; it reports how many keys the
+// node advertises, deduplicated, and leaves key trust to the signer.
+func TestCompleteCosignerSetupReportsAdvertisedKeys(t *testing.T) {
 	dataDir := t.TempDir()
-	document, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	otherPublicKey := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	otherID := testComponentSelector(t, witness.Falcon1024V1, otherPublicKey)
 	expected := signerapi.KeyInfo{
@@ -271,7 +243,7 @@ func TestCompleteCosignerSetupVerifiesExactWitness(t *testing.T) {
 	})
 	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "cosigner-token")
 	app := newEndpointTestApp(t, dataDir)
-	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Document: document, Alias: "field"})
+	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,18 +255,20 @@ func TestCompleteCosignerSetupVerifiesExactWitness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Verified || result.TokenIssued || result.WitnessKeyID != reference.WitnessKeyID {
-		t.Fatalf("result = %#v, want existing-token exact verification", result)
+	if !result.Connected || result.TokenIssued || result.AdvertisedKeys != 2 {
+		t.Fatalf("result = %#v, want a connected setup with two advertised keys and the existing token", result)
+	}
+	if output := strings.Join(result.RenderLines, "\n"); !strings.Contains(output, "2 cosigner key(s) advertised.") || strings.Contains(output, "setup file") {
+		t.Fatalf("output = %q", output)
 	}
 }
 
 func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 	dataDir := t.TempDir()
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	server := newEndpointKeysStatusServer(t, "cosigner-token", 403, `{"error":"signer is locked"}`)
 	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "cosigner-token")
 	app := newEndpointTestApp(t, dataDir)
-	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Document: document, Alias: "field"})
+	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,10 +284,9 @@ func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 
 func TestCompleteCosignerSetupRequiresExistingTokenForDirectEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "https://cosigner.example",
+		Alias: "field", URL: "https://cosigner.example",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -328,7 +301,7 @@ func TestCompleteCosignerSetupRequiresExistingTokenForDirectEndpoint(t *testing.
 	}
 }
 
-func testCosignerEnrollmentDocument(t *testing.T, endpoint *endpointrefs.Envelope) ([]byte, witness.PublicReference) {
+func testCosignerReference(t *testing.T) witness.PublicReference {
 	t.Helper()
 	publicKeyHex := testCosignerPublicKeyHex()
 	reference, err := witness.NewPublicReference(
@@ -339,28 +312,14 @@ func testCosignerEnrollmentDocument(t *testing.T, endpoint *endpointrefs.Envelop
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoint == nil {
-		data, err := enrollment.MarshalWitness(reference)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return data, reference
-	}
-	data, err := enrollment.Marshal(enrollment.Envelope{
-		Schema: enrollment.Schema, Witness: reference, Endpoint: endpoint,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data, reference
+	return reference
 }
 
 func TestCosignerSetupUsesResolvedEndpointTokenPath(t *testing.T) {
 	dataDir := t.TempDir()
-	document, _ := testCosignerEnrollmentDocument(t, nil)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Document: document, Alias: "field", URL: "ssh://cosigner.example",
+		Alias: "field", URL: "ssh://cosigner.example",
 	})
 	if err != nil {
 		t.Fatal(err)
