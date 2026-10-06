@@ -71,7 +71,7 @@ func TestPolicyEditStartsKeyWithoutPolicyFromLockedDocument(t *testing.T) {
 		t.Fatalf("editor text = %q, want the cosigner template", got)
 	}
 	rendered := stripANSI(m.renderPolicyEdit())
-	for _, want := range []string{"Edit Policy", "cosigner key " + policyViewKeyA, "No policy yet", "remove //", "// Lines starting with //"} {
+	for _, want := range []string{"Edit Policy", "cosigner key " + policyViewKeyA, "No policy yet", "Add routes", "// Lets any account send any asset to itself"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("editor missing %q:\n%s", want, rendered)
 		}
@@ -283,7 +283,7 @@ func TestPolicyEditSignerDocumentFromDocumentView(t *testing.T) {
 	if !edit.annotated || policyEditText(m) != strings.TrimRight(policyreview.SignerTemplate(), "\n") {
 		t.Fatalf("signer editor text = %q, want the signer template", policyEditText(m))
 	}
-	if rendered := stripANSI(m.renderPolicyEdit()); !strings.Contains(rendered, "policy.json") || !strings.Contains(rendered, "Starting policy") || !strings.Contains(rendered, "// Lines starting with //") {
+	if rendered := stripANSI(m.renderPolicyEdit()); !strings.Contains(rendered, "policy.json") || !strings.Contains(rendered, "Starting policy") || !strings.Contains(rendered, "// Lets any account send any asset to itself") {
 		t.Fatalf("signer editor:\n%s", rendered)
 	}
 	m = setPolicyEditText(m, `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"2000"}`)

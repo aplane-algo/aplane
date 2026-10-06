@@ -26,8 +26,8 @@ import (
 // The text may carry // and /* */ comments; policyreview removes them before
 // the document reaches the node. A starting document (the initial signer
 // policy, or a cosigner key's starting document) opens as its annotated
-// template, which explains each field and holds a commented-out example
-// route, and decodes equal to the document it stands for.
+// template, which carries a comment on the self-transfer route and decodes
+// equal to the document it stands for.
 
 // policyEditMaxLines is the text area's fixed capacity for inserted text.
 // Setting its value or pasting drops every line past this count without
@@ -417,9 +417,9 @@ func (m Model) renderPolicyEdit() string {
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
 	switch {
 	case edit.isNew:
-		hint = "No policy yet: this starting document allows self-transfers only. Comments explain the fields; remove // to enable one."
+		hint = "No policy yet: this starting document allows self-transfers only. Add routes to allow more; comments are removed on apply."
 	case edit.annotated:
-		hint = "Starting policy: self-transfers only, all else rejected. Comments explain the fields; remove // to enable one."
+		hint = "Starting policy: self-transfers only, all else rejected. Add routes to allow more; comments are removed on apply."
 	}
 	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
 	sb.WriteString("\n\n")

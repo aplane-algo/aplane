@@ -68,10 +68,9 @@ outlive the starting state.
 
 `apadmin policy template signer|cosigner` writes the same starting document
 as an annotated template (`policyreview.SignerTemplate`,
-`policyreview.CosignerTemplate`): every field explained in comments and an
-example route commented out before the real one, each commented block ending
-with a comma so it can be enabled by removing its `// `. Stripped of
-comments, a template decodes equal to the starting document it stands for,
+`policyreview.CosignerTemplate`) with one comment on the self-transfer
+route. Stripped of the comment, a template decodes equal to the starting
+document it stands for,
 which a test enforces, so the apadmin TUI editor opens a starting document as
 its template without changing what the policy allows.
 

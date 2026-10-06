@@ -72,10 +72,8 @@ them. `apstore policy check|sign` read the store directly and still require
 plain JSON there.
 
 `apadmin policy template signer|cosigner` writes the node's starting document
-with every field explained in comments and an example route commented out
-above the real one; each block ends with a comma, so enabling one is removing
-its `// `. It needs
-no node and no passphrase; `--key` fills in a cosigner key. The TUI editor
+with a comment on its self-transfer route. It needs no node and no
+passphrase; `--key` fills in a cosigner key. The TUI editor
 opens a cosigner key with no policy, or a signer whose policy is still the
 initial one, on the same template; stripped of comments it decodes equal to
 the starting document, so applying it unedited changes nothing.
