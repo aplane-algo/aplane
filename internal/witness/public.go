@@ -59,6 +59,20 @@ func NewPublicReference(keyType, keyID, publicKeyHex string) (PublicReference, e
 	}, nil
 }
 
+// MarshalPublicReference validates reference and emits the canonical public
+// witness document: the file a cosigner exports and a signer imports.
+func MarshalPublicReference(reference PublicReference) ([]byte, error) {
+	normalized, err := NewPublicReference(reference.KeyType, reference.WitnessKeyID, reference.PublicKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode public witness reference: %w", err)
+	}
+	return append(data, '\n'), nil
+}
+
 // ParsePublicReference strictly decodes and validates a public reference.
 func ParsePublicReference(data []byte) (PublicReference, error) {
 	if len(data) == 0 || len(data) > maxPublicReference {

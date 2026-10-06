@@ -684,7 +684,7 @@ print_cosigner_endpoint_summary() {
     local advertise_url="$1"
     local listen_address="$2"
     [ -n "$advertise_url" ] || return 0
-    echo "  Cosigner endpoint: $advertise_url (included in cosigner key exports)"
+    echo "  Cosigner endpoint: $advertise_url (give this address to clients for endpoints add)"
     if [ "$listen_address" != "127.0.0.1" ]; then
         echo "  SSH listens on $listen_address so remote clients can connect."
     fi
@@ -1186,7 +1186,8 @@ write_signer_config() {
 
 # Signer endpoint exposure settings.
 endpoint:
-  # Client-reachable URL used by endpoint and cosigner key exports when --host/--url are omitted.
+  # Client-reachable URL used by apadmin endpoint export when --host/--url are omitted,
+  # and shown after a cosigner key export as the address clients add.
   # Set this to a real DNS name or IP clients can reach.
 $advertise_line
   signer_port: $signer_port

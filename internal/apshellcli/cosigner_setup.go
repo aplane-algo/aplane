@@ -7,32 +7,32 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 )
 
 const cosignerUsage = "cosigner status | cosigner add ... (now: endpoints add)"
 
-const endpointsAddUsage = "endpoints add [public-json] [--alias <alias>] [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]"
+const endpointsAddUsage = "endpoints add [<cosigner-url>] [--alias <alias>] [--cosigner-port <port>] [--replace] [--dry-run]"
+
+// endpointsAddFileHint answers an operator who hands the client the cosigner's
+// key file, which belongs on the signer.
+const endpointsAddFileHint = "endpoints add takes the cosigner's URL (for example ssh://cosigner.example:1127), not a file; the cosigner's key file is imported on the signer with apadmin"
 
 // cosignerAddForwardNotice is printed when the former command name is used.
 const cosignerAddForwardNotice = "Note: 'cosigner add' is now 'endpoints add'; continuing."
 
 type cosignerSetupCLIOptions struct {
 	request apshellapp.CosignerSetupRequest
-	path    string
 	replace bool
 }
 
 type cosignerSetupProjection struct {
 	Alias          string                          `json:"alias"`
-	WitnessKeyID   string                          `json:"witness_key_id,omitempty"`
 	URL            string                          `json:"url"`
 	Created        bool                            `json:"created,omitempty"`
 	Updated        bool                            `json:"updated,omitempty"`
@@ -40,9 +40,7 @@ type cosignerSetupProjection struct {
 	TokenRetired   bool                            `json:"token_retired,omitempty"`
 	Connected      bool                            `json:"connected,omitempty"`
 	NodeRole       string                          `json:"node_role,omitempty"`
-	KeyCheck       string                          `json:"key_check,omitempty"`
 	AdvertisedKeys int                             `json:"advertised_keys,omitempty"`
-	Verified       bool                            `json:"verified,omitempty"`
 	Routes         *apshellapp.CosignerSetupRoutes `json:"routes,omitempty"`
 	DryRun         bool                            `json:"dry_run,omitempty"`
 }
@@ -73,24 +71,15 @@ func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, e
 
 // runEndpointsAdd is the guided cosigner connection setup. It resolves the
 // destination and connection name before asking anything, reuses an existing
-// connection without prompts, and reports connection, key, and route results
+// connection without prompts, and reports connection and route results
 // separately.
 func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 	options, err := parseEndpointsAddArgs(args)
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case options.path != "":
-		options.request.Document, err = readBoundedCosignerSetupFile(options.path)
-	case options.request.URL == "":
-		if r.AutoConfirm || !r.hasInteractiveLineReader() {
-			return nil, fmt.Errorf("interactive setup JSON paste is unavailable; provide a file or --endpoint: %s", endpointsAddUsage)
-		}
-		options.request.Document, err = r.readCosignerSetupPaste()
-	}
-	if err != nil {
-		return nil, err
+	if options.request.URL == "" && (r.AutoConfirm || !r.hasInteractiveLineReader()) {
+		return nil, fmt.Errorf("the cosigner URL is required: %s", endpointsAddUsage)
 	}
 
 	if options.request.Alias == "" {
@@ -186,11 +175,10 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 			}
 		})
 	}, cosignerSetupProjection{
-		Alias: result.Alias, WitnessKeyID: result.WitnessKeyID, URL: result.URL,
+		Alias: result.Alias, URL: result.URL,
 		Created: result.Created, Updated: result.Updated, TokenIssued: result.TokenIssued,
 		TokenRetired: result.TokenRetired, Connected: result.Connected, NodeRole: result.NodeRole,
-		KeyCheck: result.KeyCheck, AdvertisedKeys: result.AdvertisedKeys, Verified: result.Verified,
-		Routes: result.Routes, DryRun: result.DryRun,
+		AdvertisedKeys: result.AdvertisedKeys, Routes: result.Routes, DryRun: result.DryRun,
 	})
 }
 
@@ -266,10 +254,13 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 			}
 			out.request.SignerPort = port
 		default:
-			if strings.HasPrefix(args[i], "-") || out.path != "" {
+			if strings.HasPrefix(args[i], "-") || out.request.URL != "" {
 				return out, errors.New("usage: " + endpointsAddUsage)
 			}
-			out.path = args[i]
+			if !strings.Contains(args[i], "://") {
+				return out, errors.New(endpointsAddFileHint)
+			}
+			out.request.URL = args[i]
 		}
 	}
 	return out, nil
@@ -281,117 +272,6 @@ func parseSetupPort(value string) (int, error) {
 		return 0, fmt.Errorf("invalid port %q", value)
 	}
 	return port, nil
-}
-
-func readBoundedCosignerSetupFile(path string) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("read cosigner JSON %s: %w", path, err)
-	}
-	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(io.LimitReader(file, enrollment.MaxEnvelopeBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read cosigner JSON %s: %w", path, err)
-	}
-	if len(data) > enrollment.MaxEnvelopeBytes {
-		return nil, fmt.Errorf("cosigner key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
-	}
-	return data, nil
-}
-
-func (r *REPLState) readCosignerSetupPaste() ([]byte, error) {
-	r.println("Paste the cosigner setup JSON. The command continues when one complete document is received; Ctrl+C cancels.")
-	var document strings.Builder
-	var boundary jsonDocumentBoundary
-	blankLines := 0
-	tooLarge := false
-	for {
-		line, err := r.readInteractiveLine()
-		if err != nil {
-			return nil, err
-		}
-		boundary.feed(line)
-		if !tooLarge {
-			if document.Len()+len(line)+1 > enrollment.MaxEnvelopeBytes {
-				tooLarge = true
-			} else {
-				document.WriteString(line)
-				document.WriteByte('\n')
-			}
-		}
-		if boundary.complete {
-			if tooLarge {
-				return nil, fmt.Errorf("cosigner key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
-			}
-			data := []byte(document.String())
-			if parseErr := apshellapp.ValidateCosignerSetupDocument(data); parseErr != nil {
-				return nil, fmt.Errorf("invalid cosigner key JSON: %w", parseErr)
-			}
-			return data, nil
-		}
-		if strings.TrimSpace(line) == "" {
-			blankLines++
-		} else {
-			blankLines = 0
-		}
-		if blankLines >= 2 {
-			if tooLarge {
-				return nil, fmt.Errorf("cosigner key JSON exceeds %d bytes", enrollment.MaxEnvelopeBytes)
-			}
-			return nil, fmt.Errorf("invalid cosigner key JSON")
-		}
-	}
-}
-
-// jsonDocumentBoundary tracks the end of the pasted top-level JSON value even
-// after the bounded input buffer fills. That lets paste mode drain the rest of
-// an oversized multiline document instead of returning its remaining lines to
-// normal shell dispatch.
-type jsonDocumentBoundary struct {
-	depth    int
-	started  bool
-	inString bool
-	escaped  bool
-	complete bool
-}
-
-func (b *jsonDocumentBoundary) feed(line string) {
-	if b.complete {
-		return
-	}
-	for i := 0; i < len(line); i++ {
-		ch := line[i]
-		if b.inString {
-			if b.escaped {
-				b.escaped = false
-				continue
-			}
-			switch ch {
-			case '\\':
-				b.escaped = true
-			case '"':
-				b.inString = false
-			}
-			continue
-		}
-		if ch == '"' {
-			b.inString = true
-			continue
-		}
-		switch ch {
-		case '{', '[':
-			b.started = true
-			b.depth++
-		case '}', ']':
-			if b.started && b.depth > 0 {
-				b.depth--
-				if b.depth == 0 {
-					b.complete = true
-					return
-				}
-			}
-		}
-	}
 }
 
 func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {
@@ -440,9 +320,6 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 			signerPort = config.DefaultRESTPort
 		}
 		r.printf("  Cosigner API port through SSH: %d\n", signerPort)
-	}
-	if !plan.HasWitness {
-		r.println("  key: none in the input; the connection is set up without a key comparison")
 	}
 	if plan.Created {
 		r.println("  endpoint change: create")

@@ -1560,10 +1560,10 @@ Primary implementation ownership:
   `test/arch/client_layering_test.go`.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
-- `internal/cosigner/enrollment`: strict public composition envelope joining a
-  canonical witness reference with optional portable endpoint metadata.
-- `internal/apadminapp`: operator-side cosigner enrollment composition/import
-  ordering, explicit-endpoint ID discovery, and bounded read-only unique-route
+- `internal/witness`: the canonical public witness reference, which is the
+  whole of the cosigner key file a cosigner exports and a signer imports.
+- `internal/apadminapp`: operator-side cosigner key export/import,
+  explicit-endpoint ID discovery, and bounded read-only unique-route
   verification. Discovery and verification persist neither fetched inventory
   nor a reference-to-endpoint binding.
 - `internal/clientenroll`: shared client-owned synchronous token provisioning

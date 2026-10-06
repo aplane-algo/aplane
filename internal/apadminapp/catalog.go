@@ -17,7 +17,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -113,11 +112,9 @@ func CatalogAuthMode(command string, args []string) (AuthMode, error) {
 		}
 	case "cosigner":
 		if len(args) == 0 {
-			return AuthUnlock, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
+			return AuthUnlock, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
 		}
 		switch args[0] {
-		case "enrollment":
-			return cosignerEnrollmentAuthMode(args[1:])
 		case "export":
 			if len(args) < 2 || len(args) > 3 {
 				return AuthReadOnly, fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
@@ -383,11 +380,9 @@ func (c Catalog) runKeyType(args []string) error {
 
 func (c Catalog) runCosigner(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
+		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
 	}
 	switch args[0] {
-	case "enrollment":
-		return c.runCosignerEnrollment(args[1:])
 	case "export":
 		if len(args) < 2 || len(args) > 3 {
 			return fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
@@ -414,7 +409,7 @@ func (c Catalog) runCosigner(args []string) error {
 		}
 		return c.removeCosigner(args[1])
 	default:
-		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove|enrollment>")
+		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
 	}
 }
 
@@ -452,11 +447,13 @@ func (c Catalog) importCosigner(path, name string) error {
 	if err != nil {
 		return err
 	}
-	artifact, err := enrollment.ParseArtifact(data)
+	// The file is the cosigner's public key and nothing else; the signer
+	// stores its canonical form.
+	reference, err := witness.ParsePublicReference(data)
 	if err != nil {
 		return err
 	}
-	data, err = enrollment.MarshalWitness(artifact.Witness)
+	data, err = witness.MarshalPublicReference(reference)
 	if err != nil {
 		return err
 	}
@@ -584,6 +581,23 @@ func (c Catalog) runEndpoint(args []string) error {
 	}
 	c.info("endpoint envelope written: %s", *outPath)
 	return nil
+}
+
+func buildEndpointExportEnvelope(
+	host, explicitURL string,
+	signerPort, localPort int,
+	settings endpointExportSettings,
+) (endpointrefs.Envelope, error) {
+	urlValue, err := endpointExportURL(host, explicitURL, settings.AdvertiseURL, endpointExportSSHPort(settings))
+	if err != nil {
+		return endpointrefs.Envelope{}, err
+	}
+	if signerPort == 0 && endpointExportUsesSSH(urlValue) {
+		signerPort = endpointExportSignerPort(settings)
+	}
+	return endpointrefs.Normalize(endpointrefs.Envelope{
+		Schema: endpointrefs.Schema, URL: urlValue, SignerPort: signerPort, LocalPort: localPort,
+	})
 }
 
 func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {

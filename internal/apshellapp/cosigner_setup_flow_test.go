@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -66,15 +65,6 @@ func advertisedWitness(reference witness.PublicReference) signerapi.KeyInfo {
 		Address: reference.WitnessKeyID, PublicKeyHex: reference.PublicKeyHex,
 		KeyType: reference.KeyType, IsWitnessKey: true,
 	}
-}
-
-func endpointOnlyDocument(t *testing.T, rawURL string) []byte {
-	t.Helper()
-	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: rawURL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
 // runCosignerSetup drives prepare, apply, and complete the way the shell does.
@@ -170,7 +160,7 @@ func TestEndpointImportAndCreateRetireTokenWhenDestinationChanges(t *testing.T) 
 // first attempt stops before a new token is in place and setup is rerun.
 func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *testing.T) {
 	dataDir := t.TempDir()
-	document, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
 	previous := newRecordingEndpoint(t, "old-token", "cosigner", keys)
 	replacement := newRecordingEndpoint(t, "new-token", "cosigner", keys)
@@ -178,7 +168,7 @@ func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *t
 	app := newEndpointTestApp(t, dataDir)
 	tokenPath := filepath.Join(dataDir, "tokens", "field.token")
 
-	plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: replacement.URL})
+	plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field", URL: replacement.URL})
 	if !plan.DestinationChanged || !plan.RetiresToken {
 		t.Fatalf("plan = %#v, want a destination replacement that retires the token", plan)
 	}
@@ -191,7 +181,7 @@ func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *t
 
 	// The rerun sees an unchanged route. It must find no token rather than
 	// reuse the previous destination's.
-	rerun, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: replacement.URL})
+	rerun, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field", URL: replacement.URL})
 	if !rerun.Unchanged() {
 		t.Fatalf("rerun plan = %#v, want an unchanged route", rerun)
 	}
@@ -206,12 +196,12 @@ func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *t
 	if err := os.WriteFile(tokenPath, []byte("new-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, result, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: replacement.URL})
+	_, result, err := runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field", URL: replacement.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Connected || result.KeyCheck != CosignerSetupKeyFound {
-		t.Fatalf("result = %#v, want a connected, verified setup", result)
+	if !result.Connected || result.AdvertisedKeys != 1 {
+		t.Fatalf("result = %#v, want a connected setup", result)
 	}
 	for _, presented := range replacement.tokens() {
 		if presented != "aplane new-token" {
@@ -224,7 +214,7 @@ func TestCosignerSetupNeverPresentsPreviousTokenAfterInterruptedReplacement(t *t
 // destination must not carry the old token across, on the first attempt or on
 // a rerun after the first attempt stopped early.
 func TestCosignerSetupNeverPresentsTokenLeftByDeletedConnection(t *testing.T) {
-	document, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
 
 	t.Run("direct connection", func(t *testing.T) {
@@ -249,14 +239,14 @@ func TestCosignerSetupNeverPresentsTokenLeftByDeletedConnection(t *testing.T) {
 			t.Fatal(err)
 		}
 		fresh := newRecordingEndpoint(t, "new-token", "cosigner", keys)
-		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: fresh.URL})
+		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field", URL: fresh.URL})
 		if !plan.Created || !plan.RetiresToken {
 			t.Fatalf("plan = %#v, want a create that retires the leftover token", plan)
 		}
 		if err == nil || !strings.Contains(err.Error(), "a token file left over under this name was removed") {
 			t.Fatalf("first attempt error = %v, want leftover-token guidance", err)
 		}
-		_, _, err = runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field", URL: fresh.URL})
+		_, _, err = runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field", URL: fresh.URL})
 		if err == nil || !strings.Contains(err.Error(), "has no token") {
 			t.Fatalf("rerun error = %v, want missing-token guidance", err)
 		}
@@ -276,7 +266,7 @@ func TestCosignerSetupNeverPresentsTokenLeftByDeletedConnection(t *testing.T) {
 		}
 		app := newEndpointTestApp(t, dataDir)
 		// Nothing listens here, so the access request fails.
-		request := CosignerSetupRequest{Document: document, Alias: "field", URL: "ssh://127.0.0.1:1"}
+		request := CosignerSetupRequest{Alias: "field", URL: "ssh://127.0.0.1:1"}
 		plan, _, err := runCosignerSetup(t, app, request)
 		if !plan.Created || err == nil || !strings.Contains(err.Error(), "request token from endpoint") {
 			t.Fatalf("plan = %#v error = %v, want a create whose access request failed", plan, err)
@@ -382,7 +372,7 @@ func TestSaveEndpointTokenIfCurrentDiscardsTokenForReplacedDestination(t *testin
 }
 
 func TestCompleteCosignerSetupRequiresCosignerRole(t *testing.T) {
-	document, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
 	tests := []struct {
 		name     string
@@ -399,11 +389,11 @@ func TestCompleteCosignerSetupRequiresCosignerRole(t *testing.T) {
 			dataDir := t.TempDir()
 			server := newRecordingEndpoint(t, "token", tt.nodeRole, keys)
 			writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
-			_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Document: document, Alias: "field"})
+			_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Alias: "field"})
 			if !errors.Is(err, tt.want) || !strings.Contains(err.Error(), tt.message) {
 				t.Fatalf("CompleteCosignerSetup() error = %v, want %v mentioning %q", err, tt.want, tt.message)
 			}
-			if result.Connected || result.Verified || result.NodeRole != tt.nodeRole {
+			if result.Connected || result.NodeRole != tt.nodeRole {
 				t.Fatalf("result = %#v, want an unverified connection reporting role %q", result, tt.nodeRole)
 			}
 		})
@@ -416,7 +406,7 @@ func TestCompleteCosignerSetupRequiresCosignerRole(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 		writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
-		_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Document: document, Alias: "field"})
+		_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Alias: "field"})
 		if !errors.Is(err, ErrCosignerSetupRoleUnverified) {
 			t.Fatalf("CompleteCosignerSetup() error = %v, want %v", err, ErrCosignerSetupRoleUnverified)
 		}
@@ -426,60 +416,28 @@ func TestCompleteCosignerSetupRequiresCosignerRole(t *testing.T) {
 	})
 }
 
-func TestCompleteCosignerSetupFromEndpointOnlyInputHasNoKeyToCompare(t *testing.T) {
+func TestCompleteCosignerSetupReportsAdvertisedKeyCount(t *testing.T) {
 	dataDir := t.TempDir()
-	_, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	server := newRecordingEndpoint(t, "token", "cosigner", []signerapi.KeyInfo{advertisedWitness(reference)})
 	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
 	app := newEndpointTestApp(t, dataDir)
 
-	for name, req := range map[string]CosignerSetupRequest{
-		"endpoint document": {Document: endpointOnlyDocument(t, server.URL), Alias: "field"},
-		"explicit url":      {URL: server.URL, Alias: "field"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			plan, result, err := runCosignerSetup(t, app, req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if plan.HasWitness || !result.Connected || result.Verified ||
-				result.KeyCheck != CosignerSetupKeyNotApplicable || result.AdvertisedKeys != 1 || result.WitnessKeyID != "" {
-				t.Fatalf("plan = %#v result = %#v, want access without a key comparison", plan, result)
-			}
-			output := strings.Join(result.RenderLines, "\n")
-			if !strings.Contains(output, "1 cosigner key(s) advertised; no key in the input to compare.") ||
-				strings.Contains(output, "Key from the setup file found") {
-				t.Fatalf("output = %q, want the inventory count and no key claim", output)
-			}
-		})
+	_, result, err := runCosignerSetup(t, app, CosignerSetupRequest{URL: server.URL, Alias: "field"})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestCompleteCosignerSetupReportsMissingFileKey(t *testing.T) {
-	dataDir := t.TempDir()
-	document, reference := testCosignerEnrollmentDocument(t, nil)
-	otherPublicKey := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
-	server := newRecordingEndpoint(t, "token", "cosigner", []signerapi.KeyInfo{{
-		Address:      testComponentSelector(t, witness.Falcon1024V1, otherPublicKey),
-		PublicKeyHex: otherPublicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true,
-	}})
-	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
-
-	_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Document: document, Alias: "field"})
-	if !errors.Is(err, ErrCosignerSetupKeyNotFound) {
-		t.Fatalf("CompleteCosignerSetup() error = %v, want %v", err, ErrCosignerSetupKeyNotFound)
-	}
-	if !result.Connected || result.Verified || result.KeyCheck != CosignerSetupKeyNotFound || result.Routes != nil {
-		t.Fatalf("result = %#v, want a connected endpoint whose key check failed", result)
+	if !result.Connected || result.AdvertisedKeys != 1 {
+		t.Fatalf("result = %#v, want access with the advertised key count", result)
 	}
 	output := strings.Join(result.RenderLines, "\n")
-	if !strings.Contains(output, "Key from the setup file NOT found: "+witness.GroupedID(reference.WitnessKeyID)) {
-		t.Fatalf("output = %q, want the full missing Witness Key ID", output)
+	if !strings.Contains(output, "1 cosigner key(s) advertised.") || strings.Contains(output, "setup file") {
+		t.Fatalf("output = %q, want the inventory count and no key claim", output)
 	}
 }
 
 func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing.T) {
-	document, reference := testCosignerEnrollmentDocument(t, nil)
+	reference := testCosignerReference(t)
 	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
 
 	t.Run("another connection cannot be read", func(t *testing.T) {
@@ -491,7 +449,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		writeLiveCosignerEndpoint(t, dataDir, "elsewhere", downURL, "token")
 		writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
 
-		_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Document: document, Alias: "field"})
+		_, result, err := runCosignerSetup(t, newEndpointTestApp(t, dataDir), CosignerSetupRequest{Alias: "field"})
 		if err != nil {
 			t.Fatalf("CompleteCosignerSetup() error = %v, want another connection's failure reported without failing setup", err)
 		}
@@ -501,7 +459,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		output := strings.Join(result.RenderLines, "\n")
 		for _, want := range []string{
 			"Connection field ready.",
-			"Key from the setup file found.",
+			"1 cosigner key(s) advertised.",
 			"Account routes not checked: primary signer disconnected",
 			"Could not read: elsewhere (unavailable). Duplicates there cannot be ruled out.",
 		} {
@@ -520,7 +478,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		// A direct connection cannot enroll, so its token is installed once
 		// setup has created the route, standing in for the token an SSH
 		// enrollment would deliver during the same run.
-		plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Document: document, Alias: "second", URL: second.URL})
+		plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "second", URL: second.URL})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -570,7 +528,7 @@ func TestCompleteCosignerSetupFailsOnlyForRoutesThroughThisConnection(t *testing
 		server := newRecordingEndpoint(t, "token", "cosigner", keys)
 		writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "token")
 		app := newEndpointTestApp(t, dataDir)
-		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Document: document, Alias: "field"})
+		plan, _, err := runCosignerSetup(t, app, CosignerSetupRequest{Alias: "field"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -584,7 +542,7 @@ func TestCosignerSetupRoutesKeepResolverClassifications(t *testing.T) {
 	const witnessID = "U2QQHAZCHRMLJLR62M5ZC24YEXAMPLEEXAMPLEEXAMPLEEXAMPLE"
 	result := func(routes *CosignerSetupRoutes) string {
 		return strings.Join(cosignerSetupRenderLines(&CosignerSetupResult{
-			Alias: "field", Connected: true, KeyCheck: CosignerSetupKeyFound, WitnessKeyID: witnessID, Routes: routes,
+			Alias: "field", Connected: true, AdvertisedKeys: 1, Routes: routes,
 		}, nil), "\n")
 	}
 
@@ -678,7 +636,7 @@ func TestCosignerSetupRoutesKeepResolverClassifications(t *testing.T) {
 			AccountInventory: "unavailable", InventoryError: "primary signer locked",
 		}))
 		if !strings.Contains(empty, "No accounts requiring a cosigner on the connected signer.") ||
-			!strings.Contains(empty, "Next: create an account in signer-side apadmin and choose this setup file.") {
+			!strings.Contains(empty, "Next: create an account in signer-side apadmin and choose this cosigner's key file.") {
 			t.Fatalf("empty inventory output = %q", empty)
 		}
 		if !strings.Contains(unavailable, "Account routes not checked: primary signer locked.") ||
@@ -702,12 +660,10 @@ func TestCosignerSetupRoutesKeepResolverClassifications(t *testing.T) {
 }
 
 func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *testing.T) {
-	document, _ := testCosignerEnrollmentDocument(t, &endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:1127",
-	})
+	const cosignerURL = "ssh://cosigner.example:1127"
 
 	t.Run("suggests a name from the host", func(t *testing.T) {
-		target, err := newEndpointTestApp(t, t.TempDir()).ResolveCosignerSetupTarget(CosignerSetupRequest{Document: document})
+		target, err := newEndpointTestApp(t, t.TempDir()).ResolveCosignerSetupTarget(CosignerSetupRequest{URL: cosignerURL})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -722,7 +678,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 		}, true); err != nil {
 			t.Fatal(err)
 		}
-		target, err := newEndpointTestApp(t, dataDir).ResolveCosignerSetupTarget(CosignerSetupRequest{Document: document})
+		target, err := newEndpointTestApp(t, dataDir).ResolveCosignerSetupTarget(CosignerSetupRequest{URL: cosignerURL})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -738,7 +694,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 			t.Fatal(err)
 		}
 		app := newEndpointTestApp(t, dataDir)
-		target, err := app.ResolveCosignerSetupTarget(CosignerSetupRequest{Document: document})
+		target, err := app.ResolveCosignerSetupTarget(CosignerSetupRequest{URL: cosignerURL})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -747,7 +703,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 		}
 		// A second name for the same destination is refused with guidance to
 		// the existing one, not to deleting it.
-		_, err = app.PrepareCosignerSetup(CosignerSetupRequest{Document: document, Alias: "another"})
+		_, err = app.PrepareCosignerSetup(CosignerSetupRequest{URL: cosignerURL, Alias: "another"})
 		if !errors.Is(err, ErrCosignerEndpointAlreadyConfigured) || !strings.Contains(err.Error(), "--alias treasury") ||
 			strings.Contains(err.Error(), "delete") {
 			t.Fatalf("PrepareCosignerSetup() error = %v, want guidance to reuse treasury", err)
@@ -759,8 +715,7 @@ func TestResolveCosignerSetupTargetReusesExistingConnectionOrSuggestsName(t *tes
 		if err != nil || target.SuggestedAlias != "cosigner-local" {
 			t.Fatalf("target = %#v err = %v, want cosigner-local", target, err)
 		}
-		keyOnly, _ := testCosignerEnrollmentDocument(t, nil)
-		if _, err := app.ResolveCosignerSetupTarget(CosignerSetupRequest{Document: keyOnly}); !errors.Is(err, ErrCosignerEndpointURLRequired) {
+		if _, err := app.ResolveCosignerSetupTarget(CosignerSetupRequest{}); !errors.Is(err, ErrCosignerEndpointURLRequired) {
 			t.Fatalf("ResolveCosignerSetupTarget() error = %v, want %v", err, ErrCosignerEndpointURLRequired)
 		}
 	})

@@ -20,16 +20,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -108,20 +105,13 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build cosigner public reference: %v", err)
 	}
-	bundle, err := enrollment.Marshal(enrollment.Envelope{
-		Schema:  enrollment.Schema,
-		Witness: reference,
-		Endpoint: &endpointrefs.Envelope{
-			Schema: endpointrefs.Schema,
-			URL:    cosigner.URL,
-		},
-	})
+	keyFile, err := witness.MarshalPublicReference(reference)
 	if err != nil {
-		t.Fatalf("Failed to compose cosigner enrollment bundle: %v", err)
+		t.Fatalf("Failed to compose cosigner key file: %v", err)
 	}
-	bundlePath := filepath.Join(t.TempDir(), "integration-cosigner.aplane-cosigner.json")
-	if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
-		t.Fatalf("Failed to write cosigner enrollment bundle: %v", err)
+	keyPath := filepath.Join(t.TempDir(), "integration-cosigner.aplane-cosigner.json")
+	if err := os.WriteFile(keyPath, keyFile, 0o600); err != nil {
+		t.Fatalf("Failed to write cosigner key file: %v", err)
 	}
 	clientDataDir := t.TempDir()
 	const cosignerReferenceName = "integration-cosigner"
@@ -130,20 +120,16 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if passphrase == "" {
 		t.Fatal("TEST_PASSPHRASE is required for cosigner enrollment import")
 	}
+	// The key file goes to the signer; the client is configured by hand below.
 	importOutput, err := apadmin.RunWithInput(
 		passphrase+"\n",
-		"cosigner", "enrollment", "import", bundlePath,
-		"--name", cosignerReferenceName,
+		"cosigner", "import", keyPath, cosignerReferenceName,
 	)
 	if err != nil {
-		t.Fatalf("Failed to import cosigner enrollment bundle: %v", err)
+		t.Fatalf("Failed to import cosigner key file: %v\nOutput: %s", err, importOutput)
 	}
-	var importResult apadminapp.CosignerEnrollmentImportResult
-	if err := json.NewDecoder(strings.NewReader(importOutput)).Decode(&importResult); err != nil {
-		t.Fatalf("Failed to decode cosigner enrollment import result: %v\nOutput: %s", err, importOutput)
-	}
-	if importResult.ReferenceImport.Status != "imported" || importResult.EndpointImport.Status != "not_requested" {
-		t.Fatalf("Unexpected cosigner enrollment import result: %+v", importResult)
+	if !strings.Contains(importOutput, "cosigner reference "+cosignerReferenceName+" imported") {
+		t.Fatalf("Unexpected cosigner import output: %s", importOutput)
 	}
 	if _, err := os.Stat(config.GetClientEndpointsPath(clientDataDir)); !os.IsNotExist(err) {
 		t.Fatalf("apadmin changed client routing: %v", err)

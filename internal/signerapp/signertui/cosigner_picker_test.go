@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
@@ -280,50 +278,32 @@ func TestPrepareCosignerImportReviewVerifiesEnvelopeAndShowsFullID(t *testing.T)
 	}
 }
 
-func TestPrepareCosignerImportReviewSeparatesCombinedBundleEffects(t *testing.T) {
+// The key file is the public key and nothing else; one that carries an
+// endpoint block is not a key file and is refused before review.
+func TestPrepareCosignerImportReviewRejectsFileWithEndpoint(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
-	endpoint := endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:2223", SignerPort: 11270,
-	}
-	data, err := enrollment.Marshal(enrollment.Envelope{
-		Schema: enrollment.Schema, Witness: reference, Endpoint: &endpoint,
-	})
+	data, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
+	withEndpoint := strings.Replace(string(data), "{\n", "{\n  \"endpoint\": {\"url\": \"ssh://cosigner.example:2223\"},\n", 1)
 	path := filepath.Join(t.TempDir(), "lab.aplane-cosigner.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(withEndpoint), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
 	m := Model{
 		width: 100, height: 40, dataDir: t.TempDir(),
 		cosigner: cosignerState{importPath: path, importName: "lab"},
 	}
 	m = m.prepareCosignerImportReview()
-	if m.viewState != ViewCosignerImportReview || m.cosigner.previewEndpoint == nil {
-		t.Fatalf("review state = %v endpoint=%#v error=%q", m.viewState, m.cosigner.previewEndpoint, m.cosigner.importError)
-	}
-	if _, err := witness.ParsePublicReference([]byte(m.cosigner.envelopeJSON)); err != nil {
-		t.Fatalf("signer envelope is not the canonical witness-only document: %v", err)
-	}
-	rendered := stripANSI(m.renderCosignerImportReview())
-	for _, expected := range []string{
-		"Store this public cosigner key as lab",
-		"Configure the transaction client separately in apshell.",
-	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("review missing %q:\n%s", expected, rendered)
-		}
-	}
-	if strings.Contains(rendered, reference.PublicKeyHex) {
-		t.Fatal("combined review rendered full public-key hex")
+	if m.viewState == ViewCosignerImportReview || !strings.Contains(m.cosigner.importError, "invalid cosigner key file") {
+		t.Fatalf("review state = %v error=%q, want a refusal", m.viewState, m.cosigner.importError)
 	}
 }
 
 func TestPrepareCosignerImportReviewDefaultsNameFromWitnessID(t *testing.T) {
 	reference := testTUIEnrollmentReference(t)
-	data, err := enrollment.MarshalWitness(reference)
+	data, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,10 +367,7 @@ func setGuardedGenerationKeyType(t *testing.T) {
 
 func writeTUISetupFile(t *testing.T, reference witness.PublicReference) string {
 	t.Helper()
-	data, err := enrollment.Marshal(enrollment.Envelope{
-		Schema: enrollment.Schema, Witness: reference,
-		Endpoint: &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://cosigner.example:1127", SignerPort: 11270},
-	})
+	data, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,10 +505,10 @@ func TestCosignerExportResultPointsAtSetupFlow(t *testing.T) {
 	}}
 	rendered := stripANSI(m.renderCosignerExportResult())
 	for _, want := range []string{
-		"Setup File Exported",
-		"Generate account -> Cosigner -> Use setup file.",
-		"endpoints add /tmp/lab.aplane-cosigner.json",
-		"Nothing more is needed there",
+		"Cosigner Key Exported",
+		"Generate account -> Cosigner -> Use key file.",
+		"endpoints add ssh://",
+		"later keys on it need no client change",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("export result omitted %q:\n%s", want, rendered)

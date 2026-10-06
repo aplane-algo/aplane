@@ -157,17 +157,19 @@ press `k` for key types. The KeyType Library lets you enable additional
 compiled providers and templates for the product store.
 
 To try a guarded account, first set up a separate cosigner node and generate its
-`aplane.witness-falcon1024.v1` key. Choose **Export Setup File**. In the
-primary signer's apadmin, start **Generate account**, open the **Cosigner**
-field, and choose **Use setup file...** (or **Paste public JSON...**). Compare
-the full Witness Key ID before importing, then finish generating the account.
+`aplane.witness-falcon1024.v1` key. Choose **Export Cosigner Key**; the file
+holds the public key only, and the result screen shows the address to give
+clients. In the primary signer's apadmin, start **Generate account**, open the
+**Cosigner** field, and choose **Use key file...** (or **Paste public
+JSON...**). Compare the full Witness Key ID before importing, then finish
+generating the account.
 
-In apshell, run `endpoints add <setup-file>`. The TUI export carries the
-cosigner's address, so no endpoint flags are needed. Accept the suggested
-connection name, then compare the full client SSH key fingerprint displayed in
-apshell and the **Client Access Request** in cosigner-side apadmin before approving.
-The command configures the client route, obtains access, confirms the node is a
-cosigner, and checks the key from the file. With apshell connected to the primary signer, run
+In apshell, run `endpoints add <cosigner-url>`, for example
+`endpoints add ssh://cosigner.example:1127`. Accept the suggested connection
+name, then compare the full client SSH key fingerprint displayed in apshell
+and the **Client Access Request** in cosigner-side apadmin before approving.
+The command configures the client route, obtains access, confirms the node is
+a cosigner, and reports the keys it advertises. With apshell connected to the primary signer, run
 `cosigner status` to inspect the guarded account's current cosigner route before
 funding or rekeying. Route availability does not establish transaction-policy
 or on-chain validity.

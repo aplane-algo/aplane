@@ -10,7 +10,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
-const maxCosignerPublicEnvelopeBytes = 64 * 1024
+// MaxCosignerPublicEnvelopeBytes bounds a cosigner public key file before it
+// is decoded.
+const MaxCosignerPublicEnvelopeBytes = 64 * 1024
+
+const maxCosignerPublicEnvelopeBytes = MaxCosignerPublicEnvelopeBytes
 
 // ReadCosignerPublicEnvelope reads a bounded public witness envelope from a
 // regular file, or from stdin when path is "-".

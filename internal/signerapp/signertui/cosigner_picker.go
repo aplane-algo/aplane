@@ -11,7 +11,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -124,7 +123,6 @@ func (m *Model) clearCosignerImportEnvelope() {
 	m.cosigner.envelopeJSON = ""
 	m.cosigner.previewWitnessID = ""
 	m.cosigner.previewKeyType = ""
-	m.cosigner.previewEndpoint = nil
 	m.cosigner.reuseAliases = nil
 }
 
@@ -179,9 +177,6 @@ func (m *Model) clearCosignerWorkflowState() {
 	m.cosigner.exportWitnessID = ""
 	m.cosigner.exportPath = ""
 	m.cosigner.exportError = ""
-	m.cosigner.exportEndpoint = nil
-	m.cosigner.exportEndpointError = ""
-	m.cosigner.exportHost = ""
 	m.cosigner.exportWrittenPath = ""
 	m.cosigner.exportReturnView = ViewKeyDetails
 	m.cosigner.exportFocus = 0
@@ -213,12 +208,11 @@ func (m Model) prepareCosignerImportReview() Model {
 			return m
 		}
 	}
-	artifact, err := enrollment.ParseArtifact(data)
+	reference, err := witness.ParsePublicReference(data)
 	if err != nil {
 		m.cosigner.importError = fmt.Sprintf("invalid cosigner key file: %v", err)
 		return m
 	}
-	reference := artifact.Witness
 	name := strings.TrimSpace(m.cosigner.importName)
 	if name == m.cosigner.importNameDefault {
 		name = ""
@@ -246,7 +240,7 @@ func (m Model) prepareCosignerImportReview() Model {
 		)
 		return m
 	}
-	witnessJSON, err := enrollment.MarshalWitness(reference)
+	witnessJSON, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		m.cosigner.importError = fmt.Sprintf("invalid public witness envelope: %v", err)
 		return m
@@ -260,7 +254,6 @@ func (m Model) prepareCosignerImportReview() Model {
 	m.cosigner.envelopeJSON = string(witnessJSON)
 	m.cosigner.previewWitnessID = reference.WitnessKeyID
 	m.cosigner.previewKeyType = reference.KeyType
-	m.cosigner.previewEndpoint = artifact.Endpoint
 	m.cosigner.importError = ""
 	m.viewState = ViewCosignerImportReview
 	return m
@@ -272,7 +265,7 @@ func (m Model) handleCosignerImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		switch m.cosigner.importFocus {
 		case 0:
 			value := string(msg.Runes)
-			if len(value) > enrollment.MaxEnvelopeBytes {
+			if len(value) > apadminapp.MaxCosignerPublicEnvelopeBytes {
 				m.cosigner.importJSON = ""
 				m.cosigner.importError = "JSON exceeds the 64 KiB limit; paste a smaller cosigner key document"
 				return m, nil
@@ -344,8 +337,8 @@ func (m Model) suggestCosignerImportNameFromPath() Model {
 func cosignerImportNameFromPath(path string) string {
 	path = strings.TrimSpace(path)
 	base := filepath.Base(path)
-	if strings.HasSuffix(strings.ToLower(base), cosignerEnrollmentFileSuffix) {
-		base = base[:len(base)-len(cosignerEnrollmentFileSuffix)]
+	if strings.HasSuffix(strings.ToLower(base), cosignerKeyFileSuffix) {
+		base = base[:len(base)-len(cosignerKeyFileSuffix)]
 	} else {
 		base = strings.TrimSuffix(base, filepath.Ext(base))
 	}
@@ -361,9 +354,9 @@ func (m Model) suggestCosignerImportNameFromDocument(data []byte) Model {
 	}
 	m.cosigner.importName = ""
 	m.cosigner.importNameDefault = ""
-	artifact, err := enrollment.ParseArtifact(data)
+	reference, err := witness.ParsePublicReference(data)
 	if err == nil {
-		m.cosigner.importName = suggestedCosignerReferenceName(artifact.Witness.WitnessKeyID)
+		m.cosigner.importName = suggestedCosignerReferenceName(reference.WitnessKeyID)
 		m.cosigner.importNameDefault = m.cosigner.importName
 	}
 	return m
@@ -658,9 +651,6 @@ func (m Model) renderCosignerImportReview() string {
 	body.WriteString("Witness Key ID (compare the complete value):\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.previewWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\n")
-	if m.cosigner.previewEndpoint != nil {
-		body.WriteString("Bundle contains endpoint metadata. Configure the transaction client separately in apshell.\n")
-	}
 	body.WriteString("\n")
 	button := buttonActiveStyle.Render("IMPORT")
 	body.WriteString(button)
