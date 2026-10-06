@@ -686,42 +686,45 @@ ssh -t user@signer 'apadmin -d /path/to/signer-data'
 
 ### Guided cosigner setup
 
-Creating an account protected by a cosigner takes three actions. The same
-public **setup file** is used on the signer and on each client:
+Creating an account protected by a cosigner takes three actions. The
+cosigner's **key file** goes to the signer; each client is given the
+cosigner's address:
 
-1. **On the cosigner:** generate a cosigner key and choose **Export Setup
-   File**. The export always includes the endpoint; enter the client-reachable
-   host if `endpoint.advertise_url` is not configured. Use **SHOW JSON** to copy
-   the complete document instead of saving a file.
+1. **On the cosigner:** generate a cosigner key and choose **Export Cosigner
+   Key**. The file is the key's public reference and nothing else: no
+   endpoint, token, or host trust. Use **SHOW JSON** to copy the document
+   instead of saving a file. The result screen shows the address clients
+   should use, taken from `endpoint.advertise_url` when it is configured.
 2. **On the primary signer:** in apadmin, **Generate account**, open the
-   **Cosigner** field, and choose **Use setup file...** (or **Paste public
+   **Cosigner** field, and choose **Use key file...** (or **Paste public
    JSON...**). Compare the complete Witness Key ID with the cosigner, then
    import. The account form returns with the cosigner filled in and the other
    parameters kept. A key that is already imported is offered under its
    existing name instead of being imported again.
-3. **In apshell:** run `endpoints add <file>`, or `endpoints add` to paste JSON.
-   Accept or edit the suggested connection name, then approve the **Client
-   Access Request** in apadmin on the cosigner after comparing the full client
-   SSH key fingerprint with the one apshell shows.
+3. **In apshell:** run `endpoints add <cosigner-url>`. Accept or edit the
+   suggested connection name, then approve the **Client Access Request** in
+   apadmin on the cosigner after comparing the full client SSH key fingerprint
+   with the one apshell shows.
 
-`endpoints add` ends by reporting the connection, the key from the file, and
-the cosigner routes of the accounts on the connected signer. Run
-`cosigner status` at any time for the same route view.
+`endpoints add` ends by reporting the connection, how many keys the cosigner
+advertises, and the cosigner routes of the accounts on the connected signer.
+Run `cosigner status` at any time for the same route view. The client never
+handles the cosigner's key: it keeps the list of cosigner connections and
+discovers their keys when signing.
 
 Later tasks:
 
 | Task | What to do |
 |---|---|
-| Another key on a cosigner that is already connected | Generate and export the new key, then choose its file during account creation. No client change is needed; running `endpoints add` again is harmless |
-| Another client machine | Run `endpoints add` with a setup file whose key the cosigner still advertises |
+| Another key on a cosigner that is already connected | Generate and export the new key, then choose its file during account creation. No client change is needed |
+| Another client machine | Run `endpoints add <cosigner-url>` there |
 | Setup was interrupted | Rerun the same command; it resumes |
-| The cosigner changed address | `endpoints add <new-file> --alias <existing> --replace` |
+| The cosigner changed address | `endpoints add <new-url> --alias <existing> --replace` |
 
 The signer reference name and the client connection name are independent.
 apadmin stores the public key; apshell configures and checks the connection.
-The client stores no cosigner keys: it keeps the list of cosigner connections
-and discovers their keys when signing. The **Cosigners** manager in apadmin
-remains available for managing imported keys directly.
+The **Cosigners** manager in apadmin remains available for managing imported
+keys directly.
 
 ---
 
@@ -732,22 +735,15 @@ obtain access when needed, confirm the node is a cosigner, and report routes.
 
 ```text
 endpoints add
-endpoints add [<public-json>] [--alias <alias>] [--endpoint <url>]
-  [--cosigner-port <port>] [--replace] [--dry-run]
+endpoints add [<cosigner-url>] [--alias <alias>] [--cosigner-port <port>]
+  [--replace] [--dry-run]
 ```
 
-Accepted input:
-
-| Input | Behavior |
-|---|---|
-| Setup file (`aplane.cosigner-enrollment.v1`) | The normal case: one public key plus the endpoint |
-| Key-only file (`aplane.witness-key-public.v1`) | Has no endpoint; supply `--endpoint` or answer the prompt |
-| Endpoint-only file (`aplane.endpoint.v1`) | Sets up the connection; there is no key to compare |
-| No file, `--endpoint <url>` | Same as an endpoint-only file |
-| No file and no `--endpoint` | Bounded multiline paste prompt; it stops as soon as one complete JSON document has been received |
-
-Explicit options override values bundled in a file. A bundled local tunnel port
-is rejected because cosigner SSH connections do not use local listeners.
+The URL is `ssh://host:port`, `https://...`, or loopback `http://...`. Without
+one, an interactive shell prompts for it. `--endpoint <url>` is accepted as an
+alternative spelling. The command takes no file: the cosigner's key file is
+imported on the signer, and giving it to `endpoints add` is refused with that
+guidance.
 
 **Connection name.** apshell resolves the destination before asking anything.
 If a cosigner connection already exists for that URL it is reused, with no name
@@ -796,24 +792,23 @@ endpoint is created is removed, and the output says so.
 | Cosigner locked | Configuration is kept; unlock it in apadmin and rerun |
 | Cancelled midway | Completed effects are reported and kept for the rerun |
 
-**Results.** Three outcomes are reported separately:
+**Results.** Two outcomes are reported separately:
 
-1. *Connection:* reached, authenticated, and reporting the cosigner role.
-2. *Key from the file:* found or not found among the keys the cosigner
-   advertises. Endpoint-only input has no key to compare.
-3. *Account routes:* for accounts on the connected signer that require a
+1. *Connection:* reached, authenticated, and reporting the cosigner role, with
+   the number of cosigner keys it advertises.
+2. *Account routes:* for accounts on the connected signer that require a
    cosigner, how many have exactly one route.
 
 ```text
 Connection cosigner-example ready; access token saved.
-Key from the setup file found.
+2 cosigner key(s) advertised.
 Cosigner routes available for 2 of 2 accounts on the connected signer.
 ```
 
 The command fails only for problems with the connection being added: no access,
-a node that is not a cosigner, a file key the cosigner does not advertise, or a
-key that this connection and another one both advertise. Everything else is
-information, so cosigners can be added one at a time:
+a node that is not a cosigner, or a key that this connection and another one
+both advertise. Everything else is information, so cosigners can be added one
+at a time:
 
 - Accounts that need a different cosigner are listed with their route state.
 - A primary signer that is disconnected or locked is reported as "Account
@@ -832,19 +827,18 @@ are never offered for removal.
 
 `--dry-run` validates the input and reports the proposed route without writing
 files, changing host trust, requesting a token, or contacting the cosigner.
-File-based script use requires `--alias` for a new connection and an already
-trusted SSH host; it may wait for normal cosigner-side token approval. Paste,
-first-use trust, and conflicting replacements require an interactive shell.
+Script use requires the URL, `--alias` for a new connection, and an already
+trusted SSH host; it may wait for normal cosigner-side token approval.
+First-use trust and conflicting replacements require an interactive shell.
 `endpoints add` is not available through MCP; the other `endpoints`
 subcommands are.
 
 **Examples:**
 
 ```text
-endpoints add lab-cosigner.aplane-cosigner.json
-endpoints add witness.json --alias cosigner-lab --endpoint ssh://cosigner.example:1127 --cosigner-port 11270
-endpoints add --endpoint ssh://cosigner.example:1127 --alias cosigner-lab
-endpoints add lab-cosigner.aplane-cosigner.json --dry-run
+endpoints add ssh://cosigner.example:1127
+endpoints add ssh://cosigner.example:1127 --alias cosigner-lab --cosigner-port 11270
+endpoints add ssh://cosigner.example:1127 --alias cosigner-lab --dry-run
 ```
 
 ---
@@ -958,21 +952,20 @@ apadmin cosigner remove <name>
 ```
 
 Run `export` against the cosigner node. It asks the daemon to verify and return
-the canonical `aplane.witness-key-public.v1` envelope. With an output path,
-the `apadmin` process writes the public file on the machine where it runs. Without a path, the JSON is written to stdout.
-
-Interactive export always produces the setup file: the combined cosigner key
-document with its endpoint. Batch export includes the endpoint only when asked;
-the command for a complete setup file is
-`apadmin cosigner enrollment export <witness-key-id> --include-endpoint --out <file>`. Both import command forms accept standalone and combined
-documents.
+the canonical `aplane.witness-key-public.v1` document: the key's public
+reference and nothing else, with no endpoint, token, host trust, policy, or
+private material. With an output path, the `apadmin` process writes the public
+file on the machine where it runs. Without a path, the JSON is written to
+stdout. This file is what the interactive **Export Cosigner Key** screen
+writes too.
 
 Run `import` against the primary signer and choose a local alias such as
 `lab-cosigner`. The signer validates the key type, public key, and derived
 Witness Key ID before storing the public reference. Compare the complete
-Witness Key ID displayed by the cosigner and signer before accepting it.
+Witness Key ID displayed by the cosigner and signer before accepting it. A
+file that carries anything beyond the public key is refused.
 
-When the source is `-`, stdin is reserved for the bounded JSON envelope:
+When the source is `-`, stdin is reserved for the bounded JSON document:
 
 ```bash
 cat lab-cosigner.aplane-cosigner.json | \
@@ -989,73 +982,42 @@ catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible guarded or bounded-cosigner account without exposing a raw Falcon
 public-key input. The account-generation **Cosigner** field also offers **Use
-setup file...** and **Paste public JSON...**, which import a key in place and
+key file...** and **Paste public JSON...**, which import a key in place and
 return to the form with it selected; a key that is already imported is offered
-under its existing name. On a cosigner node, **Export Setup File** always includes an
-endpoint as public metadata: the configured `endpoint.advertise_url`, or a
-required client-reachable host field when none is configured. The screen warns
-when that endpoint is remote but SSH still listens only on loopback. A combined bundle
-review on the signer imports only the public reference. Any endpoint metadata
-is ignored by apadmin; use `endpoints add` in apshell to consume it as
-client-owned routing metadata.
+under its existing name.
 
-On a cosigner node, open a witness key and choose `e: Export setup file`, then
-select **SHOW JSON** for full JSON in the terminal: the console temporarily
-suspends and prints the complete document without inserting line breaks into
-long values. Select the JSON using the terminal's normal copy controls and
-scrollback, then press Enter to return to the export screen.
-File export and batch stdout also preserve the original JSON bytes.
+On a cosigner node, open a witness key and choose `e: Export cosigner key`,
+then select **SHOW JSON** for full JSON in the terminal: the console
+temporarily suspends and prints the complete document without inserting line
+breaks into long values. Select the JSON using the terminal's normal copy
+controls and scrollback, then press Enter to return to the export screen.
+File export and batch stdout also preserve the original JSON bytes. The
+result screen names the address to give clients, from `endpoint.advertise_url`
+when it is configured.
 
 To import copied JSON, press `p: Paste JSON` in the Cosigner References manager.
 Use your terminal's paste shortcut in the JSON field, then Tab to review or
 edit the reference name suggested from the file or Witness Key ID. Continue
-to review. The field accepts a complete multiline public witness document or
-combined cosigner key document, up to 64 KiB. Pasting
-again replaces the document; Backspace/Delete clears it. Compare the full
-Witness Key ID on the shared import review screen before importing. A bundled
-endpoint is informational and does not change client configuration.
+to review. The field accepts a complete multiline public witness document, up
+to 64 KiB. Pasting again replaces the document; Backspace/Delete clears it.
+Compare the full Witness Key ID on the shared import review screen before
+importing.
 
-#### Advanced: batch export with endpoint metadata
-
-These commands remain available for automation and compatibility:
-
-```text
-apadmin cosigner enrollment export <witness-key-id> [--include-endpoint] [--host <host> | --url <url>] [--signer-port <port>] --out <file>
-apadmin cosigner enrollment import <file|-> --name <reference-name> [--dry-run]
-```
-
-The simple `apadmin cosigner export` emits standalone public-key JSON; both
-`apadmin cosigner import` and `apadmin cosigner enrollment import` accept standalone
-and combined documents.
-
-The `cosigner enrollment` commands use the combined
-`aplane.cosigner-enrollment.v1` handoff. Export always includes the verified
-public witness reference. An explicit URL/host includes a portable endpoint;
-`--include-endpoint` uses configured `endpoint.advertise_url`. It never
-includes a token, host trust, client-local alias, policy, or private witness
-material.
-
-Import accepts either a combined cosigner key file or the standalone public
-witness file. `--name` chooses the signer-local reference alias. `--dry-run`
-validates the complete document and previews the reference import without
-changing the signer.
+#### Batch export and import
 
 ```bash
-apadmin -d "$COSIGNER_DATA" cosigner enrollment export "$WITNESS_KEY_ID" \
-  --host cosigner.example --out lab-cosigner.aplane-cosigner.json
-apadmin -d "$SIGNER_DATA" cosigner enrollment import lab-cosigner.aplane-cosigner.json \
-  --name lab-cosigner
+apadmin -d "$COSIGNER_DATA" cosigner export "$WITNESS_KEY_ID" lab-cosigner.aplane-cosigner.json
+apadmin -d "$SIGNER_DATA" cosigner import lab-cosigner.aplane-cosigner.json lab-cosigner
 ```
 
-Then configure and verify the transaction client in apshell:
+Then configure and verify the transaction client in apshell with the
+cosigner's address:
 
 ```text
-endpoints add lab-cosigner.aplane-cosigner.json
+endpoints add ssh://cosigner.example:1127 --cosigner-port 11270
 ```
 
-If a batch-exported document omitted an endpoint, add
-`--endpoint ssh://cosigner.example:1127 --cosigner-port 11270`. Approve any **Client
-Access Request** in apadmin on the cosigner node. Compare the complete client
+Approve any **Client Access Request** in apadmin on the cosigner node. Compare the complete client
 SSH key fingerprint shown by apshell with the fingerprint in that request.
 This identifies the client key, not a unique request; concurrent requests using
 the same key have the same fingerprint. The command verifies the

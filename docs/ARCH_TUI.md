@@ -120,10 +120,13 @@ the signer remains responsible for authorization, lock-state enforcement,
 store serialization, and audit emission.
 
 On cosigner nodes, witness-key details and the successful witness-generation
-screen offer `Export enrollment`. The cosigner returns the existing public
-witness envelope over the admin protocol, while the operator-side `apadmin`
-process either writes it to the chosen local path or displays full JSON directly
-in the terminal. `SHOW JSON` releases the terminal through Bubble Tea's execution lifecycle and writes
+screen offer `Export cosigner key`. The cosigner returns the public witness
+envelope over the admin protocol, and the operator-side `apadmin` process
+validates it, lays it out canonically, and either writes it to the chosen local
+path or displays full JSON directly in the terminal. The file is the key and
+nothing else; the result screen names the address clients should add, from
+`endpoint.advertise_url` when it is configured, so the address is handed over
+by the operator rather than carried in the file. `SHOW JSON` releases the terminal through Bubble Tea's execution lifecycle and writes
 the complete original JSON for manual selection using terminal soft wrapping
 and scrollback. Enter restores the export screen. No clipboard commands or OSC 52
 sequences are emitted. File export or batch stdout also preserves the original
@@ -133,25 +136,17 @@ witness credential or add an authority claim to the public envelope. Imports
 recognize the `.aplane-cosigner.json` suffix and may prefill an editable alias
 from its sanitized filename stem.
 
-When the cosigner advertises a portable endpoint, the export review offers an
-explicit, default-on `Include advertised endpoint` choice. The operator-side
-TUI composes the daemon-verified witness envelope and the validated endpoint
-into `aplane.cosigner-enrollment.v1`; opting out or lacking an advertised
-endpoint retains the compatible witness-only file. Composition never adds a
-token, host trust, client alias, or private material.
-
-The import form also accepts a combined `aplane.cosigner-enrollment.v1` bundle.
-The complete artifact is validated, and only the public witness reference is
-imported into the signer. Bundled endpoint metadata is informational; configure
-transaction-client routing separately in apshell. apadmin never reads or writes
-client endpoint registries, tokens, host trust, aliases, or caches.
+The import form accepts the public witness document only; a file that carries
+an endpoint block or any other field is refused before review. apadmin never
+reads or writes client endpoint registries, tokens, host trust, aliases, or
+caches.
 
 The manager exposes `p: Paste JSON` alongside `i: Import file`. The paste field
 captures a complete bracketed terminal paste without interpreting its contents
 as navigation keys, replacing the previous document. Input over 64 KiB clears
-the buffer and reports an error. Backspace/Delete clears the field. Both public
-witness and combined enrollment documents use the existing artifact parser and
-import review. Returning from review
+the buffer and reports an error. Backspace/Delete clears the field. The
+document goes through the same parser and import review as a file. Returning
+from review
 preserves the paste for correction; canceling or completing import clears it.
 
 Endpoint creation, token enrollment, and live route discovery belong to apshell.

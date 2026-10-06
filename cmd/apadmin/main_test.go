@@ -30,11 +30,11 @@ func TestCatalogPassphraseKeepsEnvelopeStdinReserved(t *testing.T) {
 	}
 }
 
-func TestCatalogPassphraseKeepsEnrollmentBundleStdinReserved(t *testing.T) {
+func TestCatalogPassphraseKeepsCosignerKeyStdinReserved(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
-	prompt := newAdminBatchPrompt(strings.NewReader("enrollment-bundle"), io.Discard)
+	prompt := newAdminBatchPrompt(strings.NewReader("cosigner-key-json"), io.Discard)
 	secret, closer, err := catalogPassphrase(
-		"cosigner", []string{"enrollment", "import", "-", "--name", "lab"}, prompt, io.Discard,
+		"cosigner", []string{"import", "-", "lab"}, prompt, io.Discard,
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -18,65 +18,55 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestParseEndpointsAddArgs(t *testing.T) {
 	options, err := parseEndpointsAddArgs([]string{
-		"handoff.json", "--alias", "Field", "--endpoint", "ssh://Cosigner.example:2223/path",
+		"ssh://Cosigner.example:2223/path", "--alias", "Field",
 		"--cosigner-port", "12270", "--replace", "--dry-run",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.path != "handoff.json" || options.request.Alias != "Field" ||
-		options.request.URL != "ssh://Cosigner.example:2223/path" || options.request.SignerPort != 12270 ||
-		!options.replace || !options.request.DryRun {
+	if options.request.Alias != "Field" || options.request.URL != "ssh://Cosigner.example:2223/path" ||
+		options.request.SignerPort != 12270 || !options.replace || !options.request.DryRun {
 		t.Fatalf("options = %#v", options)
+	}
+	// The flag spelling still works.
+	options, err = parseEndpointsAddArgs([]string{"--endpoint", "ssh://cosigner.example", "--alias", "field"})
+	if err != nil || options.request.URL != "ssh://cosigner.example" {
+		t.Fatalf("options = %#v err = %v", options, err)
+	}
+}
+
+// A key file belongs on the signer; handing it to the client names the right
+// command on each side instead of a usage line.
+func TestParseEndpointsAddArgsRefusesAFile(t *testing.T) {
+	_, err := parseEndpointsAddArgs([]string{"handoff.json", "--alias", "field"})
+	if err == nil || !strings.Contains(err.Error(), "not a file") || !strings.Contains(err.Error(), "apadmin") {
+		t.Fatalf("parseEndpointsAddArgs() error = %v, want the key-file guidance", err)
+	}
+	if _, err := parseEndpointsAddArgs([]string{"ssh://a.example", "ssh://b.example"}); err == nil || !strings.Contains(err.Error(), endpointsAddUsage) {
+		t.Fatalf("parseEndpointsAddArgs() error = %v, want usage error for two URLs", err)
 	}
 }
 
 func TestParseEndpointsAddArgsRejectsLocalPort(t *testing.T) {
 	_, err := parseEndpointsAddArgs([]string{
-		"handoff.json", "--alias", "field", "--local-port", "12271",
+		"ssh://cosigner.example", "--alias", "field", "--local-port", "12271",
 	})
 	if err == nil || !strings.Contains(err.Error(), endpointsAddUsage) {
 		t.Fatalf("parseEndpointsAddArgs() error = %v, want usage error", err)
 	}
 }
 
-func TestEndpointsAddPasteRequiresInteractiveReader(t *testing.T) {
+func TestEndpointsAddScriptRequiresURL(t *testing.T) {
 	state := &REPLState{AutoConfirm: true, Out: &bytes.Buffer{}}
 	_, err := state.runEndpointsAdd([]string{"--alias", "field"})
-	if err == nil || !strings.Contains(err.Error(), "provide a file or --endpoint") {
-		t.Fatalf("runEndpointsAdd() error = %v, want file guidance", err)
-	}
-}
-
-func TestReadCosignerSetupPasteCapturesOneCompleteDocument(t *testing.T) {
-	document := testCLIWitnessDocument(t)
-	lines := strings.Split(strings.TrimSuffix(string(document), "\n"), "\n")
-	lines = append(lines, "status")
-	reads := 0
-	state := &REPLState{
-		Out: &bytes.Buffer{},
-		LineReaderContext: func(context.Context) (string, error) {
-			line := lines[reads]
-			reads++
-			return line, nil
-		},
-	}
-	got, err := state.readCosignerSetupPaste()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enrollment.ParseArtifact(got); err != nil {
-		t.Fatalf("captured document is invalid: %v", err)
-	}
-	if reads != len(lines)-1 {
-		t.Fatalf("read %d lines, want %d; trailing command was consumed", reads, len(lines)-1)
+	if err == nil || !strings.Contains(err.Error(), "cosigner URL is required") {
+		t.Fatalf("runEndpointsAdd() error = %v, want the URL requirement", err)
 	}
 }
 
@@ -85,10 +75,6 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://old.example",
 	}, true); err != nil {
-		t.Fatal(err)
-	}
-	documentPath := filepath.Join(dataDir, "handoff.json")
-	if err := os.WriteFile(documentPath, testCLIWitnessDocument(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	eng, err := newIsolatedTestEngine(t, "testnet")
@@ -104,7 +90,7 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 	_, err = state.cmdCosigner([]string{
-		"add", documentPath, "--alias", "field", "--endpoint", "ssh://new.example", "--replace",
+		"add", "ssh://new.example", "--alias", "field", "--replace",
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "review the replacement in interactive apshell") {
 		t.Fatalf("cmdCosigner() error = %v, want script replacement rejection", err)
@@ -115,39 +101,6 @@ func TestCosignerSetupScriptRejectsConflictingReplacement(t *testing.T) {
 	}
 	if endpoint, _ := registry.Endpoint("field"); endpoint.URL != "ssh://old.example" {
 		t.Fatalf("script replacement changed endpoint: %#v", endpoint)
-	}
-}
-
-func TestReadCosignerSetupPasteRejectsOversizedLine(t *testing.T) {
-	state := &REPLState{
-		Out: &bytes.Buffer{},
-		LineReader: func() (string, error) {
-			return `{"padding":"` + strings.Repeat("x", enrollment.MaxEnvelopeBytes) + `"}`, nil
-		},
-	}
-	_, err := state.readCosignerSetupPaste()
-	if err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("readCosignerSetupPaste() error = %v, want size rejection", err)
-	}
-}
-
-func TestReadCosignerSetupPasteDrainsOversizedMultilineDocument(t *testing.T) {
-	lines := []string{"{", `"padding":"` + strings.Repeat("x", enrollment.MaxEnvelopeBytes) + `"`, "}", "status"}
-	reads := 0
-	state := &REPLState{
-		Out: &bytes.Buffer{},
-		LineReader: func() (string, error) {
-			line := lines[reads]
-			reads++
-			return line, nil
-		},
-	}
-	_, err := state.readCosignerSetupPaste()
-	if err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("readCosignerSetupPaste() error = %v, want size rejection", err)
-	}
-	if reads != 3 {
-		t.Fatalf("read %d lines, want 3; oversized document was not drained exactly", reads)
 	}
 }
 
@@ -169,10 +122,6 @@ func TestReadRequiredSetupValuePreservesCase(t *testing.T) {
 
 func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	dataDir := t.TempDir()
-	documentPath := filepath.Join(dataDir, "handoff.json")
-	if err := os.WriteFile(documentPath, testCLIWitnessDocument(t), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +133,7 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 		AutoConfirm: true, currentCommandCtx: context.Background(),
 	}
 	result, err := state.cmdCosigner([]string{
-		"add", documentPath, "--alias", "field", "--endpoint", "ssh://cosigner.example", "--dry-run",
+		"add", "ssh://cosigner.example", "--alias", "field", "--dry-run",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +141,7 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 	if err := result.RenderText(&out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "no files changed; host trust, access, node role, key, and routes were not checked") {
+	if !strings.Contains(out.String(), "no files changed; host trust, access, node role, and routes were not checked") {
 		t.Fatalf("output = %q", out.String())
 	}
 	if _, err := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(err) {
@@ -202,10 +151,6 @@ func TestCosignerSetupDryRunDoesNotWriteOrConnect(t *testing.T) {
 
 func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T) {
 	dataDir := t.TempDir()
-	documentPath := filepath.Join(dataDir, "handoff.json")
-	if err := os.WriteFile(documentPath, testCLIWitnessDocument(t), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	eng, err := newIsolatedTestEngine(t, "testnet")
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +162,7 @@ func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T)
 	}
 
 	_, err = state.cmdCosigner([]string{
-		"add", documentPath, "--alias", "field", "--endpoint", "http://127.0.0.1:1",
+		"add", "http://127.0.0.1:1", "--alias", "field",
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
 		t.Fatalf("cmdCosigner() error = %v, want missing direct-endpoint token error", err)
@@ -253,7 +198,7 @@ func TestContextAwarePromptAdaptersReturnCancellation(t *testing.T) {
 	}
 }
 
-func testCLIWitnessDocument(t *testing.T) []byte {
+func testCLIWitnessReference(t *testing.T) witness.PublicReference {
 	t.Helper()
 	publicKey := bytes.Repeat([]byte{0x4a}, witness.Falcon1024PublicKeySize)
 	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
@@ -264,11 +209,7 @@ func testCLIWitnessDocument(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document, err := enrollment.MarshalWitness(reference)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return document
+	return reference
 }
 
 func TestCosignerStatusWorksWithoutSignerAndProjectsResults(t *testing.T) {
@@ -353,20 +294,11 @@ func writeCLICosignerConnection(t *testing.T, dataDir, alias, rawURL, token stri
 }
 
 // A second key on a connected cosigner needs no client change: running setup
-// again with the new file reuses the connection without a name or a prompt.
+// again for the same address reuses the connection without a name or a prompt.
 func TestEndpointsAddReusesExistingConnectionWithoutAlias(t *testing.T) {
 	dataDir := t.TempDir()
-	document := testCLIWitnessDocument(t)
-	artifact, err := enrollment.ParseArtifact(document)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := newCLICosignerNode(t, "token", artifact.Witness)
+	server := newCLICosignerNode(t, "token", testCLIWitnessReference(t))
 	writeCLICosignerConnection(t, dataDir, "treasury", server.URL, "token")
-	documentPath := filepath.Join(dataDir, "second-key.json")
-	if err := os.WriteFile(documentPath, document, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	endpointsPath := config.GetClientEndpointsPath(dataDir)
 	before, err := os.ReadFile(endpointsPath)
 	if err != nil {
@@ -375,7 +307,7 @@ func TestEndpointsAddReusesExistingConnectionWithoutAlias(t *testing.T) {
 
 	var out bytes.Buffer
 	state := newEndpointsAddTestState(t, dataDir, &out)
-	result, err := state.cmdEndpoints([]string{"add", documentPath, "--endpoint", server.URL}, nil)
+	result, err := state.cmdEndpoints([]string{"add", server.URL}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +317,7 @@ func TestEndpointsAddReusesExistingConnectionWithoutAlias(t *testing.T) {
 	for _, want := range []string{
 		"Already configured as treasury. Checking access...",
 		"Connection treasury ready.",
-		"Key from the setup file found.",
+		"1 cosigner key(s) advertised.",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output = %q, want %q", out.String(), want)
@@ -441,7 +373,7 @@ func TestCosignerAddForwardsToEndpointsAddWithNotice(t *testing.T) {
 }
 
 func TestEndpointsAddIsBlockedForAutomationOnly(t *testing.T) {
-	if err := guardAutomatedEndpoints([]string{"add", "handoff.json"}); err == nil {
+	if err := guardAutomatedEndpoints([]string{"add", "ssh://cosigner.example"}); err == nil {
 		t.Fatal("guardAutomatedEndpoints() allowed guided setup")
 	}
 	for _, args := range [][]string{{"list"}, {"show", "field"}, {"import", "--alias", "a"}, {"create"}, {"discover-cosigners"}, nil} {

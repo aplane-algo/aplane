@@ -131,11 +131,11 @@ endpoint registry intentionally has no default signer endpoint.
 
 When it writes a new cosigner config, local and systemd installs ask for the
 DNS name or IP address that remote apshell clients use to reach the cosigner.
-The answer sets `endpoint.advertise_url`, so every **Export Setup File**
-document carries the endpoint. A non-loopback address also sets
-`endpoint.ssh.listen_address` to `0.0.0.0` (`::` for IPv6) so remote clients
-can connect. Leave it blank when apshell runs only on the cosigner machine; the
-listener then stays on `127.0.0.1` and exports ask for a host instead.
+The answer sets `endpoint.advertise_url`, which the cosigner key export
+screen shows as the address clients add with `endpoints add`. A non-loopback
+address also sets `endpoint.ssh.listen_address` to `0.0.0.0` (`::` for IPv6)
+so remote clients can connect. Leave it blank when apshell runs only on the
+cosigner machine; the listener then stays on `127.0.0.1`.
 
 ### Confirmation prompt
 
@@ -237,33 +237,32 @@ Cosigner access provisioning leaves the primary signer connection unchanged.
 ### Configure a cosigner for guarded accounts
 
 Witness trust, endpoint routing, and transport credentials are deliberately
-separate, but one public setup file carries what each step needs. Complete them
-in this order:
+separate: the cosigner's key file goes to the signer, and each client is given
+the cosigner's address. Complete them in this order:
 
 1. On the cosigner node, generate an `aplane.witness-falcon1024.v1` key and choose
-   **Export Setup File** from its success or key-details screen. The export
-   always carries the endpoint: the configured `endpoint.advertise_url`, or a
-   client-reachable host that you enter on the export screen.
+   **Export Cosigner Key** from its success or key-details screen. The file
+   is the public key only. The result screen shows the address clients should
+   use, from the configured `endpoint.advertise_url`.
 2. On the primary signer, start **Generate account** in `apadmin` for the
    compatible guarded account, open its **Cosigner** field, and choose **Use
-   setup file...**. Compare the complete Witness Key ID with the value shown on
+   key file...**. Compare the complete Witness Key ID with the value shown on
    the cosigner, import, and finish generating the account. A key that is
    already imported is offered under its existing name.
-3. In `apshell`, run `endpoints add <setup-file>`. Accept or edit the suggested
-   connection name. Compare the full client SSH key fingerprint shown by
-   apshell with the **Client Access Request** in cosigner-side apadmin, then
+3. In `apshell`, run `endpoints add <cosigner-url>`. Accept or edit the
+   suggested connection name. Compare the full client SSH key fingerprint shown
+   by apshell with the **Client Access Request** in cosigner-side apadmin, then
    approve the request. Apshell saves the token, confirms the node is a
-   cosigner, checks the key from the file, and reports the account's route.
+   cosigner, and reports the keys it advertises and the account's route.
 
 Run `cosigner status` at any time to inspect routes before funding or rekeying.
 It is a point-in-time connection check, not confirmation of transaction policy
 or on-chain validity.
 
-The setup file contains the public key and public endpoint metadata. It never
-contains the private cosigner key, an access token, or SSH host trust. Signer
-import and client setup are independent and may safely reuse the same file.
-The client keeps only the connection: another key on the same cosigner needs
-no client change.
+The key file contains the public key and nothing else. It never contains the
+cosigner's address, the private cosigner key, an access token, or SSH host
+trust. The client never sees it: it keeps only the connection, so another key
+on the same cosigner needs no client change.
 
 ### Advanced: provision an existing local cosigner endpoint
 

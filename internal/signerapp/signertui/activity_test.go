@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -306,7 +304,6 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 				paramName:           "cosigner",
 				returnView:          ViewGenerateParams,
 				envelopeJSON:        "public-envelope",
-				previewEndpoint:     &endpointrefs.Envelope{URL: "ssh://cosigner.example"},
 				pendingKeyType:      "guarded.v1",
 				pendingWitnessID:    "old-id",
 				managerStatus:       "old status",
@@ -314,9 +311,6 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 				generateFromManager: true,
 				exportWitnessID:     "old-id",
 				exportPath:          "old.json",
-				exportEndpoint:      &endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://old.example"},
-				exportEndpointError: "old endpoint error",
-				exportHost:          "old.example",
 				exportWrittenPath:   "old.json",
 				exportReturnView:    ViewGenerateDisplay,
 				exportShowJSON:      true,
@@ -325,13 +319,10 @@ func TestConnectionBoundariesClearCosignerWorkflowState(t *testing.T) {
 			got, _ := updateForTest(t, m, test.msg)
 			if got.cosigner.loaded || len(got.cosigner.references) != 0 || len(got.cosigner.choices) != 0 ||
 				got.cosigner.paramName != "" || got.cosigner.envelopeJSON != "" ||
-				got.cosigner.previewEndpoint != nil ||
 				got.cosigner.pendingKeyType != "" || got.cosigner.pendingWitnessID != "" ||
 				got.cosigner.managerStatus != "" || len(got.cosigner.generateTypeIndices) != 0 ||
 				got.cosigner.generateFromManager || got.cosigner.exportWitnessID != "" ||
 				got.cosigner.exportPath != "" ||
-				got.cosigner.exportEndpoint != nil || got.cosigner.exportHost != "" ||
-				got.cosigner.exportEndpointError != "" ||
 				got.cosigner.exportWrittenPath != "" || got.cosigner.exportReturnView != ViewKeyDetails ||
 				got.cosigner.exportShowJSON {
 				t.Fatalf("cosigner workflow state not cleared: %+v", got.cosigner)

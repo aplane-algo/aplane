@@ -91,8 +91,6 @@ func TestEndpointImportRejectsLocalPortForCosignerRole(t *testing.T) {
 
 func TestEndpointImportPointsCosignerKeyDocumentsAtEndpointsAdd(t *testing.T) {
 	documents := map[string]string{
-		"enrollment": `{"schema":"aplane.cosigner-enrollment.v1","witness":{},` +
-			`"endpoint":{"schema":"aplane.endpoint.v1","url":"ssh://127.0.0.1:2223"}}`,
 		"witness": `{"schema":"aplane.witness-key-public.v1","key_type":"aplane.witness-falcon1024.v1"}`,
 	}
 	for name, document := range documents {
@@ -106,7 +104,7 @@ func TestEndpointImportPointsCosignerKeyDocumentsAtEndpointsAdd(t *testing.T) {
 			_, err := newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
 				Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner, Path: path,
 			})
-			want := "use 'endpoints add " + path + " --alias cosigner-local' instead"
+			want := "the signer imports it (apadmin cosigner import); on this client run 'endpoints add <cosigner-url> --alias cosigner-local'"
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("EndpointImport() error = %v, want hint %q", err, want)
 			}

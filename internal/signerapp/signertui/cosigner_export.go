@@ -5,22 +5,19 @@ package tui
 
 import (
 	"bufio"
-	"errors"
-	"fmt"
 	"io"
-	"net"
-	"net/url"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/cosigner/enrollment"
-	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const cosignerEnrollmentFileSuffix = ".aplane-cosigner.json"
+// The exported file is the cosigner key's public reference and nothing else.
+// Clients configure the cosigner's address themselves, with endpoints add,
+// so the file carries no endpoint, token, or host trust.
+
+const cosignerKeyFileSuffix = ".aplane-cosigner.json"
 
 func suggestedCosignerExportPath(witnessKeyID string) string {
 	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))
@@ -30,7 +27,7 @@ func suggestedCosignerExportPath(witnessKeyID string) string {
 	if compact == "" {
 		compact = "public"
 	}
-	return "cosigner-" + compact + cosignerEnrollmentFileSuffix
+	return "cosigner-" + compact + cosignerKeyFileSuffix
 }
 
 func (m Model) openCosignerExport() (tea.Model, tea.Cmd) {
@@ -63,22 +60,6 @@ func (m Model) openCosignerExportFor(rawWitnessKeyID, keyType string, returnView
 	m.cosigner.exportWitnessID = witnessKeyID
 	m.cosigner.exportPath = suggestedCosignerExportPath(witnessKeyID)
 	m.cosigner.exportError = ""
-	m.cosigner.exportEndpoint = nil
-	m.cosigner.exportEndpointError = ""
-	m.cosigner.exportHost = ""
-	if m.admin.settings != nil && strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL) != "" {
-		endpoint, endpointErr := apadminapp.BuildCosignerEndpointEnvelope(
-			"",
-			m.admin.settings.EndpointAdvertiseURL,
-			m.admin.settings.SSHPort,
-			m.admin.settings.SignerPort,
-		)
-		if endpointErr != nil {
-			m.cosigner.exportEndpointError = endpointErr.Error()
-		} else {
-			m.cosigner.exportEndpoint = &endpoint
-		}
-	}
 	m.cosigner.exportWrittenPath = ""
 	m.cosigner.exportShowJSON = false
 	m.cosigner.exportReturnView = returnView
@@ -101,27 +82,19 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.cosigner.exportFocus = (m.cosigner.exportFocus + focusCount - 1) % focusCount
 		return m, nil
 	case "backspace":
-		switch {
-		case m.cosigner.exportFocus == 0:
+		if m.cosigner.exportFocus == 0 {
 			m.cosigner.exportPath = trimLastRune(m.cosigner.exportPath)
-		case m.cosignerExportHasHostField() && m.cosigner.exportFocus == 1:
-			m.cosigner.exportHost = trimLastRune(m.cosigner.exportHost)
 		}
 		m.cosigner.exportError = ""
 		return m, nil
 	case "enter":
-		fileFocus := m.cosignerExportButtonFocus()
-		if m.cosigner.exportFocus < fileFocus {
+		if m.cosigner.exportFocus < m.cosignerExportButtonFocus() {
 			m.cosigner.exportFocus++
 			return m, nil
 		}
 		showJSON := m.cosigner.exportFocus == m.cosignerExportJSONButtonFocus()
 		if !showJSON && strings.TrimSpace(m.cosigner.exportPath) == "" {
 			m.cosigner.exportError = "Output path is required"
-			return m, nil
-		}
-		if _, err := m.cosignerExportEndpoint(); err != nil {
-			m.cosigner.exportError = "Endpoint: " + err.Error()
 			return m, nil
 		}
 		m.cosigner.exportShowJSON = showJSON
@@ -135,85 +108,16 @@ func (m Model) handleCosignerExportPathKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m.waitForMessageCmd(),
 		)
 	}
-	if msg.Type == tea.KeyRunes {
-		switch {
-		case m.cosigner.exportFocus == 0:
-			m.cosigner.exportPath += string(msg.Runes)
-		case m.cosignerExportHasHostField() && m.cosigner.exportFocus == 1:
-			m.cosigner.exportHost += string(msg.Runes)
-		}
+	if msg.Type == tea.KeyRunes && m.cosigner.exportFocus == 0 {
+		m.cosigner.exportPath += string(msg.Runes)
 		m.cosigner.exportError = ""
 	}
 	return m, nil
 }
 
-// cosignerExportHasHostField reports whether the operator must supply the
-// client-reachable host because no valid advertise_url is configured.
-func (m Model) cosignerExportHasHostField() bool {
-	return m.cosigner.exportEndpoint == nil
-}
-
-// cosignerExportEndpoint resolves the endpoint every cosigner key export
-// carries, so clients never need to reconstruct it by hand.
-func (m Model) cosignerExportEndpoint() (*endpointrefs.Envelope, error) {
-	if m.cosigner.exportEndpoint != nil {
-		return m.cosigner.exportEndpoint, nil
-	}
-	host := strings.TrimSpace(m.cosigner.exportHost)
-	if host == "" {
-		return nil, errors.New("client-reachable host is required")
-	}
-	var sshPort, signerPort int
-	if m.admin.settings != nil {
-		sshPort, signerPort = m.admin.settings.SSHPort, m.admin.settings.SignerPort
-	}
-	endpoint, err := apadminapp.BuildCosignerEndpointEnvelope(host, "", sshPort, signerPort)
-	if err != nil {
-		return nil, fmt.Errorf("invalid host: %w", err)
-	}
-	return &endpoint, nil
-}
-
-// cosignerExportListenWarning flags an endpoint that remote clients cannot
-// reach because the SSH listener is bound to loopback.
-func (m Model) cosignerExportListenWarning(endpoint *endpointrefs.Envelope) string {
-	if endpoint == nil || m.admin.settings == nil {
-		return ""
-	}
-	listen := strings.TrimSpace(m.admin.settings.SSHListenAddress)
-	if listen == "" {
-		listen = apconfig.DefaultSSHListenAddress
-	}
-	parsed, err := url.Parse(endpoint.URL)
-	if err != nil || !isLoopbackHost(listen) || isLoopbackHost(parsed.Hostname()) {
-		return ""
-	}
-	return "SSH listens on " + listen + " only; remote clients cannot connect until " +
-		"endpoint.ssh.listen_address is changed and apsigner is restarted."
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func (m Model) cosignerExportButtonFocus() int {
-	if m.cosignerExportHasHostField() {
-		return 2
-	}
-	return 1
-}
-
-func (m Model) cosignerExportJSONButtonFocus() int {
-	return m.cosignerExportButtonFocus() + 1
-}
-
-func (m Model) cosignerExportLastFocus() int {
-	return m.cosignerExportJSONButtonFocus()
-}
+func (m Model) cosignerExportButtonFocus() int     { return 1 }
+func (m Model) cosignerExportJSONButtonFocus() int { return 2 }
+func (m Model) cosignerExportLastFocus() int       { return m.cosignerExportJSONButtonFocus() }
 
 func writeCosignerPublicEnvelopeCmd(path, envelopeJSON string) tea.Cmd {
 	return func() tea.Msg {
@@ -222,18 +126,29 @@ func writeCosignerPublicEnvelopeCmd(path, envelopeJSON string) tea.Cmd {
 	}
 }
 
-func composeCosignerExportArtifact(witnessJSON string, endpoint *endpointrefs.Envelope) (string, error) {
+// composeCosignerExportArtifact validates the daemon's public witness
+// document and lays it out as the exported file.
+func composeCosignerExportArtifact(witnessJSON string) (string, error) {
 	reference, err := witness.ParsePublicReference([]byte(witnessJSON))
 	if err != nil {
 		return "", err
 	}
-	data, err := enrollment.Marshal(enrollment.Envelope{
-		Schema: enrollment.Schema, Witness: reference, Endpoint: endpoint,
-	})
+	data, err := witness.MarshalPublicReference(reference)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// cosignerClientEndpointHint is the address a client types for endpoints add:
+// the configured advertise_url, or a placeholder when none is configured.
+func (m Model) cosignerClientEndpointHint() string {
+	if m.admin.settings != nil {
+		if advertised := strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL); advertised != "" {
+			return advertised
+		}
+	}
+	return "ssh://<this cosigner's host>:<ssh port>"
 }
 
 func (m Model) handleCosignerExportResultKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -254,9 +169,9 @@ func (m Model) cosignerExportReturnView() ViewState {
 
 func (m Model) renderCosignerExportPath() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Export Setup File"))
+	body.WriteString(titleStyle.Render("Export Cosigner Key"))
 	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Save this cosigner key's public setup file on this machine. No private key or access token is included."))
+	body.WriteString(subtitleStyle.Render("Save this cosigner key's public key file on this machine. No private key, address, or access token is included."))
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
 	body.WriteString("\n\nOutput path:\n")
@@ -265,31 +180,11 @@ func (m Model) renderCosignerExportPath() string {
 		pathStyle = inputActiveStyle
 	}
 	body.WriteString(pathStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.exportPath))
-	if m.cosignerExportHasHostField() {
-		body.WriteString("\n\nClient-reachable host (DNS name or IP):\n")
-		hostStyle := inputInactiveStyle
-		if m.cosigner.exportFocus == 1 {
-			hostStyle = inputActiveStyle
-		}
-		body.WriteString(hostStyle.Width(m.constrainParameterFieldWidth(60)).Render(m.cosigner.exportHost))
-		if m.cosigner.exportEndpointError != "" {
-			body.WriteString("\n" + warningStyle.Render("Ignoring invalid advertise_url: "+m.cosigner.exportEndpointError))
-		} else {
-			body.WriteString("\n" + helpStyle.Render("Set endpoint.advertise_url to skip this field."))
-		}
-	} else {
-		body.WriteString("\n\nEndpoint:\n" + m.cosigner.exportEndpoint.URL)
-	}
-	body.WriteString("\n" + helpStyle.Render("Public routing metadata only; no token or host trust."))
-	if endpoint, err := m.cosignerExportEndpoint(); err == nil {
-		if warning := m.cosignerExportListenWarning(endpoint); warning != "" {
-			body.WriteString("\n" + warningStyle.Render(warning))
-		}
-	}
+	body.WriteString("\n" + helpStyle.Render("Public key only. Clients are given this cosigner's address separately."))
 	body.WriteString("\n\n")
-	button := buttonInactiveStyle.Render("EXPORT SETUP FILE")
+	button := buttonInactiveStyle.Render("EXPORT KEY FILE")
 	if m.cosigner.exportFocus == m.cosignerExportButtonFocus() {
-		button = buttonActiveStyle.Render("EXPORT SETUP FILE")
+		button = buttonActiveStyle.Render("EXPORT KEY FILE")
 	}
 	body.WriteString(button)
 	body.WriteString("\n\n")
@@ -306,28 +201,24 @@ func (m Model) renderCosignerExportPath() string {
 }
 
 func (m Model) renderCosignerExporting() string {
-	action := "Exporting Setup File"
+	action := "Exporting Key File"
 	if m.cosigner.exportShowJSON {
-		action = "Loading Setup JSON"
+		action = "Loading Key JSON"
 	}
 	return m.renderPopup(60, titleStyle.Render(action)+"\n\n"+subtitleStyle.Render("Please wait...")+"\n")
 }
 
 func (m Model) renderCosignerExportResult() string {
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Setup File Exported"))
-	body.WriteString("\n\nPublic setup file saved to:\n")
+	body.WriteString(titleStyle.Render("Cosigner Key Exported"))
+	body.WriteString("\n\nPublic key file saved to:\n")
 	body.WriteString(m.cosigner.exportWrittenPath)
 	body.WriteString("\n\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(m.cosigner.exportWitnessID), m.popupBodyWidth(90)))
-	if endpoint, err := m.cosignerExportEndpoint(); err == nil {
-		body.WriteString("\n\nIncluded endpoint: " + endpoint.URL)
-	}
 	body.WriteString("\n")
-	body.WriteString("\nOn the signer: Generate account -> Cosigner -> Use setup file.")
-	body.WriteString("\nOn each client: endpoints add " + m.cosigner.exportWrittenPath)
-	body.WriteString("\nAlready connected this cosigner on a client? Nothing more is needed there")
-	body.WriteString("\nfor another key on the same cosigner.\n")
+	body.WriteString("\nOn the signer: Generate account -> Cosigner -> Use key file.")
+	body.WriteString("\nOn each client: endpoints add " + m.cosignerClientEndpointHint())
+	body.WriteString("\nA client connects to this cosigner once; later keys on it need no client change.\n")
 	return m.renderPopup(90, body.String())
 }
 
