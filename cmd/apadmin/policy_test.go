@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 )
 
 func TestParsePolicyCommandGrammar(t *testing.T) {
@@ -43,6 +45,10 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "retired flag", args: []string{"--check"}, wantErr: "is retired"},
 		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "is retired"},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
+		{name: "template signer", args: []string{"template", "signer"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"signer"}},
+		{name: "template cosigner key", args: []string{"template", "--key", keyID, "cosigner"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"cosigner"}, wantKey: keyID},
+		{name: "template needs a role", args: []string{"template"}, wantErr: "one node role"},
+		{name: "template key only for cosigner", args: []string{"template", "--key", keyID, "signer"}, wantErr: "cosigner template"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,6 +125,30 @@ func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
 	})
 	if code != 1 {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q, want runtime failure code 1", code, stderr.String())
+	}
+}
+
+// template needs no store: it prints with a data directory that does not
+// exist, through both the online and the rescue entry points.
+func TestPolicyTemplateNeedsNoStore(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	missing := filepath.Join(t.TempDir(), "no-such-store")
+	for _, args := range [][]string{{"template", "signer"}, {"rescue", "template", "signer"}} {
+		var stdout, stderr bytes.Buffer
+		code := runPolicyCommand(context.Background(), args, policyGlobalOptions{dataDir: missing}, policyStreams{
+			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+		})
+		if code != 0 || stdout.String() != policyreview.SignerTemplate() || stderr.Len() != 0 {
+			t.Fatalf("%v: code=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	code := runPolicyCommand(context.Background(), []string{"template", "operator"}, policyGlobalOptions{dataDir: missing}, policyStreams{
+		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+	})
+	if code != 2 || !strings.Contains(stderr.String(), "one node role") {
+		t.Fatalf("bad role: code=%d stderr=%q", code, stderr.String())
 	}
 }
 

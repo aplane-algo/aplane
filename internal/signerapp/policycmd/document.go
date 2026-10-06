@@ -18,6 +18,33 @@ import (
 // ErrPolicyInvalid reports that check found errors; they have been printed.
 var ErrPolicyInvalid = errors.New("policy is invalid")
 
+// templateKeyPlaceholder stands in for the Witness Key ID of a cosigner
+// template written without --key. The node rejects it, so the placeholder
+// cannot be applied by mistake.
+const templateKeyPlaceholder = "<Witness Key ID: 52 characters, from apadmin policy status>"
+
+// WriteTemplate writes the annotated starting document for the role named
+// by the command to stdout. It needs no node and no passphrase: the template
+// is the producer side's own text.
+func WriteTemplate(command Command, streams Streams) error {
+	if err := command.Validate(); err != nil {
+		return err
+	}
+	if command.Verb != VerbTemplate {
+		return fmt.Errorf("unsupported policy command %q", command.Verb)
+	}
+	key := command.Key
+	if command.Args[0] == "cosigner" && key == "" {
+		key = templateKeyPlaceholder
+	}
+	text, err := policyreview.StartingTemplate(command.Args[0], key)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(streams.normalized().Stdout, text)
+	return err
+}
+
 // run executes one verb against a backend.
 func run(ctx context.Context, command Command, streams Streams, backend Backend) error {
 	switch command.Verb {

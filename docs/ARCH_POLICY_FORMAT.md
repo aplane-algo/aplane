@@ -33,6 +33,12 @@ Consequences:
   `format` version.
 - There is no policy editor in the node. Review happens through `check` and
   `diff` before `apply`, which shows the same diff and asks for confirmation.
+- Comments are a producer convenience, not part of the format. The apadmin
+  policy commands and the apadmin TUI accept `//` and `/* */` comments
+  outside strings and remove them (`policyreview.StripComments`) before the
+  document is sent, so the node never sees or stores them. `apstore policy
+  check|sign` act on documents already in the store, which must be strict
+  JSON.
 
 The machine-readable schema is
 [`pkg/policyschema/policy.v1.schema.json`](../pkg/policyschema/policy.v1.schema.json)
@@ -49,10 +55,25 @@ accepts but the node's semantic rules reject in `semantic_invalid/`.
 | cosigner | `policies/<WitnessKeyID>.json`, `policies/<WitnessKeyID>.json.hmac`, one pair per cosigner key | Component signing by that key only |
 
 Files live under `identities/default/generations/<generation-id>/`. A new
-signer store starts with `{"format": "aplane.signer-policy.v1"}`
-(`policy.InitialSignerPolicy`): every setting at its default and routing off.
-A new cosigner store has no documents, so every cosigner key rejects every
-request until its document is applied.
+signer store starts with `policy.InitialSignerPolicy`: every setting at its
+default and routing on with one route, `self-transfer`, which lets any
+account send any asset to itself on any network, with `on_no_route: reject`.
+Opt-ins and self-sends pass; a transfer to any other address, a close-out, or
+a clawback is rejected until a route allows it. A new cosigner store has no
+documents, so every cosigner key rejects every request until its document is
+applied; the document an operator starts that key from
+(`policy.StartingCosignerDocumentV1`) is the same `self-transfer` route and
+nothing else. Neither starting document carries a description, which would
+outlive the starting state.
+
+`apadmin policy template signer|cosigner` writes the same starting document
+as an annotated template (`policyreview.SignerTemplate`,
+`policyreview.CosignerTemplate`): every field explained in comments and an
+example route commented out before the real one, each commented block ending
+with a comma so it can be enabled by removing its `// `. Stripped of
+comments, a template decodes equal to the starting document it stands for,
+which a test enforces, so the apadmin TUI editor opens a starting document as
+its template without changing what the policy allows.
 
 Each `.hmac` sidecar authenticates the exact document bytes with the
 `internal/integritysidecar` format. The HMAC is
@@ -101,14 +122,16 @@ Cosigner rules:
 
 Operator surfaces: `apadmin policy status|export|check|diff|apply|remove` (online
 over admin IPC, or `apadmin policy rescue ...` against a stopped daemon's
-store), `apstore policy check|verify|sign`, and the apadmin TUI Policies view,
-which lists documents and can check, diff, and apply one policy file. Wire messages are `get_policy`, `get_policy_document`,
+store), `apadmin policy template` (local, no node), `apstore policy
+check|verify|sign`, and the apadmin TUI Policies view, which lists documents
+and can check, diff, and apply one policy file or an in-place edit. Wire messages are `get_policy`, `get_policy_document`,
 `check_policy`, and `apply_policy`; see [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages)
 and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-documents).
 
 ## Parsing
 
-- UTF-8 JSON object, at most 1 MiB.
+- UTF-8 JSON object, at most 1 MiB. No comments: a producer that accepts
+  them removes them before sending (see [The Boundary](#the-boundary)).
 - Unknown fields are rejected at every level.
 - **Duplicate object keys are rejected.** Standard decoders silently keep the
   last value, so the node uses a decoder that detects duplicates.

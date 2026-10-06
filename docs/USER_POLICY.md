@@ -71,6 +71,23 @@ apadmin policy apply policy.json
 apadmin policy apply - < policy.json
 ```
 
+To start from an explained document rather than the bare one, write the
+annotated starting template and edit it:
+
+```bash
+apadmin policy template signer > policy.json
+apadmin policy template --key <WitnessKeyID> cosigner > key.json
+```
+
+The template is the node's starting document with every field explained in
+`//` comments and an example route commented out above the real one. Remove
+the `// ` from a block to enable it; each block already ends with a comma. Policy files may
+carry `//` and `/* */` comments anywhere outside strings. `apadmin` removes
+them before the document reaches the node, so `apadmin policy export` returns
+the stored document without them; keep the commented file if you want the
+notes. `apstore policy check` and `sign` read documents already in the store,
+which must be plain JSON.
+
 The apadmin TUI can also load one policy file: open Policies (`p`), press `a`,
 and enter the file path. The TUI checks the file, shows the same diff as
 `apadmin policy diff`, and applies it only after you press `y`. On a cosigner
@@ -86,21 +103,39 @@ press `e`. The document's JSON opens in an editor. Edit it, then press `ctrl+s`:
 apadmin checks the text, shows the same diff as a file load, and applies it
 only after you press `y`. Nothing is stored before that.
 
-- **A new cosigner key starts locked.** A cosigner key with no policy opens on
-  a starting document with no routes:
+- **A new cosigner key starts with self-transfers only.** A cosigner key with
+  no policy opens on the annotated starting template, which without its
+  comments is:
 
   ```json
   {
     "format": "aplane.cosigner-policy.v1",
     "key": "<WitnessKeyID>",
     "transfer_policy": {
-      "routes": []
+      "routes": [
+        {
+          "id": "self-transfer",
+          "description": "Any account may send any asset to itself",
+          "networks": ["*"],
+          "sources": ["*"],
+          "assets": ["*"],
+          "destinations": ["self"]
+        }
+      ]
     }
   }
   ```
 
-  With no routes it rejects every request, the same as having no policy. Add
-  routes to allow transfers, then check and apply.
+  Opt-ins and self-sends pass; a transfer to any other address is rejected,
+  as are close-outs and clawbacks, until a route allows it. The comments
+  explain each field and hold an example route above the real one; remove
+  the `// ` from its lines, fill in the addresses, then check and apply. A
+  signer whose policy is still the initial one opens on the signer template
+  the same way. Any other document opens exactly as stored.
+- **Comments are allowed.** `//` and `/* */` comments outside strings are
+  removed before the text reaches the node, so they never appear in the
+  stored document. A syntax error is still reported at the line and column
+  of the text as you see it.
 - **Errors keep your text.** A JSON syntax error is reported with its line and
   column. If the node rejects the document, its problems appear under the
   text. Pressing `n` in the review, or leaving a failed apply, returns to the
@@ -129,6 +164,7 @@ or lock the node when it finishes.
 | `diff FILE...` | Show how the files differ from the active policy, marking each change tightened, loosened, or changed |
 | `apply FILE...` | Check, show the diff, ask for confirmation, then install the files in one commit; `-` reads one file from stdin |
 | `remove ID...` | Show the diff, ask for confirmation, then delete cosigner keys' documents (cosigner nodes only) |
+| `template [--key ID] signer\|cosigner` | Write the annotated starting document for that node role to stdout; `--key` fills in the cosigner key. Needs no node and no passphrase |
 
 `apply` and `remove` ask "Apply these changes?" on the terminal. Pass `--yes`
 to skip the question in scripts; without a terminal and without `--yes` they

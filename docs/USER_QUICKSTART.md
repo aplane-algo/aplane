@@ -147,6 +147,11 @@ the resource "dummy" transactions that this Falcon LogicSig flow requires.
 
 This proves the signer can build, sign, and submit a real testnet transaction with your new key.
 
+A self-send is what the signer's starting policy allows: any account may send
+to itself, and a transfer to any other address is rejected until you add a
+route for it. See [USER_POLICY.md](USER_POLICY.md) for adding routes; `apadmin
+policy template signer` writes a starting document with the fields explained.
+
 ## Further Exploration
 
 By default, APlane exposes the native `ed25519` and `falcon1024` key types plus

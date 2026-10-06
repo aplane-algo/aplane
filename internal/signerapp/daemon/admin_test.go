@@ -55,6 +55,12 @@ func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 // setupTestSigner creates a Signer with a working keystore and unlocked runtime,
 // and identity context ready for handler testing.
 // Returns the signer and a cleanup function. The caller should defer cleanup().
+// testSignerPolicy is the store's policy in setupTestSigner: routing off, so
+// the tests built on it can sign payments to any address and exercise the
+// signing mechanics. The production starting document allows self-transfers
+// only; tests of policy verdicts write their own documents.
+const testSignerPolicy = "{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n"
+
 func setupTestSigner(t *testing.T) (*Signer, func()) {
 	t.Helper()
 
@@ -80,7 +86,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		Operation: "test-init", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_753_800_000, 0),
 		Apply: func(staged utilkeys.GenPaths) error {
-			if err := policy.WriteInitialSignerPolicy(staged, masterKeyRing, time.Now()); err != nil {
+			if err := policy.WriteSignerPolicy(staged, []byte(testSignerPolicy), masterKeyRing, time.Now()); err != nil {
 				return err
 			}
 			return noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, masterKeyRing, time.Now())

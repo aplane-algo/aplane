@@ -1326,10 +1326,10 @@ from credential backup into a fresh store.
 Store initialization stages the first generation with its generation-scoped
 node-role sidecar, the role's initial policy, and default key types before the
 sole commit publishes `store-root.enc`. A signer generation starts with
-`policy.json` containing `{"format": "aplane.signer-policy.v1"}`
-(`policy.InitialSignerPolicy`) plus its sidecar; a cosigner generation starts
-with no policy documents, so every cosigner key rejects every request until its
-document is applied. Installers and smoke-test setup must not create or sign a
+`policy.json` holding `policy.InitialSignerPolicy` (routing enabled with the
+`self-transfer` route only and `on_no_route: reject`) plus its sidecar; a
+cosigner generation starts with no policy documents, so every cosigner key
+rejects every request until its document is applied. Installers and smoke-test setup must not create or sign a
 root-level policy file; later policy changes target the authenticated active
 generation through the stopped-store or live-admin policy surfaces.
 
@@ -1515,7 +1515,13 @@ Operator verbs:
   error. Verbs: `status` (documents, sizes, digests, applied times, cosigner
   key coverage, and `policy_set_sha256`), `export [--key ID]` (exact stored
   bytes; a cosigner node requires `--key`), `check FILE...|-`,
-  `diff FILE...|-`, `apply FILE...|-`, and `remove ID...` (cosigner nodes only)
+  `diff FILE...|-`, `apply FILE...|-`, `remove ID...` (cosigner nodes only),
+  and `template [--key ID] signer|cosigner` (the annotated starting document,
+  written locally without a node or passphrase)
+- policy files given to `check`, `diff`, and `apply`, and text in the apadmin
+  TUI editor, may carry `//` and `/* */` comments outside strings; apadmin
+  removes them before sending, so the node receives, checks, digests, and
+  stores the stripped document. A file with no comments is sent byte for byte
 - `apply` and `remove` print the diff against the active documents and ask for
   confirmation on the controlling terminal unless `--yes` is given; with no
   changes they apply nothing
