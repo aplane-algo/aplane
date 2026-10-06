@@ -1,5 +1,21 @@
 # Release Notes
 
+## Edit policy JSON in apadmin
+
+The apadmin TUI can now edit a policy document in place. In Policies (`p`),
+press `e` on a policy to open its JSON in an editor, and `ctrl+s` to check it.
+The edit goes through the same check, diff review, and confirmed apply as a
+loaded policy file; nothing is stored before the apply.
+
+A cosigner key that has no policy opens on a starting document with no routes,
+which rejects every request, so a new key's policy is always edited up from
+zero permissions. Syntax errors are reported with a line and column, a rejected
+document keeps the editor open with the node's problems, and leaving the review
+returns to the editor with the text intact.
+
+No policy format, admin RPC, or stored state changed: a key with no policy
+still has no stored document until one is applied.
+
 ## Cosigner setup in three actions and `endpoints add`
 
 Setting up a cosigner-protected account now takes three actions with one public
