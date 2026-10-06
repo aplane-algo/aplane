@@ -13,7 +13,8 @@ import (
 )
 
 // The policies view lists the node's active policy documents and shows their
-// exact bytes. It never edits a document; policy_apply.go loads a policy file
+// exact bytes. A document changes only through the workflow in
+// policy_apply.go, which takes a policy file or an edit from policy_edit.go
 // through the same check, diff, and apply steps as apadmin policy apply.
 
 // policiesState is the policy list, the document viewer, and the
@@ -120,6 +121,10 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.requestPolicy()
 	case "a":
 		return m.openPolicyApply()
+	case "e":
+		if m.policies.selected < len(rows) {
+			return m.openPolicyEditForRow(rows[m.policies.selected])
+		}
 	case "up", "k":
 		if m.policies.selected > 0 {
 			m.policies.selected--
@@ -145,6 +150,9 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handlePolicyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.Document.ID != "" && msg.Document.ID == m.policies.apply.pendingDocumentID {
 		return m.handlePolicyApplyDocumentLoaded(msg)
+	}
+	if msg.Document.ID != "" && msg.Document.ID == m.policies.apply.edit.pendingDocumentID {
+		return m.handlePolicyEditDocumentLoaded(msg)
 	}
 	if msg.Document.ID == "" || msg.Document.ID != m.policies.pendingDocumentID {
 		return m, m.waitForMessageCmd()
@@ -184,6 +192,8 @@ func (m Model) handlePolicyDocumentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.policies.scrollOffset = 0
 		m.policies.pendingDocumentID = ""
 		m.policies.docLoading = false
+	case "e":
+		return m.openPolicyEditForDocument()
 	case "up", "k":
 		m.policies.scrollOffset--
 	case "down", "j":
@@ -210,7 +220,7 @@ func (m Model) renderPolicies() string {
 		return sb.String()
 	}
 	p := m.policies.policy
-	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  a loads a policy file; apadmin policy covers diff, remove, and rescue", p.NodeRole)))
+	sb.WriteString(subtitleStyle.Render(fmt.Sprintf("%s node  ·  e edits the selected policy; a loads a policy file; apadmin policy covers remove and rescue", p.NodeRole)))
 	sb.WriteString("\n\n")
 	rows := m.policyRows()
 	if len(rows) == 0 {
@@ -312,13 +322,13 @@ func (m Model) renderPolicyDocument() string {
 
 func (m Model) policiesFooterText() string {
 	if m.viewState == ViewPolicyDocument {
-		footer := "esc/q: Back"
+		footer := "e: Edit | esc/q: Back"
 		if len(m.policyDocumentLines()) > m.policyDocumentVisibleLines() {
 			footer += " | up/down/pgup/pgdown: Scroll"
 		}
 		return footer
 	}
-	return "up/down: Select | enter: View | a: Load file | r: Refresh | esc/q: Back"
+	return "up/down: Select | enter: View | e: Edit | a: Load file | r: Refresh | esc/q: Back"
 }
 
 // SendGetPolicy requests the node's policy summary under request id.

@@ -933,6 +933,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePolicyApplyFormKeys(msg)
 	case ViewPolicyApplyReview:
 		return m.handlePolicyApplyReviewKeys(msg)
+	case ViewPolicyEdit:
+		return m.handlePolicyEditKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:
