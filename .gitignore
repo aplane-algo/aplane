@@ -117,3 +117,6 @@ dist/
 # MCP server binaries
 mcp/aplane-mcp
 mcp/refresh-accounts
+
+# Public cosigner key files exported by tests or by apadmin run from the repo root
+*.aplane-cosigner.json
