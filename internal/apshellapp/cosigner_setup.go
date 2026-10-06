@@ -51,10 +51,9 @@ var (
 // it never handles the cosigner's key, which the signer imports from the
 // cosigner's exported key file.
 type CosignerSetupRequest struct {
-	Alias      string
-	URL        string
-	SignerPort int
-	DryRun     bool
+	Alias  string
+	URL    string
+	DryRun bool
 }
 
 // CosignerSetupTarget is what guided setup can decide before asking the user
@@ -246,9 +245,6 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 	}
 	if candidate.URL == "" {
 		return CosignerSetupPlan{}, fmt.Errorf("%w; pass the cosigner URL", ErrCosignerEndpointURLRequired)
-	}
-	if req.SignerPort != 0 {
-		candidate.SignerPort = req.SignerPort
 	}
 
 	normalizedURL := strings.TrimRight(strings.TrimSpace(candidate.URL), "/")

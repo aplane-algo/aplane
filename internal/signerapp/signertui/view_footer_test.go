@@ -107,7 +107,7 @@ func TestAdminTitleUsesCosignerNodeRole(t *testing.T) {
 	}
 }
 
-func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
+func TestStandaloneAdminHeaderShowsEndpointWithoutRESTPort(t *testing.T) {
 	m := Model{
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
@@ -122,12 +122,16 @@ func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 	got := stripANSI(m.renderAdminHeader())
 	for _, want := range []string{
 		"Cosigner Admin",
-		"Cosigner Port: 11270",
 		"Endpoint: ssh://cosigner.example.test:1127",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)
 		}
+	}
+	// The REST port is a loopback detail behind the endpoint, not something
+	// a client needs; it stays in the settings panel only.
+	if strings.Contains(got, "Port") {
+		t.Fatalf("renderAdminHeader() shows a port:\n%s", got)
 	}
 }
 
@@ -146,7 +150,6 @@ func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) 
 	got := stripANSI(m.renderAdminHeader())
 	for _, want := range []string{
 		"Signer Admin",
-		"Signer Port: 11270",
 		"Endpoint: ssh://192.0.2.10:1127",
 	} {
 		if !strings.Contains(got, want) {
@@ -230,8 +233,8 @@ func TestStandaloneAdminHeaderStaysWithinWidth(t *testing.T) {
 		t.Fatalf("renderAdminHeader() width = %d, want <= %d\n%s", width, m.width, stripANSI(got))
 	}
 	clean := stripANSI(got)
-	if !strings.Contains(clean, "Signer Admin") || !strings.Contains(clean, "Signer Port") {
-		t.Fatalf("renderAdminHeader() missing role or port:\n%s", clean)
+	if !strings.Contains(clean, "Signer Admin") || !strings.Contains(clean, "Endpoint:") {
+		t.Fatalf("renderAdminHeader() missing role or endpoint:\n%s", clean)
 	}
 }
 

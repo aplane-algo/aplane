@@ -29,7 +29,6 @@ func (a *App) StartupConnectDecision() *StartupConnectDecision {
 			decision.HasSSHConfig = true
 			decision.Host = endpointSSH.Host
 			decision.SSHPort = endpointSSH.Port
-			decision.SignerPort = endpointSSH.SignerPort
 		}
 	}
 

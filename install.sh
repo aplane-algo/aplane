@@ -950,41 +950,6 @@ read_signer_endpoint_ssh_port() {
     ' "$path"
 }
 
-read_primary_endpoint_signer_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoints[[:space:]]*:/) {
-                in_endpoints = 1
-                next
-            }
-            if (in_endpoints && indent == 2 && $0 ~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 1
-                next
-            }
-            if (in_primary && indent <= 2 && $0 !~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 0
-            }
-            if (in_primary && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
-                value = $2
-                sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                print value
-                exit
-            }
-        }
-    ' "$path"
-}
-
 read_primary_endpoint_ssh_port() {
     local path="$1"
     [ -f "$path" ] || return 0
@@ -1041,38 +1006,35 @@ check_local_config_consistency() {
     [ -f "$signer_config" ] || return 0
     [ -f "$client_config" ] || return 0
 
-    local signer_signer_port signer_ssh_port client_signer_port client_ssh_port client_ports_source
+    # Only the SSH port must agree: the signer's SSH server forwards every
+    # client channel to its own REST listener, so the client never names it.
+    local signer_ssh_port client_ssh_port client_ports_source
     client_ports_source="config"
-    signer_signer_port="$(read_signer_endpoint_signer_port "$signer_config")"
     signer_ssh_port="$(read_signer_endpoint_ssh_port "$signer_config")"
-    client_signer_port="$(read_top_level_int "$client_config" "signer_port")"
     client_ssh_port="$(read_ssh_port "$client_config")"
-    if [ -z "$client_signer_port" ] || [ -z "$client_ssh_port" ]; then
+    if [ -z "$client_ssh_port" ]; then
         local client_endpoints
         client_endpoints="$(dirname "$client_config")/endpoints.yaml"
-        client_signer_port="$(read_primary_endpoint_signer_port "$client_endpoints")"
         client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
         client_ports_source="endpoints"
     fi
 
-    if [ -z "$signer_signer_port" ] || [ -z "$signer_ssh_port" ] || [ -z "$client_signer_port" ] || [ -z "$client_ssh_port" ]; then
-        echo "Warning: could not verify local signer/client port consistency."
+    if [ -z "$signer_ssh_port" ] || [ -z "$client_ssh_port" ]; then
+        echo "Warning: could not verify local signer/client SSH port consistency."
         echo "  Signer config: $signer_config"
         echo "  Client config: $client_config"
         return 0
     fi
 
-    if [ "$signer_signer_port" = "$client_signer_port" ] && [ "$signer_ssh_port" = "$client_ssh_port" ]; then
+    if [ "$signer_ssh_port" = "$client_ssh_port" ]; then
         return 0
     fi
 
     echo ""
-    echo "WARNING: local signer/client config ports do not match."
+    echo "WARNING: local signer/client SSH ports do not match."
     echo "  Signer config: $signer_config"
-    echo "    endpoint.signer_port: $signer_signer_port"
-    echo "    endpoint.ssh.port:    $signer_ssh_port"
+    echo "    endpoint.ssh.port: $signer_ssh_port"
     echo "  Client config: $client_config"
-    echo "    signer_port: $client_signer_port"
     echo "    ssh.port:    $client_ssh_port"
     echo ""
     if [ "$client_ports_source" = "endpoints" ]; then
@@ -1260,8 +1222,7 @@ EOF
 write_apshell_endpoint_registry() {
     local target="$1"
     local host="${2:-127.0.0.1}"
-    local signer_port="${3:-11270}"
-    local ssh_port="${4:-1127}"
+    local ssh_port="${3:-1127}"
     cat > "$target" <<EOF
 # apshell endpoint registry
 # See docs/USER_CONFIG.md for full documentation.
@@ -1272,7 +1233,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://$host:$ssh_port
-    signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
@@ -1282,8 +1242,7 @@ EOF
 write_apshell_cosigner_endpoint_registry() {
     local target="$1"
     local host="${2:-127.0.0.1}"
-    local signer_port="${3:-11270}"
-    local ssh_port="${4:-1127}"
+    local ssh_port="${3:-1127}"
     cat > "$target" <<EOF
 # apshell endpoint registry
 # See docs/USER_CONFIG.md for full documentation.
@@ -1293,7 +1252,6 @@ endpoints:
   local-cosigner:
     role: cosigner
     url: ssh://$host:$ssh_port
-    signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: tokens/local-cosigner.token
@@ -1304,14 +1262,13 @@ write_apshell_endpoint_registry_for_role() {
     local target="$1"
     local role="$2"
     local host="${3:-127.0.0.1}"
-    local signer_port="${4:-11270}"
-    local ssh_port="${5:-1127}"
+    local ssh_port="${4:-1127}"
     case "$role" in
         signer)
-            write_apshell_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+            write_apshell_endpoint_registry "$target" "$host" "$ssh_port"
             ;;
         cosigner)
-            write_apshell_cosigner_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+            write_apshell_cosigner_endpoint_registry "$target" "$host" "$ssh_port"
             ;;
         *)
             echo "Error: unsupported endpoint registry role: $role" >&2
@@ -2045,7 +2002,7 @@ EOF
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" "CHANGE_ME" 11270 1127
+        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" "CHANGE_ME" 1127
     fi
 
     # Generate SSH key for signer tunnel (optional, skip if ssh-keygen not available)
@@ -2387,7 +2344,7 @@ STARTEOF
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 "$SIGNER_PORT" "$SSH_PORT"
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 "$SSH_PORT"
     fi
 
     if [ "$NODE_ROLE" = "signer" ]; then
@@ -2691,7 +2648,7 @@ if [ -n "$SUDO_USER" ]; then
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 11270 1127
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 1127
     fi
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 

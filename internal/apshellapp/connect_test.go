@@ -22,7 +22,6 @@ func TestConnectRequiresToken(t *testing.T) {
 	_, err = app.Connect(context.Background(), ConnectRequest{
 		Host:           "localhost",
 		SSHPort:        1127,
-		SignerPort:     11270,
 		IdentityFile:   "/tmp/id",
 		KnownHostsPath: "/tmp/known_hosts",
 	})
@@ -43,7 +42,6 @@ func TestConnectRequiresEndpointToken(t *testing.T) {
 	_, err = app.Connect(context.Background(), ConnectRequest{
 		Host:           "localhost",
 		SSHPort:        1127,
-		SignerPort:     11270,
 		IdentityFile:   "/tmp/id",
 		KnownHostsPath: "/tmp/known_hosts",
 		TokenFile:      tokenPath,

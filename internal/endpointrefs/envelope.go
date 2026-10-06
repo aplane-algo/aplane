@@ -20,12 +20,12 @@ const (
 	Schema = "aplane.endpoint.v1"
 )
 
-// Envelope is the public, portable endpoint handoff document.
+// Envelope is the public, portable endpoint handoff document: the schema and
+// the URL. Nothing else selects the service; an ssh:// node forwards every
+// channel to its own REST listener.
 type Envelope struct {
-	Schema     string `json:"schema"`
-	URL        string `json:"url"`
-	SignerPort int    `json:"signer_port,omitempty"`
-	LocalPort  int    `json:"local_port,omitempty"`
+	Schema string `json:"schema"`
+	URL    string `json:"url"`
 }
 
 // Parse decodes and validates a strict endpoint envelope.
@@ -69,12 +69,6 @@ func Normalize(env Envelope) (Envelope, error) {
 	env.URL = strings.TrimRight(strings.TrimSpace(env.URL), "/")
 	if err := ValidatePortableURL(env.URL); err != nil {
 		return Envelope{}, err
-	}
-	if env.SignerPort < 0 || env.SignerPort > 65535 {
-		return Envelope{}, fmt.Errorf("signer_port must be 1-65535 when set")
-	}
-	if env.LocalPort < 0 || env.LocalPort > 65535 {
-		return Envelope{}, fmt.Errorf("local_port must be 1-65535 when set")
 	}
 	return env, nil
 }

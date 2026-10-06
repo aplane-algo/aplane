@@ -125,7 +125,7 @@ func TestEndpointImportAndCreateRetireTokenWhenDestinationChanges(t *testing.T) 
 			t.Fatal(err)
 		}
 		result, err := newEndpointTestApp(t, dataDir).EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{
-			Alias: "field", URL: "ssh://new.example:2223", CosignerPort: 12270,
+			Alias: "field", URL: "ssh://new.example:2223",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -142,7 +142,7 @@ func TestEndpointImportAndCreateRetireTokenWhenDestinationChanges(t *testing.T) 
 		dataDir := t.TempDir()
 		writeLiveCosignerEndpoint(t, dataDir, "field", "ssh://old.example:2223", "old-token")
 		result, err := newEndpointTestApp(t, dataDir).EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{
-			Alias: "field", URL: "ssh://new.example:2223", CosignerPort: 12270,
+			Alias: "field", URL: "ssh://new.example:2223",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -333,17 +333,6 @@ func TestSaveEndpointTokenIfCurrentDiscardsTokenForReplacedDestination(t *testin
 		}
 		if _, statErr := os.Stat(tokenPath(dataDir)); !os.IsNotExist(statErr) {
 			t.Fatalf("token stat error = %v, want no token under the new route", statErr)
-		}
-	})
-	t.Run("api port replaced while approval was pending", func(t *testing.T) {
-		dataDir, app, endpoint := setup(t)
-		if _, err := lockedEndpointUpsert(dataDir, alias, config.ClientEndpointConfig{
-			Role: config.ClientEndpointRoleCosigner, URL: "ssh://old.example:2223", SignerPort: 12999,
-		}, true); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := app.saveEndpointTokenIfCurrent(alias, endpoint, "issued"); err == nil {
-			t.Fatal("saveEndpointTokenIfCurrent() succeeded, want the late token discarded")
 		}
 	})
 	t.Run("token file moved while approval was pending", func(t *testing.T) {

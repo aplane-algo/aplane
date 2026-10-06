@@ -17,9 +17,9 @@ import (
 // ConnectWithTunnel establishes an SSH tunnel connection using 2FA: API token + public key.
 // This method handles the tunnel setup and returns the result.
 // hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
-func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, localPort int, signerPort int, token string, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
+func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, localPort int, token string, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
 	result, err := e.Connection.ConnectWithTunnel(
-		target, host, sshPort, localPort, signerPort, token, identityFile, knownHostsPath, hostKeyApproval,
+		target, host, sshPort, localPort, token, identityFile, knownHostsPath, hostKeyApproval,
 		e.populateSignerCache,
 		e.handleConnectionClosed(onDisconnect),
 	)

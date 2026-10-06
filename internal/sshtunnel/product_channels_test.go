@@ -37,7 +37,7 @@ func connectProductClient(t *testing.T, srv *Server, tmpDir string) *Client {
 	if err := os.WriteFile(knownHostsPath, []byte(knownhosts.Line([]string{hostWithPort(host, port)}, srv.hostKey.PublicKey())+"\n"), 0600); err != nil {
 		t.Fatalf("WriteFile(known_hosts) error = %v", err)
 	}
-	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	client := NewClient(host, port, 0, identityPath, knownHostsPath)
 	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)

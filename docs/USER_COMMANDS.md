@@ -735,12 +735,13 @@ obtain access when needed, confirm the node is a cosigner, and report routes.
 
 ```text
 endpoints add
-endpoints add [<cosigner-url>] [--alias <alias>] [--cosigner-port <port>]
-  [--replace] [--dry-run]
+endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
 ```
 
 The URL is `ssh://host:port`, `https://...`, or loopback `http://...`. Without
-one, an interactive shell prompts for it. `--endpoint <url>` is accepted as an
+one, an interactive shell prompts for it. For an `ssh://` cosigner the port is
+the SSH port; the cosigner's REST port is never given to the client, because
+the cosigner's SSH server forwards every channel to its own listener. `--endpoint <url>` is accepted as an
 alternative spelling. The command takes no file: the cosigner's key file is
 imported on the signer, and giving it to `endpoints add` is refused with that
 guidance.
@@ -837,7 +838,7 @@ subcommands are.
 
 ```text
 endpoints add ssh://cosigner.example:1127
-endpoints add ssh://cosigner.example:1127 --alias cosigner-lab --cosigner-port 11270
+endpoints add ssh://cosigner.example:1127 --alias cosigner-lab
 endpoints add ssh://cosigner.example:1127 --alias cosigner-lab --dry-run
 ```
 
@@ -881,8 +882,8 @@ setup use [endpoints add](#endpoints-add); for route checks use `cosigner status
 ```
 endpoints list
 endpoints show <alias>
-endpoints add [<public-json>] [--alias <alias>] [--endpoint <url>] [--cosigner-port <port>] [--replace] [--dry-run]
-endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]
+endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
+endpoints create --alias <alias> --endpoint <url> [--dry-run]
 endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>
 endpoints discover-cosigners
 endpoints default <alias>
@@ -899,14 +900,15 @@ from `--host`, use explicit `--url`, or use the running daemon's configured
 admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
 Re-importing with the same alias replaces that alias's endpoint data. If that
-changes the destination (the URL, or the SSH-backed API port), the token issued
-by the previous destination is removed. Importing a new alias likewise removes
+changes the destination (the URL), the token issued by the previous
+destination is removed. Importing a new alias likewise removes
 any token file already at its path. The output reports either removal.
 
 `endpoints create` manually writes a `role: cosigner` endpoint profile without an
 exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
-usually `ssh://host[:ssh-port]`; `--cosignerport` is the cosigner node REST port
-behind that endpoint. It writes routing only. Tokens are still obtained with
+usually `ssh://host[:ssh-port]`. The cosigner's REST port is not part of the
+profile: an `ssh://` node forwards every client channel to its own listener.
+It writes routing only. Tokens are still obtained with
 `request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
 flow.
 
@@ -921,7 +923,7 @@ operations perform this discovery automatically for the keys they require.
 endpoints import --alias main --role signer signer.endpoint.json
 endpoints import --alias local-cosigner --role cosigner cosigner.endpoint.json
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
-endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223 --cosignerport 12270
+endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
 request-token --endpoint main
 request-token --endpoint local-cosigner
 connect main
@@ -1014,7 +1016,7 @@ Then configure and verify the transaction client in apshell with the
 cosigner's address:
 
 ```text
-endpoints add ssh://cosigner.example:1127 --cosigner-port 11270
+endpoints add ssh://cosigner.example:1127
 ```
 
 Approve any **Client Access Request** in apadmin on the cosigner node. Compare the complete client
@@ -1459,14 +1461,12 @@ endpoints:
   primary:
     role: signer
     url: ssh://192.168.1.100:1127
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
   local-cosigner:
     role: cosigner
     url: ssh://192.168.1.101:1127
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: tokens/local-cosigner.token

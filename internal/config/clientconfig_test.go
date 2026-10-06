@@ -240,8 +240,8 @@ endpoints:
 	if err != nil {
 		t.Fatalf("ResolveClientEndpointSSH: %v", err)
 	}
-	if endpointSSH.SignerPort != DefaultRESTPort || endpointSSH.Port != DefaultSSHPort {
-		t.Fatalf("endpoint SSH ports = %#v", endpointSSH)
+	if endpointSSH.Port != DefaultSSHPort {
+		t.Fatalf("endpoint SSH port = %#v", endpointSSH)
 	}
 	if endpointSSH.IdentityFile != filepath.Join(dataDir, ".ssh/id_ed25519") {
 		t.Fatalf("identity file = %q", endpointSSH.IdentityFile)

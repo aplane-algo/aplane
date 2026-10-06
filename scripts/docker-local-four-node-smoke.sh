@@ -754,10 +754,9 @@ verify_selected_network_reachable() {
 }
 
 configure_client_endpoints() {
-    local signer_ssh_port signer_port
+    local signer_ssh_port
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
-    signer_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" signer_port)"
-    [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
+    [ -n "$signer_ssh_port" ] || die "could not read signer SSH port"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/aplane/apclient/tokens && cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
 schema_version: 2
@@ -766,7 +765,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer:$signer_ssh_port
-    signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
@@ -774,12 +772,11 @@ YAML"
 }
 
 create_client_cosigner_endpoint() {
-    local cosigner_ssh_port cosigner_port out
+    local cosigner_ssh_port out
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
-    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
-    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
+    [ -n "$cosigner_ssh_port" ] || die "could not read cosigner SSH port"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints create --alias local-cosigner --endpoint ssh://cosigner:%s --cosignerport %s\nendpoints show local-cosigner\n' '$cosigner_ssh_port' '$cosigner_port' > /tmp/create-cosigner-endpoint.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints create --alias local-cosigner --endpoint ssh://cosigner:%s\nendpoints show local-cosigner\n' '$cosigner_ssh_port' > /tmp/create-cosigner-endpoint.script"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/create-cosigner-endpoint.script 2>&1")"; then
         printf '%s\n' "$out" >&2
@@ -957,8 +954,7 @@ write_sdk_data_dir() {
     local data_dir="$1"
     local host="$2"
     local ssh_port="$3"
-    local signer_port="$4"
-    local token_path="$5"
+    local token_path="$4"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$data_dir' && \
         mkdir -p '$data_dir/.ssh' && \
@@ -977,7 +973,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://$host:$ssh_port
-    signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
@@ -985,25 +980,21 @@ YAML"
 }
 
 configure_python_sdk_client_data() {
-    local signer_ssh_port signer_port cosigner_ssh_port cosigner_port
+    local signer_ssh_port cosigner_ssh_port
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
-    signer_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" signer_port)"
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
-    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
-    [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
-    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
+    [ -n "$signer_ssh_port" ] || die "could not read signer SSH port"
+    [ -n "$cosigner_ssh_port" ] || die "could not read cosigner SSH port"
 
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-primary" \
         "signer" \
         "$signer_ssh_port" \
-        "$signer_port" \
         "/home/$TEST_USER/aplane/apclient/aplane.token"
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-cosigner" \
         "cosigner" \
         "$cosigner_ssh_port" \
-        "$cosigner_port" \
         "/home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token"
 }
 
@@ -1363,12 +1354,11 @@ enroll_cosigner_reference_to_signer() {
 }
 
 verify_guided_cosigner_setup() {
-    local out client_data add_command token_check cosigner_ssh_port cosigner_port
+    local out client_data add_command token_check cosigner_ssh_port
 
     client_data="/home/$TEST_USER/aplane/apclient"
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
-    cosigner_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" signer_port)"
-    [ -n "$cosigner_ssh_port" ] && [ -n "$cosigner_port" ] || die "could not read cosigner endpoint ports"
+    [ -n "$cosigner_ssh_port" ] || die "could not read cosigner SSH port"
     if [ "$RELEASE_INSTALL" = "1" ]; then
         # A release may predate 'endpoints add' and token retirement on
         # delete. 'cosigner add' works in both, and the token is removed by
@@ -1386,7 +1376,7 @@ verify_guided_cosigner_setup() {
         . $client_data/apenv.sh && \
         apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
         $token_check && \
-        echo '$add_command ssh://cosigner:$cosigner_ssh_port --alias local-cosigner --cosigner-port $cosigner_port' > /tmp/add-cosigner.script" \
+        echo '$add_command ssh://cosigner:$cosigner_ssh_port --alias local-cosigner' > /tmp/add-cosigner.script" \
         || die "endpoints delete did not remove the cosigner endpoint and its token"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". $client_data/apenv.sh && \
         apshell -script /tmp/add-cosigner.script 2>&1")"; then

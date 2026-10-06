@@ -24,14 +24,13 @@ import (
 
 func TestParseEndpointsAddArgs(t *testing.T) {
 	options, err := parseEndpointsAddArgs([]string{
-		"ssh://Cosigner.example:2223/path", "--alias", "Field",
-		"--cosigner-port", "12270", "--replace", "--dry-run",
+		"ssh://Cosigner.example:2223/path", "--alias", "Field", "--replace", "--dry-run",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if options.request.Alias != "Field" || options.request.URL != "ssh://Cosigner.example:2223/path" ||
-		options.request.SignerPort != 12270 || !options.replace || !options.request.DryRun {
+		!options.replace || !options.request.DryRun {
 		t.Fatalf("options = %#v", options)
 	}
 	// The flag spelling still works.

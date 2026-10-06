@@ -372,7 +372,6 @@ if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
   signer_authorized_keys_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "authorized_keys_path")"
 fi
 
-client_signer_port="$(read_top_level_value "$CLIENT_CONFIG" "signer_port")"
 client_ssh_host="$(read_section_value "$CLIENT_CONFIG" "ssh" "host")"
 client_ssh_port="$(read_section_value "$CLIENT_CONFIG" "ssh" "port")"
 client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file")"
@@ -418,17 +417,8 @@ fi
 check_file_exists "client config" "$CLIENT_CONFIG"
 info "signer_port" "${signer_port:-not configured}"
 info "signer ssh.port" "${signer_ssh_port:-not configured}"
-info "client signer_port" "${client_signer_port:-not configured}"
 info "client ssh.host" "${client_ssh_host:-not configured}"
 info "client ssh.port" "${client_ssh_port:-not configured}"
-
-if [ -n "$signer_port" ] && [ -n "$client_signer_port" ]; then
-  if [ "$signer_port" = "$client_signer_port" ]; then
-    pass "REST port match" "$signer_port"
-  else
-    warn "REST port mismatch" "signer=$signer_port client=$client_signer_port"
-  fi
-fi
 
 if [ -n "$signer_ssh_port" ] && [ -n "$client_ssh_port" ]; then
   if [ "$signer_ssh_port" = "$client_ssh_port" ]; then

@@ -282,15 +282,10 @@ func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint
 			}
 			sshPort = port
 		}
-		signerPort := endpoint.SignerPort
-		if signerPort == 0 {
-			signerPort = config.DefaultRESTPort
-		}
 		progressOut := s.signerProgressWriter()
 		client, cleanup, err := connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
-			SignerPort:      signerPort,
 			Token:           token,
 			IdentityFile:    endpoint.IdentityFile,
 			KnownHostsPath:  endpoint.KnownHostsPath,

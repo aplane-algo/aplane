@@ -242,7 +242,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://localhost:$SSH_PORT
-    signer_port: $SIGNER_PORT
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token

@@ -34,20 +34,6 @@ func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
 	}
 }
 
-func TestEndpointMachineProjectionOmitsLocalPortForCosignerRole(t *testing.T) {
-	projection := projectEndpointEntry(apshellapp.EndpointEntry{
-		Alias: "cosigner", Role: config.ClientEndpointRoleCosigner,
-		URL: "ssh://cosigner.example:22", LocalPort: 12271,
-	})
-	data, err := json.Marshal(projection)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(data, []byte("local_port")) {
-		t.Fatalf("machine cosigner endpoint projection contains local_port: %s", data)
-	}
-}
-
 func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := config.DefaultConfig()
@@ -67,7 +53,6 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 		"create",
 		"--alias", "cosigner-local",
 		"--endpoint", "ssh://127.0.0.1:2223",
-		"--cosignerport", "12270",
 	}, nil)
 	if err != nil {
 		t.Fatalf("cmdEndpoints(create) error = %v", err)
@@ -77,7 +62,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	}
 	rendered := out.String()
 	if !strings.Contains(rendered, "Configured cosigner endpoint cosigner-local") ||
-		!strings.Contains(rendered, "cosigner port: 12270") ||
+		strings.Contains(rendered, "port:") ||
 		!strings.Contains(rendered, "request-token --endpoint cosigner-local") {
 		t.Fatalf("output missing create details:\n%s", rendered)
 	}
@@ -90,8 +75,8 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatal("cosigner-local endpoint missing")
 	}
-	if endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
-		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint with signer_port 12270", endpoint)
+	if endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint", endpoint)
 	}
 	if live, ok := state.App.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
 		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve cosigner-local", live, ok)
@@ -101,7 +86,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	dataDir := t.TempDir()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223", SignerPort: 12270,
+		Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -132,21 +117,6 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	endpoint, ok := state.App.Config.Endpoints.Endpoint("local-cosigner")
 	if !ok || endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
 		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-cosigner", endpoint, ok)
-	}
-}
-
-func TestParseEndpointCreateCosignerArgsAcceptsHyphenatedPortFlag(t *testing.T) {
-	req, err := parseEndpointCreateCosignerArgs([]string{
-		"--alias", "cosigner-local",
-		"--endpoint", "ssh://127.0.0.1:2223",
-		"--cosigner-port", "12270",
-		"--dry-run",
-	})
-	if err != nil {
-		t.Fatalf("parseEndpointCreateCosignerArgs() error = %v", err)
-	}
-	if req.Alias != "cosigner-local" || req.URL != "ssh://127.0.0.1:2223" || req.CosignerPort != 12270 || !req.DryRun {
-		t.Fatalf("request = %#v, want parsed manual cosigner endpoint", req)
 	}
 }
 
@@ -223,7 +193,7 @@ func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 	}
 	other := apshellapp.New(eng, cfg, dataDir)
 	if _, err := other.EndpointCreateCosigner(context.Background(), apshellapp.EndpointCreateCosignerRequest{
-		Alias: "added", URL: "ssh://127.0.0.1:2223", CosignerPort: 12270,
+		Alias: "added", URL: "ssh://127.0.0.1:2223",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +212,7 @@ func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 
 func TestEndpointArgParsersShareFlagRules(t *testing.T) {
 	importArgs := []string{"--alias", "a", "--role", "signer", "env.json"}
-	createArgs := []string{"--alias", "a", "--endpoint", "ssh://h:22", "--cosignerport", "12270"}
+	createArgs := []string{"--alias", "a", "--endpoint", "ssh://h:22"}
 	parse := map[string]func([]string) error{
 		"import": func(args []string) error { _, err := parseEndpointImportArgs(args); return err },
 		"create": func(args []string) error { _, err := parseEndpointCreateCosignerArgs(args); return err },
@@ -268,7 +238,10 @@ func TestEndpointArgParsersShareFlagRules(t *testing.T) {
 			t.Errorf("%s unknown flag: error = %v", name, err)
 		}
 	}
-	if err := parse["create"]([]string{"--alias", "a", "--endpoint", "u", "--cosignerport", "70000"}); err == nil {
-		t.Error("create accepted an out-of-range cosigner port")
+	// The cosigner port was retired: the node's SSH server forwards to its
+	// own REST listener, so the client never chose it.
+	if err := parse["create"]([]string{"--alias", "a", "--endpoint", "ssh://h:22", "--cosignerport", "12270"}); err == nil ||
+		!strings.Contains(err.Error(), "--cosignerport") {
+		t.Errorf("create accepted the retired --cosignerport flag: %v", err)
 	}
 }

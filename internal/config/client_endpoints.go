@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -41,8 +42,6 @@ type ClientEndpointConfig struct {
 	// signer endpoint and any number of cosigner endpoints.
 	Role           string `yaml:"role"`
 	URL            string `yaml:"url" description:"Endpoint URL: https://..., loopback http://..., or ssh://host[:port]"`
-	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
-	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for signer-role ssh:// endpoints (0 = choose automatically); unsupported for cosigner endpoints"`
 	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
@@ -53,7 +52,6 @@ type ClientEndpointConfig struct {
 type ClientEndpointSSH struct {
 	Host           string
 	Port           int
-	SignerPort     int
 	IdentityFile   string
 	KnownHostsPath string
 	TokenFile      string
@@ -162,9 +160,6 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 	}
 
 	if strings.HasPrefix(endpoint.URL, "ssh://") {
-		if endpoint.SignerPort == 0 {
-			endpoint.SignerPort = DefaultRESTPort
-		}
 		if endpoint.IdentityFile == "" {
 			endpoint.IdentityFile = ".ssh/id_ed25519"
 		}
@@ -178,15 +173,6 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 }
 
 func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) error {
-	if endpoint.SignerPort < 0 || endpoint.SignerPort > 65535 {
-		return fmt.Errorf("signer_port must be 1-65535 when set")
-	}
-	if endpoint.LocalPort < 0 || endpoint.LocalPort > 65535 {
-		return fmt.Errorf("local_port must be 1-65535 when set")
-	}
-	if endpoint.Role == ClientEndpointRoleCosigner && endpoint.LocalPort != 0 {
-		return fmt.Errorf("local_port is not supported for cosigner endpoints")
-	}
 	if endpoint.URL == "self" {
 		return fmt.Errorf("url %q is not supported; configure an explicit ssh://, https://, or loopback http:// endpoint", endpoint.URL)
 	}
@@ -246,14 +232,9 @@ func ResolveClientEndpointSSH(endpoint ClientEndpointConfig) (ClientEndpointSSH,
 	if err != nil {
 		return ClientEndpointSSH{}, err
 	}
-	signerPort := endpoint.SignerPort
-	if signerPort == 0 {
-		signerPort = DefaultRESTPort
-	}
 	return ClientEndpointSSH{
 		Host:           host,
 		Port:           port,
-		SignerPort:     signerPort,
 		IdentityFile:   endpoint.IdentityFile,
 		KnownHostsPath: endpoint.KnownHostsPath,
 		TokenFile:      endpoint.TokenFile,
@@ -349,9 +330,17 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	return nil
 }
 
+// retiredClientEndpointFields are endpoint fields earlier builds wrote and
+// nothing reads: the node's SSH server forwards every channel to its own REST
+// listener, so a client never chose the remote port, and the local tunnel
+// port is picked at connect time. They are dropped on load and are gone from
+// the file after its next write.
+var retiredClientEndpointFields = []string{"signer_port", "local_port"}
+
 // decodeClientEndpointRegistry reads endpoints.yaml, which must carry the
 // current schema_version.
 func decodeClientEndpointRegistry(data []byte) (ClientEndpointRegistry, error) {
+	data = stripRetiredClientEndpointFields(data)
 	var registry ClientEndpointRegistry
 	if err := UnmarshalKnownFields(data, &registry); err != nil {
 		return ClientEndpointRegistry{}, err
@@ -360,4 +349,39 @@ func decodeClientEndpointRegistry(data []byte) (ClientEndpointRegistry, error) {
 		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
 	}
 	return registry, nil
+}
+
+// stripRetiredClientEndpointFields removes retiredClientEndpointFields from
+// every endpoint entry. Anything it cannot parse is returned unchanged for the
+// strict decoder to report.
+func stripRetiredClientEndpointFields(data []byte) []byte {
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return data
+	}
+	endpoints, ok := raw["endpoints"].(map[string]any)
+	if !ok {
+		return data
+	}
+	changed := false
+	for _, entry := range endpoints {
+		fields, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, field := range retiredClientEndpointFields {
+			if _, present := fields[field]; present {
+				delete(fields, field)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return data
+	}
+	stripped, err := yaml.Marshal(raw)
+	if err != nil {
+		return data
+	}
+	return stripped
 }

@@ -89,20 +89,13 @@ func openRuntime(clientData, networkOverride string, stderr io.Writer, connectSi
 	if token == "" {
 		return nil, fmt.Errorf("no signer API token found at %s", endpoint.TokenFile)
 	}
-	localPort := endpoint.LocalPort
-	if localPort == 0 {
-		localPort, err = connect.FindAvailableLocalPort()
-		if err != nil {
-			return nil, err
-		}
-	}
-	signerPort := endpoint.SignerPort
-	if signerPort == 0 {
-		signerPort = config.DefaultRESTPort
+	localPort, err := connect.FindAvailableLocalPort()
+	if err != nil {
+		return nil, err
 	}
 
 	eng.Connection.SetSignerProgressWriter(stderr)
-	result, err := eng.ConnectWithTunnel(alias, host, sshPort, localPort, signerPort, token, endpoint.IdentityFile, endpoint.KnownHostsPath, nil, nil)
+	result, err := eng.ConnectWithTunnel(alias, host, sshPort, localPort, token, endpoint.IdentityFile, endpoint.KnownHostsPath, nil, nil)
 	if err != nil {
 		_ = eng.Disconnect()
 		return nil, fmt.Errorf("connect to signer endpoint %q: %w", alias, err)

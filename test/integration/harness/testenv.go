@@ -355,10 +355,9 @@ func assignClonedPorts(signerDataDir, clientDataDir string) error {
 		return err
 	}
 	endpointsPath := filepath.Join(clientDataDir, config.ClientEndpointsFile)
-	if err := setYAMLPath(endpointsPath, "ssh://localhost:"+fmt.Sprint(sshPort), "endpoints", config.DefaultClientEndpointName, "url"); err != nil {
-		return err
-	}
-	return setYAMLPath(endpointsPath, signerPort, "endpoints", config.DefaultClientEndpointName, "signer_port")
+	// The client names only the SSH port; the signer's SSH server forwards to
+	// its own REST listener.
+	return setYAMLPath(endpointsPath, "ssh://localhost:"+fmt.Sprint(sshPort), "endpoints", config.DefaultClientEndpointName, "url")
 }
 
 func reserveTCPPorts(count int) ([]int, error) {

@@ -54,7 +54,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.example.com:1127
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
@@ -161,7 +160,6 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.example.com:1127
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
@@ -222,12 +220,11 @@ connect main
 ```
 
 For a cosigner endpoint, the client can also create the endpoint profile manually
-when the operator already knows the client-reachable URL and cosigner REST port:
+when the operator already knows the client-reachable URL:
 
 ```bash
 endpoints create --alias local-cosigner \
-  --endpoint ssh://cosigner.example.com:1127 \
-  --cosignerport 11270
+  --endpoint ssh://cosigner.example.com:1127
 request-token --endpoint local-cosigner
 endpoints discover-cosigners
 ```
@@ -275,7 +272,6 @@ endpoints:
   main:
     role: signer
     url: ssh://signer.example.com:1127
-    signer_port: 11270
     token_file: aplane.token
 ```
 
@@ -293,7 +289,7 @@ Useful local commands:
 endpoints list
 endpoints show main
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
-endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223 --cosignerport 12270
+endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
 endpoints default main
 endpoints delete old-signer
 ```

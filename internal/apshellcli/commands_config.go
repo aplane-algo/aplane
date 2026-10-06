@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -21,7 +20,7 @@ import (
 const endpointsUsage = "endpoints list | " +
 	"endpoints show <alias> | " +
 	endpointsAddUsage + " | " +
-	"endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run] | " +
+	"endpoints create --alias <alias> --endpoint <url> [--dry-run] | " +
 	"endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json> | " +
 	"endpoints discover-cosigners | " +
 	"endpoints default <alias> | " +
@@ -160,7 +159,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 			})
 		}, endpointMutationProjection{
 			Mode: "create", Alias: result.Alias, Role: result.Role, URL: result.URL,
-			Port: result.CosignerPort, DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
+			DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
 		})
 	case "import":
 		req, err := parseEndpointImportArgs(args[1:])
@@ -182,7 +181,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 			})
 		}, endpointMutationProjection{
 			Mode: "import", Alias: result.Alias, Role: result.Role, URL: result.URL,
-			Port: result.SignerPort, DryRun: result.DryRun, Created: result.Created,
+			DryRun: result.DryRun, Created: result.Created,
 			Updated: result.Updated, DefaultChanged: result.DefaultChanged,
 		})
 	case "discover-cosigners":
@@ -294,7 +293,7 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 
 func parseEndpointCreateCosignerArgs(args []string) (apshellapp.EndpointCreateCosignerRequest, error) {
 	var req apshellapp.EndpointCreateCosignerRequest
-	const usage = "usage: endpoints create --alias <alias> --endpoint <url> --cosignerport <port> [--dry-run]"
+	const usage = "usage: endpoints create --alias <alias> --endpoint <url> [--dry-run]"
 	for i := 0; i < len(args); i++ {
 		var err error
 		switch arg := args[i]; arg {
@@ -304,17 +303,6 @@ func parseEndpointCreateCosignerArgs(args []string) (apshellapp.EndpointCreateCo
 			req.Alias, err = endpointFlagValue(args, &i, req.Alias, usage)
 		case "--endpoint", "--url":
 			req.URL, err = endpointFlagValue(args, &i, req.URL, usage)
-		case "--cosignerport", "--cosigner-port":
-			var port string
-			if req.CosignerPort != 0 {
-				return req, errors.New(usage)
-			}
-			if port, err = endpointFlagValue(args, &i, "", usage); err == nil {
-				req.CosignerPort, err = strconv.Atoi(port)
-				if err != nil || req.CosignerPort <= 0 || req.CosignerPort > 65535 {
-					return req, errors.New(usage)
-				}
-			}
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return req, fmt.Errorf("unknown endpoints create flag %q", arg)
@@ -325,7 +313,7 @@ func parseEndpointCreateCosignerArgs(args []string) (apshellapp.EndpointCreateCo
 			return req, err
 		}
 	}
-	if req.Alias == "" || req.URL == "" || req.CosignerPort == 0 {
+	if req.Alias == "" || req.URL == "" {
 		return req, errors.New(usage)
 	}
 	return req, nil
@@ -383,10 +371,6 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("Role: %s\n", endpoint.Role)
 	r.printf("Default: %s\n", yesNo(endpoint.IsDefault))
 	r.printf("URL: %s\n", endpoint.URL)
-	r.printf("Signer port: %d\n", endpoint.SignerPort)
-	if endpoint.Role == config.ClientEndpointRoleSigner {
-		r.printf("Local port: %d\n", endpoint.LocalPort)
-	}
 	r.printf("Identity file: %s\n", endpoint.IdentityFile)
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
 	r.printf("Token file: %s\n", endpoint.TokenFile)

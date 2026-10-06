@@ -703,8 +703,6 @@ type EndpointEntry struct {
 	Alias          string
 	Role           string
 	URL            string
-	SignerPort     int
-	LocalPort      int
 	IdentityFile   string
 	KnownHostsPath string
 	TokenFile      string
@@ -728,8 +726,6 @@ type EndpointImportResult struct {
 	Alias          string
 	Role           string
 	URL            string
-	SignerPort     int
-	LocalPort      int
 	TokenFile      string
 	DryRun         bool
 	Created        bool
@@ -745,14 +741,13 @@ type EndpointImportResult struct {
 // EndpointCreateCosignerResult describes manual creation of a cosigner endpoint
 // profile.
 type EndpointCreateCosignerResult struct {
-	Alias        string
-	Role         string
-	URL          string
-	CosignerPort int
-	TokenFile    string
-	DryRun       bool
-	Created      bool
-	Updated      bool
+	Alias     string
+	Role      string
+	URL       string
+	TokenFile string
+	DryRun    bool
+	Created   bool
+	Updated   bool
 	// TokenRetired reports that a stored token was removed (or would be, in a
 	// dry run): the alias moved to another destination, or was created over a
 	// token file left under its name.
@@ -806,7 +801,6 @@ type StartupConnectDecision struct {
 	HasSSHConfig  bool
 	Host          string
 	SSHPort       int
-	SignerPort    int
 	ShouldConnect bool
 }
 

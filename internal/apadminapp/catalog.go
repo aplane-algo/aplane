@@ -541,10 +541,9 @@ func (c Catalog) removeCosigner(name string) error {
 type endpointExportSettings struct {
 	AdvertiseURL string
 	SSHPort      int
-	SignerPort   int
 }
 
-const endpointExportUsage = "usage: apadmin endpoint export [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
+const endpointExportUsage = "usage: apadmin endpoint export [--host <host> | --url <url>] [--out endpoint.json]"
 
 func (c Catalog) runEndpoint(args []string) error {
 	if len(args) == 0 || args[0] != "export" {
@@ -554,8 +553,6 @@ func (c Catalog) runEndpoint(args []string) error {
 	fs.SetOutput(io.Discard)
 	host := fs.String("host", "", "client-reachable SSH host or IP")
 	endpointURL := fs.String("url", "", "endpoint URL")
-	signerPort := fs.Int("signer-port", 0, "remote apsigner REST port")
-	localPort := fs.Int("local-port", 0, "local tunnel port")
 	outPath := fs.String("out", "", "output JSON path")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 		return errors.New(endpointExportUsage)
@@ -564,7 +561,7 @@ func (c Catalog) runEndpoint(args []string) error {
 	if err != nil {
 		return err
 	}
-	envelope, err := buildEndpointExportEnvelope(*host, *endpointURL, *signerPort, *localPort, settings)
+	envelope, err := buildEndpointExportEnvelope(*host, *endpointURL, settings)
 	if err != nil {
 		return err
 	}
@@ -583,21 +580,12 @@ func (c Catalog) runEndpoint(args []string) error {
 	return nil
 }
 
-func buildEndpointExportEnvelope(
-	host, explicitURL string,
-	signerPort, localPort int,
-	settings endpointExportSettings,
-) (endpointrefs.Envelope, error) {
+func buildEndpointExportEnvelope(host, explicitURL string, settings endpointExportSettings) (endpointrefs.Envelope, error) {
 	urlValue, err := endpointExportURL(host, explicitURL, settings.AdvertiseURL, endpointExportSSHPort(settings))
 	if err != nil {
 		return endpointrefs.Envelope{}, err
 	}
-	if signerPort == 0 && endpointExportUsesSSH(urlValue) {
-		signerPort = endpointExportSignerPort(settings)
-	}
-	return endpointrefs.Normalize(endpointrefs.Envelope{
-		Schema: endpointrefs.Schema, URL: urlValue, SignerPort: signerPort, LocalPort: localPort,
-	})
+	return endpointrefs.Normalize(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: urlValue})
 }
 
 func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
@@ -607,7 +595,7 @@ func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
 	}, &settings); err != nil {
 		return endpointExportSettings{}, fmt.Errorf("load endpoint export settings: %w", err)
 	}
-	return endpointExportSettings{AdvertiseURL: settings.EndpointAdvertiseURL, SSHPort: settings.SSHPort, SignerPort: settings.SignerPort}, nil
+	return endpointExportSettings{AdvertiseURL: settings.EndpointAdvertiseURL, SSHPort: settings.SSHPort}, nil
 }
 
 func (c Catalog) runGenerations(args []string) error {
@@ -850,20 +838,9 @@ func endpointExportURL(host, explicitURL, advertisedURL string, sshPort int) (st
 	return "", fmt.Errorf("endpoint advertise_url is not configured; pass --host/--url or configure endpoint.advertise_url")
 }
 
-func endpointExportUsesSSH(rawURL string) bool {
-	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(rawURL)), "ssh://")
-}
-
 func endpointExportSSHPort(settings endpointExportSettings) int {
 	if settings.SSHPort != 0 {
 		return settings.SSHPort
 	}
 	return apconfig.DefaultSSHPort
-}
-
-func endpointExportSignerPort(settings endpointExportSettings) int {
-	if settings.SignerPort != 0 {
-		return settings.SignerPort
-	}
-	return apconfig.DefaultRESTPort
 }

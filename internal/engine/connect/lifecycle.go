@@ -35,7 +35,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	host string,
 	sshPort int,
 	localPort int,
-	signerPort int,
 	token string,
 	identityFile string,
 	knownHostsPath string,
@@ -78,7 +77,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 		return result, fmt.Errorf("port %d is already in use locally", localPort)
 	}
 
-	client := sshtunnel.NewClient(host, sshPort, localPort, signerPort, identityFile, knownHostsPath)
+	client := sshtunnel.NewClient(host, sshPort, localPort, identityFile, knownHostsPath)
 	client.SetAPIToken(token)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
@@ -184,7 +183,7 @@ func (s *ConnectionState) RequestTokenWithContext(
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
 	onProvisioningStart func(string),
 ) (string, error) {
-	client := sshtunnel.NewClient(host, sshPort, 0, 0, identityFile, knownHostsPath)
+	client := sshtunnel.NewClient(host, sshPort, 0, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}

@@ -75,7 +75,7 @@ func TestSSHDialTargetPreservesExplicitIPv6(t *testing.T) {
 }
 
 func TestClientResetCloseSignalAllowsReuseAfterClose(t *testing.T) {
-	client := NewClient("example.com", 22, 0, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+	client := NewClient("example.com", 22, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
 	close(client.closeChan)
 
 	client.mu.Lock()
@@ -96,7 +96,7 @@ func TestGenerateIdentityKeyDoesNotOverwriteExistingFile(t *testing.T) {
 	if err := os.WriteFile(path, original, 0o644); err != nil {
 		t.Fatalf("WriteFile(existing) error = %v", err)
 	}
-	client := NewClient("example.com", 22, 0, 0, path, filepath.Join(t.TempDir(), "known_hosts"))
+	client := NewClient("example.com", 22, 0, path, filepath.Join(t.TempDir(), "known_hosts"))
 
 	if _, err := client.generateIdentityKey(path); err == nil {
 		t.Fatal("generateIdentityKey(existing) error = nil, want create-new failure")
@@ -122,7 +122,7 @@ func TestHostKeyApprovalIsPerCallback(t *testing.T) {
 	SetStatusWriter(&promptOutput)
 	defer SetStatusWriter(nil)
 	knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
-	client := NewClient("example.com", 22, 0, 0, "", knownHostsPath)
+	client := NewClient("example.com", 22, 0, "", knownHostsPath)
 
 	calls := 0
 	client.SetHostKeyApprovalHandler(func(host string, fingerprint string) (bool, error) {
@@ -185,7 +185,7 @@ func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 22}
 
 	t.Run("unknown", func(t *testing.T) {
-		client := NewClient("unknown.example", 22, 0, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+		client := NewClient("unknown.example", 22, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
 		callback, err := client.hostKeyCallback()
 		if err != nil {
 			t.Fatal(err)
@@ -196,7 +196,7 @@ func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 	})
 
 	t.Run("mismatch", func(t *testing.T) {
-		client := NewClient("pinned.example", 22, 0, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
+		client := NewClient("pinned.example", 22, 0, "", filepath.Join(t.TempDir(), "known_hosts"))
 		client.SetHostKeyApprovalHandler(func(string, string) (bool, error) { return true, nil })
 		callback, err := client.hostKeyCallback()
 		if err != nil {
@@ -219,7 +219,7 @@ func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 		if err := os.WriteFile(path, []byte("not a known-hosts record\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		client := NewClient("bad.example", 22, 0, 0, "", path)
+		client := NewClient("bad.example", 22, 0, "", path)
 		_, err := client.hostKeyCallback()
 		if !errors.Is(err, ErrKnownHostsFile) {
 			t.Fatalf("hostKeyCallback() error = %v, want ErrKnownHostsFile", err)

@@ -44,9 +44,8 @@ func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
 		Default:       "primary",
 		Endpoints: map[string]config.ClientEndpointConfig{
 			"primary": {
-				Role:       config.ClientEndpointRoleSigner,
-				URL:        "ssh://signer.example:1127",
-				SignerPort: 11270,
+				Role: config.ClientEndpointRoleSigner,
+				URL:  "ssh://signer.example:1127",
 			},
 		},
 	}
@@ -56,7 +55,7 @@ func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
 	if !decision.HasSSHConfig {
 		t.Fatal("HasSSHConfig = false, want true")
 	}
-	if decision.Host != "signer.example" || decision.SSHPort != 1127 || decision.SignerPort != 11270 {
+	if decision.Host != "signer.example" || decision.SSHPort != 1127 {
 		t.Fatalf("decision = %#v", decision)
 	}
 }
@@ -83,7 +82,6 @@ func TestStartupConnectDecisionUsesDefaultEndpointToken(t *testing.T) {
 			"primary-alt": {
 				Role:           config.ClientEndpointRoleSigner,
 				URL:            "ssh://signer.example:2222",
-				SignerPort:     12270,
 				IdentityFile:   "/tmp/id_ed25519",
 				KnownHostsPath: "/tmp/known_hosts",
 				TokenFile:      tokenPath,
@@ -99,7 +97,7 @@ func TestStartupConnectDecisionUsesDefaultEndpointToken(t *testing.T) {
 	if decision.TokenPath != tokenPath || decision.EndpointName != "primary-alt" {
 		t.Fatalf("decision = %#v, want endpoint token path", decision)
 	}
-	if decision.Host != "signer.example" || decision.SSHPort != 2222 || decision.SignerPort != 12270 {
+	if decision.Host != "signer.example" || decision.SSHPort != 2222 {
 		t.Fatalf("decision = %#v, want endpoint connection info", decision)
 	}
 }

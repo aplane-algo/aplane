@@ -577,7 +577,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	endpoint, clientCfg := mustLoadDefaultSignerEndpoint(t)
+	_, clientCfg := mustLoadDefaultSignerEndpoint(t)
 	eng, err := engine.NewEngine(harness.IntegrationNetwork())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
@@ -612,7 +612,6 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 		clientCfg.Host,
 		clientCfg.Port,
 		localPort,
-		endpoint.SignerPort,
 		token,
 		"",
 		clientCfg.KnownHostsPath,
@@ -662,7 +661,6 @@ func TestActiveTunnelFailsCleanlyWhenTokenRevoked(t *testing.T) {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 	sshCfg := mustLoadClientSSHConfig(t)
-	endpoint := mustLoadDefaultSignerEndpointOnly(t)
 
 	token, err := requestTokenViaEngine(t, eng, sshCfg, ipcClient, func(host, fingerprint string) (bool, error) {
 		return true, nil
@@ -687,7 +685,6 @@ func TestActiveTunnelFailsCleanlyWhenTokenRevoked(t *testing.T) {
 		sshCfg.Host,
 		sshCfg.Port,
 		localPort,
-		endpoint.SignerPort,
 		token,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
@@ -732,7 +729,7 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	endpoint, sshCfg := mustLoadDefaultSignerEndpoint(t)
+	_, sshCfg := mustLoadDefaultSignerEndpoint(t)
 	eng, err := engine.NewEngine(harness.IntegrationNetwork())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
@@ -761,7 +758,6 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 		sshCfg.Host,
 		sshCfg.Port,
 		localPort,
-		endpoint.SignerPort,
 		firstToken,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
@@ -802,7 +798,6 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 		sshCfg.Host,
 		sshCfg.Port,
 		reconnectPort,
-		endpoint.SignerPort,
 		secondToken,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
@@ -1138,13 +1133,6 @@ func mustLoadClientSSHConfig(t *testing.T) config.ClientEndpointSSH {
 
 	_, sshCfg := mustLoadDefaultSignerEndpoint(t)
 	return sshCfg
-}
-
-func mustLoadDefaultSignerEndpointOnly(t *testing.T) config.ClientEndpointConfig {
-	t.Helper()
-
-	endpoint, _ := mustLoadDefaultSignerEndpoint(t)
-	return endpoint
 }
 
 func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, config.ClientEndpointSSH) {

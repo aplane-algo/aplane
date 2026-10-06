@@ -61,7 +61,7 @@ func TestClientRejectsServerThatSkipsMutualTokenProof(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	client := NewClient(host, port, 0, identityPath, knownHostsPath)
 	client.SetAPIToken("test-token")
 	err = client.ConnectWithKey(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "did not complete mutual token proof") {
@@ -100,7 +100,7 @@ func TestClientRejectsInvalidServerTokenProof(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	client := NewClient(host, port, 0, identityPath, knownHostsPath)
 	client.SetAPIToken("wrong-token")
 	if err := client.ConnectWithKey(context.Background()); err == nil {
 		t.Fatal("ConnectWithKey() succeeded with a wrong token")
@@ -163,7 +163,7 @@ func TestClientRejectsServerProofBoundToAnotherHostKey(t *testing.T) {
 
 func TestClientConnectWithKeyReturnsDialError(t *testing.T) {
 	_, _, identityPath := generateClientIdentityFile(t, t.TempDir())
-	client := NewClient("127.0.0.1", 1, 0, 0, identityPath, filepath.Join(t.TempDir(), "known_hosts"))
+	client := NewClient("127.0.0.1", 1, 0, identityPath, filepath.Join(t.TempDir(), "known_hosts"))
 	client.SetAPIToken("test-token")
 	err := client.ConnectWithKey(context.Background())
 	if err == nil {

@@ -358,8 +358,9 @@ URL plus, for `ssh://` endpoints, the REST port reached through SSH.
 Hand-editing `endpoints.yaml` bypasses these write-side rules.
 
 The registry may contain one signer endpoint and at most 12 cosigner endpoints.
-Cosigner endpoint records carry connection metadata only and do not accept a
-`local_port` setting.
+Endpoint records carry connection metadata only: the URL, SSH identity and
+known-hosts paths, and the token file. No record names the node's REST port;
+the node's SSH server forwards every channel to its own listener.
 
 Runtime guarded-send routing works like this:
 
