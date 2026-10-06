@@ -71,17 +71,15 @@ apadmin policy apply policy.json
 apadmin policy apply - < policy.json
 ```
 
-To start from an explained document rather than the bare one, write the
-annotated starting template and edit it:
+To start from the node's starting document, write it out and edit it:
 
 ```bash
 apadmin policy template signer > policy.json
 apadmin policy template --key <WitnessKeyID> cosigner > key.json
 ```
 
-The template is the node's starting document with every field explained in
-`//` comments and an example route commented out above the real one. Remove
-the `// ` from a block to enable it; each block already ends with a comma. Policy files may
+The template is the node's starting document with a `//` comment on its one
+route, which lets any account send any asset to itself. Policy files may
 carry `//` and `/* */` comments anywhere outside strings. `apadmin` removes
 them before the document reaches the node, so `apadmin policy export` returns
 the stored document without them; keep the commented file if you want the
@@ -104,8 +102,7 @@ apadmin checks the text, shows the same diff as a file load, and applies it
 only after you press `y`. Nothing is stored before that.
 
 - **A new cosigner key starts with self-transfers only.** A cosigner key with
-  no policy opens on the annotated starting template, which without its
-  comments is:
+  no policy opens on the starting document, which without its comment is:
 
   ```json
   {
@@ -127,11 +124,10 @@ only after you press `y`. Nothing is stored before that.
   ```
 
   Opt-ins and self-sends pass; a transfer to any other address is rejected,
-  as are close-outs and clawbacks, until a route allows it. The comments
-  explain each field and hold an example route above the real one; remove
-  the `// ` from its lines, fill in the addresses, then check and apply. A
-  signer whose policy is still the initial one opens on the signer template
-  the same way. Any other document opens exactly as stored.
+  as are close-outs and clawbacks, until a route allows it. Add routes, then
+  check and apply. A signer whose policy is still the initial one opens on
+  the signer starting document the same way. Any other document opens
+  exactly as stored.
 - **Comments are allowed.** `//` and `/* */` comments outside strings are
   removed before the text reaches the node, so they never appear in the
   stored document. A syntax error is still reported at the line and column

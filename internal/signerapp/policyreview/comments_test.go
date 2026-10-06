@@ -110,9 +110,8 @@ func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
 	}
 }
 
-// The templates are the starting documents with comments: stripped, they
-// decode equal to what the node starts with, and with their example blocks
-// enabled they are valid policy with the example route.
+// The templates are the starting documents with a comment: stripped, they
+// decode equal to what the node starts with.
 func TestStartingTemplatesMatchTheStartingDocuments(t *testing.T) {
 	signer := SignerTemplate()
 	stripped, err := StripComments([]byte(signer))
@@ -176,48 +175,5 @@ func TestStartingTemplatesMatchTheStartingDocuments(t *testing.T) {
 	}
 	if text, err := StartingTemplate("cosigner", testKeyA); err != nil || text != cosigner {
 		t.Fatalf("StartingTemplate(cosigner) = %q, %v", text, err)
-	}
-}
-
-func TestTemplateExampleBlocksAreValidPolicy(t *testing.T) {
-	const address = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
-	enabled := strings.ReplaceAll(UncommentTemplate(SignerTemplate()), "<58-character address>", address)
-	for _, line := range strings.Split(enabled, "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimLeft(line, " "), "//"); ok {
-			if text := strings.TrimLeft(rest, " "); text != "" && strings.ContainsRune(`"{}[]`, rune(text[0])) {
-				t.Fatalf("a JSON line stayed commented: %q", line)
-			}
-		}
-	}
-	stripped, err := StripComments([]byte(enabled))
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := policy.DecodeSignerPolicyV1(stripped)
-	if err != nil {
-		t.Fatalf("enabled signer template does not decode: %v\n%s", err, stripped)
-	}
-	if signer.TransferPolicy == nil || !signer.TransferPolicy.Enabled || len(signer.TransferPolicy.Routes) != 2 ||
-		signer.TransferPolicy.Routes[0].ID != "treasury-to-ops" || signer.TransferPolicy.Routes[1].ID != policy.SelfTransferRouteID ||
-		signer.MaxFeeMicroAlgos == nil || len(signer.Limits) == 0 || signer.RejectForeignRekey == nil || *signer.RejectForeignRekey {
-		t.Fatalf("enabled signer template = %+v, want every example block in effect", signer)
-	}
-
-	template, err := CosignerTemplate(testKeyA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enabled = strings.ReplaceAll(UncommentTemplate(template), "<58-character address>", address)
-	stripped, err = StripComments([]byte(enabled))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cosigner, err := policy.DecodeCosignerPolicyV1(stripped, testKeyA)
-	if err != nil {
-		t.Fatalf("enabled cosigner template does not decode: %v\n%s", err, stripped)
-	}
-	if len(cosigner.Routes) != 2 || cosigner.Routes[0].ID != "treasury-to-ops" || cosigner.Routes[1].ID != policy.SelfTransferRouteID || len(cosigner.RekeyPolicy) != 1 ||
-		cosigner.RejectRekey == nil || cosigner.MaxFeeMicroAlgos == nil || len(cosigner.Limits) == 0 {
-		t.Fatalf("enabled cosigner template = %+v, want every example block in effect", cosigner)
 	}
 }

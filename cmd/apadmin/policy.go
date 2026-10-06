@@ -128,9 +128,9 @@ Verbs:
   apply FILE...|-   check, show the diff, confirm, then replace documents in one commit
   remove ID...      show the diff, confirm, then delete cosigner keys' policies
   template [--key ID] signer|cosigner
-                    write an annotated starting document for that node role,
-                    with every field explained in comments and an example
-                    route commented out; --key names the cosigner key
+                    write the starting document for that node role, with a
+                    comment on its self-transfer route; --key names the
+                    cosigner key
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
 template needs no node and no passphrase.
