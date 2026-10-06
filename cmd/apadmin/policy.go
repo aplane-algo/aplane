@@ -46,6 +46,16 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 
+	// template is the producer side's own text: no store, socket, data
+	// directory, or passphrase takes part, so none is resolved.
+	if command.Verb == policycmd.VerbTemplate {
+		if err := policycmd.WriteTemplate(command, ioStreams); err != nil {
+			writePolicyError(streams.stderr, err)
+			return 1
+		}
+		return 0
+	}
+
 	if rescue {
 		if globals.ipcPathPassed {
 			writePolicyError(streams.stderr, fmt.Errorf("policy rescue cannot use --ipc-path"))

@@ -18,9 +18,12 @@ var errUnterminatedComment = errors.New("unterminated /* comment")
 
 // StripComments removes comments from data and returns the document the node
 // receives. Text with no comment is returned unchanged, byte for byte. A
-// comment is removed outright: a line that held only a comment disappears,
-// and trailing whitespace left where a comment was removed is dropped, so a
-// stored document does not keep blank lines where its notes were.
+// comment on one line becomes a single space, so the tokens around it stay
+// separate: "fa/* x */lse" is not turned into "false". A comment spanning
+// lines keeps its newlines. A line that then holds only whitespace
+// disappears, and trailing whitespace left where a comment was removed is
+// dropped, so a stored document does not keep blank lines where its notes
+// were.
 func StripComments(data []byte) ([]byte, error) {
 	spans, err := commentSpans(data)
 	if err != nil {
@@ -29,7 +32,7 @@ func StripComments(data []byte) ([]byte, error) {
 	if len(spans) == 0 {
 		return data, nil
 	}
-	// Delete the comments, keeping their newlines so lines still line up
+	// Replace the comments, keeping their newlines so lines still line up
 	// with the original, then rebuild line by line: a line a comment
 	// touched is trimmed on the right and dropped when nothing is left.
 	deleted := deleteSpans(data, spans)
@@ -125,16 +128,22 @@ func commentSpans(data []byte) ([]commentSpan, error) {
 	return spans, nil
 }
 
-// deleteSpans removes every comment byte except newlines.
+// deleteSpans replaces every comment with its newlines, or with one space
+// when it has none, so the tokens on either side never join.
 func deleteSpans(data []byte, spans []commentSpan) []byte {
 	out := make([]byte, 0, len(data))
 	pos := 0
 	for _, span := range spans {
 		out = append(out, data[pos:span.start]...)
+		newlines := 0
 		for _, c := range data[span.start:span.end] {
 			if c == '\n' {
 				out = append(out, c)
+				newlines++
 			}
+		}
+		if newlines == 0 {
+			out = append(out, ' ')
 		}
 		pos = span.end
 	}

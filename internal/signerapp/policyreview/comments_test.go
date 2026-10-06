@@ -18,7 +18,9 @@ func TestStripCommentsRemovesCommentsOutsideStrings(t *testing.T) {
 		{name: "no comments is unchanged", in: "{\n  \"a\": \"b\"  \n}\n", want: "{\n  \"a\": \"b\"  \n}\n"},
 		{name: "line comment on its own line is dropped", in: "{\n  // note\n  \"a\": 1\n}\n", want: "{\n  \"a\": 1\n}\n"},
 		{name: "trailing line comment is trimmed", in: "{\n  \"a\": 1 // note\n}\n", want: "{\n  \"a\": 1\n}\n"},
-		{name: "block comment inline", in: "{\"a\": /* x */ 1}", want: "{\"a\":  1}"},
+		{name: "block comment inline", in: "{\"a\": /* x */ 1}", want: "{\"a\":   1}"},
+		{name: "inline comment keeps tokens apart", in: "{\"a\":fa/* x */lse}", want: "{\"a\":fa lse}"},
+		{name: "inline comment between tokens without spaces", in: "{\"a\":1/* x */,\"b\":2}", want: "{\"a\":1 ,\"b\":2}"},
 		{name: "block comment spanning lines", in: "{\n  /* one\n     two */\n  \"a\": 1\n}", want: "{\n  \"a\": 1\n}"},
 		{name: "block comment ending mid line keeps the rest", in: "{\n  /* one\n  two */ \"a\": 1\n}", want: "{\n \"a\": 1\n}"},
 		{name: "comment markers inside strings stay", in: "{\"url\": \"http://x/*y*/\", \"b\": \"\\\"//\"}", want: "{\"url\": \"http://x/*y*/\", \"b\": \"\\\"//\"}"},
@@ -94,6 +96,17 @@ func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
 		if _, err := DocumentFromText("signer", "policy.json", text); err == nil {
 			t.Fatalf("%s: text accepted", name)
 		}
+	}
+	// A comment inside a token does not assemble one: the stripped text is
+	// what the node decodes, and it fails there exactly as the blanked text
+	// the TUI checks would.
+	split := "{\"format\": \"aplane.signer-policy.v1\", \"reject_foreign_rekey\": fa/* note */lse}"
+	doc, err = DocumentFromText("signer", "policy.json", split)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := policy.DecodeSignerPolicyV1([]byte(doc.Document)); err == nil {
+		t.Fatalf("a token split by a comment decoded: %q", doc.Document)
 	}
 }
 
