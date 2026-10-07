@@ -103,7 +103,7 @@ Source: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
 | A1 | implemented | A1 | `internal/cosigner/message/message.go`; `internal/signerapp/signing/component.go::prepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesCosignerRoleDomain`; `::TestAssembleDecodedGuardedRejectsWrongUserSignature` | Role byte separates user and cosigner signatures for the same target txid. Machine-checked in `guarded_assembly.tla` (`A1_RoleDomainSeparation`). |
 | A2 | implemented | A2 | `internal/signerapp/signing/cosigner_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup` | Covers witness keys and the dedicated guarded account key type; bounded-cosigner ordinary-sign rejection is tested separately. |
 | A3 | implemented | A3 | `internal/signerapp/signing/component_sign.go::signPreparedUserComponents`; `::loadGuardedAccountSigningKey` | `internal/signerapp/signing/component_test.go::TestSignPreparedUserComponentsSignsGuardedAccountMessages`; `::TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages` | User component signing proves `component_key` is a local guarded account key; sender may differ and is bound by assembly. |
-| A4 | implemented | A4 | `internal/signerapp/signing/service.go::signComponentWithContext` (entry: `unified_component.go::SignComponentsWithContext`); `internal/signerapp/signing/cosigner_policy.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentCosignerRequiresPolicyBeforeKeyLoad`; `::TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRekeyBeforeKeyLoad` | Cosigner policy is deterministic: no review and no operator default. |
+| A4 | implemented | A4 | `internal/signerapp/signing/service.go::signComponentWithContext` (entry: `unified_component.go::SignComponentsWithContext`); `internal/signerapp/signing/cosigner_policy.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentCosignerRequiresPolicyBeforeKeyLoad`; `::TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentCosignerRejectsRekeyBeforeKeyLoad` | Cosigner policy is deterministic: no review and no operator default. Policies are selected per Witness Key ID (`Service.CosignerPolicies`, `TestCosignerComponentPolicyIsSelectedByComponentKey`); a key with no policy document rejects every request. That selection is a single lookup guard and stays a test-level contract by decision (2026-10-07 drift review), not a model extension. |
 | A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadCosignerComponentKey`; `internal/witness` | `internal/signerapp/signing/component_test.go::TestSignPreparedCosignerComponentsRejectsWrongKeyType`; `::TestLoadCosignerComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedCosignerComponentsSignsFalcon1024Messages` | Witness Key ID, category, key type, and public/private pair must agree. |
 | A6 | implemented | A6 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongUserSignature`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | User signature is checked against the user public key stored in the local guarded account key. Machine-checked in `guarded_assembly.tla` (`A6_UserSignatureVerified`). |
 | A7 | implemented | A7 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongCosignerSignature`; `::TestAssembleDecodedGuardedVerifiesFalconCosignerAndBuildsSignedGroup` | Cosigner signature is checked against the cosigner public key embedded in local key metadata/bytecode, not endpoint metadata. Machine-checked in `guarded_assembly.tla` (`A7_CosignerSignatureVerified`). |
@@ -170,6 +170,16 @@ Source: [ARCH_SECURITY.md](ARCH_SECURITY.md) ("Client Enrollment via SSH"); mach
 | EQ4 | implemented | Every enrolled key is audited `CLIENT_ENROLLED`, including one whose registry write was applied but not durable | `internal/signerapp/daemon/server.go::ApproveClientEnrollment`; `::ImportClientKey`; `internal/signerapp/productruntime/runtime.go::ApproveEnrollment` | `internal/signerapp/productruntime/client_registry_test.go::TestApproveEnrollmentAppliedNotDurableReportsEnrollment`; `internal/signerapp/daemon/enrollment_test.go::TestEnrollmentRequestQueuesNotifiesAndApproves` | The `enrolled`/`added` result is reported separately from the durability error so the caller audits the authority change. Machine-checked as `EQ4_EnrolledKeysAudited`. |
 | EQ5 | implemented | The queue holds at most `MaxPending` keys; a repeated request refreshes its entry and does not count against the cap | `internal/signerapp/enrollqueue/queue.go::WithRequest` | `internal/signerapp/enrollqueue/queue_test.go::TestWithRequestAddsRefreshesAndCaps`; `internal/signerapp/enrollment/service_test.go::TestServiceRequestReportsFullQueueAndHidesOtherFailures` | Machine-checked as `EQ5_QueueBounded`. |
 | EQ6 | implemented | Rejecting never drops the request of a key that is already enrolled | `internal/signerapp/productruntime/runtime.go::RejectEnrollment` (`ErrAlreadyEnrolled`) | `internal/signerapp/productruntime/client_registry_test.go::TestRejectEnrollmentRefusesEnrolledKey`; `internal/signerapp/daemon/enrollment_test.go::TestRejectClientEnrollmentRefusesEnrolledKey` | The state arises when an approval's registry write applied but its queue write failed; the operator approves again or revokes. Machine-checked as `EQ6_RejectNeverStrandsEnrolledKey` (history flag). |
+
+## Recovery Binding
+
+Source: [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) (reload binding and recovery maintenance); machine-checked in [formal/recovery_binding.tla](formal/recovery_binding.tla).
+
+| ID | Status | Property | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| RB1 | implemented | Deleted-archive list and prune act only on the generation the authenticated root selects | `internal/signerapp/daemon/admin_services.go::authenticatedSelection`; `::ListDeletedArchive`; `::PruneDeletedArchive` | `internal/signerapp/daemon/archive_selection_test.go::TestDeletedArchiveMaintenanceFollowsTheStoreRoot` | Maintenance authenticates the root itself rather than trusting the cached binding. Machine-checked as `RB1_MaintenanceFollowsRoot`; the negative control `recovery_binding_negative.cfg` is the pre-`b0e51275` code and must violate it. |
+| RB2 | implemented | After a mutation releases the store lock, no signing request or key write runs from a key cache behind the root | `internal/signerapp/admin/policy.go::ApplyPolicy` (`SetRecovery` inside `WithStoreMutation`); `internal/signerapp/backupadmin/direct_restore.go`; `internal/signerapp/runtime/runtime.go::SetRecovery` | `internal/signerapp/admin/policy_test.go::TestPolicyApplyEntersRecoveryBeforeReleasingTheLock` | Recovery is a distinct runtime state that refuses signing and key writes. Machine-checked as `RB2_NoStaleServiceAfterMutation` and `RB3_StaleCacheImpliesRecoveryOrMutation`. |
+| RB4 | implemented | A reload binds the authenticated root selection before any step that can fail, and clears it when the root no longer authenticates | `internal/signerapp/templates/reload.go` (`BindStoreRootSelection` first); `internal/keystore/file.go::Scan`; `::BindStoreRootSelection`; `internal/genstore/store_root.go::AuthenticateStoreRootSelection`; `::ValidateStoreRootSelection` | `internal/keystore/scan_binding_test.go::TestScanFailureBindsTheAuthenticatedSelection`; `::TestScanClearsBindingWhenRootStopsAuthenticating` | Machine-checked as `RB4_BindingFollowsRoot`. |
 
 ## Open Cross-Cutting Gaps
 
@@ -449,6 +459,31 @@ Validated by mutation tests: dropping the `regSynced` guard on the
 `already enrolled` answer flips `ackedUnsynced` (EQ1) and, after a crash,
 violates EQ3; dropping the `k \notin reg` check in `Reject` flips
 `rejectedEnrolled` (EQ6).
+
+### Recovery binding module
+
+[formal/recovery_binding.tla](formal/recovery_binding.tla) (see
+[FORMAL_TLA_RECOVERY_BINDING_MODEL.md](FORMAL_TLA_RECOVERY_BINDING_MODEL.md))
+models the reload that follows a root commit: the keystore binding, the key
+cache, and recovery maintenance against the root selection, under the three
+code guards as constants (bind before validate, maintenance reads the root,
+recovery before lock release). TLC checked over the full finite state space,
+45 distinct states, depth 10, no counterexamples. The expected-failure
+[formal/recovery_binding_negative.cfg](formal/recovery_binding_negative.cfg)
+disables the first two guards (the code before `b0e51275`) and must violate
+`RB1_MaintenanceFollowsRoot` after 15 distinct states at depth 5.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| RB1 (maintenance follows the root) | `RB1_MaintenanceFollowsRoot` |
+| RB2 (no stale service after a mutation) | `RB2_NoStaleServiceAfterMutation` |
+| RB3 (stale cache implies recovery or mutation) | `RB3_StaleCacheImpliesRecoveryOrMutation` |
+| RB4 (binding follows the root) | `RB4_BindingFollowsRoot` |
+
+Validated by mutation tests: `BindBeforeValidate = FALSE` alone violates
+RB4; `RecoveryBeforeRelease = FALSE` alone violates RB2 and RB3;
+`MaintenanceReadsRoot = FALSE` alone holds because the fixed binding is the
+root.
 
 ### Unmodeled invariants
 

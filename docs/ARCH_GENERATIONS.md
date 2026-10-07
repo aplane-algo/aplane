@@ -316,3 +316,7 @@ The commit and substitution properties are modeled in
 [`formal/store_root_commit.tla`](formal/store_root_commit.tla). The normal
 configuration checks the invariants; `store_root_commit_negative.cfg` is an
 expected-failure control that removes exact outgoing-seal verification.
+What the runtime binds, serves, and maintains after a failed post-commit
+reload is modeled in [`formal/recovery_binding.tla`](formal/recovery_binding.tla);
+its negative control is the pre-fix binding and reproduces the superseded-
+generation prune as an invariant violation.

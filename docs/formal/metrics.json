@@ -73,5 +73,17 @@
     "expected_invariant_violation": "EQ2_PendingAckSurvivesCrash",
     "distinct_states": 175,
     "depth": 3
+  },
+  {
+    "spec": "recovery_binding",
+    "distinct_states": 45,
+    "depth": 10
+  },
+  {
+    "spec": "recovery_binding",
+    "cfg": "recovery_binding_negative",
+    "expected_invariant_violation": "RB1_MaintenanceFollowsRoot",
+    "distinct_states": 15,
+    "depth": 5
   }
 ]

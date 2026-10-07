@@ -18,6 +18,7 @@ contracts; these models cover narrower security-critical transitions.
 | `bounded_cosigner.tla` | bounded-cosigner composition |
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
+| `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -202,3 +203,15 @@ and lapse. EQ1-EQ6 hold over 2,340 states (depth 11; deep 12,168 at depth
 175 states at depth 3. Prose companion
 `FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md`; traceability rows and module section
 added. Items (2) and (3) remain flagged.
+
+Follow-up (2026-10-07, same day): flagged items (2) and (3) closed.
+`recovery_binding.tla` models the post-commit reload: the keystore binding,
+the key cache, and recovery maintenance against the root selection, with the
+three code guards as constants (bind before validate, maintenance reads the
+root, recovery before lock release). RB1-RB4 hold over 45 states at depth
+10; the negative control disables the first two guards, the shape before
+`b0e51275`, and reproduces that bug as an RB1 violation in five steps. Each
+guard is load-bearing for a different invariant (recorded in the prose
+companion `FORMAL_TLA_RECOVERY_BINDING_MODEL.md`). The per-witness-key
+cosigner policy selection stays a test-level contract by decision, recorded
+on the A4 traceability row. No flagged items remain from this review.
