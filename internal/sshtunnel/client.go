@@ -30,7 +30,20 @@ var (
 	ErrHostKeyMismatch = errors.New("SSH host key mismatch")
 	ErrUnknownHostKey  = errors.New("unknown SSH host key")
 	ErrKnownHostsFile  = errors.New("invalid SSH known_hosts file")
+	// ErrKeyNotEnrolled marks an SSH handshake the node refused because the
+	// client's key is not enrolled there (or was revoked). The client's key
+	// is its only credential, so this is the one authentication failure.
+	ErrKeyNotEnrolled = errors.New("SSH key not enrolled at this node")
 )
+
+// classifyHandshakeError marks an authentication refusal with
+// ErrKeyNotEnrolled. The SSH library reports it only as text.
+func classifyHandshakeError(err error) error {
+	if err != nil && strings.Contains(err.Error(), "unable to authenticate") {
+		return fmt.Errorf("%w: %w", ErrKeyNotEnrolled, err)
+	}
+	return err
+}
 
 // statusWriter is the destination for SSH client status/error messages emitted
 // from background goroutines (keepalive monitors, connection-closed handlers,
@@ -105,12 +118,10 @@ type Client struct {
 	listener  net.Listener
 	agentConn net.Conn
 
-	identityFile        string
-	knownHostsPath      string
-	hostKeyApproval     HostKeyApprovalHandler // Callback for TOFU host key approval
-	onProvisioningStart func(string)
-
-	apiToken string
+	identityFile      string
+	knownHostsPath    string
+	hostKeyApproval   HostKeyApprovalHandler // Callback for TOFU host key approval
+	onEnrollmentStart func(string)
 
 	mu        sync.Mutex
 	connected bool
@@ -119,8 +130,13 @@ type Client struct {
 	// Connection monitoring
 	keepaliveStop    *keepaliveStopSignal // Signal to stop keepalive goroutine
 	onDisconnect     func()               // Callback when connection dies
-	disconnectReason string               // Set by server before closing (e.g. "token-revoked")
+	disconnectReason string               // Set by server before closing (e.g. "key-revoked")
+	interceptDone    chan struct{}        // Closed once the global-request interceptor has drained
 }
+
+// DisconnectReasonKeyRevoked is the disconnect reason recorded when the server
+// closed the connection because the client's key was revoked.
+const DisconnectReasonKeyRevoked = "key-revoked"
 
 // forwardedAPIAddress is the destination named in every direct-tcpip channel
 // request. The server (see handleDirectTCPIP) checks only that the address is
@@ -162,24 +178,18 @@ func (c *Client) SetHostKeyApprovalHandler(handler HostKeyApprovalHandler) {
 	c.hostKeyApproval = handler
 }
 
-// SetProvisioningStartCallback sets a callback for token provisioning after
-// the SSH session starts the remote provision command. Its argument is the
-// complete SHA256 fingerprint of the client key used for authentication.
-func (c *Client) SetProvisioningStartCallback(callback func(string)) {
+// SetEnrollmentStartCallback sets a callback for enrollment after the SSH
+// session starts the remote enroll command. Its argument is the complete
+// SHA256 fingerprint of the client key used for authentication.
+func (c *Client) SetEnrollmentStartCallback(callback func(string)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.onProvisioningStart = callback
+	c.onEnrollmentStart = callback
 }
 
-// SetAPIToken sets the API token used for mutual token proof.
-func (c *Client) SetAPIToken(token string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.apiToken = token
-}
-
-// ConnectWithKey establishes an SSH connection using public-key auth and
-// mutual token proof.
+// ConnectWithKey establishes an SSH connection authenticated by the client's
+// enrolled key. The server is authenticated by its host key against
+// known_hosts; no other credential is involved.
 func (c *Client) ConnectWithKey(ctx context.Context) error {
 	c.mu.Lock()
 	if c.connected {
@@ -187,12 +197,8 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		return fmt.Errorf("already connected")
 	}
 	c.resetCloseSignalLocked()
-	token := c.apiToken
 	c.mu.Unlock()
 
-	if token == "" {
-		return fmt.Errorf("API token required (call SetAPIToken first)")
-	}
 	authMethod, agentConn, err := c.authMethod(nil)
 	if err != nil {
 		return err
@@ -205,45 +211,28 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		}
 		return err
 	}
-	authState := newTokenProofClientAuth(token)
-	defer authState.clear()
-	verifiedHostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		if err := hostKeyCallback(hostname, remote, key); err != nil {
-			return err
-		}
-		return authState.captureHostKey(key)
-	}
 
 	config := &ssh.ClientConfig{
-		User: productSSHUsername,
-		Auth: []ssh.AuthMethod{
-			authMethod,
-			ssh.KeyboardInteractive(authState.challenge),
-		},
-		HostKeyCallback: verifiedHostKeyCallback,
+		User:            productSSHUsername,
+		Auth:            []ssh.AuthMethod{authMethod},
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         sshHandshakeTimeout,
 	}
 
 	// Connect to SSH server
 	addr := net.JoinHostPort(c.host, fmt.Sprint(c.sshPort))
 
-	sshClient, err := c.dialAndIntercept(ctx, "tcp", addr, config)
+	sshClient, interceptDone, err := c.dialAndIntercept(ctx, "tcp", addr, config)
 	if err != nil {
 		if agentConn != nil {
 			_ = agentConn.Close()
 		}
-		return fmt.Errorf("SSH connection failed: %w", err)
-	}
-	if !authState.serverVerified() {
-		_ = sshClient.Close()
-		if agentConn != nil {
-			_ = agentConn.Close()
-		}
-		return fmt.Errorf("SSH connection failed: server did not complete mutual token proof")
+		return fmt.Errorf("SSH connection failed: %w", classifyHandshakeError(err))
 	}
 
 	c.mu.Lock()
 	c.sshClient = sshClient
+	c.interceptDone = interceptDone
 	c.agentConn = agentConn
 	c.connected = true
 	c.disconnectReason = ""
@@ -714,11 +703,17 @@ func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 	return sshClient.DialContext(ctx, "tcp", forwardedAPIAddress)
 }
 
-// RequestToken connects to the SSH server and requests a token via the exec channel.
-// This is a one-shot operation: connect, request, receive token, disconnect.
-func (c *Client) RequestToken(ctx context.Context) (string, error) {
+// RequestEnrollment connects as the enrollment user and asks the operator to
+// enroll this client's key, with an optional display label. It is a one-shot
+// operation: connect, request, receive the acknowledgement, disconnect. On
+// success it returns the enrolled key's fingerprint. No credential is
+// returned: the key is the credential.
+func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if _, ok := parseEnrollmentCommand(enrollmentCommandLine(label)); !ok {
+		return "", fmt.Errorf("enrollment label must be printable, single-line, and at most %d bytes", maxEnrollmentLabelBytes)
 	}
 	var clientFingerprint string
 	authMethod, agentConn, err := c.authMethod(func(fingerprint string) { clientFingerprint = fingerprint })
@@ -734,9 +729,8 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Use special username for token provisioning
 	config := &ssh.ClientConfig{
-		User:            tokenRequestSSHUsername,
+		User:            enrollmentSSHUsername,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         sshHandshakeTimeout,
@@ -747,6 +741,8 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 	sshClient, err := dialWithContext(ctx, "tcp", addr, config)
 	if err != nil {
 		if strings.Contains(err.Error(), "unable to authenticate") {
+			// The enrollment username accepts any key of a supported type,
+			// so a refusal here is a key-type problem, not enrollment.
 			return "", fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, clientKeyRequirement)
 		}
 		return "", fmt.Errorf("SSH connection failed: %w", err)
@@ -777,21 +773,20 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	// Run the "provision" command
-	if err := session.Start("provision"); err != nil {
+	if err := session.Start(enrollmentCommandLine(label)); err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		return "", fmt.Errorf("failed to start provisioning: %w", err)
+		return "", fmt.Errorf("failed to start enrollment: %w", err)
 	}
 	c.mu.Lock()
-	onProvisioningStart := c.onProvisioningStart
+	onEnrollmentStart := c.onEnrollmentStart
 	c.mu.Unlock()
-	if onProvisioningStart != nil {
-		onProvisioningStart(clientFingerprint)
+	if onEnrollmentStart != nil {
+		onEnrollmentStart(clientFingerprint)
 	}
 
-	// Drain stdout (the token on success) and stderr (error detail)
+	// Drain stdout (the acknowledgement on success) and stderr (error detail)
 	// concurrently: reading them sequentially can deadlock if the remote
 	// command fills the unread pipe's window before closing the other.
 	var errOutput []byte
@@ -825,16 +820,25 @@ func (c *Client) RequestToken(ctx context.Context) (string, error) {
 		if errMsg != "" {
 			return "", fmt.Errorf("%s", errMsg)
 		}
-		return "", fmt.Errorf("provisioning failed: %w", err)
+		return "", fmt.Errorf("enrollment failed: %w", err)
 	}
 
-	// Success - return the token (trimmed)
-	token := strings.TrimSpace(string(output))
-	if token == "" {
-		return "", fmt.Errorf("empty token received")
+	fingerprint, ok := strings.CutPrefix(strings.TrimSpace(string(output)), "enrolled ")
+	if !ok || fingerprint == "" {
+		return "", fmt.Errorf("unexpected enrollment response: %s", quoteClientText(strings.TrimSpace(string(output))))
 	}
+	if clientFingerprint != "" && fingerprint != clientFingerprint {
+		return "", fmt.Errorf("server enrolled %s, but this client authenticated with %s", fingerprint, clientFingerprint)
+	}
+	return fingerprint, nil
+}
 
-	return token, nil
+// enrollmentCommandLine renders the exec command for an enrollment request.
+func enrollmentCommandLine(label string) string {
+	if label == "" {
+		return enrollmentCommand
+	}
+	return enrollmentCommand + " " + label
 }
 
 // monitorConnection monitors the SSH connection and detects when it dies
@@ -889,6 +893,20 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 	keepaliveStop.stop()
 	<-keepaliveDone
 
+	// The server's revocation notice precedes its close on the wire, and
+	// the SSH mux closes the request stream before Wait returns, so the
+	// interceptor is about to finish; wait for it so the disconnect reason
+	// is in place before the callback reads it.
+	c.mu.Lock()
+	interceptDone := c.interceptDone
+	c.mu.Unlock()
+	if interceptDone != nil {
+		select {
+		case <-interceptDone:
+		case <-time.After(time.Second):
+		}
+	}
+
 	// Handle disconnection
 	c.handleDisconnect()
 }
@@ -904,8 +922,8 @@ func (c *Client) handleDisconnect() {
 
 	// Only trigger callback once
 	if wasConnected && callback != nil {
-		if reason == "token-revoked" {
-			_, _ = fmt.Fprintln(status(), "\n[SSH] Disconnected: token was revoked by the signer")
+		if reason == DisconnectReasonKeyRevoked {
+			_, _ = fmt.Fprintln(status(), "\n[SSH] Disconnected: this client's key was revoked by the signer")
 		} else {
 			_, _ = fmt.Fprintln(status(), "\n[SSH] Connection closed by remote server")
 		}
@@ -914,20 +932,25 @@ func (c *Client) handleDisconnect() {
 }
 
 // dialAndIntercept connects to the SSH server and intercepts global requests
-// from the server (e.g. token-revoked@aplane) before forwarding them to ssh.NewClient.
-func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+// from the server (the revocation notice) before forwarding them to
+// ssh.NewClient. The returned channel closes once the interceptor has
+// drained the request stream, which the SSH mux closes when the connection
+// ends.
+func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, chan struct{}, error) {
 	sshConn, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Intercept global requests: capture server signals, forward the rest
 	filteredReqs := make(chan *ssh.Request, 16)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for req := range reqs {
-			if req.Type == "token-revoked@aplane" {
+			if req.Type == RevokedRequestType {
 				c.mu.Lock()
-				c.disconnectReason = "token-revoked"
+				c.disconnectReason = DisconnectReasonKeyRevoked
 				c.mu.Unlock()
 				if req.WantReply {
 					_ = req.Reply(true, nil)
@@ -942,7 +965,7 @@ func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, con
 	}()
 
 	client := ssh.NewClient(sshConn, chans, filteredReqs)
-	return client, nil
+	return client, done, nil
 }
 
 func forwardInterceptedGlobalRequest(ctx context.Context, filteredReqs chan<- *ssh.Request, req *ssh.Request) bool {

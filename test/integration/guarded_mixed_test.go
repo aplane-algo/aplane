@@ -8,8 +8,8 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +29,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerclient"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -93,10 +92,12 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 		t.Fatalf("Failed to generate cosigner key: %v", err)
 	}
 	cosignerPubHex := hex.EncodeToString(cosignerPub)
-	const cosignerToken = "mixed-guarded-cosigner-token"
+	// The client data directory is fresh, so the cosigner node is started
+	// with the client's default identity (.ssh/id_ed25519) enrolled.
+	clientDataDir := t.TempDir()
 	var cosignerDiscoveryCalls atomic.Int32
-	cosigner := startMockCosignerEndpoint(t, cosignerPub, cosignerPriv, cosignerToken, &cosignerDiscoveryCalls)
-	t.Cleanup(cosigner.Close)
+	cosigner := sshtest.ServeWithOptions(t, mockCosignerEndpoint(t, cosignerPub, cosignerPriv, &cosignerDiscoveryCalls),
+		sshtest.Options{Dir: filepath.Join(clientDataDir, ".ssh")})
 	cosignerID, err := witness.ID(witness.Falcon1024V1, cosignerPub)
 	if err != nil {
 		t.Fatalf("Failed to derive cosigner Witness Key ID: %v", err)
@@ -113,7 +114,6 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if err := os.WriteFile(keyPath, keyFile, 0o600); err != nil {
 		t.Fatalf("Failed to write cosigner key file: %v", err)
 	}
-	clientDataDir := t.TempDir()
 	const cosignerReferenceName = "integration-cosigner"
 	const cosignerEndpointAlias = "integration-cosigner-route"
 	passphrase := os.Getenv("TEST_PASSPHRASE")
@@ -148,15 +148,8 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load imported cosigner endpoint: %v", err)
 	}
-	importedEndpoint, ok := endpointRegistry.Endpoints[cosignerEndpointAlias]
-	if !ok {
+	if _, ok := endpointRegistry.Endpoints[cosignerEndpointAlias]; !ok {
 		t.Fatalf("Imported cosigner endpoint %q is missing", cosignerEndpointAlias)
-	}
-	if err := os.MkdirAll(filepath.Dir(importedEndpoint.TokenFile), 0o700); err != nil {
-		t.Fatalf("Failed to create cosigner token directory: %v", err)
-	}
-	if err := tokenfile.WriteToken(importedEndpoint.TokenFile, cosignerToken); err != nil {
-		t.Fatalf("Failed to enroll cosigner endpoint token: %v", err)
 	}
 	discovered, err := clientApp.EndpointDiscoverCosigners(context.Background(), apshellapp.EndpointDiscoverCosignersRequest{})
 	if err != nil {
@@ -193,14 +186,13 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	}
 	t.Logf("guarded=%s non-guarded falcon=%s", guardedAddr, falconAddr)
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, guardedAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), guardedAddr, 10*time.Second) {
 		t.Fatalf("Signer did not reload guarded key %s", guardedAddr)
 	}
-	if !waitForKey(t, signerd.GetURL(), token, falconAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), falconAddr, 10*time.Second) {
 		t.Fatalf("Signer did not reload falcon key %s", falconAddr)
 	}
-	signerHTTP := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerHTTP := signerclient.NewSignerClient(signerd.GetURL())
 	keysResult, err := signerHTTP.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to inspect generated guarded key: %v", err)
@@ -237,7 +229,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	eng.Connection.SignerClient = signerclient.NewSignerClient(signerd.GetURL())
 	eng.EndpointRegistry = endpointRegistry
 	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		t.Fatalf("Failed to populate signer cache from signer /keys: %v", err)
@@ -328,16 +320,16 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 	t.Logf("cleanup: closed %s to funding account", from)
 }
 
-// startMockCosignerEndpoint stands up an HTTP endpoint that behaves like a cosigner
-// node for one cosigner key: it advertises the Witness Key ID on /keys (so the
-// client's endpoint-advertisement check passes) and produces real cosigner-role
+// mockCosignerEndpoint behaves like a cosigner node for one cosigner key: it
+// advertises the Witness Key ID on /keys (so the client's
+// endpoint-advertisement check passes) and produces real cosigner-role
 // component signatures on /sign/component using the test-held private key.
-func startMockCosignerEndpoint(
+// The handler is served behind an in-process SSH node, as a real cosigner is.
+func mockCosignerEndpoint(
 	t *testing.T,
 	publicKey, privateKey []byte,
-	token string,
 	discoveryCalls *atomic.Int32,
-) *httptest.Server {
+) http.Handler {
 	t.Helper()
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -345,16 +337,8 @@ func startMockCosignerEndpoint(
 	}
 	publicKeyHex := hex.EncodeToString(publicKey)
 
-	authorized := func(r *http.Request) bool {
-		return token == "" || r.Header.Get("Authorization") == "aplane "+token
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
-		if !authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		discoveryCalls.Add(1)
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
@@ -367,10 +351,6 @@ func startMockCosignerEndpoint(
 		})
 	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
-		if !authorized(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		var req signerapi.ComponentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -410,5 +390,5 @@ func startMockCosignerEndpoint(
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
-	return httptest.NewServer(mux)
+	return mux
 }

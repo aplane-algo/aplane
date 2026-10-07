@@ -197,7 +197,6 @@ endpoint:
   ssh:
     port: $SSH_PORT
     host_key_path: .ssh/ssh_host_key
-    authorized_keys_path: .ssh/authorized_keys
 
 passphrase_timeout: "0m"
 lock_on_disconnect: false
@@ -244,7 +243,6 @@ endpoints:
     url: ssh://localhost:$SSH_PORT
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 YAML
 echo "  Wrote client endpoints.yaml"
 
@@ -290,10 +288,6 @@ mkdir -p "$SIGNER_DATA/library/templates"
 cp "$PROJECT_ROOT"/library/templates/*.yaml "$SIGNER_DATA/library/templates/"
 cp "$PROJECT_ROOT/library/templates/README.md" "$SIGNER_DATA/library/templates/"
 echo "  Copied template library"
-
-# Copy token to client data directory
-cp "$SIGNER_DATA/identities/default/aplane.token" "$CLIENT_DATA/aplane.token"
-echo "  Copied token to client data"
 
 # Pre-populate client known_hosts with the signer's SSH host key
 # This avoids TOFU prompts during non-interactive testing

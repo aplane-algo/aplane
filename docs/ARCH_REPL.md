@@ -196,10 +196,10 @@ focused approval workflows.
 |--------|--------|
 | Input | stdin `y/n` approval loop |
 | Output | FIFO approval queue rendered to terminal |
-| State | In-memory pending queue of signing and token-provisioning requests |
+| State | In-memory pending queue of signing and client-enrollment requests |
 | Transport | Local IPC admin protocol |
 
-Signing and token-provisioning requests share a single FIFO queue. Policy
+Signing and client-enrollment requests share a single FIFO queue. Policy
 violations included in sign requests are shown to the approver. Signing
 approval requests time out after the product runtime's effective `approval_wait` value,
 which defaults to 60 seconds.

@@ -333,7 +333,7 @@ func TestSignAndSubmitWithPluginSignersSimulatesSignedGroupClientSide(t *testing
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	engine.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	engine.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	engine.Simulate = true
 
 	var pluginCalls atomic.Int32

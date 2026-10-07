@@ -544,8 +544,7 @@ result, err := engine.ConnectWithTunnel(
     host,        // "host.example.com"
     sshPort,     // 1127
     localPort,   // free loopback port chosen by the caller
-    token,       // API token (HTTP auth)
-    identityFile,    // SSH private key path (optional, uses agent if empty)
+    identityFile,    // SSH private key path (optional, uses agent if empty); the enrolled key is the credential
     knownHostsPath,  // known_hosts file for SSH verification
     hostKeyApproval, // TOFU callback for unknown SSH host keys
     onDisconnect,    // optional lifecycle callback
@@ -565,9 +564,10 @@ target := engine.GetConnectionTarget()
 // Disconnect
 err := engine.Disconnect()
 
-// Request a new token through the SSH provisioning flow
-token, err := engine.RequestTokenWithContext(ctx, host, sshPort, identityFile,
-    knownHostsPath, hostKeyApproval, onProvisioningStart)
+// Ask the node to enroll this client's key (operator approval required);
+// returns the enrolled key's SHA256 fingerprint
+fingerprint, err := engine.RequestEnrollmentWithContext(ctx, host, sshPort, identityFile,
+    knownHostsPath, label, hostKeyApproval, onEnrollmentStart)
 ```
 
 ## Cache Management API
@@ -696,7 +696,7 @@ func (e *Engine) IsConnected() bool {
 | accounts | `ListAccounts` |
 | participation | `GetParticipationStatus` |
 | status | `GetStatus` |
-| connect | `ConnectWithTunnel`, `RequestToken`, `Disconnect` |
+| connect | `ConnectWithTunnel`, `RequestEnrollmentWithContext`, `Disconnect` |
 | rekey refresh | `RefreshAuthCacheWithContext`, `RefreshAuthAddressWithContext` |
 
 ## Benefits of the Engine Pattern

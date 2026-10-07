@@ -14,8 +14,6 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
-
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 func TestLoadEnrolledClientRequiresDefaultSignerEndpoint(t *testing.T) {
@@ -33,36 +31,6 @@ func TestLoadEnrolledClientRequiresDefaultSignerEndpoint(t *testing.T) {
 	}
 }
 
-func TestLoadEnrolledClientRequiresToken(t *testing.T) {
-	dir := t.TempDir()
-	writeRemoteConfig(t, dir, `
-network: testnet
-`)
-	writeRemoteEndpointRegistry(t, dir, `
-schema_version: 2
-default: primary
-endpoints:
-  primary:
-    role: signer
-    url: ssh://signer.local:1127
-    signer_port: 11270
-    identity_file: .ssh/id_ed25519
-    known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
-`)
-
-	got, err := LoadEnrolledClient(dir, testOptions())
-	if err == nil {
-		t.Fatal("err = nil, want missing token error")
-	}
-	if got != nil {
-		t.Fatalf("got = %#v, want nil", got)
-	}
-	if !strings.Contains(err.Error(), "requires an enrolled client token") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestLoadEnrolledClientRequiresKnownHost(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
@@ -75,14 +43,9 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.local:1127
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 `)
-	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
-		t.Fatalf("write token: %v", err)
-	}
 
 	got, err := LoadEnrolledClient(dir, testOptions())
 	if err == nil {
@@ -111,14 +74,9 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.local:2222
-    signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: hosts/known_hosts
-    token_file: aplane.token
 `)
-	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
-		t.Fatalf("write token: %v", err)
-	}
 	writeDummyKnownHost(t, filepath.Join(dir, "hosts/known_hosts"), "signer.local", 2222)
 
 	got, err := LoadEnrolledClient(dir, testOptions())
@@ -165,18 +123,9 @@ endpoints:
   primary:
     role: signer
     url: ssh://signer.local:2222
-    signer_port: 11270
     identity_file: keys/operator
     known_hosts_path: hosts/known_hosts
-    token_file: tokens/primary.token
 `)
-	tokenPath := filepath.Join(dir, "tokens/primary.token")
-	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-		t.Fatalf("mkdir token dir: %v", err)
-	}
-	if err := tokenfile.WriteToken(tokenPath, "test-token"); err != nil {
-		t.Fatalf("write token: %v", err)
-	}
 	writeKnownHost(t, filepath.Join(dir, "hosts/known_hosts"), "signer.local", 2222)
 
 	got, err := LoadEnrolledClient(dir, testOptions())
@@ -186,8 +135,8 @@ endpoints:
 	if got.DataDir != dir {
 		t.Fatalf("DataDir = %q, want %q", got.DataDir, dir)
 	}
-	if got.Token != "test-token" {
-		t.Fatalf("Token = %q, want test-token", got.Token)
+	if got.SSH.IdentityFile != filepath.Join(dir, "keys/operator") {
+		t.Fatalf("IdentityFile = %q", got.SSH.IdentityFile)
 	}
 	if got.SSH.Host != "signer.local" {
 		t.Fatalf("Host = %q", got.SSH.Host)
@@ -201,7 +150,6 @@ func testOptions() Options {
 	return Options{
 		Product:              "test-surface",
 		MissingSSHHint:       "run setup first",
-		MissingTokenHint:     "run request-token first",
 		MissingKnownHostHint: "run connect first",
 	}
 }

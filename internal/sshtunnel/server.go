@@ -25,6 +25,24 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	// productSSHUsername is the fixed, non-secret username for enrolled client
+	// connections.
+	productSSHUsername = "aplane"
+	// enrollmentSSHUsername is the username of a bootstrap connection that
+	// asks the operator to enroll the client's key. It carries no credential
+	// and may open only the enrollment session.
+	enrollmentSSHUsername = "request-enrollment"
+	// enrollmentCommand is the one exec command an enrollment connection may
+	// run. An optional label follows it, separated by a space.
+	enrollmentCommand = "enroll"
+	// maxEnrollmentLabelBytes bounds the client-supplied display label.
+	maxEnrollmentLabelBytes = 64
+	// RevokedRequestType is the global request the server sends before it
+	// closes a connection whose key was revoked, so the client can report why.
+	RevokedRequestType = "key-revoked@aplane"
+)
+
 // isClosedConnError returns true if the error is due to use of a closed connection
 // These are expected during normal disconnects and shouldn't be logged as errors
 func isClosedConnError(err error) bool {
@@ -44,71 +62,86 @@ func isClosedConnError(err error) bool {
 // SessionCallback is called when SSH sessions connect or disconnect
 type SessionCallback func(remoteAddr string, connected bool)
 
-// TokenApprovalCallback is called to request operator approval for token provisioning.
-// Returns true if the operator approved, false if rejected.
-type TokenApprovalCallback func(sshFingerprint, remoteAddr string) (approved bool, err error)
+// EnrollmentApprovalCallback asks the operator to approve enrolling the key
+// with the given fingerprint. It is canceled when the SSH client disconnects.
+type EnrollmentApprovalCallback func(ctx context.Context, sshFingerprint, label, remoteAddr string) (approved bool, err error)
 
-// TokenApprovalContextCallback is called to request operator approval for token
-// provisioning and is canceled when the SSH client disconnects.
-type TokenApprovalContextCallback func(ctx context.Context, sshFingerprint, remoteAddr string) (approved bool, err error)
-
-// TokenIssuanceCallback is called after approval and key enrollment to load or generate the token.
-// It must not log success or audit — the caller handles that after confirming delivery.
-type TokenIssuanceCallback func() (token string, err error)
-
-// TokenAuditCallback is called after the token has been successfully delivered to the client.
-type TokenAuditCallback func(sshFingerprint, remoteAddr string)
+// EnrollmentAuditCallback is called after the enrollment acknowledgement has
+// been delivered to the client.
+type EnrollmentAuditCallback func(sshFingerprint, label, remoteAddr string)
 
 // OperatorCheckCallback is called to check if the product operator is connected.
 type OperatorCheckCallback func() bool
 
-// TokenMACFunc computes the server and expected client token-proof MACs from
-// one product token-generation snapshot. The raw token remains with the
-// product authenticator.
-type TokenMACFunc func(serverInput, clientInput []byte) (serverMAC, clientMAC []byte, tokenGeneration uint64, valid bool)
-
-// KeyCheckerFunc checks whether a public key is authorized for the product.
+// KeyCheckerFunc reports whether a public key is currently enrolled.
 type KeyCheckerFunc func(key ssh.PublicKey) bool
 
-// KeyEnrollerFunc enrolls a public key for the product.
-type KeyEnrollerFunc func(key ssh.PublicKey) error
+// KeyEnrollerFunc enrolls a public key with a display label. It must be
+// idempotent for an already-enrolled key. enrolled reports that the key is
+// now usable; it can be true alongside an error when the registry was
+// installed but its write is not yet durable. The server then audits the
+// enrollment but answers the client with an error, so the client retries
+// and is acknowledged only once the registry is durable.
+type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
 
-// ProductHooks configures product token validation and SSH key storage.
+// ProductHooks connects the server to the product's enrolled-key registry.
+// Both hooks are required together; without them the server keeps an
+// in-memory key list that exists for tests.
 type ProductHooks struct {
-	ComputeTokenMACs TokenMACFunc
-	CheckKey         KeyCheckerFunc
-	EnrollKey        KeyEnrollerFunc
+	CheckKey  KeyCheckerFunc
+	EnrollKey KeyEnrollerFunc
 }
 
-// TokenProvisioningHooks configures the operator-approved request-token flow.
-// The sshtunnel layer interleaves key enrollment between approval and issuance,
-// and calls AuditProvisioned only after confirming token delivery to the client.
-type TokenProvisioningHooks struct {
-	Approve           TokenApprovalCallback
-	ApproveContext    TokenApprovalContextCallback
-	Issue             TokenIssuanceCallback
-	AuditProvisioned  TokenAuditCallback
+// EnrollmentHooks configures the operator-approved request-enrollment flow.
+// The server enrolls the key only after approval and audits only after the
+// acknowledgement reached the client.
+type EnrollmentHooks struct {
+	ApproveContext    EnrollmentApprovalCallback
+	AuditEnrolled     EnrollmentAuditCallback
 	OperatorConnected OperatorCheckCallback
 }
+
+// APIHandoff receives each accepted API channel as a connection carrying the
+// authenticated client's identity. It returns an error to refuse the channel,
+// for example when the receiving listener is full or closed.
+type APIHandoff func(conn *APIConn) error
+
+// APIConn is one forwarded API connection. The HTTP server reads the client
+// identity from it through its connection context.
+type APIConn struct {
+	net.Conn
+	fingerprint string
+	remote      net.Addr
+	local       net.Addr
+}
+
+// KeyFingerprint is the SHA256 fingerprint of the enrolled key that opened
+// the channel.
+func (c *APIConn) KeyFingerprint() string { return c.fingerprint }
+
+// RemoteAddr is the SSH peer's address, not a loopback socket.
+func (c *APIConn) RemoteAddr() net.Addr { return c.remote }
+
+// LocalAddr is the SSH listener's address.
+func (c *APIConn) LocalAddr() net.Addr { return c.local }
 
 const (
 	initialAcceptErrorBackoff = 25 * time.Millisecond
 	maxAcceptErrorBackoff     = time.Second
-	invalidTokenProofDelay    = 5 * time.Second
 	sshHandshakeTimeout       = 60 * time.Second
 	maxPendingSSHHandshakes   = 64
 	// One remote address may hold only a share of the handshake slots, so a
 	// single host cannot keep every slot busy for the handshake timeout.
 	maxPendingSSHHandshakesPerHost = 8
 
-	// request-token connections are unauthenticated, so their footprint is
-	// bounded: a few concurrent connections, each of which must start
-	// provisioning promptly and may provision only once.
-	maxTokenProvisioningConns         = 8
-	maxTokenProvisioningChannels      = 2
-	tokenProvisioningExecDeadline     = 30 * time.Second
-	tokenProvisioningResponseDeadline = 10 * time.Second
-	maxLoggedClientTextBytes          = 64
+	// request-enrollment connections are unauthenticated, so their footprint
+	// is bounded: a few concurrent connections, each of which must start
+	// enrollment promptly and may request it only once.
+	maxEnrollmentConns         = 8
+	maxEnrollmentChannels      = 2
+	enrollmentExecDeadline     = 30 * time.Second
+	enrollmentResponseDeadline = 10 * time.Second
+	maxLoggedClientTextBytes   = 64
 
 	// The server pings each client and closes a connection whose client
 	// stops answering. The library cannot cancel a pending request, so the
@@ -117,34 +150,33 @@ const (
 	keepaliveReplyTimeout = 30 * time.Second
 )
 
-// Server represents an SSH server with mutual token proof and public-key auth.
+// Server is the node's SSH server. An enrolled key authenticates a client;
+// the client's API channels are handed to the HTTP server in-process with
+// that identity attached. A bootstrap username lets an unknown key ask the
+// operator for enrollment.
 type Server struct {
 	listenAddr      string          // Address to listen on (e.g., "127.0.0.1:2222")
-	targetAddr      string          // Local address to forward connections to (e.g., "127.0.0.1:15283")
 	sessionCallback SessionCallback // Optional callback for session events
 
-	sshConfig          *ssh.ServerConfig
-	listener           net.Listener
-	hostKey            ssh.Signer
-	authKeys           []ssh.PublicKey
-	authKeysMu         sync.RWMutex // Protects authKeys
-	authKeysFileMu     sync.Mutex   // Serializes authorized_keys file appends
-	authorizedKeysPath string       // Path to authorized_keys file
+	sshConfig *ssh.ServerConfig
+	listener  net.Listener
+	hostKey   ssh.Signer
 
-	// Authentication
-	tokenMu       sync.RWMutex
-	expectedToken string // API token used when tokenMAC is nil
+	// In-memory enrolled keys, used only when no product hooks are set.
+	authKeys   []ssh.PublicKey
+	authKeysMu sync.RWMutex
 
-	// Optional product callbacks (override built-in single-token/single-keyfile behavior)
-	tokenMAC    TokenMACFunc    // If set, computes product token proof MACs
-	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
-	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
+	// Product registry hooks
+	keyChecker  KeyCheckerFunc
+	keyEnroller KeyEnrollerFunc
 
-	// Token provisioning callbacks
-	tokenApprovalCallback TokenApprovalContextCallback // Called to request operator approval
-	tokenIssuanceCallback TokenIssuanceCallback        // Called to load/generate the token
-	tokenAuditCallback    TokenAuditCallback           // Called after confirmed delivery
-	operatorCheckCallback OperatorCheckCallback        // Called to check if operator is connected
+	// API channel handoff; nil refuses every API channel.
+	apiHandoff APIHandoff
+
+	// Enrollment callbacks
+	enrollmentApprovalCallback EnrollmentApprovalCallback
+	enrollmentAuditCallback    EnrollmentAuditCallback
+	operatorCheckCallback      OperatorCheckCallback
 
 	mu        sync.Mutex
 	started   bool
@@ -158,22 +190,22 @@ type Server struct {
 	pendingHandshakes        int
 	pendingHandshakesByHost  map[string]int // Pending handshakes per remote IP; protected by sshConnsMu
 	handshakeTimeout         time.Duration
-	minimumTokenGeneration   uint64        // Minimum accepted product token generation
-	sshConnsMu               sync.Mutex    // Protects connection maps, pendingHandshakes, and minimumTokenGeneration
-	testAfterAuthBeforeTrack func()        // Test hook for auth/revocation race coverage
-	invalidTokenDelay        time.Duration // Tests may set this to zero to avoid the production rejection delay
+	sshConnsMu               sync.Mutex // Protects connection maps and pendingHandshakes
+	testAfterAuthBeforeTrack func()     // Test hook for auth/revocation race coverage
 
-	tokenProvisioningConns        int           // Live request-token connections; protected by sshConnsMu
-	tokenProvisioningExecDeadline time.Duration // Tests may shorten the time a request-token connection has to start provisioning
-	tokenProvisioningRespDeadline time.Duration // Tests may shorten the time a client has to accept a provisioning response
-	keepaliveInterval             time.Duration // Tests may shorten keepaliveInterval
-	keepaliveTimeout              time.Duration // Tests may shorten keepaliveReplyTimeout
-	provisioningClaims            sync.Map      // *ssh.ServerConn -> struct{}: connections that already provisioned once
-	provisioningActive            atomic.Bool   // One client access request is pending at a time, server-wide
+	enrollmentConns        int           // Live request-enrollment connections; protected by sshConnsMu
+	enrollmentExecDeadline time.Duration // Tests may shorten the time an enrollment connection has to start
+	enrollmentRespDeadline time.Duration // Tests may shorten the time a client has to accept an enrollment response
+	keepaliveInterval      time.Duration // Tests may shorten keepaliveInterval
+	keepaliveTimeout       time.Duration // Tests may shorten keepaliveReplyTimeout
+	enrollmentClaims       sync.Map      // *ssh.ServerConn -> struct{}: connections that already requested enrollment
+	enrollmentActive       atomic.Bool   // One enrollment request is pending at a time, server-wide
 }
 
+// sshConnInfo is what the server remembers about an authenticated connection.
 type sshConnInfo struct {
-	tokenGeneration uint64
+	fingerprint string
+	key         ssh.PublicKey // nil for enrollment connections
 }
 
 // SetSessionCallback sets a callback for session connect/disconnect events.
@@ -185,69 +217,77 @@ func (s *Server) SetSessionCallback(cb SessionCallback) {
 	s.sessionCallback = cb
 }
 
-// SetTokenProvisioningHooks configures all token provisioning hooks together.
-// Hooks are immutable after Start.
-func (s *Server) SetTokenProvisioningHooks(hooks TokenProvisioningHooks) {
+// SetEnrollmentHooks configures the request-enrollment flow. Hooks are
+// immutable after Start.
+func (s *Server) SetEnrollmentHooks(hooks EnrollmentHooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.assertNotStartedLocked("SetTokenProvisioningHooks")
-	s.tokenApprovalCallback = hooks.ApproveContext
-	if s.tokenApprovalCallback == nil && hooks.Approve != nil {
-		s.tokenApprovalCallback = func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
-			_ = ctx
-			return hooks.Approve(sshFingerprint, remoteAddr)
-		}
-	}
-	s.tokenIssuanceCallback = hooks.Issue
-	s.tokenAuditCallback = hooks.AuditProvisioned
+	s.assertNotStartedLocked("SetEnrollmentHooks")
+	s.enrollmentApprovalCallback = hooks.ApproveContext
+	s.enrollmentAuditCallback = hooks.AuditEnrolled
 	s.operatorCheckCallback = hooks.OperatorConnected
 }
 
-// UpdateToken replaces the expected token and closes all active SSH connections.
-// Existing connections were authenticated with the old token and must reconnect.
-func (s *Server) UpdateToken(newToken string) {
-	s.tokenMu.Lock()
-	s.expectedToken = newToken
-	s.tokenMu.Unlock()
+// SetAPIHandoff installs the receiver of forwarded API channels. It is
+// immutable after Start. Without it every API channel is refused.
+func (s *Server) SetAPIHandoff(handoff APIHandoff) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.assertNotStartedLocked("SetAPIHandoff")
+	s.apiHandoff = handoff
+}
 
-	// Close all active SSH connections (authenticated with old token)
+// CloseConnectionsForFingerprint closes every connection authenticated with
+// the key that has the given fingerprint, telling the client why first. The
+// caller installs the new registry view before calling this, and the
+// post-handshake re-check (see handleConnection) closes the auth-before-track
+// race, so a revoked key cannot keep or regain a connection.
+func (s *Server) CloseConnectionsForFingerprint(fingerprint, reason string) int {
+	s.sshConnsMu.Lock()
+	conns := make([]*ssh.ServerConn, 0)
+	for conn, info := range s.sshConns {
+		if info.fingerprint == fingerprint {
+			conns = append(conns, conn)
+		}
+	}
+	s.sshConnsMu.Unlock()
+	s.closeRevoked(conns, reason)
+	return len(conns)
+}
+
+// CloseAllClientConnections closes every authenticated connection, enrolled
+// and enrollment alike, telling clients why first.
+func (s *Server) CloseAllClientConnections(reason string) int {
 	s.sshConnsMu.Lock()
 	conns := make([]*ssh.ServerConn, 0, len(s.sshConns))
 	for conn := range s.sshConns {
 		conns = append(conns, conn)
 	}
 	s.sshConnsMu.Unlock()
+	s.closeRevoked(conns, reason)
+	return len(conns)
+}
 
+func (s *Server) closeRevoked(conns []*ssh.ServerConn, reason string) {
+	payload := []byte(reason)
 	for _, conn := range conns {
-		// Signal reason before closing so client can display a useful message
-		_, _, _ = conn.SendRequest("token-revoked@aplane", false, nil)
+		_, _, _ = conn.SendRequest(RevokedRequestType, false, payload)
 		_ = conn.Close()
 	}
 }
 
-// CloseProductConnections closes active SSH connections authenticated with an
-// older product token generation. The authenticator is updated before this is
-// called, and the minimum generation closes the auth-before-track race.
-func (s *Server) CloseProductConnections(minTokenGeneration uint64, reason string) {
+// ConnectedFingerprints returns the number of live connections per enrolled
+// key fingerprint. Enrollment connections are not counted.
+func (s *Server) ConnectedFingerprints() map[string]int {
 	s.sshConnsMu.Lock()
-	conns := make([]*ssh.ServerConn, 0, len(s.sshConns))
-	if minTokenGeneration > 0 {
-		if minTokenGeneration > s.minimumTokenGeneration {
-			s.minimumTokenGeneration = minTokenGeneration
+	defer s.sshConnsMu.Unlock()
+	counts := make(map[string]int)
+	for _, info := range s.sshConns {
+		if info.key != nil {
+			counts[info.fingerprint]++
 		}
 	}
-	for conn, info := range s.sshConns {
-		if minTokenGeneration == 0 || info.tokenGeneration < minTokenGeneration {
-			conns = append(conns, conn)
-		}
-	}
-	s.sshConnsMu.Unlock()
-
-	payload := []byte(reason)
-	for _, conn := range conns {
-		_, _, _ = conn.SendRequest("token-revoked@aplane", false, payload)
-		_ = conn.Close()
-	}
+	return counts
 }
 
 // ActiveConnectionCount returns the number of active SSH client connections.
@@ -258,36 +298,26 @@ func (s *Server) ActiveConnectionCount() int {
 	return n
 }
 
-// SetProductHooks configures product token validation and SSH key storage.
+// SetProductHooks connects the server to the product's enrolled-key registry.
 // Hooks are immutable after Start.
 func (s *Server) SetProductHooks(hooks ProductHooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.assertNotStartedLocked("SetProductHooks")
-	if err := validateProductHooks(hooks); err != nil {
-		panic(err.Error())
+	if (hooks.CheckKey == nil) != (hooks.EnrollKey == nil) {
+		panic("product SSH hooks require CheckKey and EnrollKey together")
 	}
-	s.tokenMAC = hooks.ComputeTokenMACs
 	s.keyChecker = hooks.CheckKey
 	s.keyEnroller = hooks.EnrollKey
 }
 
-func validateProductHooks(hooks ProductHooks) error {
-	if !productHooksConfigured(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
-		return nil
+// isEnrolled reports whether key is currently enrolled, through the product
+// registry when hooks are set and the in-memory list otherwise.
+func (s *Server) isEnrolled(key ssh.PublicKey) bool {
+	if s.keyChecker != nil {
+		return s.keyChecker(key)
 	}
-	if !productHooksComplete(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
-		return fmt.Errorf("product SSH hooks require ComputeTokenMACs, CheckKey, and EnrollKey together")
-	}
-	return nil
-}
-
-func productHooksConfigured(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
-	return tokenMAC != nil || keyChecker != nil || keyEnroller != nil
-}
-
-func productHooksComplete(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
-	return tokenMAC != nil && keyChecker != nil && keyEnroller != nil
+	return s.hasAuthorizedKey(key)
 }
 
 func (s *Server) assertNotStartedLocked(method string) {
@@ -296,46 +326,32 @@ func (s *Server) assertNotStartedLocked(method string) {
 	}
 }
 
-// NewServer creates an SSH server with public-key auth and mutual token proof.
-//
-// Authentication requires both:
-//   - Valid SSH public key (enrolled via request-token or manually added to authorized_keys)
-//   - Mutual proof of the product API token
-func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expectedToken string) (*Server, error) {
+// NewServer creates an SSH server that authenticates clients by enrolled
+// public key. The host key at hostKeyPath is loaded, or generated if absent.
+func NewServer(listenAddr, hostKeyPath string) (*Server, error) {
 	hostKey, err := loadOrGenerateHostKey(hostKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load host key: %w", err)
 	}
 
-	authKeys, err := loadAuthorizedKeys(authorizedKeysPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load authorized keys: %w", err)
-	}
-
 	server := &Server{
 		listenAddr:              listenAddr,
-		targetAddr:              targetAddr,
 		hostKey:                 hostKey,
-		authKeys:                authKeys,
-		authorizedKeysPath:      authorizedKeysPath,
-		expectedToken:           expectedToken,
 		closeChan:               make(chan struct{}),
 		sshConns:                make(map[*ssh.ServerConn]sshConnInfo),
-		invalidTokenDelay:       invalidTokenProofDelay,
 		rawConns:                make(map[net.Conn]struct{}),
 		pendingHandshakesByHost: make(map[string]int),
 		handshakeTimeout:        sshHandshakeTimeout,
 
-		tokenProvisioningExecDeadline: tokenProvisioningExecDeadline,
-		tokenProvisioningRespDeadline: tokenProvisioningResponseDeadline,
-		keepaliveInterval:             keepaliveInterval,
-		keepaliveTimeout:              keepaliveReplyTimeout,
+		enrollmentExecDeadline: enrollmentExecDeadline,
+		enrollmentRespDeadline: enrollmentResponseDeadline,
+		keepaliveInterval:      keepaliveInterval,
+		keepaliveTimeout:       keepaliveReplyTimeout,
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
-		PublicKeyAuthAlgorithms:   clientKeyAlgorithms,
-		PublicKeyCallback:         server.handlePublicKeyAuth,
-		VerifiedPublicKeyCallback: server.handleVerifiedPublicKeyAuth,
+		PublicKeyAuthAlgorithms: clientKeyAlgorithms,
+		PublicKeyCallback:       server.handlePublicKeyAuth,
 		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
 			fmt.Println(formatSSHAuthLog(conn, method, err))
 		},
@@ -350,10 +366,6 @@ func formatSSHAuthLog(conn ssh.ConnMetadata, method string, err error) string {
 	outcome := "accepted"
 	if err != nil {
 		outcome = "rejected"
-		var partial *ssh.PartialSuccessError
-		if errors.As(err, &partial) {
-			outcome = "partial"
-		}
 	}
 	return fmt.Sprintf("[SSH] Authentication from %s: method=%s outcome=%s", conn.RemoteAddr(), method, outcome)
 }
@@ -427,308 +439,67 @@ func writeNewPrivateKeyFile(path string, pemBytes []byte) error {
 	return nil
 }
 
-// loadAuthorizedKeys loads all keys from an authorized_keys file.
-// Returns an empty slice if the file doesn't exist or is empty (TOFU mode).
-func loadAuthorizedKeys(path string) ([]ssh.PublicKey, error) {
-	if path == "" {
-		return nil, fmt.Errorf("authorized keys path is empty")
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// File doesn't exist - TOFU mode, will create on first registration
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read authorized keys %s: %w", path, err)
-	}
-
-	// Empty file is valid - TOFU mode
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return nil, nil
-	}
-
-	var keys []ssh.PublicKey
-	for len(data) > 0 {
-		pubKey, _, _, rest, parseErr := ssh.ParseAuthorizedKey(data)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse authorized keys %s: %w", path, parseErr)
-		}
-		keys = append(keys, pubKey)
-		data = rest
-	}
-
-	return keys, nil
-}
-
-// handlePublicKeyAuth validates product/key eligibility. Normal authentication
-// remains incomplete until handleVerifiedPublicKeyAuth transitions to mutual
-// token proof after SSH verifies possession of the private key.
-//
-// Special mode: If username is "request-token", this is a token provisioning
-// request. Only key authentication is required (no token). Fails fast if no operator connected.
+// handlePublicKeyAuth decides key eligibility; SSH then verifies possession,
+// and the permissions returned here are installed only after that signature
+// check succeeds. For the product username the key must be enrolled now,
+// and it is checked again after the handshake (see handleConnection) so a
+// revocation during authentication still refuses the connection. For the
+// enrollment username any acceptable key may proceed to ask the operator.
 func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	remoteAddr := conn.RemoteAddr().String()
 	keyFingerprint := ssh.FingerprintSHA256(key)
 	username := conn.User()
 
-	if username == tokenRequestSSHUsername {
-		return s.handleTokenProvisioningAuth(conn, key, username, remoteAddr, keyFingerprint)
+	if username == enrollmentSSHUsername {
+		return s.handleEnrollmentAuth(key, remoteAddr, keyFingerprint)
 	}
 	if username != productSSHUsername {
 		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", productSSHUsername)
 	}
-
-	var authorized bool
-	if productHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-		if !productHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-			fmt.Printf("[SSH] Product auth is not fully configured for %s (key: %s)\n", remoteAddr, keyFingerprint)
-			return nil, fmt.Errorf("product SSH authentication is not fully configured")
-		}
-		authorized = s.keyChecker(key)
-	} else {
-		s.authKeysMu.RLock()
-		for _, allowedKey := range s.authKeys {
-			if bytes.Equal(allowedKey.Marshal(), key.Marshal()) {
-				authorized = true
-				break
-			}
-		}
-		s.authKeysMu.RUnlock()
-	}
-
-	// Reject unknown keys — all key enrollment goes through request-token
-	if !authorized {
+	if !s.isEnrolled(key) {
 		fmt.Printf("[SSH] Rejected unknown key from %s: %s\n", remoteAddr, keyFingerprint)
-		return nil, fmt.Errorf("unknown key %s; use request-token to enroll", keyFingerprint)
+		return nil, fmt.Errorf("unknown key %s; use request-enrollment to enroll", keyFingerprint)
 	}
 	return &ssh.Permissions{Extensions: map[string]string{
-		"auth_method":     "publickey_pending_token_proof",
+		"auth_method":     "publickey",
 		"key_fingerprint": keyFingerprint,
+		"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 	}}, nil
 }
 
-func (s *Server) handleVerifiedPublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey, permissions *ssh.Permissions, _ string) (*ssh.Permissions, error) {
-	if permissions == nil || permissions.Extensions == nil {
-		return nil, fmt.Errorf("SSH public-key permissions are missing")
-	}
-	if permissions.Extensions["auth_method"] == "token_provisioning" {
-		return permissions, nil
-	}
-
-	keyFingerprint := permissions.Extensions["key_fingerprint"]
-	if keyFingerprint == "" {
-		return nil, fmt.Errorf("SSH public-key identity binding is incomplete")
-	}
-	fmt.Printf("[SSH] Verified enrolled key from %s: %s\n", conn.RemoteAddr(), keyFingerprint)
-
-	return permissions, &ssh.PartialSuccessError{
-		Next: ssh.ServerAuthCallbacks{
-			KeyboardInteractiveCallback: func(nextConn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
-				return s.handleTokenProofAuth(nextConn, challenge, keyFingerprint)
-			},
-		},
-	}
-}
-
-func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge, keyFingerprint string) (*ssh.Permissions, error) {
-	clientNonceQuestion, err := marshalClientNonceQuestion()
-	if err != nil {
-		return nil, err
-	}
-	answers, err := challenge(tokenProofDomain, "", []string{clientNonceQuestion}, []bool{false})
-	if err != nil {
-		return nil, fmt.Errorf("request token proof client nonce: %w", err)
-	}
-	if len(answers) != 1 {
-		return s.rejectTokenProof(conn, keyFingerprint, "invalid client nonce response")
-	}
-	clientNonce, err := parseClientNonceAnswer(answers[0])
-	if err != nil {
-		return s.rejectTokenProof(conn, keyFingerprint, "invalid client nonce response")
-	}
-
-	serverNonce := make([]byte, tokenProofNonceSize)
-	if _, err := rand.Read(serverNonce); err != nil {
-		return nil, fmt.Errorf("generate token proof server nonce: %w", err)
-	}
-	hostKeyHash, err := hashSSHHostKey(s.hostKey.PublicKey())
-	if err != nil {
-		return nil, err
-	}
-	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
-		Username:    conn.User(),
-		HostKeyHash: hostKeyHash,
-		ClientNonce: clientNonce,
-		ServerNonce: serverNonce,
-	})
-	if err != nil {
-		return nil, err
-	}
-	serverInput, err := encodeTokenProofMACInput(tokenProofServerDomain, transcript)
-	if err != nil {
-		return nil, err
-	}
-	clientInput, err := encodeTokenProofMACInput(tokenProofClientDomain, transcript)
-	if err != nil {
-		return nil, err
-	}
-
-	serverProof, expectedClientProof, tokenGeneration, valid := s.computeTokenMACs(serverInput, clientInput)
-	if !valid || len(serverProof) != tokenProofMACSize || len(expectedClientProof) != tokenProofMACSize {
-		return s.rejectTokenProof(conn, keyFingerprint, "token proof unavailable")
-	}
-	serverProofQuestion, err := marshalServerProofQuestion(serverNonce, serverProof)
-	if err != nil {
-		return nil, err
-	}
-	answers, err = challenge(tokenProofDomain, "", []string{serverProofQuestion}, []bool{false})
-	if err != nil {
-		return nil, fmt.Errorf("request token proof client proof: %w", err)
-	}
-	if len(answers) != 1 {
-		return s.rejectTokenProof(conn, keyFingerprint, "invalid client proof response")
-	}
-	clientProof, err := parseClientProofAnswer(answers[0])
-	if err != nil || !verifyTokenProof(expectedClientProof, clientProof) {
-		return s.rejectTokenProof(conn, keyFingerprint, "invalid client proof")
-	}
-
-	extensions := map[string]string{
-		"auth_method":     "publickey+token-proof",
-		"key_fingerprint": keyFingerprint,
-	}
-	if tokenGeneration > 0 {
-		extensions["token_generation"] = strconv.FormatUint(tokenGeneration, 10)
-	}
-	return &ssh.Permissions{Extensions: extensions}, nil
-}
-
-func (s *Server) computeTokenMACs(serverInput, clientInput []byte) (serverMAC, clientMAC []byte, generation uint64, valid bool) {
-	if s.tokenMAC != nil {
-		return s.tokenMAC(serverInput, clientInput)
-	}
-
-	s.tokenMu.RLock()
-	defer s.tokenMu.RUnlock()
-	if s.expectedToken == "" {
-		return nil, nil, 0, false
-	}
-	return computeTokenProofMAC(s.expectedToken, serverInput), computeTokenProofMAC(s.expectedToken, clientInput), 0, true
-}
-
-func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason string) (*ssh.Permissions, error) {
-	fmt.Printf("[SSH] Token proof rejected from %s (key: %s)\n", conn.RemoteAddr(), keyFingerprint)
-	if s.invalidTokenDelay > 0 {
-		select {
-		case <-time.After(s.invalidTokenDelay):
-		case <-s.closeChan:
-		}
-	}
-	return nil, fmt.Errorf("token proof authentication failed: %s", reason)
-}
-
-// handleTokenProvisioningAuth handles SSH auth for token provisioning requests.
-// Username is exactly "request-token".
-// Only requires valid SSH key - no token needed (that's what we're requesting!).
-// Fails fast if no operator is connected to approve the request.
-func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.PublicKey, username, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
-	if username != tokenRequestSSHUsername {
-		return nil, fmt.Errorf("unsupported token provisioning username")
-	}
-
+// handleEnrollmentAuth admits a bootstrap connection. Only key possession is
+// proven; the connection may open nothing but the enrollment session, and
+// the operator decides whether the key is enrolled.
+func (s *Server) handleEnrollmentAuth(key ssh.PublicKey, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
 	// clientKeyAlgorithms has already refused other key types before
 	// verification; this keeps enrollment to the same set.
 	if err := checkEnrollmentKey(key); err != nil {
-		fmt.Printf("[SSH] Token provisioning key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
+		fmt.Printf("[SSH] Enrollment key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
 		return nil, err
 	}
-
-	// Note: Operator and callback checks moved to session handler so error messages
-	// can be sent through the channel (SSH auth errors don't preserve the message)
-
-	fmt.Printf("[SSH] Token provisioning request from %s (key: %s)\n", remoteAddr, keyFingerprint)
-
+	fmt.Printf("[SSH] Enrollment request from %s (key: %s)\n", remoteAddr, keyFingerprint)
 	return &ssh.Permissions{
 		Extensions: map[string]string{
-			"auth_method":     "token_provisioning",
+			"auth_method":     "enrollment",
 			"key_fingerprint": keyFingerprint,
 			"public_key":      string(ssh.MarshalAuthorizedKey(key)),
 		},
 	}, nil
 }
 
-// enrollKey enrolls a public key, using the product callback if set,
-// otherwise falling back to the built-in single-file registration.
-func (s *Server) enrollKey(key ssh.PublicKey) error {
-	if productHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-		if !productHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
-			return fmt.Errorf("product SSH key enrollment is not fully configured")
-		}
-		return s.keyEnroller(key)
+// enrollKey enrolls a public key through the product registry when hooks are
+// set, and into the in-memory list otherwise.
+func (s *Server) enrollKey(key ssh.PublicKey, label string) (enrolled bool, err error) {
+	if s.keyEnroller != nil {
+		return s.keyEnroller(key, label)
 	}
-	return s.registerAuthorizedKey(key)
-}
-
-// registerAuthorizedKey adds a new public key to the global authorized_keys file and in-memory list.
-func (s *Server) registerAuthorizedKey(key ssh.PublicKey) error {
-	if s.hasAuthorizedKey(key) {
-		return nil
-	}
-
-	// Format key for authorized_keys file
-	keyLine := string(ssh.MarshalAuthorizedKey(key))
-
-	// Ensure directory exists
-	dir := filepath.Dir(s.authorizedKeysPath)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-
-	s.authKeysFileMu.Lock()
-	defer s.authKeysFileMu.Unlock()
-
-	if s.hasAuthorizedKey(key) {
-		return nil
-	}
-
-	fileKeys, err := loadAuthorizedKeys(s.authorizedKeysPath)
-	if err != nil {
-		return err
-	}
-	if authorizedKeyInList(fileKeys, key) {
-		s.authKeysMu.Lock()
-		if !authorizedKeyInList(s.authKeys, key) {
-			s.authKeys = append(s.authKeys, key)
-		}
-		s.authKeysMu.Unlock()
-		return nil
-	}
-
-	// Append to file
-	f, err := os.OpenFile(s.authorizedKeysPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to open authorized_keys: %w", err)
-	}
-
-	if _, err := f.WriteString(keyLine); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to write key: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("failed to close authorized_keys: %w", err)
-	}
-
-	// Add to in-memory list
 	s.authKeysMu.Lock()
+	defer s.authKeysMu.Unlock()
+	if authorizedKeyInList(s.authKeys, key) {
+		return false, nil
+	}
 	s.authKeys = append(s.authKeys, key)
-	s.authKeysMu.Unlock()
-
-	return nil
+	return true, nil
 }
 
 func (s *Server) hasAuthorizedKey(key ssh.PublicKey) bool {
@@ -773,7 +544,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	fmt.Printf("SSH server listening on %s (forwarding to %s)\n", s.listenAddr, s.targetAddr)
+	fmt.Printf("SSH server listening on %s\n", s.listenAddr)
 
 	// Accept connections in background
 	s.activeConns.Add(1)
@@ -925,26 +696,32 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	}
 
 	info := sshConnInfo{}
+	isEnrollment := false
 	if sshConn.Permissions != nil {
-		if generationText := sshConn.Permissions.Extensions["token_generation"]; generationText != "" {
-			if generation, parseErr := strconv.ParseUint(generationText, 10, 64); parseErr == nil {
-				info.tokenGeneration = generation
+		info.fingerprint = sshConn.Permissions.Extensions["key_fingerprint"]
+		switch sshConn.Permissions.Extensions["auth_method"] {
+		case "publickey":
+			if key, _, _, _, parseErr := ssh.ParseAuthorizedKey([]byte(sshConn.Permissions.Extensions["public_key"])); parseErr == nil {
+				info.key = key
 			}
+		case "enrollment":
+			isEnrollment = true
 		}
 	}
 
-	// Track connection for graceful shutdown and product token revocation.
+	// Track the connection for shutdown and revocation. The enrollment check
+	// is repeated here, under the same lock revocation uses to find
+	// connections, so a key revoked while its handshake was in flight is
+	// refused rather than registered after the revocation's close pass.
 	s.sshConnsMu.Lock()
-	s.sshConns[sshConn] = info
+	revoked := !isEnrollment && (info.key == nil || !s.isEnrolled(info.key))
+	if !revoked {
+		s.sshConns[sshConn] = info
+	}
 	delete(s.rawConns, netConn)
-	staleAuth := s.connectionStaleLocked(info)
 	s.sshConnsMu.Unlock()
 
 	remoteAddr := sshConn.RemoteAddr().String()
-
-	// Check if this is a token provisioning connection
-	isTokenProvisioning := sshConn.Permissions != nil &&
-		sshConn.Permissions.Extensions["auth_method"] == "token_provisioning"
 
 	// Channel to signal keepalive monitor to stop
 	keepaliveDone := make(chan struct{})
@@ -969,8 +746,8 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		}
 	}()
 
-	if staleAuth {
-		_, _, _ = sshConn.SendRequest("token-revoked@aplane", false, []byte("token revoked"))
+	if revoked {
+		_, _, _ = sshConn.SendRequest(RevokedRequestType, false, []byte("key revoked"))
 		return
 	}
 
@@ -1002,16 +779,16 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	connCtx, cancelConnCtx := context.WithCancel(context.Background())
 	defer cancelConnCtx()
 
-	if isTokenProvisioning {
-		if !s.admitTokenProvisioningConn() {
-			fmt.Printf("[SSH] Too many pending client access requests; closing %s\n", remoteAddr)
+	if isEnrollment {
+		if !s.admitEnrollmentConn() {
+			fmt.Printf("[SSH] Too many pending enrollment requests; closing %s\n", remoteAddr)
 			return
 		}
-		defer s.releaseTokenProvisioningConn(sshConn)
-		// A request-token connection that has not started provisioning by the
-		// deadline is closed, so idle unauthenticated connections cannot pile up.
-		deadline := time.AfterFunc(s.tokenProvisioningExecDeadline, func() {
-			if _, claimed := s.provisioningClaims.Load(sshConn); !claimed {
+		defer s.releaseEnrollmentConn(sshConn)
+		// An enrollment connection that has not started by the deadline is
+		// closed, so idle unauthenticated connections cannot pile up.
+		deadline := time.AfterFunc(s.enrollmentExecDeadline, func() {
+			if _, claimed := s.enrollmentClaims.Load(sshConn); !claimed {
 				_ = sshConn.Close()
 			}
 		})
@@ -1019,24 +796,24 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	}
 
 	// Handle channel requests
-	var provisioningChannels atomic.Int32
+	var enrollmentChannels atomic.Int32
 	for newChannel := range chans {
-		if isTokenProvisioning {
-			// Token provisioning mode: handle session channels for exec. The
+		if isEnrollment {
+			// Enrollment mode: handle session channels for exec. The
 			// connection is unauthenticated, so its open channels are capped
 			// before any is accepted.
-			if provisioningChannels.Load() >= maxTokenProvisioningChannels {
-				if err := newChannel.Reject(ssh.ResourceShortage, "too many channels for token provisioning"); err != nil && !isClosedConnError(err) {
+			if enrollmentChannels.Load() >= maxEnrollmentChannels {
+				if err := newChannel.Reject(ssh.ResourceShortage, "too many channels for enrollment"); err != nil && !isClosedConnError(err) {
 					fmt.Printf("Failed to reject SSH channel: %v\n", err)
 				}
 				continue
 			}
-			provisioningChannels.Add(1)
+			enrollmentChannels.Add(1)
 			s.activeConns.Add(1)
 			go func(ch ssh.NewChannel) {
 				defer s.activeConns.Done()
-				defer provisioningChannels.Add(-1)
-				s.handleTokenProvisioningChannel(connCtx, sshConn, ch)
+				defer enrollmentChannels.Add(-1)
+				s.handleEnrollmentChannel(connCtx, sshConn, ch)
 			}(newChannel)
 			continue
 		}
@@ -1046,7 +823,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 			s.activeConns.Add(1)
 			go func(ch ssh.NewChannel) {
 				defer s.activeConns.Done()
-				s.handleChannel(ch)
+				s.handleChannel(sshConn, info, ch)
 			}(newChannel)
 		default:
 			if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil && !isClosedConnError(err) {
@@ -1120,30 +897,28 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 	}
 }
 
-// handleTokenProvisioningChannel handles SSH channels for token provisioning.
-// Accepts "session" channel type with "exec" request to trigger provisioning.
-func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
-	// Only accept session channels for token provisioning
+// handleEnrollmentChannel handles the session channel of an enrollment
+// connection. Only an "exec" request running "enroll [<label>]" is accepted.
+func (s *Server) handleEnrollmentChannel(connCtx context.Context, sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
 	if newChannel.ChannelType() != "session" {
-		if err := newChannel.Reject(ssh.UnknownChannelType, "only session channels supported for token provisioning"); err != nil {
+		if err := newChannel.Reject(ssh.UnknownChannelType, "only session channels are supported for enrollment"); err != nil {
 			fmt.Printf("Failed to reject channel: %v\n", err)
 		}
 		return
 	}
 
-	// Accept the channel
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
 		return
 	}
 	// claimed is set once this channel takes the connection's single
-	// provisioning request; the connection then closes when the request
+	// enrollment request; the connection then closes when the request
 	// finishes, whatever the outcome, so a refused or rejected client cannot
-	// keep holding one of the few request-token connection slots.
+	// keep holding one of the few enrollment connection slots.
 	claimed := false
 	defer func() {
 		if err := channel.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close token provisioning channel: %v\n", err)
+			fmt.Printf("Failed to close enrollment channel: %v\n", err)
 		}
 		if claimed {
 			_ = sshConn.Close()
@@ -1152,14 +927,12 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 	approvalCtx, cancelApproval := context.WithCancel(connCtx)
 	defer cancelApproval()
 
-	// Get provisioning info from connection permissions
 	fingerprint := ""
 	if sshConn.Permissions != nil && sshConn.Permissions.Extensions != nil {
 		fingerprint = sshConn.Permissions.Extensions["key_fingerprint"]
 	}
 	remoteAddr := sshConn.RemoteAddr().String()
 
-	// Handle requests on this channel
 	for req := range requests {
 		switch req.Type {
 		case "exec":
@@ -1170,27 +943,23 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 				}
 				continue
 			}
-
-			// We only handle "provision" command
-			if command != "provision" {
-				fmt.Printf("[SSH] Unknown provisioning command from %s: %s\n", remoteAddr, quoteClientText(command))
+			label, ok := parseEnrollmentCommand(command)
+			if !ok {
+				fmt.Printf("[SSH] Unknown enrollment command from %s: %s\n", remoteAddr, quoteClientText(command))
 				if req.WantReply {
 					_ = req.Reply(false, nil)
 				}
 				_, _ = channel.Write([]byte("ERROR: unknown command\n"))
 				continue
 			}
-
-			// Accept the exec request
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
-			go cancelOnProvisioningChannelClosed(requests, cancelApproval)
-			claimed = s.provision(approvalCtx, sshConn, channel, fingerprint, remoteAddr)
+			go cancelOnEnrollmentChannelClosed(requests, cancelApproval)
+			claimed = s.requestEnrollment(approvalCtx, sshConn, channel, fingerprint, label, remoteAddr)
 			return
 
 		default:
-			// Reject other request types
 			if req.WantReply {
 				_ = req.Reply(false, nil)
 			}
@@ -1198,141 +967,164 @@ func (s *Server) handleTokenProvisioningChannel(connCtx context.Context, sshConn
 	}
 }
 
-// provision runs the connection's single provisioning request. It reports
-// whether the request claimed the connection, which then closes when the
-// request ends.
-func (s *Server) provision(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, remoteAddr string) bool {
-	// Check if operator is connected (moved here from auth so error message reaches client)
+// parseEnrollmentCommand accepts "enroll" or "enroll <label>" and returns the
+// label. A label is bounded, printable, and single-line; anything else is
+// not an enrollment command.
+func parseEnrollmentCommand(command string) (label string, ok bool) {
+	if command == enrollmentCommand {
+		return "", true
+	}
+	rest, found := strings.CutPrefix(command, enrollmentCommand+" ")
+	if !found {
+		return "", false
+	}
+	rest = strings.TrimSpace(rest)
+	if rest == "" || len(rest) > maxEnrollmentLabelBytes {
+		return "", false
+	}
+	for _, r := range rest {
+		if r < 0x20 || r == 0x7f {
+			return "", false
+		}
+	}
+	return rest, true
+}
+
+// requestEnrollment runs the connection's single enrollment request. It
+// reports whether the request claimed the connection, which then closes when
+// the request ends.
+func (s *Server) requestEnrollment(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) bool {
 	if s.operatorCheckCallback == nil || !s.operatorCheckCallback() {
-		fmt.Printf("[SSH] Token provisioning rejected from %s: no operator connected\n", remoteAddr)
-		_, _ = channel.Write([]byte("no operator (apadmin) connected to approve token request\n"))
+		fmt.Printf("[SSH] Enrollment rejected from %s: no operator connected\n", remoteAddr)
+		_, _ = channel.Write([]byte("no operator (apadmin) connected to approve the enrollment request\n"))
 		_ = s.sendExitStatus(channel, 1)
 		return false
 	}
-	if s.tokenApprovalCallback == nil || s.tokenIssuanceCallback == nil {
-		_, _ = channel.Write([]byte("token provisioning not configured on server\n"))
+	if s.enrollmentApprovalCallback == nil {
+		_, _ = channel.Write([]byte("enrollment is not configured on this server\n"))
 		_ = s.sendExitStatus(channel, 1)
 		return false
 	}
 
-	// One provisioning request per connection, and one pending client
-	// access request server-wide: an unauthenticated client cannot
-	// queue a stream of operator prompts.
-	if _, already := s.provisioningClaims.LoadOrStore(sshConn, struct{}{}); already {
-		_ = s.respondProvisioning(sshConn, channel, "ERROR: only one provisioning request is allowed per connection\n", 1)
+	// One enrollment request per connection, and one pending request
+	// server-wide: an unauthenticated client cannot queue a stream of
+	// operator prompts.
+	if _, already := s.enrollmentClaims.LoadOrStore(sshConn, struct{}{}); already {
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: only one enrollment request is allowed per connection\n", 1)
 		return false
 	}
-	if !s.provisioningActive.CompareAndSwap(false, true) {
-		fmt.Printf("[SSH] Client access request from %s refused: another request is pending\n", remoteAddr)
-		_ = s.respondProvisioning(sshConn, channel, "ERROR: another client access request is pending; try again later\n", 1)
+	if !s.enrollmentActive.CompareAndSwap(false, true) {
+		fmt.Printf("[SSH] Enrollment request from %s refused: another request is pending\n", remoteAddr)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: another enrollment request is pending; try again later\n", 1)
 		return true
 	}
-	defer s.provisioningActive.Store(false)
+	defer s.enrollmentActive.Store(false)
 
-	s.approveEnrollAndIssue(ctx, sshConn, channel, fingerprint, remoteAddr)
+	s.approveAndEnroll(ctx, sshConn, channel, fingerprint, label, remoteAddr)
 	return true
 }
 
-// approveEnrollAndIssue asks the operator to approve the client, then enrolls
-// its SSH key, issues the token, and delivers it. Each step runs only after
-// the previous one succeeds, and the request is audited as provisioned only
-// once the token has been delivered.
-func (s *Server) approveEnrollAndIssue(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, remoteAddr string) {
-	fmt.Printf("[SSH] Processing product token provisioning from %s\n", remoteAddr)
-	fmt.Printf("[SSH] Waiting for operator approval in apadmin for token provisioning request from %s\n", remoteAddr)
+// approveAndEnroll asks the operator to approve the key, enrolls it, and
+// acknowledges. Each step runs only after the previous one succeeds. The
+// enrollment is audited as soon as the registry holds the key, since that is
+// when the key becomes usable; a lost acknowledgement does not undo it. No
+// credential is issued: the client's key is its credential.
+func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) {
+	fmt.Printf("[SSH] Waiting for operator approval in apadmin for enrollment request from %s\n", remoteAddr)
 
-	// Step 1: Request operator approval (blocking — waits for apadmin response)
-	approved, err := s.tokenApprovalCallback(ctx, fingerprint, remoteAddr)
+	approved, err := s.enrollmentApprovalCallback(ctx, fingerprint, label, remoteAddr)
 	if err != nil {
-		_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
+		_ = s.respondEnrollment(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
 		return
 	}
 	if !approved {
-		_ = s.respondProvisioning(sshConn, channel, "ERROR: token provisioning rejected by operator\n", 1)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: enrollment rejected by operator\n", 1)
 		return
 	}
 
-	// Step 2: Enroll the client's SSH key (after approval, before token issuance).
-	// A key in authorized_keys without a token is harmless (client cannot
-	// authenticate without a valid token). But a token on disk without the key
-	// enrolled would leave the client unable to connect.
-	if !s.enrollProvisioningKey(sshConn.Permissions) {
-		_ = s.respondProvisioning(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
+	key, ok := enrollmentPublicKey(sshConn.Permissions)
+	if !ok {
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
 		return
 	}
-
-	// Step 3: Load or generate the token (persists to disk).
-	// If this fails, the key is enrolled but harmless without a token.
-	token, err := s.tokenIssuanceCallback()
+	enrolled, err := s.enrollKey(key, label)
+	if err != nil && !enrolled {
+		fmt.Printf("[SSH] Failed to enroll SSH key: %v\n", err)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
+		return
+	}
+	// The registry changed: the key is enrolled and usable from here on,
+	// whether or not the client learns of it, so the audit event records
+	// the authority change itself, before the durability outcome is
+	// considered. Acknowledgement delivery is logged separately below.
+	if enrolled && s.enrollmentAuditCallback != nil {
+		s.enrollmentAuditCallback(fingerprint, label, remoteAddr)
+	}
 	if err != nil {
-		_ = s.respondProvisioning(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
+		// The key is usable, but a crash before the next successful sync can
+		// lose it, so the client is not told it is enrolled: it retries, the
+		// retry re-publishes the registry first, and the acknowledgement
+		// follows a durable write. The retry changes nothing and is not
+		// audited again.
+		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s) but the registry write is not yet durable: %v\n", remoteAddr, fingerprint, err)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: enrollment recorded but not yet durable; retry the request\n", 1)
 		return
 	}
+	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
 
-	// Step 4: Send the token. If disconnect or write completion fails,
-	// do not audit the request as successful.
 	if ctx.Err() != nil {
-		fmt.Printf("[SSH] Token provisioning client disconnected before token delivery: %v\n", ctx.Err())
+		fmt.Printf("[SSH] Enrollment client %s disconnected before acknowledgement; its key stays enrolled: %v\n", remoteAddr, ctx.Err())
 		return
 	}
-	if err := s.respondProvisioning(sshConn, channel, token+"\n", 0); err != nil {
-		fmt.Printf("[SSH] Failed to send product token to client: %v\n", err)
+	if err := s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0); err != nil {
+		fmt.Printf("[SSH] Failed to acknowledge enrollment to %s; its key stays enrolled: %v\n", remoteAddr, err)
 		return
 	}
-
-	// Step 5: Audit and log success only after the send path completes.
-	if s.tokenAuditCallback != nil {
-		s.tokenAuditCallback(fingerprint, remoteAddr)
-	}
-	fmt.Printf("[SSH] Product token provisioned and SSH key enrolled to %s\n", remoteAddr)
 }
 
-// enrollProvisioningKey enrolls the public key the client authenticated with.
-// Enrollment is idempotent: registerAuthorizedKey checks for duplicates.
-func (s *Server) enrollProvisioningKey(permissions *ssh.Permissions) bool {
-	pubKeyStr := provisioningPublicKeyString(permissions)
-	if pubKeyStr == "" {
-		fmt.Printf("[SSH] Missing public key for enrollment\n")
-		return false
+// enrollmentPublicKey returns the key the enrollment connection authenticated
+// with, as recorded by handleEnrollmentAuth.
+func enrollmentPublicKey(permissions *ssh.Permissions) (ssh.PublicKey, bool) {
+	if permissions == nil || permissions.Extensions == nil {
+		return nil, false
 	}
-	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
+	text := permissions.Extensions["public_key"]
+	if text == "" {
+		return nil, false
+	}
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(text))
 	if err != nil {
-		fmt.Printf("[SSH] Failed to parse public key for enrollment: %v\n", err)
-		return false
+		return nil, false
 	}
-	if err := s.enrollKey(pubKey); err != nil {
-		fmt.Printf("[SSH] Failed to enroll product SSH key: %v\n", err)
-		return false
-	}
-	return true
+	return key, true
 }
 
-// admitTokenProvisioningConn counts a live request-token connection, refusing
+// admitEnrollmentConn counts a live request-enrollment connection, refusing
 // one beyond the cap.
-func (s *Server) admitTokenProvisioningConn() bool {
+func (s *Server) admitEnrollmentConn() bool {
 	s.sshConnsMu.Lock()
 	defer s.sshConnsMu.Unlock()
-	if s.tokenProvisioningConns >= maxTokenProvisioningConns {
+	if s.enrollmentConns >= maxEnrollmentConns {
 		return false
 	}
-	s.tokenProvisioningConns++
+	s.enrollmentConns++
 	return true
 }
 
-func (s *Server) releaseTokenProvisioningConn(sshConn *ssh.ServerConn) {
+func (s *Server) releaseEnrollmentConn(sshConn *ssh.ServerConn) {
 	s.sshConnsMu.Lock()
-	s.tokenProvisioningConns--
+	s.enrollmentConns--
 	s.sshConnsMu.Unlock()
-	s.provisioningClaims.Delete(sshConn)
+	s.enrollmentClaims.Delete(sshConn)
 }
 
-// respondProvisioning writes a provisioning result and exit status under a
+// respondEnrollment writes an enrollment result and exit status under a
 // deadline. A client that stops reading, for example by advertising a zero
 // receive window, would otherwise block the write and hold the server-wide
-// provisioning slot; at the deadline its connection is closed, which fails
-// the write and lets the handler release the slot.
-func (s *Server) respondProvisioning(sshConn ssh.Conn, channel ssh.Channel, msg string, status uint32) error {
-	deadline := time.AfterFunc(s.tokenProvisioningRespDeadline, func() { _ = sshConn.Close() })
+// enrollment slot; at the deadline its connection is closed, which fails the
+// write and lets the handler release the slot.
+func (s *Server) respondEnrollment(sshConn ssh.Conn, channel ssh.Channel, msg string, status uint32) error {
+	deadline := time.AfterFunc(s.enrollmentRespDeadline, func() { _ = sshConn.Close() })
 	defer deadline.Stop()
 	if _, err := channel.Write([]byte(msg)); err != nil {
 		return err
@@ -1361,20 +1153,13 @@ func parseExecCommand(payload []byte) (string, bool) {
 	return string(payload[4 : 4+cmdLenInt]), true
 }
 
-func cancelOnProvisioningChannelClosed(requests <-chan *ssh.Request, cancel context.CancelFunc) {
+func cancelOnEnrollmentChannelClosed(requests <-chan *ssh.Request, cancel context.CancelFunc) {
 	for req := range requests {
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
 	}
 	cancel()
-}
-
-func provisioningPublicKeyString(permissions *ssh.Permissions) string {
-	if permissions == nil || permissions.Extensions == nil {
-		return ""
-	}
-	return permissions.Extensions["public_key"]
 }
 
 // sendExitStatus sends an exit-status message on an SSH channel
@@ -1388,9 +1173,11 @@ func (s *Server) sendExitStatus(channel ssh.Channel, status uint32) error {
 	return err
 }
 
-// handleChannel processes a single SSH channel (port forward request)
-func (s *Server) handleChannel(newChannel ssh.NewChannel) {
-	// We only support "direct-tcpip" channel type (port forwarding)
+// handleChannel serves one direct-tcpip channel. The requested destination
+// must be loopback; its port is ignored. The channel is handed to the API
+// handoff as a connection carrying the client's identity, so the HTTP server
+// knows who is calling without any credential in the request.
+func (s *Server) handleChannel(sshConn *ssh.ServerConn, info sshConnInfo, newChannel ssh.NewChannel) {
 	if newChannel.ChannelType() != "direct-tcpip" {
 		if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil {
 			fmt.Printf("Failed to reject channel: %v\n", err)
@@ -1398,7 +1185,6 @@ func (s *Server) handleChannel(newChannel ssh.NewChannel) {
 		return
 	}
 
-	// Parse the port forward request
 	var req struct {
 		DestAddr   string
 		DestPort   uint32
@@ -1411,62 +1197,79 @@ func (s *Server) handleChannel(newChannel ssh.NewChannel) {
 		}
 		return
 	}
-
-	// Verify the request is for our local target (HTTP API)
-	// We only allow forwarding to the configured target address
 	if req.DestAddr != "127.0.0.1" && req.DestAddr != "localhost" {
 		if err := newChannel.Reject(ssh.Prohibited, "forwarding only allowed to localhost"); err != nil {
 			fmt.Printf("Failed to reject channel: %v\n", err)
 		}
 		return
 	}
+	if s.apiHandoff == nil || info.fingerprint == "" {
+		if err := newChannel.Reject(ssh.Prohibited, "API forwarding is not available"); err != nil {
+			fmt.Printf("Failed to reject channel: %v\n", err)
+		}
+		return
+	}
 
-	// Accept the channel
+	// Hand the connection over before accepting the channel, so a full or
+	// closed listener refuses the channel instead of accepting and dropping it.
+	apiSide, tunnelSide := net.Pipe()
+	apiConn := &APIConn{Conn: apiSide, fingerprint: info.fingerprint, remote: sshConn.RemoteAddr(), local: sshConn.LocalAddr()}
+	if err := s.apiHandoff(apiConn); err != nil {
+		_ = apiSide.Close()
+		_ = tunnelSide.Close()
+		if err := newChannel.Reject(ssh.ResourceShortage, "API listener unavailable"); err != nil && !isClosedConnError(err) {
+			fmt.Printf("Failed to reject channel: %v\n", err)
+		}
+		return
+	}
+
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
+		_ = tunnelSide.Close()
 		return
 	}
-	defer func() {
-		if err := channel.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close SSH channel: %v\n", err)
-		}
-	}()
-
-	// Discard all channel requests
 	go ssh.DiscardRequests(requests)
 
-	// Connect to local target (HTTP API)
-	targetConn, err := net.Dial("tcp", s.targetAddr)
-	if err != nil {
-		return
+	// The forwarded connection lives exactly as long as both of its halves.
+	// net.Pipe has no half-close, and the HTTP server treats a client's EOF
+	// as abandonment of the request anyway (it cancels the request context),
+	// so whichever side finishes first tears the whole connection down: the
+	// client going away cancels the in-flight request and frees the HTTP
+	// side at once, and the HTTP side closing ends the channel instead of
+	// waiting for the client to notice its EOF.
+	var teardown sync.Once
+	closeBoth := func() {
+		teardown.Do(func() {
+			_ = tunnelSide.Close()
+			if err := channel.Close(); err != nil && !isClosedConnError(err) {
+				fmt.Printf("Failed to close SSH channel: %v\n", err)
+			}
+		})
 	}
-	defer func() {
-		if err := targetConn.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close target connection: %v\n", err)
-		}
-	}()
+	defer closeBoth()
 
-	// Bidirectional copy between SSH channel and target connection
 	var wg sync.WaitGroup
 	wg.Add(2)
-
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(channel, targetConn); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Error copying target to channel: %v\n", err)
+		defer closeBoth()
+		if _, err := io.Copy(channel, tunnelSide); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
+			fmt.Printf("Error copying API to channel: %v\n", err)
 		}
+		// Everything the HTTP side wrote has been handed to the channel (a
+		// pipe write returns only once read), so the client sees an orderly
+		// EOF before the close that follows.
 		if err := channel.CloseWrite(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close channel write: %v\n", err)
 		}
 	}()
-
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(targetConn, channel); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Error copying channel to target: %v\n", err)
+		defer closeBoth()
+		if _, err := io.Copy(tunnelSide, channel); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
+			fmt.Printf("Error copying channel to API: %v\n", err)
 		}
 	}()
-
 	wg.Wait()
 }
 
@@ -1542,11 +1345,21 @@ func (s *Server) StopContext(ctx context.Context) error {
 	}
 }
 
-func (s *Server) connectionStaleLocked(info sshConnInfo) bool {
-	if info.tokenGeneration == 0 {
-		return false
+// ListenAddr returns the address the server is listening on, or "" before
+// Start.
+func (s *Server) ListenAddr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listener == nil {
+		return ""
 	}
-	return s.minimumTokenGeneration > 0 && info.tokenGeneration < s.minimumTokenGeneration
+	return s.listener.Addr().String()
+}
+
+// HostPublicKey returns the server's host public key, which clients pin in
+// known_hosts.
+func (s *Server) HostPublicKey() ssh.PublicKey {
+	return s.hostKey.PublicKey()
 }
 
 // GetHostKeyFingerprint returns the SSH host key fingerprint for verification

@@ -47,9 +47,11 @@ var dispatchTable = map[string]dispatchFunc{
 		s.HandleReconcileStore(m.ID)
 	}),
 
-	protocol.MsgTypeRevokeToken:        typed("revoke token", (*Session).HandleRevokeToken),
-	protocol.MsgTypeGetAdminSettings:   typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
-	protocol.MsgTypeUpdateAdminSetting: typed("update admin setting", (*Session).HandleUpdateAdminSetting),
+	protocol.MsgTypeListEnrolledKeys:      typed("list enrolled keys", (*Session).HandleListEnrolledKeys),
+	protocol.MsgTypeRevokeEnrolledKey:     typed("revoke enrolled key", (*Session).HandleRevokeEnrolledKey),
+	protocol.MsgTypeRevokeAllEnrolledKeys: typed("revoke all enrolled keys", (*Session).HandleRevokeAllEnrolledKeys),
+	protocol.MsgTypeGetAdminSettings:      typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
+	protocol.MsgTypeUpdateAdminSetting:    typed("update admin setting", (*Session).HandleUpdateAdminSetting),
 
 	protocol.MsgTypeGetPolicy:         typed("get policy", (*Session).HandleGetPolicy),
 	protocol.MsgTypeGetPolicyDocument: typed("get policy document", (*Session).HandleGetPolicyDocument),
@@ -98,8 +100,8 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeDeactivateKeyType: typed("deactivate key type", (*Session).HandleDeactivateKeyType),
 	protocol.MsgTypeListKeyTypes:      typed("list key types", func(s *Session, m *protocol.ListKeyTypesMessage) { s.HandleListKeyTypes(m.ID) }),
 
-	protocol.MsgTypeSignResponse:              typed("sign response", (*Session).HandleSignResponse),
-	protocol.MsgTypeTokenProvisioningResponse: typed("token provisioning response", (*Session).HandleTokenProvisioningResponse),
+	protocol.MsgTypeSignResponse:             typed("sign response", (*Session).HandleSignResponse),
+	protocol.MsgTypeClientEnrollmentResponse: typed("client enrollment response", (*Session).HandleClientEnrollmentResponse),
 }
 
 // authOnlyDispatchTypes is the complete server-enforced capability granted to

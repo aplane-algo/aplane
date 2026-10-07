@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,8 +24,8 @@ import (
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signerstartuptemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storelock"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -214,7 +215,7 @@ func Run(dataDir string) int {
 	if removed != 0 {
 		logInfof("removed %d incomplete backup import(s)", removed)
 	}
-	logInfof("API token loaded from %s", tokenfile.GetAPlaneTokenPathForRoot(startupOpts.Paths.Root()))
+	logInfof("client authentication: enrolled SSH keys in %s", ir.AuthorizedKeysPath())
 
 	// Configure algod client on all DSA providers that need it (for TEAL compilation)
 	configureAlgodOnDSAs(&config)
@@ -293,8 +294,10 @@ func Run(dataDir string) int {
 
 	httpServer := buildHTTPServer(server, port)
 	logHTTPStartup(keyCount, keysSnapshot, port)
+	apiListener := sshtunnel.NewAPIListener(maxHTTPConnections)
+	server.apiListener = apiListener
 
-	sshRuntime, err := startSSHRuntime(server, config.Endpoint.SSH.ListenAddress, config.Endpoint.SSH.Port, config.Endpoint.SSH.HostKeyPath, config.Endpoint.SSH.AuthorizedKeysPath, auditLog)
+	sshRuntime, err := startSSHRuntime(server, config.Endpoint.SSH.ListenAddress, config.Endpoint.SSH.Port, config.Endpoint.SSH.HostKeyPath, auditLog)
 	if err != nil {
 		logErrorf("failed to start SSH server: %v", err)
 		return 1
@@ -344,9 +347,15 @@ func Run(dataDir string) int {
 							errs <- err
 						}
 					}()
+					go func() {
+						if err := httpServer.Serve(newLimitListener(apiListener, maxHTTPConnections)); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+							errs <- err
+						}
+					}()
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
+					_ = apiListener.Close()
 					return httpServer.Shutdown(ctx)
 				},
 			},

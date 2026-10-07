@@ -5,7 +5,9 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"net"
 	"net/http"
 	"strings"
@@ -120,9 +122,10 @@ func TestHTTPServerRefusesOversizedHeaders(t *testing.T) {
 	}
 }
 
-// An unauthenticated client cannot hold a connection slot with keep-alive
-// requests: the server closes its connection after the response, so an
-// authenticated client waiting for the slot is served.
+// An unauthenticated keep-alive request must not hold a loopback
+// connection slot: its response closes the connection, so the next client
+// gets the slot. A request over an authenticated API channel keeps its
+// connection alive.
 func TestUnauthenticatedKeepAliveDoesNotHoldConnectionSlot(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
@@ -156,14 +159,39 @@ func TestUnauthenticatedKeepAliveDoesNotHoldConnectionSlot(t *testing.T) {
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/status", nil)
+	next, err := client.Get("http://" + addr + "/health")
 	if err != nil {
+		t.Fatalf("health request while an unauthenticated client held the slot: %v", err)
+	}
+	_ = next.Body.Close()
+	if next.StatusCode != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", next.StatusCode)
+	}
+
+	// An authenticated client arrives over an API channel handed off by the
+	// SSH server, never over loopback TCP.
+	fingerprint := enrollTestClient(t, server, "keepalive")
+	channels := sshtunnel.NewAPIListener(1)
+	defer func() { _ = channels.Close() }()
+	channelServer := buildHTTPServer(server, 0)
+	// The daemon serves API channels through the same limiter as loopback,
+	// which must not hide the connection's identity.
+	go func() { _ = channelServer.Serve(newLimitListener(channels, 1)) }()
+	defer func() { _ = channelServer.Close() }()
+	clientSide, serverSide := net.Pipe()
+	pipeAddr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1}
+	if err := channels.Handoff(sshtunnel.NewAPIConn(serverSide, fingerprint, pipeAddr, pipeAddr)); err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "aplane test-token")
-	authed, err := client.Do(req)
+	tunneled := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(context.Context, string, string) (net.Conn, error) { return clientSide, nil },
+		},
+	}
+	authed, err := tunneled.Get("http://api-channels/status")
 	if err != nil {
-		t.Fatalf("authenticated request while an unauthenticated client held the slot: %v", err)
+		t.Fatalf("authenticated request over an API channel: %v", err)
 	}
 	_ = authed.Body.Close()
 	if authed.StatusCode != http.StatusOK {

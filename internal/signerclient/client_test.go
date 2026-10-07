@@ -20,7 +20,7 @@ import (
 )
 
 func TestRequestGroupSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
-	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestGroupSign([]signerapi.SignRequest{{AuthAddress: "ADDR"}})
 	if err == nil || !strings.Contains(err.Error(), "invalid group sign request") {
 		t.Fatalf("RequestGroupSign() error = %v", err)
@@ -28,7 +28,7 @@ func TestRequestGroupSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 }
 
 func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
-	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestGroupPlan([]signerapi.SignRequest{{AuthAddress: "ADDR"}})
 	if err == nil || !strings.Contains(err.Error(), "invalid group plan request") {
 		t.Fatalf("RequestGroupPlan() error = %v", err)
@@ -36,7 +36,7 @@ func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 }
 
 func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
-	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestComponents(signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindUser}},
@@ -47,7 +47,7 @@ func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 }
 
 func TestRequestAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
-	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestAssemble(signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 	})
@@ -63,7 +63,7 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestNewSignerClientHasNoGlobalTimeout(t *testing.T) {
-	client := NewSignerClientWithToken("http://signer.test", "test-token")
+	client := NewSignerClient("http://signer.test")
 	if client.Client.Timeout != 0 {
 		t.Fatalf("Client.Timeout = %s, want no global timeout", client.Client.Timeout)
 	}
@@ -71,14 +71,14 @@ func TestNewSignerClientHasNoGlobalTimeout(t *testing.T) {
 
 func TestSignerClientHealthUsesConfiguredClient(t *testing.T) {
 	used := false
-	client := NewSignerClientWithToken("http://signer.test", "test-token")
+	client := NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		used = true
 		if req.URL.Path != "/health" {
 			t.Fatalf("request path = %s, want /health", req.URL.Path)
 		}
-		if got := req.Header.Get("Authorization"); got != "aplane test-token" {
-			t.Fatalf("authorization header = %q", got)
+		if got := req.Header.Get("Authorization"); got != "" {
+			t.Fatalf("Authorization header = %q, want none: requests carry no credential", got)
 		}
 		return &http.Response{
 			StatusCode: 200,
@@ -96,7 +96,7 @@ func TestSignerClientHealthUsesConfiguredClient(t *testing.T) {
 }
 
 func TestSignerClientHealthPropagatesConfiguredClientError(t *testing.T) {
-	client := NewSignerClientWithToken("http://signer.test", "test-token")
+	client := NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("transport boom")
 	})}
@@ -108,7 +108,7 @@ func TestSignerClientHealthPropagatesConfiguredClientError(t *testing.T) {
 }
 
 func TestSignerClientContextAccessIsRaceSafe(t *testing.T) {
-	client := NewSignerClientWithToken("http://signer.test", "test-token")
+	client := NewSignerClient("http://signer.test")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -273,7 +273,7 @@ func mockResponse(status int, body string) *http.Response {
 
 func newTestClient(t *testing.T, fn roundTripperFunc) *Client {
 	t.Helper()
-	c := NewSignerClientWithToken("http://signer.test", "test-token")
+	c := NewSignerClient("http://signer.test")
 	c.Client = &http.Client{Transport: fn}
 	c.ProgressOut = io.Discard
 	return c
@@ -788,8 +788,8 @@ func TestRequestComponentsPostsToComponentEndpoint(t *testing.T) {
 		if req.URL.Path != "/sign/component" || req.Method != http.MethodPost {
 			t.Fatalf("request = %s %s, want POST /sign/component", req.Method, req.URL.Path)
 		}
-		if got := req.Header.Get("Authorization"); got != "aplane test-token" {
-			t.Fatalf("authorization header = %q", got)
+		if got := req.Header.Get("Authorization"); got != "" {
+			t.Fatalf("Authorization header = %q, want none: requests carry no credential", got)
 		}
 		var got signerapi.ComponentRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
@@ -928,11 +928,12 @@ func TestRequestGroupPlanDoesNotUseApprovalWaitDeadline(t *testing.T) {
 
 // --- Auth header ---
 
-func TestAuthorizationHeader(t *testing.T) {
+// The connection authenticates the client (its enrolled SSH key), so no
+// request carries a credential header.
+func TestNoAuthorizationHeader(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		got := req.Header.Get("Authorization")
-		if got != "aplane test-token" {
-			t.Errorf("Authorization = %q, want %q", got, "aplane test-token")
+		if got := req.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization = %q, want none", got)
 		}
 		return mockResponse(200, jsonBody(t, signerapi.KeysResponse{})), nil
 	})

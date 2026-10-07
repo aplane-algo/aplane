@@ -4,10 +4,8 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"os"
 	"testing"
 	"time"
 
@@ -65,13 +63,7 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	tokenBytes, err := os.ReadFile(signerd.GetTokenPath())
-	if err != nil {
-		t.Fatalf("read token: %v", err)
-	}
-	token := string(bytes.TrimSpace(tokenBytes))
-
-	if !waitForKey(t, signerd.GetURL(), token, falconAddr, 15*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), falconAddr, 15*time.Second) {
 		t.Fatalf("falcon key %s not loaded", falconAddr)
 	}
 
@@ -93,7 +85,7 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	eng.Connection.SignerClient = signerclient.NewSignerClient(signerd.GetURL())
 	if !eng.IsConnected() {
 		t.Fatal("engine not connected to signer after wiring SignerClient")
 	}

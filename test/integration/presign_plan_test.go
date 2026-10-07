@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -56,13 +55,7 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	tokenBytes, err := os.ReadFile(signerd.GetTokenPath())
-	if err != nil {
-		t.Fatalf("read token: %v", err)
-	}
-	token := string(bytes.TrimSpace(tokenBytes))
-
-	if !waitForKey(t, signerd.GetURL(), token, falconAddr, 15*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), falconAddr, 15*time.Second) {
 		t.Fatalf("falcon key %s not loaded", falconAddr)
 	}
 
@@ -101,7 +94,6 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 		t.Fatalf("new request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "aplane "+token)
 
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {

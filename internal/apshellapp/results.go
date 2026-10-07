@@ -690,9 +690,10 @@ type DisconnectResult struct {
 	Summary      Summary
 }
 
-// RequestTokenResult describes the outcome of token enrollment.
-type RequestTokenResult struct {
-	TokenPath        string
+// RequestEnrollmentResult describes the outcome of a client key enrollment.
+type RequestEnrollmentResult struct {
+	Alias            string
+	Fingerprint      string
 	DisconnectedPrev bool
 	RenderLines      []string
 	Summary          Summary
@@ -705,9 +706,6 @@ type EndpointEntry struct {
 	URL            string
 	IdentityFile   string
 	KnownHostsPath string
-	TokenFile      string
-	TokenPresent   bool
-	TokenError     string
 	IsDefault      bool
 }
 
@@ -726,33 +724,23 @@ type EndpointImportResult struct {
 	Alias          string
 	Role           string
 	URL            string
-	TokenFile      string
 	DryRun         bool
 	Created        bool
 	Updated        bool
 	DefaultChanged bool
-	// TokenRetired reports that a stored token was removed (or would be, in a
-	// dry run): the alias moved to another destination, or was created over a
-	// token file left under its name.
-	TokenRetired bool
-	RenderLines  []string
+	RenderLines    []string
 }
 
 // EndpointCreateCosignerResult describes manual creation of a cosigner endpoint
 // profile.
 type EndpointCreateCosignerResult struct {
-	Alias     string
-	Role      string
-	URL       string
-	TokenFile string
-	DryRun    bool
-	Created   bool
-	Updated   bool
-	// TokenRetired reports that a stored token was removed (or would be, in a
-	// dry run): the alias moved to another destination, or was created over a
-	// token file left under its name.
-	TokenRetired bool
-	RenderLines  []string
+	Alias       string
+	Role        string
+	URL         string
+	DryRun      bool
+	Created     bool
+	Updated     bool
+	RenderLines []string
 }
 
 // EndpointDefaultResult describes a default endpoint change.
@@ -764,10 +752,8 @@ type EndpointDefaultResult struct {
 
 // EndpointDeleteResult describes an endpoint deletion.
 type EndpointDeleteResult struct {
-	Alias string
-	// TokenRetired reports that the endpoint's token file was removed with it.
-	TokenRetired bool
-	RenderLines  []string
+	Alias       string
+	RenderLines []string
 }
 
 // DiscoveredEndpointCosignerKey describes one cosigner key advertised by an
@@ -796,8 +782,6 @@ type EndpointDiscoverCosignersResult struct {
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
 	EndpointName  string
-	HasToken      bool
-	TokenPath     string
 	HasSSHConfig  bool
 	Host          string
 	SSHPort       int

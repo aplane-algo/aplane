@@ -93,12 +93,7 @@ func TestBasicFalconTransaction(t *testing.T) {
 	t.Logf("Generated Falcon address: %s", falconAddr)
 
 	// Create apshell harness for sending transactions
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-
-	// Copy the API token from signer to apshell work directory
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("Failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	// Start background unlock to keep signer unlocked during apshell operations
 	if err := apadmin.StartUnlockBackground(); err != nil {
@@ -188,10 +183,7 @@ func TestFalconGroupTransaction(t *testing.T) {
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("Failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	t.Log("Generating Falcon keys...")
 	addr1, err := apadmin.GenerateKey("test falcon key 1")
@@ -226,11 +218,10 @@ func TestFalconGroupTransaction(t *testing.T) {
 		t.Fatalf("Failed to get suggested params: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, addr1, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addr1, 10*time.Second) {
 		t.Fatalf("Signer did not reload Falcon key %s", addr1)
 	}
-	if !waitForKey(t, signerd.GetURL(), token, addr2, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addr2, 10*time.Second) {
 		t.Fatalf("Signer did not reload Falcon key %s", addr2)
 	}
 
@@ -256,7 +247,7 @@ func TestFalconGroupTransaction(t *testing.T) {
 		},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, signReq)
+	status, body := postSignRequest(t, signerd.GetURL(), signReq)
 	if status != 200 {
 		t.Fatalf("Expected 200 from /sign, got %d: %s", status, string(body))
 	}

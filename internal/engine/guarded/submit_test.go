@@ -9,10 +9,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -320,18 +319,14 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 	}
 }
 
-func TestRequestCosignerComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T) {
+func TestRequestCosignerComponentSignaturesUsesConfiguredSSHEndpoint(t *testing.T) {
 	publicKey, privateKey := testFalconCosignerKeypair(t, 0x61)
 	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	server := newCosignerEndpointTestServer(t, cosignerHex, privateKey, "cosigner-token", nil)
-	defer server.Close()
-	tokenFile := writeCosignerTokenFile(t, "cosigner-token")
+	node := newCosignerEndpointNode(t, cosignerHex, privateKey, nil)
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
-	s.endpointRegistry = cosignerEndpointRegistry("cosigner-http", config.ClientEndpointConfig{
-		URL: server.URL, TokenFile: tokenFile,
-	})
+	s.endpointRegistry = cosignerEndpointRegistry("cosigner-ssh", cosignerNodeEndpoint(node))
 
 	signatures, requestIDs, err := s.requestCosignerComponentSignatures(
 		context.Background(),
@@ -385,18 +380,14 @@ func TestRequestCosignerComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 
-	selfServer := newCosignerEndpointTestServer(t, cosignerHex, privateKey, "", nil)
+	selfServer := newCosignerEndpointTestServer(t, cosignerHex, privateKey, nil)
 	defer selfServer.Close()
 	var wrongSignCalls atomic.Int32
-	wrongServer := newCosignerEndpointTestServer(t, wrongHex, wrongPrivateKey, "cosigner-token", &wrongSignCalls)
-	defer wrongServer.Close()
-	tokenFile := writeCosignerTokenFile(t, "cosigner-token")
+	wrongNode := newCosignerEndpointNode(t, wrongHex, wrongPrivateKey, &wrongSignCalls)
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
-	s.endpointRegistry = cosignerEndpointRegistry("cosigner-wrong", config.ClientEndpointConfig{
-		URL: wrongServer.URL, TokenFile: tokenFile,
-	})
+	s.conn.SignerClient = signerclient.NewSignerClient(selfServer.URL)
+	s.endpointRegistry = cosignerEndpointRegistry("cosigner-wrong", cosignerNodeEndpoint(wrongNode))
 
 	_, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
@@ -434,14 +425,10 @@ func TestRequestCosignerComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"signer is locked"}`, http.StatusForbidden)
 	})
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	tokenFile := writeCosignerTokenFile(t, "cosigner-token")
+	node := sshtest.Serve(t, mux)
 
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
-	s.endpointRegistry = cosignerEndpointRegistry("cosigner-locked", config.ClientEndpointConfig{
-		URL: server.URL, TokenFile: tokenFile,
-	})
+	s.endpointRegistry = cosignerEndpointRegistry("cosigner-locked", cosignerNodeEndpoint(node))
 
 	_, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
@@ -469,12 +456,9 @@ func TestRequestCosignerComponentSignaturesUsesExplicitLoopbackEndpoint(t *testi
 	cosignerHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	server := newCosignerEndpointTestServer(t, cosignerHex, privateKey, "", nil)
-	defer server.Close()
+	node := newCosignerEndpointNode(t, cosignerHex, privateKey, nil)
 	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
-	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", config.ClientEndpointConfig{
-		URL: server.URL, TokenFile: writeCosignerTokenFile(t, "cosigner-token"),
-	})
+	s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignerNodeEndpoint(node))
 
 	signatures, _, err := s.requestCosignerComponentSignatures(
 		context.Background(),
@@ -489,6 +473,12 @@ func TestRequestCosignerComponentSignaturesUsesExplicitLoopbackEndpoint(t *testi
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
 	}
+}
+
+// cosignerNodeEndpoint is the endpoint configuration that reaches node with
+// the test client's enrolled identity.
+func cosignerNodeEndpoint(node *sshtest.Node) config.ClientEndpointConfig {
+	return config.ClientEndpointConfig{URL: node.URL, IdentityFile: node.IdentityFile, KnownHostsPath: node.KnownHostsPath}
 }
 
 func cosignerEndpointRegistry(alias string, endpoint config.ClientEndpointConfig) config.ClientEndpointRegistry {
@@ -667,7 +657,21 @@ func TestCosignerComponentLabelUsesFalconCosignerKeyID(t *testing.T) {
 	}
 }
 
-func newCosignerEndpointTestServer(t *testing.T, publicKeyHex string, privateKey []byte, token string, signCalls *atomic.Int32) *httptest.Server {
+// newCosignerEndpointTestServer serves a cosigner node's surface over
+// loopback HTTP, for the user signer client that is pointed at it directly.
+func newCosignerEndpointTestServer(t *testing.T, publicKeyHex string, privateKey []byte, signCalls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(cosignerEndpointHandler(t, publicKeyHex, privateKey, signCalls))
+}
+
+// newCosignerEndpointNode starts an in-process cosigner node reachable over
+// SSH with the test client's enrolled key.
+func newCosignerEndpointNode(t *testing.T, publicKeyHex string, privateKey []byte, signCalls *atomic.Int32) *sshtest.Node {
+	t.Helper()
+	return sshtest.Serve(t, cosignerEndpointHandler(t, publicKeyHex, privateKey, signCalls))
+}
+
+func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byte, signCalls *atomic.Int32) http.Handler {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
@@ -679,10 +683,6 @@ func newCosignerEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
-		if token != "" && r.Header.Get("Authorization") != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
@@ -694,10 +694,6 @@ func newCosignerEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 		})
 	})
 	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
-		if token != "" && r.Header.Get("Authorization") != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		if signCalls != nil {
 			signCalls.Add(1)
 		}
@@ -735,7 +731,7 @@ func newCosignerEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
-	return httptest.NewServer(mux)
+	return mux
 }
 
 func testFalconCosignerKeypair(t *testing.T, fill byte) ([]byte, []byte) {
@@ -745,15 +741,6 @@ func testFalconCosignerKeypair(t *testing.T, fill byte) ([]byte, []byte) {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}
 	return publicKey, privateKey
-}
-
-func writeCosignerTokenFile(t *testing.T, token string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "aplane.token")
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		t.Fatalf("write token file: %v", err)
-	}
-	return path
 }
 
 func TestVerifyAssembledAgainstFrozen(t *testing.T) {

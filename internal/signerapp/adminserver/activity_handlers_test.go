@@ -29,10 +29,7 @@ func (a *recordingIdentityLockAudit) LogIdentityLockedContext(ctx SessionContext
 }
 
 func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	conn := &queueConn{}
@@ -84,10 +81,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 }
 
 func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	delivered := make(chan struct{}, 1)
@@ -140,10 +134,7 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 }
 
 func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	conn := &queueConn{}

@@ -1,5 +1,41 @@
 # Release Notes
 
+## The client's SSH key is its only credential
+
+The API token is gone. A client no longer holds `aplane.token` or
+`tokens/<alias>.token`, no request carries an `Authorization` header, and the
+signer no longer keeps a product token under `identities/default/`. A client
+authenticates once, at the SSH handshake, with the key the operator enrolled;
+the node's SSH server hands each tunneled API channel to its REST handler with
+that identity (`client:<SHA256 fingerprint>`) attached. The daemon's loopback
+REST port carries no identity and now answers only `GET /health`.
+
+`request-enrollment [--endpoint <alias>] [--label <text>]` replaces
+`request-token`. It still creates the client key if needed and performs host
+trust, and the operator still approves the fingerprint in `apadmin` or
+`apapprover`; the difference is that nothing is issued or saved afterwards.
+The SSH username for the request is now `request-enrollment`. Guided cosigner
+setup (`endpoints add`) enrolls automatically when a cosigner refuses the key.
+
+The operator manages keys from the new **Enrolled Clients** panel in `apadmin`
+(`c` on the Admin panel): it lists each key's fingerprint, label, type, and
+connection state, and can revoke one key or every key. Revocation closes the
+key's live connections at once and the next handshake is refused. The old
+token revoke (`t`) and the `revoke_token` admin message are gone, replaced by
+`list_enrolled_keys`, `revoke_enrolled_key`, and `revoke_all_enrolled_keys`.
+Audit logs record `CLIENT_ENROLLED` and `CLIENT_KEY_REVOKED` instead of
+`TOKEN_PROVISIONED`.
+
+The registry is `identities/default/.ssh/authorized_keys`, written only by
+the daemon: option-free lines are client keys, options beginning `aplane-`
+are reserved, and a duplicate key is refused. The server setting
+`endpoint.ssh.authorized_keys_path` is removed. In client `endpoints.yaml`,
+`token_file` joins `signer_port` and `local_port` as a retired key: ignored on
+load, dropped on the next write. Endpoints no longer carry a token, so
+creating, re-importing, or deleting one no longer retires anything.
+
+The SDKs are updated separately to authenticate with the SSH key.
+
 ## Client endpoints name only the address
 
 The client-side `signer_port` and `local_port` fields are gone from

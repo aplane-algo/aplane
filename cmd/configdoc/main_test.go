@@ -27,10 +27,18 @@ func TestGeneratedReferenceUsesConnectionOnlyEndpointRegistry(t *testing.T) {
 		"## apshell Endpoint Registry",
 		"| `schema_version` | int | `2` |",
 		"`endpoints.<alias>.role`",
-		"`endpoints.<alias>.token_file`",
+		"`endpoints.<alias>.identity_file`",
+		"`endpoints.<alias>.known_hosts_path`",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("generated reference missing %q", want)
+		}
+	}
+	// The client's SSH key is its credential: no token file is configured,
+	// and the enrolled-client registry has a fixed location.
+	for _, retired := range []string{"token_file", "authorized_keys_path"} {
+		if strings.Contains(doc, retired) {
+			t.Fatalf("generated reference contains retired field %q", retired)
 		}
 	}
 	if strings.Contains(doc, "published_cosigners") {

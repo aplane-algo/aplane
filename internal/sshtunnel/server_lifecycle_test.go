@@ -19,24 +19,20 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 	srv, _ := testServer(t)
 
 	srv.SetSessionCallback(func(remoteAddr string, connected bool) {})
-	srv.SetTokenProvisioningHooks(TokenProvisioningHooks{
-		Approve:           func(sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
-		Issue:             func() (string, error) { return "token", nil },
-		AuditProvisioned:  func(sshFingerprint, remoteAddr string) {},
+	srv.SetEnrollmentHooks(EnrollmentHooks{
+		ApproveContext:    func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) { return true, nil },
+		AuditEnrolled:     func(sshFingerprint, label, remoteAddr string) {},
 		OperatorConnected: func() bool { return true },
 	})
 	srv.SetProductHooks(ProductHooks{
-		ComputeTokenMACs: testTokenMACs,
-		CheckKey:         func(key ssh.PublicKey) bool { return true },
-		EnrollKey:        func(key ssh.PublicKey) error { return nil },
+		CheckKey:  func(key ssh.PublicKey) bool { return true },
+		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil },
 	})
 
 	if srv.sessionCallback == nil ||
-		srv.tokenApprovalCallback == nil ||
-		srv.tokenIssuanceCallback == nil ||
-		srv.tokenAuditCallback == nil ||
+		srv.enrollmentApprovalCallback == nil ||
+		srv.enrollmentAuditCallback == nil ||
 		srv.operatorCheckCallback == nil ||
-		srv.tokenMAC == nil ||
 		srv.keyChecker == nil ||
 		srv.keyEnroller == nil {
 		t.Fatal("expected all callback setters to apply before Start")
@@ -78,23 +74,12 @@ func TestSetProductHooksRejectsPartialConfiguration(t *testing.T) {
 		hooks ProductHooks
 	}{
 		{
-			name: "token MAC only",
-			hooks: ProductHooks{
-				ComputeTokenMACs: testTokenMACs,
-			},
+			name:  "checker only",
+			hooks: ProductHooks{CheckKey: func(key ssh.PublicKey) bool { return true }},
 		},
 		{
-			name: "missing enroller",
-			hooks: ProductHooks{
-				ComputeTokenMACs: testTokenMACs,
-				CheckKey:         func(key ssh.PublicKey) bool { return true },
-			},
-		},
-		{
-			name: "enroller only",
-			hooks: ProductHooks{
-				EnrollKey: func(key ssh.PublicKey) error { return nil },
-			},
+			name:  "enroller only",
+			hooks: ProductHooks{EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil }},
 		},
 	}
 
@@ -107,8 +92,8 @@ func TestSetProductHooksRejectsPartialConfiguration(t *testing.T) {
 					t.Fatal("SetProductHooks did not panic for partial hooks")
 				}
 				msg, ok := r.(string)
-				if !ok || !strings.Contains(msg, "require ComputeTokenMACs, CheckKey, and EnrollKey together") {
-					t.Fatalf("panic = %#v, want partial identity hook assertion", r)
+				if !ok || !strings.Contains(msg, "require CheckKey and EnrollKey together") {
+					t.Fatalf("panic = %#v, want partial hook assertion", r)
 				}
 			}()
 			srv.SetProductHooks(tt.hooks)
@@ -116,39 +101,21 @@ func TestSetProductHooksRejectsPartialConfiguration(t *testing.T) {
 	}
 }
 
-func TestProductAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing.T) {
-	srv, _ := testServer(t)
-	_, pub := generateClientKey(t)
-	srv.authKeysMu.Lock()
-	srv.authKeys = append(srv.authKeys, pub)
-	srv.authKeysMu.Unlock()
-	srv.tokenMAC = testTokenMACs
-
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: productSSHUsername}, pub)
-	if perms != nil {
-		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
-	}
-	if err == nil || !strings.Contains(err.Error(), "not fully configured") {
-		t.Fatalf("handlePublicKeyAuth() error = %v, want partial identity hook rejection", err)
-	}
-}
-
 func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
-	srv.tokenMAC = testTokenMACs
 	checked := false
 	srv.keyChecker = func(key ssh.PublicKey) bool {
 		checked = true
 		return true
 	}
-	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
+	srv.keyEnroller = func(key ssh.PublicKey, label string) (bool, error) { return true, nil }
 
 	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: productSSHUsername}, pub)
 	if err != nil {
 		t.Fatalf("handlePublicKeyAuth() error = %v", err)
 	}
-	if !checked || perms.Extensions["auth_method"] != "publickey_pending_token_proof" {
+	if !checked || perms.Extensions["auth_method"] != "publickey" || perms.Extensions["key_fingerprint"] != ssh.FingerprintSHA256(pub) {
 		t.Fatalf("product binding = checked %v permissions %#v", checked, perms)
 	}
 }
@@ -156,15 +123,14 @@ func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 func TestProductAuthRejectsNonProductUsernameBeforeKeyCheck(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
-	srv.tokenMAC = testTokenMACs
 	checked := false
 	srv.keyChecker = func(key ssh.PublicKey) bool {
 		checked = true
 		return true
 	}
-	srv.keyEnroller = func(key ssh.PublicKey) error { return nil }
+	srv.keyEnroller = func(key ssh.PublicKey, label string) (bool, error) { return true, nil }
 
-	for _, username := range []string{"other-identity", "request-token:other-identity"} {
+	for _, username := range []string{"other-identity", "request-enrollment:other-identity"} {
 		t.Run(username, func(t *testing.T) {
 			checked = false
 			perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: username}, pub)
@@ -237,12 +203,11 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 			call: func() { srv.SetSessionCallback(func(remoteAddr string, connected bool) {}) },
 		},
 		{
-			name: "SetTokenProvisioningHooks",
+			name: "SetEnrollmentHooks",
 			call: func() {
-				srv.SetTokenProvisioningHooks(TokenProvisioningHooks{
-					Approve:           func(sshFingerprint, remoteAddr string) (bool, error) { return true, nil },
-					Issue:             func() (string, error) { return "token", nil },
-					AuditProvisioned:  func(sshFingerprint, remoteAddr string) {},
+				srv.SetEnrollmentHooks(EnrollmentHooks{
+					ApproveContext:    func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) { return true, nil },
+					AuditEnrolled:     func(sshFingerprint, label, remoteAddr string) {},
 					OperatorConnected: func() bool { return true },
 				})
 			},
@@ -251,9 +216,8 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 			name: "SetProductHooks",
 			call: func() {
 				srv.SetProductHooks(ProductHooks{
-					ComputeTokenMACs: testTokenMACs,
-					CheckKey:         func(key ssh.PublicKey) bool { return true },
-					EnrollKey:        func(key ssh.PublicKey) error { return nil },
+					CheckKey:  func(key ssh.PublicKey) bool { return true },
+					EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil },
 				})
 			},
 		},
@@ -278,10 +242,6 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 
 type testConnMetadata struct {
 	user string
-}
-
-func testTokenMACs(serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
-	return make([]byte, tokenProofMACSize), make([]byte, tokenProofMACSize), 1, true
 }
 
 func (m testConnMetadata) User() string {

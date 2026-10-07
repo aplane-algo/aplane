@@ -92,18 +92,33 @@ func (r *REPLState) cmdConnect(args []string, _ interface{}) (command.Result, er
 	})
 }
 
-func (r *REPLState) cmdRequestToken(args []string, ctx interface{}) (command.Result, error) {
-	return newTerminalCommandResult(nil), r.runRequestToken(args, ctx)
+func (r *REPLState) cmdRequestEnrollment(args []string, ctx interface{}) (command.Result, error) {
+	return newTerminalCommandResult(nil), r.runRequestEnrollment(args, ctx)
 }
 
-func (r *REPLState) runRequestToken(args []string, _ interface{}) error {
-	if len(args) == 0 {
-		return requestToken(r, "")
+const requestEnrollmentUsage = "request-enrollment [--endpoint <alias>] [--label <text>]"
+
+func (r *REPLState) runRequestEnrollment(args []string, _ interface{}) error {
+	alias, label := "", ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--endpoint", "-e":
+			if i+1 >= len(args) {
+				return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+			}
+			alias = args[i+1]
+			i++
+		case "--label", "-l":
+			if i+1 >= len(args) {
+				return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+			}
+			label = args[i+1]
+			i++
+		default:
+			return fmt.Errorf("usage: %s", requestEnrollmentUsage)
+		}
 	}
-	if len(args) == 2 && (args[0] == "--endpoint" || args[0] == "-e") {
-		return requestToken(r, args[1])
-	}
-	return fmt.Errorf("usage: request-token [--endpoint <alias>]")
+	return requestEnrollment(r, alias, label)
 }
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, error) {
@@ -154,7 +169,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 					r.println(line)
 				}
 				if !result.DryRun {
-					r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+					r.printf("Run 'request-enrollment --endpoint %s' before using this endpoint.\n", result.Alias)
 				}
 			})
 		}, endpointMutationProjection{
@@ -176,7 +191,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) (command.Result, 
 					r.println(line)
 				}
 				if !result.DryRun {
-					r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+					r.printf("Run 'request-enrollment --endpoint %s' before using this endpoint.\n", result.Alias)
 				}
 			})
 		}, endpointMutationProjection{
@@ -352,14 +367,13 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL\tTOKEN")
+	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL")
 	for _, endpoint := range result.Endpoints {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			endpoint.Alias,
 			endpoint.Role,
 			yesNo(endpoint.IsDefault),
 			endpoint.URL,
-			tokenStatusLabel(endpoint),
 		)
 	}
 	_ = w.Flush()
@@ -373,15 +387,6 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("URL: %s\n", endpoint.URL)
 	r.printf("Identity file: %s\n", endpoint.IdentityFile)
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
-	r.printf("Token file: %s\n", endpoint.TokenFile)
-	r.printf("Token present: %s\n", tokenStatusLabel(endpoint))
-}
-
-func tokenStatusLabel(endpoint apshellapp.EndpointEntry) string {
-	if endpoint.TokenError != "" {
-		return "error"
-	}
-	return yesNo(endpoint.TokenPresent)
 }
 
 func yesNo(ok bool) string {

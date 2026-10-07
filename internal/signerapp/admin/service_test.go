@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -95,11 +94,9 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 	}
 	keyStore := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      keyStore,
-		KeyPaths:      keyPaths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		NodeRole:      role,
+		KeyStore: keyStore,
+		KeyPaths: keyPaths,
+		NodeRole: role,
 	})
 	return Service{Deps: deps, Runtime: ir}, ir, deps
 }

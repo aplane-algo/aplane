@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
@@ -18,7 +19,14 @@ type ProductServices interface {
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
 	ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
-	RevokeProductToken() error
+	// EnrolledKeys lists the enrolled client keys.
+	EnrolledKeys() []protocol.EnrolledKeyInfo
+	// RevokeEnrolledKey removes one enrolled client key and closes its
+	// connections, reporting how many were closed.
+	RevokeEnrolledKey(ctx SessionContext, fingerprint string) (closedConnections int, err error)
+	// RevokeAllEnrolledKeys removes every enrolled client key and closes
+	// every client connection.
+	RevokeAllEnrolledKeys(ctx SessionContext) (revoked, closedConnections int, err error)
 }
 
 type SettingsServices interface {

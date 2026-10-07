@@ -49,7 +49,7 @@ func TestConnectionStateSignerClientErrorsWhenDisconnected(t *testing.T) {
 
 func TestConnectionStateSignerClientInheritsProgressWriter(t *testing.T) {
 	var progress bytes.Buffer
-	client := signerclient.NewSignerClientWithToken("http://signer.test", "token")
+	client := signerclient.NewSignerClient("http://signer.test")
 	state := &ConnectionState{
 		SignerClient:      client,
 		SignerProgressOut: &progress,
@@ -65,7 +65,7 @@ func TestConnectionStateSignerClientInheritsProgressWriter(t *testing.T) {
 }
 
 func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
-	client := signerclient.NewSignerClientWithToken("http://signer.test", "token")
+	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: connectRoundTripper{t: t, handler: func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":

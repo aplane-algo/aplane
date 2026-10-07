@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -22,10 +21,8 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 
 	root := t.TempDir()
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths:      storepaths.NewPaths(root),
-		Authenticator: auth.NewTokenAuthenticator("token"),
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyPaths: storepaths.NewPaths(root),
 	})
 	ir.SetUnlocked()
 	ir.SnapshotKeySession().InitializeSession()
@@ -120,10 +117,8 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 
 	root := t.TempDir()
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths:      storepaths.NewPaths(root),
-		Authenticator: auth.NewTokenAuthenticator("token"),
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyPaths: storepaths.NewPaths(root),
 	})
 	ir.SetUnlocked()
 	ir.SnapshotKeySession().InitializeSession()
@@ -188,10 +183,8 @@ func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T)
 
 	root := t.TempDir()
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
-		KeyPaths:      storepaths.NewPaths(root),
-		Authenticator: auth.NewTokenAuthenticator("token"),
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyPaths: storepaths.NewPaths(root),
 	})
 	ir.SetUnlocked()
 	ir.SnapshotKeySession().InitializeSession()

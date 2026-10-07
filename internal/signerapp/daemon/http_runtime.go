@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,17 +14,21 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 const signerHTTPWriteTimeout = serverconfig.MaxApprovalWait + 2*time.Minute
 
-// The REST API listens on loopback, where any local process can connect
-// before authenticating. Concurrent connections and header size are bounded
-// so unauthenticated connections cannot grow the signer's memory, which
+// The REST API is served on two listeners: tunneled API channels from the
+// SSH server, which carry the enrolled client's identity, and a loopback TCP
+// listener where any local process can connect and only /health answers.
+// Concurrent connections and header size are bounded on both so
+// unauthenticated connections cannot grow the signer's memory, which
 // mlockall keeps resident: beyond the cap, new connections wait in the
-// kernel accept queue. Only an authenticated request keeps its connection
-// alive (closeUnlessAuthenticated), so an unauthenticated client holds a
-// slot for at most one request and its header timeout.
+// kernel accept queue or are refused at the SSH channel. Only an
+// authenticated request keeps its connection alive
+// (closeUnlessAuthenticated), so an unauthenticated client holds a slot for
+// at most one request and its header timeout.
 const (
 	maxHTTPConnections    = 64
 	maxHTTPHeaderBytes    = 64 << 10
@@ -48,12 +53,32 @@ func buildHTTPServer(server *Signer, port int) *http.Server {
 	return &http.Server{
 		Addr:              httpBindAddr(port),
 		Handler:           closeUnlessAuthenticated(mux),
+		ConnContext:       apiConnContext,
 		ReadHeaderTimeout: httpReadHeaderTimeout,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      signerHTTPWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    maxHTTPHeaderBytes,
 	}
+}
+
+// apiConnContext attaches the client identity the SSH server verified to a
+// tunneled API connection's context. A loopback TCP connection carries no
+// identity, so only /health answers on it. The connection may arrive wrapped
+// by the connection limiter, so the API connection is looked for through
+// every Unwrap layer.
+func apiConnContext(ctx context.Context, c net.Conn) context.Context {
+	for c != nil {
+		if api, ok := c.(*sshtunnel.APIConn); ok {
+			return auth.ContextWithConnIdentity(ctx, auth.ConnIdentity{KeyFingerprint: api.KeyFingerprint()})
+		}
+		wrapper, ok := c.(interface{ Unwrap() net.Conn })
+		if !ok {
+			break
+		}
+		c = wrapper.Unwrap()
+	}
+	return ctx
 }
 
 // closeUnlessAuthenticated closes the connection after every response that
@@ -119,6 +144,10 @@ func (c *limitListenerConn) Close() error {
 	c.once.Do(c.release)
 	return err
 }
+
+// Unwrap exposes the accepted connection, so apiConnContext can recognize a
+// tunneled API connection behind the limiter.
+func (c *limitListenerConn) Unwrap() net.Conn { return c.Conn }
 
 func httpBindAddr(port int) string {
 	return fmt.Sprintf("127.0.0.1:%d", port)

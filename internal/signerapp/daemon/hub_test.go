@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -44,9 +43,7 @@ func TestSignerStateString(t *testing.T) {
 func TestRegistryInitializesSignerRuntime(t *testing.T) {
 	signer := &Signer{}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
@@ -70,9 +67,7 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 func TestSignerIsUnlocked(t *testing.T) {
 	signer := &Signer{}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 
 	// Initially locked
@@ -105,9 +100,7 @@ func TestSignerHasClient(t *testing.T) {
 func TestFailAllPendingRequests(t *testing.T) {
 	signer := &Signer{}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
@@ -124,9 +117,7 @@ func TestFailAllPendingRequests(t *testing.T) {
 func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 	signer := &Signer{}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
@@ -151,9 +142,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 		hub: hub,
 	}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 
@@ -172,7 +161,7 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 	}
 
 	hub.reset()
-	approved, err = signer.requestTokenProvisioning("req-token", "fingerprint", "remote", time.Second)
+	approved, err = signer.requestClientEnrollment("req-enroll", "fingerprint", "laptop", "remote", time.Second)
 	if err == nil {
 		t.Fatal("expected send failure, got nil")
 	}
@@ -183,16 +172,14 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 		t.Fatal("HasClient was not called")
 	}
 	if !hub.tokenCalled {
-		t.Fatal("SendTokenProvisioningRequest was not called")
+		t.Fatal("SendClientEnrollmentRequest was not called")
 	}
 }
 
 func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
 	hub := &recordingAdminHub{}
 	signer := &Signer{hub: hub}
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 
 	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.productBuildHooks(), nil)
 	if svc.NotifyKeysChanged == nil {
@@ -209,8 +196,6 @@ func TestReloadServiceFailsNodeClosedOnNodeRoleConflict(t *testing.T) {
 	nodeState := &productruntime.NodeFailState{}
 	signer := &Signer{nodeFailState: nodeState}
 	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-
 		NodeRole: noderole.RoleSigner,
 	})
 
@@ -231,9 +216,7 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 	signer := &Signer{
 		hub: hub,
 	}
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 
 	svc := signer.newApprovalServiceForRuntime(ir)
@@ -251,9 +234,7 @@ func TestApprovalServiceChecksProductAdminClient(t *testing.T) {
 func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 	signer := &Signer{}
 
-	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	signer.runtime = ir
 	signerstartup.WireApprovalCoordinator(ir, signer.productBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
@@ -356,12 +337,12 @@ func (h *recordingAdminHub) SendSignRequestCanceled(_ *signerapproval.SignReques
 	return false
 }
 
-func (h *recordingAdminHub) SendTokenProvisioningRequest(_ *signerapproval.TokenProvisioningRequest) bool {
+func (h *recordingAdminHub) SendClientEnrollmentRequest(_ *signerapproval.ClientEnrollmentRequest) bool {
 	h.tokenCalled = true
 	return false
 }
 
-func (h *recordingAdminHub) SendTokenProvisioningCanceled(_ *signerapproval.TokenProvisioningCanceled) bool {
+func (h *recordingAdminHub) SendClientEnrollmentCanceled(_ *signerapproval.ClientEnrollmentCanceled) bool {
 	return false
 }
 

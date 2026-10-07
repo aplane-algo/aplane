@@ -153,7 +153,7 @@ func TestSignAndSubmitTransactionsRejectsUnsupportedConsensusBeforeSigner(t *tes
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(signerServer.URL, "")
+	eng.Connection.SignerClient = signerclient.NewSignerClient(signerServer.URL)
 	txn := presignTestTxn(t, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ", "prebuilt")
 
 	_, err = eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{txn}, false)
@@ -180,7 +180,7 @@ func TestGroupPlanningValidatesConsensusBeforeSigner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 	_, err = eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: "ADDR",
 		TxnBytesHex: "545801",
@@ -209,7 +209,7 @@ func TestGroupPlanningForwardsAfterConsensusValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	eng.Connection.SignerClient = signerclient.NewSignerClient(server.URL)
 	response, err := eng.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: "ADDR",
 		TxnBytesHex: "545801",

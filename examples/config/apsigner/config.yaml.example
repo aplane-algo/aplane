@@ -14,7 +14,6 @@ endpoint:
     listen_address: 127.0.0.1
     port: 1127
     host_key_path: .ssh/ssh_host_key        # Relative to $APSIGNER_DATA
-    authorized_keys_path: .ssh/authorized_keys  # Relative to $APSIGNER_DATA
 
 # User auto-approve skips operator prompts for non-rejected default-fallback requests (default: false)
 user_auto_approve: false

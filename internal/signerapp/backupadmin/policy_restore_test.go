@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -45,7 +44,7 @@ func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productrunti
 	}
 	ir := productruntime.New(productruntime.Config{
 		KeyStore: keyStore, KeyPaths: paths,
-		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleCosigner,
+		NodeRole: noderole.RoleCosigner,
 	})
 	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, nil

@@ -20,10 +20,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
-	"golang.org/x/crypto/ssh"
 )
 
 type cosignerComponentClient interface {
@@ -261,18 +259,12 @@ func incompleteCosignerDiscoveryError(aliases []string, states []*cosignerEndpoi
 }
 
 func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint config.ClientEndpointConfig) (*signerclient.Client, func(), string, error) {
-	token, err := readCosignerEndpointToken(endpoint.TokenFile)
-	if err != nil {
-		return nil, nil, "", err
-	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errCosignerEndpointConfig, err)
 	}
 
 	switch parsed.Scheme {
-	case "http", "https":
-		return signerclient.NewSignerClientWithToken(strings.TrimRight(endpoint.URL, "/"), token), nil, endpoint.URL, nil
 	case "ssh":
 		sshPort := config.DefaultSSHPort
 		if parsed.Port() != "" {
@@ -286,7 +278,6 @@ func (s *Signer) connectConfiguredCosignerEndpoint(ctx context.Context, endpoint
 		client, cleanup, err := connect.ConnectCosignerWithSSH(ctx, connect.CosignerSSHConfig{
 			Host:            parsed.Hostname(),
 			SSHPort:         sshPort,
-			Token:           token,
 			IdentityFile:    endpoint.IdentityFile,
 			KnownHostsPath:  endpoint.KnownHostsPath,
 			ProgressOut:     progressOut,
@@ -486,30 +477,16 @@ func (s *Signer) warnSkippedCosignerEndpoints(states []*cosignerEndpointProbeRes
 	}
 }
 
-func readCosignerEndpointToken(path string) (string, error) {
-	token, err := tokenfile.ReadToken(path)
-	if err != nil {
-		return "", fmt.Errorf("%w: failed to read cosigner token file %s: %v", errCosignerEndpointAuth, path, err)
-	}
-	if token == "" {
-		return "", fmt.Errorf("%w: cosigner token file %s is empty", errCosignerEndpointAuth, path)
-	}
-	return token, nil
-}
-
 func classifyCosignerDiscoveryConnectError(err error) error {
 	switch {
 	case errors.Is(err, errCosignerEndpointAuth):
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	case errors.Is(err, errCosignerEndpointConfig):
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
+	case errors.Is(err, connect.ErrSSHKeyNotEnrolled):
+		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	case isNetworkUnavailableError(err):
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)
-	}
-
-	var sshAuthErr *ssh.ServerAuthError
-	if errors.As(err, &sshAuthErr) {
-		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	}
 	return fmt.Errorf("%w: %w", ErrCosignerDiscoveryConfig, err)
 }

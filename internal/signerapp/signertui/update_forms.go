@@ -952,36 +952,6 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleRevokeTokenConfirmKeys handles keyboard input on token revocation confirmation dialog
-func (m Model) handleRevokeTokenConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "n":
-		m.viewState = ViewAdminPanel
-		return m, nil
-
-	case "tab", "left", "right", "h", "l":
-		m.admin.revokeTokenFocus = (m.admin.revokeTokenFocus + 1) % 2
-		return m, nil
-
-	case "enter", " ":
-		if m.admin.revokeTokenFocus == 0 {
-			// Cancel
-			m.viewState = ViewAdminPanel
-			return m, nil
-		}
-		// Revoke - send IPC request
-		m.viewState = ViewAdminPanel
-		return m, tea.Batch(m.sendRevokeTokenCmd(), m.waitForMessageCmd())
-
-	case "y":
-		// Quick confirm
-		m.viewState = ViewAdminPanel
-		return m, tea.Batch(m.sendRevokeTokenCmd(), m.waitForMessageCmd())
-	}
-
-	return m, nil
-}
-
 func (m Model) openManualLockConfirm() (tea.Model, tea.Cmd) {
 	m.manualLock.focus = 0
 	m.manualLock.returnView = m.viewState

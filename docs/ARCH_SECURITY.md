@@ -21,19 +21,25 @@ allowlist. See
 
 | Channel | Tool | User Type | Auth Method | Connection Model |
 |---------|------|-----------|-------------|------------------|
-| SSH Tunnel + HTTP | apshell | Agents or users | Public key + token (2FA) | Persistent (transport) |
+| SSH Tunnel + HTTP | apshell | Agents or users | Enrolled SSH public key | Persistent (transport) |
 | Admin protocol over IPC | apadmin / apapprover | Human operator | Passphrase | Persistent (session) |
 
 ## Authentication Channels
 
-### 1. HTTP REST API (Token-Based)
+### 1. HTTP REST API (Connection-Authenticated)
 
-Used by apshell and other HTTP clients for signing requests.
+Used by apshell and other HTTP clients for signing requests. The REST API is
+reachable only through the node's SSH server: the client authenticates the
+SSH connection with its enrolled key, and each `direct-tcpip` channel it opens
+is handed off in-process to the HTTP server as an API connection that carries
+the verified key fingerprint. A request carries no credential of its own.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  SSH connection authenticated by enrolled key SHA256:...        │
+│  └── direct-tcpip channel handed off as an API connection       │
+│      (sshtunnel.APIConn, fingerprint attached to the context)   │
 │  Request: POST /sign                                            │
-│  Header: Authorization: aplane 5f7a8c9b2d1e4f6a...              │
 │  Body: { "requests": [{ "auth_address": "...",                 │
 │                        "txn_bytes_hex": "..." }] }              │
 └─────────────────────────────────────────────────────────────────┘
@@ -41,10 +47,10 @@ Used by apshell and other HTTP clients for signing requests.
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Step 1: Authentication (who is this?)                          │
-│  Authenticator.Authenticate(request)                            │
-│  └── TokenAuthenticator validates Authorization: aplane header  │
-│      └── Constant-time comparison (timing-attack safe)          │
-│  └── Returns Identity or 401 Unauthorized                       │
+│  Authenticator.Authenticate(ctx, request)                       │
+│  └── reads the connection identity from the request context     │
+│  └── looks the fingerprint up in the enrolled-key registry      │
+│  └── Returns Identity client:<fingerprint> or 401 Unauthorized  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -62,36 +68,42 @@ Used by apshell and other HTTP clients for signing requests.
 ```
 
 **Characteristics:**
-- **Stateless**: Each request authenticated independently
-- **No login step**: Product token read from `identities/default/aplane.token` at startup
-- **Security boundary**: Filesystem permissions on token file (mode 0600)
-- **Trust model**: If you can read the token file, you can make API calls
+- **Connection-scoped identity**: Every request on a tunneled connection is
+  attributed to the key that authenticated that connection; nothing in a
+  request can supply or override it
+- **No login step and no shared secret**: There is no API token. The client's
+  SSH private key is its only credential
+- **Loopback carries no identity**: The loopback TCP listener on
+  `endpoint.signer_port` answers only `/health`; every other path on it gets
+  `401` with `Authentication required: connect through an enrolled SSH key`
+- **Unauthenticated responses close the connection**: `Connection: close` is
+  set on auth failures, `/health`, and unknown routes, so an unauthenticated
+  client cannot hold a connection slot with keep-alive requests
 
-**Token Details:**
-- 32 bytes (256 bits) of cryptographic randomness
-- Hex-encoded (64 characters)
-- Generated on first server startup if not present
-- Stored in `identities/default/aplane.token` with mode 0600
+**Client Credential Details:**
+- Ed25519, ECDSA (P-256/384/521), or hardware-backed `sk-` Ed25519/ECDSA key
+  at the endpoint's `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`,
+  mode 0600) or held by an SSH agent
+- Enrolled once per node through the operator-approved `request-enrollment`
+  flow; the node records it in `identities/default/.ssh/authorized_keys`
+- Identified everywhere by its SHA256 fingerprint; the principal is
+  `client:<fingerprint>`
 
-**Token Lifecycle and Limitations:**
-
-One product token serves the fixed `default` signer runtime, so all clients
-share the same bearer credential.
+**Credential Lifecycle:**
 
 | Aspect | Behavior |
 |--------|----------|
-| Scope | One product token serves HTTP API and SSH tunnel authentication for `default` |
-| Revocation | Operator can revoke/regenerate the product token from `apadmin`; clients must re-run `request-token` or otherwise receive the new token |
-| Per-client differentiation | None at the bearer-token layer; all clients share the same credential |
-| Compromise impact | Bearer access to HTTP wherever the signer API is reachable; normal SSH tunnel access also requires an enrolled SSH key |
+| Scope | One enrollment per client key per node; the same key may be enrolled at a signer and at cosigners |
+| Revocation | Operator revokes one key, or every key, from the `apadmin` Enrolled Clients screen; the key's live SSH connections are closed and its next handshake is refused |
+| Per-client differentiation | Each client is a distinct key, so audit and revocation are per client |
+| Compromise impact | A stolen private key authenticates as that client until it is revoked; it grants no admin capability, because the admin protocol is reachable only over local IPC |
 
-**Client Token Handling:**
+**Client Key Handling:**
 
-Clients receiving the token should:
-- Obtain the token via secure out-of-band channel (encrypted transfer, secrets manager, physical)
-- Store as `aplane.token` in the `$APCLIENT_DATA` directory with mode `0600`
-- Never embed the token inline in scripts checked into version control
-- Treat token compromise as full compromise; notify operator to rotate
+Clients should:
+- Keep the private key owner-only (mode `0600`) or in an SSH agent
+- Never copy one key to several machines; enroll each machine's own key
+- Report a suspected key compromise so the operator can revoke it
 
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
@@ -122,7 +134,7 @@ same policy, approval, signing, and audit behavior as submission, releases an
 executable group, and cannot know whether the client later simulates or submits
 it.
 
-> **Note on admin endpoints:** The `/admin/*` endpoints use the same token as `/sign` and `/keys`. In the single-operator model the token holder is the operator.
+> **Note on admin endpoints:** The `/admin/*` endpoints are authenticated like `/sign` and `/keys`: by the enrolled client key on the connection. An enrolled client may generate and delete keys; it never receives administrative actions (unlock, policy, settings, enrollment, revocation), which exist only on the admin protocol over local IPC.
 
 **Unprotected Endpoints:**
 - `GET /health` - Health check (no sensitive data)
@@ -131,8 +143,8 @@ it.
 
 Used by apadmin for interactive key management and signer control over the
 local IPC Unix socket. SSH does not carry the admin protocol: it refuses
-session channels, so a client holding an enrolled key and the token still
-cannot reach the passphrase prompt remotely.
+session channels, so a client holding an enrolled key still cannot reach the
+passphrase prompt remotely.
 
 ```
 ┌──────────────┐                              ┌──────────────┐
@@ -196,13 +208,13 @@ Connect → Authenticate → [Commands...] → Disconnect
 ### Stateless (HTTP)
 
 ```
-Request 1: POST /sign + Token ──► Authenticate ──► Handle ──► Response
-Request 2: POST /sign + Token ──► Authenticate ──► Handle ──► Response
-Request 3: GET /keys + Token  ──► Authenticate ──► Handle ──► Response
+Request 1: POST /sign ──► Authenticate (connection key) ──► Handle ──► Response
+Request 2: POST /sign ──► Authenticate (connection key) ──► Handle ──► Response
+Request 3: GET /keys  ──► Authenticate (connection key) ──► Handle ──► Response
 ```
 
-- No server-side session state
-- Token required on every request
+- No server-side session state beyond the SSH connection itself
+- Every request is re-attributed to the key that authenticated its connection
 - Scalable (no session storage)
 - Suitable for automation/scripting
 
@@ -222,24 +234,23 @@ Connect ──► Authenticate ──┬── Command 1 ──► Response
 
 ## SSH Tunnel (Transport Layer)
 
-When apshell connects to a remote apsigner, it uses an SSH tunnel with configurable authentication:
+Every apshell connection to an apsigner, local or remote, is an SSH tunnel:
 
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │◄═══════ SSH Tunnel (persistent) ════════►│  apsigner │
 └──────────┘                                          └────────────┘
      │                                                       │
-     │    HTTP requests through tunnel still require         │
-     │    token authentication on each request               │
+     │    HTTP requests ride direct-tcpip channels that       │
+     │    carry the connection's enrolled-key identity        │
      │                                                       │
 ```
 
 ### SSH Authentication Model
 
-SSH authentication requires **both** a valid API token and a valid public key (2FA).
-The normal SSH username is the fixed non-secret value `aplane`. The bearer token never appears
-in SSH metadata; the client proves possession through a programmatic,
-host-key-bound keyboard-interactive exchange after public-key authentication.
+SSH public-key authentication is the whole client authentication model. The
+normal SSH username is the fixed non-secret value `aplane`; the server accepts
+the connection only if the presented key is enrolled in the node's registry.
 
 **Authentication flow:**
 
@@ -249,28 +260,31 @@ Client                                               Server
   │  1. SSH connect (username=aplane, pubkey=KEY)         │
   │──────────────────────────────────────────────────────>│
   │                                                       │
-  │  2. Verify enrolled key possession; partial success  │
+  │  2. Key type accepted? Fingerprint enrolled?         │
+  │     Enrollment re-checked after the handshake        │
   │<──────────────────────────────────────────────────────│
   │                                                       │
-  │  3. Exchange fresh client/server nonces              │
-  │  4. Server proves token possession first             │
-  │<──────────────────────────────────────────────────────│
-  │  5. Client verifies server proof, then proves token   │
-  │──────────────────────────────────────────────────────>│
+  │  3. SSH session established; the server records the  │
+  │     connection under the key's fingerprint           │
   │                                                       │
-  │  6. Server verifies proof; SSH session established   │
-  │<──────────────────────────────────────────────────────│
+  │  4. direct-tcpip channels -> API connections carrying │
+  │     that fingerprint -> HTTP handlers                 │
 ```
 
-Keys are enrolled exclusively through the `request-token` operator-approved flow.
+Keys are enrolled exclusively through the `request-enrollment` operator-approved flow.
 
 **Key points:**
-- Token is always required for normal connections (no "key-only" mode); the `request-token` bootstrap flow is the sole exception
-- The keyboard-interactive exchange is fully programmatic and never prompts a user
-- Proofs are HMAC-SHA256 values over the accepted SSH host key and two fresh nonces; server and client roles are domain-separated
-- The server proves token possession before the client emits its proof
-- Clients reject an SSH server that accepts the public key without completing mutual token proof
-- Proof comparison is constant-time
+- A key that is not enrolled fails the handshake with the standard SSH
+  "unable to authenticate" error; the client surfaces this as
+  `sshtunnel.ErrKeyNotEnrolled` and apshell tells the user to run
+  `request-enrollment`
+- Enrollment is re-checked against the installed registry after the handshake,
+  so a key revoked while its handshake was in flight is refused
+- The server never carries session channels for `aplane`: port forwarding is
+  the only service, so the key grants API access and nothing else
+- The accepted key algorithms are Ed25519, ECDSA (P-256/384/521), and
+  hardware-backed `sk-` variants; the server's algorithm list refuses other
+  keys before any signature is verified
 
 ### Client-Side Host Key Verification (TOFU)
 
@@ -296,31 +310,22 @@ Client                                              Server
 - Client: `ssh.known_hosts_path` - where to store/verify server keys (default: `$APCLIENT_DATA/.ssh/known_hosts`)
 - Server: `ssh.host_key_path` - persistent host key (default: `$APSIGNER_DATA/.ssh/ssh_host_key`)
 
-With explicit TOFU enabled, a wrongly trusted first endpoint still cannot learn
-the bearer token: it cannot produce the server proof, and the client sends no
-client proof until that proof verifies. A proof observed on one connection is
-not reusable against the real signer because the accepted host-key hash and
-fresh nonces differ.
+A wrongly trusted first endpoint learns nothing reusable: SSH public-key
+authentication signs a session-bound challenge, so an impostor cannot replay
+the client's signature against the real signer, and the client sends no
+secret of any kind.
 
 ### SSH Security Properties
 
 | Property | Implementation |
 |----------|----------------|
-| Two-factor auth | Enrolled SSH public key + mutual, host-key-bound API token proof |
-| Key enrollment | Operator-approved `request-token` flow only |
+| Client authentication | Enrolled SSH public key; the registry is `identities/default/.ssh/authorized_keys` |
+| Key enrollment | Operator-approved `request-enrollment` flow only |
 | Host key verification | TOFU model with persistent known_hosts |
-| Token confidentiality | Token never appears in SSH username, metadata, challenge, or response |
-| Proof context and replay resistance | Fixed `aplane` username, accepted host-key hash, and fresh client/server nonces bind each proof transcript |
-| Token validation | HMAC-SHA256 with constant-time proof comparison |
-| Token revocation | Operator-initiated via apadmin; invalidates new HTTP requests and closes active SSH connections |
-| Transport encryption | SSH protocol (Ed25519 keys) |
-
-The token-confidentiality row applies to normal SSH authentication. Initial
-provisioning intentionally sends the approved token over the constrained,
-encrypted provisioning channel, and authenticated HTTP requests subsequently
-carry the bearer token inside the SSH tunnel. Fresh nonce/proof state is
-connection-local, is never reused, and is discarded after each authentication
-attempt; garbage-collected SDKs cannot guarantee memory zeroization.
+| Credential confidentiality | The private key never leaves the client; no shared secret exists on either side |
+| Replay resistance | Standard SSH public-key authentication over a session-bound exchange |
+| Key revocation | Operator-initiated via apadmin; closes the key's active SSH connections and refuses its next handshake |
+| Transport encryption | SSH protocol (Ed25519 host keys) |
 
 ### SSH Audit Logging
 
@@ -351,7 +356,10 @@ fields are omitted, apsigner fills in defaults and still starts the SSH server.
 | `endpoint.ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
 | `endpoint.ssh.port` | `1127` | SSH listener port |
 | `endpoint.ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
-| `endpoint.ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product client authorization and enrollment use `identities/default/.ssh/authorized_keys` |
+
+The enrolled-client registry is not configurable: it is always
+`identities/default/.ssh/authorized_keys` inside the product store, and the
+daemon is its only writer.
 
 **Example config.yaml with SSH:**
 ```yaml
@@ -364,58 +372,71 @@ endpoint:
 
 **Important distinction:**
 - SSH tunnel provides **transport security** and **client authentication**
-- Application-level auth (`Authorization: aplane <token>`) is still required per HTTP request
-- SSH key possession plus token proof authenticates the tunnel identity; the same token authorizes each HTTP request
+- HTTP requests carry no credential; the HTTP server authenticates each request
+  by the identity of the API connection it arrived on
+- Authorization is still evaluated per request, against the client role's
+  explicit action allowlist
 
-### Token Provisioning via SSH
+### Client Enrollment via SSH
 
-New clients without a token can request one through the SSH tunnel using the `request-token` command. This provides a secure bootstrap mechanism.
+A client whose key is not yet enrolled asks the node to enroll it with the
+`request-enrollment` command. This is the only bootstrap mechanism.
 
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │                                          │  apsigner │
 └────┬─────┘                                          └─────┬──────┘
      │                                                      │
-     │  1. SSH connect (username=request-token,             │
-     │     pubkey only)                                     │
+     │  1. SSH connect (username=request-enrollment,        │
+     │     any supported key)                               │
      │─────────────────────────────────────────────────────>│
      │                                                      │
-     │  2. Server verifies pubkey, starts token request     │
+     │  2. exec "enroll [<label>]"                           │
+     │─────────────────────────────────────────────────────>│
      │                                                      │
-     │  3. Operator (apadmin) sees approval prompt         │
-     │     "Client <fingerprint> requesting token"          │
+     │  3. Operator (apadmin) sees approval prompt          │
+     │     "Client <fingerprint> [<label>] requesting        │
+     │     enrollment"                                      │
      │                                                      │
      │  4. Operator approves/rejects                        │
      │                                                      │
-     │  5. If approved: SSH key enrolled + token sent       │
+     │  5. If approved: key written to the registry,        │
+     │     reply "enrolled <fingerprint>", exit 0           │
      │<─────────────────────────────────────────────────────│
      │                                                      │
-     │  6. Client saves token to aplane.token               │
+     │  6. Client reconnects as "aplane" with the same key   │
      │                                                      │
 ```
 
 **Key points:**
-- Token provisioning requires operator approval (human in the loop)
-- SSH public key identifies the requesting client
-- Operator approval gates both key enrollment and token issuance: after approval, the SSH key is enrolled first, then the token is loaded/generated, then delivered to the client
+- Enrollment requires operator approval (human in the loop)
+- The SSH public key identifies the requesting client; the label is display
+  information the client asked for, never authority
+- The reply names the fingerprint the server enrolled; the client checks it
+  against the key it authenticated with
 - Key enrollment is product-scoped under `identities/default/.ssh/authorized_keys`
-- No token is created or audited before both approval and enrollment succeed
-- If token delivery to the client fails, no success audit is recorded
-- Token is transmitted over the encrypted SSH channel
-- Once provisioned, client can connect normally
+- Nothing is audited before approval and the registry write succeed; the
+  `CLIENT_ENROLLED` audit entry is written as soon as the registry holds the
+  key, because the key is usable from then on even if the client never
+  receives the acknowledgement
+- Failures are reported as `ERROR: ...` lines with exit status 1:
+  `enrollment rejected by operator`, `failed to enroll SSH key`, or
+  `no operator (apadmin) connected to approve the enrollment request`
+- Nothing is stored on the client: its key is its credential, and the node
+  records the enrollment. Once enrolled, the client can connect normally
 
-**Limits.** `request-token` accepts any client key it has not seen before, so
-the flow is reachable without credentials. It is bounded so that it cannot crowd out signing:
-- At most one client access request is pending server-wide; a concurrent
+**Limits.** `request-enrollment` accepts any supported client key, so the
+flow is reachable without credentials. It is bounded so that it cannot crowd out signing:
+- At most one enrollment request is pending server-wide; a concurrent
   request is refused with a retry message
-- Each `request-token` connection may make one provisioning request, and the
+- Each `request-enrollment` connection may make one enrollment request, and the
   connection closes when that request ends, whatever the outcome
-- A `request-token` connection that has not started provisioning within 30
+- A `request-enrollment` connection that has not started enrollment within 30
   seconds is closed
-- At most 8 `request-token` connections are open at once
+- At most 8 `request-enrollment` connections are open at once
 - The client key must be Ed25519, ECDSA (P-256/384/521), or a
   hardware-backed `sk-` Ed25519/ECDSA key. This applies to every SSH client,
-  not only `request-token`: the server's public-key algorithm list refuses
+  not only `request-enrollment`: the server's public-key algorithm list refuses
   other keys (RSA, DSA, certificates) before the key is parsed or any
   signature is verified. RSA is excluded because its verification cost grows
   with a modulus size the client chooses, and a key refused only in the
@@ -427,66 +448,73 @@ the flow is reachable without credentials. It is bounded so that it cannot crowd
 - The server sends each SSH client a keepalive every 15 seconds and closes a
   connection that does not reply within 30 seconds, so a client that keeps
   TCP open but stops answering does not hold its connection indefinitely
-- Each `request-token` connection may have at most 2 open session channels;
+- Each `request-enrollment` connection may have at most 2 open session channels;
   further channels are rejected before they are accepted
-- A client must accept the provisioning response within 10 seconds; a client
+- A client must accept the enrollment response within 10 seconds; a client
   that stops reading (for example by advertising a zero receive window) is
   disconnected, which releases the pending-request slot
-- Signing has priority. Signing and client access share the coordinator's
+- Signing has priority. Signing and enrollment share the coordinator's
   single delivery turn (one prompt at a time), but a queued signing request
-  is delivered before any client access request, and a client access prompt
-  already shown is withdrawn (`token_provisioning_request_canceled`, reason
+  is delivered before any enrollment request, and an enrollment prompt
+  already shown is withdrawn (`client_enrollment_request_canceled`, reason
   `preempted`) as soon as a signing request arrives. The SSH client is told
   the operator is handling a signing request and to try again
 - Client-supplied text (for example an unknown exec command) is quoted and
   truncated before it is logged, so it cannot inject terminal escapes into an
   operator console
 
-### Token Revocation
+### Client Key Revocation
 
-The operator can revoke the current API token from the apadmin TUI Admin panel
-using the `t` key. This invalidates the existing token and forces all clients
-to re-authenticate.
+The operator revokes an enrolled client key from the apadmin TUI Enrolled
+Clients screen (opened with `c` from the Admin panel). The screen lists every
+enrolled key with its fingerprint, label, key type, and whether it is connected
+right now, and offers per-key revocation or, as the emergency lever,
+revocation of every key.
 
 ```
 ┌──────────┐      ┌──────────┐                     ┌────────────┐
 │ apadmin │      │  apshell │                     │  apsigner │
 └────┬─────┘      └────┬─────┘                     └─────┬──────┘
      │                  │                                 │
-     │  1. Operator presses t (Revoke Token)              │
+     │  1. Operator revokes key SHA256:...                │
      │───────────────────────────────────────────────────>│
      │                  │                                 │
-     │                  │  2. Server generates new token  │
-     │                  │     Writes to aplane.token      │
-     │                  │     Updates HTTP authenticator  │
-     │                  │     Updates SSH server          │
+     │                  │  2. Server removes the key from │
+     │                  │     authorized_keys (validated, │
+     │                  │     atomically published)       │
      │                  │                                 │
-     │                  │  3. All active SSH connections  │
-     │                  │     forcibly closed             │
+     │                  │  3. Server sends key-revoked@   │
+     │                  │     aplane and closes the key's │
+     │                  │     SSH connections             │
      │                  │<────────────── [disconnected] ──│
      │                  │                                 │
-     │                  │  4. Client must request-token   │
-     │                  │     to obtain new token         │
+     │                  │  4. Client must request-        │
+     │                  │     enrollment again            │
      │                  │     (requires operator approval)│
      │                  │                                 │
 ```
 
 **What happens on revocation:**
-1. A new random token is generated and written to `identities/default/aplane.token`
-2. The product HTTP token authenticator is updated in-memory
-3. The SSH server records the new generation and closes every connection authenticated with an older product token
-4. Connected clients see an immediate disconnect ("SSH tunnel disconnected")
+1. The registry is rewritten without the key, under the publication rule
+   (validate the full candidate, write atomically, install under one lock)
+2. Every SSH connection authenticated with that key receives the
+   `key-revoked@aplane` global request and is closed; the result reports how
+   many connections were closed
+3. A handshake that completed against the previous registry is re-checked
+   against the installed one and refused
+4. The `CLIENT_KEY_REVOKED` audit entry records the fingerprint, label, and
+   closed-connection count with the admin session's attribution
 
 **Client re-authorization:**
-- Clients must run `request-token` to obtain a new token (same flow as initial provisioning)
-- The operator must approve the new token request via the apadmin TUI
-- If a client runs `request-token` while still connected, the session is automatically disconnected first
-- Once re-provisioned, the client can `connect` normally with the new token
+- The client must run `request-enrollment` again (same flow as initial enrollment)
+- The operator must approve the new request via the apadmin TUI
+- If a client runs `request-enrollment` while still connected to that node, the session is disconnected first
+- Once re-enrolled, the client can `connect` normally with the same key
 
 **Use cases:**
-- Compromised token (e.g., leaked credential)
-- Rotating credentials as a security practice
-- Revoking access from a specific device (after revocation, selectively re-approve only trusted clients)
+- Compromised or lost client machine
+- Decommissioning a device
+- Revoking every client at once after an incident, then selectively re-approving only trusted clients
 
 ### Uniform SSH Tunneling
 
@@ -495,38 +523,37 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 ```
 ┌──────────┐                                          ┌────────────┐
 │  apshell │◄═══════ SSH Tunnel (encrypted) ═════════►│  apsigner │
-│          │ :random ─────────────────────────► :11270│            │
+│          │ :random ───── direct-tcpip channels ────►│ API conns  │
 └──────────┘                                          └────────────┘
      │
-     └── HTTP through tunnel + Authorization: aplane <token>
+     └── HTTP through the tunnel; each request attributed to the connection's key
 ```
 
 **Why uniform SSH:**
 - Every client has a unique SSH key identity, even on localhost
-- The signer can distinguish between clients (e.g., for audit logging)
-- Token-only access cannot distinguish between clients ("token holder")
+- The signer distinguishes clients by key for authentication, audit, and revocation
 - Consistent security model regardless of network topology
 
 **Connection properties:**
-- SSH provides transport encryption
+- SSH provides transport encryption and client authentication
 - Host key verification prevents MITM (TOFU via known_hosts)
 - Random local port avoids conflicts
-- Token auth still required per HTTP request (2FA: SSH key + token)
+- Authorization is evaluated per HTTP request against the client role
 
 **Configuration:**
 - Client connection profiles live in `$APCLIENT_DATA/endpoints.yaml`
-- An endpoint URL can be `ssh://host[:port]` for tunneled signer access
-- Endpoint records carry the SSH identity file, `known_hosts` path, and token
-  file; relative paths resolve against the client data directory
+- An endpoint URL is `ssh://host[:port]`; a node is reachable only this way
+- Endpoint records carry the SSH identity file and `known_hosts` path;
+  relative paths resolve against the client data directory
 - Server SSH listener settings live in signer `config.yaml` under
   `endpoint.ssh:`
-- `request-token` also uses SSH for token provisioning and writes the selected
-  endpoint's token file
+- `request-enrollment [--endpoint <alias>] [--label <text>]` uses the same
+  endpoint record to reach the node it enrolls with
 
 **Bootstrap requirement:**
-Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `request-token`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
+Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `request-enrollment`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
 
-The `request-token` flow is the only bootstrap path: a single operator approval gates both SSH key enrollment and API token issuance. This is a single trust decision that fully onboards the client.
+The `request-enrollment` flow is the only bootstrap path: one operator approval enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client.
 
 ## Interface Architecture
 
@@ -545,21 +572,30 @@ type Authenticator interface {
 }
 
 type Identity struct {
-    ID       string            // Unique identifier
-    Type     string            // "service", "system", or other principal type
-    Method   string            // "aplane-token", "mtls", "oidc"
-    Metadata map[string]string // Additional claims
+    ID             string            // "client:<fingerprint>" or "system:product-admin"
+    Type           string            // "client" or "system"
+    Method         string            // "ssh-key" or "ipc-passphrase"
+    Role           string            // assigned by the trusted auth path; selects permissions
+    KeyFingerprint string            // SHA256 fingerprint of the enrolled client key
+    Label          string            // enrolled key's display label; never authority
+    Metadata       map[string]string // Additional claims
 }
 ```
 
 **Implementation:**
-- `TokenAuthenticator` - Validates `Authorization: aplane <token>` header
+- `productAuthenticator` (`internal/signerapp/daemon/product_authenticator.go`)
+  reads the `auth.ConnIdentity` the HTTP server attached to the connection
+  context, looks the fingerprint up in the enrolled-key registry, and returns
+  `client:<fingerprint>` with role `client`. A loopback connection carries no
+  identity and fails with `ErrNoCredentials`; an unenrolled fingerprint fails
+  with `ErrInvalidCredentials`
 
 ### Authorizer Interface
 
 The authorization model separates the actor principal from the resource being
-acted on. Product credentials authenticate the reserved
-`system:product-admin` principal.
+acted on. Admin sessions over IPC authenticate the reserved
+`system:product-admin` principal; tunneled HTTP connections authenticate a
+`client:<fingerprint>` principal whose role grants only the client action set.
 
 ```go
 // internal/auth/authorizer.go
@@ -649,7 +685,7 @@ Denial behavior:
 - Cosigner policy rejections (`SIGN_REJECTED` for a cosigner component) are
   rate limited the same way, with a separate budget and a
   `COSIGNER_REJECTIONS_SUPPRESSED` summary. The caller is authenticated, but
-  a compromised signer side holding the cosigner token can provoke
+  a compromised signer side enrolled at the cosigner can provoke
   rejections at will; without the limit it could rotate the record of what
   the cosigner signed out of the log. Cosigner signatures (`SIGN_APPROVED`)
   are never rate limited.
@@ -687,8 +723,9 @@ mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, au
 mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 ```
 
-HTTP token authentication validates against the token authority bound to the
-one product runtime. Node failure is checked first and fails closed.
+HTTP authentication resolves the connection's enrolled key against the
+registry bound to the one product runtime. Node failure is checked first and
+fails closed.
 
 ```go
 // internal/signerapp/daemon/http_auth.go
@@ -726,14 +763,14 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 
 ## Security Properties
 
-### Token Authentication (HTTP)
+### Client Key Authentication (HTTP over SSH)
 
 | Property | Implementation |
 |----------|----------------|
-| Timing-attack resistance | `crypto/subtle.ConstantTimeCompare()` |
-| Token entropy | 256 bits (cryptographically random) |
-| Token storage | File with mode 0600 (owner read/write only) |
-| Transport security | Local REST listener binds to `127.0.0.1`; normal client access goes through SSH tunnels |
+| Credential | Client SSH private key (Ed25519, ECDSA, or hardware-backed `sk-`); never transmitted |
+| Identity | SHA256 key fingerprint, attached to the API connection by the SSH server |
+| Registry | `identities/default/.ssh/authorized_keys`, daemon-written, strict parser, atomic publication |
+| Transport security | Loopback REST listener answers only `/health`; every authenticated request arrives through an SSH tunnel |
 
 ### Passphrase Authentication (Admin Protocol)
 
@@ -1131,9 +1168,9 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 | Attack Vector | Mitigation |
 |---------------|------------|
-| Token brute force | 256-bit token (2^256 combinations) |
-| SSH key compromise | Token always required (2FA: token + key) |
-| Timing attacks | Constant-time comparison |
+| Credential guessing | No shared secret exists; SSH public-key authentication only |
+| SSH key compromise | Per-key revocation closes the key's connections and refuses its next handshake; the key grants no admin capability |
+| Timing attacks | SSH signature verification; no secret comparison on the HTTP path |
 | Memory forensics | `mlockall()`, key zeroing, core dumps disabled |
 | Swap file leakage | Memory locking prevents swap (`require_memory_protection: true` enforces this) |
 | Socket hijacking | Permissions check, symlink rejection |
@@ -1200,11 +1237,11 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 
 | Aspect | HTTP (apshell) | IPC (apadmin) | SSH Tunnel |
 |--------|-------------|-------------------|------------|
-| Auth credential | Token file | Passphrase | SSH key + token (2FA) |
+| Auth credential | Enrolled SSH key of the connection | Passphrase | Enrolled SSH key |
 | Auth frequency | Every request | Once per connection | Once per tunnel |
 | Authorization | Authorizer interface | Authorizer interface | Transport only; tunneled HTTP/admin paths authorize separately |
 | Connection model | Stateless | Persistent session | Persistent transport |
-| Security boundary | File permissions | Knowledge of passphrase | SSH key + token file |
+| Security boundary | Possession of the enrolled private key | Knowledge of passphrase | Possession of the enrolled private key |
 | Target user | Scripts/automation | Human operator | Remote agents/users |
 | Key management | Yes (admin endpoints) | Yes | No |
 | Signing approval | Via policy or TUI | Direct approve/reject | Via policy or TUI |
@@ -1213,13 +1250,13 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 The multi-channel design separates concerns:
 - **HTTP**: Optimized for automation, scriptability, stateless operation
 - **IPC**: Optimized for human interaction, key security, session management
-- **SSH**: Secure transport for remote access, public key + token authentication (2FA)
+- **SSH**: Secure transport and the single client authentication step (enrolled public key)
 
 **Admin endpoint separation:** `/admin/generate` and `/admin/keys` use
 separate stable actions (`keys.generate`, `keys.delete`) from signing
 (`sign.request`). The closed product allowlist names each action explicitly, so
-adding a known action does not accidentally expose it; the current product
-token intentionally represents the one full product administrator.
+adding a known action does not accidentally expose it; an enrolled client key
+holds the `client` role and never an administrative action.
 
 Authorization behavior is documented in
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).

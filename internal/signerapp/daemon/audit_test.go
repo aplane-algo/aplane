@@ -50,7 +50,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogSignFailed("ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
 	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
-	logger.LogTokenProvisioned("SHA256:abc", "10.0.0.1")
+	logger.LogClientEnrolled("SHA256:abc", "laptop", "10.0.0.1")
 	logger.LogAuthFailedAttributed("alice", "10.0.0.1", "invalid_credentials")
 	logger.LogSessionConnected("10.0.0.1", "user")
 	logger.LogSessionDisconnected("10.0.0.1", "user")
@@ -346,8 +346,9 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
+	fingerprint := enrollTestClient(t, server, "audit-client")
 	r := httptest.NewRequest(http.MethodPost, "/sign", bytes.NewReader(reqJSON))
-	r.Header.Set("Authorization", "aplane test-token")
+	r = r.WithContext(auth.ContextWithConnIdentity(r.Context(), auth.ConnIdentity{KeyFingerprint: fingerprint}))
 	r.RemoteAddr = "203.0.113.12:5000"
 	w := httptest.NewRecorder()
 	server.requireAuth(
@@ -367,8 +368,8 @@ func TestHandleSignWritesHTTPAttributedAuditEntries(t *testing.T) {
 		t.Fatalf("audit events = %q/%q, want request/approved", entries[0].Event, entries[1].Event)
 	}
 	for _, entry := range entries {
-		if entry.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
-			t.Fatalf("HTTP signing identity attribution = %#v", entry)
+		if entry.RequesterPrincipal != auth.ClientPrincipalPrefix+fingerprint {
+			t.Fatalf("HTTP signing identity attribution = %#v, want client %s", entry, fingerprint)
 		}
 		if entry.Transport != auditTransportHTTP || entry.RemoteAddr != "203.0.113.12:5000" {
 			t.Fatalf("HTTP signing transport attribution = %#v", entry)

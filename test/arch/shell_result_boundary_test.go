@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -133,7 +134,7 @@ func TestRegisteredShellHandlersDoNotReachProcessGlobalStdout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(registryData), `"config":        command.BlockedAutomation(`) {
+	if !regexp.MustCompile(`"config":\s+command\.BlockedAutomation\(`).Match(registryData) {
 		t.Fatal("config.DisplayConfig stdout exception requires config to remain explicitly automation-blocked")
 	}
 

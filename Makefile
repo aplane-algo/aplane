@@ -366,13 +366,12 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 			'First connection:' \
 			'- SSH identity key will be auto-generated in .ssh\id_ed25519' \
 			"- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
-			'- API token can be provisioned from the server via request-token' \
+			'- Ask the operator to enroll your key: run request-enrollment and have them approve it' \
 			'' \
 			'Files:' \
 			'  bin\apshell.exe   - General shell client' \
 			'  config.yaml       - Configuration template (edit signer host/ports)' \
 			'  .ssh\             - SSH keys and known_hosts (created/managed locally)' \
-			'  aplane.token      - API token (created after request-token or copied from operator)' \
 			> dist/staging/aplane-client/README.txt; \
 		write_release_metadata dist/staging/aplane-client; \
 		(cd dist/staging && zip -qr "../$${archive}" aplane-client); \
@@ -497,7 +496,7 @@ docker-systemd-test:
 
 # End-to-end local install test. Builds a release tarball, boots signer, cosigner,
 # client/admin, and LocalNet algod containers on one Docker network, then
-# verifies SSH token provisioning, shared LocalNet reachability, the complete
+# verifies SSH client enrollment, shared LocalNet reachability, the complete
 # local-IPC apadmin ID-first cosigner enrollment ceremony, guarded signing, corridor
 # allowlist enforcement, and local Python SDK guarded signing across the Docker
 # network.

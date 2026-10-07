@@ -31,9 +31,9 @@ The TUI follows the standard Bubble Tea pattern:
 | Restore helpers | `restore_helpers.go` |
 
 Per-view `update_*.go` and `view_*.go` files cover authentication, the key list,
-admin panel, KeyType Library, signing approval, token
-provisioning approval, generate / import / export / delete forms, and managed
-backup restore. The `view.go` dispatcher selects the renderer by current
+admin panel, KeyType Library, signing approval, client enrollment
+approval, the enrolled-client list with revocation, generate / import / export /
+delete forms, and managed backup restore. The `view.go` dispatcher selects the renderer by current
 `ViewState`; the `update.go` dispatcher selects the handler the same way.
 
 Popup panels use a shared overflow viewport instead of truncating content.
@@ -77,7 +77,10 @@ identifies the current screen. The enum has families for:
 
 - Authentication and unlock (`ViewAuth`, `ViewUnlock`)
 - Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
-- Approval popups (`ViewSigningPopup`, `ViewTokenProvisioningPopup`)
+- Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
+- Enrolled clients (`ViewEnrolledClients`, opened with `c` from the Admin
+  panel): every enrolled key with fingerprint, label, key type, and live
+  connection state; per-key or all-key revocation
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress)
@@ -90,7 +93,7 @@ identifies the current screen. The enum has families for:
   until the visible store validates cleanly. The client preserves the server's three-way runtime state
   (`locked` / `recovery` / `unlocked`); recovery is never rendered as
   unlocked.
-- Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeTokenConfirm`, `ViewDisplaceConfirm`)
+- Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewDisplaceConfirm`)
 - Settings panel (`ViewAdminPanel`)
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
 - `ViewError`
@@ -138,8 +141,8 @@ from its sanitized filename stem.
 
 The import form accepts the public witness document only; a file that carries
 an endpoint block or any other field is refused before review. apadmin never
-reads or writes client endpoint registries, tokens, host trust, aliases, or
-caches.
+reads or writes client endpoint registries, client SSH identities, host trust,
+aliases, or caches.
 
 The manager exposes `p: Paste JSON` alongside `i: Import file`. The paste field
 captures a complete bracketed terminal paste without interpreting its contents
@@ -149,7 +152,7 @@ document goes through the same parser and import review as a file. Returning
 from review
 preserves the paste for correction; canceling or completing import clears it.
 
-Endpoint creation, token enrollment, and live route discovery belong to apshell.
+Endpoint creation, enrollment requests, and live route discovery belong to apshell.
 The reference details screen shows signer-owned metadata only.
 
 TEAL exports save to the working directory of the apadmin process. Address-list

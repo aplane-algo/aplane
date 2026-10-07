@@ -107,7 +107,7 @@ These return an error telling you the right path:
 | Blocked | Use instead |
 |---------|-------------|
 | `js`, `jssave`, `jslist` | the dedicated MCP tools |
-| `request-token` | interactive approval — run real `apshell` in a terminal |
+| `request-enrollment` | interactive approval — run real `apshell` in a terminal |
 | `quit`, `exit` | MCP disconnect |
 | `keyreg` with no args | provide args directly (`keyreg alice online`) — paste mode is interactive |
 
@@ -447,9 +447,10 @@ bytes even though apshell does not submit them.
 
 - **`connect [alias]`** opens the SSH tunnel to the signer (default endpoint, or
   a named one). **`disconnect`** closes it.
-- **`request-token`** obtains an API token from the signer — **interactive and
-  not available via MCP**; run real `apshell` in a terminal once to enroll. MCP
-  refuses to start without an existing enrollment (token + trusted host).
+- **`request-enrollment`** enrolls this client's SSH key at the signer —
+  **interactive and not available via MCP**; run real `apshell` in a terminal
+  once to enroll. MCP refuses to start without a trusted host, and the signer
+  refuses the tunnel until the key is enrolled.
 - **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
   `create`, `import`, `discover-cosigners`, `default`, `delete`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
@@ -571,10 +572,9 @@ each MCP server instance uses its own:
 | `endpoints.yaml` | signer + cosigner routing profiles (the default endpoint) |
 | `plugins.yaml` | names of enabled plugins |
 | `plugins.available/<name>/` | plugin payloads |
-| `aplane.token` (and `tokens/<alias>.token`) | API tokens (from `request-token`) |
 | `scripts/` | saved JS (`jssave` / `jslist` / `js <file.js>`) |
 | `txnjson/` | transaction JSON written in `write` mode |
-| `.ssh/` | tunnel identity (`id_ed25519`) and `known_hosts` |
+| `.ssh/` | tunnel identity (`id_ed25519`, the client's only credential) and `known_hosts` |
 | `.mcp.json` | MCP server config for clients that read Claude-style JSON (written by the installer) |
 | `.codex/config.toml` | Project-scoped Codex MCP server config (written by the installer) |
 | cache | token-scoped ASA/alias/auth caches |
@@ -595,7 +595,7 @@ each MCP server instance uses its own:
   ungrouped.
 - **All-foreign sign/plan requests are rejected.**
 - **After `rekey`, run `rekey refresh`.**
-- **`request-token`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
+- **`request-enrollment`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
   (no args) are not available via the `execute` tool** — use the dedicated
   tools or a terminal.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /

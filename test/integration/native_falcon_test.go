@@ -69,9 +69,8 @@ func TestNativeFalconPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate disposable Ed25519 account: %v", err)
 	}
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, childAddress, 10*time.Second) ||
-		!waitForKey(t, signerd.GetURL(), token, edAddress, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), childAddress, 10*time.Second) ||
+		!waitForKey(t, signerd.GetURL(), edAddress, 10*time.Second) {
 		t.Fatal("signer did not publish generated test keys")
 	}
 
@@ -88,7 +87,7 @@ func TestNativeFalconPayment(t *testing.T) {
 		"restore", "apply", filepath.Base(backupResult.ArchivePath), "--address", childAddress); restoreErr != nil {
 		t.Fatalf("restore native Falcon key: %v\noutput:\n%s", restoreErr, output)
 	}
-	if !waitForKey(t, signerd.GetURL(), token, childAddress, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), childAddress, 10*time.Second) {
 		t.Fatalf("signer did not reload restored native Falcon key %s", childAddress)
 	}
 
@@ -113,7 +112,7 @@ func TestNativeFalconPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build second native Falcon group transaction: %v", err)
 	}
-	response := signNativeFalconGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+	response := signNativeFalconGroup(t, signerd.GetURL(), []signerapi.SignRequest{
 		nativeFalconSignRequest(childAddress, firstNative),
 		nativeFalconSignRequest(childAddress, secondNative),
 	})
@@ -148,7 +147,7 @@ func TestNativeFalconPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build Ed25519 member of mixed group: %v", err)
 	}
-	mixedResponse := signNativeFalconGroup(t, signerd.GetURL(), token, []signerapi.SignRequest{
+	mixedResponse := signNativeFalconGroup(t, signerd.GetURL(), []signerapi.SignRequest{
 		nativeFalconSignRequest(childAddress, nativeGrouped),
 		nativeFalconSignRequest(edAddress, edGrouped),
 	})
@@ -172,10 +171,7 @@ func TestNativeFalconPayment(t *testing.T) {
 		t.Fatalf("mixed native Falcon/Ed25519 group did not confirm: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("copy signer token to apshell harness: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 	t.Cleanup(func() {
 		closeAccountToFunding(t, apshell, network, edAddress, fundingAddress)
 		closeAccountToFunding(t, apshell, network, childAddress, fundingAddress)
@@ -235,9 +231,9 @@ func nativeFalconSignRequest(authorizer string, txn types.Transaction) signerapi
 	}
 }
 
-func signNativeFalconGroup(t *testing.T, signerURL, token string, requests []signerapi.SignRequest) signerapi.GroupSignResponse {
+func signNativeFalconGroup(t *testing.T, signerURL string, requests []signerapi.SignRequest) signerapi.GroupSignResponse {
 	t.Helper()
-	status, body := postSignRequest(t, signerURL, "aplane "+token, signerapi.GroupSignRequest{Requests: requests})
+	status, body := postSignRequest(t, signerURL, signerapi.GroupSignRequest{Requests: requests})
 	if status != 200 {
 		t.Fatalf("native Falcon /sign status = %d: %s", status, body)
 	}

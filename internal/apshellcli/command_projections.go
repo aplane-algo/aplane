@@ -147,18 +147,15 @@ type disconnectProjection struct {
 }
 
 type endpointProjection struct {
-	Alias        string `json:"alias"`
-	Role         string `json:"role"`
-	URL          string `json:"url"`
-	TokenPresent bool   `json:"token_present"`
-	TokenStatus  string `json:"token_status"`
-	Default      bool   `json:"default"`
+	Alias   string `json:"alias"`
+	Role    string `json:"role"`
+	URL     string `json:"url"`
+	Default bool   `json:"default"`
 }
 
 func projectEndpointEntry(endpoint apshellapp.EndpointEntry) endpointProjection {
 	return endpointProjection{
 		Alias: endpoint.Alias, Role: endpoint.Role, URL: endpoint.URL,
-		TokenPresent: endpoint.TokenPresent, TokenStatus: tokenStatusLabel(endpoint),
 		Default: endpoint.IsDefault,
 	}
 }

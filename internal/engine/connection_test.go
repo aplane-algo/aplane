@@ -23,10 +23,10 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
+	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 
-	result, err := eng.ConnectWithTunnel("remote-b", "host", 22, 12345, "token", "", "", nil, nil)
+	result, err := eng.ConnectWithTunnel("remote-b", "host", 22, 12345, "", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -64,7 +64,7 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	eng.Connection = engconnect.NewState()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
+	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache = cache.NewSignerCache()
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
@@ -80,27 +80,28 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	}
 }
 
-func TestEngineRequestTokenDisconnectsFirst(t *testing.T) {
+func TestEngineRequestEnrollmentDisconnectsFirst(t *testing.T) {
 	eng, err := NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 	eng.Connection = engconnect.NewState()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken("http://localhost:1", "token")
+	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, 10001, "", "")
 	eng.Connection.TunnelConnected = true
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
-	_, err = eng.RequestTokenWithContext(context.Background(), "127.0.0.1", 1, "", "", nil, nil)
+	dir := t.TempDir()
+	_, err = eng.RequestEnrollmentWithContext(context.Background(), "127.0.0.1", 1, dir+"/id_ed25519", dir+"/known_hosts", "", nil, nil)
 	if err == nil {
-		t.Fatal("expected token request error, got nil")
+		t.Fatal("expected enrollment request error, got nil")
 	}
 	if eng.Connection.IsConnected() {
-		t.Fatal("engine should be disconnected before requesting token")
+		t.Fatal("engine should be disconnected before requesting enrollment")
 	}
 	if eng.IsTunnelConnected() {
-		t.Fatal("tunnel should be disconnected before requesting token")
+		t.Fatal("tunnel should be disconnected before requesting enrollment")
 	}
 	if eng.SignerCache.Count() != 0 {
 		t.Fatal("signer cache should be reset by disconnect-before-request flow")
@@ -165,7 +166,7 @@ func TestEnsureSignerCacheWithContextPropagatesCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
-	client := signerclient.NewSignerClientWithToken("http://signer.test", "token")
+	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: keyMgmtRoundTripper{t: t, handler: func(req *http.Request) (*http.Response, error) {
 		<-req.Context().Done()
 		return nil, req.Context().Err()

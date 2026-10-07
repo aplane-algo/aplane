@@ -111,7 +111,7 @@ func TestAdminPanelKShortcutOpensKeyTypes(t *testing.T) {
 	}
 }
 
-func TestAdminPanelTShortcutOpensRevokeTokenConfirm(t *testing.T) {
+func TestAdminPanelCShortcutOpensEnrolledClients(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
 		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
@@ -120,13 +120,13 @@ func TestAdminPanelTShortcutOpensRevokeTokenConfirm(t *testing.T) {
 		}},
 	}
 
-	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	got := next.(Model)
-	if got.viewState != ViewRevokeTokenConfirm {
-		t.Fatalf("viewState = %v, want ViewRevokeTokenConfirm", got.viewState)
+	if got.viewState != ViewEnrolledClients || !got.clients.loading || got.clients.returnView != ViewAdminPanel {
+		t.Fatalf("viewState = %v clients = %+v, want the enrolled clients screen loading", got.viewState, got.clients)
 	}
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	if cmd == nil {
+		t.Fatal("cmd = nil, want the list request")
 	}
 }
 

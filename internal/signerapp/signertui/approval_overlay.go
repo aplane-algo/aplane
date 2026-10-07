@@ -15,7 +15,7 @@ type approvalOverlay struct {
 }
 
 func isApprovalView(view ViewState) bool {
-	return view == ViewSigningPopup || view == ViewTokenProvisioningPopup
+	return view == ViewSigningPopup || view == ViewClientEnrollmentPopup
 }
 
 // approvalPending reports whether view is an approval popup whose request is
@@ -24,8 +24,8 @@ func (m Model) approvalPending(view ViewState) bool {
 	switch view {
 	case ViewSigningPopup:
 		return m.signing.request != nil
-	case ViewTokenProvisioningPopup:
-		return m.tokenApproval.request != nil
+	case ViewClientEnrollmentPopup:
+		return m.enrollmentApproval.request != nil
 	}
 	return false
 }
@@ -47,8 +47,8 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 		switch {
 		case m.signing.request != nil:
 			popup = ViewSigningPopup
-		case m.tokenApproval.request != nil:
-			popup = ViewTokenProvisioningPopup
+		case m.enrollmentApproval.request != nil:
+			popup = ViewClientEnrollmentPopup
 		default:
 			if isApprovalView(m.viewState) {
 				m.viewState = m.screenUnderApproval()
@@ -69,5 +69,5 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 // signer locks, without a per-request cancel.
 func (m *Model) clearPendingApprovals() {
 	m.signing.request = nil
-	m.tokenApproval.request = nil
+	m.enrollmentApproval.request = nil
 }

@@ -69,10 +69,9 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	requirePolicyTestKeyLoaded(t, signerd, token, addresses.source)
-	requirePolicyTestKeyLoaded(t, signerd, token, addresses.other)
-	requirePolicyTestKeyLoaded(t, signerd, token, addresses.authority)
+	requirePolicyTestKeyLoaded(t, signerd, addresses.source)
+	requirePolicyTestKeyLoaded(t, signerd, addresses.other)
+	requirePolicyTestKeyLoaded(t, signerd, addresses.authority)
 
 	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
 	passphrase := os.Getenv("TEST_PASSPHRASE")
@@ -88,16 +87,15 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 		passphrase,
 		transferRoutingIntegrationPolicy(testnet.Network, addresses),
 	)
-	startSignerAndLoadKey(t, signerd, apadmin, token, addresses.source)
-	requirePolicyTestKeyLoaded(t, signerd, token, addresses.other)
-	requirePolicyTestKeyLoaded(t, signerd, token, addresses.authority)
+	startSignerAndLoadKey(t, signerd, apadmin, addresses.source)
+	requirePolicyTestKeyLoaded(t, signerd, addresses.other)
+	requirePolicyTestKeyLoaded(t, signerd, addresses.authority)
 
 	sp, err := testnet.GetSuggestedParams()
 	if err != nil {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
 
-	authHeader := "aplane " + token
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
@@ -106,7 +104,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.allowed, 1, "routing-allowed"),
 		)
-		expectTransferRoutingSignOK(t, signerd.GetURL(), authHeader, req)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
 	})
 
 	t.Run("self_destination_term_signs", func(t *testing.T) {
@@ -114,7 +112,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.source, 1, "routing-self"),
 		)
-		expectTransferRoutingSignOK(t, signerd.GetURL(), authHeader, req)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
 	})
 
 	t.Run("route_miss_rejects_without_operator_prompt", func(t *testing.T) {
@@ -122,7 +120,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.blocked, 1, "routing-miss"),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:route_miss")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:route_miss")
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
@@ -134,7 +132,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, unknownGenesisSP, addresses.source, addresses.allowed, 1, "routing-unknown-genesis"),
 		)
-		expectTransferRoutingBadRequest(t, signerd.GetURL(), authHeader, req, "unrecognized genesis hash")
+		expectTransferRoutingBadRequest(t, signerd.GetURL(), req, "unrecognized genesis hash")
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
@@ -143,7 +141,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.reject, 6, "routing-reject-threshold"),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:reject_payee:reject_above")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:reject_payee:reject_above")
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
@@ -152,7 +150,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.networkLimit, 5, "routing-network-limit"),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:network_limit_payee:reject_above")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:network_limit_payee:reject_above")
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
@@ -161,7 +159,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.other,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.other, addresses.blocked, 1, "routing-other"),
 		)
-		expectTransferRoutingSignOK(t, signerd.GetURL(), authHeader, req)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
 	})
 
 	t.Run("blocked_destination_rejects_before_wildcard_route", func(t *testing.T) {
@@ -169,7 +167,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.other,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.other, addresses.denied, 1, "routing-blocked"),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:blocked_destination")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:blocked_destination")
 		mustNotReceiveIPCSignRequest(t, ipcClient, 500*time.Millisecond)
 	})
 
@@ -178,7 +176,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 			addresses.source,
 			mustUnsignedPaymentTxnHex(t, sp, addresses.source, addresses.review, 11, "routing-review-threshold"),
 		)
-		expectTransferRoutingManualApproval(t, signerd.GetURL(), authHeader, req, ipcClient, addresses.source)
+		expectTransferRoutingManualApproval(t, signerd.GetURL(), req, ipcClient, addresses.source)
 	})
 
 	t.Run("allowed_close_route_signs", func(t *testing.T) {
@@ -194,7 +192,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 				addresses.closeTo,
 			),
 		)
-		expectTransferRoutingSignOK(t, signerd.GetURL(), authHeader, req)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
 	})
 
 	t.Run("close_without_close_route_rejects", func(t *testing.T) {
@@ -210,7 +208,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 				addresses.blocked,
 			),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:close_rejected")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:close_rejected")
 	})
 
 	t.Run("allowed_clawback_route_signs", func(t *testing.T) {
@@ -227,7 +225,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 				"routing-clawback-allowed",
 			),
 		)
-		expectTransferRoutingSignOK(t, signerd.GetURL(), authHeader, req)
+		expectTransferRoutingSignOK(t, signerd.GetURL(), req)
 	})
 
 	t.Run("clawback_without_matching_asset_source_rejects", func(t *testing.T) {
@@ -244,7 +242,7 @@ func TestTransferRoutingIntegrationExercisesRoutes(t *testing.T) {
 				"routing-clawback-denied",
 			),
 		)
-		expectTransferRoutingReject(t, signerd.GetURL(), authHeader, req, "transfer_policy:clawback_rejected")
+		expectTransferRoutingReject(t, signerd.GetURL(), req, "transfer_policy:clawback_rejected")
 	})
 }
 
@@ -347,10 +345,10 @@ func transferRoutingSignRequest(authAddress, txnHex string) signerapi.GroupSignR
 	}
 }
 
-func expectTransferRoutingSignOK(t *testing.T, signerURL, authHeader string, req signerapi.GroupSignRequest) signerapi.GroupSignResponse {
+func expectTransferRoutingSignOK(t *testing.T, signerURL string, req signerapi.GroupSignRequest) signerapi.GroupSignResponse {
 	t.Helper()
 
-	status, body := postSignRequest(t, signerURL, authHeader, req)
+	status, body := postSignRequest(t, signerURL, req)
 	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d: %s", status, string(body))
@@ -364,10 +362,10 @@ func expectTransferRoutingSignOK(t *testing.T, signerURL, authHeader string, req
 	return resp
 }
 
-func expectTransferRoutingReject(t *testing.T, signerURL, authHeader string, req signerapi.GroupSignRequest, wantRuleID string) signerapi.GroupSignResponse {
+func expectTransferRoutingReject(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantRuleID string) signerapi.GroupSignResponse {
 	t.Helper()
 
-	status, body := postSignRequest(t, signerURL, authHeader, req)
+	status, body := postSignRequest(t, signerURL, req)
 	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden, got %d: %s", status, string(body))
@@ -384,10 +382,10 @@ func expectTransferRoutingReject(t *testing.T, signerURL, authHeader string, req
 	return resp
 }
 
-func expectTransferRoutingBadRequest(t *testing.T, signerURL, authHeader string, req signerapi.GroupSignRequest, wantError string) signerapi.GroupSignResponse {
+func expectTransferRoutingBadRequest(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantError string) signerapi.GroupSignResponse {
 	t.Helper()
 
-	status, body := postSignRequest(t, signerURL, authHeader, req)
+	status, body := postSignRequest(t, signerURL, req)
 	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request, got %d: %s", status, string(body))
@@ -404,7 +402,6 @@ func expectTransferRoutingBadRequest(t *testing.T, signerURL, authHeader string,
 func expectTransferRoutingManualApproval(
 	t *testing.T,
 	signerURL string,
-	authHeader string,
 	req signerapi.GroupSignRequest,
 	ipcClient *transport.IPCClient,
 	wantAddress string,
@@ -416,7 +413,7 @@ func expectTransferRoutingManualApproval(
 	var body []byte
 	go func() {
 		defer close(done)
-		status, body = postSignRequest(t, signerURL, authHeader, req)
+		status, body = postSignRequest(t, signerURL, req)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)

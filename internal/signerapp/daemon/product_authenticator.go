@@ -11,9 +11,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
-// productAuthenticator verifies the one product runtime's token and maps the
-// credential to the reserved product-admin principal. Token authentication is
-// deliberately independent from runtime selection.
+// productAuthenticator identifies an HTTP request by the connection it
+// arrived on. The SSH server verified an enrolled key and the HTTP server
+// attached that key's fingerprint to the connection context; nothing in the
+// request itself is a credential. Enrollment is checked again on every
+// request, including keep-alive requests, so a key revoked while its
+// connection is open stops authenticating at once.
 type productAuthenticator struct {
 	nodeFailState *productruntime.NodeFailState
 	runtime       *productruntime.Runtime
@@ -23,25 +26,26 @@ func newProductAuthenticator(nodeFailState *productruntime.NodeFailState, runtim
 	return &productAuthenticator{nodeFailState: nodeFailState, runtime: runtime}
 }
 
-func (a *productAuthenticator) Authenticate(ctx context.Context, r *http.Request) (*auth.Identity, error) {
+func (a *productAuthenticator) Authenticate(ctx context.Context, _ *http.Request) (*auth.Identity, error) {
 	if a.nodeFailState != nil {
 		if err := a.nodeFailState.Err(); err != nil {
 			return nil, err
 		}
 	}
-	if a.runtime == nil || a.runtime.Authenticator() == nil {
+	if a.runtime == nil {
 		return nil, auth.ErrInvalidCredentials
 	}
-	ident, err := a.runtime.Authenticator().Authenticate(ctx, r)
-	if err != nil {
-		return nil, err
+	conn, ok := auth.ConnIdentityFromContext(ctx)
+	if !ok {
+		return nil, auth.ErrNoCredentials
 	}
-	if ident == nil {
+	entry, enrolled := a.runtime.EnrolledKey(conn.KeyFingerprint)
+	if !enrolled {
 		return nil, auth.ErrInvalidCredentials
 	}
-	return auth.NewProductIdentity(a.Method()), nil
+	return auth.NewClientIdentity(entry.Fingerprint, entry.Label), nil
 }
 
-func (*productAuthenticator) Method() string { return "aplane-token" }
+func (*productAuthenticator) Method() string { return auth.MethodSSHKey }
 
 var _ auth.Authenticator = (*productAuthenticator)(nil)

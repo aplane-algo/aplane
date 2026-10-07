@@ -6,6 +6,7 @@ package sshtunnel
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -43,13 +44,24 @@ func TestClientDialSignerAPIUsesAuthenticatedDirectChannel(t *testing.T) {
 	}()
 
 	tmpDir := t.TempDir()
-	srv, err := NewServer(
-		"127.0.0.1:0", target.Addr().String(), filepath.Join(tmpDir, "host_key"),
-		filepath.Join(tmpDir, "authorized_keys"), "test-token",
-	)
+	srv, err := NewServer("127.0.0.1:0", filepath.Join(tmpDir, "host_key"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Bridge each handed-off API connection to the test target, the way the
+	// daemon's listener hands them to its HTTP server.
+	srv.SetAPIHandoff(func(conn *APIConn) error {
+		targetConn, dialErr := net.Dial("tcp", target.Addr().String())
+		if dialErr != nil {
+			return dialErr
+		}
+		go func() {
+			defer func() { _ = targetConn.Close(); _ = conn.Close() }()
+			go func() { _, _ = io.Copy(conn, targetConn) }()
+			_, _ = io.Copy(targetConn, conn)
+		}()
+		return nil
+	})
 	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
 	srv.authKeysMu.Lock()
 	srv.authKeys = append(srv.authKeys, clientPub)
@@ -70,7 +82,6 @@ func TestClientDialSignerAPIUsesAuthenticatedDirectChannel(t *testing.T) {
 	}
 
 	client := NewClient(host, sshPort, 0, identityPath, knownHostsPath)
-	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(t.Context()); err != nil {
 		t.Fatal(err)
 	}

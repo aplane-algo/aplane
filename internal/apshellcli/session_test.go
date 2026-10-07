@@ -60,7 +60,7 @@ func TestSessionHistoryUsesApshellHistoryFile(t *testing.T) {
 	}
 }
 
-func TestSessionStartupConnectReportsMissingToken(t *testing.T) {
+func TestSessionStartupConnectSkipsWithoutDefaultEndpoint(t *testing.T) {
 	session, err := NewSession("testnet", config.DefaultConfig(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
@@ -71,10 +71,7 @@ func TestSessionStartupConnectReportsMissingToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartupConnect() error = %v", err)
 	}
-	if !strings.Contains(output, missingAplaneTokenStartupMessage) {
-		t.Fatalf("StartupConnect() output = %q, want missing token message", output)
-	}
-	if strings.Contains(output, "Verifying Signer") {
-		t.Fatalf("StartupConnect() output = %q, should not attempt connect without token", output)
+	if output != "" {
+		t.Fatalf("StartupConnect() output = %q, want no connection attempt without a default endpoint", output)
 	}
 }

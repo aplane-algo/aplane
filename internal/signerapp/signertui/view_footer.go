@@ -34,7 +34,7 @@ func (m Model) viewFooterText() string {
 			footer += " | up/down/pgup/pgdown: Scroll"
 		}
 		return footer
-	case ViewSigningPopup, ViewTokenProvisioningPopup:
+	case ViewSigningPopup, ViewClientEnrollmentPopup:
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
 	case ViewBackupConfirm:
 		return "Tab: Next | Enter: Create backup | Esc: Back"
@@ -99,14 +99,16 @@ func (m Model) viewFooterText() string {
 		return "q: Quit"
 	case ViewDeleteConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"
-	case ViewRevokeTokenConfirm:
+	case ViewEnrolledClients:
+		return "up/down: Select | r: Revoke selected | A: Revoke all | R: Refresh | esc: Back"
+	case ViewRevokeClientConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Revoke | n/esc: Cancel"
 	case ViewLockConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Lock | n/esc: Cancel"
 	case ViewDisplaceConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
-		return "p: Policies | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
+		return "p: Policies | k: KeyTypes | c: Clients | l: Lock | esc: Back"
 	case ViewPolicies, ViewPolicyDocument:
 		return m.policiesFooterText()
 	case ViewPolicyApplyForm, ViewPolicyApplyReview:

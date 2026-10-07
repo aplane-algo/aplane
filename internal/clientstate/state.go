@@ -5,8 +5,6 @@ package clientstate
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -69,29 +66,6 @@ func (s *State) WithExclusiveLock(fn func() error) error {
 		return fn()
 	}
 	return clientdata.WithExclusiveLock(s.DataDir, fn)
-}
-
-// SaveApshellToken persists the client auth token under APCLIENT_DATA.
-func (s *State) SaveApshellToken(token string) (string, error) {
-	tokenPath, err := tokenfile.GetApshellTokenPathForDataDir(s.DataDir)
-	if err != nil {
-		return "", err
-	}
-	return s.SaveApshellTokenToPath(tokenPath, token)
-}
-
-// SaveApshellTokenToPath persists a client auth token to a specific endpoint
-// token file under APCLIENT_DATA.
-func (s *State) SaveApshellTokenToPath(tokenPath, token string) (string, error) {
-	if err := s.WithExclusiveLock(func() error {
-		if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-			return err
-		}
-		return tokenfile.WriteToken(tokenPath, token)
-	}); err != nil {
-		return "", err
-	}
-	return tokenPath, nil
 }
 
 // ReloadAliasCache refreshes aliases from disk-backed cache state.

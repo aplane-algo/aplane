@@ -21,14 +21,16 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-func TestProvisioningFingerprintMatchesApprovedKey(t *testing.T) {
+func TestEnrollmentFingerprintMatchesApprovedKey(t *testing.T) {
 	for _, mode := range []string{"existing", "generated", "agent"} {
 		t.Run(mode, func(t *testing.T) {
 			srv, dir := testServer(t)
 			approval := make(chan string, 1)
-			setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-				Approve: func(fingerprint, _ string) (bool, error) { approval <- fingerprint; return true, nil },
-				Issue:   func() (string, error) { return "issued-token", nil },
+			setEnrollmentHooks(srv, EnrollmentHooks{
+				ApproveContext: func(_ context.Context, fingerprint, _, _ string) (bool, error) {
+					approval <- fingerprint
+					return true, nil
+				},
 			})
 			identity := filepath.Join(dir, "new_identity")
 			if mode == "existing" {
@@ -103,15 +105,15 @@ func TestProvisioningFingerprintMatchesApprovedKey(t *testing.T) {
 			}
 			client := NewClient(host, port, 0, identity, known)
 			var displayed string
-			client.SetProvisioningStartCallback(func(fingerprint string) { displayed = fingerprint })
-			token, err := client.RequestToken(ctx)
-			if err != nil || token != "issued-token" {
-				t.Fatalf("request=%q %v", token, err)
+			client.SetEnrollmentStartCallback(func(fingerprint string) { displayed = fingerprint })
+			enrolledFingerprint, err := client.RequestEnrollment(ctx, "")
+			if err != nil {
+				t.Fatalf("RequestEnrollment() error = %v", err)
 			}
 			select {
 			case expected := <-approval:
-				if displayed == "" || displayed != expected {
-					t.Fatalf("client=%q server=%q", displayed, expected)
+				if displayed == "" || displayed != expected || enrolledFingerprint != expected {
+					t.Fatalf("client=%q server=%q enrolled=%q", displayed, expected, enrolledFingerprint)
 				}
 			default:
 				t.Fatal("approval missing")

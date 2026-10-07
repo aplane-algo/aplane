@@ -7,7 +7,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
@@ -18,8 +17,6 @@ func TestNewSigningServiceForRuntimeCapturesPolicyAndUserAutoApproveSnapshot(t *
 		config: &serverconfig.ServerConfig{},
 	}
 	ir := productruntime.New(productruntime.Config{
-
-		Authenticator:   auth.NewTokenAuthenticator("test-token"),
 		UserAutoApprove: &userAutoApprove,
 	})
 	initialPolicy := &policy.Config{

@@ -119,7 +119,8 @@ principal/transport attribution.
 | `SESSION_CONNECTED` | IPC or SSH session established |
 | `SESSION_DISCONNECTED` | Session ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
-| `TOKEN_PROVISIONED` | API token provisioned via SSH connection |
+| `CLIENT_ENROLLED` | Client SSH key enrolled after operator approval (`client_label` carries its display label) |
+| `CLIENT_KEY_REVOKED` | Enrolled client SSH key revoked by the operator; its connections were closed |
 
 ## Log Rotation
 

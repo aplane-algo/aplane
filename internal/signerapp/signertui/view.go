@@ -367,8 +367,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderTEALFullDisplay()
 	case ViewSigningPopup:
 		content = m.renderSigningPopup()
-	case ViewTokenProvisioningPopup:
-		content = m.renderTokenProvisioningPopup()
+	case ViewClientEnrollmentPopup:
+		content = m.renderClientEnrollmentPopup()
 	case ViewBackupConfirm:
 		content = m.renderBackupConfirm()
 	case ViewBackingUp:
@@ -431,8 +431,10 @@ func (m Model) renderViewContent() string {
 		content = m.renderGenerateDisplay()
 	case ViewDeleteConfirm:
 		content = m.renderDeleteConfirm()
-	case ViewRevokeTokenConfirm:
-		content = m.renderRevokeTokenConfirm()
+	case ViewEnrolledClients:
+		content = m.renderEnrolledClients()
+	case ViewRevokeClientConfirm:
+		content = m.renderRevokeClientConfirm()
 	case ViewLockConfirm:
 		content = m.renderLockConfirm()
 	case ViewDeleting:

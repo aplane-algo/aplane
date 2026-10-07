@@ -51,10 +51,7 @@ func (a *recordingAuthorizationAudit) LogAuthorizationDenied(ctx SessionContext,
 }
 
 func TestSessionAuthorizationDenialStopsAdminOperation(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	svc := &stubServices{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}
 	audit := &recordingAuthorizationAudit{}
@@ -132,9 +129,21 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 		handle func(*Session)
 	}{
 		{
-			name: "revoke token",
+			name: "list enrolled keys",
 			handle: func(session *Session) {
-				session.HandleRevokeToken(&protocol.RevokeTokenMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+				session.HandleListEnrolledKeys(&protocol.ListEnrolledKeysMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
+			},
+		},
+		{
+			name: "revoke enrolled key",
+			handle: func(session *Session) {
+				session.HandleRevokeEnrolledKey(&protocol.RevokeEnrolledKeyMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}, Fingerprint: "SHA256:x"})
+			},
+		},
+		{
+			name: "revoke all enrolled keys",
+			handle: func(session *Session) {
+				session.HandleRevokeAllEnrolledKeys(&protocol.RevokeAllEnrolledKeysMessage{BaseMessage: protocol.BaseMessage{ID: "request-1"}})
 			},
 		},
 		{
@@ -193,7 +202,7 @@ func TestAdminHandlersWithoutBoundRuntimeReturnProtocolError(t *testing.T) {
 
 // boundPolicySession binds a session over svc with a recording authorizer.
 func boundPolicySession(svc *stubServices) (*Session, *recordingAuthorizer, *queueConn) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{Product: svc, Settings: svc, Authorizer: authorizer})

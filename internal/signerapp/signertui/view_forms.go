@@ -681,36 +681,6 @@ func (m Model) renderDeleteConfirm() string {
 	return m.renderPopup(80, sb.String())
 }
 
-// renderRevokeTokenConfirm renders the token revocation confirmation dialog
-func (m Model) renderRevokeTokenConfirm() string {
-	var sb strings.Builder
-
-	sb.WriteString(errorStyle.Render("REVOKE API TOKEN"))
-	sb.WriteString("\n\n")
-
-	sb.WriteString("This will generate a new API token and invalidate the current one.\n\n")
-
-	sb.WriteString(errorStyle.Render("All connected clients will be disconnected."))
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Clients must obtain a new token using: request-token"))
-	sb.WriteString("\n\n")
-
-	// Buttons - Cancel is default (safer)
-	var cancelBtn, revokeBtn string
-	if m.admin.revokeTokenFocus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		revokeBtn = buttonInactiveStyle.Render("  REVOKE")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		revokeBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> REVOKE")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", revokeBtn)
-	sb.WriteString(buttons)
-
-	return m.renderPopup(80, sb.String())
-}
-
 // renderLockConfirm renders the manual signer lock confirmation dialog.
 func (m Model) renderLockConfirm() string {
 	var sb strings.Builder

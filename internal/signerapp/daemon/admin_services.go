@@ -219,8 +219,34 @@ func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionConte
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
-func (s signerAdminServices) RevokeProductToken() error {
-	return s.signer.RevokeProductToken(s.ProductRuntime())
+func (s signerAdminServices) EnrolledKeys() []protocol.EnrolledKeyInfo {
+	ir := s.ProductRuntime()
+	if ir == nil {
+		return nil
+	}
+	connected := map[string]int{}
+	if sshServer := s.signer.currentSSHServer(); sshServer != nil {
+		connected = sshServer.ConnectedFingerprints()
+	}
+	entries := ir.EnrolledKeys()
+	out := make([]protocol.EnrolledKeyInfo, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, protocol.EnrolledKeyInfo{
+			Fingerprint: entry.Fingerprint,
+			Label:       entry.Label,
+			KeyType:     entry.Key.Type(),
+			Connected:   connected[entry.Fingerprint] > 0,
+		})
+	}
+	return out
+}
+
+func (s signerAdminServices) RevokeEnrolledKey(ctx adminserver.SessionContext, fingerprint string) (int, error) {
+	return s.signer.RevokeClientKey(ctx, s.ProductRuntime(), fingerprint)
+}
+
+func (s signerAdminServices) RevokeAllEnrolledKeys(ctx adminserver.SessionContext) (int, int, error) {
+	return s.signer.RevokeAllClientKeys(ctx, s.ProductRuntime())
 }
 
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {

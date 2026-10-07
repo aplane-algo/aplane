@@ -12,42 +12,24 @@ import (
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
-func TestConnectRequiresToken(t *testing.T) {
-	eng, err := engine.NewEngine("testnet")
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
-	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.Connect(context.Background(), ConnectRequest{
-		Host:           "localhost",
-		SSHPort:        1127,
-		IdentityFile:   "/tmp/id",
-		KnownHostsPath: "/tmp/known_hosts",
-	})
-	if err == nil || !strings.Contains(err.Error(), "no token configured") {
-		t.Fatalf("Connect() error = %v, want missing token error", err)
-	}
-}
-
-func TestConnectRequiresEndpointToken(t *testing.T) {
+// Connect fails closed on an identity file that does not exist, before any
+// network activity.
+func TestConnectRequiresIdentityFile(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
 	dataDir := t.TempDir()
-	tokenPath := dataDir + "/tokens/cosigner-local.token"
 	app := New(eng, config.DefaultConfig(), dataDir)
 	_, err = app.Connect(context.Background(), ConnectRequest{
 		Host:           "localhost",
-		SSHPort:        1127,
-		IdentityFile:   "/tmp/id",
-		KnownHostsPath: "/tmp/known_hosts",
-		TokenFile:      tokenPath,
+		SSHPort:        1,
+		IdentityFile:   dataDir + "/missing_id",
+		KnownHostsPath: dataDir + "/known_hosts",
 	})
-	if err == nil || !strings.Contains(err.Error(), tokenPath) {
-		t.Fatalf("Connect() error = %v, want missing endpoint token path", err)
+	if err == nil {
+		t.Fatal("Connect() error = nil, want a failure")
 	}
 }
 
@@ -119,7 +101,7 @@ func TestDecorateConnectResultOmitsLockedTranscriptLine(t *testing.T) {
 	}
 }
 
-func TestResolveTokenRequestTarget(t *testing.T) {
+func TestResolveEnrollmentTarget(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Endpoints = config.ClientEndpointRegistry{
 		Default: "primary",
@@ -138,18 +120,18 @@ func TestResolveTokenRequestTarget(t *testing.T) {
 		{alias: "primary", wantAlias: "primary", wantAutoConnect: true},
 		{alias: "cosigner", wantAlias: "cosigner", wantAutoConnect: false},
 	} {
-		target, err := app.ResolveTokenRequestTarget(tc.alias)
+		target, err := app.ResolveEnrollmentTarget(tc.alias)
 		if err != nil || target.Alias != tc.wantAlias || target.AutoConnect != tc.wantAutoConnect {
-			t.Fatalf("ResolveTokenRequestTarget(%q) = %+v, %v; want alias %q, auto-connect %v",
+			t.Fatalf("ResolveEnrollmentTarget(%q) = %+v, %v; want alias %q, auto-connect %v",
 				tc.alias, target, err, tc.wantAlias, tc.wantAutoConnect)
 		}
 	}
-	if _, err := app.ResolveTokenRequestTarget("missing"); err == nil || !strings.Contains(err.Error(), `unknown endpoint alias "missing"`) {
-		t.Fatalf("ResolveTokenRequestTarget(missing) error = %v", err)
+	if _, err := app.ResolveEnrollmentTarget("missing"); err == nil || !strings.Contains(err.Error(), `unknown endpoint alias "missing"`) {
+		t.Fatalf("ResolveEnrollmentTarget(missing) error = %v", err)
 	}
 
 	app.Config.Endpoints = config.ClientEndpointRegistry{}
-	if _, err := app.ResolveTokenRequestTarget(""); err == nil || !strings.Contains(err.Error(), "no default signer endpoint") {
-		t.Fatalf("ResolveTokenRequestTarget(no default) error = %v", err)
+	if _, err := app.ResolveEnrollmentTarget(""); err == nil || !strings.Contains(err.Error(), "no default signer endpoint") {
+		t.Fatalf("ResolveEnrollmentTarget(no default) error = %v", err)
 	}
 }

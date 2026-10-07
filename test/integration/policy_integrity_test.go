@@ -46,13 +46,9 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
-	token := readSignerToken(t, signerd)
-	requirePolicyTestKeyLoaded(t, signerd, token, fundingAddr)
+	requirePolicyTestKeyLoaded(t, signerd, fundingAddr)
 
 	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
 	passphrase := os.Getenv("TEST_PASSPHRASE")
@@ -62,7 +58,7 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 
 	stopSigner(t, signerd)
 	writeAndSignIntegrationPolicy(t, apstore, env.SignerDataDir, passphrase, restrictiveAlgoPaymentPolicy(testnet.Network))
-	startSignerAndLoadKey(t, signerd, apadmin, token, fundingAddr)
+	startSignerAndLoadKey(t, signerd, apadmin, fundingAddr)
 
 	validateOutput, err := apshell.RunWithInput(fmt.Sprintf("validate %s\nquit\n", fundingAddr))
 	if err != nil {
@@ -84,7 +80,7 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 
 	stopSigner(t, signerd)
 	writeAndSignIntegrationPolicy(t, apstore, env.SignerDataDir, passphrase, permissiveIntegrationPolicy())
-	startSignerAndLoadKey(t, signerd, apadmin, token, fundingAddr)
+	startSignerAndLoadKey(t, signerd, apadmin, fundingAddr)
 
 	txid, err := apshell.SendTransaction(fundingAddr, fundingAddr, 0.1)
 	if err != nil {
@@ -152,7 +148,7 @@ func stopSigner(t *testing.T, signerd *harness.SignerHarness) {
 	}
 }
 
-func startSignerAndLoadKey(t *testing.T, signerd *harness.SignerHarness, apadmin *harness.ApAdminHarness, token, address string) {
+func startSignerAndLoadKey(t *testing.T, signerd *harness.SignerHarness, apadmin *harness.ApAdminHarness, address string) {
 	t.Helper()
 	if err := signerd.Start(); err != nil {
 		t.Fatalf("failed to restart signer: %v", err)
@@ -160,12 +156,12 @@ func startSignerAndLoadKey(t *testing.T, signerd *harness.SignerHarness, apadmin
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock restarted signer: %v", err)
 	}
-	requirePolicyTestKeyLoaded(t, signerd, token, address)
+	requirePolicyTestKeyLoaded(t, signerd, address)
 }
 
-func requirePolicyTestKeyLoaded(t *testing.T, signerd *harness.SignerHarness, token, address string) {
+func requirePolicyTestKeyLoaded(t *testing.T, signerd *harness.SignerHarness, address string) {
 	t.Helper()
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not load policy test key %s", address)
 	}
 }

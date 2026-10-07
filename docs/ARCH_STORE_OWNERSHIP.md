@@ -72,7 +72,7 @@ moved behind an existing owner.
 | `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
 | `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
-| `internal/tokenfile` when invoked by signer administration | Product bearer-token state |
+| `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |
 
 Normal operators reach these owners through authenticated HTTP or the admin protocol over IPC/SSH;
 they do not call the storage packages directly.

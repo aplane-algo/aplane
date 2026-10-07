@@ -22,7 +22,6 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -133,11 +132,9 @@ func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productrunti
 	}
 
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      ks,
-		KeyPaths:      keyPaths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		NodeRole:      role,
+		KeyStore: ks,
+		KeyPaths: keyPaths,
+		NodeRole: role,
 	})
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, reloadKeysForTest(ir, keyPaths)

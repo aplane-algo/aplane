@@ -12,9 +12,10 @@ clients must use ordinary signing followed by client-side algod simulation.
 This is a coordinated breaking change: clients that call the removed routes
 receive `404` and must be upgraded with apsigner.
 
-The product-facing HTTP API is a single-signer API. Successful token
-authentication maps to the product principal, and every authenticated handler
-uses the process-owned product runtime. HTTP requests and authorization
+The product-facing HTTP API is a single-signer API. A request is authenticated
+by the SSH connection it arrived on: the enrolled client key that authenticated
+that connection becomes the request's `client:<fingerprint>` principal, and
+every authenticated handler uses the process-owned product runtime. HTTP requests and authorization
 resources carry no runtime or store selector. Status and audit fields identify
 request state and principals without a runtime ID.
 
@@ -112,8 +113,9 @@ Timeout behavior:
 
 Fixed runtime binding:
 
-- HTTP auth uses the one product `aplane` token to authenticate the reserved
-  product-admin principal.
+- HTTP auth resolves the enrolled client key of the request's SSH connection
+  to a `client:<fingerprint>` principal; requests carry no credential, and the
+  loopback listener answers only `/health`.
 - authenticated handlers use the process-owned product runtime; requests carry
   no runtime or store selector.
 - missing or invalid credentials return `401`; authorization failures return

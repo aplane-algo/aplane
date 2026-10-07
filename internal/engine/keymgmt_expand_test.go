@@ -68,7 +68,7 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 			return nil, nil
 		}
 	}
-	client := signerclient.NewSignerClientWithToken("http://signer.test", "token")
+	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: keyMgmtRoundTripper{t: t, handler: handler}}
 	eng.Connection = &engconnect.ConnectionState{SignerClient: client}
 

@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// connectProductClient starts srv and connects a client that passes key and
-// token-proof authentication.
+// connectProductClient starts srv and connects a client whose key is
+// enrolled in the server's in-memory list.
 func connectProductClient(t *testing.T, srv *Server, tmpDir string) *Client {
 	t.Helper()
 	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
@@ -38,7 +38,6 @@ func connectProductClient(t *testing.T, srv *Server, tmpDir string) *Client {
 		t.Fatalf("WriteFile(known_hosts) error = %v", err)
 	}
 	client := NewClient(host, port, 0, identityPath, knownHostsPath)
-	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)
 	}
@@ -70,10 +69,9 @@ func TestUnansweredKeepaliveClosesConnection(t *testing.T) {
 	srv, _ := testServer(t)
 	srv.keepaliveInterval = 20 * time.Millisecond
 	srv.keepaliveTimeout = 50 * time.Millisecond
-	srv.tokenProvisioningExecDeadline = time.Minute // only the keepalive may close it
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(context.Context, string, string) (bool, error) { return false, nil },
-		Issue:          func() (string, error) { return "", nil },
+	srv.enrollmentExecDeadline = time.Minute // only the keepalive may close it
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(context.Context, string, string, string) (bool, error) { return false, nil },
 	})
 	addr := serveConnections(t, srv)
 
@@ -83,7 +81,7 @@ func TestUnansweredKeepaliveClosesConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn, chans, reqs, err := ssh.NewClientConn(netConn, addr, &ssh.ClientConfig{
-		User:            tokenRequestSSHUsername,
+		User:            enrollmentSSHUsername,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
 		Timeout:         5 * time.Second,

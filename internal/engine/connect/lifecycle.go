@@ -29,13 +29,13 @@ type Result struct {
 	ErrorMessage string
 }
 
-// ConnectWithTunnel establishes an SSH tunnel connection and verifies the signer token.
+// ConnectWithTunnel establishes an SSH tunnel connection authenticated by the
+// client's enrolled key and verifies the signer answers over it.
 func (s *ConnectionState) ConnectWithTunnel(
 	target string,
 	host string,
 	sshPort int,
 	localPort int,
-	token string,
 	identityFile string,
 	knownHostsPath string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
@@ -62,11 +62,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 			s.clearPendingConnect(target)
 		}
 	}()
-	if token == "" {
-		result.ErrorMessage = "no API token configured"
-		return result, fmt.Errorf("no API token configured")
-	}
-
 	dialTimeout := s.portDialTimeout
 	if dialTimeout == nil {
 		dialTimeout = net.DialTimeout
@@ -78,7 +73,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	}
 
 	client := sshtunnel.NewClient(host, sshPort, localPort, identityFile, knownHostsPath)
-	client.SetAPIToken(token)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
@@ -106,7 +100,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 		return result, fmt.Errorf("failed to start port forwarding: %w", err)
 	}
 
-	signerClient := signerclient.NewSignerClientWithToken(fmt.Sprintf("http://localhost:%d", localPort), token)
+	signerClient := signerclient.NewSignerClient(fmt.Sprintf("http://localhost:%d", localPort))
 	s.Mu.Lock()
 	signerClient.ProgressOut = s.SignerProgressOut
 	s.Mu.Unlock()
@@ -161,40 +155,30 @@ func (s *ConnectionState) Disconnect(onDisconnect func()) error {
 	return nil
 }
 
-// RequestToken requests a signer token over SSH.
-func (s *ConnectionState) RequestToken(
-	host string,
-	sshPort int,
-	identityFile string,
-	knownHostsPath string,
-	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onProvisioningStart func(string),
-) (string, error) {
-	return s.RequestTokenWithContext(context.Background(), host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
-}
-
-// RequestTokenWithContext requests a signer token over SSH.
-func (s *ConnectionState) RequestTokenWithContext(
+// RequestEnrollmentWithContext asks a node to enroll this client's SSH key
+// and returns the enrolled key's fingerprint.
+func (s *ConnectionState) RequestEnrollmentWithContext(
 	ctx context.Context,
 	host string,
 	sshPort int,
 	identityFile string,
 	knownHostsPath string,
+	label string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
-	onProvisioningStart func(string),
+	onEnrollmentStart func(string),
 ) (string, error) {
 	client := sshtunnel.NewClient(host, sshPort, 0, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
 	}
-	if onProvisioningStart != nil {
-		client.SetProvisioningStartCallback(onProvisioningStart)
+	if onEnrollmentStart != nil {
+		client.SetEnrollmentStartCallback(onEnrollmentStart)
 	}
-	token, err := client.RequestToken(ctx)
+	fingerprint, err := client.RequestEnrollment(ctx, label)
 	if err != nil {
-		return "", fmt.Errorf("token request failed: %w", err)
+		return "", fmt.Errorf("enrollment request failed: %w", err)
 	}
-	return token, nil
+	return fingerprint, nil
 }
 
 func (s *ConnectionState) clearLocked() {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/clientenroll"
 	"github.com/aplane-algo/aplane/internal/config"
@@ -16,19 +15,20 @@ import (
 	engineconnect "github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 // isAuthenticationFailure reports whether a connect error is an
-// authentication problem: an HTTP 401 from the signer (typed) or an SSH
-// public-key auth rejection (x/crypto/ssh exposes no typed error, so that
-// case still matches the standard "unable to authenticate" text).
+// authentication problem: the node refused this client's key at the SSH
+// handshake (typed as ErrSSHKeyNotEnrolled), or the signer answered 401.
 func isAuthenticationFailure(err error) bool {
+	if errors.Is(err, engineconnect.ErrSSHKeyNotEnrolled) {
+		return true
+	}
 	var herr *signerclient.HTTPStatusError
 	if errors.As(err, &herr) {
 		return herr.StatusCode == http.StatusUnauthorized
 	}
-	return strings.Contains(err.Error(), "unable to authenticate")
+	return false
 }
 
 // ConnectRequest establishes an SSH tunnel to the signer.
@@ -37,23 +37,13 @@ type ConnectRequest struct {
 	SSHPort         int
 	IdentityFile    string
 	KnownHostsPath  string
-	TokenFile       string
 	EndpointName    string
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 	OnDisconnect    func()
 }
 
-// Connect establishes an SSH tunnel using the configured signer identity and token.
+// Connect establishes an SSH tunnel authenticated by the client's enrolled key.
 func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, error) {
-	tokenPath, err := a.tokenPathForRequest(req.TokenFile)
-	if err != nil {
-		return nil, err
-	}
-	token, _ := tokenfile.ReadToken(tokenPath)
-	if token == "" {
-		return nil, fmt.Errorf("no token configured.\nRun 'request-token' to obtain a token, or copy a token to %s", tokenPath)
-	}
-
 	localPort, err := engineconnect.FindAvailableLocalPort()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available local port: %w", err)
@@ -65,7 +55,6 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 		req.Host,
 		req.SSHPort,
 		localPort,
-		token,
 		req.IdentityFile,
 		req.KnownHostsPath,
 		req.HostKeyApproval,
@@ -73,7 +62,7 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 	)
 	if err != nil {
 		if isAuthenticationFailure(err) {
-			return nil, fmt.Errorf("authentication failed — possible causes:\n  - Token at %s was revoked or is invalid\n  - SSH key is not in the signer's authorized_keys\n\nTry 'request-token' to re-enroll, or copy a valid aplane.token from the signer", tokenPath)
+			return nil, fmt.Errorf("authentication failed: this client's SSH key (%s) is not enrolled at the signer, or was revoked.\nRun 'request-enrollment' and have the operator approve it", req.IdentityFile)
 		}
 		return nil, err
 	}
@@ -141,7 +130,6 @@ func (a *App) connectEndpoint(ctx context.Context, alias string, endpoint config
 		SSHPort:         endpointSSH.Port,
 		IdentityFile:    endpointSSH.IdentityFile,
 		KnownHostsPath:  endpointSSH.KnownHostsPath,
-		TokenFile:       endpointSSH.TokenFile,
 		EndpointName:    alias,
 		HostKeyApproval: hostKeyApproval,
 		OnDisconnect:    onDisconnect,
@@ -163,83 +151,58 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 	}, nil
 }
 
-// TokenRequestTarget is the endpoint a request-token run enrolls with.
-type TokenRequestTarget struct {
+// EnrollmentTarget is the endpoint a request-enrollment run enrolls with.
+type EnrollmentTarget struct {
 	Alias string
 	// AutoConnect reports that the target is the default signer endpoint, so
-	// the shell replaces its current session with one using the new token.
+	// the shell replaces its current session with one using the enrolled key.
 	AutoConnect bool
 }
 
-// ResolveTokenRequestTarget resolves a request-token alias; an empty alias
+// ResolveEnrollmentTarget resolves a request-enrollment alias; an empty alias
 // selects the default signer endpoint.
-func (a *App) ResolveTokenRequestTarget(alias string) (TokenRequestTarget, error) {
+func (a *App) ResolveEnrollmentTarget(alias string) (EnrollmentTarget, error) {
 	registry := a.Config.ClientEndpointsOrDefault()
 	defaultAlias, defaultEndpoint, hasDefault := registry.DefaultEndpoint()
 	if alias == "" {
 		if !hasDefault {
-			return TokenRequestTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-token")
+			return EnrollmentTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running request-enrollment")
 		}
 		alias = defaultAlias
 	}
 	if _, err := a.configuredEndpoint(alias); err != nil {
-		return TokenRequestTarget{}, err
+		return EnrollmentTarget{}, err
 	}
-	return TokenRequestTarget{
+	return EnrollmentTarget{
 		Alias:       alias,
 		AutoConnect: hasDefault && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner,
 	}, nil
 }
 
-// RequestTokenEndpointAlias enrolls with a configured endpoint alias and saves
-// the issued token. progress, when set, receives the client key fingerprint
-// once the request is waiting for operator approval.
-func (a *App) RequestTokenEndpointAlias(ctx context.Context, alias string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, progress func(string)) (*RequestTokenResult, error) {
+// RequestEnrollmentEndpointAlias asks a configured endpoint to enroll this
+// client's SSH key under an optional display label. progress, when set,
+// receives the client key fingerprint once the request is waiting for
+// operator approval. Nothing is stored on the client: the key is the
+// credential.
+func (a *App) RequestEnrollmentEndpointAlias(ctx context.Context, alias, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, progress func(string)) (*RequestEnrollmentResult, error) {
 	endpoint, err := a.configuredEndpoint(alias)
 	if err != nil {
 		return nil, err
 	}
 	wasConnected := a.eng.IsTunnelConnected()
-	result, err := clientenroll.RequestEndpointToken(
-		ctx,
-		currentDestinationTokenClient{TokenClient: a.eng, app: a, alias: alias, requested: endpoint},
-		a.DataDir,
-		alias,
-		endpoint,
-		hostKeyApproval,
-		progress,
-	)
+	result, err := clientenroll.RequestEndpointEnrollment(ctx, a.eng, alias, endpoint, label, hostKeyApproval, progress)
 	if err != nil {
 		return nil, err
 	}
 
-	requestResult := &RequestTokenResult{
-		TokenPath:        result.TokenPath,
+	requestResult := &RequestEnrollmentResult{
+		Alias:            result.Alias,
+		Fingerprint:      result.Fingerprint,
 		DisconnectedPrev: wasConnected,
-		Summary:          Summary{Message: fmt.Sprintf("Token received and saved to %s", result.TokenPath)},
+		Summary:          Summary{Message: fmt.Sprintf("Client key %s enrolled at endpoint %s", result.Fingerprint, result.Alias)},
 	}
 	requestResult.RenderLines = []string{fmt.Sprintf("✓ %s", requestResult.Summary.Message)}
 	return requestResult, nil
-}
-
-// currentDestinationTokenClient requests a token through the engine and saves
-// it only while the alias still names the destination that issued it.
-type currentDestinationTokenClient struct {
-	clientenroll.TokenClient
-	app       *App
-	alias     string
-	requested config.ClientEndpointConfig
-}
-
-func (c currentDestinationTokenClient) SaveApshellTokenToPath(_, token string) (string, error) {
-	return c.app.saveEndpointTokenIfCurrent(c.alias, c.requested, token)
-}
-
-func (a *App) tokenPathForRequest(tokenPath string) (string, error) {
-	if tokenPath != "" {
-		return tokenPath, nil
-	}
-	return tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
 }
 
 func decorateConnectResult(res *ConnectResult) {

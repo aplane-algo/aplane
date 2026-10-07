@@ -53,7 +53,8 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
-	AuditTokenProvisioned                 AuditEventType = "TOKEN_PROVISIONED"
+	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
+	AuditClientKeyRevoked                 AuditEventType = "CLIENT_KEY_REVOKED"
 	AuditKeyGenerated                     AuditEventType = "KEY_GENERATED"
 	AuditKeyDeleted                       AuditEventType = "KEY_DELETED"
 	AuditKeyImported                      AuditEventType = "KEY_IMPORTED"
@@ -120,6 +121,8 @@ type AuditEntry struct {
 	TermFailed           int            `json:"term_failed,omitempty"`
 	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
 	SuppressedCount      int            `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
+	ClientLabel          string         `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
+	ClosedConnections    int            `json:"closed_connections,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -683,13 +686,26 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	a.Log(entry)
 }
 
-// LogTokenProvisioned logs when a token is provisioned via SSH.
-func (a *AuditLogger) LogTokenProvisioned(sshFingerprint, remoteAddr string) {
+// LogClientEnrolled logs that an operator enrolled a client key over SSH.
+func (a *AuditLogger) LogClientEnrolled(sshFingerprint, label, remoteAddr string) {
 	entry := productPrincipalAuditFields()
-	entry.Event = AuditTokenProvisioned
-	entry.Outcome = "provisioned"
+	entry.Event = AuditClientEnrolled
+	entry.Outcome = "enrolled"
 	entry.RemoteAddr = remoteAddr
 	entry.Reason = sshFingerprint
+	entry.ClientLabel = label
+	a.Log(entry)
+}
+
+// LogClientKeyRevokedContext logs that an admin session revoked an enrolled
+// client key, with the number of live connections that were closed.
+func (a *AuditLogger) LogClientKeyRevokedContext(ctx adminserver.SessionContext, sshFingerprint, label string, closedConnections int) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditClientKeyRevoked
+	entry.Outcome = "revoked"
+	entry.Reason = sshFingerprint
+	entry.ClientLabel = label
+	entry.ClosedConnections = closedConnections
 	a.Log(entry)
 }
 

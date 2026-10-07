@@ -23,22 +23,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
-	util "github.com/aplane-algo/aplane/internal/tokenfile"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
-type recordingUpdater struct {
-	token string
-	calls int
-}
-
 var testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon invest"
 var registerProvidersOnce sync.Once
-
-func (r *recordingUpdater) UpdateToken(token string) {
-	r.token = token
-	r.calls++
-}
 
 func registerProviders() {
 	registerProvidersOnce.Do(func() {
@@ -59,35 +48,6 @@ func setupKeystore(t *testing.T) (utilkeys.Paths, *crypto.Keyring, func()) {
 	return paths, kr, cleanup
 }
 
-func TestRevokeTokenWritesAndUpdatesDependents(t *testing.T) {
-	tmpDir := t.TempDir()
-	paths := utilkeys.NewPaths(tmpDir)
-	paths = genstoretest.MintFirst(t, paths)
-
-	httpUpdater := &recordingUpdater{}
-	sshUpdater := &recordingUpdater{}
-	svc := New(paths, httpUpdater, sshUpdater)
-
-	tokenPath, err := svc.RevokeToken()
-	if err != nil {
-		t.Fatalf("RevokeToken() error = %v", err)
-	}
-
-	tokenOnDisk, err := util.ReadToken(tokenPath)
-	if err != nil {
-		t.Fatalf("ReadToken() error = %v", err)
-	}
-	if tokenOnDisk == "" {
-		t.Fatal("expected non-empty token on disk")
-	}
-	if httpUpdater.calls != 1 || httpUpdater.token != tokenOnDisk {
-		t.Fatalf("http updater = (%d calls, %q), want (1 call, %q)", httpUpdater.calls, httpUpdater.token, tokenOnDisk)
-	}
-	if sshUpdater.calls != 1 || sshUpdater.token != tokenOnDisk {
-		t.Fatalf("ssh updater = (%d calls, %q), want (1 call, %q)", sshUpdater.calls, sshUpdater.token, tokenOnDisk)
-	}
-}
-
 func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := utilkeys.NewPaths(tmpDir)
@@ -101,7 +61,7 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	svc := New(paths, nil, nil)
+	svc := New(paths)
 	result, err := svc.DeleteKey("ADDR", keyPath)
 	if err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
@@ -126,7 +86,7 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New(paths, nil, nil)
+	svc := New(paths)
 	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
@@ -149,7 +109,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New(paths, nil, nil)
+	svc := New(paths)
 	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
@@ -172,7 +132,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	paths, masterKey, cleanup := setupKeystore(t)
 	defer cleanup()
 
-	svc := New(paths, nil, nil)
+	svc := New(paths)
 	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
 	if err != nil {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
@@ -225,7 +185,7 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	svc := New(utilkeys.NewPaths(dir), nil, nil)
+	svc := New(utilkeys.NewPaths(dir))
 	if err := svc.SaveServerSetting(dir, "theme", "dark"); err != nil {
 		t.Fatalf("SaveServerSetting() error = %v", err)
 	}
@@ -245,7 +205,7 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
 	dir := t.TempDir()
 
-	svc := New(utilkeys.NewPaths(dir), nil, nil)
+	svc := New(utilkeys.NewPaths(dir))
 	if err := svc.SaveRuntimeSetting(dir, "user_auto_approve", true); err != nil {
 		t.Fatalf("SaveRuntimeSetting() error = %v", err)
 	}
@@ -291,7 +251,7 @@ func TestDeleteCosignerKeyArchivesItsPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := New(paths, nil, nil).DeleteKey(witnessKeyID, keyPath); err != nil {
+	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
 	if _, err := os.Stat(active.CosignerPolicyPath(witnessKeyID)); !os.IsNotExist(err) {
@@ -326,7 +286,7 @@ func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := New(paths, nil, nil).DeleteKey(witnessKeyID, keyPath); err == nil {
+	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err == nil {
 		t.Fatal("DeleteKey() succeeded past the archive limit")
 	}
 	for _, path := range []string{keyPath, active.CosignerPolicyPath(witnessKeyID)} {

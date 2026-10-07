@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-func (fs *Signer) requestTokenProvisioning(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	return fs.requestTokenProvisioningContext(context.Background(), requestID, sshFingerprint, remoteAddr, timeout)
+func (fs *Signer) requestClientEnrollment(requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
+	return fs.requestClientEnrollmentContext(context.Background(), requestID, sshFingerprint, label, remoteAddr, timeout)
 }
 
-func (fs *Signer) requestTokenProvisioningContext(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+func (fs *Signer) requestClientEnrollmentContext(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
 	ir := fs.runtime
 	if ir == nil {
 		return false, fmt.Errorf("product runtime is not initialized")
 	}
-	return ir.RequestTokenProvisioningContext(ctx, requestID, sshFingerprint, remoteAddr, timeout)
+	return ir.RequestClientEnrollmentContext(ctx, requestID, sshFingerprint, label, remoteAddr, timeout)
 }

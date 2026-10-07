@@ -269,7 +269,6 @@ echo "Running SDK integration tests from $APLANE_SDKS_REPO"
     APLANE_SDK_SIGNER_PORT="$port" \
     APLANE_SDK_SSH_KEY_PATH="$APCLIENT_DATA/.ssh/id_ed25519" \
     APLANE_SDK_KNOWN_HOSTS_PATH="$APCLIENT_DATA/.ssh/known_hosts" \
-    APLANE_SDK_TOKEN_FILE="$APCLIENT_DATA/aplane.token" \
     APSIGNER_DATA="$APSIGNER_DATA" \
     APCLIENT_DATA="$APCLIENT_DATA" \
     make --no-print-directory integration-test

@@ -22,11 +22,8 @@ func TestExtraProductStoreEntryPreventsSignerStartup(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(aliceDir, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Seed selector-bearing artifacts to prove layout validation runs before a
-	// second token or SSH enrollment can become an authentication route.
-	if err := os.WriteFile(filepath.Join(aliceDir, "aplane.token"), []byte("not-a-product-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// Seed a selector-bearing artifact to prove layout validation runs before
+	// a second SSH enrollment registry can become an authentication route.
 	if err := os.WriteFile(filepath.Join(aliceDir, ".ssh", "authorized_keys"), []byte("not-an-ssh-key\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +43,7 @@ func TestExtraProductStoreEntryPreventsSignerStartup(t *testing.T) {
 	}
 
 	client := &http.Client{Timeout: 250 * time.Millisecond}
-	if resp, err := client.Get(signerd.GetURL() + "/health"); err == nil {
+	if resp, err := client.Get(signerd.LoopbackURL() + "/health"); err == nil {
 		_ = resp.Body.Close()
 		t.Fatalf("HTTP route became reachable after rejected startup: status %d", resp.StatusCode)
 	}

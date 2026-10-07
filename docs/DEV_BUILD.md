@@ -252,7 +252,7 @@ bin/apshell
 bin/apshell -d ~/aplane/apclient
 
 # Connect to the configured signer, then list available signing keys
-apshell> request-token
+apshell> request-enrollment
 apshell> connect
 apshell> keys
 

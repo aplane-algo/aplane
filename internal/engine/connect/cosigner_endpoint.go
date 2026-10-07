@@ -22,6 +22,7 @@ var (
 	ErrSSHHostKeyMismatch = sshtunnel.ErrHostKeyMismatch
 	ErrSSHUnknownHostKey  = sshtunnel.ErrUnknownHostKey
 	ErrSSHKnownHostsFile  = sshtunnel.ErrKnownHostsFile
+	ErrSSHKeyNotEnrolled  = sshtunnel.ErrKeyNotEnrolled
 )
 
 // HostKeyApproval is the interactive trust callback accepted by explicit SSH
@@ -34,7 +35,6 @@ type HostKeyApproval = sshtunnel.HostKeyApprovalHandler
 type CosignerSSHConfig struct {
 	Host            string
 	SSHPort         int
-	Token           string
 	IdentityFile    string
 	KnownHostsPath  string
 	ProgressOut     io.Writer
@@ -51,10 +51,6 @@ type cosignerSSHDialer interface {
 // cosigner and returns an HTTP client that opens direct SSH channels to its REST
 // API, plus a cleanup callback.
 func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signerclient.Client, func(), error) {
-	if cfg.Token == "" {
-		return nil, nil, fmt.Errorf("no API token configured")
-	}
-
 	// The caller's context bounds connection setup, but a successful SSH link is
 	// owned by the returned cleanup callback. Discovery callers intentionally
 	// cancel their short per-endpoint probe context after /keys; binding the
@@ -65,7 +61,6 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	if cfg.HostKeyApproval != nil {
 		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	}
-	sshConnection.SetAPIToken(cfg.Token)
 	if err := sshConnection.ConnectWithKey(sshCtx); err != nil {
 		_ = detachSetup()
 		cancelSSH()
@@ -78,7 +73,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	}
 
 	transport := newCosignerSSHHTTPTransport(sshConnection)
-	client := signerclient.NewSignerClientWithToken("http://"+cosignerSSHHTTPAuthority, cfg.Token)
+	client := signerclient.NewSignerClient("http://" + cosignerSSHHTTPAuthority)
 	client.Client = &http.Client{Transport: transport}
 	client.ProgressOut = cfg.ProgressOut
 	var closeOnce sync.Once

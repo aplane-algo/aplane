@@ -87,9 +87,8 @@ func TestRSAClientKeyRefusedBeforeVerification(t *testing.T) {
 		consulted = true
 		return callback(conn, key)
 	}
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(context.Context, string, string) (bool, error) { prompted = true; return false, nil },
-		Issue:          func() (string, error) { return "", nil },
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(context.Context, string, string, string) (bool, error) { prompted = true; return false, nil },
 	})
 	weak, err := rsa.GenerateKey(rand.Reader, 3072)
 	if err != nil {
@@ -100,13 +99,13 @@ func TestRSAClientKeyRefusedBeforeVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = ssh.Dial("tcp", serveConnections(t, srv), &ssh.ClientConfig{
-		User:            tokenRequestSSHUsername,
+		User:            enrollmentSSHUsername,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
 		Timeout:         5 * time.Second,
 	})
 	if err == nil {
-		t.Fatal("request-token accepted an RSA key")
+		t.Fatal("request-enrollment accepted an RSA key")
 	}
 	if consulted || prompted {
 		t.Fatalf("RSA key got past the algorithm allowlist (callback=%v, prompt=%v)", consulted, prompted)

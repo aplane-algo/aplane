@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -138,10 +139,10 @@ func TestEndpointDiscoverCosignersIsReadOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := testCosignerPublicKeyHex()
 	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
-	server := newEndpointKeysServer(t, "cosigner-token", []signerapi.KeyInfo{{
+	server := newEndpointKeysServer(t, []signerapi.KeyInfo{{
 		Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true,
 	}})
-	writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server.URL, "cosigner-token")
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server)
 	before, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
 	if err != nil {
 		t.Fatal(err)
@@ -169,10 +170,10 @@ func TestEndpointDiscoverCosignersRejectsDuplicatePublication(t *testing.T) {
 	publicKey := testCosignerPublicKeyHex()
 	componentKey := testComponentSelector(t, witness.Falcon1024V1, publicKey)
 	keys := []signerapi.KeyInfo{{Address: componentKey, PublicKeyHex: publicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}
-	first := newEndpointKeysServer(t, "token-a", keys)
-	second := newEndpointKeysServer(t, "token-b", keys)
-	writeLiveCosignerEndpoint(t, dataDir, "cosigner-a", first.URL, "token-a")
-	writeLiveCosignerEndpoint(t, dataDir, "cosigner-b", second.URL, "token-b")
+	first := newEndpointKeysServer(t, keys)
+	second := newEndpointKeysServer(t, keys)
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-a", first)
+	writeLiveCosignerEndpoint(t, dataDir, "cosigner-b", second)
 	app := newEndpointTestApp(t, dataDir)
 	_, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 	if err == nil || !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
@@ -182,7 +183,7 @@ func TestEndpointDiscoverCosignersRejectsDuplicatePublication(t *testing.T) {
 
 func TestEndpointDiscoverCosignersReportsUnavailableEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
-	writeLiveCosignerEndpoint(t, dataDir, "cosigner-offline", "http://127.0.0.1:1", "token")
+	writeCosignerEndpointURL(t, dataDir, "cosigner-offline", "ssh://127.0.0.1:1")
 	app := newEndpointTestApp(t, dataDir)
 	result, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 	if err != nil {
@@ -196,20 +197,20 @@ func TestEndpointDiscoverCosignersReportsUnavailableEndpoint(t *testing.T) {
 func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *testing.T) {
 	tests := []struct {
 		name    string
-		server  func(*testing.T) *httptest.Server
+		server  func(*testing.T) *sshtest.Node
 		wantErr string
 	}{
 		{
 			name: "authentication",
-			server: func(t *testing.T) *httptest.Server {
-				return newEndpointKeysStatusServer(t, "different-token", http.StatusUnauthorized, `{"error":"unauthorized"}`)
+			server: func(t *testing.T) *sshtest.Node {
+				return newUnenrolledEndpointKeysServer(t, nil)
 			},
-			wantErr: "authentication",
+			wantErr: "SSH auth failed",
 		},
 		{
 			name: "metadata",
-			server: func(t *testing.T) *httptest.Server {
-				return newEndpointKeysServer(t, "token", []signerapi.KeyInfo{{
+			server: func(t *testing.T) *sshtest.Node {
+				return newEndpointKeysServer(t, []signerapi.KeyInfo{{
 					Address: "INVALID", PublicKeyHex: "zz", KeyType: witness.Falcon1024V1, IsWitnessKey: true,
 				}})
 			},
@@ -220,7 +221,7 @@ func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *t
 		t.Run(tt.name, func(t *testing.T) {
 			dataDir := t.TempDir()
 			server := tt.server(t)
-			writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server.URL, "token")
+			writeLiveCosignerEndpoint(t, dataDir, "cosigner-local", server)
 			app := newEndpointTestApp(t, dataDir)
 			_, err := app.EndpointDiscoverCosigners(t.Context(), EndpointDiscoverCosignersRequest{})
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -368,18 +369,25 @@ func writeEndpointEnvelope(t *testing.T, dir string) string {
 	return path
 }
 
-func writeLiveCosignerEndpoint(t *testing.T, dir, alias, rawURL, token string) {
+// writeLiveCosignerEndpoint stores a cosigner endpoint for an in-process node,
+// with the node's client identity and pinned host key.
+func writeLiveCosignerEndpoint(t *testing.T, dir, alias string, node *sshtest.Node) {
+	t.Helper()
+	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
+		Role: config.ClientEndpointRoleCosigner, URL: node.URL,
+		IdentityFile: node.IdentityFile, KnownHostsPath: node.KnownHostsPath,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeCosignerEndpointURL stores a cosigner endpoint by URL alone, for
+// destinations that are not reachable or not live.
+func writeCosignerEndpointURL(t *testing.T, dir, alias, rawURL string) {
 	t.Helper()
 	if _, err := config.UpsertStoredClientEndpoint(dir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: rawURL,
 	}, true); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "tokens", alias+".token")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -412,22 +420,17 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 	}
 }
 
-func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo) *httptest.Server {
+// newEndpointKeysServer starts an in-process cosigner node advertising keys.
+func newEndpointKeysServer(t *testing.T, keys []signerapi.KeyInfo) *sshtest.Node {
 	t.Helper()
-	return newEndpointRoleKeysServer(t, token, "cosigner", keys)
+	return newEndpointRoleKeysServer(t, "cosigner", keys)
 }
 
-// newEndpointRoleKeysServer serves /status with nodeRole and /keys with keys,
-// and records every bearer token presented to it.
-func newEndpointRoleKeysServer(t *testing.T, token, nodeRole string, keys []signerapi.KeyInfo) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// endpointRoleKeysHandler serves /status with nodeRole and /keys with keys.
+func endpointRoleKeysHandler(nodeRole string, keys []signerapi.KeyInfo) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || (r.URL.Path != "/keys" && r.URL.Path != "/status") {
 			http.NotFound(w, r)
-			return
-		}
-		if got := r.Header.Get("Authorization"); got != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -436,23 +439,56 @@ func newEndpointRoleKeysServer(t *testing.T, token, nodeRole string, keys []sign
 			return
 		}
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
-	}))
+	})
+}
+
+// newEndpointRoleKeysServer starts an in-process node of the given role
+// advertising keys, with the test client's key enrolled.
+func newEndpointRoleKeysServer(t *testing.T, nodeRole string, keys []signerapi.KeyInfo) *sshtest.Node {
+	t.Helper()
+	return sshtest.Serve(t, endpointRoleKeysHandler(nodeRole, keys))
+}
+
+// newUnenrolledEndpointKeysServer starts a cosigner node that refuses the
+// test client's key and rejects its enrollment request, so every connection
+// fails authentication.
+func newUnenrolledEndpointKeysServer(t *testing.T, keys []signerapi.KeyInfo) *sshtest.Node {
+	t.Helper()
+	return sshtest.ServeWithOptions(t, endpointRoleKeysHandler("cosigner", keys), sshtest.Options{
+		Unenrolled: true,
+		Approve:    func(string, string) bool { return false },
+	})
+}
+
+func endpointStatusHandler(status int, body string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	})
+}
+
+// newEndpointKeysServerHTTP serves keys over loopback HTTP for a signer
+// client pointed at it directly.
+func newEndpointKeysServerHTTP(t *testing.T, keys []signerapi.KeyInfo) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(endpointRoleKeysHandler("signer", keys))
 	t.Cleanup(server.Close)
 	return server
 }
 
-func newEndpointKeysStatusServer(t *testing.T, token string, status int, body string) *httptest.Server {
+// newEndpointKeysStatusServer serves one fixed status and body over loopback
+// HTTP, for a signer client that is pointed at it directly.
+func newEndpointKeysStatusServer(t *testing.T, status int, body string) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
-	}))
+	server := httptest.NewServer(endpointStatusHandler(status, body))
 	t.Cleanup(server.Close)
 	return server
+}
+
+// newEndpointKeysStatusNode fronts the same fixed response with an SSH node.
+func newEndpointKeysStatusNode(t *testing.T, status int, body string) *sshtest.Node {
+	t.Helper()
+	return sshtest.Serve(t, endpointStatusHandler(status, body))
 }
 
 func TestEndpointChangeReportsFailedConfigReload(t *testing.T) {

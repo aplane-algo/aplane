@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
-	util "github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 func writeTestNodeRole(t *testing.T, root string, role noderole.Role) {
@@ -77,9 +76,6 @@ func TestBuildProductRuntimeAppliesStoredConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := productruntime.SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := util.LoadAPlaneToken(root); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,9 +140,6 @@ func TestBuildProductRuntimeRejectsStoredMode(t *testing.T) {
 	if err := productruntime.SaveStoredSetting(root, "mode", "cosigner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := util.LoadAPlaneToken(root); err != nil {
-		t.Fatal(err)
-	}
 
 	_, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               root,
@@ -189,9 +182,6 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_ProductStorePassfile(t *test
 	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := util.LoadAPlaneToken(root); err != nil {
-		t.Fatal(err)
-	}
 
 	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               root,
@@ -229,9 +219,6 @@ func TestBuildProductRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T)
 	if err := productruntime.SaveStoredSetting(root, "passphrase_timeout", "10m"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := util.LoadAPlaneToken(root); err != nil {
-		t.Fatal(err)
-	}
 
 	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               root,
@@ -260,10 +247,6 @@ func TestBuildProductRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 	cfg := serverconfig.DefaultServerConfig()
 	hub := &recordingAdminHub{}
 	writeTestNodeRole(t, root, noderole.RoleSigner)
-
-	if _, err := util.LoadAPlaneToken(root); err != nil {
-		t.Fatal(err)
-	}
 
 	ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
 		DataDir:               root,

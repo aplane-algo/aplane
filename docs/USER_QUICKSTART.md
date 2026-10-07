@@ -67,25 +67,26 @@ Falcon-1024 post-quantum key.
 In APlane terminology, a "key" is a file managed by the signer that contains all information 
 (private key material, LogicSig and parameters, etc.) necessary to sign for an account.
 
-## 5. Get an access token
+## 5. Enroll the client
 
-The first time you connect with a client, it needs to obtain an access token
-from the signer daemon. This is a human-approved process done via the signer admin.
+The first time you connect with a client, the signer must enroll the client's
+SSH key. This is a human-approved process done via the signer admin.
 
 In the shell pane, run:
 
 ```
-request-token
+request-enrollment
 ```
 You will see an approval prompt in the signer admin pane. Navigate to it with F1 or <Shift>-LeftArrow and accept it. 
 
 ![Quickstart screenshot 2](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs2.png)
 
-Approval results in the shell being given an access token by the signer.
+Approval enrolls the client's SSH key at the signer; the key is the client's
+only credential.
 
 ## 6. Confirm or reconnect
 
-After the token is delivered, the shell will auto-connect to the signer. If for some reason it does not, retry from apshell:
+After the key is enrolled, the shell will auto-connect to the signer. If for some reason it does not, retry from apshell:
 
 ```
 connect

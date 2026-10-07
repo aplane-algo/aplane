@@ -34,8 +34,7 @@ type cosignerSetupProjection struct {
 	URL            string                          `json:"url"`
 	Created        bool                            `json:"created,omitempty"`
 	Updated        bool                            `json:"updated,omitempty"`
-	TokenIssued    bool                            `json:"token_issued,omitempty"`
-	TokenRetired   bool                            `json:"token_retired,omitempty"`
+	Enrolled       bool                            `json:"enrolled,omitempty"`
 	Connected      bool                            `json:"connected,omitempty"`
 	NodeRole       string                          `json:"node_role,omitempty"`
 	AdvertisedKeys int                             `json:"advertised_keys,omitempty"`
@@ -153,7 +152,7 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.app().CompleteCosignerSetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printCosignerProvisioningWait)
+	result, err := r.app().CompleteCosignerSetup(r.commandContext(), plan, endpoint, buildHostKeyApproval(r), r.printCosignerEnrollmentWait)
 	if err != nil {
 		if result != nil {
 			for _, line := range result.RenderLines {
@@ -174,8 +173,8 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 		})
 	}, cosignerSetupProjection{
 		Alias: result.Alias, URL: result.URL,
-		Created: result.Created, Updated: result.Updated, TokenIssued: result.TokenIssued,
-		TokenRetired: result.TokenRetired, Connected: result.Connected, NodeRole: result.NodeRole,
+		Created: result.Created, Updated: result.Updated, Enrolled: result.Enrolled,
+		Connected: result.Connected, NodeRole: result.NodeRole,
 		AdvertisedKeys: result.AdvertisedKeys, Routes: result.Routes, DryRun: result.DryRun,
 	})
 }
@@ -189,11 +188,8 @@ func cosignerSetupCompletedEffects(plan apshellapp.CosignerSetupPlan, result *ap
 	} else if plan.Updated {
 		completed = "connection updated"
 	}
-	if result != nil && result.TokenRetired {
-		completed += ", earlier stored token removed"
-	}
-	if result != nil && result.TokenIssued {
-		completed += " and access token saved"
+	if result != nil && result.Enrolled {
+		completed += " and this client's key was enrolled at the cosigner"
 	}
 	return completed
 }
@@ -296,24 +292,18 @@ func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan)
 	r.printf("  endpoint: %s\n", plan.Endpoint.URL)
 	if plan.Created {
 		r.println("  endpoint change: create")
-		if plan.RetiresToken {
-			r.println("  access token: a token file left over under this name predates the connection and will be removed")
-		}
 	} else if plan.Updated {
 		r.println("  endpoint change: replace")
 		if plan.ExistingEndpoint != nil {
 			r.printf("  previous endpoint: %s\n", plan.ExistingEndpoint.URL)
-		}
-		if plan.RetiresToken {
-			r.println("  access token: the stored token was issued by the previous destination and will be removed")
 		}
 	} else {
 		r.println("  endpoint change: none")
 	}
 }
 
-func (r *REPLState) printCosignerProvisioningWait(clientFingerprint string) {
-	r.progressPrintln("Waiting for approval. In apadmin on the cosigner, open the Client Access Request")
+func (r *REPLState) printCosignerEnrollmentWait(clientFingerprint string) {
+	r.progressPrintln("Waiting for approval. In apadmin on the cosigner, open the Client Enrollment Request")
 	r.progressPrintln("and compare its full fingerprint with this one before approving:")
 	r.progressPrintln("  " + clientFingerprint)
 	r.progressPrintln("Leave this shell open while the cosigner operator approves or rejects the request.")

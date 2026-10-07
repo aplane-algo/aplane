@@ -60,8 +60,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 
 	cases := []struct {
 		name     string
@@ -130,7 +129,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 					t.Logf("cleanup: AdminDeleteKey(%s) failed: %v", got, cErr)
 				}
 			})
-			if !waitForKey(t, signerd.GetURL(), token, got, 10*time.Second) {
+			if !waitForKey(t, signerd.GetURL(), got, 10*time.Second) {
 				t.Fatalf("signer did not reload derived key %s", got)
 			}
 

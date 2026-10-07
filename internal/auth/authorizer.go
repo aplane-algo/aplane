@@ -53,8 +53,9 @@ const (
 	ActionPolicyUpdate               Action = "policy.update"
 	ActionSettingsView               Action = "settings.view"
 	ActionSettingsUpdate             Action = "settings.update"
-	ActionTokenProvision             Action = "token.provision"
-	ActionTokenRevoke                Action = "token.revoke"
+	ActionClientsView                Action = "clients.view"
+	ActionClientsEnroll              Action = "clients.enroll"
+	ActionClientsRevoke              Action = "clients.revoke"
 	ActionHealthGet                  Action = "health.get"
 
 	ActionSign      = ActionSignRequest
@@ -94,8 +95,9 @@ var knownActions = map[Action]struct{}{
 	ActionPolicyUpdate:               {},
 	ActionSettingsView:               {},
 	ActionSettingsUpdate:             {},
-	ActionTokenProvision:             {},
-	ActionTokenRevoke:                {},
+	ActionClientsView:                {},
+	ActionClientsEnroll:              {},
+	ActionClientsRevoke:              {},
 	ActionHealthGet:                  {},
 }
 

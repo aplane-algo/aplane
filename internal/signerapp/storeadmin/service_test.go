@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -205,8 +204,6 @@ func TestPassphraseCommandConfigFromUnlock(t *testing.T) {
 
 func testIdentityRuntime() *productruntime.Runtime {
 	return productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ApprovalWait:  serverconfig.DefaultApprovalWait,
+		ApprovalWait: serverconfig.DefaultApprovalWait,
 	})
 }

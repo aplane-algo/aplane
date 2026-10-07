@@ -23,13 +23,31 @@ func (s *Session) SendError(requestID, code, errMsg string) error {
 	return s.WriteJSON(ProtocolErrorMessage(requestID, code, errMsg))
 }
 
-func (s *Session) handleRevokeToken(msg *protocol.RevokeTokenMessage) {
-	if !s.authorize(msg.ID, auth.ActionTokenRevoke, auth.Resource{Type: "token"}) {
+func (s *Session) HandleListEnrolledKeys(msg *protocol.ListEnrolledKeysMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsView, auth.Resource{Type: "clients"}) {
 		return
 	}
-	err := s.productServices.RevokeProductToken()
+	_ = s.WriteJSON(ProtocolEnrolledKeysListMessage(msg.ID, s.productServices.EnrolledKeys()))
+}
 
-	_ = s.WriteJSON(ProtocolRevokeTokenResultMessage(msg.ID, err))
+func (s *Session) HandleRevokeEnrolledKey(msg *protocol.RevokeEnrolledKeyMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsRevoke, auth.Resource{Type: "client", ID: msg.Fingerprint}) {
+		return
+	}
+	if msg.Fingerprint == "" {
+		_ = s.WriteJSON(ProtocolRevokeEnrolledKeyResultMessage(msg.ID, 0, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("fingerprint is required"))))
+		return
+	}
+	closed, err := s.productServices.RevokeEnrolledKey(s.SessionContext(), msg.Fingerprint)
+	_ = s.WriteJSON(ProtocolRevokeEnrolledKeyResultMessage(msg.ID, closed, err))
+}
+
+func (s *Session) HandleRevokeAllEnrolledKeys(msg *protocol.RevokeAllEnrolledKeysMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsRevoke, auth.Resource{Type: "clients"}) {
+		return
+	}
+	revoked, closed, err := s.productServices.RevokeAllEnrolledKeys(s.SessionContext())
+	_ = s.WriteJSON(ProtocolRevokeAllEnrolledKeysResultMessage(msg.ID, revoked, closed, err))
 }
 
 func (s *Session) HandleGetAdminSettings(requestID string) {
@@ -369,10 +387,6 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 		audit.LogDeletedArchivePruneContext(s.SessionContext(), msg.ID, result)
 	}
 	_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, result))
-}
-
-func (s *Session) HandleRevokeToken(msg *protocol.RevokeTokenMessage) {
-	s.handleRevokeToken(msg)
 }
 
 func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
@@ -940,12 +954,12 @@ func (s *Session) HandleSignResponse(msg *protocol.SignResponseMessage) {
 	}
 }
 
-func (s *Session) HandleTokenProvisioningResponse(msg *protocol.TokenProvisioningResponseMessage) {
+func (s *Session) HandleClientEnrollmentResponse(msg *protocol.ClientEnrollmentResponseMessage) {
 	if ir := s.BoundRuntime(); ir != nil {
-		if !s.authorize(msg.ID, auth.ActionTokenProvision, auth.Resource{Type: "token_provisioning", ID: msg.ID}) {
+		if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client_enrollment", ID: msg.ID}) {
 			return
 		}
-		ir.HandleTokenProvisioningApprovalResponse(&signerapproval.TokenProvisioningResponse{
+		ir.HandleClientEnrollmentApprovalResponse(&signerapproval.ClientEnrollmentResponse{
 			ID:       msg.ID,
 			Approved: msg.Approved,
 			Reason:   msg.Reason,

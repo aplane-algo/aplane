@@ -20,7 +20,6 @@ endpoint:
     listen_address: 127.0.0.1
     port: 1127
     host_key_path: .ssh/ssh_host_key
-    authorized_keys_path: .ssh/authorized_keys
 
 # IPC socket for admin interface (apadmin, apapprover)
 # Uses default: $APSIGNER_DATA/aplane.sock

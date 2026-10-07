@@ -7,7 +7,6 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,14 +178,7 @@ func assertStoreUninitialized(t *testing.T, env *storeEnv) {
 
 func storeClient(t *testing.T, env *storeEnv) *signerclient.Client {
 	t.Helper()
-	token, err := os.ReadFile(filepath.Join(env.dataDir, "identities", "default", "aplane.token"))
-	if err != nil {
-		t.Fatalf("read signer token: %v", err)
-	}
-	return signerclient.NewSignerClientWithToken(
-		fmt.Sprintf("http://127.0.0.1:%d", env.port),
-		strings.TrimSpace(string(token)),
-	)
+	return signerclient.NewSignerClient(env.url())
 }
 
 func mustGenerateEd25519(t *testing.T, env *storeEnv) string {

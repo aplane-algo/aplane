@@ -27,7 +27,6 @@ import (
 // Client is an HTTP client for the Signer signing service.
 type Client struct {
 	BaseURL     string
-	Token       string // Bearer token for authentication
 	Client      *http.Client
 	Ctx         context.Context // If set, used for HTTP requests (enables cancellation)
 	ProgressOut io.Writer       // Progress/status output. Defaults to os.Stdout when nil.
@@ -100,18 +99,14 @@ const (
 	maxDiscoveredApprovalWait = 30 * time.Minute
 )
 
-// NewSignerClientWithToken creates a new Signer client with authentication token.
-func NewSignerClientWithToken(baseURL, token string) *Client {
+// NewSignerClient creates a Signer client for baseURL. Requests carry no
+// credential: the connection they travel on, an SSH channel authenticated by
+// the client's enrolled key, identifies the caller.
+func NewSignerClient(baseURL string) *Client {
 	return &Client{
 		BaseURL: baseURL,
-		Token:   token,
 		Client:  &http.Client{},
 	}
-}
-
-// SetToken sets the authentication token.
-func (c *Client) SetToken(token string) {
-	c.Token = token
 }
 
 // SetContext sets the fallback request context used when a call does not pass
@@ -137,16 +132,13 @@ func (c *Client) Context() context.Context {
 	return c.Ctx
 }
 
-// doRequest performs an HTTP request with authentication.
-// Explicit ctx takes precedence; otherwise c.Ctx is used when set.
+// doRequest performs an HTTP request. Explicit ctx takes precedence;
+// otherwise c.Ctx is used when set.
 func (c *Client) doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
 	if ctx != nil {
 		req = req.WithContext(ctx)
 	} else if clientCtx := c.Context(); clientCtx != nil {
 		req = req.WithContext(clientCtx)
-	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "aplane "+c.Token)
 	}
 	return c.Client.Do(req)
 }

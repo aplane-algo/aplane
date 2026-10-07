@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -27,10 +26,8 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 		t.Fatalf("RemoveAll(selected generation) error = %v", err)
 	}
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      keystore.NewAtomicFileKeyStoreForPaths(paths),
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("token"),
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyPaths: paths,
 	})
 	service := signerAdminServices{product: ir}
 

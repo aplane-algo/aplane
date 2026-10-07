@@ -61,9 +61,9 @@ func TestCanceledSigningRequestReturnsToScreenUnderneath(t *testing.T) {
 func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) {
 	m := approvalTestModel(ViewImportParams)
 	id := m.beginOperation(ViewImporting)
-	m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 	m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("authorization denied")})
-	if m.viewState != ViewTokenProvisioningPopup {
+	if m.viewState != ViewClientEnrollmentPopup {
 		t.Fatalf("error replaced the enrollment popup: view %v", m.viewState)
 	}
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
@@ -75,12 +75,12 @@ func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) 
 func TestSecondApprovalShowsAfterFirstIsAnswered(t *testing.T) {
 	m := approvalTestModel(ViewKeyDetails)
 	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
-	m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 	if m.viewState != ViewSigningPopup {
 		t.Fatalf("view %v, want the signing popup kept in front", m.viewState)
 	}
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if m.viewState != ViewTokenProvisioningPopup {
+	if m.viewState != ViewClientEnrollmentPopup {
 		t.Fatalf("after answering the signing request: view %v, want the enrollment popup", m.viewState)
 	}
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
@@ -101,9 +101,9 @@ func TestSessionEndAndLockDropPendingApprovals(t *testing.T) {
 	} {
 		m := approvalTestModel(ViewKeyList)
 		m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
-		m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
+		m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 		m = updateModel(t, m, msg)
-		if m.signing.request != nil || m.tokenApproval.request != nil || isApprovalView(m.viewState) {
+		if m.signing.request != nil || m.enrollmentApproval.request != nil || isApprovalView(m.viewState) {
 			t.Errorf("%s left an approval pending: view %v", name, m.viewState)
 		}
 	}
@@ -148,13 +148,13 @@ func TestUnrelatedErrorKeepsOperationInProgress(t *testing.T) {
 // closes and the operator returns to the screen underneath.
 func TestWithdrawnClientAccessRequestClosesItsPopup(t *testing.T) {
 	m := approvalTestModel(ViewKeyDetails)
-	m = updateModel(t, m, TokenProvisioningRequestReceivedMsg{Request: PendingTokenRequest{ID: "token-1"}})
-	m = updateModel(t, m, TokenProvisioningCanceledMsg{ID: "other", Reason: "preempted"})
-	if m.viewState != ViewTokenProvisioningPopup || m.tokenApproval.request == nil {
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
+	m = updateModel(t, m, ClientEnrollmentCanceledMsg{ID: "other", Reason: "preempted"})
+	if m.viewState != ViewClientEnrollmentPopup || m.enrollmentApproval.request == nil {
 		t.Fatalf("withdrawal for another request closed the popup: view %v", m.viewState)
 	}
-	m = updateModel(t, m, TokenProvisioningCanceledMsg{ID: "token-1", Reason: "preempted"})
-	if m.tokenApproval.request != nil || m.viewState != ViewKeyDetails {
-		t.Fatalf("after withdrawal: view %v, request %+v; want key details and no pending request", m.viewState, m.tokenApproval.request)
+	m = updateModel(t, m, ClientEnrollmentCanceledMsg{ID: "token-1", Reason: "preempted"})
+	if m.enrollmentApproval.request != nil || m.viewState != ViewKeyDetails {
+		t.Fatalf("after withdrawal: view %v, request %+v; want key details and no pending request", m.viewState, m.enrollmentApproval.request)
 	}
 }

@@ -56,13 +56,15 @@ endpoints:
     url: ssh://signer.example.com:1127
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 ```
 
 Note: endpoint SSH paths are relative to the data directory (installer default:
 `~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when
-needed. SSH authentication uses an enrolled public key plus a programmatic,
-host-key-bound proof of the API token; the token is not sent as the SSH username.
+needed. The client's enrolled SSH key is its only credential: the node
+authenticates the key at the SSH handshake and hands the tunneled API
+connection to its REST handler with that identity attached. There is no API
+token and no HTTP authentication header. Older `token_file`, `signer_port`,
+and `local_port` keys are ignored on load and dropped by the next write.
 APlane does not read or write the operating-system user's personal SSH
 directory; client keys and host trust are isolated under `$APCLIENT_DATA/.ssh/`.
 
@@ -162,13 +164,12 @@ endpoints:
     url: ssh://signer.example.com:1127
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 EOF
 
-# Request token from signer (requires operator approval)
+# Enroll this client's SSH key at the signer (requires operator approval)
 ./apshell
-> request-token
-# After approval, apshell saves the token and immediately tries to connect.
+> request-enrollment
+# After approval, apshell immediately tries to connect.
 
 # Or use custom directory
 ./apshell -d /custom/path
@@ -190,7 +191,7 @@ export APCLIENT_DATA=/custom/path
 
 The `connect` command with no arguments connects to the default signer. In the
 normal endpoint-registry setup, it reads the default signer from
-`endpoints.yaml` and that endpoint's configured token file:
+`endpoints.yaml` and that endpoint's SSH identity and known-hosts files:
 
 ```bash
 connect
@@ -215,7 +216,7 @@ apadmin -d "$APSIGNER_DATA" endpoint export \
 # client side, inside apshell
 endpoints import --alias main --role signer signer.endpoint.json
 endpoints show main
-request-token --endpoint main
+request-enrollment --endpoint main
 connect main
 ```
 
@@ -225,7 +226,7 @@ when the operator already knows the client-reachable URL:
 ```bash
 endpoints create --alias local-cosigner \
   --endpoint ssh://cosigner.example.com:1127
-request-token --endpoint local-cosigner
+request-enrollment --endpoint local-cosigner
 endpoints discover-cosigners
 ```
 
@@ -258,9 +259,10 @@ header derives a local URL from `endpoint.ssh.listen_address` and
 host's detected primary outbound IPv4 address when available, with `127.0.0.1`
 as the fallback.
 
-Importing an endpoint creates routing/configuration only. It does not copy API
-tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
-with `request-token --endpoint <alias>`. Re-import with the same alias replaces
+Importing an endpoint creates routing/configuration only. It does not copy SSH
+host trust, private keys, or passphrases, and it does not enroll the client's
+key at the node; that is still done with `request-enrollment --endpoint <alias>`
+(or automatically by `endpoints add`). Re-import with the same alias replaces
 that alias's endpoint data.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
@@ -272,7 +274,6 @@ endpoints:
   main:
     role: signer
     url: ssh://signer.example.com:1127
-    token_file: aplane.token
 ```
 
 Then:
@@ -280,7 +281,7 @@ Then:
 ```bash
 connect                 # default endpoint
 connect main
-request-token --endpoint main
+request-enrollment --endpoint main
 ```
 
 Useful local commands:
@@ -294,9 +295,9 @@ endpoints default main
 endpoints delete old-signer
 ```
 
-Token enrollment is endpoint-only. Import or configure a signer endpoint
-before running `request-token`; create or import a cosigner endpoint before
-running `request-token --endpoint <alias>`.
+Enrollment is endpoint-only. Import or configure a signer endpoint before
+running `request-enrollment`; create or import a cosigner endpoint before
+running `request-enrollment --endpoint <alias>`.
 
 ---
 
@@ -460,7 +461,7 @@ apadmin uses local Unix socket IPC at `ipc_path`:
 - cannot be snooped with tcpdump (no network stack)
 - local apadmin and apapprover connect via this socket
 
-`apadmin` does not read `APCLIENT_DATA`, endpoint registries, or client tokens.
+`apadmin` does not read `APCLIENT_DATA`, endpoint registries, or client SSH identities.
 For remote administration, SSH into the signer machine and run it there:
 
 ```bash
@@ -501,7 +502,6 @@ endpoint:
     listen_address: 127.0.0.1
     port: 1127
     host_key_path: .ssh/ssh_host_key
-    authorized_keys_path: .ssh/authorized_keys
   advertise_url: ssh://signer.example.com:1127
 passphrase_timeout: "15m"
 lock_on_disconnect: true
@@ -914,78 +914,69 @@ user_auto_approve: true
 
 ## Authentication
 
-Signer uses one product token for authenticating API requests from apshell and the Python SDK.
+A client authenticates with its SSH key and nothing else. There is no API
+token, no `Authorization` header, and no credential file to copy.
 
 ### How It Works
 
-1. **Token generation**: `apstore initialize` creates a cryptographically secure 256-bit random token for the product
-2. **Token storage**: Saved to `identities/default/aplane.token`, alongside the keys it grants access to
-3. **Token provisioning**: Clients request tokens via SSH (requires operator approval in apadmin)
-4. **Request authentication**: Clients send the token via `Authorization: aplane <token>` HTTP header
-5. **Validation**: apsigner validates using constant-time comparison (prevents timing attacks)
+1. **Enrollment**: the client runs `request-enrollment`; the signer operator
+   approves the client's SSH key fingerprint in `apadmin` (or `apapprover`)
+2. **Registry**: the signer records the key in
+   `identities/default/.ssh/authorized_keys`, which the daemon owns; do not
+   hand-edit it
+3. **Connection**: `connect` opens an SSH tunnel authenticated by that key.
+   The signer's SSH server verifies the key, then hands each tunneled API
+   channel to its REST handler with the client identity (`client:<SHA256
+   fingerprint>`) attached
+4. **Loopback**: the daemon's loopback REST port carries no identity and
+   answers only `GET /health`
 
-apadmin authenticates over local IPC independently of client API tokens.
+apadmin authenticates over local IPC independently of client keys.
 
-### Token File
+### Enrollment
+
+```bash
+# In apshell - asks the signer to enroll this client's key, operator approves in apadmin
+> request-enrollment
+
+# For a named endpoint in endpoints.yaml (signer or cosigner)
+> request-enrollment --endpoint main
+
+# With a display label shown in the apadmin client list
+> request-enrollment --label laptop
+```
+
+The command creates the client SSH key if it is missing and performs first-use
+host trust interactively. The operator sees the client's full SSH fingerprint
+in apadmin and compares it with the fingerprint apshell prints before
+approving. After approval, interactive `apshell` immediately attempts to
+establish the signer SSH tunnel when that endpoint is the default signer.
+Enrolling a key that is already enrolled changes nothing.
+
+Guided cosigner setup (`endpoints add`) enrolls automatically: when the
+cosigner refuses the client's key, apshell requests enrollment, waits for the
+cosigner operator's approval, and retries.
+
+### Client Keys
 
 | Property | Value |
 |----------|-------|
-| Filename | `aplane.token` |
-| Format | 64-character hex string (256 bits) |
-| Permissions | `0600` (owner read/write only) |
+| Private key | `$APCLIENT_DATA/.ssh/id_ed25519` (mode `0600`) |
+| Accepted types | Ed25519, ECDSA (P-256/384/521), hardware-backed `sk-` Ed25519/ECDSA |
+| Host trust | `$APCLIENT_DATA/.ssh/known_hosts` |
 
-### Token Provisioning (Recommended)
+### Revocation
 
-Use the `request-token` command to obtain a token securely via SSH:
+The operator opens **Enrolled Clients** from the apadmin Admin panel (press
+`c`). It lists each enrolled key's fingerprint, label, key type, and whether it
+is connected, and offers **revoke key** and **revoke all keys**. Revoking a key:
 
-```bash
-# In apshell - requests token via SSH, operator approves in apadmin
-> request-token
+1. Removes it from the registry
+2. Closes that client's live SSH connections immediately
+3. Requires the client to run `request-enrollment` again (operator approval required)
 
-# For a named endpoint in endpoints.yaml
-> request-token --endpoint main
-
-# In Python SDK
-from aplanesdk import request_token_to_file
-request_token_to_file()  # reads APCLIENT_DATA from environment
-```
-
-The operator sees the client's SSH fingerprint in apadmin and can verify identity before approving.
-
-### Manual Token Setup (Alternative)
-
-If the client's SSH key is already in `authorized_keys` (e.g. added manually by the operator), you can copy the token directly:
-
-```bash
-# 1. Add the APlane client's public key to authorized_keys
-mkdir -p $APSIGNER_DATA/identities/default/.ssh
-cat $APCLIENT_DATA/.ssh/id_ed25519.pub >> $APSIGNER_DATA/identities/default/.ssh/authorized_keys
-
-# 2. Copy token from signer to client
-cp $APSIGNER_DATA/identities/default/aplane.token $APCLIENT_DATA/
-```
-
-Copy the token **after** the client endpoint exists (`endpoints import` or
-`endpoints create`). Creating an endpoint, or changing its destination, removes
-any token file already at that endpoint's token path, because such a file was
-issued for an earlier endpoint. Copy it to the endpoint's `token_file`, shown
-by `endpoints show <alias>`.
-
-> **Note:** The `request-token` flow is preferred — it handles both key enrollment and token delivery in a single operator-approved step.
-After approval, interactive `apshell` writes the token to the selected endpoint's
-configured token file and immediately attempts to establish the signer SSH tunnel
-when that endpoint is the default signer.
-
-### Token Revocation
-
-The operator can revoke the current token from the apadmin Admin panel by
-pressing `t`. This:
-
-1. Generates a new random token and writes it to disk
-2. Disconnects all connected clients immediately
-3. Requires clients to run `request-token` again to obtain the new token (operator approval required)
-
-Use this when a token may be compromised or to rotate credentials.
+Use **revoke all keys** as the emergency lever when a client machine may be
+compromised.
 
 ### Endpoints
 
@@ -1003,12 +994,17 @@ Use this when a token may be compromised or to rotate credentials.
 | `DELETE /admin/keys` | Required |
 | `GET /health` | Not required (public health check) |
 
+"Required" means the request must arrive over an SSH tunnel authenticated by
+an enrolled client key.
+
 ### Security Notes
 
-- The token acts as a pre-shared secret between apshell and apsigner
-- For remote connections, the token travels through the SSH tunnel (encrypted)
-- Keep `aplane.token` secure with `chmod 600`
-- Revoke and regenerate via the `t` shortcut on the apadmin Admin panel (preferred), or by deleting the file and restarting apsigner
+- The client's private key never leaves the client; the signer holds only its
+  public key
+- All API traffic travels through the SSH tunnel (encrypted and authenticated)
+- Keep `.ssh/id_ed25519` secure with `chmod 600`
+- Revoke a lost or compromised client key from the apadmin **Enrolled
+  Clients** panel
 
 ---
 
@@ -1036,7 +1032,7 @@ Headless operation allows Signer to run unattended without interactive prompts, 
 
 In normal (interactive) operation:
 1. Signer starts locked and waits for passphrase via apadmin
-2. By default, signing and token-provisioning requests require manual approval via apadmin or apapprover
+2. By default, signing and client enrollment requests require manual approval via apadmin or apapprover
 3. In default prompt mode, apadmin can disconnect after local keyboard inactivity
 4. When apadmin disconnects, the signer locks
 

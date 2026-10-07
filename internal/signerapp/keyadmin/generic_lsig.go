@@ -86,7 +86,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 	if err != nil {
 		return "", err
 	}
-	mut := storemut.New(activeKeyPaths, nil, nil)
+	mut := storemut.New(activeKeyPaths)
 	signingArgs := signingargs.FromRuntimeDefs(template.RuntimeArgs())
 	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(template, false)
 	if err != nil {

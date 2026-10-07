@@ -160,21 +160,25 @@ Server to Client:
 - `deactivate_key_type_result`
 - `key_types`
 
-### Signing Approval and Tokens
+### Signing Approval and Client Enrollment
 
 Client to Server:
 
 - `sign_response`
-- `token_provisioning_response`
-- `revoke_token`
+- `client_enrollment_response`
+- `list_enrolled_keys`
+- `revoke_enrolled_key`
+- `revoke_all_enrolled_keys`
 
 Server to Client:
 
 - `sign_request`
 - `sign_request_canceled`
-- `token_provisioning_request`
-- `token_provisioning_request_canceled`
-- `revoke_token_result`
+- `client_enrollment_request`
+- `client_enrollment_request_canceled`
+- `enrolled_keys_list`
+- `revoke_enrolled_key_result`
+- `revoke_all_enrolled_keys_result`
 
 ### Backup and Restore
 
@@ -334,15 +338,17 @@ checks and locked/unlocked/recovery-state interlocks.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
 - `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `cosigner_component_key_type` so `apadmin` can filter enrolled public cosigner references for guarded-account generation without changing the public HTTP/SDK DTO
 
-### Signing Approval and Tokens
+### Signing Approval and Client Enrollment
 
 - `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
-- `token_provisioning_request`: `ssh_fingerprint`, `remote_addr`, `timestamp`
-- `token_provisioning_response`: `approved`, optional `reason`
-- `token_provisioning_request_canceled`: `reason`; server-originated notification that a delivered `token_provisioning_request` was withdrawn. The only reason is `preempted`: a signing request is waiting, and signing has priority over client access. The coordinator sends it before releasing the delivery turn, so it precedes the next `sign_request`. Admin clients must close the matching prompt and must not send a later `token_provisioning_response` for it; the SSH client is told to retry.
-- `revoke_token` / `revoke_token_result`: `success`, optional `code`, `error`
+- `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`request-enrollment` username, `enroll [<label>]` command) to have its key enrolled. The label is the client's requested display text, bounded and printable, and carries no authority.
+- `client_enrollment_response`: `approved`, optional `reason`; an approval enrolls the key in `identities/default/.ssh/authorized_keys` and acknowledges the client with `enrolled <fingerprint>`; no credential is issued, because the client's key is its credential. The server-side handling attaches the admin session's approver principal to the `CLIENT_ENROLLED` audit entry.
+- `client_enrollment_request_canceled`: `reason`; server-originated notification that a delivered `client_enrollment_request` was withdrawn. The only reason is `preempted`: a signing request is waiting, and signing has priority over enrollment. The coordinator sends it before releasing the delivery turn, so it precedes the next `sign_request`. Admin clients must close the matching prompt and must not send a later `client_enrollment_response` for it; the SSH client is told to retry.
+- `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection)
+- `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
+- `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
 
 ### Backup and Restore
 

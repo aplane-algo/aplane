@@ -94,7 +94,7 @@ type shellStartupConnectMsg struct {
 }
 
 // shellProgressLineMsg is a live status line emitted by a blocking command
-// (e.g. request-token) that would otherwise be trapped in the captured output
+// (e.g. request-enrollment) that would otherwise be trapped in the captured output
 // buffer until the command returns.
 type shellProgressLineMsg struct {
 	text string
@@ -888,7 +888,7 @@ func protectShellWrapBreaks(line, nonBreakingHyphen, nonBreakingSpace string) st
 }
 
 const (
-	apconsoleMissingTokenNotice    = "No aplane token found. Run 'request-token' to obtain token from the signer."
+	apconsoleMissingTokenNotice    = "This client's SSH key is not enrolled at the signer. Run 'request-enrollment' and approve it in the admin pane."
 	apconsoleMissingTokenPinkColor = "205"
 )
 

@@ -29,8 +29,8 @@ configuration and state:
 - plugin execution context,
 - SDK config behavior.
 
-This network context token is unrelated to the product API bearer token used
-for HTTP authentication and SSH mutual proof. SSH authentication
+This network context token is a configuration key, not a credential: client
+authentication is the enrolled SSH key. SSH authentication
 completes before transaction network context is evaluated and does not bind a
 connection to one network token.
 

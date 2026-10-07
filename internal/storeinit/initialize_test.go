@@ -4,6 +4,7 @@
 package storeinit
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig"
 )
 
-func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
+func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 	lsig.RegisterClient()
 
 	dataDir := t.TempDir()
@@ -64,8 +65,9 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if err := genstore.ValidateCurrent(active); err != nil {
 		t.Fatalf("initial generation failed validation: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "aplane.token")); err != nil {
-		t.Fatalf("token stat error = %v", err)
+	// The client's SSH key is its credential: no token is minted.
+	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "aplane.token")); !os.IsNotExist(err) {
+		t.Fatalf("token stat error = %v, want no token file", err)
 	}
 	if doc, _, err := policy.LoadVerifiedSignerPolicy(active, kr); err != nil || string(doc.Bytes) != string(policy.InitialSignerPolicy) {
 		t.Fatalf("signer policy baseline = %q, %v", doc.Bytes, err)
@@ -135,21 +137,21 @@ func TestInitializeCreatesExplicitCosignerNodeRole(t *testing.T) {
 	}
 }
 
+// A failure after the node role is written but before the store root is
+// committed (here, the first generation's candidate is rejected) removes the
+// node role again, so the directory is not left half-initialized.
 func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
-	identityDir := paths.ProductDir()
-	if err := os.MkdirAll(filepath.Join(identityDir, "aplane.token"), 0o700); err != nil {
-		t.Fatalf("MkdirAll(aplane.token dir) error = %v", err)
-	}
 
-	_, err := Initialize([]byte("init-passphrase"), Options{ValidateCandidate: acceptCandidate,
-		DataDir: dataDir,
-		Paths:   paths,
-		Role:    noderole.RoleCosigner,
+	_, err := Initialize([]byte("init-passphrase"), Options{
+		ValidateCandidate: func(FirstGenerationCandidate) error { return errors.New("candidate rejected by test") },
+		DataDir:           dataDir,
+		Paths:             paths,
+		Role:              noderole.RoleCosigner,
 	})
-	if err == nil || !strings.Contains(err.Error(), "failed to generate API token") {
-		t.Fatalf("Initialize() error = %v, want token failure", err)
+	if err == nil || !strings.Contains(err.Error(), "candidate rejected by test") {
+		t.Fatalf("Initialize() error = %v, want candidate rejection", err)
 	}
 	if _, statErr := os.Stat(paths.NodeRolePath()); !os.IsNotExist(statErr) {
 		t.Fatalf("node role stat error = %v, want removed node.yaml after failed initialize", statErr)
@@ -186,11 +188,8 @@ func TestHasPartialState(t *testing.T) {
 	if err := os.MkdirAll(identityDir, 0o770); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(identityDir, "aplane.token"), []byte("token"), 0o600); err != nil {
-		t.Fatalf("WriteFile(aplane.token) error = %v", err)
-	}
 	if HasPartialState(paths) {
-		t.Fatal("token-only identity dir should not be partial")
+		t.Fatal("empty identity dir should not be partial")
 	}
 	if err := os.WriteFile(filepath.Join(identityDir, "orphan.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)

@@ -91,7 +91,6 @@ var guardedAllowedImports = map[string]bool{
 	modulePrefix + "/internal/cosigner/canonical": true,
 	modulePrefix + "/internal/signerclient":       true,
 	modulePrefix + "/internal/signing":            true,
-	modulePrefix + "/internal/tokenfile":          true,
 	modulePrefix + "/internal/txnutil":            true,
 	modulePrefix + "/internal/witness":            true,
 	modulePrefix + "/pkg/signerapi":               true,

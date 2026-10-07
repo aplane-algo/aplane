@@ -21,16 +21,15 @@ import (
 type ApshellHarness struct {
 	t          *testing.T
 	workDir    string
-	signerURL  string
 	binaryPath string
 	clientData string
 	envVars    []string
 	timeout    time.Duration
 }
 
-// NewApshellHarness creates a new apshell CLI test harness
-// signerWorkDir should be the signer's work directory to copy the token from
-func NewApshellHarness(t *testing.T, signerURL string) *ApshellHarness {
+// NewApshellHarness creates a new apshell CLI test harness. apshell reaches
+// the signer through the endpoint registry and SSH identity in APCLIENT_DATA.
+func NewApshellHarness(t *testing.T) *ApshellHarness {
 	// Create a unique work directory for this test
 	workDir := filepath.Join(t.TempDir(), "apshell-test")
 	if err := os.MkdirAll(workDir, 0755); err != nil {
@@ -46,7 +45,6 @@ func NewApshellHarness(t *testing.T, signerURL string) *ApshellHarness {
 	return &ApshellHarness{
 		t:          t,
 		workDir:    workDir,
-		signerURL:  signerURL,
 		clientData: os.Getenv("APCLIENT_DATA"),
 		envVars:    []string{},
 		timeout:    30 * time.Second,
@@ -76,24 +74,6 @@ func (a *ApshellHarness) Build() error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to build apshell: %w\nOutput: %s", err, output)
-	}
-
-	return nil
-}
-
-// CopyTokenFrom copies aplane.token from the signer data directory.
-// Token is located at: <signerWorkDir>/identities/default/aplane.token
-func (a *ApshellHarness) CopyTokenFrom(signerWorkDir string) error {
-	srcPath := filepath.Join(signerWorkDir, "identities", "default", "aplane.token")
-	dstPath := filepath.Join(a.workDir, "aplane.token")
-
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("failed to read token from signer (%s): %w", srcPath, err)
-	}
-
-	if err := os.WriteFile(dstPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write token: %w", err)
 	}
 
 	return nil

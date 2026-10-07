@@ -9,10 +9,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"net/http"
-	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,13 +160,13 @@ func TestCosignerSetupRefreshesREPLConfigBeforeVerificationFailure(t *testing.T)
 	}
 
 	_, err = state.cmdCosigner([]string{
-		"add", "http://127.0.0.1:1", "--alias", "field",
+		"add", "ssh://127.0.0.1:1", "--alias", "field",
 	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
-		t.Fatalf("cmdCosigner() error = %v, want missing direct-endpoint token error", err)
+	if err == nil {
+		t.Fatal("cmdCosigner() error = nil, want the unreachable node's verification failure")
 	}
 	endpoint, ok := state.App.Config.Endpoints.Endpoint("field")
-	if !ok || endpoint.URL != "http://127.0.0.1:1" {
+	if !ok || endpoint.URL != "ssh://127.0.0.1:1" {
 		t.Fatalf("REPL endpoint after partial setup = %#v/%v, want persisted field endpoint", endpoint, ok)
 	}
 	if appEndpoint, appOK := state.App.Config.Endpoints.Endpoint("field"); !appOK || appEndpoint != endpoint {
@@ -252,13 +251,9 @@ func newEndpointsAddTestState(t *testing.T, dataDir string, out *bytes.Buffer) *
 }
 
 // newCLICosignerNode serves the node role and key inventory guided setup reads.
-func newCLICosignerNode(t *testing.T, token string, reference witness.PublicReference) *httptest.Server {
+func newCLICosignerNode(t *testing.T, reference witness.PublicReference) *sshtest.Node {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "aplane "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	return sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/status":
@@ -272,22 +267,26 @@ func newCLICosignerNode(t *testing.T, token string, reference witness.PublicRefe
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(server.Close)
-	return server
 }
 
-func writeCLICosignerConnection(t *testing.T, dataDir, alias, rawURL, token string) {
+// writeCLICosignerConnection stores a cosigner connection to an in-process
+// node, with the node's client identity and pinned host key.
+func writeCLICosignerConnection(t *testing.T, dataDir, alias string, node *sshtest.Node) {
+	t.Helper()
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
+		Role: config.ClientEndpointRoleCosigner, URL: node.URL,
+		IdentityFile: node.IdentityFile, KnownHostsPath: node.KnownHostsPath,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeCLICosignerConnectionURL stores a cosigner connection by URL alone.
+func writeCLICosignerConnectionURL(t *testing.T, dataDir, alias, rawURL string) {
 	t.Helper()
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, alias, config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: rawURL,
 	}, true); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dataDir, "tokens", alias+".token")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -296,8 +295,8 @@ func writeCLICosignerConnection(t *testing.T, dataDir, alias, rawURL, token stri
 // again for the same address reuses the connection without a name or a prompt.
 func TestEndpointsAddReusesExistingConnectionWithoutAlias(t *testing.T) {
 	dataDir := t.TempDir()
-	server := newCLICosignerNode(t, "token", testCLIWitnessReference(t))
-	writeCLICosignerConnection(t, dataDir, "treasury", server.URL, "token")
+	server := newCLICosignerNode(t, testCLIWitnessReference(t))
+	writeCLICosignerConnection(t, dataDir, "treasury", server)
 	endpointsPath := config.GetClientEndpointsPath(dataDir)
 	before, err := os.ReadFile(endpointsPath)
 	if err != nil {
@@ -345,7 +344,7 @@ func TestEndpointsAddScriptRequiresAliasForNewConnection(t *testing.T) {
 
 func TestEndpointsAddRefusesSecondNameForConfiguredCosigner(t *testing.T) {
 	dataDir := t.TempDir()
-	writeCLICosignerConnection(t, dataDir, "treasury", "ssh://cosigner.example:1127", "token")
+	writeCLICosignerConnectionURL(t, dataDir, "treasury", "ssh://cosigner.example:1127")
 	state := newEndpointsAddTestState(t, dataDir, &bytes.Buffer{})
 	_, err := state.cmdEndpoints([]string{"add", "--endpoint", "ssh://cosigner.example:1127", "--alias", "second"}, nil)
 	if !errors.Is(err, apshellapp.ErrCosignerEndpointAlreadyConfigured) || !strings.Contains(err.Error(), "--alias treasury") {

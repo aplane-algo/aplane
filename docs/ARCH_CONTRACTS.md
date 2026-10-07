@@ -18,7 +18,7 @@
 - [apshell Parsing Contracts](#apshell-parsing-contracts)
 - [Configuration Contracts](#configuration-contracts)
 - [On-Disk Formats](#on-disk-formats)
-- [Authentication, SSH, and Token Provisioning](#authentication-ssh-and-token-provisioning)
+- [Authentication, SSH, and Client Enrollment](#authentication-ssh-and-client-enrollment)
 - [Approval and Policy Contracts](#approval-and-policy-contracts)
 - [Runtime Ownership and Shutdown](#runtime-ownership-and-shutdown)
 - [Key Watching and Reload](#key-watching-and-reload)
@@ -40,15 +40,16 @@ roots are `identities/default/` and `backups/default/`; `default` is the fixed
 directory name, not an authorization principal or request value.
 
 Startup performs a no-follow check of direct `identities/` entries before it
-loads tokens, keys, policy, or watchers. A directory, ordinary file, hidden
+loads the client registry, keys, policy, or watchers. A directory, ordinary file, hidden
 entry, or symlink with any name other than `default` is rejected. An existing
 `default` entry must be a real directory and not a symlink. A missing
 `identities/` tree or missing `default` uses the explicit blank-store
 initialization behavior.
 
-HTTP authentication verifies the product token and produces
-`system:product-admin`; it cannot choose a runtime. Normal SSH usernames must be
-exactly `aplane`, and token enrollment must be exactly `request-token`.
+HTTP authentication resolves the enrolled client key that authenticated the
+request's SSH connection and produces `client:<fingerprint>`; it cannot choose
+a runtime. Normal SSH usernames must be exactly `aplane`, and client enrollment
+must be exactly `request-enrollment`.
 Product HTTP, admin, CLI, SDK, and audit surfaces expose no runtime selector.
 
 Internal storage APIs also expose no product-store selector:
@@ -643,7 +644,8 @@ IPC failure semantics:
 | Key management | yes | partial | no | no |
 | Managed backup/restore | yes | no | no | no |
 | Signing approval | yes | no | yes | no |
-| Token provisioning approval | yes | no | yes | no |
+| Client enrollment approval | yes | no | yes | no |
+| Enrolled-client list and revocation | yes | no | no | no |
 | Admin settings | yes | no | no | no |
 | Async notifications | yes | limited | limited | no |
 
@@ -974,10 +976,9 @@ execution, output decoding, environment filtering, and validation.
       policies/<WitnessKeyID>.json       # cosigner nodes: one v1 document per key
       policies/<WitnessKeyID>.json.hmac
     quarantine/generations/<gen-id>/ # non-authoritative abandoned publications
-    aplane.token
     config.yaml
     unlock.yaml
-    .ssh/authorized_keys
+    .ssh/authorized_keys    # enrolled client keys; daemon-written registry
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     cosigners/<name>.json
@@ -1034,7 +1035,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- `ssh.authorized_keys_path` remains a validated/resolved server setting for the underlying SSH server wiring, but product auth and token enrollment use `identities/default/.ssh/authorized_keys`
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. An enrolling client is answered with an error rather than `enrolled` in that state, so it retries and is acknowledged only once the registry is durable. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -1045,9 +1046,6 @@ Additional signer-state notes:
   endpoints.yaml
   .mcp.json
   .codex/config.toml
-  aplane.token
-  tokens/
-    <endpoint-alias>.token
   .apclient.lock
   .ssh/id_ed25519
   .ssh/known_hosts
@@ -1090,24 +1088,23 @@ Additional client-state notes:
 - `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the client-local endpoint registry. It requires `schema_version: 2`; any other or missing version is rejected. It has a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
 - if client `config.yaml` contains top-level `ssh:` or `signer_port:` routing, client startup fails closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
-- endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]`, loopback `http://...`, or `https://...`), `identity_file`, `known_hosts_path`, and `token_file`. There is no remote REST port field: an `ssh://` node's SSH server accepts only loopback channel destinations and forwards every channel to its own REST listener, so the client never chooses that port. There is no local tunnel port field either; the signer-role forward binds a free loopback port at connect time. The retired `signer_port` and `local_port` keys are ignored on load and dropped on the next write. Relative file paths resolve against `APCLIENT_DATA`. The special URL `self` is rejected for every role; same-host signer and cosigner processes use explicit endpoints. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
-- endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
+- endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]` only; `http://`, `https://`, and `self` are rejected, because a node is reachable only through its SSH server), `identity_file`, and `known_hosts_path`. There is no remote REST port field: the node's SSH server accepts only loopback channel destinations and forwards every channel to its own REST listener, so the client never chooses that port. There is no local tunnel port field either; the signer-role forward binds a free loopback port at connect time. There is no credential field: the client's enrolled SSH key at `identity_file` is its only credential. The retired `signer_port`, `local_port`, and `token_file` keys are dropped on load and gone after the next write. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
 - cosigner keys are not persisted in endpoint records. Each guarded or bounded-cosigner operation queries authenticated `/keys` on every configured cosigner endpoint and builds an operation-scoped route snapshot. SSH cosigner endpoints carry HTTP over restricted direct channels on their authenticated SSH connection and never allocate a transient local port. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
-- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with the schema and the portable endpoint URL only; the retired `signer_port` and `local_port` members are rejected as unknown fields. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
-- `apshell endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `cosigner` alias for dev co-location. Import is not an ownership or trust proof and does not discover cosigner keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow. Creating an alias, or replacing one with a different destination, retires any token file already at its path.
-- `apshell endpoints create --alias <alias> --endpoint <url> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, copy tokens, or establish SSH host trust.
+- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with the schema and the portable endpoint URL only; the retired `signer_port` and `local_port` members are rejected as unknown fields. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, credentials, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
+- `apshell endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `cosigner` alias for dev co-location. Import is not an ownership or trust proof and does not discover cosigner keys. Enrollment of this client's key at that node is still requested separately with `request-enrollment --endpoint <alias>` (or by guided setup), and SSH host trust is still established by the existing known-hosts flow.
+- `apshell endpoints create --alias <alias> --endpoint <url> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, enroll the client, or establish SSH host trust.
 - `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
-- `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, provisions tokens, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
-- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and token enrollment only after releasing that lock. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `token_issued`, `token_retired`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and token request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, token requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
-- an endpoint token is presented only to the destination that issued it, where a destination is the endpoint URL. When `endpoints add`, `endpoints import`, or `endpoints create` creates an alias or moves one to another destination, any token file at the alias's path is removed and its directory synced before the new route is written, under the same lock; the result reports the retirement. The sync runs even when the file is already absent, so a retry after a failed sync is still durable. `endpoints delete` retires the alias's token before removing the route. A token file that another alias also resolves to is never retired: creating or re-pointing the alias is refused, and deleting it leaves the file, comparing paths after resolution against the client data directory. A manually supplied token must therefore be installed after its endpoint exists. A token issued by `request-token` or guided setup is saved only if, re-read under the lock, the alias still exists, names the same destination, and uses the same token file; otherwise it is discarded with an explanation. Hand edits to `endpoints.yaml` are outside these rules.
-- endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits and token persistence occur outside endpoint-write critical sections; token persistence acquires the same non-reentrant client lock independently and revalidates the alias's destination before writing.
+- `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, requests enrollment, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
+- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it requests enrollment there, waits for the operator's approval, and tries once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
+- an endpoint record carries no per-destination credential, so creating, re-pointing, or deleting an alias retires nothing on the client. The enrollment a node recorded for this client's key outlives the client's route to it; revoking it is the node operator's action.
+- endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits occur outside endpoint-write critical sections.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
-- interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
-- for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
-- `request-token` enrolls only configured endpoints: without arguments it uses the default signer endpoint; `request-token --endpoint <alias>` uses that signer or cosigner endpoint. The removed positional host form is not accepted. After successful enrollment, `apshell` saves the selected endpoint's token and only auto-connects when that endpoint is the default signer.
-- `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted `known_hosts`)
-- `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
+- interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start with a key the signer has not enrolled or without a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands. Whether a key is enrolled is known only to the node; an unenrolled key is discovered as an authentication failure at connect time, with guidance to run `request-enrollment`
+- for interactive `apshell`, SSH host trust is enforced when the shell attempts `connect`, startup auto-connect, or `request-enrollment` flows; it is not a preflight requirement for process startup
+- `request-enrollment [--endpoint <alias>] [--label <text>]` enrolls this client's key at configured endpoints only: without `--endpoint` it uses the default signer endpoint; `--endpoint <alias>` uses that signer or cosigner endpoint. A positional host is not accepted. The optional label is display text the node stores beside the key. Nothing is written on the client; after a successful enrollment at the default signer, `apshell` connects with the enrolled key
+- `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured and its host is trusted in `known_hosts`
+- `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected state or with a key the signer refuses, and it cannot perform first-use trust or enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
 - an explicit `-d` or explicitly selected profile `signer_data` is also an
   explicit signer-store selection for IPC discovery and cannot be retargeted
@@ -1123,10 +1120,10 @@ Additional client-state notes:
   daemon's lifecycle
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
-- local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
+- local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-enrollment` while the local signer/admin panes are available for approval
 - local-mode cosigner `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; cosigner policy changes use the `apadmin policy` verbs
-- the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, token provisioning, and endpoint configuration
-- for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
+- the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, enrollment, and endpoint configuration
+- for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup; enrollment is discovered at connect time, when the embedded shell attempts startup auto-connect, `connect`, or `request-enrollment`
 - remote-mode `apconsole` is rejected; run apconsole on the signer machine, using an ordinary SSH login when needed
 - `apadmin` uses local IPC only and has no client enrollment prerequisite. For remote administration, SSH into the signer host and run apadmin there.
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`
@@ -1846,9 +1843,9 @@ LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
-During SSH token provisioning, apshell displays the complete SHA256 fingerprint
+During enrollment, apshell displays the complete SHA256 fingerprint
 of the key that signed SSH authentication, including agent-selected keys.
-The admin access request already carries that fingerprint; this adds no wire
+The admin enrollment request already carries that fingerprint; this adds no wire
 field. It identifies the requesting client key, not an individual request,
 the server host key, or a Witness Key ID.
 
@@ -1871,7 +1868,7 @@ The daemon returns the document over the admin protocol; the operator process
 validates it, re-serializes it canonically (`witness.MarshalPublicReference`:
 the field order above, two-space indentation, one trailing newline), and
 writes it locally with owner-private permissions. The file carries no
-endpoint, reference alias, endpoint alias or role, token, SSH identity,
+endpoint, reference alias, endpoint alias or role, client credential, SSH identity,
 `known_hosts` entry, cached live inventory, private witness material, policy,
 or proof of endpoint ownership. The cosigner's address is not a file contract
 at all: the operator reads it from the export result screen (the configured
@@ -2101,13 +2098,14 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
-- `TOKEN_PROVISIONED`
+- `CLIENT_ENROLLED`
+- `CLIENT_KEY_REVOKED`
 
 Signing-audit semantics:
 
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
-- signing audit over HTTP records `transport:"http"` and the token-authenticated principal as requester
+- signing audit over HTTP records `transport:"http"` and the connection's `client:<fingerprint>` principal as requester
 - cosigner-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
   Witness Key ID, `txn_sender` is the decoded target sender, and
@@ -2152,122 +2150,104 @@ Store-management audit semantics:
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
 - `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
+- `CLIENT_ENROLLED` is emitted as soon as an operator-approved enrollment has been written to the registry, whether or not the acknowledgement reaches the client (the key is usable from that write on); it carries the key fingerprint, the `client_label`, the remote address, and the approver principal
+- `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count, and admin session attribution
 
-## Authentication, SSH, and Token Provisioning
+## Authentication, SSH, and Client Enrollment
 
-HTTP auth uses `Authorization: aplane <token>`.
-
-Client and signer token files are bearer credentials. Token reads reject
-group/world-accessible `aplane.token` files and report a `chmod 600`
-remediation; token writes create owner-only files.
+The client's enrolled SSH key is its only credential. There is no API token,
+no `Authorization` header, and no credential file on either side: an HTTP
+request is authenticated by the SSH connection it arrived on.
 
 SSH server uses Ed25519 host keys, auto-generated at `.ssh/ssh_host_key`.
 
-Authentication requires both factors in one handshake:
+Normal clients send the fixed non-secret username `aplane` and authenticate by
+public key. The key must be enrolled in `identities/default/.ssh/authorized_keys`
+(see the registry contract under the signer data layout). Enrollment is checked
+in the public-key callback and again, against the installed registry, after the
+handshake completes, so a key revoked while its handshake was in flight is
+refused. The server accepts only Ed25519, ECDSA (P-256/384/521), and
+hardware-backed `sk-` keys; the public-key algorithm list refuses other key
+types before any signature is verified.
 
-- public key enrolled for the product in `identities/default/.ssh/authorized_keys`
-- mutual proof of the product API token
+An `aplane` connection may open only `direct-tcpip` channels to loopback
+destinations; session channels are refused. Each accepted channel is handed off
+in-process to the HTTP server as an `sshtunnel.APIConn` carrying the connection's
+key fingerprint, which the HTTP server attaches to the connection context as
+`auth.ConnIdentity`. The product authenticator maps that fingerprint, if it is
+still enrolled, to the principal `client:<fingerprint>` with role `client`.
+Nothing in a request can supply or override the connection identity. The
+loopback TCP listener on `endpoint.signer_port` attaches no identity: it answers
+`/health` and returns `401` with `Authentication required: connect through an
+enrolled SSH key` for every other route. Unauthenticated responses carry
+`Connection: close` so a client that cannot authenticate cannot hold a
+connection slot with keep-alive requests.
 
-Normal clients send the fixed non-secret username `aplane`. After SSH
-verifies possession of an enrolled public key, the server returns partial
-success and requires keyboard-interactive authentication. That exchange is
-programmatic and has two rounds:
-
-1. server asks `{"version":1,"step":"client_nonce"}` and the client returns a fresh 32-byte nonce as unpadded base64url
-2. server returns a fresh 32-byte nonce and its proof; the client verifies that proof before returning its own proof
-
-The v1 proof transcript is the concatenation of five uint32-big-endian
-length-prefixed fields: `aplane-ssh-token-proof-v1`, the fixed normal-auth SSH
-username `aplane`, SHA-256 of the canonical accepted SSH host-key blob, client
-nonce, and server nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
-followed by the length-prefixed transcript. Proofs are HMAC-SHA256 keyed by the
-raw token. JSON messages reject unknown or duplicate fields, non-canonical
-base64url, wrong sizes, and trailing data. The shared conformance vector is
-`test/contracts/sshtunnel/token_proof_v1.json`.
-
-Because the transcript encoding is compatibility-bearing, any post-v1 field,
-ordering, or encoding change requires a new protocol domain/version.
-
-The server computes both role proofs under one token-authenticator read lock
-and records that token generation on the authenticated connection. Clients
-must verify that the server proof round completed even when the SSH library
-reports authentication success; this rejects a wrongly trusted endpoint that
-accepts the public key and skips token proof. The token itself is never sent in
-the SSH username, metadata, challenge, or response.
-
-That no-raw-token property applies to normal SSH authentication. The approved
-`request-token` exception intentionally delivers the token over its constrained,
-encrypted SSH provisioning channel. After normal authentication, HTTP requests
-continue to carry `Authorization: aplane <token>` over loopback and the
-authenticated SSH connection; the token remains a bearer credential at the HTTP
-boundary.
-
-Each authentication attempt generates fresh 32-byte client and server nonces
-from a cryptographically secure random source. Nonces and proof state must not
-be reused across attempts or reconnects. Clients discard proof-only state after
-the authentication attempt succeeds or fails; garbage-collected runtimes provide
-best-effort reference release rather than guaranteed memory zeroization. The
-client retains its separate bearer-token state for subsequent HTTP requests.
-
-`ssh.authorized_keys_path` is part of the server config surface; product SSH
-authorization and enrollment are sourced from
-`identities/default/.ssh/authorized_keys`.
-
-Unavailable or invalid client token proofs incur a 5-second delay, interrupted
-by server shutdown. The SSH server allows at most 64 concurrent pending
-handshakes and closes excess arrivals. Authentication has a 60-second socket
-deadline, cleared after successful authentication. Accepted sockets are tracked
-before authentication so shutdown also closes stalled handshakes. The limit
-applies to pending authentication, not established sessions or subsequent
-operator approval for token provisioning.
+The SSH server allows at most 64 concurrent pending handshakes and closes
+excess arrivals; one remote address may hold at most 8 of them. Authentication
+has a 60-second socket deadline, cleared after successful authentication.
+Accepted sockets are tracked before authentication so shutdown also closes
+stalled handshakes. The limit applies to pending authentication, not
+established sessions or subsequent operator approval for enrollment.
 
 Client TCP dialing and SSH authentication share one setup timeout (60 seconds
 by default). Setup cancellation closes the socket to interrupt blocked I/O.
 Successful connections detach from that setup timeout; their established
-connection lifecycle and provisioning approval waits remain separately owned.
+connection lifecycle and enrollment approval waits remain separately owned.
 The setup timeout also covers interactive first-use host-key approval, giving
 the operator time to compare the displayed fingerprint.
 
-Token provisioning flow:
+Client enrollment flow:
 
-1. client connects as `request-token`
+1. client connects as `request-enrollment` with any supported key
 2. server rejects every other username before SSH auth succeeds
-3. key-only SSH auth succeeds for the product
-4. the `provision` exec request is accepted on that authenticated connection
-5. server verifies the product admin client is connected
-6. admin approves via TUI
-7. server enrolls the public key
-8. server generates or loads token
-9. token is sent over SSH exec channel
-10. audit log is written after confirmed delivery
+3. the exec request `enroll` or `enroll <label>` is accepted on that
+   connection; the label is at most 64 bytes of printable single-line text,
+   and any other command is answered `ERROR: unknown command` with exit 1
+4. server verifies the product admin client is connected
+   (`no operator (apadmin) connected to approve the enrollment request`, exit 1,
+   otherwise)
+5. admin approves via `client_enrollment_request` / `client_enrollment_response`
+   (`ERROR: enrollment rejected by operator`, exit 1, on rejection)
+6. server adds the public key and label to the registry under the publication
+   rule (`ERROR: failed to enroll SSH key`, exit 1, if the write fails)
+7. `CLIENT_ENROLLED` is audited: the registry now holds the key, so the
+   authority change is recorded whether or not the client hears the reply.
+   If the write took effect but is not yet durable, the reply is instead
+   `ERROR: enrollment recorded but not yet durable; retry the request`,
+   exit 1; the retry is acknowledged once the registry is durable and is not
+   audited again
+8. server replies `enrolled <fingerprint>` with exit 0; the client checks the
+   fingerprint against the key it authenticated with. A client that is gone
+   by then stays enrolled; the missed acknowledgement is only logged
 
-The callbacks are separated as approval, key enrollment, issuance, then audit.
+The callbacks are separated as approval, key enrollment, audit, then
+acknowledgement. No credential is issued at any step: the enrolled key is the credential.
+Enrolling a key that is already enrolled asks the operator like any request,
+changes nothing in the registry, and acknowledges normally.
 
-Product-facing clients request tokens with the fixed `request-token` username.
+Product-facing clients request enrollment with the fixed `request-enrollment`
+username. Limits: one enrollment request per connection, one pending request
+server-wide, at most 8 enrollment connections and 2 session channels per
+connection, a 30-second deadline to start the request, and a 10-second deadline
+for the client to accept the response.
 
-Token revocation behavior:
+Revocation behavior (`revoke_enrolled_key`, `revoke_all_enrolled_keys`):
 
-- rotate the product token file and in-memory authenticator,
-- record the new token generation,
-- send `token-revoked@aplane` to active SSH connections authenticated with an older generation,
-- close every stale product connection.
+- rewrite the registry without the key under the publication rule,
+- send `key-revoked@aplane` to every SSH connection that key authenticated,
+  then close those connections and report the count,
+- refuse the key's next handshake.
 
-`sshtunnel.Server.UpdateToken()` is the global updater. Signer
-product revocation uses `CloseProductConnections(minTokenGeneration, reason)`.
-If SSH authentication races token rotation, authentication may complete
-against the old token, but connection tracking closes the stale connection after the authenticator is
-updated.
+`sshtunnel.Server.CloseConnectionsForFingerprint(fingerprint, reason)` and
+`CloseAllClientConnections(reason)` close connections by key. If SSH
+authentication races a revocation, the post-handshake re-check against the
+installed registry refuses the connection.
 
-SSH server callbacks are startup-only. Token validation, key checking,
-key enrollment, token provisioning, operator checks, session notifications,
-and admin channel callbacks must be configured
-before `Start`; setters fail fast after the server has started.
-
-Token provisioning reads the product's existing token. It never
-creates or rotates a token at request time: store initialization owns token
-creation, and the authenticated revocation flow owns rotation. If the token
-file is absent or unreadable, provisioning fails after key enrollment instead
-of returning a credential that differs from the running authenticator.
+SSH server callbacks are startup-only. Key checking, key enrollment,
+operator checks, enrollment approval and audit, session notifications, and the
+API channel handoff must be configured before `Start`; setters fail fast after
+the server has started.
 
 ## Approval and Policy Contracts
 
@@ -2676,7 +2656,7 @@ Blocked commands in `execute`:
 - `help` (use `mcp_reference`)
 - `config` (use the safe `status` command)
 - `script`
-- `request-token`
+- `request-enrollment`
 - `clear`
 - `quit`, including aliases `exit` and `q`
 - `keyreg` paste mode
@@ -2805,7 +2785,7 @@ The sealed manifest plaintext uses schema
 `aplane.credential-backup.manifest.v1`, schema version 1. It records the
 source node role, packaging time, and the complete member inventory
 (`path`, `sha256`, `size`). Backups carry no signer policy, approval defaults,
-genesis-hash mappings, templates, endpoints, tokens, SSH enrollment, or other
+genesis-hash mappings, templates, endpoints, client enrollment, or other
 operator configuration. The manifest is encrypted under the export passphrase.
 Knowing that passphrase authenticates the archive as produced or endorsed by a
 passphrase holder; it is not independent origin authentication.
@@ -2965,7 +2945,7 @@ SDK-facing typed errors in Go include:
 
 ## SDK Contracts
 
-All SDKs communicate via the same HTTP REST API as `apshell`. Auth header is `Authorization: aplane <token>`.
+All SDKs communicate via the same HTTP REST API as `apshell`, through an SSH tunnel authenticated with the client's enrolled SSH key; requests carry no auth header. The SDKs are being updated to this model in a separate change.
 
 Cross-SDK compatibility-bearing behavior:
 
@@ -3044,9 +3024,9 @@ Cross-SDK compatibility-bearing behavior:
 
 Go SDK specifics:
 
-- `ConnectSSH(host, token, sshKeyPath, opts)` establishes SSH tunnel then HTTP
-- `FromEnv(opts)` resolves config/token from client data dir and requires signer endpoint routing
-- `NewSignerClientWithToken(baseURL, token)` supports caller-owned transport and direct client construction
+- `ConnectSSH(host, sshKeyPath, opts)` establishes the SSH tunnel with the client key, then HTTP (signature as updated in the SDK repository)
+- `FromEnv(opts)` resolves the client SSH identity and signer endpoint routing from the client data dir
+- `NewSignerClient(baseURL)` supports caller-owned transport and direct client construction
 - `SetHTTPClient(client)` overrides the HTTP transport for advanced callers.
   If caller-owned transport sets a global timeout shorter than the effective
   signing approval wait, the SDK cannot extend that deadline.
