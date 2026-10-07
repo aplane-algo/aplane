@@ -70,11 +70,11 @@ args = ["--mcp", "-d", "/path/to/my_aplane/apclient"]
 ```
 
 Each server instance uses its own data directory (`-d` flag), which determines
-the config, caches, token, plugin catalog, and plugin activation config.
+the config, caches, SSH identity, plugin catalog, and plugin activation config.
 
 ## Startup Sequence
 
-1. Run the shared `clientenroll.LoadEnrolledClient` preflight: a default signer endpoint, that endpoint's token file, and a trusted signer host in the endpoint `known_hosts_path` are required, with MCP-specific hints. Failure exits non-zero before any other startup work.
+1. Run the shared `clientenroll.LoadEnrolledClient` preflight: a default signer endpoint and a trusted signer host in the endpoint `known_hosts_path` are required, with MCP-specific hints. Whether the client's key is enrolled is known only to the signer, so an unenrolled key fails the startup connection instead. Failure exits non-zero before any other startup work.
 2. Create `REPLState` with initialized runtime state and app facade.
 3. Set `AutoConfirm: true` (non-interactive) and redirect REPL/app output to `os.Stderr`.
 4. Save the real stdout for MCP transport, then redirect `os.Stdout` to `os.Stderr` so stray prints do not corrupt the JSON-RPC stream.
@@ -128,7 +128,7 @@ JSON is rejected.
 | `help` | Use `mcp_reference` instead |
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
-| `request-token` | Token request requires interactive approval |
+| `request-enrollment` | Client enrollment requires interactive approval |
 | `cosigner` | Guided cosigner setup requires interactive trust/replacement decisions or a trusted-host script session |
 | `clear` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |

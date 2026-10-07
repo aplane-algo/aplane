@@ -31,10 +31,9 @@ Signer and cosigner endpoint routing lives here, not in `config.yaml`.
 | `schema_version` | int | `2` | Endpoint registry schema version |
 | `default` | string | `(operator-chosen)` | Default signer endpoint alias |
 | `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `cosigner` |
-| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, or `https://...` |
-| `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |
+| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]` |
+| `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path (the enrolled client key), resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |
-| `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |
 
 ## apsigner Configuration
 
@@ -50,7 +49,6 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `endpoint.ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |
 | `endpoint.ssh.port` | int | `1127` | SSH port to listen on |
 | `endpoint.ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
-| `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Process-global authorized client public keys file |
 | `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
 | `ipc_path` | string | `systemd: /run/apsigner/aplane.sock; same-UID: $APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC; systemd custom paths must be outside signer data in a service-owned protected runtime directory |

@@ -181,7 +181,7 @@ an otherwise successful verification.
 
 It does **not** include:
 - the store's `store-root.enc` root and `.keystore` marker
-- the live signer token
+- the enrolled client key registry
 - any unlocked runtime state
 - policy, approval defaults, network/genesis mappings, templates, or key-type state
 - algod URLs, algod tokens, endpoints, or other network credentials
@@ -234,10 +234,6 @@ This creates the product `store-root.enc` under `identities/default/`, containin
 Opening the root is itself the passphrase check, so there is no separate
 verifier. It also writes the `.keystore` format marker, which records only the
 version and layout.
-
-It also creates the product `aplane.token` under `identities/default/` if one does not already
-exist. Normal clients should use the operator-approved `request-token`
-flow to receive a client-side copy of that token.
 
 On a signer node, `apstore initialize` also creates the initial signed policy
 document inside the first selected generation:
@@ -569,7 +565,7 @@ integrity metadata. They deliberately exclude:
 - `user_auto_approve` and other product settings
 - network/genesis mappings and endpoints
 - installed or library templates and key-type enable/disable state
-- API tokens, SSH enrollment, and passphrase helpers
+- client SSH enrollment and passphrase helpers
 
 This is not a partial machine migration. If you need to reproduce a signer's
 configuration, manage that configuration separately and review it as an

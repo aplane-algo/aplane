@@ -28,8 +28,8 @@ This document describes durable key and key type states that affect:
 - which warnings are provenance-only.
 
 It is the key/keytype companion to transaction lifecycle documentation. It does
-not define transaction planning, policy verdicts, endpoint routing, token
-provisioning, or approval prompts.
+not define transaction planning, policy verdicts, endpoint routing, client
+enrollment, or approval prompts.
 
 ## Core Rule
 

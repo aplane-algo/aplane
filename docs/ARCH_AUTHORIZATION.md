@@ -19,8 +19,8 @@ May this principal perform this action on this resource?
 It is separate from:
 
 - **Authentication:** Which credential was presented, and did it verify?
-- **Product-store ownership:** Which process owns keys, config, token files,
-  runtime state, and approval state?
+- **Product-store ownership:** Which process owns keys, config, the enrolled
+  client registry, runtime state, and approval state?
 - **Signing policy:** Is a specific transaction safe enough to sign?
 - **Encryption and key handling:** How passphrases, term keys, and key files
   are protected.
@@ -37,9 +37,10 @@ A credential is proof presented at an authentication boundary.
 
 Credential types include:
 
-- HTTP API token from `identities/default/aplane.token`
+- an enrolled client SSH key, presented at the SSH handshake; the HTTP API is
+  reachable only through that tunnel, and each request is attributed to the
+  key that authenticated its connection
 - admin passphrase over local IPC
-- SSH public key plus token for tunnel access to the HTTP API
 
 Credentials authenticate access. They are not themselves the authorization
 subject.
@@ -48,10 +49,17 @@ subject.
 
 A principal is the actor used for authorization decisions.
 
-Product credentials authenticate the reserved system principal:
+The admin passphrase authenticates the reserved system principal:
 
 ```text
 system:product-admin
+```
+
+An enrolled client key authenticates a client principal named by the key's
+SHA256 fingerprint, with role `client`:
+
+```text
+client:SHA256:<fingerprint>
 ```
 
 `default` is not a principal. It names the product signing store directory in
@@ -64,8 +72,7 @@ The one product store owns signer state:
 - encrypted key files
 - keystore metadata
 - product runtime config
-- API token file
-- SSH authorized keys
+- enrolled client registry (`.ssh/authorized_keys`)
 - approval coordinator
 - runtime lock/unlock state
 - watcher and reload ownership
@@ -83,7 +90,7 @@ Examples:
 sign.request
 keys.generate
 policy.update
-token.revoke
+clients.revoke
 ```
 
 ### Resource
@@ -100,7 +107,7 @@ type Resource struct {
 Conventions:
 
 - `Type` is the resource family, such as `key`, `keys`, `policy`,
-  `transaction`, or `token`.
+  `transaction`, or `client`.
 - `ID` is the concrete resource identifier when one exists, such as a key
   address, request ID, or template key type.
 
@@ -111,17 +118,18 @@ The product mode is:
 ```text
 mode: product_single
 admin principal: system:product-admin
-authorization source: closed product action allowlist
-identity/principal/group/grant management UI: none
+client principals: client:<fingerprint>, role client
+authorization source: closed action allowlists (product admin, client role)
+identity/principal/group/grant management UI: enrolled-client list and revocation only
 ```
 
 The authorization path is:
 
 ```text
 credential
-  -> authenticated product session
-  -> system:product-admin
-  -> explicit ProductAllowedActions membership
+  -> authenticated product session or tunneled API connection
+  -> system:product-admin, or client:<fingerprint> with role client
+  -> explicit ProductAllowedActions or ClientAllowedActions membership
   -> concrete resource type and optional resource ID
 ```
 
@@ -129,25 +137,35 @@ Important implications:
 
 - Logging in with `apadmin` authenticates against the product store, and the admin
   session authorizes as `system:product-admin`.
+- A tunneled HTTP request authorizes as the client principal of its
+  connection. `ClientAllowedActions` (`internal/authz`) grants only what the
+  authenticated HTTP routes expose: `identity.view`, `sign.request`,
+  `sign.component`, `sign.assemble`, `keys.view`, `keys.generate`,
+  `keys.delete`, and `keytypes.view`. Clients never receive administrative
+  actions.
 - A known action is not automatically allowed. It must also appear in the
-  explicit product action allowlist.
+  explicit allowlist for that principal kind.
 
 ## Authorization Flow
 
 ### HTTP
 
-HTTP requests use token authentication followed by authorization:
+HTTP requests are authenticated by their connection, then authorized:
 
 ```text
-Authorization: aplane <token>
-  -> product TokenAuthenticator
-  -> system:product-admin
-  -> ProductAuthorizer
+SSH handshake with enrolled key
+  -> direct-tcpip channel handed off as an API connection (sshtunnel.APIConn)
+  -> auth.ConnIdentity{KeyFingerprint} attached to the connection context
+  -> productAuthenticator looks the fingerprint up in the enrolled registry
+  -> client:<fingerprint> (role client)
+  -> ProductAuthorizer (ClientAllowedActions)
   -> process-owned product runtime
   -> handler
 ```
 
-HTTP authentication maps the one product token to the product principal.
+A request carries no credential: nothing in it can supply or override the
+connection identity. The loopback REST listener attaches no identity, so on it
+only `/health` answers and every other route fails authentication with `401`.
 Authentication and authorization never select a runtime or store.
 
 ### Admin IPC
@@ -178,7 +196,7 @@ not by a signer-side activity grant.
 ### No Remote Admin Transport
 
 The admin protocol is carried only over the local IPC socket. SSH carries
-port forwarding to the HTTP API and `request-token` enrollment; it refuses
+port forwarding to the HTTP API and `request-enrollment` bootstrap; it refuses
 session channels, so no admin subsystem is reachable over SSH. Remote
 administration means logging in to the signer host and running `apadmin`
 there.
@@ -226,8 +244,9 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `policy.update` | Update signer policy | `policy` | No |
 | `settings.view` | View admin settings | `settings` | No |
 | `settings.update` | Update admin settings | `settings` | No |
-| `token.provision` | Approve token provisioning | `token_provisioning` | No |
-| `token.revoke` | Revoke product API token | `token` | No |
+| `clients.view` | List enrolled client keys and their live connections | `clients` | No |
+| `clients.enroll` | Approve a client enrollment request | `client_enrollment` | No |
+| `clients.revoke` | Revoke one enrolled client key, or every key, closing its connections | `client`, `clients` | No |
 | `health.get` | Reserved action name; `/health` is unauthenticated and does not call the authorizer | `system` | No |
 
 New sensitive operations must either use an existing action with the same
@@ -235,12 +254,15 @@ meaning or define a new stable action before implementation.
 
 ## Product Action Allowlist
 
-`ProductAllowedActions` is a closed, explicit set populated in code. The
-product authorizer grants an operation only when all of these conditions hold:
+`ProductAllowedActions` and `ClientAllowedActions` are closed, explicit sets
+populated in code. The product authorizer grants an operation only when all of
+these conditions hold:
 
-- the principal is exactly `system:product-admin`;
+- the principal is exactly `system:product-admin`, or is a `client:` principal
+  whose role is `client`;
 - the action is in the closed known-action vocabulary;
-- the action is independently present in `ProductAllowedActions`; and
+- the action is independently present in the allowlist for that principal
+  kind; and
 - the callsite supplies a concrete resource type and, where applicable, ID.
 
 Adding a known action does not add it to the product allowlist. This preserves
@@ -253,14 +275,17 @@ the single-product authorizer.
 Principal resolution maps authenticated credentials to authorization principals:
 
 ```text
-admin passphrase / product token
+admin passphrase
   -> system:product-admin
+
+enrolled client SSH key (connection identity)
+  -> client:<SHA256 fingerprint>, role client
 ```
 
 ## Enforcement Points
 
 Authorization checks must run before private-key access, mutation, approval
-response handling, token rotation, or policy/settings changes.
+response handling, client enrollment or revocation, or policy/settings changes.
 
 Enforced callsites:
 
@@ -277,8 +302,8 @@ Enforced callsites:
   template list/install/remove, policy view/update, settings view/update,
   signer-managed backup creation/list, credential restore preview/apply,
   restore rollback/reconciliation,
-  passphrase rotation, signing approval response, token provisioning response,
-  and token revoke through `s.authorize`.
+  passphrase rotation, signing approval response, client enrollment response,
+  enrolled-key listing, and key revocation through `s.authorize`.
 
 `/health` is intentionally absent from the enforcement list. It is an
 unauthenticated health endpoint in [ARCH_HTTP_API.md](ARCH_HTTP_API.md);
@@ -310,7 +335,8 @@ Audit records identify the actors and request context for sensitive operations.
 Relevant audit fields:
 
 - `principal`: principal field
-- `requester_principal`: principal requesting the operation
+- `requester_principal`: principal requesting the operation; for tunneled
+  HTTP requests this is the connection's `client:<fingerprint>`
 - `approver_principal`: principal approving or rejecting the operation
 - `admin_session_id`: admin protocol session ID
 - `transport`: `ipc`, `ssh`, `http`, or empty for process events
@@ -333,8 +359,8 @@ boundary.
 - Runtime code must not use an allow-all authorizer.
 - Product authorization must use an explicit action allowlist.
 - Every private-key operation must have an authorization check.
-- Every key, policy, settings, template, token, identity, or lifecycle mutation
-  must have an authorization check.
+- Every key, policy, settings, template, client-registry, identity, or
+  lifecycle mutation must have an authorization check.
 - Auth-time unlock must be authorization-gated.
 - Approval responses must be authorization-gated.
 - Authorization resources must not grow a runtime or store selector.
@@ -343,12 +369,14 @@ boundary.
   not create ad hoc permissions.
 - Unknown principals must fail closed.
 - `system:product-admin` is reserved.
+- A client principal's role is assigned by the trusted authentication path,
+  never read from a request.
 
 ## Implementation
 
 - stable action vocabulary
 - closed product action allowlist
-- reserved product-admin principal
+- reserved product-admin principal and fingerprint-named client principals
 - admin session principal separation from target signing identity
 - HTTP and admin operation gates
 
@@ -361,6 +389,7 @@ Primary implementation files:
 - `internal/signerapp/adminserver/session.go`
 - `internal/signerapp/adminserver/handlers.go`
 - `internal/signerapp/daemon/http_auth.go`
+- `internal/signerapp/daemon/product_authenticator.go`
 - `internal/signerapp/daemon/http_runtime.go`
 - `internal/signerapp/daemon/admin_services.go`
 - `internal/signerapp/daemon/audit_attribution.go`

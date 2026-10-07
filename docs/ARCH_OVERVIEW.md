@@ -67,7 +67,7 @@ a key.
 
 APlane is a **single-operator, single-signing-identity product**. Every
 `apsigner` process owns exactly one signing-state aggregate. The aggregate owns
-the keystore, lock state, approval coordinator, token authority, SSH enrollment,
+the keystore, lock state, approval coordinator, enrolled-client registry,
 configuration, and watcher; it has no runtime ID, registry, or selector. IPC
 admin clients compete for one process-wide admin session.
 
@@ -79,9 +79,10 @@ and cosigner-role data roots.
 
 At startup, a no-follow layout-integrity check rejects any direct entry under
 `identities/` other than a real directory named `default`; it fails closed
-before tokens, keys, policy, or watchers are loaded. HTTP token authentication binds the reserved
-principal `system:product-admin` to the one product runtime. Normal SSH accepts
-only `aplane`; enrollment accepts only `request-token`; product request
+before the client registry, keys, policy, or watchers are loaded. HTTP requests
+are authenticated by the enrolled client key of the SSH connection they arrive
+on and bind to the one product runtime. Normal SSH accepts
+only `aplane`; enrollment accepts only `request-enrollment`; product request
 and admin inputs expose no runtime selector.
 
 Signer transaction policy is product-scoped under `identities/default/` and uses the current verdict model
@@ -195,7 +196,8 @@ aplane/
 │   │   ├── storemut/              # Signer-owned persistent mutation service
 │   │   ├── backupadmin/           # Signer-managed backup/restore admin workflows
 │   │   ├── rest/                  # Signer REST service layer
-│   │   ├── sshprovision/          # SSH token provisioning
+│   │   ├── clientregistry/        # Enrolled client key registry (authorized_keys)
+│   │   ├── enrollment/            # Client enrollment approval and audit service
 │   │   └── templates/             # Template reload and state reporting
 │   ├── adminproto/                # Admin service vocabulary and framed server connection
 │   ├── protocol/                  # IPC/admin wire message definitions
@@ -222,7 +224,7 @@ aplane/
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
 │   ├── policy/                    # Signer and cosigner policy documents, compilation, and evaluation
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
-│   └── fsutil/, theme/, tokenfile/, cmdlog/, ...   # Focused support packages
+│   └── fsutil/, theme/, cmdlog/, ...   # Focused support packages
 │
 ├── lsig/                          # LogicSig provider implementations
 │   ├── all.go                     # Built-in LogicSig registration aggregator
@@ -346,7 +348,7 @@ process is systemd-managed through `APLANE_SYSTEMD_MANAGED=1` or parent PID 1.
 1. Validate that `identities/` is blank or contains only a real `default/`
    directory, with no extra files, directories, or symlinks.
 2. `startup.BuildProductRuntime` constructs the one product runtime from the
-   default config overlay, API token, and keystore.
+   default config overlay, enrolled-client registry, and keystore.
 3. In headless mode, the product store is unlocked immediately; in locked
    mode, unlock happens later via admin IPC.
 

@@ -88,13 +88,13 @@ it access to your encrypted keystore.
 In the signer pane, press `g` and select `aplane.falcon1024.v1` to generate a
 Falcon-1024 post-quantum key.
 
-## 7. Get an access token
+## 7. Enroll the client
 
-The first time a client connects, it needs a human-approved access token from
-the signer daemon. In the shell pane, run:
+The first time a client connects, the signer must enroll the client's SSH key,
+a human-approved step. In the shell pane, run:
 
 ```
-request-token
+request-enrollment
 ```
 
 You will see an approval prompt in the signer admin pane. Navigate to it with

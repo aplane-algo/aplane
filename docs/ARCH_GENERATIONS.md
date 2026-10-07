@@ -19,7 +19,7 @@ the retired `CURRENT` plus `keyring.enc` layout.
     store-root.enc
     config.yaml
     unlock.yaml
-    aplane.token
+    .ssh/authorized_keys
     passphrase | passphrase.cred
     cosigners/<name>.json
     quarantine/generations/<gen-id>/
@@ -38,9 +38,10 @@ the retired `CURRENT` plus `keyring.enc` layout.
 ```
 
 The generation boundary includes all mutable state whose confidentiality or
-integrity depends on a keyring term. Process and product configuration, tokens,
-unlock helpers, SSH state, cosigner references, backups, the plaintext template
-library, and the root node-role document are not generational.
+integrity depends on a keyring term. Process and product configuration,
+unlock helpers, SSH state including the enrolled-client registry, cosigner
+references, backups, the plaintext template library, and the root node-role
+document are not generational.
 
 `quarantine/` is non-authoritative. Normal resolution, signing, historical
 reads, successor construction, and rollback never search it.

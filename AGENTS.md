@@ -161,7 +161,7 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Requires data directory: `-d <path>` or `APSIGNER_DATA` env var
 - Config file: `<data_dir>/config.yaml`
 - Endpoints: see `docs/ARCH_HTTP_API.md` for the current HTTP surface
-- Authentication: `Authorization: aplane <token>` header
+- Authentication: the client's enrolled SSH key; API channels arrive through the SSH server with that identity, the loopback port answers only `/health`
 
 ### apadmin
 - TUI for key management and apsigner control
@@ -243,7 +243,7 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Lock memory to prevent swap: `mlockall()`
 
 ### Authentication
-- HTTP: Bearer token with constant-time comparison
+- HTTP: connection identity from the enrolled SSH key that opened the tunnel (no header credential)
 - IPC: Passphrase verified against Argon2id-derived master key
 - See `docs/ARCH_SECURITY.md` for authentication/security architecture and `docs/ARCH_AUTHORIZATION.md` for authorization architecture
 
@@ -292,7 +292,7 @@ gofmt -s -w .         # Format code
 ## Configuration Files
 
 ### Key Files
-- `aplane.token`: API token for HTTP authentication (mode 0600)
+- `identities/default/.ssh/authorized_keys`: daemon-owned registry of enrolled client SSH keys (mode 0600)
 - `identities/default/keys/*.key`: Encrypted account-authority records (mode 0600)
 - `identities/default/keys/*.cos`: Encrypted cosigner witness credentials (mode 0600)
 - `identities/default/.keystore`: Keystore metadata (master salt, passphrase verification)

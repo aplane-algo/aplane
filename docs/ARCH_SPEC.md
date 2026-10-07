@@ -164,10 +164,10 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
-| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
+| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
@@ -453,9 +453,9 @@ minisign-signed.
 
 - One `apsigner` on the signer host
 - Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC. For remote administration, log in to the signer host and run `apadmin` there.
-- One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful enrollment of the default signer, `apshell` immediately attempts to connect using the newly issued token; cosigner enrollment does not replace the primary connection. Token files are bearer credentials and are rejected if group/world accessible.
-- `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or token-provisioning client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
+- One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not an enrolled key or a trusted signer host. SSH host trust is enforced when interactive `apshell` attempts a signer connection or enrollment flow, not before process startup; whether the key is enrolled is learned from the node at connect time. After successful enrollment at the default signer, `apshell` immediately connects with the enrolled key; cosigner enrollment does not replace the primary connection.
+- `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured with a trusted endpoint `known_hosts` entry and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-enrollment` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Enrollment is learned from the node when the embedded shell attempts `request-enrollment`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or enrollment client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
@@ -485,10 +485,10 @@ accept no runtime locator.
 
 Startup rejects any direct `identities/` entry other than a real `default`
 directory before loading secrets or starting watchers. HTTP authentication
-maps the one product token to `system:product-admin`. SSH accepts only
-`aplane` and `request-token`. Its mutual-proof transcript binds the protocol
-version, fixed `aplane` username, accepted host key, client nonce, server nonce,
-and proof role.
+maps the enrolled client key of the request's SSH connection to
+`client:<fingerprint>`. SSH accepts only `aplane` and `request-enrollment`;
+an `aplane` connection must present an enrolled key, and every API channel it
+opens carries that key's identity.
 
 #### Product Runtime Invariants
 
@@ -498,10 +498,10 @@ The runtime enforces these single-product invariants:
   displacement slot, and one active product session across IPC and SSH;
 - template/provider registration is process-global and
   `internal/lsigprovider.registerMu` has no per-owner reference counts;
-- one product runtime owns the watcher, approval coordinator, token authority,
-  SSH enrollment state, runtime settings, and lock state;
-- SSH uses the fixed usernames `aplane` and `request-token`; normal token-proof
-  transcripts bind `aplane` and carry no store or runtime identifier;
+- one product runtime owns the watcher, approval coordinator, enrolled-client
+  registry, runtime settings, and lock state;
+- SSH uses the fixed usernames `aplane` and `request-enrollment` and carries no
+  store or runtime identifier;
 - audit records attribute actors through principal and session fields and carry
   no store or runtime identifier;
 - `node.yaml.hmac` and policy sidecars bind authenticated state to the one
@@ -531,8 +531,9 @@ Current client config includes:
 Signer and cosigner routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `cosigner` endpoints. Endpoint records carry URL, identity file,
-`known_hosts`, and token file; no port beyond the one in the URL, because the
+or more `cosigner` endpoints. Endpoint records carry URL, identity file, and
+`known_hosts`; no credential, because the enrolled identity key is the
+credential; and no port beyond the one in the URL, because the
 node's SSH server forwards every channel to its own REST listener and the
 signer-role forward binds a free local port at connect time. Live cosigner-key discovery is operation-scoped
 and is not stored in the registry. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
@@ -666,7 +667,7 @@ The concrete on-disk layouts, key-file compatibility, keystore metadata versioni
 
 Operationally:
 
-- client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), token (`aplane.token`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
+- client-local state lives under the client data directory, including plugins (`plugins.available/`, `plugins.yaml`), scripts (`scripts/`), the SSH identity (`.ssh/`), caches (`cache/`), swap state (`swap/<network>/`), and the cooperative `.apclient.lock`,
 - signer-local state lives under the signer data directory, with the plaintext key type library at `library/templates/`, signer-wide ASA metadata at `cache/<network>_asa_cache.json`, managed backup archives at `backups/default/`, and all sensitive runtime assets rooted under `identities/default/`,
 - systemd signer state is service-user-only (`0700` directories and `0600`
   ordinary files); the operator Unix group has no traversal rights and reaches
@@ -688,10 +689,10 @@ Operationally:
 
 The system has two main auth channels:
 
-- HTTP token auth for shell/API callers
+- enrolled SSH key auth for shell/API callers: the HTTP API is reachable only
+  through the node's SSH server, and each request is attributed to the key
+  that authenticated its connection
 - passphrase auth for admin sessions over local IPC
-
-Optional SSH provides transport-level authentication for remote shell access, but HTTP requests require the API token.
 
 Authorization is a separate concern through `auth.Authorizer`. Runtime code uses
 the explicit product action allowlist documented in
@@ -750,13 +751,13 @@ registry.
 | Concern | Owner |
 |---------|-------|
 | Lock/unlock state | `internal/signerapp/runtime` |
-| Sign request lifecycle, approval queues, cancellation (sign + token) | `internal/signerapp/approval` |
+| Sign request lifecycle, approval queues, cancellation (sign + enrollment) | `internal/signerapp/approval` |
 | Planning, approval flow, execution, signing orchestration | `internal/signerapp/signing` |
 | Template registration, reload coordination | `internal/signerapp/templates` |
 | Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
 | Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
-| Product runtime aggregate, config, token, SSH enrollment, lifecycle | `internal/signerapp/productruntime` |
+| Product runtime aggregate, config, enrolled-client registry, lifecycle | `internal/signerapp/productruntime` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
@@ -856,7 +857,7 @@ Sensitive product state lives under `internal/signerapp/productruntime.Runtime`,
 - approval coordinator,
 - watcher lifecycle,
 - product runtime config,
-- token authority and SSH enrollment state.
+- enrolled-client registry state.
 
 The key indexes are authoritative runtime indexes of what the server believes is signable.
 
@@ -874,11 +875,11 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
-| `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
+| `Coordinator.pendingEnrollmentRequestsLock` | Pending client enrollment approvals |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
 | `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
-| SSH server locks | Authorized keys, product-token callbacks, product connections, listener |
+| SSH server locks | Product hooks, client connections by fingerprint, enrollment claims, listener |
 
 Goroutines:
 
@@ -963,7 +964,8 @@ The server-side plan/sign boundary is split as follows:
 - signer transaction description formatting in `internal/signerapp/txdesc`,
 - template registration and reload lifecycle in `internal/signerapp/templates`,
 - template library, install, show, import, remove, activate, and deactivate workflows in `internal/signerapp/templateadmin`,
-- SSH token provisioning approval and audit service in `internal/signerapp/sshprovision`,
+- client enrollment approval and audit service in `internal/signerapp/enrollment`,
+- the enrolled-client registry (strict parser, validate-then-publish) in `internal/signerapp/clientregistry`,
 - append-only audit logging in `internal/signerapp/audit`, with HTTP/request
   attribution and operational side effects wired from
   `internal/signerapp/daemon`.
@@ -976,7 +978,7 @@ Transport adapters should not own:
 - admin request dispatch and message-specific handler logic,
 - request canonicalization,
 - policy enforcement,
-- token issuance and revocation side effects.
+- client enrollment and revocation side effects.
 
 Storage primitives should not own:
 
@@ -1115,8 +1117,8 @@ The engine boundary is partial rather than absolute:
 `apshell` can connect to a signer through:
 
 - local or remote SSH tunnel transport,
-- then HTTP requests tunneled to signer REST endpoints,
-- plus a locally stored token for per-request auth.
+- then HTTP requests tunneled to signer REST endpoints, attributed to the
+  enrolled key that authenticated the tunnel.
 
 The client treats transport connectivity and signer key availability as separate concerns. `EnsureSignerCache()` exists specifically because a connected signer may transition from locked to unlocked later.
 
@@ -1148,7 +1150,7 @@ First-class built-in command families include:
 - alias/set commands: `alias`, `sets`
 - rekey commands: `rekey`, `unrekey`
 - signer/key-management commands: `keys`, `keytypes`, `generate`, `delete`
-- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-token`, `endpoints`, `clear`/`cls`, `quit`/`exit`/`q`
+- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `clear`/`cls`, `quit`/`exit`/`q`
 - scripting/plugin commands: `script`, `js`, `jssave`, `jslist`
 
 Command handling constraints:
@@ -1474,7 +1476,7 @@ forward signatures to assembly as opaque material.
 
 Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
 at most one `signer` endpoint and zero or more `cosigner` endpoints. Endpoint
-records contain connection profile data, endpoint role, token-file path,
+records contain connection profile data, endpoint role,
 known-hosts path, and SSH identity path. They do not persist cosigner-key
 inventory.
 
@@ -1489,7 +1491,8 @@ Operator handoff and manual endpoint setup use two paths:
   writes client-local endpoint routing.
 - `apshell endpoints create --alias <name> --endpoint <url>` writes a manual
   cosigner endpoint profile when no exported endpoint envelope is used.
-- bearer tokens are obtained separately with `request-token --endpoint`.
+- this client's key is enrolled at a node separately with
+  `request-enrollment --endpoint`, or by guided `endpoints add`.
 - SSH host trust remains owned by the existing known-hosts flow.
 
 `apshell endpoints discover-cosigners` is a read-only diagnostic. It queries
@@ -1565,8 +1568,8 @@ Primary implementation ownership:
   explicit-endpoint ID discovery, and bounded read-only unique-route
   verification. Discovery and verification persist neither fetched inventory
   nor a reference-to-endpoint binding.
-- `internal/clientenroll`: shared client-owned synchronous token provisioning
-  and remote preflight used by shell and admin enrollment surfaces.
+- `internal/clientenroll`: shared client-owned synchronous enrollment request
+  and remote preflight used by shell and MCP surfaces.
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog used by
   generation UIs.
 - `internal/policy`: shared signer/cosigner policy grammar, validation, and
@@ -1801,7 +1804,7 @@ guards:
 - `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`
   against signer, cosigner, client/admin, and LocalNet algod containers on one
   Docker network. It verifies local install layout, shared LocalNet
-  reachability, SSH token provisioning, local IPC `apadmin` cosigner
+  reachability, SSH client enrollment, local IPC `apadmin` cosigner
   public-reference export and authorized import, client signer
   reachability, guarded signing, and corridor allowlist enforcement across the
   Docker network.
@@ -1856,28 +1859,28 @@ Verification expectations remain:
 - `make formal-test` passes when formalized behavior or `docs/formal/` modules change,
 - external SDK fixtures and timeout behavior are reviewed when `/status`,
   `/sign`, or approval-wait contracts change,
-- integration tests covering signer, app, passthrough, Falcon, and SSH token provisioning pass,
+- integration tests covering signer, app, passthrough, Falcon, and SSH client enrollment pass,
 - external SDK tests pass when the touched surface includes SDK-facing behavior,
 - signing outputs for unchanged inputs remain stable,
 - IPC notifications and request/response message shapes remain compatible with `apadmin` and `apapprover`,
-- token provisioning and revocation remain compatible with the SSH client flow,
+- client enrollment and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
-- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.cos`, `.template`, `config.yaml`, `audit.log`, and token files.
+- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.cos`, `.template`, `config.yaml`, `audit.log`, and the enrolled-client registry.
 - client endpoint compatibility is checked for `endpoints.yaml`,
-  endpoint token files, endpoint handoff envelopes, and public cosigner
+  endpoint handoff envelopes, and public cosigner
   reference records when those surfaces change.
 
 ## Authentication
 
-- HTTP: token auth (`Authorization: aplane <token>`). The one product token
-  authenticates `system:product-admin`; handlers use the one product runtime.
+- HTTP: connection auth. The enrolled client key that authenticated the SSH
+  connection becomes the request's `client:<fingerprint>` principal; requests
+  carry no credential, and handlers use the one product runtime.
 - IPC: passphrase auth. The admin protocol has no runtime selector and
   binds to the product runtime after passphrase verification.
-- SSH: dual-factor for tunnel/admin connections. The fixed non-secret username
-  is `aplane`. An enrolled public key is verified first, followed by a
-  programmatic mutual HMAC proof of the product token bound to the accepted
-  SSH host key and fresh client/server nonces. Token provisioning remains a
-  key-only, operator-approved exception using `request-token`.
+- SSH: enrolled public key for tunnel connections. The fixed non-secret
+  username is `aplane`; the key must be in the node's registry, which is
+  re-checked after the handshake. Enrollment is a key-only, operator-approved
+  bootstrap using the `request-enrollment` username.
 
 ## Approval Model
 
@@ -1891,7 +1894,7 @@ The SSH tunnel is implemented in `internal/sshtunnel`. It provides:
 - SSH clients in `apshell` and the external Go, Python, and
   TypeScript SDKs that establish the tunnel.
 
-Watcher, template reload, audit logging, token provisioning, token revocation, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+Watcher, template reload, audit logging, client enrollment, key revocation, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 Architecturally:
 
@@ -1901,10 +1904,9 @@ Architecturally:
   and same-`key_type` template mutation is rejected rather than applied on
   reload/unlock,
 - audit logging is a signer-side operational subsystem, not a UI concern,
-- token provisioning is an approval-mediated enrollment path, not just SSH auth,
-- token provisioning requires the active product admin session, and product
-  token rotation closes every SSH connection authenticated with an older token
-  generation.
+- client enrollment is an approval-mediated path, not just SSH auth,
+- enrollment requires the active product admin session, and revoking a key
+  closes every SSH connection that key authenticated.
 
 ## Architectural Invariants
 
@@ -1984,8 +1986,8 @@ Weaker or more coupled areas:
 
 Product-level boundaries:
 
-- one fixed product store, runtime session, approval coordinator, and token
-  authority exist, with a single-operator deployment model,
+- one fixed product store, runtime session, approval coordinator, and
+  enrolled-client registry exist, with a single-operator deployment model,
 - plugin manifests expose one command-first executable contract,
 - template files are product-store scoped and encrypted; `key_type` is an immutability boundary rather than an override hook,
 - shell command automation is explicit per primary command, with aliases inheriting policy and no text-capture fallback.
@@ -1996,7 +1998,7 @@ Product-level boundaries:
 |------|-------|
 | Server | `cmd/apsigner/main.go`, `internal/signerapp/daemon/server.go`, `internal/signerapp/startup/*.go` |
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
-| Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `internal/clientenroll/token_request.go` |
+| Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `internal/clientenroll/enrollment_request.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/store.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |

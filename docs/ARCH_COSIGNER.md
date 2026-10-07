@@ -250,7 +250,7 @@ import` on the signer node.
 The exported file is that canonical `aplane.witness-key-public.v1` document
 and nothing else: the cosigner's address is not in it. apadmin imports the
 public witness reference through authorized local IPC and refuses a file that
-carries anything more. apshell owns endpoint configuration, token enrollment,
+carries anything more. apshell owns endpoint configuration, client enrollment,
 host trust, and live discovery, and is given the cosigner's address by the
 operator; apadmin does not access client state.
 
@@ -264,9 +264,11 @@ Before prompting, the workflow resolves the destination and reuses a cosigner
 profile already configured for that URL; only a new profile needs a name, for
 which it suggests one derived from the endpoint host. Under the shared
 client-data lock it revalidates and writes only the chosen endpoint alias, then
-releases the lock before any SSH trust, token enrollment, or network operation.
-Token enrollment uses a standalone SSH connection and does not disturb the
-primary signer tunnel. Cosigner HTTP requests use restricted direct channels on
+releases the lock before any SSH trust, enrollment, or network operation.
+Setup first tries the connection with the client's key; a node that refuses
+the key as unenrolled is asked to enroll it, which waits for operator approval
+there, and the connection is tried once more. The enrollment request uses a
+standalone SSH connection and does not disturb the primary signer tunnel. Cosigner HTTP requests use restricted direct channels on
 that authenticated SSH connection instead of a transient local forwarding
 listener.
 
@@ -320,46 +322,24 @@ Client endpoint routing lives in:
 $APCLIENT_DATA/endpoints.yaml
 ```
 
-### Token And Destination Invariant
+### Credential And Destination
 
-An endpoint token is a bearer credential for the destination that issued it,
-and is only ever presented to that destination. A destination is the endpoint
-URL plus, for `ssh://` endpoints, the REST port reached through SSH.
+The client's enrolled SSH key is its credential at every node, and the node is
+where the enrollment lives. An endpoint record therefore carries no
+per-destination credential, and no client-side state is created or retired
+when an alias is created, re-pointed, or deleted: the route is all the client
+keeps. Revoking this client's access to a cosigner is that node operator's
+action, in its apadmin, not a client-side edit.
 
-- **Retire before publishing.** When an upsert creates an alias or moves one
-  to another destination, any token file at the alias's path is removed and its
-  directory synced before the new route is written, in the same client-data
-  lock. A token that predates the alias was left by an earlier profile of the
-  same name; one that predates a destination change was issued by the previous
-  destination. An interruption between the two steps leaves no route with a
-  token it did not issue. This holds for `endpoints add`, `endpoints import`,
-  and `endpoints create`, which share one upsert.
-- **The sync is unconditional.** Retirement syncs the directory even when the
-  file is already absent, so a retry after a failed sync does not treat an
-  unsynced removal as durable.
-- **A token's lifetime ends with its alias.** `endpoints delete` retires the
-  alias's token before removing the route.
-- **Shared token files are never retired.** If another alias resolves to the
-  same token file, creating or re-pointing the alias is refused, and deleting
-  it leaves the file in place. Paths are compared after resolution against the
-  client data directory, so a relative path, its absolute form, and a symlink
-  to it are one file.
-- **Install a token after its profile exists.** Because creation retires
-  whatever is at the path, a manually supplied token (the only option for
-  HTTPS and loopback HTTP endpoints) must be placed after the endpoint is
-  created. No stored record distinguishes a deliberate early install from an
-  orphan, so the order is the rule.
-- **Late tokens are discarded.** Enrollment waits for operator approval with
-  the client lock released. Before an issued token is saved, the alias is
-  re-read under the lock; if it was removed, now names another destination, or
-  now uses another token file, the token is discarded. This applies to
-  `request-token` as well.
+Enrollment waits for operator approval with the client lock released. Nothing
+is written on the client when it completes: the route was published before the
+request, and the node recorded the enrollment.
 
-Hand-editing `endpoints.yaml` bypasses these write-side rules.
+Hand-editing `endpoints.yaml` bypasses the write-side locking rules.
 
 The registry may contain one signer endpoint and at most 12 cosigner endpoints.
-Endpoint records carry connection metadata only: the URL, SSH identity and
-known-hosts paths, and the token file. No record names the node's REST port;
+Endpoint records carry connection metadata only: the `ssh://` URL and the SSH
+identity and known-hosts paths. No record names the node's REST port;
 the node's SSH server forwards every channel to its own listener.
 
 Runtime guarded-send routing works like this:

@@ -88,7 +88,7 @@ Important vocabulary:
 
 - identity keystores and key files,
 - product runtime config, node-role policy documents (`policy.json` or
-  `policies/<WitnessKeyID>.json`), tokens, SSH enrollments,
+  `policies/<WitnessKeyID>.json`), the enrolled-client registry,
   and key type state,
 - encrypted installed templates,
 - public cosigner references and witness public metadata sidecars,
@@ -106,8 +106,7 @@ intent and receive finalized signed transaction bytes, not key material.
 `APCLIENT_DATA`:
 
 - client config and endpoint registry,
-- endpoint-scoped bearer token files copied from signer enrollment,
-- SSH client keys and known-hosts trust,
+- SSH client keys (the client's credential) and known-hosts trust,
 - aliases, sets, signer inventory cache, auth cache, ASA cache,
 - operation-scoped live cosigner routing,
 - plugins and plugin activation,
@@ -149,8 +148,7 @@ DTOs and contract fixtures.
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Node-role policy | Signer identity | signer: `policy.json` plus `policy.json.hmac`; cosigner: `policies/<WitnessKeyID>.json` plus `.json.hmac` per key | client-signing `policy.Config` or per-key cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
-| API token | Product signer and client | signer `identities/default/aplane.token`, client `aplane.token` | product token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
-| SSH enrollment | Product signer | `identities/default/.ssh/authorized_keys` | product SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
+| Enrolled client registry | Product signer | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` published into the product runtime | SSH auth, HTTP principal resolution, enrollment, revocation | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` |
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
@@ -177,8 +175,8 @@ Client data dir
       -> default signer endpoint
       -> zero or more cosigner endpoints
       -> live /keys discovery -> operation-scoped cosigner routing
-  -> endpoint tokens + SSH trust
-  -> signer HTTP/admin connection
+  -> client SSH identity + SSH trust
+  -> signer HTTP connection over the tunnel
 
 Signer data dir
   -> process config
@@ -188,8 +186,8 @@ Signer data dir
       -> cosigners public references -> /keytypes generation options
       -> key type state + installed templates -> /keytypes and generation
       -> policy documents + HMAC -> signer approval verdicts or per-key cosigner component-sign authorization by node role
-      -> API token + SSH keys -> authn
-      -> approval coordinator -> sign/token prompts
+      -> enrolled client registry -> SSH authn and client principals
+      -> approval coordinator -> sign/enrollment prompts
       -> process-wide admin session -> admin mutations and approvals
 ```
 
@@ -261,7 +259,6 @@ identities/default/
     cosigners/*.json
     deleted/{keys,keytypes,policies}/
   quarantine/generations/<gen-id>/
-  aplane.token
   config.yaml
   unlock.yaml
   .ssh/authorized_keys
@@ -280,8 +277,7 @@ generation and commits it with one durable `store-root.enc` replacement.
 - key session,
 - key indexes,
 - approval coordinator,
-- token authority,
-- SSH enrollment,
+- enrolled client registry,
 - effective product runtime config,
 - effective node-role policy: client-signing policy on signer nodes or cosigner
   component policy on cosigner nodes,
@@ -473,22 +469,20 @@ a cosigner key archives its policy pair under `deleted/policies/`.
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 product runtime config.
 
-### Tokens, SSH, And Admin Sessions
+### Client Keys, SSH, And Admin Sessions
 
-API tokens are bearer credentials:
-
-- signer authority: `identities/default/aplane.token`,
-- client copy: endpoint-scoped files such as `APCLIENT_DATA/aplane.token` or
-  `APCLIENT_DATA/tokens/<alias>.token`.
-
-SSH enrollment is product-scoped:
+The client's enrolled SSH key is its only credential; no token exists on
+either side. Enrollment is product-scoped:
 
 ```text
 identities/default/.ssh/authorized_keys
 ```
 
-Remote clients authenticate with SSH public key plus token. Admin protocol
-sessions then authenticate with the product passphrase.
+The daemon is the registry's only writer: it validates a complete candidate,
+writes it atomically, and installs it under one lock. Clients authenticate the
+SSH tunnel with the enrolled public key, and every HTTP request is attributed
+to the key of its connection as `client:<fingerprint>`. Admin protocol
+sessions authenticate with the product passphrase over local IPC.
 
 The one admin session is runtime-only. It is represented by session context,
 transport, and principal, not by a durable session record.
@@ -497,8 +491,8 @@ transport, and principal, not by a durable session record.
 
 The audit log is append-only JSONL at `audit.log`. It records process events,
 product-runtime events, signing outcomes, authorization denials, session
-connect/disconnect, key management, backup/restore, token provisioning, and
-policy-related signing decisions.
+connect/disconnect, key management, backup/restore, client enrollment and
+revocation, and policy-related signing decisions.
 
 Audit is observability and accountability data. It is not consulted as authority
 for signing, authorization, or recovery.
@@ -514,8 +508,6 @@ config.yaml
 endpoints.yaml
 .mcp.json
 .codex/config.toml
-aplane.token
-tokens/<alias>.token
 .apclient.lock
 .ssh/id_ed25519
 .ssh/known_hosts
@@ -542,8 +534,8 @@ namespace and must not be treated as chain identity.
 Signer and cosigner endpoint routing lives in `endpoints.yaml`, not in
 `config.yaml`. The endpoint registry contains a `schema_version`, one default
 signer endpoint alias, and endpoint records with `role: signer` or
-`role: cosigner`. Endpoint records own connection details such as URL,
-signer/local ports, token file, SSH identity file, and known-hosts path.
+`role: cosigner`. Endpoint records own connection details: the `ssh://` URL,
+SSH identity file, and known-hosts path.
 
 Cosigner endpoint records do not contain key inventory. Guarded and
 bounded-cosigner operations query authenticated `/keys` and retain routing only
@@ -713,8 +705,9 @@ Primary projections:
 - admin generate/delete DTOs,
 - `ErrorResponse`.
 
-HTTP token authentication resolves the product-admin principal, and handlers
-use the process-owned product runtime. Clients route signing on inventory `signing_flow`
+HTTP authentication resolves the connection's enrolled client key to a
+`client:<fingerprint>` principal, and handlers use the process-owned product
+runtime. Clients route signing on inventory `signing_flow`
 labels (`cosigner1`, `bounded1`, `bounded-cosigner1`, or empty for plain `/sign`)
 and must fail closed on unknown labels.
 
@@ -735,7 +728,7 @@ The admin protocol projects:
 - template library and installed-template state,
 - key type metadata,
 - sign approval prompts and responses,
-- token provisioning prompts,
+- client enrollment prompts, the enrolled-key list, and key revocation,
 - backup/restore results,
 - cosigner-reference and generation inventory,
 - admin and policy settings.
@@ -854,16 +847,18 @@ durable sign request table.
 Endpoint routing and `/keys` discovery are not trust proofs. A wrong endpoint
 can only return a signature that assembly or the on-chain LogicSig rejects.
 
-### Token Provisioning Lifecycle
+### Client Enrollment Lifecycle
 
-1. Client connects over SSH as `request-token`.
-2. Server verifies the fixed product username and SSH key-only bootstrap path.
-3. Server asks connected admin for approval.
+1. Client connects over SSH as `request-enrollment` and runs `enroll [<label>]`.
+2. Server verifies the fixed enrollment username and key-only bootstrap path.
+3. Server asks the connected admin for approval.
 4. Admin approves.
-5. Server enrolls the SSH public key.
-6. Server creates or loads the product API token.
-7. Token is delivered over the SSH channel.
-8. Audit records confirmed delivery.
+5. Server adds the SSH public key and label to the registry.
+6. Server replies `enrolled <fingerprint>` over the SSH channel.
+7. Audit records `CLIENT_ENROLLED` after confirmed delivery.
+
+Revocation removes the key from the registry, closes its live SSH connections,
+and audits `CLIENT_KEY_REVOKED`; the client must enroll again.
 
 ### Backup And Restore Lifecycle
 
@@ -905,8 +900,8 @@ credentials directly because no live signer store is being mutated.
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
 | `policy.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; v1 signer or cosigner documents according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
-| API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
-| SSH private key | client secret | client-side file, used for tunnel auth |
+| Enrolled client registry | authoritative access list | `identities/default/.ssh/authorized_keys`, daemon-written; a key listed here authenticates as `client:<fingerprint>` |
+| SSH private key | client secret | client-side file or agent key; the client's only credential |
 | Backup export passphrase | secret | protects `.apb` payloads |
 | Audit log | sensitive operational record | mode `0600`; append/rotate |
 | Public cosigner reference | public metadata | generation input only; not endpoint trust or ownership proof |

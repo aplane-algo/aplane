@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `cosigner status`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -615,7 +615,7 @@ connect primary
 
 `known_hosts_path` is optional; if omitted, apshell uses the default client-data known-hosts path.
 
-**Setup:** Obtain a token with `request-token`, or place the endpoint's token file in your `$APCLIENT_DATA` directory after the endpoint has been created or imported.
+**Setup:** Enroll this client's SSH key at the signer with `request-enrollment` after the endpoint has been created or imported.
 
 ---
 
@@ -631,52 +631,57 @@ This is useful before connecting to a different endpoint in scripts.
 
 ---
 
-### request-token
+### request-enrollment
 
-Request an API token from the Signer over SSH.
+Ask the Signer to enroll this client's SSH key, over SSH.
 
 ```
-request-token
-request-token --endpoint <alias>
+request-enrollment
+request-enrollment --endpoint <alias>
+request-enrollment --label <text>
 ```
 
 The command always uses the client SSH key and known-hosts path from the
-selected endpoint profile. With no arguments, it uses the default endpoint.
-With `--endpoint`, it saves the token to that endpoint's token file.
-The selected endpoint also supplies the SSH URL, signer REST port, and token
-destination.
+selected endpoint profile. With no arguments, it uses the default signer
+endpoint. With `--endpoint`, it enrolls the key at that signer or cosigner
+endpoint. `--label` is a display name the operator sees next to the key in
+apadmin.
 
 **Examples:**
 ```
-request-token
-request-token --endpoint main
+request-enrollment
+request-enrollment --endpoint main
+request-enrollment --label laptop
 ```
 
-**Note:** An operator using local `apadmin` must approve the request on the server.
-After approval, `apshell` saves the new token. It immediately attempts to
-connect only when the selected endpoint is the default signer; cosigner
-access provisioning leaves the primary signer connection unchanged. For normal
-cosigner setup, use [endpoints add](#endpoints-add), which obtains access as part of setup.
+**Note:** An operator using local `apadmin` (or `apapprover`) must approve the
+request on the node. Compare the full client fingerprint printed by apshell
+with the **Client Enrollment Request** shown there before approving. On
+success apshell prints `Client key <fingerprint> enrolled at endpoint <alias>`.
+It immediately attempts to connect only when the selected endpoint is the
+default signer; enrolling at a cosigner leaves the primary signer connection
+unchanged. For normal cosigner setup, use [endpoints add](#endpoints-add),
+which enrolls as part of setup.
 
-A token is saved only while the endpoint still names the destination that
-issued it. If the endpoint was changed or removed while the request was waiting
-for approval, the issued token is discarded and the command says so.
+Enrolling a key that is already enrolled is harmless: the operator approves
+again and nothing changes. Nothing is stored on the client; its key is its
+credential, and the node keeps the registry.
 
 The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
 hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
-Ed25519. RSA and DSA keys fail SSH authentication, for `request-token` and
-`connect` alike, before any approval prompt.
+Ed25519. RSA and DSA keys fail SSH authentication, for `request-enrollment`
+and `connect` alike, before any approval prompt.
 
 The positional one-off host form is no longer supported. Import or configure
-the endpoint first, then request its token:
+the endpoint first, then enroll with it:
 
 ```text
 endpoints import --alias main --role signer signer.endpoint.json
-request-token
+request-enrollment
 ```
 
-apadmin uses local IPC independently of apshell endpoints and tokens. For remote
-administration, log in to the signer host:
+apadmin uses local IPC independently of apshell endpoints and client keys. For
+remote administration, log in to the signer host:
 
 ```bash
 ssh -t user@signer 'apadmin -d /path/to/signer-data'
@@ -692,7 +697,7 @@ cosigner's address:
 
 1. **On the cosigner:** generate a cosigner key and choose **Export Cosigner
    Key**. The file is the key's public reference and nothing else: no
-   endpoint, token, or host trust. Use **SHOW JSON** to copy the document
+   endpoint or host trust. Use **SHOW JSON** to copy the document
    instead of saving a file. The result screen shows the address clients
    should use, taken from `endpoint.advertise_url` when it is configured.
 2. **On the primary signer:** in apadmin, **Generate account**, open the
@@ -762,34 +767,21 @@ ambiguous at signing time.
 **The node must be a cosigner.** After access is established, apshell reads the
 node role and stops if the endpoint is a signer, or if the role is missing,
 unrecognized, or cannot be read. For a signer it prints the signer setup
-commands (`endpoints import --role signer`, `request-token`, `connect`).
+commands (`endpoints import --role signer`, `request-enrollment`, `connect`).
 
-**Replacing a destination.** Changing the URL or the SSH-backed API port of an
-existing connection requires interactive replacement consent. The token issued
-by the previous destination is removed before the new route is written, so it
-is never presented to the new one. If another connection uses the same token
-file, the replacement is refused; give the connection its own `token_file`
-first.
+**Replacing a destination.** Changing the URL of an existing connection
+requires interactive replacement consent. The client's enrollment at the old
+node is not affected; revoke it there if it is no longer wanted.
 
-**Tokens belong to one endpoint.** A token is only ever presented to the
-destination that issued it. `endpoints add`, `endpoints import`, and
-`endpoints create` all follow the same rules:
-
-- Creating an endpoint removes any token file already at its path. Such a file
-  was left by an earlier endpoint of the same name.
-- Changing an endpoint's destination removes its token.
-- `endpoints delete` removes the endpoint's token with it.
-
-For HTTPS and loopback HTTP endpoints, which cannot enroll automatically,
-install the token file **after** the endpoint exists. A token placed before the
-endpoint is created is removed, and the output says so.
+**The key is the credential.** Nothing is stored on the client for access:
+the node keeps the registry of enrolled keys. `endpoints add`,
+`endpoints import`, and `endpoints create` write routing only.
 
 | Situation | Behavior |
 |---|---|
-| Same URL and API port | The connection is reused with its custom key, token, and known-hosts paths |
-| No token, `ssh://` | Access is requested; compare the full client fingerprint with the Client Access Request before approving |
-| Stored token rejected, `ssh://` | Explained, with `request-token --endpoint <alias>` to re-enroll |
-| No token, HTTPS or loopback HTTP | Install the endpoint token file now that the endpoint exists, then rerun; automatic enrollment requires SSH |
+| Same URL | The connection is reused with its custom key and known-hosts paths |
+| Key not enrolled, `ssh://` | Enrollment is requested; compare the full client fingerprint with the Client Enrollment Request before approving |
+| Key revoked, `ssh://` | Enrollment is requested again the same way |
 | Cosigner locked | Configuration is kept; unlock it in apadmin and rerun |
 | Cancelled midway | Completed effects are reported and kept for the rerun |
 
@@ -801,7 +793,7 @@ endpoint is created is removed, and the output says so.
    cosigner, how many have exactly one route.
 
 ```text
-Connection cosigner-example ready; access token saved.
+Connection cosigner-example ready; this client's key was enrolled.
 2 cosigner key(s) advertised.
 Cosigner routes available for 2 of 2 accounts on the connected signer.
 ```
@@ -827,9 +819,9 @@ duplicate route, apshell offers to remove it. Connections that already existed
 are never offered for removal.
 
 `--dry-run` validates the input and reports the proposed route without writing
-files, changing host trust, requesting a token, or contacting the cosigner.
+files, changing host trust, requesting enrollment, or contacting the cosigner.
 Script use requires the URL, `--alias` for a new connection, and an already
-trusted SSH host; it may wait for normal cosigner-side token approval.
+trusted SSH host; it may wait for normal cosigner-side enrollment approval.
 First-use trust and conflicting replacements require an interactive shell.
 `endpoints add` is not available through MCP; the other `endpoints`
 subcommands are.
@@ -893,27 +885,24 @@ endpoints delete <alias>
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
 `apadmin endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
-and `role: cosigner` for cosigner endpoints. Import does not copy tokens or SSH
-host trust. On the signer side, `apadmin endpoint export` can derive the URL
+and `role: cosigner` for cosigner endpoints. Import does not enroll the
+client's key or copy SSH host trust. On the signer side, `apadmin endpoint export` can derive the URL
 from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
 admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
-Re-importing with the same alias replaces that alias's endpoint data. If that
-changes the destination (the URL), the token issued by the previous
-destination is removed. Importing a new alias likewise removes
-any token file already at its path. The output reports either removal.
+Re-importing with the same alias replaces that alias's endpoint data.
 
 `endpoints create` manually writes a `role: cosigner` endpoint profile without an
 exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
 usually `ssh://host[:ssh-port]`. The cosigner's REST port is not part of the
 profile: an `ssh://` node forwards every client channel to its own listener.
-It writes routing only. Tokens are still obtained with
-`request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
-flow.
+It writes routing only. The client's key is still enrolled with
+`request-enrollment --endpoint <alias>`, and SSH host trust still uses the
+known-hosts flow.
 
 `endpoints discover-cosigners` is a read-only diagnostic. It queries configured
-cosigner endpoints using their endpoint token files, validates the advertised
+cosigner endpoints over SSH with the client's enrolled key, validates the advertised
 Witness Key IDs, and prints live results. It does not update `endpoints.yaml`
 or the connected signer's generation catalog. Guarded and bounded-cosigner
 operations perform this discovery automatically for the keys they require.
@@ -924,8 +913,8 @@ endpoints import --alias main --role signer signer.endpoint.json
 endpoints import --alias local-cosigner --role cosigner cosigner.endpoint.json
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
-request-token --endpoint main
-request-token --endpoint local-cosigner
+request-enrollment --endpoint main
+request-enrollment --endpoint local-cosigner
 connect main
 endpoints discover-cosigners
 endpoints list
@@ -935,9 +924,9 @@ endpoints delete old-signer
 ```
 
 `endpoints delete` refuses to remove the signer endpoint. Cosigner routing has no
-persisted key inventory to retain. Deleting an endpoint also removes its token
-file, unless another endpoint uses the same file; SSH host trust is left as it
-is.
+persisted key inventory to retain. SSH host trust is left as it is, and the
+client's enrollment at that node is not revoked; do that from the node's
+apadmin if it is no longer wanted.
 
 ---
 
@@ -955,7 +944,7 @@ apadmin cosigner remove <name>
 
 Run `export` against the cosigner node. It asks the daemon to verify and return
 the canonical `aplane.witness-key-public.v1` document: the key's public
-reference and nothing else, with no endpoint, token, host trust, policy, or
+reference and nothing else, with no endpoint, host trust, policy, or
 private material. With an output path, the `apadmin` process writes the public
 file on the machine where it runs. Without a path, the JSON is written to
 stdout. This file is what the interactive **Export Cosigner Key** screen
@@ -1463,13 +1452,11 @@ endpoints:
     url: ssh://192.168.1.100:1127
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
   local-cosigner:
     role: cosigner
     url: ssh://192.168.1.101:1127
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-cosigner.token
 ```
 
 See `docs/USER_CONFIG.md` for full configuration options.

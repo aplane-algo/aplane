@@ -101,7 +101,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   └── identities/default/ # Keystore (created during install)
 │       ├── store-root.enc
 │       ├── .keystore
-│       └── .ssh/          # Product-local authorized_keys after token enrollment
+│       └── .ssh/          # authorized_keys registry of enrolled client keys
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
 │   ├── bin/               # apshell
 │   ├── config.yaml        # Client config (network and UI defaults)
@@ -190,12 +190,11 @@ cd /path/to/aplane
 
 For local signer nodes, this opens shell, signer admin, and daemon panes in one
 Bubble Tea console while preserving the same apshell, apadmin, and apsigner
-transport interfaces. Unlock the signer pane, then run `request-token` in the
-shell pane. Local `apconsole` probes the live loopback SSH endpoint before
+transport interfaces. Unlock the signer pane, then run `request-enrollment` in
+the shell pane. Local `apconsole` probes the live loopback SSH endpoint before
 pinning the local signer's SSH host key into the client `known_hosts` file.
-Approve the request in the signer pane; that first enrollment writes
-`aplane.token` into the client data directory and the shell immediately attempts
-to connect.
+Approve the request in the signer pane; that enrolls the client's SSH key at
+the signer and the shell immediately attempts to connect.
 
 For local cosigner nodes, `apconsole` shows the cosigner admin pane and daemon pane
 only. Unlock the cosigner in that console, then follow
@@ -218,7 +217,7 @@ For a signer node:
 1. Run `./start.sh` from the install root
 2. Unlock the signer pane with the keystore passphrase
 3. Generate a signing key in the signer pane (press `g`)
-4. In the shell pane, run `request-token` to obtain an API token via SSH provisioning
+4. In the shell pane, run `request-enrollment` to enroll the client's SSH key at the signer
 5. Approve the request in the signer pane
 
 For a cosigner node:
@@ -228,11 +227,12 @@ For a cosigner node:
 3. Follow [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
    below to export the key and add the connection in apshell.
 
-`request-token` creates the client SSH key if it is missing, then waits for an
-operator to approve client access in `apadmin` or `apapprover`.
-After approval, the shell saves the token for the selected endpoint and
-immediately attempts to connect only when that endpoint is the default signer.
-Cosigner access provisioning leaves the primary signer connection unchanged.
+`request-enrollment` creates the client SSH key if it is missing, then waits
+for an operator to approve the key in `apadmin` or `apapprover`. The key is
+the client's only credential; nothing else is issued or stored. After approval,
+the shell immediately attempts to connect only when the selected endpoint is
+the default signer. Enrolling at a cosigner leaves the primary signer
+connection unchanged.
 
 ### Configure a cosigner for guarded accounts
 
@@ -252,26 +252,25 @@ the cosigner's address. Complete them in this order:
 3. In `apshell`, run `endpoints add <cosigner-url>`. Accept or edit the
    suggested connection name. Compare the full client SSH key fingerprint shown
    by apshell with the **Client Access Request** in cosigner-side apadmin, then
-   approve the request. Apshell saves the token, confirms the node is a
-   cosigner, and reports the keys it advertises and the account's route.
+   approve the request. Apshell confirms the node is a cosigner and reports
+   the keys it advertises and the account's route.
 
 Run `cosigner status` at any time to inspect routes before funding or rekeying.
 It is a point-in-time connection check, not confirmation of transaction policy
 or on-chain validity.
 
 The key file contains the public key and nothing else. It never contains the
-cosigner's address, the private cosigner key, an access token, or SSH host
-trust. The client never sees it: it keeps only the connection, so another key
+cosigner's address, the private cosigner key, or SSH host trust. The client never sees it: it keeps only the connection, so another key
 on the same cosigner needs no client change.
 
-### Advanced: provision an existing local cosigner endpoint
+### Advanced: enroll with an existing local cosigner endpoint
 
-For an already configured `local-cosigner` endpoint, you can provision its access
-token separately. In another terminal, source the install's `apenv.sh`, start
-apshell, and run `request-token --endpoint local-cosigner`. Approve the request
-in the cosigner admin pane after comparing the complete client SSH fingerprint.
-The client saves `tokens/local-cosigner.token`. This manual access step does not
-import a public cosigner key into the primary signer.
+For an already configured `local-cosigner` endpoint, you can enroll the
+client's key separately. In another terminal, source the install's `apenv.sh`,
+start apshell, and run `request-enrollment --endpoint local-cosigner`. Approve
+the request in the cosigner admin pane after comparing the complete client SSH
+fingerprint. This manual access step does not import a public cosigner key
+into the primary signer.
 
 For new guarded-account setup, use the guided flow above. See
 [advanced endpoint commands](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery)
@@ -322,7 +321,7 @@ To inspect an environment without changing it, run:
 ```
 
 The audit script checks resolved data directories, config presence, signer/client
-port consistency, listeners, IPC socket state, token and SSH key permissions,
+port consistency, listeners, IPC socket state, SSH key permissions,
 and common partial-install states. IPC discovery is delegated to `approbe`; an
 explicit `--signer-data` suppresses inherited socket overrides, while normal
 environment-selected discovery honors an `APSIGNER_DATA`/
@@ -339,14 +338,14 @@ This removes installer-managed local artifacts: binaries under `apsigner/bin/`
 and `apclient/bin/`, generated `apenv.sh`, `apconsole.yaml`, `start.sh`, the
 copied `uninstall.sh`, and the shell rc source block for this install. It
 preserves `apsigner/` and `apclient/` state by default, including signer keys,
-configuration, audit logs, client token, SSH trust, plugins, scripts, caches,
+configuration, audit logs, client SSH key, SSH trust, plugins, scripts, caches,
 and swap state. Use `--local` to force local uninstall mode; when no path is
 provided, it prompts for the local APlane directory. If you run the copied
 `<install-path>/uninstall.sh`, the prompt defaults to that install path.
 
 At the end, the uninstaller prints the retained paths and explicit `rm -rf`
 commands for irreversible state destruction. Only run those commands after
-backing up any keys, tokens, audit logs, or client state you still need.
+backing up any keys, audit logs, or client state you still need.
 
 ---
 
@@ -426,7 +425,7 @@ the installer's minimum supported version. If the existing install is below the 
 if the installer cannot read `install/release.json`, install into a fresh root
 and initialize fresh `apclient` and `apsigner` data directories. Preserve the
 source install directory separately until you have confirmed the fresh environment
-has the keys, policy, endpoint routing, tokens, and network configuration you
+has the keys, policy, endpoint routing, client enrollments, and network configuration you
 intend to use.
 
 Use `-f` or `--force` only when you intentionally need to bypass that installer
@@ -463,7 +462,7 @@ This installs:
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
 - `~/aplane/apclient/.codex/config.toml` — Codex project MCP configuration for `apshell --mcp`; Codex loads it when started from this trusted client directory
-- `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell request-token` when first needed
+- `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell request-enrollment` when first needed
 - `~/aplane/apclient/plugins.yaml` — enabled plugin names; new installs start with an empty activation list
 - `~/aplane/apclient/plugins.available/algokit-localnet/` — bundled LocalNet operations plugin, loaded only when `algokit-localnet` is listed in `plugins.yaml`
 - `~/aplane/apclient/scripts/` — saved JavaScript/MCP snippets
@@ -472,15 +471,15 @@ This installs:
 
 1. Ensure `~/aplane/apclient/bin` is on your `PATH`, or invoke `apshell` by full path
 2. Edit `~/aplane/apclient/endpoints.yaml` to set your remote signer host
-3. Run `apshell`, then use `request-token` to generate or reuse your SSH key and request an API token
-4. Ask the signer operator to approve the token enrollment in `apadmin` or `apapprover`
+3. Run `apshell`, then use `request-enrollment` to generate or reuse your SSH key and ask the signer to enroll it
+4. Ask the signer operator to approve the enrollment in `apadmin` or `apapprover`
 
-The normal `request-token` flow handles the client's SSH-key and API-token
-enrollment together. It does not enroll a cosigner witness as a guarded-account
+The `request-enrollment` flow enrolls the client's SSH key, which is its only
+credential. It does not enroll a cosigner witness as a guarded-account
 co-authority. For guarded accounts, follow
 [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts).
-After approval, interactive `apshell` saves the token and immediately attempts
-to connect to the signer.
+After approval, interactive `apshell` immediately attempts to connect to the
+signer.
 
 **Constraints:** `--client` cannot be combined with `--systemd` or `--bindir`. It must not be run as root.
 
@@ -750,7 +749,7 @@ This produces statically linked binaries in `bin/`:
 | `apstore` | Offline keystore bootstrap, verification, and rescue |
 | `apadmin` | Live administration over local IPC, in the TUI or batch mode |
 | `apconsole` | Unified secure-machine console for shell, signer TUI, and daemon status |
-| `apapprover` | Signing and token provisioning approval interface |
+| `apapprover` | Signing and client enrollment approval interface |
 | `appass` | Offline passphrase auto-unlock configuration TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
@@ -1032,7 +1031,6 @@ $APSIGNER_DATA/identities/default/
 │   ├── keys/         # Encrypted credentials and public witness metadata
 │   └── deleted/      # Bounded deleted credential/template/cosigner-policy archive
 ├── quarantine/generations/<gen-id>/ # Non-authoritative abandoned publications
-├── aplane.token      # Product API token created by apstore initialize
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
@@ -1042,10 +1040,10 @@ with an empty `policies/` set, so each cosigner key rejects every request until
 its policy is applied with `apadmin policy apply`. Every policy apply commits a
 new generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
-`appass`. The signer-side `aplane.token` is created during initialization;
-client-side token files are written when a client is enrolled via
-`request-token`. `passphrase.cred` exists only when `appass` configures
-auto-unlock with `systemd-creds`.
+`appass`. `identities/default/.ssh/authorized_keys` is the daemon-owned
+registry of client SSH keys enrolled via `request-enrollment`; do not hand-edit
+it. `passphrase.cred` exists only when `appass` configures auto-unlock with
+`systemd-creds`.
 
 Treat `identities/default/` as one filesystem restore unit. Restoring
 `store-root.enc` without the generation and quarantine directories it governed,
@@ -1064,12 +1062,10 @@ The client data directory grows over time as well:
 $APCLIENT_DATA/
 ├── config.yaml           # Network and UI defaults
 ├── endpoints.yaml        # Signer endpoint routing
-├── aplane.token          # API token (created after request-token approval)
-├── tokens/               # Optional endpoint-specific API tokens
 ├── .mcp.json             # Installer-written MCP client config for apshell --mcp
 ├── .codex/config.toml    # Installer-written Codex project MCP config
 ├── .ssh/
-│   ├── id_ed25519        # SSH private key for authentication
+│   ├── id_ed25519        # SSH private key: the client's credential
 │   ├── id_ed25519.pub    # SSH public key
 │   └── known_hosts       # Trusted server host keys
 ├── plugins.yaml          # Enabled plugin names
@@ -1088,7 +1084,7 @@ The `installer/` directory contains service files and installer helper scripts f
 | `installer/apsigner.service` | Pre-built service unit. Hardcoded for `/var/lib/apsigner` as user `aplane` with binaries in `/usr/local/bin/`. Copy directly to `/etc/systemd/system/` for the simplest possible setup. |
 | `installer/apsigner.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, and `@@MEMORY_LOCK_SERVICE_LINES@@` placeholders. Used by `installer/scripts/systemd-setup.sh` for customizable installs. |
 | `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `apsigner` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
-| `installer/scripts/aplane-env-audit.sh` | Read-only environment audit for local configuration, ports, listeners, IPC socket state, token/key permissions, and partial installs. |
+| `installer/scripts/aplane-env-audit.sh` | Read-only environment audit for local configuration, ports, listeners, IPC socket state, SSH key permissions, and partial installs. |
 | `installer/scripts/config-mcp.sh` | Helper that writes `$APCLIENT_DATA/.mcp.json` and `$APCLIENT_DATA/.codex/config.toml` for `apshell --mcp`. Installers call the same configuration logic automatically. |
 
 ### Manual Installation (Without the Setup Script)
@@ -1239,7 +1235,8 @@ every retained path with a one-line label. Security-relevant entries:
 - **`identities/default/store-root.enc`** -- the store's cryptographic root and
   active-generation selector; without it no generation has current authority.
 - **`identities/default/.keystore`** -- store format marker.
-- **`identities/default/aplane.token`** -- HTTP API token; treat as a credential.
+- **`identities/default/.ssh/authorized_keys`** -- registry of enrolled client
+  SSH keys; whoever holds a listed private key can reach the signer.
 - **`audit.log`** -- the signer's audit trail. Retain for compliance and
   forensics unless you have already exported it.
 - **`backups/`** -- encrypted backup tarballs (same protections as keys).

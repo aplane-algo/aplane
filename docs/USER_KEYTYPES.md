@@ -174,7 +174,7 @@ validation and signer-reference import as file import. Choosing
 compatible with that witness type.
 
 The key file contains the public key only; it carries no address. Client
-routing, access provisioning, and SSH host trust are separate explicit steps
+routing, client enrollment, and SSH host trust are separate explicit steps
 in apshell, which is given the cosigner's address directly.
 
 The cosigner-side `apadmin` export screen also offers **SHOW JSON**, which prints
@@ -193,9 +193,9 @@ needs no client change.
 
 Connect apshell to the primary signer and run `cosigner status` to inspect the
 guarded account's cosigner route. apadmin uses local IPC and never reads or
-writes the client endpoint registry or token files.
+writes the client endpoint registry or SSH identity.
 
-For scripting, batch import/export, and separate endpoint/token operations,
+For scripting, batch import/export, and separate endpoint/enrollment operations,
 see [the cosigner command reference](USER_COMMANDS.md#apadmin-cosigner) and
 [advanced manual endpoint configuration](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery).
 

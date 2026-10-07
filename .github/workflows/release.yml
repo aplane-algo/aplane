@@ -191,7 +191,7 @@ jobs:
               'First connection:' \
               '- SSH identity key will be auto-generated in .ssh/id_ed25519' \
               "- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
-              '- API token can be provisioned from the server via request-token' \
+              '- Ask the operator to enroll your key: run request-enrollment and have them approve it' \
               '' \
               'Files:' \
               '  bin/apshell       - General shell client' \
@@ -199,7 +199,6 @@ jobs:
               '  config.yaml       - Configuration template (edit signer host/ports)' \
               '  .ssh/             - SSH keys and known_hosts (created/managed locally)' \
               '  installer/scripts/config-mcp.sh - Optional helper to write .mcp.json after extraction' \
-              '  aplane.token      - API token (created after request-token or copied from operator)' \
               > dist/staging/aplane-client/README.txt
           }
 
@@ -215,13 +214,12 @@ jobs:
               'First connection:' \
               '- SSH identity key will be auto-generated in .ssh\id_ed25519' \
               "- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
-              '- API token can be provisioned from the server via request-token' \
+              '- Ask the operator to enroll your key: run request-enrollment and have them approve it' \
               '' \
               'Files:' \
               '  bin\apshell.exe   - General shell client' \
               '  config.yaml       - Configuration template (edit signer host/ports)' \
               '  .ssh\             - SSH keys and known_hosts (created/managed locally)' \
-              '  aplane.token      - API token (created after request-token or copied from operator)' \
               > dist/staging/aplane-client/README.txt
           }
 

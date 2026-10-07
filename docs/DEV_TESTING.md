@@ -129,8 +129,6 @@ aplane/
 │   │   ├── jsonrpc/protocol_test.go      # JSON-RPC protocol tests
 │   │   ├── manifest/manifest_test.go     # Plugin manifest tests
 │   │   └── sandbox/sandbox_test.go       # Plugin sandbox tests
-│   ├── tokenfile/
-│   │   └── tokenfile_test.go         # Token file permission and IO tests
 │   └── transport/
 │       ├── client_test.go            # IPC transport tests
 │       ├── protocol_flow_test.go     # Admin protocol flow tests
@@ -258,7 +256,7 @@ test/
 │   ├── app_test.go                # Application deploy/read/call flow tests
 │   ├── apstore_initialize_test.go # apstore initialize bootstrap tests
 │   ├── backup_portability_test.go # Backup/restore portability tests
-│   ├── ssh_token_test.go          # SSH enrollment and token provisioning tests
+│   ├── ssh_enrollment_test.go     # SSH client enrollment, host trust, and revocation tests
 │   ├── apadmin_changepass_test.go # Passphrase rotation restart regression
 │   └── passthrough_test.go        # Passthrough/multi-party signing tests
 ```
@@ -313,7 +311,6 @@ This creates `/tmp/aplane-test-env/` containing:
 │       │   └── authorized_keys        # Product-store SSH client key authorization
 │       ├── store-root.enc         # Cryptographic root and active-generation selection
 │       ├── .keystore              # Store format marker
-│       ├── aplane.token           # Generated API token
 │       └── generations/<gen-id>/  # Active generation selected by store-root.enc
 │           ├── policy.json        # Permissive integration-test signer policy
 │           ├── policy.json.hmac   # Integrity sidecar for policy.json
@@ -322,7 +319,6 @@ This creates `/tmp/aplane-test-env/` containing:
 └── apclient/                      # Client data directory (APCLIENT_DATA)
     ├── config.yaml                # Client config (network and algod settings)
     ├── endpoints.yaml             # Client endpoint registry (SSH signer route)
-    ├── aplane.token               # Copy of API token
     └── .ssh/
         ├── id_ed25519             # Generated client SSH key
         ├── id_ed25519.pub
@@ -338,15 +334,14 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 3. Picks random available ports for REST API and SSH (avoids collisions with running services)
 4. Writes signer `config.yaml` (random ports, `user_auto_approve:true`, no admin idle timeout)
 5. Writes client `config.yaml` for network/algod settings and `endpoints.yaml`
-   for the SSH signer route, token file, and `known_hosts_path`
+   for the SSH signer route, `identity_file`, and `known_hosts_path`
 6. Writes passphrase file for the signer
 7. Initializes the keystore non-interactively by piping the generated test passphrase to `apstore initialize`
-8. Copies the generated API token to the client data directory
-9. Pre-populates client `known_hosts` with the signer's SSH host key (avoids TOFU prompts)
-10. Writes product-store authorized keys and applies a permissive test policy with `apadmin policy rescue apply --yes -`
-11. Copies the top-level `library/templates/` YAML files into the signer data library
-12. In localnet mode, creates a disposable native Falcon account, funds it from KMD, exports it as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
-13. Writes `.env.test` with all required environment variables
+8. Pre-populates client `known_hosts` with the signer's SSH host key (avoids TOFU prompts)
+9. Writes product-store authorized keys and applies a permissive test policy with `apadmin policy rescue apply --yes -`
+10. Copies the top-level `library/templates/` YAML files into the signer data library
+11. In localnet mode, creates a disposable native Falcon account, funds it from KMD, exports it as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
+12. Writes `.env.test` with all required environment variables
 
 #### Test environment ports
 
@@ -447,7 +442,7 @@ go run ./test/integration/cmd/localnet-clean-test-keys
 go run ./test/integration/cmd/localnet-clean-test-keys -yes
 ```
 
-`make integration-test` is the canonical path because integration tests require a coherent generated fixture: signer/client data dirs, randomized ports, SSH keys, token files, and initialized keystore state. Focused runs should still go through `make integration-test` with `INTEGRATION_GO_ARGS` so the fixture is regenerated before `go test`.
+`make integration-test` is the canonical path because integration tests require a coherent generated fixture: signer/client data dirs, randomized ports, SSH keys, client enrollment, and initialized keystore state. Focused runs should still go through `make integration-test` with `INTEGRATION_GO_ARGS` so the fixture is regenerated before `go test`.
 
 When `APLANE_SDKS_REPO` points at a local `aplanesdk` checkout, the Makefile
 also runs the SDK repo's live signer integration tests after the in-repo Go
@@ -502,7 +497,7 @@ the safe apshell command surface: connection/config/status, aliases/sets,
 balance and participation reads, write/verbose/simulate modes, script and
 JavaScript helpers, app read commands, ASA cache/info/opt-in/opt-out,
 generate/delete, validate, offline keyreg, rekey/unrekey, send, sweep, and
-close. It intentionally skips plugins, token provisioning, and keyreg-online.
+close. It intentionally skips plugins, client enrollment, and keyreg-online.
 
 The target is intentionally separate from `make integration-test` and
 `make integrity-check`; it is for capacity and endurance testing against a
@@ -553,7 +548,7 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 | `TestPassthroughMixedGroup` | Sign + passthrough in one group: server signs txn A, pre-signed txn B passes through unchanged |
 | `TestPassthroughResign` | Sign full group, strip one signature, resubmit with mix of sign + passthrough |
 | `TestPassthroughRequiresPreGrouped` | Verify passthrough rejects transactions without pre-set group ID |
-| `TestRequestTokenHappyPathEnrollsKeyAndConnectWorks` | Exercise SSH token provisioning, enrollment, and reconnect |
+| `TestRequestEnrollmentHappyPathEnrollsKeyAndConnectWorks` | Exercise SSH client enrollment with operator approval, then connect |
 
 `TestKeyDerivationRegression` is a compatibility golden, not a generated test
 artifact. If a derivation path intentionally changes, such as a LogicSig salt
@@ -590,9 +585,9 @@ if err := signerd.Start(); err != nil {
 }
 defer func() { _ = signerd.Stop() }()
 
-url := signerd.GetURL()             // "http://localhost:<port>"
+url := signerd.GetURL()             // Loopback URL of an SSH tunnel opened with the client identity in APCLIENT_DATA
 dir := signerd.GetWorkDir()         // APSIGNER_DATA path
-token := signerd.GetTokenPath()     // Path to aplane.token
+health := signerd.LoopbackURL()     // Daemon loopback listener; answers only /health
 logs, _ := signerd.GetLogs()        // Captured log output
 ```
 
@@ -632,10 +627,7 @@ Provides programmatic interface to apshell CLI:
 - Parses transaction IDs from command output
 
 ```go
-apshell := harness.NewApshellHarness(t, signerd.GetURL())
-if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-    t.Fatal(err)
-}
+apshell := harness.NewApshellHarness(t)
 
 // Transactions
 txid, err := apshell.SendTransaction(from, to, 0.1)     // Payment
@@ -791,7 +783,7 @@ make docker-systemd-test
 `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`. It
 starts signer, cosigner, client/admin, and AlgoKit-style LocalNet algod/KMD
 containers on one Docker network. It verifies local install layouts, shared
-LocalNet reachability, SSH token provisioning for signer and cosigner endpoints,
+LocalNet reachability, SSH client enrollment at signer and cosigner endpoints,
 local IPC `apadmin` public-reference export and import, the `apadmin policy`
 verbs on the cosigner node (`status`, `check`, `diff`, `apply` from a file and
 from stdin, `export --key`, `remove`), guarded signing, Corridor allowlist
@@ -802,7 +794,7 @@ Python SDK checkout.
 but installs APlane from GitHub release assets, Python from PyPI, and TypeScript
 from npm. It also exercises guarded signing through both published SDKs.
 
-`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the active-service install gate, stopped in-place systemd upgrade state preservation, and uninstall signer-state preservation.
+`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, client enrollment approval, the active-service install gate, stopped in-place systemd upgrade state preservation, and uninstall signer-state preservation.
 
 The older focused single-container rootless lifecycle smoke remains available
 as `scripts/docker-local-smoke.sh`. Invoke it directly when testing
