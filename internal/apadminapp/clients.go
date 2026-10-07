@@ -4,7 +4,7 @@
 package apadminapp
 
 import (
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -56,28 +56,61 @@ func parseClientsFingerprintArgs(verb string, args []string, allowLabel bool) (f
 	if allowLabel {
 		usage += " [--label <text>]"
 	}
-	fs := flag.NewFlagSet("apadmin clients "+verb, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	labelFlag := fs.String("label", "", "")
-	if err := fs.Parse(args); err != nil || fs.NArg() != 1 || (!allowLabel && *labelFlag != "") {
+	positional, label, labelSet, err := splitClientsLabelFlag(args)
+	if err != nil || len(positional) != 1 || (!allowLabel && labelSet) {
 		return "", "", fmt.Errorf("%s", usage)
 	}
-	fingerprint = strings.TrimSpace(fs.Arg(0))
+	fingerprint = strings.TrimSpace(positional[0])
 	if !strings.HasPrefix(fingerprint, "SHA256:") {
 		return "", "", fmt.Errorf("%s: fingerprint must be the SHA256: form shown by apshell", usage)
 	}
-	return fingerprint, strings.TrimSpace(*labelFlag), nil
+	return fingerprint, strings.TrimSpace(label), nil
 }
 
 func parseClientsImportArgs(args []string) (path, label string, err error) {
 	const usage = "usage: apadmin clients import <public-key-file|-> [--label <text>]"
-	fs := flag.NewFlagSet("apadmin clients import", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	labelFlag := fs.String("label", "", "")
-	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+	positional, label, _, err := splitClientsLabelFlag(args)
+	if err != nil || len(positional) != 1 {
 		return "", "", fmt.Errorf("%s", usage)
 	}
-	return fs.Arg(0), strings.TrimSpace(*labelFlag), nil
+	return positional[0], strings.TrimSpace(label), nil
+}
+
+// splitClientsLabelFlag separates the one optional --label flag from the
+// positional arguments of a clients verb. The flag is accepted before or
+// after the positional argument, as the documented forms show it, which
+// the standard flag package does not allow since it stops at the first
+// positional. "--label <text>", "--label=<text>", and the single-dash
+// spellings are all accepted; "--" ends flag parsing. Any other flag is an
+// error, as is a repeated --label or one without a value.
+func splitClientsLabelFlag(args []string) (positional []string, label string, labelSet bool, err error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positional = append(positional, arg)
+			continue
+		}
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if name != "label" {
+			return nil, "", false, fmt.Errorf("unknown flag %q", arg)
+		}
+		if labelSet {
+			return nil, "", false, errors.New("--label given more than once")
+		}
+		if !hasValue {
+			if i+1 >= len(args) {
+				return nil, "", false, errors.New("--label needs a value")
+			}
+			i++
+			value = args[i]
+		}
+		label, labelSet = value, true
+	}
+	return positional, label, labelSet, nil
 }
 
 func (c Catalog) runClients(args []string) error {

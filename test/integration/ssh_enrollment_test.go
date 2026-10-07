@@ -543,15 +543,20 @@ func TestImportClientKeyPreEnrolls(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
-	defer ipcClient.Close()
-
 	line := strings.TrimSpace(readFileIfExists(t, env.ClientPublicKeyPath))
 	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
-	fingerprint, label, added := mustImportClientKeyViaIPC(t, ipcClient, line, "imported-laptop")
-	if fingerprint != want || label != "imported-laptop" || !added {
-		t.Fatalf("import = %s %q %v, want %s imported-laptop added", fingerprint, label, added, want)
+
+	// The documented batch form puts --label after the file; the import
+	// goes through apadmin so that ordering is exercised end to end. The
+	// IPC client connects afterwards: the daemon keeps one active admin
+	// session, and apadmin's unlocked session would displace an earlier one.
+	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
+	imported, err := apadmin.RunWithInput(os.Getenv("TEST_PASSPHRASE")+"\n", "clients", "import", env.ClientPublicKeyPath, "--label", "imported-laptop")
+	if err != nil || !strings.Contains(imported, "client key "+want+" enrolled (label \"imported-laptop\")") {
+		t.Fatalf("apadmin clients import: %v\noutput:\n%s", err, imported)
 	}
+	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
 	if _, _, added := mustImportClientKeyViaIPC(t, ipcClient, line, ""); added {
 		t.Fatal("second import reported the key as new")
 	}
@@ -559,7 +564,6 @@ func TestImportClientKeyPreEnrolls(t *testing.T) {
 
 	// The batch listing authenticates read-only, so the inventory requests
 	// must be on the auth_only allowlist.
-	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	listing, err := apadmin.RunWithInput(os.Getenv("TEST_PASSPHRASE")+"\n", "clients", "list")
 	if err != nil || !strings.Contains(listing, "enrolled  "+want) || !strings.Contains(listing, "imported-laptop") {
 		t.Fatalf("apadmin clients list: %v\noutput:\n%s", err, listing)
