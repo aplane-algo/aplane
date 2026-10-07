@@ -7,17 +7,20 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 func testClientKey(t *testing.T) ssh.PublicKey {
@@ -256,5 +259,226 @@ func TestRejectClientEnrollmentRefusesEnrolledKey(t *testing.T) {
 	}
 	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
 		t.Fatal("a refused rejection changed state")
+	}
+}
+
+// An approval whose queue write failed enrolled the key but left its request
+// listed; the retry enrolls nothing and clears the request, and that is a
+// change to the list, so it is announced. Importing an enrolled key that has
+// a request waiting is the same shape.
+func TestEnrollmentRetriesAnnounceQueueChanges(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+	ir := server.productRuntime()
+	svc := server.enrollmentService()
+	ctx := adminserver.SessionContext{}
+
+	failQueueWrites := func() {
+		fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+			if op == fsutil.OpRename && strings.Contains(path, enrollqueue.FileName) {
+				return errors.New("injected queue rename failure")
+			}
+			return nil
+		}
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	retried := testClientKey(t)
+	retriedFP := ssh.FingerprintSHA256(retried)
+	if _, err := svc.Request(retried, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	failQueueWrites()
+	if _, err := server.ApproveClientEnrollment(ctx, ir, retriedFP, ""); err == nil {
+		t.Fatal("ApproveClientEnrollment() succeeded despite the queue failure")
+	}
+	fsutil.TestHook = nil
+	if !ir.HasAuthorizedKey(retried) || len(ir.PendingEnrollments()) != 1 {
+		t.Fatalf("setup: authorized = %v, pending = %d", ir.HasAuthorizedKey(retried), len(ir.PendingEnrollments()))
+	}
+	if _, err := server.ApproveClientEnrollment(ctx, ir, retriedFP, ""); err != nil {
+		t.Fatalf("retry ApproveClientEnrollment() error = %v", err)
+	}
+	if len(ir.PendingEnrollments()) != 0 {
+		t.Fatal("retry did not clear the request")
+	}
+
+	imported := testClientKey(t)
+	importedFP := ssh.FingerprintSHA256(imported)
+	if _, err := svc.Request(imported, "desk", "10.0.0.2:1"); err != nil {
+		t.Fatal(err)
+	}
+	failQueueWrites()
+	if _, err := server.ApproveClientEnrollment(ctx, ir, importedFP, ""); err == nil {
+		t.Fatal("ApproveClientEnrollment() succeeded despite the queue failure")
+	}
+	fsutil.TestHook = nil
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported)))
+	if _, _, added, err := server.ImportClientKey(ctx, ir, line, ""); err != nil || added {
+		t.Fatalf("ImportClientKey() of an enrolled key = added %v, err %v", added, err)
+	}
+	if len(ir.PendingEnrollments()) != 0 {
+		t.Fatal("import did not clear the request")
+	}
+
+	want := []adminproto.EnrollmentChangedNotification{
+		{Reason: protocol.EnrollmentChangeRequested, Fingerprint: retriedFP},
+		{Reason: protocol.EnrollmentChangeApproved, Fingerprint: retriedFP}, // enrolled, request left behind
+		{Reason: protocol.EnrollmentChangeApproved, Fingerprint: retriedFP}, // retry: request cleared
+		{Reason: protocol.EnrollmentChangeRequested, Fingerprint: importedFP},
+		{Reason: protocol.EnrollmentChangeApproved, Fingerprint: importedFP},
+		{Reason: protocol.EnrollmentChangeImported, Fingerprint: importedFP}, // import: request cleared
+	}
+	if !reflect.DeepEqual(hub.enrollmentChanges, want) {
+		t.Fatalf("notifications = %+v, want %+v", hub.enrollmentChanges, want)
+	}
+}
+
+// Every change to the enrollment queue or the client registry is announced
+// with enrollment_changed, whatever path made it, so an admin client showing
+// either list can re-fetch it. A refused change announces nothing.
+func TestEnrollmentChangesAreNotified(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+	ir := server.productRuntime()
+	svc := server.enrollmentService()
+	ctx := adminserver.SessionContext{}
+
+	var want []adminproto.EnrollmentChangedNotification
+	expect := func(step, reason, fingerprint string) {
+		t.Helper()
+		want = append(want, adminproto.EnrollmentChangedNotification{Reason: reason, Fingerprint: fingerprint})
+		if !reflect.DeepEqual(hub.enrollmentChanges, want) {
+			t.Fatalf("after %s: notifications = %+v, want %+v", step, hub.enrollmentChanges, want)
+		}
+	}
+
+	approved := testClientKey(t)
+	approvedFP := ssh.FingerprintSHA256(approved)
+	if _, err := svc.Request(approved, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	expect("request", protocol.EnrollmentChangeRequested, approvedFP)
+	if _, err := svc.Request(approved, "", "10.0.0.1:2"); err != nil {
+		t.Fatal(err)
+	}
+	expect("repeat request (refreshes the entry's address)", protocol.EnrollmentChangeRequested, approvedFP)
+	if _, err := server.ApproveClientEnrollment(ctx, ir, approvedFP, ""); err != nil {
+		t.Fatal(err)
+	}
+	expect("approve", protocol.EnrollmentChangeApproved, approvedFP)
+	if _, err := server.ApproveClientEnrollment(ctx, ir, approvedFP, ""); err == nil {
+		t.Fatal("second approval succeeded")
+	}
+	if len(hub.enrollmentChanges) != len(want) {
+		t.Fatalf("a refused approval was announced: %+v", hub.enrollmentChanges)
+	}
+
+	rejected := testClientKey(t)
+	rejectedFP := ssh.FingerprintSHA256(rejected)
+	if _, err := svc.Request(rejected, "", "10.0.0.2:1"); err != nil {
+		t.Fatal(err)
+	}
+	expect("request", protocol.EnrollmentChangeRequested, rejectedFP)
+	if err := server.RejectClientEnrollment(ctx, ir, rejectedFP); err != nil {
+		t.Fatal(err)
+	}
+	expect("reject", protocol.EnrollmentChangeRejected, rejectedFP)
+
+	imported := testClientKey(t)
+	importedFP := ssh.FingerprintSHA256(imported)
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported))) + " ops"
+	if _, _, _, err := server.ImportClientKey(ctx, ir, line, ""); err != nil {
+		t.Fatal(err)
+	}
+	expect("import", protocol.EnrollmentChangeImported, importedFP)
+	if _, _, added, err := server.ImportClientKey(ctx, ir, line, ""); err != nil || added {
+		t.Fatalf("repeat import = added %v, err %v", added, err)
+	}
+	if len(hub.enrollmentChanges) != len(want) {
+		t.Fatalf("an import that changed nothing was announced: %+v", hub.enrollmentChanges)
+	}
+
+	if _, err := server.RevokeClientKey(ctx, ir, importedFP); err != nil {
+		t.Fatal(err)
+	}
+	expect("revoke", protocol.EnrollmentChangeRevoked, importedFP)
+	if _, err := server.RevokeClientKey(ctx, ir, importedFP); err == nil {
+		t.Fatal("revoking an unknown key succeeded")
+	}
+	if len(hub.enrollmentChanges) != len(want) {
+		t.Fatalf("a refused revocation was announced: %+v", hub.enrollmentChanges)
+	}
+
+	if revoked, _, err := server.RevokeAllClientKeys(ctx, ir); err != nil || revoked != 1 {
+		t.Fatalf("RevokeAllClientKeys() = %d, %v", revoked, err)
+	}
+	expect("revoke all", protocol.EnrollmentChangeRevokedAll, "")
+}
+
+// The notification reaches the admin session as enrollment_changed, after
+// the request announcement it accompanies.
+func TestEnrollmentRequestIsFollowedByChangeNotification(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
+	server.ipcServer = ipcServer
+	adminConn := addActiveProductSession(t, ipcServer)
+
+	key := testClientKey(t)
+	fingerprint := ssh.FingerprintSHA256(key)
+	if _, err := server.enrollmentService().Request(key, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	var messages []map[string]any
+	deadline := time.After(2 * time.Second)
+	for len(messages) < 2 {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for both notifications; got %#v", messages)
+		case <-time.After(10 * time.Millisecond):
+			messages = adminConn.messages(t)
+		}
+	}
+	if messages[0]["type"] != protocol.MsgTypeClientEnrollmentRequest {
+		t.Fatalf("first message = %#v, want the request announcement", messages[0])
+	}
+	if !reflectJSONSubset(messages[1], map[string]any{
+		"kind":        string(protocol.MessageKindNotification),
+		"type":        protocol.MsgTypeEnrollmentChanged,
+		"reason":      protocol.EnrollmentChangeRequested,
+		"fingerprint": fingerprint,
+	}) {
+		t.Fatalf("enrollment_changed shape mismatch: %#v", messages[1])
+	}
+}
+
+// An enrolled key's client connection opening or closing is announced as a
+// connected/disconnected enrollment change, since the Enrolled Clients list
+// shows which keys are connected. An enrollment-request session is not: its
+// request is announced when queued.
+func TestSSHSessionCallbackAnnouncesEnrolledConnections(t *testing.T) {
+	hub := &recordingAdminHub{}
+	server := &Signer{hub: hub}
+	cb := server.sshSessionCallback(nil)
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.1:1", Fingerprint: "SHA256:req", Connected: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.1:1", Fingerprint: "SHA256:req"})
+	if len(hub.enrollmentChanges) != 0 {
+		t.Fatalf("an enrollment-request session was announced: %+v", hub.enrollmentChanges)
+	}
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:key", EnrolledKey: true, Connected: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:key", EnrolledKey: true})
+	want := []adminproto.EnrollmentChangedNotification{
+		{Reason: protocol.EnrollmentChangeConnected, Fingerprint: "SHA256:key"},
+		{Reason: protocol.EnrollmentChangeDisconnected, Fingerprint: "SHA256:key"},
+	}
+	if !reflect.DeepEqual(hub.enrollmentChanges, want) {
+		t.Fatalf("notifications = %+v, want %+v", hub.enrollmentChanges, want)
 	}
 }

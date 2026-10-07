@@ -91,6 +91,7 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeListKeyTypes,
 		MsgTypeKeyTypes,
 		MsgTypeKeysChanged,
+		MsgTypeEnrollmentChanged,
 		MsgTypeSignerLocked,
 		MsgTypeGetAdminSettings,
 		MsgTypeAdminSettings,
@@ -312,6 +313,20 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":      MsgTypeKeysChanged,
 				"id":        "keys-1",
 				"key_count": float64(7),
+			},
+		},
+		{
+			name: "enrollment_changed",
+			msg: EnrollmentChangedMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeEnrollmentChanged, ID: "enroll-1"},
+				Reason:      EnrollmentChangeApproved,
+				Fingerprint: "SHA256:abc",
+			},
+			wantMap: map[string]any{
+				"type":        MsgTypeEnrollmentChanged,
+				"id":          "enroll-1",
+				"reason":      "approved",
+				"fingerprint": "SHA256:abc",
 			},
 		},
 		{

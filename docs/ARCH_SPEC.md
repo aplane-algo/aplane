@@ -1923,7 +1923,12 @@ Architecturally:
 - enrollment requests are persisted even without an active admin session;
   an authenticated admin approves or rejects them later, and pending requests
   are announced again when the admin authenticates,
-- revoking a key closes every SSH connection that key authenticated.
+- revoking a key closes every SSH connection that key authenticated,
+- every change to the enrollment queue, the enrolled-key registry, or an
+  enrolled key's connection state is announced to the connected admin session
+  (`enrollment_changed`), so an admin screen showing those lists re-fetches
+  them rather than polling; the SSH server reports each session's key to the
+  daemon after the connection is tracked and after it is untracked.
 
 ## Architectural Invariants
 

@@ -1053,6 +1053,14 @@ func ProtocolKeysChangedMessage(notification adminproto.KeysChangedNotification)
 	}
 }
 
+func ProtocolEnrollmentChangedMessage(notification adminproto.EnrollmentChangedNotification) protocol.EnrollmentChangedMessage {
+	return protocol.EnrollmentChangedMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeEnrollmentChanged},
+		Reason:      notification.Reason,
+		Fingerprint: notification.Fingerprint,
+	}
+}
+
 func protocolViolations(vs []signerapproval.Violation) []protocol.PolicyViolation {
 	if len(vs) == 0 {
 		return nil

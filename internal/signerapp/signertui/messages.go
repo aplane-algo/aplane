@@ -87,8 +87,9 @@ const (
 	// Server-initiated notification message types
 	MsgTypeSignRequestCanceled = protocol.MsgTypeSignRequestCanceled
 
-	MsgTypeKeysChanged  = protocol.MsgTypeKeysChanged
-	MsgTypeSignerLocked = protocol.MsgTypeSignerLocked
+	MsgTypeKeysChanged       = protocol.MsgTypeKeysChanged
+	MsgTypeEnrollmentChanged = protocol.MsgTypeEnrollmentChanged
+	MsgTypeSignerLocked      = protocol.MsgTypeSignerLocked
 
 	// Admin settings message types
 	MsgTypeGetAdminSettings         = protocol.MsgTypeGetAdminSettings
@@ -174,6 +175,7 @@ type (
 	LibraryTemplateInfo                  = protocol.LibraryTemplateInfo
 	KeyTypeInfo                          = protocol.KeyTypeInfo
 	KeysChangedMessage                   = protocol.KeysChangedMessage
+	EnrollmentChangedMessage             = protocol.EnrollmentChangedMessage
 	SignerLockedMessage                  = protocol.SignerLockedMessage
 	ClientExistsMessage                  = protocol.ClientExistsMessage
 	DisplaceConfirmMessage               = protocol.DisplaceConfirmMessage

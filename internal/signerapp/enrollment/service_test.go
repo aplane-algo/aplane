@@ -78,20 +78,27 @@ func TestServiceRequestRefreshAndAlreadyEnrolledAreQuiet(t *testing.T) {
 	key := testKey(t)
 	audit := &auditRecorder{}
 	notified := 0
+	changed := 0
 	svc := Service{
 		Queue:    func(ssh.PublicKey, string, string) (bool, bool, error) { return true, false, nil },
 		Notify:   func(Request) { notified++ },
+		Changed:  func(string) { changed++ },
 		AuditLog: audit,
 	}
 	if pending, err := svc.Request(key, "", ""); err != nil || !pending {
 		t.Fatalf("refresh Request() = %v, %v", pending, err)
 	}
+	// A refresh updates the waiting entry, so it is a change to the queue
+	// even though it is neither audited nor announced as a new request.
+	if changed != 1 {
+		t.Fatalf("changed after refresh = %d, want 1", changed)
+	}
 	svc.Queue = func(ssh.PublicKey, string, string) (bool, bool, error) { return false, false, nil }
 	if pending, err := svc.Request(key, "", ""); err != nil || pending {
 		t.Fatalf("enrolled Request() = %v, %v", pending, err)
 	}
-	if audit.calls != 0 || notified != 0 {
-		t.Fatalf("audit calls = %d notified = %d, want none", audit.calls, notified)
+	if audit.calls != 0 || notified != 0 || changed != 1 {
+		t.Fatalf("audit calls = %d notified = %d changed = %d, want none, none, 1", audit.calls, notified, changed)
 	}
 }
 

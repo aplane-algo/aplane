@@ -499,7 +499,7 @@ flow is reachable without credentials, and the queue it writes to is bounded:
 ### Client Key Revocation
 
 The operator revokes an enrolled client key from the apadmin TUI Enrolled
-Clients screen (opened with `c` from the Admin panel). The screen lists every
+Clients screen (opened with `c` from the key list). The screen lists every
 enrolled key with its fingerprint, label, key type, and whether it is connected
 right now, and offers per-key revocation or, as the emergency lever,
 revocation of every key.

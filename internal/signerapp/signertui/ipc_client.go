@@ -602,6 +602,9 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			KeyCount: keysChanged.KeyCount,
 		}
 	}),
+	MsgTypeEnrollmentChanged: decodeAs(func(changed EnrollmentChangedMessage) tea.Msg {
+		return EnrollmentChangedMsg{Reason: changed.Reason, Fingerprint: changed.Fingerprint}
+	}),
 	MsgTypeClientEnrollmentRequest: decodeAs(func(req ClientEnrollmentRequestMessage) tea.Msg {
 		return ClientEnrollmentRequestReceivedMsg{
 			Request: PendingEnrollmentRequest{

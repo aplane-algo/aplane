@@ -17,5 +17,6 @@ type AdminHub interface {
 	SendClientEnrollmentRequest(req *signerapproval.ClientEnrollmentRequest) bool
 	NotifyLocked(notification adminproto.SignerLockedNotification)
 	NotifyKeysChanged(notification adminproto.KeysChangedNotification)
+	NotifyEnrollmentChanged(notification adminproto.EnrollmentChangedNotification)
 	NotifyStatus(state string, keyCount int)
 }

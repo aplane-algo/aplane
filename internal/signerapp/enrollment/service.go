@@ -47,7 +47,12 @@ type Service struct {
 	Queue func(key ssh.PublicKey, label, remoteAddr string) (pending, added bool, err error)
 	// Notify tells a connected operator about a new request. It may be nil
 	// and must not block.
-	Notify   func(req Request)
+	Notify func(req Request)
+	// Changed reports that the live queue now holds the request, new or
+	// refreshed (a repeat updates the entry's label, address, and time), so
+	// a screen listing the queue can re-fetch it. It may be nil and must
+	// not block.
+	Changed  func(fingerprint string)
 	AuditLog AuditLogger
 	Logf     func(format string, args ...interface{})
 	Now      func() time.Time
@@ -89,8 +94,14 @@ func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending b
 		if s.Notify != nil {
 			s.Notify(Request{ID: RequestID(fingerprint), Fingerprint: fingerprint, Label: label, RemoteAddr: remoteAddr, RequestedAt: s.now()})
 		}
+		if s.Changed != nil {
+			s.Changed(fingerprint)
+		}
 	default:
 		s.logf("enrollment request refreshed from %s (key: %s); it is still waiting for the operator", remoteAddr, fingerprint)
+		if s.Changed != nil {
+			s.Changed(fingerprint)
+		}
 	}
 	if notDurable {
 		s.logf("enrollment request from %s (key: %s) is queued but the queue write is not yet durable; the client is told to retry: %v", remoteAddr, fingerprint, err)

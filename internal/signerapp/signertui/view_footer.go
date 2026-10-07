@@ -102,7 +102,7 @@ func (m Model) viewFooterText() string {
 	case ViewDeleteConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"
 	case ViewEnrolledClients:
-		return "up/down: Select | r: Revoke selected | A: Revoke all | R: Refresh | esc: Back"
+		return "up/down: Select | r: Revoke selected | A: Revoke all | esc: Back"
 	case ViewRevokeClientConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Revoke | n/esc: Cancel"
 	case ViewLockConfirm:
@@ -110,7 +110,7 @@ func (m Model) viewFooterText() string {
 	case ViewDisplaceConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
-		return "p: Policies | k: KeyTypes | c: Clients | l: Lock | esc: Back"
+		return "p: Policies | k: KeyTypes | l: Lock | esc: Back"
 	case ViewPolicies, ViewPolicyDocument:
 		return m.policiesFooterText()
 	case ViewPolicyApplyForm, ViewPolicyApplyReview:

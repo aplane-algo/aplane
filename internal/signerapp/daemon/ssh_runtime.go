@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -24,6 +25,30 @@ type sshRuntime struct {
 
 type sshRuntimeStopper interface {
 	StopContext(context.Context) error
+}
+
+// sshSessionCallback audits each client session and announces an enrolled
+// key's connection coming or going, since the Enrolled Clients list shows
+// which keys are connected. Enrollment-request connections are audited but
+// not announced: the request itself is, when it is queued.
+func (fs *Signer) sshSessionCallback(auditLog *AuditLogger) sshtunnel.SessionCallback {
+	return func(event sshtunnel.SessionEvent) {
+		if auditLog != nil {
+			if event.Connected {
+				auditLog.LogSessionConnected(event.RemoteAddr, "ssh")
+			} else {
+				auditLog.LogSessionDisconnected(event.RemoteAddr, "ssh")
+			}
+		}
+		if !event.EnrolledKey {
+			return
+		}
+		reason := protocol.EnrollmentChangeDisconnected
+		if event.Connected {
+			reason = protocol.EnrollmentChangeConnected
+		}
+		fs.notifyEnrollmentChanged(reason, event.Fingerprint)
+	}
 }
 
 func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath string, auditLog *AuditLogger) (*sshRuntime, error) {
@@ -62,15 +87,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		sshServer.SetAPIHandoff(server.apiListener.Handoff)
 	}
 
-	if auditLog != nil {
-		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
-			if connected {
-				auditLog.LogSessionConnected(remoteAddr, "ssh")
-			} else {
-				auditLog.LogSessionDisconnected(remoteAddr, "ssh")
-			}
-		})
-	}
+	sshServer.SetSessionCallback(server.sshSessionCallback(auditLog))
 
 	sshServer.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{Request: enrollmentSvc.Request})
 

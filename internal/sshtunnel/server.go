@@ -61,8 +61,24 @@ func isClosedConnError(err error) bool {
 		strings.Contains(errStr, "broken pipe")
 }
 
-// SessionCallback is called when SSH sessions connect or disconnect
-type SessionCallback func(remoteAddr string, connected bool)
+// SessionEvent describes one SSH connection the server accepted, at the
+// moment it was registered (Connected) or unregistered (not Connected).
+// EnrolledKey is set for a connection authenticated by an enrolled client
+// key, whose Fingerprint then names the key; an enrollment-request
+// connection carries the requesting key's fingerprint with EnrolledKey
+// unset.
+type SessionEvent struct {
+	RemoteAddr  string
+	Fingerprint string
+	EnrolledKey bool
+	Connected   bool
+}
+
+// SessionCallback is called when SSH sessions connect or disconnect. The
+// connect call runs after the connection is tracked and the disconnect
+// call after it is untracked, so ConnectedFingerprints reflects the event
+// from inside the callback.
+type SessionCallback func(event SessionEvent)
 
 // EnrollmentRequestFunc records a client's request to be enrolled. It
 // returns pending when the request now waits for the operator, and false
@@ -734,7 +750,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		// Log the session disconnect.
 		fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
 		if connectedLogged && s.sessionCallback != nil {
-			s.sessionCallback(remoteAddr, false)
+			s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil})
 		}
 	}()
 
@@ -746,7 +762,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	// Log the successful SSH connection.
 	fmt.Printf("[SSH] Client connected from %s\n", remoteAddr)
 	if s.sessionCallback != nil {
-		s.sessionCallback(remoteAddr, true)
+		s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil, Connected: true})
 	}
 	connectedLogged = true
 

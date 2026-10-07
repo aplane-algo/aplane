@@ -149,6 +149,9 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e", "E":
 		return m.openCosignerReferenceManager()
 
+	case "c", "C":
+		return m.openEnrolledClients()
+
 	case "s", "S":
 		// Open settings panel
 		m.admin.selectedRow = 0

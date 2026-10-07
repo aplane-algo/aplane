@@ -159,6 +159,7 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 	if fs.auditLog != nil {
 		fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
 	}
+	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevoked, fingerprint)
 	if err != nil {
 		logWarnf("client key revoked: %s (closed %d connection(s)) but the registry write is not yet durable: %v", fingerprint, closed, err)
 		return closed, err
@@ -179,7 +180,7 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 	if err != nil {
 		return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
-	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, label)
+	entry, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, label)
 	if enrolled {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
@@ -189,6 +190,11 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 		} else {
 			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 		}
+	}
+	// A retry after a failed queue write enrolls nothing but clears the
+	// request; the list changed either way.
+	if enrolled || cleared {
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeApproved, fingerprint)
 	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
@@ -214,6 +220,7 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 		} else {
 			logInfof("client enrollment request rejected: %s", fingerprint)
 		}
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRejected, fingerprint)
 	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
@@ -260,7 +267,7 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
-	added, err := ir.ImportClientKey(key, label)
+	added, cleared, err := ir.ImportClientKey(key, label)
 	if added {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
@@ -272,6 +279,11 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		}
 	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)
+	}
+	// Importing a key that is already enrolled still clears its waiting
+	// request, if any; the list changed either way.
+	if added || cleared {
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	}
 	if err != nil {
 		return fingerprint, label, added, err
@@ -298,6 +310,7 @@ func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *produc
 			fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
 		}
 	}
+	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevokedAll, "")
 	if err != nil {
 		logWarnf("all client keys revoked: %d key(s), closed %d connection(s), but the registry write is not yet durable: %v", len(entries), closed, err)
 		return len(entries), closed, err

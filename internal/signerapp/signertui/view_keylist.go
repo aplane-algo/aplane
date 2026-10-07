@@ -22,8 +22,8 @@ import (
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
 const (
-	keyListHelpText         = "g: Generate | i: Import | e: Cosigners | b: Backup | r: Restore | p: Policies | l: Lock | /: Filter | s: Settings | q: Quit"
-	cosignerKeyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policies | l: Lock | /: Filter | s: Settings | q: Quit"
+	keyListHelpText         = "g: Generate | i: Import | e: Cosigners | c: Clients | b: Backup | r: Restore | p: Policies | l: Lock | /: Filter | s: Settings | q: Quit"
+	cosignerKeyListHelpText = "g: Generate | i: Import | c: Clients | b: Backup | r: Restore | p: Policies | l: Lock | /: Filter | s: Settings | q: Quit"
 )
 
 // truncateLongHex shortens hex values longer than maxLen characters

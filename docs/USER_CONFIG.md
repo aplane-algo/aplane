@@ -984,7 +984,7 @@ or `apadmin clients import <file>`).
 
 ### Revocation
 
-The operator opens **Enrolled Clients** from the apadmin Admin panel (press
+The operator opens **Enrolled Clients** from the apadmin key list (press
 `c`). It lists the enrollment requests waiting for approval (`a` approves,
 `x` rejects) and then each enrolled key's fingerprint, label, key type, and
 whether it is connected, with `r` to revoke a key, `A` to revoke all keys, and

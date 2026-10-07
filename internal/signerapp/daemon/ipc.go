@@ -366,6 +366,17 @@ func (s *IPCServer) NotifyKeysChanged(notification adminproto.KeysChangedNotific
 	_ = active.WriteJSON(msg) // Best-effort notification
 }
 
+// NotifyEnrollmentChanged sends an enrollment_changed notification to the
+// connected IPC client so a screen showing the enrollment queue or the
+// client registry can re-fetch it, whatever session or path made the change.
+func (s *IPCServer) NotifyEnrollmentChanged(notification adminproto.EnrollmentChangedNotification) {
+	active := s.activeSession()
+	if active == nil {
+		return
+	}
+	_ = active.WriteJSON(adminserver.ProtocolEnrollmentChangedMessage(notification)) // Best-effort notification
+}
+
 func (s *IPCServer) sessionManager() *adminserver.SessionManager {
 	if s.manager == nil {
 		s.manager = adminserver.NewSessionManager()
