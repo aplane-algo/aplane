@@ -178,3 +178,13 @@ request are a fail-closed refinement of A4 covered by tests only. Code tidy
 noted (not formal drift): `deliveryWaiter.signing` and the non-signing
 queue branch are vestigial, and `SessionManager.RegisterPending` has no
 production caller.
+
+Follow-up (2026-10-07, same day): the reported divergence is resolved by
+reducing `approval_coordinator.tla` to signing-only, the shape it had before
+`0e05c41d`: `TokenRequests`, `Preempted`, `Preempt`, `SigningQueued`,
+`tokenOvertookSigning`, and AP8 are gone, the four configurations declare
+`SignRequests` only, and the recorded runs return to 112 (depth 10) and 294
+(depth 13) for `Safety` and 490 (depth 10) and 3,773 (depth 13) for
+`Progress`; both suites match. Both model docs lost their drift notes and
+token prose and now say that enrollment never takes the delivery turn. The
+enrollment queue remains flagged above as a model-extension candidate.

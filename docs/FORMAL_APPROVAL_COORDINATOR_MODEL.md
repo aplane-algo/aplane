@@ -5,33 +5,19 @@ Status: implemented and machine-checked by
 
 ## Scope
 
-> **Drift note (October 2026):** the production coordinator now serves
-> signing requests only. SSH client enrollment requests no longer wait for
-> the operator through the coordinator; they are queued on disk and answered
-> at once (see `docs/ARCH_SECURITY.md`, "Client Enrollment via SSH"). The
-> token-request states, `Preempt`, and claim AP8 below describe behavior the
-> code no longer has, and the listed preemption tests were removed. The model
-> has not yet been reduced to match; until it is, read its token requests as
-> a historical second request kind.
-
-The approval coordinator serializes delivery to one operator. Requests are
-transaction signing or SSH client-access token provisioning. A request moves
+The approval coordinator serializes delivery to one operator. It serves
+transaction-signing requests only: SSH client enrollment requests are queued
+on disk and answered at once, never through the delivery turn (see
+`docs/ARCH_SECURITY.md`, "Client Enrollment via SSH"). A request moves
 from `New` to `Queued` to `Delivered`, then to exactly one terminal state:
-`Approved`, `Rejected`, `TimedOut`, `Canceled`, `Failed`, or, for token
-requests only, `Preempted`.
-
-Signing has priority. A token request is not delivered while a signing request
-is queued, and `Preempt` withdraws a delivered token prompt once one is.
-Token requests come from unauthenticated SSH clients; without priority, one
-could hold the delivery turn for its full timeout ahead of every signing
-request.
+`Approved`, `Rejected`, `TimedOut`, `Canceled`, or `Failed`.
 
 The model includes operator decisions, timeout, cancellation, operator-client
 disconnect, and authenticated client displacement. Disconnect and displacement
-are modeled as reason-independent fail-all actions. Runtime lock, server
-shutdown, and other production callers use the same
-`Coordinator.FailAllPendingRequests` mechanism and therefore share the same Go
-contract even though their reason strings are not separate model states.
+are modeled as reason-independent fail-all actions. Runtime lock, the third
+production caller, uses the same `Coordinator.FailAllPendingRequests`
+mechanism and therefore shares the same Go contract even though its reason
+string is not a separate model state.
 
 ## Claims
 
@@ -44,7 +30,6 @@ contract even though their reason strings are not separate model states.
 | AP5 | Every non-terminal request can be canceled. | `AP5_CancelAlwaysEnabled` |
 | AP6 | Every modeled fail-all leaves no delivered request. | `AP6_FailAllLeavesNoPending` |
 | AP7 | Displacement cannot orphan a delivered request. | `AP7_NoOrphanedDelivery` |
-| AP8 | A token request is never delivered while a signing request is queued. | `AP8_SigningNotOvertaken` |
 
 AP6 uses the sticky `badPendingAfterFailAll` history flag. Both
 `OperatorDisconnect` and `Displace` update it from the post-action delivered
@@ -54,7 +39,7 @@ it retains the security-specific head-of-line blocking regression guard.
 
 ## Liveness
 
-`LiveSpec` assumes weak fairness for `Deliver`, `Timeout`, and `Preempt`. Under those
+`LiveSpec` assumes weak fairness for `Deliver` and `Timeout`. Under those
 runtime guarantees, every request that reaches `Queued` or `Delivered`
 eventually reaches a terminal state. Operator approve/reject and client cancel
 are choices and intentionally carry no fairness.
@@ -69,11 +54,7 @@ liveness configurations are all recorded in `formal/metrics*.json`.
   cancellation, terminal resolution, and `FailAllPendingRequests`.
 - `internal/signerapp/approval/coordinator_test.go`:
   `TestCoordinatorFailAllClearsPendingMaps` and
-  `TestCoordinatorFailAllUnblocksPendingRequest`. The preemption tests
-  earlier revisions cited went with the token request kind.
-- `internal/sshtunnel/enrollment_bounds_test.go`: the SSH-side caps on
-  enrollment connections and channels. Enrollment no longer enters the
-  coordinator, so these bound nothing in the model.
+  `TestCoordinatorFailAllUnblocksPendingRequest`.
 - `internal/signerapp/daemon/hub_test.go`: daemon-level fail-all forwarding.
 - `internal/signerapp/daemon/ipc.go`: displacement fails pending approvals
   before changing the active operator session.
@@ -85,7 +66,7 @@ The end-to-end mapping from approval outcome to signing output is checked in
 [`formal/approval_composition.tla`](formal/approval_composition.tla). A
 `Failed` coordinator outcome is not approval and produces no signed output,
 independent of whether the production reason was disconnect, displacement,
-lock, or shutdown.
+or lock.
 
 ## Run
 
