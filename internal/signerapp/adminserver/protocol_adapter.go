@@ -43,7 +43,7 @@ func ProtocolAuthResultMessage(success bool, code, errMsg string) protocol.AuthR
 	}
 }
 
-func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo, pendingCount int) protocol.EnrolledKeysListMessage {
+func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo) protocol.EnrolledKeysListMessage {
 	if keys == nil {
 		keys = []protocol.EnrolledKeyInfo{}
 	}
@@ -52,8 +52,7 @@ func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo,
 			Type: protocol.MsgTypeEnrolledKeysList,
 			ID:   id,
 		},
-		Keys:         keys,
-		PendingCount: pendingCount,
+		Keys: keys,
 	}
 }
 
@@ -87,13 +86,14 @@ func ProtocolApproveEnrollmentResultMessage(id, fingerprint, label string, err e
 	return result
 }
 
-func ProtocolRejectEnrollmentResultMessage(id string, err error) protocol.RejectEnrollmentResultMessage {
+func ProtocolRejectEnrollmentResultMessage(id, fingerprint string, err error) protocol.RejectEnrollmentResultMessage {
 	result := protocol.RejectEnrollmentResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeRejectEnrollmentResult,
 			ID:   id,
 		},
-		Success: err == nil,
+		Success:     err == nil,
+		Fingerprint: fingerprint,
 	}
 	if err != nil {
 		result.Code = protocol.CodeForError(err)

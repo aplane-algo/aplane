@@ -70,12 +70,10 @@ func (e *Core) GetConnectionTarget() string {
 }
 
 // RequestEnrollmentWithContext asks a node to enroll this client's SSH key.
+// The request uses its own short-lived SSH connection and leaves a live
+// tunnel alone: the answer is normally "pending", and the caller decides
+// whether to replace its session once the key is enrolled.
 func (e *Core) RequestEnrollmentWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onEnrollmentStart func(string)) (connect.EnrollmentResult, error) {
-	// Disconnect if currently connected: the session is replaced once the key
-	// is enrolled.
-	if e.IsTunnelConnected() {
-		_ = e.Disconnect()
-	}
 	return e.Connection.RequestEnrollmentWithContext(ctx, host, sshPort, identityFile, knownHostsPath, label, hostKeyApproval, onEnrollmentStart)
 }
 

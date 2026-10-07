@@ -186,6 +186,11 @@ type enrollmentApprovalState struct {
 	// queue holds requests announced while another was on screen; each is
 	// shown in turn once the operator answers the current one.
 	queue []PendingEnrollmentRequest
+	// answering lists the fingerprints whose approve or reject is in flight,
+	// from the popup or the Enrolled Clients list. A request announced again
+	// meanwhile (at login, or by a replay) is not shown a second time; the
+	// signer's result settles it.
+	answering []string
 }
 
 // backupState is the managed-backup confirm/result flow.
@@ -608,8 +613,7 @@ type DeleteResultMsg struct {
 
 // EnrolledKeysListMsg carries the enrolled client keys.
 type EnrolledKeysListMsg struct {
-	Keys         []protocol.EnrolledKeyInfo
-	PendingCount int
+	Keys []protocol.EnrolledKeyInfo
 }
 
 // PendingEnrollmentsListMsg carries the enrollment requests waiting for
@@ -628,8 +632,9 @@ type ApproveEnrollmentResultMsg struct {
 
 // RejectEnrollmentResultMsg is sent when an enrollment rejection completes.
 type RejectEnrollmentResultMsg struct {
-	Success bool
-	Error   string
+	Success     bool
+	Error       string
+	Fingerprint string
 }
 
 // ImportClientKeyResultMsg is sent when a client key import completes.

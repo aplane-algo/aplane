@@ -27,7 +27,7 @@ importing its public key file: `i` on the Enrolled Clients screen, or
 commands `apadmin clients list|approve|reject|revoke|import` cover the whole
 registry without the TUI. Admin protocol: `list_pending_enrollments`,
 `approve_enrollment`, `reject_enrollment`, and `import_client_key` (with their
-results), and `pending_count` on `enrolled_keys_list`. Audit logs record
+results). Audit logs record
 `CLIENT_ENROLLMENT_REQUESTED` when a request is queued and
 `CLIENT_ENROLLMENT_REJECTED` when one is rejected; `CLIENT_ENROLLED` now
 carries the approving admin session.

@@ -84,11 +84,6 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 	}
 	alias = target.Alias
 
-	if target.AutoConnect && r.app().IsTunnelConnected() {
-		r.println("Disconnecting current session...")
-		_ = disconnectTunnel(r)
-	}
-
 	r.printf("Requesting enrollment at endpoint %s...\n", alias)
 	r.println("The node's operator approves the request later in apadmin; this command returns at once.")
 	r.println()
@@ -102,6 +97,13 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 		r.println(line)
 	}
 	if target.AutoConnect && !result.Pending {
+		// The key is enrolled now, so the session is replaced with one that
+		// uses it. A pending request leaves the current session untouched:
+		// nothing could follow it until the operator approves.
+		if r.app().IsTunnelConnected() {
+			r.println("Disconnecting current session...")
+			_ = disconnectTunnel(r)
+		}
 		r.println("Connecting to signer with the enrolled key...")
 		connectResult, err := executeConnectEndpointAlias(r, alias)
 		if err != nil {

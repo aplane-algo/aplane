@@ -469,7 +469,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		}
 	}),
 	MsgTypeEnrolledKeysList: decodeAs(func(list EnrolledKeysListMessage) tea.Msg {
-		return EnrolledKeysListMsg{Keys: list.Keys, PendingCount: list.PendingCount}
+		return EnrolledKeysListMsg{Keys: list.Keys}
 	}),
 	MsgTypePendingEnrollmentsList: decodeAs(func(list PendingEnrollmentsListMessage) tea.Msg {
 		return PendingEnrollmentsListMsg{Requests: list.Requests}
@@ -478,7 +478,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return ApproveEnrollmentResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label}
 	}),
 	MsgTypeRejectEnrollmentResult: decodeAs(func(result RejectEnrollmentResultMessage) tea.Msg {
-		return RejectEnrollmentResultMsg{Success: result.Success, Error: result.Error}
+		return RejectEnrollmentResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint}
 	}),
 	MsgTypeImportClientKeyResult: decodeAs(func(result ImportClientKeyResultMessage) tea.Msg {
 		return ImportClientKeyResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label, Added: result.Added}

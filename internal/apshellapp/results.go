@@ -697,10 +697,9 @@ type RequestEnrollmentResult struct {
 	// Pending reports that the request waits for the node's operator; the
 	// client connects once it is approved. Otherwise the key was already
 	// enrolled.
-	Pending          bool
-	DisconnectedPrev bool
-	RenderLines      []string
-	Summary          Summary
+	Pending     bool
+	RenderLines []string
+	Summary     Summary
 }
 
 // EndpointEntry describes one client-local signer endpoint profile.

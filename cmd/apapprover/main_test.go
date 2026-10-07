@@ -321,6 +321,29 @@ func enrollmentApproval(id string) approvalRequest {
 
 // The operator answers the head of the queue; a failed send keeps the
 // request so the operator can retry, and invalid input changes nothing.
+// enrollmentReply answers enrollment requests the way the signer does, with
+// a correlated result, recording what was asked.
+func enrollmentReply(t *testing.T, sent *[]any, fail string) func(any) ([]byte, error) {
+	t.Helper()
+	return func(v any) ([]byte, error) {
+		*sent = append(*sent, v)
+		var reply any
+		switch msg := v.(type) {
+		case protocol.ApproveEnrollmentMessage:
+			reply = protocol.ApproveEnrollmentResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeApproveEnrollmentResult, ID: msg.ID}, Success: fail == "", Error: fail, Fingerprint: msg.Fingerprint, Label: "laptop"}
+		case protocol.RejectEnrollmentMessage:
+			reply = protocol.RejectEnrollmentResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRejectEnrollmentResult, ID: msg.ID}, Success: fail == "", Error: fail, Fingerprint: msg.Fingerprint}
+		default:
+			t.Fatalf("unexpected enrollment answer %T", v)
+		}
+		raw, err := protocol.MarshalAdminMessage(reply)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw, nil
+	}
+}
+
 func TestApproverAnswersHeadOfQueue(t *testing.T) {
 	var sent []any
 	sendErr := error(nil)
@@ -331,6 +354,7 @@ func TestApproverAnswersHeadOfQueue(t *testing.T) {
 		sent = append(sent, v)
 		return nil
 	}}
+	a.answer = enrollmentReply(t, &sent, "")
 	a.enqueue(signApproval("sign-1"))
 	a.enqueue(enrollmentApproval("token-1"))
 
@@ -366,6 +390,7 @@ func TestApproverAnswersHeadOfQueue(t *testing.T) {
 func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
 	var sent []any
 	a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+	a.answer = enrollmentReply(t, &sent, "")
 	a.enqueue(enrollmentApproval("enroll-1"))
 	a.enqueue(signApproval("sign-1"))
 	// An enrollment request announced again (as at login) is not queued twice.
@@ -389,4 +414,61 @@ func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
 	if _, ok := sent[0].(protocol.ApproveEnrollmentMessage); !ok {
 		t.Fatalf("sent %T, want an enrollment approval", sent[0])
 	}
+}
+
+// An enrollment answer is a correlated request: a refused result (the
+// request was answered elsewhere, or the registry write failed) is final
+// and the request leaves the queue, while a delivery failure keeps it so the
+// operator can retry. The signer's verdict is what is printed, not the
+// operator's intent.
+func TestApproverEnrollmentAnswerFollowsTheSignersVerdict(t *testing.T) {
+	var sent []any
+	a := &approver{send: func(v any) error { t.Fatal("signing send used for an enrollment answer"); return nil }}
+	a.answer = func(any) ([]byte, error) { return nil, os.ErrClosed }
+	a.enqueue(enrollmentApproval("enroll-1"))
+	a.handleInput("y")
+	if len(a.queue) != 1 {
+		t.Fatalf("queue after a failed delivery = %d, want the request kept", len(a.queue))
+	}
+
+	a.answer = enrollmentReply(t, &sent, "no enrollment request is waiting for key SHA256:one")
+	a.handleInput("y")
+	if len(sent) != 1 || len(a.queue) != 0 {
+		t.Fatalf("after a refused approval: sent %d, queue %d; want the answer delivered and the request settled", len(sent), len(a.queue))
+	}
+	outcome, err := decodeEnrollmentOutcome(mustMarshal(t, protocol.ApproveEnrollmentResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeApproveEnrollmentResult, ID: "enroll-1"},
+		Error:       "registry not durable",
+		Fingerprint: "SHA256:one",
+	}), "SHA256:one", true)
+	if err != nil || outcome.success || !strings.Contains(outcome.String(), "Approval of SHA256:one failed: registry not durable") {
+		t.Fatalf("refused approval outcome = %q, %v", outcome, err)
+	}
+	outcome, err = decodeEnrollmentOutcome(mustMarshal(t, protocol.RejectEnrollmentResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRejectEnrollmentResult, ID: "enroll-1"},
+		Success:     true,
+		Fingerprint: "SHA256:one",
+	}), "SHA256:one", false)
+	if err != nil || !outcome.success || !strings.Contains(outcome.String(), "Enrollment request for SHA256:one rejected") {
+		t.Fatalf("rejection outcome = %q, %v", outcome, err)
+	}
+	outcome, err = decodeEnrollmentOutcome(mustMarshal(t, protocol.ErrorMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "enroll-1"},
+		Error:       "not permitted",
+	}), "SHA256:one", true)
+	if err != nil || outcome.success || !strings.Contains(outcome.String(), "not permitted") {
+		t.Fatalf("protocol error outcome = %q, %v", outcome, err)
+	}
+	if _, err := decodeEnrollmentOutcome(mustMarshal(t, protocol.StatusMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeStatus}}), "SHA256:one", true); err == nil {
+		t.Fatal("an unrelated reply must be rejected")
+	}
+}
+
+func mustMarshal(t *testing.T, msg any) []byte {
+	t.Helper()
+	raw, err := protocol.MarshalAdminMessage(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

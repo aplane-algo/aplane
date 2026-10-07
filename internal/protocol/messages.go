@@ -612,9 +612,10 @@ type RejectEnrollmentMessage struct {
 // RejectEnrollmentResultMessage is the response to a rejection.
 type RejectEnrollmentResultMessage struct {
 	BaseMessage
-	Success bool   `json:"success"`
-	Code    string `json:"code,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success     bool   `json:"success"`
+	Code        string `json:"code,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // ImportClientKeyMessage enrolls a public key the operator supplies
@@ -651,12 +652,10 @@ type EnrolledKeyInfo struct {
 	Connected   bool   `json:"connected"` // The key has at least one live SSH connection
 }
 
-// EnrolledKeysListMessage lists the enrolled client keys and how many
-// enrollment requests are waiting.
+// EnrolledKeysListMessage lists the enrolled client keys.
 type EnrolledKeysListMessage struct {
 	BaseMessage
-	Keys         []EnrolledKeyInfo `json:"keys"`
-	PendingCount int               `json:"pending_count"`
+	Keys []EnrolledKeyInfo `json:"keys"`
 }
 
 // RevokeEnrolledKeyMessage removes one enrolled client key and closes its

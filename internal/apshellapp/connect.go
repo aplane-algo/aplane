@@ -190,17 +190,15 @@ func (a *App) RequestEnrollmentEndpointAlias(ctx context.Context, alias, label s
 	if err != nil {
 		return nil, err
 	}
-	wasConnected := a.eng.IsTunnelConnected()
 	result, err := clientenroll.RequestEndpointEnrollment(ctx, a.eng, alias, endpoint, label, hostKeyApproval, progress)
 	if err != nil {
 		return nil, err
 	}
 
 	requestResult := &RequestEnrollmentResult{
-		Alias:            result.Alias,
-		Fingerprint:      result.Fingerprint,
-		Pending:          result.Pending,
-		DisconnectedPrev: wasConnected,
+		Alias:       result.Alias,
+		Fingerprint: result.Fingerprint,
+		Pending:     result.Pending,
 	}
 	if result.Pending {
 		requestResult.Summary = Summary{Message: fmt.Sprintf("Enrollment request for client key %s is waiting for the operator at endpoint %s", result.Fingerprint, result.Alias)}

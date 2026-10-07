@@ -27,7 +27,7 @@ func (s *Session) HandleListEnrolledKeys(msg *protocol.ListEnrolledKeysMessage) 
 	if !s.authorize(msg.ID, auth.ActionClientsView, auth.Resource{Type: "clients"}) {
 		return
 	}
-	_ = s.WriteJSON(ProtocolEnrolledKeysListMessage(msg.ID, s.productServices.EnrolledKeys(), len(s.productServices.PendingEnrollments())))
+	_ = s.WriteJSON(ProtocolEnrolledKeysListMessage(msg.ID, s.productServices.EnrolledKeys()))
 }
 
 func (s *Session) HandleListPendingEnrollments(msg *protocol.ListPendingEnrollmentsMessage) {
@@ -54,10 +54,10 @@ func (s *Session) HandleRejectEnrollment(msg *protocol.RejectEnrollmentMessage) 
 		return
 	}
 	if msg.Fingerprint == "" {
-		_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("fingerprint is required"))))
+		_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("fingerprint is required"))))
 		return
 	}
-	_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, s.productServices.RejectEnrollment(s.SessionContext(), msg.Fingerprint)))
+	_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, msg.Fingerprint, s.productServices.RejectEnrollment(s.SessionContext(), msg.Fingerprint)))
 }
 
 func (s *Session) HandleImportClientKey(msg *protocol.ImportClientKeyMessage) {

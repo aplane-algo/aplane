@@ -55,33 +55,41 @@ func (m Model) handleEnrolledKeysList(msg EnrolledKeysListMsg) (tea.Model, tea.C
 	return m, m.waitForMessageCmd()
 }
 
+// handleApproveEnrollmentResult reports the signer's answer where the
+// operator is looking: the Enrolled Clients status line when that screen is
+// up, otherwise (an answer given from the popup) a transient footer note,
+// so a failed approval is never silent.
 func (m Model) handleApproveEnrollmentResult(msg ApproveEnrollmentResultMsg) (tea.Model, tea.Cmd) {
-	if msg.Success {
-		m.lastError = ""
-		if msg.Label != "" {
-			m.clients.status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, msg.Label)
-		} else {
-			m.clients.status = fmt.Sprintf("Client key %s enrolled.", msg.Fingerprint)
-		}
-	} else {
-		m.clients.status = "Approval failed: " + msg.Error
+	m.settleEnrollmentAnswer(msg.Fingerprint)
+	var status string
+	switch {
+	case msg.Success && msg.Label != "":
+		status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, msg.Label)
+	case msg.Success:
+		status = fmt.Sprintf("Client key %s enrolled.", msg.Fingerprint)
+	default:
+		status = fmt.Sprintf("Approval of %s failed: %s", msg.Fingerprint, msg.Error)
 	}
-	if m.viewState != ViewEnrolledClients {
-		return m, m.waitForMessageCmd()
-	}
-	return m, m.refreshClientsCmd()
+	return m.reportEnrollmentAnswer(status, msg.Success)
 }
 
 func (m Model) handleRejectEnrollmentResult(msg RejectEnrollmentResultMsg) (tea.Model, tea.Cmd) {
-	if msg.Success {
+	m.settleEnrollmentAnswer(msg.Fingerprint)
+	status := fmt.Sprintf("Enrollment request for %s rejected.", msg.Fingerprint)
+	if !msg.Success {
+		status = fmt.Sprintf("Rejection of %s failed: %s", msg.Fingerprint, msg.Error)
+	}
+	return m.reportEnrollmentAnswer(status, msg.Success)
+}
+
+func (m Model) reportEnrollmentAnswer(status string, success bool) (tea.Model, tea.Cmd) {
+	if success {
 		m.lastError = ""
-		m.clients.status = "Enrollment request rejected."
-	} else {
-		m.clients.status = "Rejection failed: " + msg.Error
 	}
 	if m.viewState != ViewEnrolledClients {
-		return m, m.waitForMessageCmd()
+		return m, tea.Batch(m.setTransientWarning(status), m.waitForMessageCmd())
 	}
+	m.clients.status = status
 	return m, m.refreshClientsCmd()
 }
 
@@ -162,11 +170,13 @@ func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		if req, ok := m.selectedPendingRequest(); ok {
 			m.clients.status = ""
+			m.markEnrollmentAnswered(req.Fingerprint)
 			return m, tea.Batch(m.sendApproveEnrollmentCmd(req.Fingerprint, ""), m.waitForMessageCmd())
 		}
 	case "x":
 		if req, ok := m.selectedPendingRequest(); ok {
 			m.clients.status = ""
+			m.markEnrollmentAnswered(req.Fingerprint)
 			return m, tea.Batch(m.sendRejectEnrollmentCmd(req.Fingerprint), m.waitForMessageCmd())
 		}
 	case "r":

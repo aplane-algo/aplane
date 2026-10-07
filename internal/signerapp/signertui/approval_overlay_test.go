@@ -5,9 +5,12 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func updateModel(t *testing.T, m Model, msg tea.Msg) Model {
@@ -162,5 +165,64 @@ func TestEnrollmentRequestsQueueBehindThePopup(t *testing.T) {
 	}
 	if m.nextEnrollmentRequest() || m.enrollmentApproval.request != nil {
 		t.Fatalf("queue drained but a request remains: %+v", m.enrollmentApproval.request)
+	}
+}
+
+// A request answered from the Enrolled Clients list is not shown again by a
+// later announcement (a login replay), and one answered from the popup is
+// dropped from the popup queue; the signer's result settles the answer so
+// a genuinely new request for the same key shows afterwards.
+func TestAnsweredEnrollmentRequestIsNotShownAgain(t *testing.T) {
+	m := approvalTestModel(ViewEnrolledClients)
+	m.clients.pending = []protocol.PendingEnrollmentInfo{{Fingerprint: "SHA256:one"}}
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	if m.viewState != ViewEnrolledClients || m.enrollmentApproval.request != nil {
+		t.Fatalf("a replay of an answered request was shown: view %v request %+v", m.viewState, m.enrollmentApproval.request)
+	}
+	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: true, Fingerprint: "SHA256:one"})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	if m.viewState != ViewClientEnrollmentPopup {
+		t.Fatalf("a new request after the answer settled was not shown: view %v", m.viewState)
+	}
+
+	// From the popup: answering one request drops its other announcements
+	// from the queue, and the next distinct request follows.
+	m = approvalTestModel(ViewKeyList)
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	m.enrollmentApproval.queue = []PendingEnrollmentRequest{
+		{ID: "enroll-1", SSHFingerprint: "SHA256:one"},
+		{ID: "enroll-2", SSHFingerprint: "SHA256:two"},
+	}
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if m.enrollmentApproval.request == nil || m.enrollmentApproval.request.ID != "enroll-2" || len(m.enrollmentApproval.queue) != 0 {
+		t.Fatalf("after answering enroll-1: request %+v queue %+v", m.enrollmentApproval.request, m.enrollmentApproval.queue)
+	}
+}
+
+// The signer's answer to a popup approval reaches the operator wherever
+// they are: a failure is never left on a status line they are not looking
+// at.
+func TestEnrollmentAnswerFromPopupIsReported(t *testing.T) {
+	m := approvalTestModel(ViewKeyList)
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if m.viewState != ViewKeyList {
+		t.Fatalf("view after answering = %v, want the key list", m.viewState)
+	}
+	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: false, Error: "registry not durable", Fingerprint: "SHA256:one"})
+	if !strings.Contains(m.lastWarning, "Approval of SHA256:one failed: registry not durable") {
+		t.Fatalf("lastWarning = %q, want the failed approval reported", m.lastWarning)
+	}
+	m = updateModel(t, m, RejectEnrollmentResultMsg{Success: true, Fingerprint: "SHA256:two"})
+	if !strings.Contains(m.lastWarning, "Enrollment request for SHA256:two rejected") {
+		t.Fatalf("lastWarning = %q, want the rejection reported", m.lastWarning)
+	}
+
+	// On the Enrolled Clients screen the status line is the place.
+	m = approvalTestModel(ViewEnrolledClients)
+	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: false, Error: "boom", Fingerprint: "SHA256:one"})
+	if m.clients.status != "Approval of SHA256:one failed: boom" || m.lastWarning != "" {
+		t.Fatalf("status = %q, warning = %q", m.clients.status, m.lastWarning)
 	}
 }
