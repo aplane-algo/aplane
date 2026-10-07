@@ -6,6 +6,12 @@
 > with no counterexamples. `docs/formal/metrics.json` and
 > `docs/formal/metrics_deep.json` remain the authoritative run inventory.
 
+> **Drift note (October 2026):** the production coordinator serves signing
+> requests only; SSH client enrollment is queued on disk and never takes the
+> delivery turn. The token requests, `Preempt`, and AP8 below describe
+> behavior the code no longer has. The model has not yet been reduced; see
+> the drift note in `FORMAL_APPROVAL_COORDINATOR_MODEL.md`.
+
 The executable model is
 [`formal/approval_coordinator.tla`](formal/approval_coordinator.tla); the design
 and code anchors are in

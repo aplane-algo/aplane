@@ -136,3 +136,45 @@ resolves the deep-config gap for `store_root_commit` and `bounded_cosigner`
 truthfully rather than with duplicate runs.
 `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` gained the standard status
 header quoting its four recorded runs.
+
+Drift review (2026-10-07, HEAD `09e24050`): range `92940382..09e24050` (184
+commits: v1 JSON policy documents and the YAML model's removal, the
+sentry→cosigner rename, shared guarded/bounded client flow steps, keys-only
+client auth with the asynchronous enrollment queue, SSH admin subsystem
+removal, recovery-binding and generation-validation fixes). `make formal-test`
+(12 runs) and `make formal-test-deep` (7 runs) passed with all metrics
+matched; the negative control still fails on `S5_NoUnpinnedPromotion`. Every
+modeled guard re-read against current code HOLDS: coordinator cancel/ctx/
+hasClient rechecks after the delivery turn, turn release on every terminal
+path, fail-all callers (disconnect, displacement, lock; still no shutdown or
+decommission caller); SO2 cleanup condition with `cleanupRuntime` set at
+auth, `PromoteToActive` before `DisplaceSession`; staged mint order (Mint now
+refuses a request without candidate validation, a strengthening), single
+durable root rename, non-destructive quarantine; `assembleDecoded` check order
+and abort-on-first-failure (rename only, plus one added fail-closed check on
+unsupported witness key types); bounded base gate order
+(frozen-context → plan → policy/approval → sign) and the client choreography
+(base components, then non-guarded positions, then the cosigner, then
+assembly with receipt); plugin files changed by import path only; sign modes
+unchanged, verdict ladder in `gate.go` unchanged, ApprovalWait floors intact.
+Bookkeeping consistent (ten modules in the table, `metrics.json` matches every
+status header). Fixed in this commit: AP4 traceability row cited the removed
+`TestCoordinatorSerializesAcrossApprovalTypes` and described FIFO across
+token requests; `FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md` gained a drift
+pointer. REPORTED, not fixed: `approval_coordinator.tla` still models token
+requests, `Preempt`, and AP8 (added in `0e05c41d`), which `a7ccb7eb` removed
+from the coordinator; the signing half of the model still matches, so no
+guard is lost, but the spec over-approximates. Options: reduce the model to
+signing-only (drop `TokenRequests`/`Preempt`/AP8, re-record four runs) or keep
+the historical second kind with the drift notes. Flagged for model extension:
+(1) the persisted enrollment queue (`enrollqueue`: request → pending →
+approved/rejected/expired/removed, durable publish with the
+applied-not-durable rule, `MaxPending`, 7-day TTL) is a new approval-adjacent
+lifecycle no spec covers; (2) `b0e51275` binds recovery maintenance to the
+authenticated store-root selection even when that generation fails
+validation, a selection-authority property outside `store_root_commit.tla`;
+(3) per-witness-key cosigner policies with a missing entry rejecting every
+request are a fail-closed refinement of A4 covered by tests only. Code tidy
+noted (not formal drift): `deliveryWaiter.signing` and the non-signing
+queue branch are vestigial, and `SessionManager.RegisterPending` has no
+production caller.
