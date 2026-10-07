@@ -24,7 +24,7 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 		manager: adminserver.NewSessionManager(),
 	}
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), adminserver.SessionDeps{})
-	_ = server.manager.RegisterPending(oldSession)
+	_ = registerPendingSession(server.manager, oldSession)
 	_, _ = server.manager.PromoteToActive(oldSession)
 
 	newServer, newClient := net.Pipe()
@@ -70,8 +70,8 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	}
 
 	newSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), adminserver.SessionDeps{})
-	if !server.manager.RegisterPending(newSession) {
-		t.Fatal("RegisterPending(newSession) = false, want true")
+	if !registerPendingSession(server.manager, newSession) {
+		t.Fatal("registerPendingSession(newSession) = false, want true")
 	}
 	replaced, ok := server.manager.PromoteToActive(newSession)
 	if !ok {
@@ -117,8 +117,8 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 		manager: adminserver.NewSessionManager(),
 	}
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	if !ipcServer.manager.RegisterPending(oldSession) {
-		t.Fatal("RegisterPending(oldSession) = false, want true")
+	if !registerPendingSession(ipcServer.manager, oldSession) {
+		t.Fatal("registerPendingSession(oldSession) = false, want true")
 	}
 	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
 		t.Fatal("PromoteToActive(oldSession) = false, want true")
@@ -194,8 +194,8 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	defer func() { _ = oldClient.Close() }()
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), signer.adminSessionDeps())
 	oldSession.Bind(auth.NewProductIdentity("test"), ir)
-	if !ipcServer.manager.RegisterPending(oldSession) {
-		t.Fatal("RegisterPending(oldSession) = false, want true")
+	if !registerPendingSession(ipcServer.manager, oldSession) {
+		t.Fatal("registerPendingSession(oldSession) = false, want true")
 	}
 	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
 		t.Fatal("PromoteToActive(oldSession) = false, want true")

@@ -29,16 +29,6 @@ func (m *SessionManager) RegisterPreAuthPending(s *Session) bool {
 	return true
 }
 
-func (m *SessionManager) RegisterPending(s *Session) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.pending != nil {
-		return false
-	}
-	m.pending = s
-	return true
-}
-
 func (m *SessionManager) BindPreAuthPending(s *Session) (active *Session, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

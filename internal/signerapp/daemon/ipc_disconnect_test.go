@@ -117,8 +117,8 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 
 	owner := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
 	owner.Bind(auth.NewProductIdentity("test-owner"), ir)
-	if !ipcServer.manager.RegisterPending(owner) {
-		t.Fatal("RegisterPending(owner) = false, want true")
+	if !registerPendingSession(ipcServer.manager, owner) {
+		t.Fatal("registerPendingSession(owner) = false, want true")
 	}
 	if _, ok := ipcServer.manager.PromoteToActive(owner); !ok {
 		t.Fatal("PromoteToActive(owner) = false, want true")
@@ -200,8 +200,8 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 	signer.ipcServer = ipcServer
 
 	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
-	if !ipcServer.manager.RegisterPending(blocker) {
-		t.Fatal("RegisterPending(blocker) = false, want true")
+	if !registerPendingSession(ipcServer.manager, blocker) {
+		t.Fatal("registerPendingSession(blocker) = false, want true")
 	}
 
 	serverConn, clientConn := net.Pipe()

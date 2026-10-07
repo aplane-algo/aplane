@@ -30,7 +30,6 @@ type deliveryWaiter struct {
 	ready    chan struct{}
 	granted  bool
 	canceled bool
-	signing  bool
 }
 
 // Coordinator owns the pending approval queue for signing requests.
@@ -223,7 +222,7 @@ func isCancellationResponse(response SignResponse) bool {
 		response.Reason == SignRequestCancelReasonTimeout
 }
 
-func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bool) error {
+func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -231,28 +230,14 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bo
 		return err
 	}
 
-	waiter := &deliveryWaiter{ready: make(chan struct{}), signing: signing}
+	waiter := &deliveryWaiter{ready: make(chan struct{})}
 	c.deliveryMu.Lock()
 	if !c.deliveryInFlight && len(c.deliveryQueue) == 0 {
 		c.deliveryInFlight = true
 		c.deliveryMu.Unlock()
 		return nil
 	}
-	if signing {
-		// Queue ahead of any non-signing waiter.
-		at := len(c.deliveryQueue)
-		for i, queued := range c.deliveryQueue {
-			if !queued.signing {
-				at = i
-				break
-			}
-		}
-		c.deliveryQueue = append(c.deliveryQueue, nil)
-		copy(c.deliveryQueue[at+1:], c.deliveryQueue[at:])
-		c.deliveryQueue[at] = waiter
-	} else {
-		c.deliveryQueue = append(c.deliveryQueue, waiter)
-	}
+	c.deliveryQueue = append(c.deliveryQueue, waiter)
 	c.deliveryMu.Unlock()
 
 	select {
@@ -339,7 +324,7 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 		return SignResponse{}, fmt.Errorf("no apadmin client connected")
 	}
 
-	if err := c.acquireDeliveryTurnContext(ctx, true); err != nil {
+	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, err)
 	}
 	defer c.releaseDeliveryTurn()

@@ -17,9 +17,22 @@ func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 		manager: adminserver.NewSessionManager(),
 	}
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminserver.SessionDeps{})
-	_ = server.manager.RegisterPending(session)
+	_ = registerPendingSession(server.manager, session)
 	server.manager.PromoteToActive(session)
 	return server
+}
+
+// registerPendingSession walks a session through the production path into
+// the scalar authenticated-pending slot: register it pre-auth, then bind it.
+func registerPendingSession(manager *adminserver.SessionManager, session *adminserver.Session) bool {
+	if !manager.RegisterPreAuthPending(session) {
+		return false
+	}
+	if _, ok := manager.BindPreAuthPending(session); !ok {
+		manager.ClearPreAuthPending(session)
+		return false
+	}
+	return true
 }
 
 func newBoundTestSession(server *IPCServer, conn net.Conn, ir *productruntime.Runtime) *adminserver.Session {

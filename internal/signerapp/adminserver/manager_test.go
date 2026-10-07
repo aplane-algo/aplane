@@ -32,15 +32,29 @@ func TestSessionManagerPreAuthBindsToScalarPending(t *testing.T) {
 	}
 }
 
+// bindPending walks a session through the production path into the scalar
+// authenticated-pending slot: register it pre-auth, then bind it.
+func bindPending(t *testing.T, manager *SessionManager, s *Session) bool {
+	t.Helper()
+	if !manager.RegisterPreAuthPending(s) {
+		t.Fatal("RegisterPreAuthPending() = false, want true")
+	}
+	_, ok := manager.BindPreAuthPending(s)
+	if !ok {
+		manager.ClearPreAuthPending(s)
+	}
+	return ok
+}
+
 func TestSessionManagerHasOnePendingSlot(t *testing.T) {
 	manager := NewSessionManager()
 	first := NewSession(stubConn{}, SessionDeps{})
 	second := NewSession(stubConn{}, SessionDeps{})
-	if !manager.RegisterPending(first) || manager.RegisterPending(second) {
+	if !bindPending(t, manager, first) || bindPending(t, manager, second) {
 		t.Fatal("manager did not enforce one authenticated pending slot")
 	}
 	manager.ClearPending(first)
-	if !manager.RegisterPending(second) {
+	if !bindPending(t, manager, second) {
 		t.Fatal("cleared pending slot was not reusable")
 	}
 }
@@ -49,15 +63,15 @@ func TestSessionManagerPromoteReplaceAndClear(t *testing.T) {
 	manager := NewSessionManager()
 	first := NewSession(stubConn{}, SessionDeps{})
 	second := NewSession(stubConn{}, SessionDeps{})
-	if !manager.RegisterPending(first) {
-		t.Fatal("RegisterPending(first) = false")
+	if !bindPending(t, manager, first) {
+		t.Fatal("bindPending(first) = false")
 	}
 	replaced, ok := manager.PromoteToActive(first)
 	if !ok || replaced != nil || !manager.HasClient() || manager.ActiveSession() != first {
 		t.Fatal("first promotion did not establish the scalar active slot")
 	}
-	if !manager.RegisterPending(second) {
-		t.Fatal("RegisterPending(second) = false")
+	if !bindPending(t, manager, second) {
+		t.Fatal("bindPending(second) = false")
 	}
 	replaced, ok = manager.PromoteToActive(second)
 	if !ok || replaced != first || manager.ActiveSession() != second {
@@ -93,7 +107,7 @@ func TestSessionManagerConcurrentOwnershipTransitions(t *testing.T) {
 		go func(session *Session) {
 			defer wg.Done()
 			<-start
-			if manager.RegisterPending(session) {
+			if manager.RegisterPreAuthPending(session) {
 				winners <- session
 			}
 			_ = manager.HasClient()
@@ -113,6 +127,9 @@ func TestSessionManagerConcurrentOwnershipTransitions(t *testing.T) {
 	}
 	if winner == nil {
 		t.Fatal("no concurrent pending registration succeeded")
+	}
+	if _, ok := manager.BindPreAuthPending(winner); !ok {
+		t.Fatal("BindPreAuthPending(winner) = false, want true")
 	}
 	if replaced, ok := manager.PromoteToActive(winner); !ok || replaced != nil {
 		t.Fatalf("PromoteToActive() = (%p, %v), want (nil, true)", replaced, ok)
