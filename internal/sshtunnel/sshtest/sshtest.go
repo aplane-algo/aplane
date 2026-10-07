@@ -183,33 +183,12 @@ func (n *Node) Enrolled(fingerprint string) bool {
 	return n.enrolled[fingerprint]
 }
 
-// Approve enrolls a key whose request is waiting, as an operator approval
-// would. It reports whether such a request existed.
-func (n *Node) Approve(fingerprint string) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if _, ok := n.pending[fingerprint]; !ok {
-		return false
-	}
-	delete(n.pending, fingerprint)
-	n.enrolled[fingerprint] = true
-	return true
-}
-
 // Pending reports whether a request for the key is waiting.
 func (n *Node) Pending(fingerprint string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	_, ok := n.pending[fingerprint]
 	return ok
-}
-
-// Revoke removes the key from the registry and closes its connections.
-func (n *Node) Revoke(fingerprint string) int {
-	n.mu.Lock()
-	delete(n.enrolled, fingerprint)
-	n.mu.Unlock()
-	return n.Server.CloseConnectionsForFingerprint(fingerprint, "key revoked")
 }
 
 // EnrollmentRequests returns the enrollment requests received so far.
