@@ -2212,7 +2212,7 @@ Client enrollment flow:
    with exit 0 and nothing is queued
 5. otherwise the server records the request (public key, label, remote
    address, time) in `identities/default/.ssh/pending_enrollments.json`,
-   written atomically like the registry; a new request is audited as
+   written atomically and durably like the registry; a new request is audited as
    `CLIENT_ENROLLMENT_REQUESTED` and announced to a connected admin session
    as `client_enrollment_request`; a repeat for a waiting key refreshes its
    entry. Refusals are `ERROR: enrollment queue is full; ask the operator to

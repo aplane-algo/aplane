@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 func testKey(t *testing.T) ssh.PublicKey {
@@ -160,5 +162,25 @@ func TestLoadAndPublish(t *testing.T) {
 	}
 	if _, err := Load(path, t0); err == nil {
 		t.Fatal("Load() accepted a corrupt queue")
+	}
+}
+
+// A directory fsync failure after the rename is reported, not swallowed.
+func TestPublishReportsDirectorySyncFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	q, _, _, _ := (&Queue{}).WithRequest(testKey(t), "laptop", "", t0)
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op == fsutil.OpDirSync {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	if err := Publish(path, q); err == nil || !strings.Contains(err.Error(), "injected dir sync failure") {
+		t.Fatalf("Publish() error = %v, want the directory sync failure", err)
+	}
+	loaded, err := Load(path, t0)
+	if err != nil || loaded.Len() != 1 {
+		t.Fatalf("Load() after failed sync = %d, %v; the renamed file should be in place", loaded.Len(), err)
 	}
 }

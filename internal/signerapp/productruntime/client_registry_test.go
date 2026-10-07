@@ -87,3 +87,26 @@ func TestEnrollAuthorizedKeyFailedStagingKeepsRegistry(t *testing.T) {
 		t.Fatal("runtime registry changed after a failed publish")
 	}
 }
+
+// A rejection whose queue write fails after the rename is reported, and the
+// runtime adopts the queue on disk, which no longer holds the request.
+func TestRejectEnrollmentFailedPublishResyncsQueue(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || !pending {
+		t.Fatalf("QueueEnrollment() = %v, %v", pending, err)
+	}
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op == fsutil.OpDirSync {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	if _, err := ir.RejectEnrollment(ssh.FingerprintSHA256(key)); err == nil {
+		t.Fatal("RejectEnrollment() succeeded despite the publish failure")
+	}
+	if got := ir.PendingEnrollments(); len(got) != 0 {
+		t.Fatalf("pending after failed rejection = %+v; the file no longer holds the request", got)
+	}
+}

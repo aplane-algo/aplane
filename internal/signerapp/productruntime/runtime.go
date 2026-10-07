@@ -580,6 +580,14 @@ func (ir *Runtime) LoadEnrollmentQueue() error {
 // with clientsMu held.
 func (ir *Runtime) publishQueueLocked(next *enrollqueue.Queue) error {
 	if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), next); err != nil {
+		// As for the registry: the file is either the old queue or the new
+		// one, so serve what it holds; an unreadable queue holds nothing.
+		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
+		if loadErr != nil {
+			ir.pending = &enrollqueue.Queue{}
+			return fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests dropped until it is repaired: %v)", err, loadErr)
+		}
+		ir.pending = reloaded
 		return err
 	}
 	ir.pending = next
