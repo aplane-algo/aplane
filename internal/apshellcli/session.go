@@ -61,13 +61,6 @@ func (s *Session) StartupConnect() (string, error) {
 	previous := s.state.Out
 	s.state.SetOutput(&buf)
 	defer s.state.SetOutput(previous)
-	decision := s.state.app().StartupConnectDecision()
-	if !decision.HasToken {
-		s.state.println()
-		s.state.println(missingAplaneTokenStartupMessage)
-		s.state.println()
-		return strings.TrimRight(buf.String(), "\n"), nil
-	}
 	err := attemptStartupConnection(s.state)
 	if err != nil {
 		s.state.printf("Warning: Signer verification failed: %v\n", err)

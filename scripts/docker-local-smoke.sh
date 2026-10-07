@@ -35,9 +35,9 @@ This test requires Docker privileges. It starts a stock ubuntu:24.04 container
 (no systemd), creates a non-root test user, runs install.sh in local mode,
 verifies the install layout, exercises appass --check, starts apsigner,
 verifies the installer refuses to run while that signer is running, starts
-apapprover, drives `apshell request-token` end-to-end (including the
-apapprover-side approval), confirms the client can reach the signer with the
-issued token, verifies a stopped in-place upgrade preserves state, then runs the installed uninstaller
+apapprover, drives `apshell request-enrollment` end-to-end (including the
+apapprover-side approval), confirms the client can reach the signer with its
+enrolled key, verifies a stopped in-place upgrade preserves state, then runs the installed uninstaller
 and verifies state preservation.
 EOF
 }
@@ -275,7 +275,7 @@ verify_appass_local_detection() {
 generate_client_ssh_key() {
     # The local install doesn't generate the apshell SSH key (only --client
     # mode does in install.sh). In real use, the user runs ssh-keygen before
-    # request-token; we do the same here.
+    # request-enrollment; we do the same here.
     local client_dir="/home/$TEST_USER/aplane/apclient"
     docker_exec_as_tester "mkdir -p $client_dir/.ssh && chmod 700 $client_dir/.ssh && \
         ssh-keygen -t ed25519 -f $client_dir/.ssh/id_ed25519 -N '' -q"
@@ -342,7 +342,7 @@ populate_known_hosts() {
 
 start_apapprover() {
     # apapprover authenticates via IPC (which also unlocks the signer), then
-    # auto-answers "y" to every approval prompt — both token provisioning and
+    # auto-answers "y" to every approval prompt — both client enrollment and
     # signing use the same prompt. We write the expect script on the host and
     # copy it in; `docker exec` doesn't forward stdin unless -i is set, so
     # piping a heredoc into a bare `docker exec` produces an empty file.
@@ -387,18 +387,19 @@ EXPECT_SCRIPT
     die "apapprover did not authenticate within 20s"
 }
 
-run_request_token() {
-    # Run request-token non-interactively via apshell -script. AutoConfirm=true
-    # is set by script mode; known_hosts is pre-populated so no trust prompt.
-    docker_exec_as_tester "echo 'request-token' > /tmp/req-token.script"
+run_request_enrollment() {
+    # Run request-enrollment non-interactively via apshell -script.
+    # AutoConfirm=true is set by script mode; known_hosts is pre-populated so
+    # no trust prompt. Success enrolls the client key at the signer.
+    docker_exec_as_tester "echo 'request-enrollment' > /tmp/req-enrollment.script"
     docker_exec_as_tester ". /home/$TEST_USER/aplane/apenv.sh && \
-        apshell -script /tmp/req-token.script 2>&1 | tee /tmp/req-token.log"
-    docker_exec_as_tester "test -s /home/$TEST_USER/aplane/apclient/aplane.token" \
-        || die "request-token did not produce a client token file"
+        apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
+    docker_exec_as_tester "grep -q 'enrolled at endpoint' /tmp/req-enrollment.log" \
+        || die "request-enrollment did not report an enrolled client key"
 }
 
 verify_signer_reachable() {
-    # With the token saved, `apshell -script status` should print
+    # With the client key enrolled, `apshell -script status` should print
     # "Signer: Connected" after attemptStartupConnection succeeds.
     docker_exec_as_tester "echo 'status' > /tmp/status.script"
     local out
@@ -425,7 +426,6 @@ files='
 $root/apsigner/config.yaml
 $root/apsigner/identities/default/.keystore
 $root/apclient/config.yaml
-$root/apclient/aplane.token
 $root/apclient/.ssh/id_ed25519
 $root/apclient/.ssh/known_hosts
 $root/apclient/plugins.yaml
@@ -444,7 +444,6 @@ files='
 $root/apsigner/config.yaml
 $root/apsigner/identities/default/.keystore
 $root/apclient/config.yaml
-$root/apclient/aplane.token
 $root/apclient/.ssh/id_ed25519
 $root/apclient/.ssh/known_hosts
 $root/apclient/plugins.yaml
@@ -616,10 +615,10 @@ main() {
     log "Starting apapprover (unlocks signer, auto-approves requests)"
     start_apapprover
 
-    log "Requesting API token via apshell"
-    run_request_token
+    log "Enrolling the client key via apshell"
+    run_request_enrollment
 
-    log "Verifying client can reach signer with issued token"
+    log "Verifying client can reach signer with its enrolled key"
     verify_signer_reachable
 
     log "Creating preserved local state markers"

@@ -14,14 +14,12 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 // Options customize enrollment preflight messages for the calling surface.
 type Options struct {
 	Product              string
 	MissingSSHHint       string
-	MissingTokenHint     string
 	MissingKnownHostHint string
 }
 
@@ -30,12 +28,13 @@ type Prereqs struct {
 	DataDir string
 	Config  config.Config
 	SSH     config.ClientEndpointSSH
-	Token   string
 }
 
-// LoadEnrolledClient validates that the client is already enrolled for a
-// non-interactive, signer-facing surface. It requires a default signer endpoint,
-// a client token, and a trusted known_hosts entry.
+// LoadEnrolledClient validates that the client is already set up for a
+// non-interactive, signer-facing surface. It requires a default signer
+// endpoint and a trusted known_hosts entry. Whether the client's key is
+// enrolled is known only to the node; an unenrolled key fails SSH
+// authentication at connect time.
 func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 	if err := config.CheckSupportedClientEndpointConfig(dataDir); err != nil {
 		return nil, err
@@ -54,18 +53,6 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 		return nil, fmt.Errorf("%s default signer endpoint is invalid: %w", opts.Product, err)
 	}
 
-	tokenPath := endpointSSH.TokenFile
-	if tokenPath == "" {
-		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(dataDir)
-	}
-	token, err := tokenfile.ReadToken(tokenPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load token from %s: %w", tokenPath, err)
-	}
-	if token == "" {
-		return nil, fmt.Errorf("%s requires an enrolled client token at %s; %s", opts.Product, tokenPath, opts.MissingTokenHint)
-	}
-
 	if err := requireKnownHost(endpointSSH, opts); err != nil {
 		return nil, err
 	}
@@ -74,7 +61,6 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 		DataDir: dataDir,
 		Config:  cfg,
 		SSH:     endpointSSH,
-		Token:   token,
 	}, nil
 }
 

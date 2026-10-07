@@ -7,8 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +40,7 @@ func TestPrepareCosignerSetupReusesUnchangedCustomEndpoint(t *testing.T) {
 	want := config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleCosigner, URL: "ssh://cosigner.example:2223",
 		IdentityFile:   "/custom/id",
-		KnownHostsPath: "/custom/known_hosts", TokenFile: "/custom/token",
+		KnownHostsPath: "/custom/known_hosts",
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "field", want, true); err != nil {
 		t.Fatal(err)
@@ -218,12 +218,12 @@ func TestCompleteCosignerSetupReportsAdvertisedKeys(t *testing.T) {
 		Address: reference.WitnessKeyID, PublicKeyHex: reference.PublicKeyHex,
 		KeyType: reference.KeyType, IsWitnessKey: true,
 	}
-	server := newEndpointKeysServer(t, "cosigner-token", []signerapi.KeyInfo{
+	server := newEndpointKeysServer(t, []signerapi.KeyInfo{
 		expected,
 		expected, // Identical repeated advertisements are deduplicated.
 		{Address: otherID, PublicKeyHex: otherPublicKey, KeyType: witness.Falcon1024V1, IsWitnessKey: true},
 	})
-	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "cosigner-token")
+	writeLiveCosignerEndpoint(t, dataDir, "field", server)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
 	if err != nil {
@@ -237,8 +237,8 @@ func TestCompleteCosignerSetupReportsAdvertisedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Connected || result.TokenIssued || result.AdvertisedKeys != 2 {
-		t.Fatalf("result = %#v, want a connected setup with two advertised keys and the existing token", result)
+	if !result.Connected || result.Enrolled || result.AdvertisedKeys != 2 {
+		t.Fatalf("result = %#v, want a connected setup with two advertised keys and no enrollment", result)
 	}
 	if output := strings.Join(result.RenderLines, "\n"); !strings.Contains(output, "2 cosigner key(s) advertised.") || strings.Contains(output, "setup file") {
 		t.Fatalf("output = %q", output)
@@ -247,8 +247,8 @@ func TestCompleteCosignerSetupReportsAdvertisedKeys(t *testing.T) {
 
 func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 	dataDir := t.TempDir()
-	server := newEndpointKeysStatusServer(t, "cosigner-token", 403, `{"error":"signer is locked"}`)
-	writeLiveCosignerEndpoint(t, dataDir, "field", server.URL, "cosigner-token")
+	server := newEndpointKeysStatusNode(t, 403, `{"error":"signer is locked"}`)
+	writeLiveCosignerEndpoint(t, dataDir, "field", server)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
 	if err != nil {
@@ -264,12 +264,20 @@ func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 	}
 }
 
-func TestCompleteCosignerSetupRequiresExistingTokenForDirectEndpoint(t *testing.T) {
+// A node that refuses the client's key is asked to enroll it; once the
+// operator approves, the connection is retried and setup completes.
+func TestCompleteCosignerSetupEnrollsUnenrolledClient(t *testing.T) {
 	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Alias: "field", URL: "https://cosigner.example",
+	reference := testCosignerReference(t)
+	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
+	var label string
+	server := sshtest.ServeWithOptions(t, endpointRoleKeysHandler("cosigner", keys), sshtest.Options{
+		Unenrolled: true,
+		Approve:    func(_, requested string) bool { label = requested; return true },
 	})
+	writeLiveCosignerEndpoint(t, dataDir, "field", server)
+	app := newEndpointTestApp(t, dataDir)
+	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,9 +285,43 @@ func TestCompleteCosignerSetupRequiresExistingTokenForDirectEndpoint(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = app.CompleteCosignerSetup(context.Background(), plan, endpoint, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "automatic enrollment requires ssh://") {
-		t.Fatalf("CompleteCosignerSetup() error = %v, want direct-endpoint token guidance", err)
+	var shownFingerprint string
+	result, err := app.CompleteCosignerSetup(context.Background(), plan, endpoint, nil, func(fp string) { shownFingerprint = fp })
+	if err != nil {
+		t.Fatalf("CompleteCosignerSetup() error = %v", err)
+	}
+	if !result.Connected || !result.Enrolled || result.AdvertisedKeys != 1 {
+		t.Fatalf("result = %#v, want a connected setup that enrolled the client", result)
+	}
+	if shownFingerprint != server.Fingerprint || !server.Enrolled(server.Fingerprint) || label != "" {
+		t.Fatalf("shown %q enrolled %v label %q", shownFingerprint, server.Enrolled(server.Fingerprint), label)
+	}
+	if output := strings.Join(result.RenderLines, "\n"); !strings.Contains(output, "this client's key was enrolled") {
+		t.Fatalf("output = %q", output)
+	}
+}
+
+// A node whose operator rejects the enrollment leaves setup failed with the
+// authentication error, and nothing claims a connection.
+func TestCompleteCosignerSetupReportsRejectedEnrollment(t *testing.T) {
+	dataDir := t.TempDir()
+	server := newUnenrolledEndpointKeysServer(t, nil)
+	writeLiveCosignerEndpoint(t, dataDir, "field", server)
+	app := newEndpointTestApp(t, dataDir)
+	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := app.ApplyCosignerSetupEndpoint(plan, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := app.CompleteCosignerSetup(context.Background(), plan, endpoint, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "rejected by operator") {
+		t.Fatalf("CompleteCosignerSetup() error = %v, want the operator rejection", err)
+	}
+	if result.Connected || result.Enrolled {
+		t.Fatalf("result = %#v, want neither connection nor enrollment", result)
 	}
 }
 
@@ -295,23 +337,4 @@ func testCosignerReference(t *testing.T) witness.PublicReference {
 		t.Fatal(err)
 	}
 	return reference
-}
-
-func TestCosignerSetupUsesResolvedEndpointTokenPath(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{
-		Alias: "field", URL: "ssh://cosigner.example",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint, err := app.ApplyCosignerSetupEndpoint(plan, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(dataDir, "tokens", "field.token")
-	if endpoint.TokenFile != want {
-		t.Fatalf("token path = %q, want %q", endpoint.TokenFile, want)
-	}
 }

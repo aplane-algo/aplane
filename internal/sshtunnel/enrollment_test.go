@@ -35,27 +35,54 @@ func TestParseExecCommandRejectsOversizedLength(t *testing.T) {
 	}
 }
 
-func TestProvisioningPublicKeyStringHandlesNilPermissions(t *testing.T) {
-	if got := provisioningPublicKeyString(nil); got != "" {
-		t.Fatalf("provisioningPublicKeyString(nil) = %q, want empty", got)
+func TestEnrollmentPublicKeyHandlesMissingPermissions(t *testing.T) {
+	if _, ok := enrollmentPublicKey(nil); ok {
+		t.Fatal("enrollmentPublicKey(nil) reported a key")
 	}
-	if got := provisioningPublicKeyString(&ssh.Permissions{}); got != "" {
-		t.Fatalf("provisioningPublicKeyString(empty extensions) = %q, want empty", got)
+	if _, ok := enrollmentPublicKey(&ssh.Permissions{}); ok {
+		t.Fatal("enrollmentPublicKey(empty extensions) reported a key")
 	}
-	if got := provisioningPublicKeyString(&ssh.Permissions{Extensions: map[string]string{"public_key": "key"}}); got != "key" {
-		t.Fatalf("provisioningPublicKeyString() = %q, want key", got)
+	if _, ok := enrollmentPublicKey(&ssh.Permissions{Extensions: map[string]string{"public_key": "not a key"}}); ok {
+		t.Fatal("enrollmentPublicKey(malformed) reported a key")
+	}
+	_, pub := generateClientKey(t)
+	key, ok := enrollmentPublicKey(&ssh.Permissions{Extensions: map[string]string{"public_key": string(ssh.MarshalAuthorizedKey(pub))}})
+	if !ok || ssh.FingerprintSHA256(key) != ssh.FingerprintSHA256(pub) {
+		t.Fatalf("enrollmentPublicKey() = %v, %v", key, ok)
 	}
 }
 
-// testServer creates a minimal Server configured for token provisioning tests.
+func TestParseEnrollmentCommand(t *testing.T) {
+	tests := []struct {
+		command string
+		label   string
+		ok      bool
+	}{
+		{"enroll", "", true},
+		{"enroll laptop", "laptop", true},
+		{"enroll  padded label ", "padded label", true},
+		{"enroll ", "", false},
+		{"enrollx", "", false},
+		{"provision", "", false},
+		{"enroll bad\x1bescape", "", false},
+		{"enroll " + strings.Repeat("a", maxEnrollmentLabelBytes+1), "", false},
+	}
+	for _, tt := range tests {
+		label, ok := parseEnrollmentCommand(tt.command)
+		if ok != tt.ok || label != tt.label {
+			t.Fatalf("parseEnrollmentCommand(%q) = (%q, %v), want (%q, %v)", tt.command, label, ok, tt.label, tt.ok)
+		}
+	}
+}
+
+// testServer creates a minimal Server for enrollment and channel tests.
 func testServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 
 	hostKeyPath := filepath.Join(tmpDir, "host_key")
-	authKeysPath := filepath.Join(tmpDir, "authorized_keys")
 
-	srv, err := NewServer("127.0.0.1:0", "127.0.0.1:0", hostKeyPath, authKeysPath, "test-token")
+	srv, err := NewServer("127.0.0.1:0", hostKeyPath)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -63,11 +90,11 @@ func testServer(t *testing.T) (*Server, string) {
 	return srv, tmpDir
 }
 
-func setTokenProvisioningHooks(srv *Server, hooks TokenProvisioningHooks) {
+func setEnrollmentHooks(srv *Server, hooks EnrollmentHooks) {
 	if hooks.OperatorConnected == nil {
 		hooks.OperatorConnected = func() bool { return true }
 	}
-	srv.SetTokenProvisioningHooks(hooks)
+	srv.SetEnrollmentHooks(hooks)
 }
 
 // generateClientKey creates an ephemeral Ed25519 SSH key pair for testing.
@@ -84,9 +111,14 @@ func generateClientKey(t *testing.T) (ssh.Signer, ssh.PublicKey) {
 	return signer, signer.PublicKey()
 }
 
-// runProvisioningSession starts a TCP listener, accepts one connection on the
-// server side, and connects with an SSH client to run "provision".
-func runProvisioningSession(t *testing.T, srv *Server, clientSigner ssh.Signer) (output string, exitCode int, err error) {
+// runEnrollmentSession starts a TCP listener, accepts one connection on the
+// server side, and connects with an SSH client to run "enroll".
+func runEnrollmentSession(t *testing.T, srv *Server, clientSigner ssh.Signer) (output string, exitCode int, err error) {
+	t.Helper()
+	return runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll")
+}
+
+func runEnrollmentSessionWithCommand(t *testing.T, srv *Server, clientSigner ssh.Signer, command string) (output string, exitCode int, err error) {
 	t.Helper()
 
 	// Listen on a random port
@@ -113,13 +145,13 @@ func runProvisioningSession(t *testing.T, srv *Server, clientSigner ssh.Signer) 
 		go ssh.DiscardRequests(globalReqs)
 
 		for newChannel := range chans {
-			srv.handleTokenProvisioningChannel(context.Background(), sshServerConn, newChannel)
+			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
 		}
 	}()
 
 	// Client side
 	clientConfig := &ssh.ClientConfig{
-		User: tokenRequestSSHUsername,
+		User: enrollmentSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -150,7 +182,7 @@ func runProvisioningSession(t *testing.T, srv *Server, clientSigner ssh.Signer) 
 	}
 	defer func() { _ = session.Close() }()
 
-	out, runErr := session.CombinedOutput("provision")
+	out, runErr := session.CombinedOutput(command)
 	outStr := string(out)
 
 	if runErr != nil {
@@ -162,27 +194,25 @@ func runProvisioningSession(t *testing.T, srv *Server, clientSigner ssh.Signer) 
 	return outStr, 0, nil
 }
 
-func TestTokenProvisioning_FullSuccess(t *testing.T) {
-	srv, tmpDir := testServer(t)
+func TestEnrollment_FullSuccess(t *testing.T) {
+	srv, _ := testServer(t)
 
-	var approvalCalled, issuanceCalled, auditCalled bool
-
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
+	var approvalCalled, auditCalled bool
+	var approvedLabel, auditedLabel string
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			approvalCalled = true
+			approvedLabel = label
 			return true, nil
 		},
-		Issue: func() (string, error) {
-			issuanceCalled = true
-			return "test-token-value", nil
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
 			auditCalled = true
+			auditedLabel = label
 		},
 	})
 
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
+	clientSigner, clientPub := generateClientKey(t)
+	output, exitCode, err := runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll laptop")
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
@@ -190,108 +220,32 @@ func TestTokenProvisioning_FullSuccess(t *testing.T) {
 	if exitCode != 0 {
 		t.Errorf("expected exit 0, got %d; output: %s", exitCode, output)
 	}
-	if !strings.Contains(output, "test-token-value") {
-		t.Errorf("expected token in output, got: %s", output)
+	if want := "enrolled " + ssh.FingerprintSHA256(clientPub) + "\n"; output != want {
+		t.Errorf("output = %q, want %q", output, want)
 	}
-	if !approvalCalled {
-		t.Error("approval callback not called")
+	if !approvalCalled || approvedLabel != "laptop" {
+		t.Errorf("approval callback called=%v label=%q", approvalCalled, approvedLabel)
 	}
-	if !issuanceCalled {
-		t.Error("issuance callback not called")
+	if !auditCalled || auditedLabel != "laptop" {
+		t.Errorf("audit callback called=%v label=%q", auditCalled, auditedLabel)
 	}
-	if !auditCalled {
-		t.Error("audit callback not called")
-	}
-
-	// Verify key was enrolled in authorized_keys
-	authKeysData, readErr := os.ReadFile(filepath.Join(tmpDir, "authorized_keys"))
-	if readErr != nil {
-		t.Fatalf("read authorized_keys: %v", readErr)
-	}
-	if len(authKeysData) == 0 {
-		t.Error("authorized_keys is empty — key was not enrolled")
+	if !srv.hasAuthorizedKey(clientPub) {
+		t.Error("key was not enrolled")
 	}
 }
 
-func TestRegisterAuthorizedKeyConcurrentDuplicate(t *testing.T) {
-	srv, tmpDir := testServer(t)
-	_, pub := generateClientKey(t)
-
-	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := srv.registerAuthorizedKey(pub); err != nil {
-				t.Errorf("registerAuthorizedKey() error = %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	authKeysData, err := os.ReadFile(filepath.Join(tmpDir, "authorized_keys"))
-	if err != nil {
-		t.Fatalf("ReadFile(authorized_keys) error = %v", err)
-	}
-	lines := strings.Fields(strings.TrimSpace(string(authKeysData)))
-	if len(lines) == 0 {
-		t.Fatal("authorized_keys is empty")
-	}
-	if got := strings.Count(string(authKeysData), string(ssh.MarshalAuthorizedKey(pub))); got != 1 {
-		t.Fatalf("authorized_keys contains key %d times, want 1", got)
-	}
-	srv.authKeysMu.RLock()
-	authKeyCount := len(srv.authKeys)
-	srv.authKeysMu.RUnlock()
-	if authKeyCount != 1 {
-		t.Fatalf("len(authKeys) = %d, want 1", authKeyCount)
-	}
-}
-
-func TestRegisterAuthorizedKeyAdoptsExistingFileEntry(t *testing.T) {
-	srv, tmpDir := testServer(t)
-	_, pub := generateClientKey(t)
-	authKeysPath := filepath.Join(tmpDir, "authorized_keys")
-	keyLine := string(ssh.MarshalAuthorizedKey(pub))
-	if err := os.WriteFile(authKeysPath, []byte(keyLine), 0o600); err != nil {
-		t.Fatalf("WriteFile(authorized_keys) error = %v", err)
-	}
-
-	if err := srv.registerAuthorizedKey(pub); err != nil {
-		t.Fatalf("registerAuthorizedKey() error = %v", err)
-	}
-
-	authKeysData, err := os.ReadFile(authKeysPath)
-	if err != nil {
-		t.Fatalf("ReadFile(authorized_keys) error = %v", err)
-	}
-	if got := strings.Count(string(authKeysData), keyLine); got != 1 {
-		t.Fatalf("authorized_keys contains key %d times, want 1", got)
-	}
-	srv.authKeysMu.RLock()
-	authKeyCount := len(srv.authKeys)
-	srv.authKeysMu.RUnlock()
-	if authKeyCount != 1 {
-		t.Fatalf("len(authKeys) = %d, want 1", authKeyCount)
-	}
-}
-
-func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
+func TestEnrollmentApprovalCanceledOnClientDisconnect(t *testing.T) {
 	srv, _ := testServer(t)
 	clientSigner, _ := generateClientKey(t)
 
 	approvalStarted := make(chan struct{})
 	approvalDone := make(chan error, 1)
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			<-ctx.Done()
 			approvalDone <- ctx.Err()
 			return false, ctx.Err()
-		},
-		Issue: func() (string, error) {
-			t.Fatal("issuance callback should not be called after client disconnect")
-			return "", nil
 		},
 	})
 
@@ -318,12 +272,12 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 		go ssh.DiscardRequests(globalReqs)
 
 		for newChannel := range chans {
-			srv.handleTokenProvisioningChannel(context.Background(), sshServerConn, newChannel)
+			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
 		}
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: tokenRequestSSHUsername,
+		User: enrollmentSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -345,7 +299,7 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 		_ = client.Close()
 		t.Fatalf("new session: %v", sessErr)
 	}
-	if err := session.Start("provision"); err != nil {
+	if err := session.Start("enroll"); err != nil {
 		_ = session.Close()
 		_ = client.Close()
 		t.Fatalf("start provisioning: %v", err)
@@ -376,21 +330,17 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
+func TestClientRequestEnrollmentContextCancelClosesRequest(t *testing.T) {
 	srv, tmpDir := testServer(t)
 
 	approvalStarted := make(chan struct{})
 	approvalDone := make(chan error, 1)
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			<-ctx.Done()
 			approvalDone <- ctx.Err()
 			return false, ctx.Err()
-		},
-		Issue: func() (string, error) {
-			t.Fatal("issuance callback should not be called after client cancellation")
-			return "", nil
 		},
 	})
 
@@ -413,9 +363,9 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	resultCh := make(chan error, 1)
 	go func() {
-		token, err := client.RequestToken(reqCtx)
-		if token != "" {
-			resultCh <- fmt.Errorf("token = %q, want empty", token)
+		fingerprint, err := client.RequestEnrollment(reqCtx, "")
+		if fingerprint != "" {
+			resultCh <- fmt.Errorf("fingerprint = %q, want empty", fingerprint)
 			return
 		}
 		resultCh <- err
@@ -431,10 +381,10 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 	select {
 	case err := <-resultCh:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("RequestToken() error = %v, want context.Canceled", err)
+			t.Fatalf("RequestEnrollment() error = %v, want context.Canceled", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("RequestToken() did not return after cancellation")
+		t.Fatal("RequestEnrollment() did not return after cancellation")
 	}
 	select {
 	case err := <-approvalDone:
@@ -446,15 +396,15 @@ func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
 	}
 }
 
-func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
+func TestEnrollmentIgnoresClientStdinEOF(t *testing.T) {
 	srv, _ := testServer(t)
 	clientSigner, _ := generateClientKey(t)
 
 	approvalStarted := make(chan struct{})
 	allowApproval := make(chan struct{})
 	approvalCanceled := make(chan error, 1)
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			close(approvalStarted)
 			select {
 			case <-allowApproval:
@@ -464,10 +414,7 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 				return false, ctx.Err()
 			}
 		},
-		Issue: func() (string, error) {
-			return "token-after-stdin-eof", nil
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {},
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {},
 	})
 
 	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
@@ -493,12 +440,12 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 		go ssh.DiscardRequests(globalReqs)
 
 		for newChannel := range chans {
-			srv.handleTokenProvisioningChannel(context.Background(), sshServerConn, newChannel)
+			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
 		}
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: tokenRequestSSHUsername,
+		User: enrollmentSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -535,7 +482,7 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 		_ = clientConn.Close()
 		t.Fatalf("stdout pipe: %v", stdoutErr)
 	}
-	if err := session.Start("provision"); err != nil {
+	if err := session.Start("enroll"); err != nil {
 		_ = session.Close()
 		_ = client.Close()
 		_ = clientConn.Close()
@@ -564,8 +511,8 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 	if err := session.Wait(); err != nil {
 		t.Fatalf("wait provisioning: %v; output: %s", err, string(output))
 	}
-	if !strings.Contains(string(output), "token-after-stdin-eof") {
-		t.Fatalf("output = %q, want token", string(output))
+	if !strings.Contains(string(output), "enrolled ") {
+		t.Fatalf("output = %q, want the enrollment acknowledgement", string(output))
 	}
 
 	_ = session.Close()
@@ -578,24 +525,33 @@ func TestTokenProvisioningIgnoresClientStdinEOF(t *testing.T) {
 	}
 }
 
-func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *testing.T) {
-	srv, tmpDir := testServer(t)
+func TestEnrollmentDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *testing.T) {
+	srv, _ := testServer(t)
 	clientSigner, clientPubKey := generateClientKey(t)
 
 	issueStarted := make(chan struct{})
 	allowIssue := make(chan struct{})
-	var auditCalled bool
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
+	var auditCalled, enrolled bool
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			return true, nil
 		},
-		Issue: func() (string, error) {
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
+			auditCalled = true
+		},
+	})
+	// The registry write succeeds, then the client is gone before the
+	// acknowledgement: the enrollment stands, but it is not audited as
+	// delivered. The hook blocks so the test controls that ordering.
+	srv.SetProductHooks(ProductHooks{
+		CheckKey: func(key ssh.PublicKey) bool {
+			return enrolled && ssh.FingerprintSHA256(key) == ssh.FingerprintSHA256(clientPubKey)
+		},
+		EnrollKey: func(key ssh.PublicKey, label string) error {
+			enrolled = true
 			close(issueStarted)
 			<-allowIssue
-			return "token-after-client-disconnect", nil
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
-			auditCalled = true
+			return nil
 		},
 	})
 
@@ -628,7 +584,7 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 			handlers.Add(1)
 			go func(ch ssh.NewChannel) {
 				defer handlers.Done()
-				srv.handleTokenProvisioningChannel(connCtx, sshServerConn, ch)
+				srv.handleEnrollmentChannel(connCtx, sshServerConn, ch)
 			}(newChannel)
 		}
 		cancelConnCtx()
@@ -637,7 +593,7 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	}()
 
 	clientConfig := &ssh.ClientConfig{
-		User: tokenRequestSSHUsername,
+		User: enrollmentSSHUsername,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(clientSigner),
 		},
@@ -667,7 +623,7 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 		_ = clientConn.Close()
 		t.Fatalf("stdout pipe: %v", stdoutErr)
 	}
-	if err := session.Start("provision"); err != nil {
+	if err := session.Start("enroll"); err != nil {
 		_ = session.Close()
 		_ = client.Close()
 		_ = clientConn.Close()
@@ -677,16 +633,10 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 	select {
 	case <-issueStarted:
 	case <-time.After(time.Second):
-		t.Fatal("issuance callback did not start")
+		t.Fatal("enrollment hook did not start")
 	}
-
-	authKeysData, readErr := os.ReadFile(filepath.Join(tmpDir, "authorized_keys"))
-	if readErr != nil {
-		t.Fatalf("read authorized_keys: %v", readErr)
-	}
-	keyLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(clientPubKey)))
-	if !strings.Contains(string(authKeysData), keyLine) {
-		t.Fatalf("authorized_keys does not contain enrolled client key:\n%s", string(authKeysData))
+	if !enrolled {
+		t.Fatal("client key was not enrolled")
 	}
 
 	_ = session.Close()
@@ -706,30 +656,25 @@ func TestTokenProvisioningDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *t
 		t.Fatal("server did not finish after client disconnect")
 	}
 	if auditCalled {
-		t.Fatal("audit callback should not be called after token delivery failure")
+		t.Fatal("audit callback should not be called after acknowledgement delivery failure")
 	}
 }
 
-func TestTokenProvisioning_Rejected(t *testing.T) {
-	srv, tmpDir := testServer(t)
+func TestEnrollment_Rejected(t *testing.T) {
+	srv, _ := testServer(t)
 
-	var issuanceCalled, auditCalled bool
-
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
+	var auditCalled bool
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			return false, nil // Operator rejects
 		},
-		Issue: func() (string, error) {
-			issuanceCalled = true
-			return "should-not-be-issued", nil
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
 			auditCalled = true
 		},
 	})
 
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
+	clientSigner, clientPub := generateClientKey(t)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
@@ -737,120 +682,66 @@ func TestTokenProvisioning_Rejected(t *testing.T) {
 	if exitCode == 0 {
 		t.Errorf("expected non-zero exit, got 0; output: %s", output)
 	}
-	if issuanceCalled {
-		t.Error("issuance callback should NOT have been called after rejection")
+	if !strings.Contains(output, "rejected by operator") {
+		t.Errorf("output = %q, want the operator rejection", output)
 	}
 	if auditCalled {
 		t.Error("audit callback should NOT have been called after rejection")
 	}
-
-	// Verify no key was enrolled
-	authKeysData, _ := os.ReadFile(filepath.Join(tmpDir, "authorized_keys"))
-	if len(authKeysData) > 0 {
-		t.Error("authorized_keys should be empty after rejection")
+	if srv.hasAuthorizedKey(clientPub) {
+		t.Error("key should not be enrolled after rejection")
 	}
 }
 
-func TestTokenProvisioning_EnrollmentFailure(t *testing.T) {
-	srv, tmpDir := testServer(t)
-
-	// Make authorized_keys path unwritable to force enrollment failure
-	authKeysDir := filepath.Join(tmpDir, "nowrite")
-	if err := os.MkdirAll(authKeysDir, 0500); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	srv.authorizedKeysPath = filepath.Join(authKeysDir, "subdir", "authorized_keys")
-
-	var issuanceCalled, auditCalled bool
-
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
-			return true, nil // Operator approves
-		},
-		Issue: func() (string, error) {
-			issuanceCalled = true
-			return "should-not-be-issued", nil
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
-			auditCalled = true
-		},
-	})
-
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-
-	if exitCode == 0 {
-		t.Errorf("expected non-zero exit on enrollment failure, got 0; output: %s", output)
-	}
-	if issuanceCalled {
-		t.Error("issuance callback should NOT have been called after enrollment failure")
-	}
-	if auditCalled {
-		t.Error("audit callback should NOT have been called after enrollment failure")
-	}
-}
-
-func TestTokenProvisioning_IssuanceFailure(t *testing.T) {
-	srv, tmpDir := testServer(t)
+func TestEnrollment_RegistryFailure(t *testing.T) {
+	srv, _ := testServer(t)
 
 	var auditCalled bool
-
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
-			return true, nil
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
+			return true, nil // Operator approves
 		},
-		Issue: func() (string, error) {
-			return "", fmt.Errorf("disk full")
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
 			auditCalled = true
 		},
 	})
+	srv.SetProductHooks(ProductHooks{
+		CheckKey:  func(key ssh.PublicKey) bool { return false },
+		EnrollKey: func(key ssh.PublicKey, label string) error { return fmt.Errorf("registry publish failed") },
+	})
 
 	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
 
 	if exitCode == 0 {
-		t.Errorf("expected non-zero exit on issuance failure, got 0; output: %s", output)
+		t.Errorf("expected non-zero exit on registry failure, got 0; output: %s", output)
 	}
-	if !strings.Contains(output, "disk full") {
-		t.Errorf("expected error message in output, got: %s", output)
+	if !strings.Contains(output, "failed to enroll SSH key") {
+		t.Errorf("output = %q, want the enrollment failure", output)
 	}
 	if auditCalled {
-		t.Error("audit callback should NOT have been called after issuance failure")
-	}
-
-	// Key should still be enrolled (that succeeded before issuance was attempted)
-	authKeysData, _ := os.ReadFile(filepath.Join(tmpDir, "authorized_keys"))
-	if len(authKeysData) == 0 {
-		t.Error("authorized_keys should contain the enrolled key even after issuance failure")
+		t.Error("audit callback should NOT have been called after registry failure")
 	}
 }
 
-func TestTokenProvisioning_NoOperator(t *testing.T) {
+func TestEnrollment_NoOperator(t *testing.T) {
 	srv, _ := testServer(t)
 
 	var approvalCalled bool
 
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
+	setEnrollmentHooks(srv, EnrollmentHooks{
 		OperatorConnected: func() bool { return false },
-		Approve: func(sshFingerprint, remoteAddr string) (bool, error) {
+		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
 			approvalCalled = true
 			return true, nil
-		},
-		Issue: func() (string, error) {
-			return "nope", nil
 		},
 	})
 
 	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
@@ -863,11 +754,11 @@ func TestTokenProvisioning_NoOperator(t *testing.T) {
 	}
 }
 
-func TestTokenProvisioningChecksProductOperator(t *testing.T) {
+func TestEnrollmentChecksProductOperator(t *testing.T) {
 	srv, _ := testServer(t)
 
 	called := false
-	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
+	setEnrollmentHooks(srv, EnrollmentHooks{
 		OperatorConnected: func() bool {
 			called = true
 			return false
@@ -875,7 +766,7 @@ func TestTokenProvisioningChecksProductOperator(t *testing.T) {
 	})
 
 	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runProvisioningSession(t, srv, clientSigner)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}

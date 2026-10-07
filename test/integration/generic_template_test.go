@@ -55,14 +55,10 @@ func TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	lsigAddr := generateGenericLSigWithShell(t, apshell, keyType, funder.GetAddress())
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, lsigAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", lsigAddr)
 	}
 
@@ -137,8 +133,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("failed to re-enable template key type over IPC: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 	resp, err := signerClient.AdminGenerate(keyType, nil)
 	if err != nil {
 		t.Fatalf("failed to generate lifecycle generic LSig: %v", err)
@@ -147,7 +142,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 	if lsigAddr == "" {
 		t.Fatal("admin generate returned empty lifecycle LSig address")
 	}
-	if !waitForKey(t, signerd.GetURL(), token, lsigAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload generated lifecycle LSig key %s", lsigAddr)
 	}
 
@@ -184,12 +179,11 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("lifecycle generic LSig close transaction failed to confirm: %v", err)
 	}
 
-	token = readSignerToken(t, signerd)
-	signerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient = signerclient.NewSignerClient(signerd.GetURL())
 	if _, err := signerClient.AdminDeleteKey(lsigAddr); err != nil {
 		t.Fatalf("failed to delete lifecycle generic LSig key %s: %v", lsigAddr, err)
 	}
-	if !waitForKeyMissing(t, signerd.GetURL(), token, lsigAddr, 10*time.Second) {
+	if !waitForKeyMissing(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
 		t.Fatalf("signer still reports deleted lifecycle LSig key %s", lsigAddr)
 	}
 
@@ -254,8 +248,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 		t.Fatalf("failed to re-enable composed template key type over IPC: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 	resp, err := signerClient.AdminGenerate(keyType, nil)
 	if err != nil {
 		t.Fatalf("failed to generate composed DSA LSig: %v", err)
@@ -264,7 +257,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	if lsigAddr == "" {
 		t.Fatal("admin generate returned empty composed DSA LSig address")
 	}
-	if !waitForKey(t, signerd.GetURL(), token, lsigAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload generated composed DSA LSig key %s", lsigAddr)
 	}
 
@@ -307,12 +300,11 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 		t.Fatalf("composed DSA LSig close transaction failed to confirm: %v", err)
 	}
 
-	token = readSignerToken(t, signerd)
-	signerClient = signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient = signerclient.NewSignerClient(signerd.GetURL())
 	if _, err := signerClient.AdminDeleteKey(lsigAddr); err != nil {
 		t.Fatalf("failed to delete composed DSA LSig key %s: %v", lsigAddr, err)
 	}
-	if !waitForKeyMissing(t, signerd.GetURL(), token, lsigAddr, 10*time.Second) {
+	if !waitForKeyMissing(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
 		t.Fatalf("signer still reports deleted composed DSA LSig key %s", lsigAddr)
 	}
 
@@ -540,10 +532,7 @@ func assertLogicSigSendRejected(t *testing.T, apshell *harness.ApshellHarness, f
 func apshellForSigner(t *testing.T, signerd *harness.SignerHarness) *harness.ApshellHarness {
 	t.Helper()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 	return apshell
 }
 
@@ -564,8 +553,7 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 
 	params := map[string]string{
 		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -585,7 +573,7 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	originalAddress := resp.Address
 	t.Logf("Generated aplane.htlc.v1 address: %s", originalAddress)
 
-	if !waitForKey(t, signerd.GetURL(), token, originalAddress, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), originalAddress, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", originalAddress)
 	}
 

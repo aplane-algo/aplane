@@ -75,10 +75,10 @@ func disconnectTunnel(r *REPLState) error {
 	return nil
 }
 
-// requestToken enrolls with alias, or with the default signer endpoint when
-// alias is empty.
-func requestToken(r *REPLState, alias string) error {
-	target, err := r.app().ResolveTokenRequestTarget(alias)
+// requestEnrollment asks alias, or the default signer endpoint when alias is
+// empty, to enroll this client's SSH key.
+func requestEnrollment(r *REPLState, alias, label string) error {
+	target, err := r.app().ResolveEnrollmentTarget(alias)
 	if err != nil {
 		return err
 	}
@@ -89,12 +89,12 @@ func requestToken(r *REPLState, alias string) error {
 		_ = disconnectTunnel(r)
 	}
 
-	r.printf("Requesting token from endpoint %s...\n", alias)
-	r.println("This requires an operator (apadmin) to approve on the server.")
+	r.printf("Requesting enrollment at endpoint %s...\n", alias)
+	r.println("This requires an operator (apadmin) to approve on the node.")
 	r.println()
 
 	hostKeyApproval := buildHostKeyApproval(r)
-	result, err := r.app().RequestTokenEndpointAlias(r.commandContext(), alias, hostKeyApproval, r.printTokenProvisioningWait)
+	result, err := r.app().RequestEnrollmentEndpointAlias(r.commandContext(), alias, label, hostKeyApproval, r.printEnrollmentWait)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func requestToken(r *REPLState, alias string) error {
 		r.println(line)
 	}
 	if target.AutoConnect {
-		r.println("Connecting to signer with new token...")
+		r.println("Connecting to signer with the enrolled key...")
 		connectResult, err := executeConnectEndpointAlias(r, alias)
 		if err != nil {
 			return err
@@ -112,11 +112,11 @@ func requestToken(r *REPLState, alias string) error {
 	return nil
 }
 
-func (r *REPLState) printTokenProvisioningWait(clientFingerprint string) {
+func (r *REPLState) printEnrollmentWait(clientFingerprint string) {
 	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
-	r.progressPrintln("Compare this complete fingerprint with the Client Access Request in apadmin.")
+	r.progressPrintln("Compare this complete fingerprint with the Client Enrollment Request in apadmin.")
 	r.progressPrintln("Waiting for operator approval in apadmin...")
-	r.progressPrintln("Leave this shell open while the operator approves or rejects the token request.")
+	r.progressPrintln("Leave this shell open while the operator approves or rejects the enrollment request.")
 }
 
 // buildHostKeyApproval returns a TOFU host key approval handler for SSH connections.

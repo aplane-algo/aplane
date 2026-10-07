@@ -78,8 +78,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err := apadmin.ActivateKeyType(ed25519lsig.KeyTypeV1); err != nil {
 		t.Fatalf("failed to activate %s for key-type matrix: %v", ed25519lsig.KeyTypeV1, err)
 	}
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 	fundingAddress, err := apadmin.ImportFundingKey(os.Getenv("TEST_FUNDING_MNEMONIC"))
 	if err != nil {
 		t.Fatalf("failed to import native Falcon funding key for matrix fee sponsorship: %v", err)
@@ -87,7 +86,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if fundingAddress != funder.GetAddress() {
 		t.Fatalf("imported funding address %s does not match derived address %s", fundingAddress, funder.GetAddress())
 	}
-	if !waitForKey(t, signerd.GetURL(), token, fundingAddress, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), fundingAddress, 10*time.Second) {
 		t.Fatalf("signer did not reload imported funding key %s", fundingAddress)
 	}
 
@@ -210,7 +209,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			// accounts reject CloseRemainderTo by contract, so they first rekey to
 			// this test-owned Ed25519 authority and are then closed normally.
 			cleanupPlans := prepareMatrixRekeyCleanups(
-				t, testnet, signerClient, signerd.GetURL(), token, fundingAddress,
+				t, testnet, signerClient, signerd.GetURL(), fundingAddress,
 				batch, sp, approvalClient, cleanupAuthority,
 			)
 			cleanupReserves := matrixCleanupReserves(cleanupPlans)
@@ -226,7 +225,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 			expectedDummies := matrixExpectedResourceDummies(t, sp.ConsensusVersion, batch, resourceProfiles)
 			req := plannedMatrixSignRequest(t, signerClient, sp, fundingAddress, signTxns, expectedDummies)
-			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+			status, body := postSignRequest(t, signerd.GetURL(), req)
 			if status != http.StatusOK {
 				t.Fatalf("expected positive batch sign to succeed, got %d: %s", status, string(body))
 			}
@@ -261,7 +260,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 					negativeReq := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{
 						account.negativeSignTxn(t, sp, funder.GetAddress()),
 					})
-					negativeStatus, negativeBody := postSignRequest(t, signerd.GetURL(), "aplane "+token, negativeReq)
+					negativeStatus, negativeBody := postSignRequest(t, signerd.GetURL(), negativeReq)
 					if negativeStatus != http.StatusOK {
 						t.Fatalf("expected signer to produce LogicSig for negative case, got %d: %s", negativeStatus, string(negativeBody))
 					}
@@ -278,7 +277,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			}
 
 			validateMatrixHTLCAssetOptInOpcodeCeilings(
-				t, compileAlgod, signerd.GetURL(), token, fundingAddress, batch, mustSuggestedParams(t, testnet), fundingRound,
+				t, compileAlgod, signerd.GetURL(), fundingAddress, batch, mustSuggestedParams(t, testnet), fundingRound,
 			)
 			validateMatrixRekeyOpcodeCeilings(t, compileAlgod, cleanupPlans, fundingRound)
 
@@ -337,7 +336,6 @@ func prepareMatrixRekeyCleanups(
 	testnet *harness.TestnetConfig,
 	signerClient *signerclient.Client,
 	signerURL string,
-	token string,
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
@@ -350,7 +348,7 @@ func prepareMatrixRekeyCleanups(
 		switch {
 		case matrixSupportsSpendingRekey(account.keyType):
 			plans = append(plans, prepareMatrixSpendingRekeyCleanup(
-				t, signerURL, token, fundingAddress, account, sp, approvalClient, cleanupAuthority,
+				t, signerURL, fundingAddress, account, sp, approvalClient, cleanupAuthority,
 			))
 		case account.keyType == "aplane.falcon1024-allowlist-alock.v1":
 			plans = append(plans, prepareMatrixAdminRekeyCleanup(
@@ -364,7 +362,6 @@ func prepareMatrixRekeyCleanups(
 func prepareMatrixSpendingRekeyCleanup(
 	t *testing.T,
 	signerURL string,
-	token string,
 	fundingAddress string,
 	account includedKeyTypeAccount,
 	sp types.SuggestedParams,
@@ -383,7 +380,7 @@ func prepareMatrixSpendingRekeyCleanup(
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		status, body = postSignRequest(t, signerURL, "aplane "+token, req)
+		status, body = postSignRequest(t, signerURL, req)
 	}()
 	approval := mustReadIPCSignRequest(t, approvalClient, 10*time.Second)
 	const wantApprovalAddress = "2 auth addresses (see details)"
@@ -558,7 +555,6 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 	t *testing.T,
 	client *sdkalgod.Client,
 	signerURL string,
-	token string,
 	fundingAddress string,
 	accounts []includedKeyTypeAccount,
 	sp types.SuggestedParams,
@@ -574,7 +570,7 @@ func validateMatrixHTLCAssetOptInOpcodeCeilings(
 				t, sp, account.address, account.address, 0, account.opcodeAssetOptInID, "keytype-matrix-asset-optin",
 			)
 			req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
-			status, body := postSignRequest(t, signerURL, "aplane "+token, req)
+			status, body := postSignRequest(t, signerURL, req)
 			if status != http.StatusOK {
 				t.Fatalf("expected HTLC asset opt-in signing to succeed, got %d: %s", status, string(body))
 			}

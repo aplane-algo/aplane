@@ -133,7 +133,7 @@ func (a *quarantinePruneAudit) LogGenerationQuarantinePruneContext(
 }
 
 func TestHandleCosignerReferenceMutationsRejectLockedIdentity(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	if ir.IsUnlocked() {
 		t.Fatal("new product runtime unexpectedly unlocked")
 	}
@@ -161,7 +161,7 @@ func TestHandleCosignerReferenceMutationsRejectLockedIdentity(t *testing.T) {
 }
 
 func TestHandleListCosignerReferencesAuthorizesBeforeReading(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	inspection := &inspectionStub{listResult: adminproto.ListCosignerReferencesResult{
 		References: []adminproto.CosignerReferenceInfo{{Name: "lab", ComponentKey: "WKID", KeyType: "witness"}},
 	}}
@@ -188,7 +188,7 @@ func TestHandleListCosignerReferencesAuthorizesBeforeReading(t *testing.T) {
 }
 
 func TestHandleImportCosignerReferenceDenialStopsMutation(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}
@@ -215,7 +215,7 @@ func TestHandleImportCosignerReferenceDenialStopsMutation(t *testing.T) {
 
 func TestHandlePruneGenerationQuarantineRequiresAuditBeforeMutation(t *testing.T) {
 	const generationID = "gen-1700000000-0123abcd"
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{pruneResult: adminproto.PruneGenerationQuarantineResult{
 		Success: true,
@@ -285,7 +285,7 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+			ir := productruntime.New(productruntime.Config{})
 			ir.SetUnlocked()
 			inspection := &inspectionStub{}
 			conn := &queueConn{}
@@ -315,7 +315,7 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 }
 
 func TestHandleListDeletedArchiveAuthorizesBeforeReading(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{archiveListResult: adminproto.DeletedArchiveInventory{
 		Entries:    []adminproto.DeletedArchiveEntry{{Path: "deleted/keys/A.key", EncodedBytes: 12}},
@@ -344,7 +344,7 @@ func TestHandleListDeletedArchiveAuthorizesBeforeReading(t *testing.T) {
 }
 
 func TestHandlePruneDeletedArchiveRequiresAuthorizationAndDurableAudit(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	inspection := &inspectionStub{archivePruneResult: adminproto.PruneDeletedArchiveResult{
 		Success: true,
@@ -386,7 +386,7 @@ func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
 		{name: "audit failure", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("disk full")}, wantCode: protocol.ResultCodeArchiveAuditFailed},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ir := productruntime.New(productruntime.Config{Authenticator: auth.NewTokenAuthenticator("token")})
+			ir := productruntime.New(productruntime.Config{})
 			ir.SetUnlocked()
 			inspection := &inspectionStub{}
 			conn := &queueConn{}

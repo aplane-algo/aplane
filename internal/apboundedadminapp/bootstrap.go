@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 type engineRuntime struct {
@@ -82,20 +81,13 @@ func openRuntime(clientData, networkOverride string, stderr io.Writer, connectSi
 	if err != nil {
 		return nil, fmt.Errorf("default signer endpoint %q: %w", alias, err)
 	}
-	token, err := tokenfile.ReadToken(endpoint.TokenFile)
-	if err != nil {
-		return nil, fmt.Errorf("read signer API token: %w", err)
-	}
-	if token == "" {
-		return nil, fmt.Errorf("no signer API token found at %s", endpoint.TokenFile)
-	}
 	localPort, err := connect.FindAvailableLocalPort()
 	if err != nil {
 		return nil, err
 	}
 
 	eng.Connection.SetSignerProgressWriter(stderr)
-	result, err := eng.ConnectWithTunnel(alias, host, sshPort, localPort, token, endpoint.IdentityFile, endpoint.KnownHostsPath, nil, nil)
+	result, err := eng.ConnectWithTunnel(alias, host, sshPort, localPort, endpoint.IdentityFile, endpoint.KnownHostsPath, nil, nil)
 	if err != nil {
 		_ = eng.Disconnect()
 		return nil, fmt.Errorf("connect to signer endpoint %q: %w", alias, err)

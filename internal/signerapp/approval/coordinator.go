@@ -14,9 +14,9 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
-	// ErrTokenProvisioningPreempted reports that a signing request took the
+	// ErrClientEnrollmentPreempted reports that a signing request took the
 	// approval turn from a client access request; the client may retry.
-	ErrTokenProvisioningPreempted = errors.New("the operator is handling a signing request; try again")
+	ErrClientEnrollmentPreempted = errors.New("the operator is handling a signing request; try again")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -24,8 +24,8 @@ const maxRememberedCanceledSignRequests = 1024
 type HasClientFunc func() bool
 type SendSignRequestFunc func(*SignRequest) bool
 type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
-type SendTokenProvisioningRequestFunc func(*TokenProvisioningRequest) bool
-type SendTokenProvisioningCanceledFunc func(*TokenProvisioningCanceled) bool
+type SendClientEnrollmentRequestFunc func(*ClientEnrollmentRequest) bool
+type SendClientEnrollmentCanceledFunc func(*ClientEnrollmentCanceled) bool
 
 type activeSignRequest struct {
 	cancel context.CancelFunc
@@ -40,10 +40,10 @@ type deliveryWaiter struct {
 
 // Coordinator owns pending approval queues for signing and token provisioning.
 type Coordinator struct {
-	hasClient                    HasClientFunc
-	sendSignRequest              SendSignRequestFunc
-	sendSignRequestCanceled      SendSignRequestCanceledFunc
-	sendTokenProvisioningRequest SendTokenProvisioningRequestFunc
+	hasClient                   HasClientFunc
+	sendSignRequest             SendSignRequestFunc
+	sendSignRequestCanceled     SendSignRequestCanceledFunc
+	sendClientEnrollmentRequest SendClientEnrollmentRequestFunc
 
 	pendingRequests      map[string]chan SignResponse
 	activeRequests       map[string]map[*activeSignRequest]struct{}
@@ -51,8 +51,8 @@ type Coordinator struct {
 	canceledRequestOrder []string
 	pendingRequestsLock  sync.Mutex
 
-	pendingTokenRequests     map[string]chan TokenProvisioningResponse
-	pendingTokenRequestsLock sync.Mutex
+	pendingEnrollmentRequests     map[string]chan ClientEnrollmentResponse
+	pendingEnrollmentRequestsLock sync.Mutex
 
 	// One request is delivered at a time (AP4). Signing takes priority over
 	// token provisioning: a signing request queues ahead of waiting token
@@ -61,17 +61,17 @@ type Coordinator struct {
 	deliveryMu       sync.Mutex
 	deliveryInFlight bool
 	deliveryQueue    []*deliveryWaiter
-	tokenHolder      chan struct{} // closed to preempt the delivered token request; nil when none holds the turn
+	enrollmentHolder chan struct{} // closed to preempt the delivered token request; nil when none holds the turn
 
-	sendTokenProvisioningCanceled SendTokenProvisioningCanceledFunc
+	sendClientEnrollmentCanceled SendClientEnrollmentCanceledFunc
 }
 
-// SetTokenProvisioningCanceledSender sets how a preempted token provisioning
+// SetClientEnrollmentCanceledSender sets how a preempted token provisioning
 // request is withdrawn from the approval client.
-func (c *Coordinator) SetTokenProvisioningCanceledSender(send SendTokenProvisioningCanceledFunc) {
+func (c *Coordinator) SetClientEnrollmentCanceledSender(send SendClientEnrollmentCanceledFunc) {
 	c.deliveryMu.Lock()
 	defer c.deliveryMu.Unlock()
-	c.sendTokenProvisioningCanceled = send
+	c.sendClientEnrollmentCanceled = send
 }
 
 func trySendSignResponse(ch chan SignResponse, msg SignResponse) {
@@ -85,7 +85,7 @@ func trySendSignResponse(ch chan SignResponse, msg SignResponse) {
 	close(ch)
 }
 
-func trySendTokenResponse(ch chan TokenProvisioningResponse, msg TokenProvisioningResponse) {
+func trySendEnrollmentResponse(ch chan ClientEnrollmentResponse, msg ClientEnrollmentResponse) {
 	if ch == nil {
 		return
 	}
@@ -96,16 +96,16 @@ func trySendTokenResponse(ch chan TokenProvisioningResponse, msg TokenProvisioni
 	close(ch)
 }
 
-func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc, sendTokenProvisioningRequest SendTokenProvisioningRequestFunc) *Coordinator {
+func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc, sendClientEnrollmentRequest SendClientEnrollmentRequestFunc) *Coordinator {
 	c := &Coordinator{
-		hasClient:                    hasClient,
-		sendSignRequest:              sendSignRequest,
-		sendSignRequestCanceled:      sendSignRequestCanceled,
-		sendTokenProvisioningRequest: sendTokenProvisioningRequest,
-		pendingRequests:              make(map[string]chan SignResponse),
-		activeRequests:               make(map[string]map[*activeSignRequest]struct{}),
-		canceledRequests:             make(map[string]string),
-		pendingTokenRequests:         make(map[string]chan TokenProvisioningResponse),
+		hasClient:                   hasClient,
+		sendSignRequest:             sendSignRequest,
+		sendSignRequestCanceled:     sendSignRequestCanceled,
+		sendClientEnrollmentRequest: sendClientEnrollmentRequest,
+		pendingRequests:             make(map[string]chan SignResponse),
+		activeRequests:              make(map[string]map[*activeSignRequest]struct{}),
+		canceledRequests:            make(map[string]string),
+		pendingEnrollmentRequests:   make(map[string]chan ClientEnrollmentResponse),
 	}
 	return c
 }
@@ -286,9 +286,9 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bo
 		c.deliveryQueue = append(c.deliveryQueue, nil)
 		copy(c.deliveryQueue[at+1:], c.deliveryQueue[at:])
 		c.deliveryQueue[at] = waiter
-		if c.tokenHolder != nil {
-			close(c.tokenHolder)
-			c.tokenHolder = nil
+		if c.enrollmentHolder != nil {
+			close(c.enrollmentHolder)
+			c.enrollmentHolder = nil
 		}
 	} else {
 		c.deliveryQueue = append(c.deliveryQueue, waiter)
@@ -458,38 +458,38 @@ func (c *Coordinator) FailAllPendingRequests(reason string) {
 		trySendSignResponse(ch, SignResponse{ID: id, Approved: false, Reason: reason})
 	}
 
-	c.pendingTokenRequestsLock.Lock()
-	tokenRequests := c.pendingTokenRequests
-	c.pendingTokenRequests = make(map[string]chan TokenProvisioningResponse)
-	c.pendingTokenRequestsLock.Unlock()
+	c.pendingEnrollmentRequestsLock.Lock()
+	tokenRequests := c.pendingEnrollmentRequests
+	c.pendingEnrollmentRequests = make(map[string]chan ClientEnrollmentResponse)
+	c.pendingEnrollmentRequestsLock.Unlock()
 
 	for id, ch := range tokenRequests {
-		trySendTokenResponse(ch, TokenProvisioningResponse{ID: id, Approved: false, Reason: reason})
+		trySendEnrollmentResponse(ch, ClientEnrollmentResponse{ID: id, Approved: false, Reason: reason})
 	}
 
 }
 
-func (c *Coordinator) HandleTokenProvisioningResponse(msg *TokenProvisioningResponse) {
+func (c *Coordinator) HandleClientEnrollmentResponse(msg *ClientEnrollmentResponse) {
 	if msg == nil || msg.ID == "" {
 		return
 	}
-	c.pendingTokenRequestsLock.Lock()
-	ch, exists := c.pendingTokenRequests[msg.ID]
+	c.pendingEnrollmentRequestsLock.Lock()
+	ch, exists := c.pendingEnrollmentRequests[msg.ID]
 	if exists {
-		delete(c.pendingTokenRequests, msg.ID)
+		delete(c.pendingEnrollmentRequests, msg.ID)
 	}
-	c.pendingTokenRequestsLock.Unlock()
+	c.pendingEnrollmentRequestsLock.Unlock()
 
 	if exists {
-		trySendTokenResponse(ch, *msg)
+		trySendEnrollmentResponse(ch, *msg)
 	}
 }
 
-func (c *Coordinator) RequestTokenProvisioning(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	return c.RequestTokenProvisioningContext(context.Background(), requestID, sshFingerprint, remoteAddr, timeout)
+func (c *Coordinator) RequestClientEnrollment(requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
+	return c.RequestClientEnrollmentContext(context.Background(), requestID, sshFingerprint, label, remoteAddr, timeout)
 }
 
-func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+func (c *Coordinator) RequestClientEnrollmentContext(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -501,40 +501,41 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 	}
 
 	if err := c.acquireDeliveryTurnContext(ctx, false); err != nil {
-		return false, fmt.Errorf("token provisioning request canceled: %w", err)
+		return false, fmt.Errorf("client enrollment request canceled: %w", err)
 	}
 	defer c.releaseDeliveryTurn()
-	preempted, holding := c.holdTokenTurn()
+	preempted, holding := c.holdEnrollmentTurn()
 	if !holding {
-		return false, ErrTokenProvisioningPreempted
+		return false, ErrClientEnrollmentPreempted
 	}
-	defer c.dropTokenTurn(preempted)
+	defer c.dropEnrollmentTurn(preempted)
 
 	if c.hasClient == nil || !c.hasClient() {
 		return false, fmt.Errorf("no apadmin client connected")
 	}
 
-	responseChan := make(chan TokenProvisioningResponse, 1)
+	responseChan := make(chan ClientEnrollmentResponse, 1)
 
-	c.pendingTokenRequestsLock.Lock()
-	c.pendingTokenRequests[requestID] = responseChan
-	c.pendingTokenRequestsLock.Unlock()
+	c.pendingEnrollmentRequestsLock.Lock()
+	c.pendingEnrollmentRequests[requestID] = responseChan
+	c.pendingEnrollmentRequestsLock.Unlock()
 
 	defer func() {
-		c.pendingTokenRequestsLock.Lock()
-		delete(c.pendingTokenRequests, requestID)
-		c.pendingTokenRequestsLock.Unlock()
+		c.pendingEnrollmentRequestsLock.Lock()
+		delete(c.pendingEnrollmentRequests, requestID)
+		c.pendingEnrollmentRequestsLock.Unlock()
 	}()
 
-	request := &TokenProvisioningRequest{
+	request := &ClientEnrollmentRequest{
 		ID:             requestID,
 		SSHFingerprint: sshFingerprint,
+		Label:          label,
 		RemoteAddr:     remoteAddr,
 		Timestamp:      time.Now().Unix(),
 	}
 
-	if c.sendTokenProvisioningRequest == nil || !c.sendTokenProvisioningRequest(request) {
-		return false, fmt.Errorf("failed to send token provisioning request via IPC")
+	if c.sendClientEnrollmentRequest == nil || !c.sendClientEnrollmentRequest(request) {
+		return false, fmt.Errorf("failed to send client enrollment request via IPC")
 	}
 
 	select {
@@ -546,19 +547,19 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 	case <-preempted:
 		// Withdraw the prompt before releasing the turn, so the operator
 		// never has two requests delivered at once.
-		c.notifyTokenProvisioningCanceled(requestID, TokenProvisioningCancelReasonPreempted)
-		return false, ErrTokenProvisioningPreempted
+		c.notifyClientEnrollmentCanceled(requestID, ClientEnrollmentCancelReasonPreempted)
+		return false, ErrClientEnrollmentPreempted
 	case <-time.After(timeout):
 		return false, fmt.Errorf("approval timeout - no response from apadmin within %v", timeout)
 	case <-ctx.Done():
-		return false, fmt.Errorf("token provisioning canceled: %w", ctx.Err())
+		return false, fmt.Errorf("client enrollment canceled: %w", ctx.Err())
 	}
 }
 
-// holdTokenTurn registers the token request that now holds the delivery
+// holdEnrollmentTurn registers the token request that now holds the delivery
 // turn. It reports false when a signing request is already waiting, which
 // takes the turn before the token request is delivered.
-func (c *Coordinator) holdTokenTurn() (<-chan struct{}, bool) {
+func (c *Coordinator) holdEnrollmentTurn() (<-chan struct{}, bool) {
 	c.deliveryMu.Lock()
 	defer c.deliveryMu.Unlock()
 	for _, queued := range c.deliveryQueue {
@@ -566,24 +567,24 @@ func (c *Coordinator) holdTokenTurn() (<-chan struct{}, bool) {
 			return nil, false
 		}
 	}
-	c.tokenHolder = make(chan struct{})
-	return c.tokenHolder, true
+	c.enrollmentHolder = make(chan struct{})
+	return c.enrollmentHolder, true
 }
 
-func (c *Coordinator) dropTokenTurn(preempt <-chan struct{}) {
+func (c *Coordinator) dropEnrollmentTurn(preempt <-chan struct{}) {
 	c.deliveryMu.Lock()
 	defer c.deliveryMu.Unlock()
-	if c.tokenHolder != nil && (<-chan struct{})(c.tokenHolder) == preempt {
-		c.tokenHolder = nil
+	if c.enrollmentHolder != nil && (<-chan struct{})(c.enrollmentHolder) == preempt {
+		c.enrollmentHolder = nil
 	}
 }
 
-func (c *Coordinator) notifyTokenProvisioningCanceled(requestID, reason string) {
+func (c *Coordinator) notifyClientEnrollmentCanceled(requestID, reason string) {
 	c.deliveryMu.Lock()
-	send := c.sendTokenProvisioningCanceled
+	send := c.sendClientEnrollmentCanceled
 	c.deliveryMu.Unlock()
 	if send == nil {
 		return
 	}
-	_ = send(&TokenProvisioningCanceled{ID: requestID, Reason: reason})
+	_ = send(&ClientEnrollmentCanceled{ID: requestID, Reason: reason})
 }

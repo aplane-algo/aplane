@@ -295,8 +295,7 @@ teal: |
 				t.Fatalf("failed to unlock source signer: %v", err)
 			}
 
-			sourceToken := readSignerToken(t, sourceSigner)
-			sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
+			sourceClient := signerclient.NewSignerClient(sourceSigner.GetURL())
 			address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, keyType, generateParams)
 			if keyType == "ed25519" && harness.IntegrationNetwork() == harness.IntegrationNetworkLocalnet {
 				funder, err := harness.NewFundTestAccount(testnet.Client)
@@ -346,12 +345,11 @@ teal: |
 				t.Fatalf("failed to unlock destination signer: %v", err)
 			}
 
-			destToken := readSignerToken(t, destSigner)
-			if !waitForKey(t, destSigner.GetURL(), destToken, address, 10*time.Second) {
+			if !waitForKey(t, destSigner.GetURL(), address, 10*time.Second) {
 				t.Fatalf("destination signer did not load restored key %s", address)
 			}
 
-			destClient := signerclient.NewSignerClientWithToken(destSigner.GetURL(), destToken)
+			destClient := signerclient.NewSignerClient(destSigner.GetURL())
 			keyInventory, err := destClient.GetKeys()
 			if err != nil {
 				t.Fatalf("list restored destination credentials: %v", err)
@@ -370,7 +368,7 @@ teal: |
 			signReq := signerapi.GroupSignRequest{
 				Requests: []signerapi.SignRequest{tc.buildSignRequest(t, address)},
 			}
-			status, body := postSignRequest(t, destSigner.GetURL(), "aplane "+destToken, signReq)
+			status, body := postSignRequest(t, destSigner.GetURL(), signReq)
 			if status != 200 {
 				t.Fatalf("expected destination signing success for %s, got %d: %s", keyType, status, string(body))
 			}
@@ -442,8 +440,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	if _, err := os.Stat(mustActiveAccountKeyPath(t, destClone.SignerDataDir, address)); err != nil {
 		t.Fatalf("expected restored key file after IPC restore, got stat err=%v", err)
 	}
-	destToken := readSignerToken(t, destSigner)
-	if !waitForKey(t, destSigner.GetURL(), destToken, address, 10*time.Second) {
+	if !waitForKey(t, destSigner.GetURL(), address, 10*time.Second) {
 		t.Fatalf("destination signer did not load IPC-restored key %s", address)
 	}
 }
@@ -517,8 +514,7 @@ func TestSignerManagedBackupRoundTripViaApadminRestore(t *testing.T) {
 		t.Fatalf("failed to unlock destination signer: %v", err)
 	}
 
-	destToken := readSignerToken(t, destSigner)
-	if !waitForKey(t, destSigner.GetURL(), destToken, address, 10*time.Second) {
+	if !waitForKey(t, destSigner.GetURL(), address, 10*time.Second) {
 		t.Fatalf("destination signer did not load restored key %s", address)
 	}
 }
@@ -549,8 +545,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 		t.Fatalf("failed to get algod status: %v", err)
 	}
 	preimageHash := sha256.Sum256(bytes.Repeat([]byte("p"), 32))
-	sourceToken := readSignerToken(t, sourceSigner)
-	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
+	sourceClient := signerclient.NewSignerClient(sourceSigner.GetURL())
 	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
 		"hash":           hex.EncodeToString(preimageHash[:]),
 		"recipient":      integrationBurnAddress,
@@ -663,8 +658,7 @@ func mustAdminGenerateKeyNoCleanup(t *testing.T, signerClient *signerclient.Clie
 	if resp.Address == "" {
 		t.Fatalf("admin generate for %s returned empty address", keyType)
 	}
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, resp.Address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), resp.Address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", resp.Address)
 	}
 	return resp.Address

@@ -28,21 +28,21 @@ type approvalKind int
 
 const (
 	approvalKindSign approvalKind = iota
-	approvalKindTokenProvisioning
+	approvalKindClientEnrollment
 )
 
 type approvalRequest struct {
-	kind         approvalKind
-	signRequest  *protocol.SignRequestMessage
-	tokenRequest *protocol.TokenProvisioningRequestMessage
+	kind              approvalKind
+	signRequest       *protocol.SignRequestMessage
+	enrollmentRequest *protocol.ClientEnrollmentRequestMessage
 }
 
 func (r approvalRequest) id() string {
 	switch {
 	case r.kind == approvalKindSign && r.signRequest != nil:
 		return r.signRequest.ID
-	case r.kind == approvalKindTokenProvisioning && r.tokenRequest != nil:
-		return r.tokenRequest.ID
+	case r.kind == approvalKindClientEnrollment && r.enrollmentRequest != nil:
+		return r.enrollmentRequest.ID
 	}
 	return ""
 }
@@ -50,9 +50,9 @@ func (r approvalRequest) id() string {
 type decodedNotification struct {
 	request  *approvalRequest
 	canceled *protocol.SignRequestCanceledMessage
-	// tokenCanceled withdraws a delivered client access request.
-	tokenCanceled *protocol.TokenProvisioningRequestCanceledMessage
-	errMsg        *protocol.ErrorMessage
+	// enrollmentCanceled withdraws a delivered client access request.
+	enrollmentCanceled *protocol.ClientEnrollmentRequestCanceledMessage
+	errMsg             *protocol.ErrorMessage
 }
 
 const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
@@ -212,8 +212,8 @@ func (a *approver) handleNotification(notification transport.Notification) {
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:
 		a.handleCanceled(approvalKindSign, "Signing request", decoded.canceled.ID, decoded.canceled.Reason)
-	case decoded.tokenCanceled != nil:
-		a.handleCanceled(approvalKindTokenProvisioning, "Client access request", decoded.tokenCanceled.ID, decoded.tokenCanceled.Reason)
+	case decoded.enrollmentCanceled != nil:
+		a.handleCanceled(approvalKindClientEnrollment, "Client enrollment request", decoded.enrollmentCanceled.ID, decoded.enrollmentCanceled.Reason)
 	case decoded.request != nil:
 		a.enqueue(*decoded.request)
 	}
@@ -272,21 +272,21 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 			return decodedNotification{}, true, fmt.Errorf("malformed sign request cancellation: %w", err)
 		}
 		return decodedNotification{canceled: &canceled}, true, nil
-	case protocol.MsgTypeTokenProvisioningRequestCanceled:
-		var canceled protocol.TokenProvisioningRequestCanceledMessage
+	case protocol.MsgTypeClientEnrollmentRequestCanceled:
+		var canceled protocol.ClientEnrollmentRequestCanceledMessage
 		if err := json.Unmarshal(notification.Raw, &canceled); err != nil {
-			return decodedNotification{}, true, fmt.Errorf("malformed token provisioning cancellation: %w", err)
+			return decodedNotification{}, true, fmt.Errorf("malformed client enrollment cancellation: %w", err)
 		}
-		return decodedNotification{tokenCanceled: &canceled}, true, nil
-	case protocol.MsgTypeTokenProvisioningRequest:
-		var req protocol.TokenProvisioningRequestMessage
+		return decodedNotification{enrollmentCanceled: &canceled}, true, nil
+	case protocol.MsgTypeClientEnrollmentRequest:
+		var req protocol.ClientEnrollmentRequestMessage
 		if err := json.Unmarshal(notification.Raw, &req); err != nil {
-			return decodedNotification{}, true, fmt.Errorf("malformed token provisioning request: %w", err)
+			return decodedNotification{}, true, fmt.Errorf("malformed client enrollment request: %w", err)
 		}
 		return decodedNotification{
 			request: &approvalRequest{
-				kind:         approvalKindTokenProvisioning,
-				tokenRequest: &req,
+				kind:              approvalKindClientEnrollment,
+				enrollmentRequest: &req,
 			},
 		}, true, nil
 	case protocol.MsgTypeError:
@@ -321,7 +321,7 @@ func approvalCancelReason(reason string) string {
 		return "requester canceled"
 	case "timeout":
 		return "timed out"
-	case protocol.TokenProvisioningCancelReasonPreempted:
+	case protocol.ClientEnrollmentCancelReasonPreempted:
 		return "withdrawn for a signing request; the client can retry"
 	default:
 		return reason
@@ -357,14 +357,14 @@ func parseApprovalInput(input string) (approved bool, reason string, ok bool) {
 
 func buildApprovalResponse(req approvalRequest, approved bool, reason string) (interface{}, error) {
 	switch req.kind {
-	case approvalKindTokenProvisioning:
-		if req.tokenRequest == nil {
-			return nil, fmt.Errorf("missing token provisioning request")
+	case approvalKindClientEnrollment:
+		if req.enrollmentRequest == nil {
+			return nil, fmt.Errorf("missing client enrollment request")
 		}
-		return protocol.TokenProvisioningResponseMessage{
+		return protocol.ClientEnrollmentResponseMessage{
 			BaseMessage: protocol.BaseMessage{
-				Type: protocol.MsgTypeTokenProvisioningResponse,
-				ID:   req.tokenRequest.ID,
+				Type: protocol.MsgTypeClientEnrollmentResponse,
+				ID:   req.enrollmentRequest.ID,
 			},
 			Approved: approved,
 			Reason:   reason,
@@ -389,8 +389,8 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 // displayRequest shows an approval request to the user.
 func displayRequest(req approvalRequest, queueLen int) {
 	switch req.kind {
-	case approvalKindTokenProvisioning:
-		displayTokenProvisioningRequest(req.tokenRequest, queueLen)
+	case approvalKindClientEnrollment:
+		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen)
 	default:
 		displaySignRequest(req.signRequest, queueLen)
 	}
@@ -438,16 +438,19 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	fmt.Print(approvalPrompt)
 }
 
-// displayTokenProvisioningRequest shows a token provisioning request to the user.
-func displayTokenProvisioningRequest(req *protocol.TokenProvisioningRequestMessage, queueLen int) {
+// displayClientEnrollmentRequest shows a client enrollment request to the user.
+func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage, queueLen int) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if queueLen > 1 {
-		fmt.Printf("🎫 TOKEN PROVISIONING REQUEST (1 of %d pending)\n", queueLen)
+		fmt.Printf("🔑 CLIENT ENROLLMENT REQUEST (1 of %d pending)\n", queueLen)
 	} else {
-		fmt.Println("🎫 TOKEN PROVISIONING REQUEST")
+		fmt.Println("🔑 CLIENT ENROLLMENT REQUEST")
 	}
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Printf("SSH Key:     %s\n", req.SSHFingerprint)
+	if req.Label != "" {
+		fmt.Printf("Label:       %s\n", req.Label)
+	}
 	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
 	fmt.Printf("Timestamp:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
 	fmt.Println(strings.Repeat("=", 60))

@@ -5,11 +5,16 @@ package daemon
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -87,11 +92,8 @@ func TestAuthFailureReason(t *testing.T) {
 }
 
 func TestAuthRequiredError(t *testing.T) {
-	if got := authRequiredError("aplane-token"); got != "Authorization header required" {
-		t.Fatalf("authRequiredError(aplane-token) = %q", got)
-	}
-	if got := authRequiredError("ssh-passphrase"); got != "Authentication required" {
-		t.Fatalf("authRequiredError(ssh-passphrase) = %q", got)
+	if got := authRequiredError(auth.MethodSSHKey); got == "" || !strings.Contains(got, "enrolled SSH key") {
+		t.Fatalf("authRequiredError() = %q", got)
 	}
 }
 
@@ -108,55 +110,101 @@ func TestRequireAuthMissingCredentials(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if got := decodeErrorResponse(t, w); got != "Authorization header required" {
-		t.Fatalf("error = %q, want Authorization header required", got)
+	if got := decodeErrorResponse(t, w); got != authRequiredError("") {
+		t.Fatalf("error = %q, want %q", got, authRequiredError(""))
 	}
 }
 
+// A request whose connection names a fingerprint that is not enrolled (for
+// example a key revoked after the connection opened) is refused, and an
+// Authorization header never substitutes for connection identity.
 func TestRequireAuthInvalidCredentials(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane wrong-token")
-	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
-		t.Fatal("next handler should not be called")
-	})(w, r)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", w.Code)
-	}
-	if got := decodeErrorResponse(t, w); got != "Authorization header required" {
-		t.Fatalf("error = %q, want Authorization header required", got)
+	for _, tt := range []struct {
+		name string
+		req  func() *http.Request
+	}{
+		{name: "unknown fingerprint", req: func() *http.Request {
+			return enrolledRequest("SHA256:not-enrolled", http.MethodGet, "/keys")
+		}},
+		{name: "bearer header only", req: func() *http.Request {
+			r := httptest.NewRequest(http.MethodGet, "/keys", nil)
+			r.Header.Set("Authorization", "aplane anything")
+			return r
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
+				t.Fatal("next handler should not be called")
+			})(w, tt.req())
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+		})
 	}
 }
 
-func TestProductAuthenticatorMintsPrincipalAfterCredentialValidation(t *testing.T) {
-	credential := &auth.Identity{ID: "credential:test", Type: "credential", Method: "test"}
-	runtime := productruntime.New(productruntime.Config{
-		Authenticator: stubHTTPAuthenticator{identity: credential, method: "test"},
-	})
-	authenticator := newProductAuthenticator(&productruntime.NodeFailState{}, runtime)
+// enrolledRequest builds a request whose connection context carries the
+// given client key fingerprint, as the HTTP server does for a tunneled API
+// channel.
+func enrolledRequest(fingerprint, method, target string) *http.Request {
+	r := httptest.NewRequest(method, target, nil)
+	return r.WithContext(auth.ContextWithConnIdentity(r.Context(), auth.ConnIdentity{KeyFingerprint: fingerprint}))
+}
 
-	identity, err := authenticator.Authenticate(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil))
+// enrollTestClient enrolls a fresh key in the test signer's registry and
+// returns its fingerprint.
+func enrollTestClient(t *testing.T, server *Signer, label string) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.productRuntime().EnrollAuthorizedKey(key, label); err != nil {
+		t.Fatalf("EnrollAuthorizedKey() error = %v", err)
+	}
+	return ssh.FingerprintSHA256(key)
+}
+
+func TestProductAuthenticatorMintsClientPrincipalFromConnectionIdentity(t *testing.T) {
+	server, cleanup := newAuthTestSigner(t)
+	defer cleanup()
+	fingerprint := enrollTestClient(t, server, "laptop")
+	authenticator := newProductAuthenticator(&productruntime.NodeFailState{}, server.productRuntime())
+
+	r := enrolledRequest(fingerprint, http.MethodGet, "/")
+	identity, err := authenticator.Authenticate(r.Context(), r)
 	if err != nil {
 		t.Fatalf("Authenticate() error = %v", err)
 	}
-	if identity == nil || identity.ID != auth.SystemProductAdminPrincipalID || identity.Type != "system" {
-		t.Fatalf("Authenticate() identity = %#v, want reserved product principal", identity)
+	if identity == nil || identity.ID != auth.ClientPrincipalPrefix+fingerprint || identity.Role != auth.RoleClient ||
+		identity.KeyFingerprint != fingerprint || identity.Label != "laptop" || identity.Method != auth.MethodSSHKey {
+		t.Fatalf("Authenticate() identity = %#v, want the client principal", identity)
+	}
+
+	// Revocation takes effect on the next request, keep-alive or not.
+	if _, err := server.productRuntime().RevokeAuthorizedKey(fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if identity, err := authenticator.Authenticate(r.Context(), r); identity != nil || !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("Authenticate() after revocation = (%#v, %v), want invalid credentials", identity, err)
 	}
 }
 
-func TestProductAuthenticatorRejectsNilIdentity(t *testing.T) {
-	runtime := productruntime.New(productruntime.Config{
-		Authenticator: stubHTTPAuthenticator{method: "test"},
-	})
+func TestProductAuthenticatorRejectsConnectionWithoutIdentity(t *testing.T) {
+	runtime := productruntime.New(productruntime.Config{})
 	authenticator := newProductAuthenticator(&productruntime.NodeFailState{}, runtime)
 
 	identity, err := authenticator.Authenticate(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil))
-	if identity != nil || !errors.Is(err, auth.ErrInvalidCredentials) {
-		t.Fatalf("Authenticate() = (%#v, %v), want invalid credentials", identity, err)
+	if identity != nil || !errors.Is(err, auth.ErrNoCredentials) {
+		t.Fatalf("Authenticate() = (%#v, %v), want no credentials", identity, err)
 	}
 }
 
@@ -183,9 +231,10 @@ func TestRequireAuthForbidden(t *testing.T) {
 	authz := &stubAuthorizer{err: auth.ErrForbidden}
 	server.authorizer = authz
 
+	fingerprint := enrollTestClient(t, server, "")
+	want := auth.ClientPrincipalPrefix + fingerprint
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane test-token")
+	r := enrolledRequest(fingerprint, http.MethodGet, "/keys")
 	server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key", ID: "ADDR"}, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	})(w, r)
@@ -196,11 +245,11 @@ func TestRequireAuthForbidden(t *testing.T) {
 	if got := decodeErrorResponse(t, w); got != "Forbidden" {
 		t.Fatalf("error = %q, want Forbidden", got)
 	}
-	if authz.got.identityID != auth.SystemProductAdminPrincipalID {
-		t.Fatalf("identityID = %q, want %q", authz.got.identityID, auth.SystemProductAdminPrincipalID)
+	if authz.got.identityID != want {
+		t.Fatalf("identityID = %q, want %q", authz.got.identityID, want)
 	}
-	if authz.got.contextIdentityID != auth.SystemProductAdminPrincipalID {
-		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, auth.SystemProductAdminPrincipalID)
+	if authz.got.contextIdentityID != want {
+		t.Fatalf("context identityID = %q, want %q", authz.got.contextIdentityID, want)
 	}
 	if authz.got.action != auth.ActionKeysDelete {
 		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionKeysDelete)
@@ -217,9 +266,9 @@ func TestHTTPRouteAdminCosignerSyncIsNotRegistered(t *testing.T) {
 	authz := &stubAuthorizer{}
 	server.authorizer = authz
 
+	fingerprint := enrollTestClient(t, server, "")
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/admin/cosigners/sync", nil)
-	r.Header.Set("Authorization", "aplane test-token")
+	r := enrolledRequest(fingerprint, http.MethodPost, "/admin/cosigners/sync")
 	buildHTTPServer(server, 0).Handler.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -237,9 +286,9 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 	authorizer := &stubAuthorizer{}
 	server.authorizer = authorizer
 
+	fingerprint := enrollTestClient(t, server, "laptop")
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane test-token")
+	r := enrolledRequest(fingerprint, http.MethodGet, "/keys")
 
 	called := false
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
@@ -249,8 +298,8 @@ func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 			t.Fatal("identity missing from context")
 			return
 		}
-		if ident.ID != auth.SystemProductAdminPrincipalID {
-			t.Fatalf("principal ID = %q, want %q", ident.ID, auth.SystemProductAdminPrincipalID)
+		if ident.ID != auth.ClientPrincipalPrefix+fingerprint || ident.Label != "laptop" {
+			t.Fatalf("principal = %#v, want client %s", ident, fingerprint)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})(w, r)
@@ -268,25 +317,24 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	defer cleanup()
 
 	productRuntime := server.productRuntime()
+	fingerprint := enrollTestClient(t, server, "")
 
 	invalid := httptest.NewRecorder()
-	invalidRequest := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	invalidRequest.Header.Set("Authorization", "aplane non-product-token")
+	invalidRequest := enrolledRequest("SHA256:someone-else", http.MethodGet, "/keys")
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(http.ResponseWriter, *http.Request) {
-		t.Fatal("additional runtime token must not authenticate")
+		t.Fatal("an unenrolled fingerprint must not authenticate")
 	})(invalid, invalidRequest)
 	if invalid.Code != http.StatusUnauthorized {
-		t.Fatalf("additional runtime token status = %d, want 401", invalid.Code)
+		t.Fatalf("unenrolled fingerprint status = %d, want 401", invalid.Code)
 	}
 
 	authorizer := &stubAuthorizer{}
 	server.authorizer = authorizer
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/keys", nil)
-	r.Header.Set("Authorization", "aplane test-token")
+	r := enrolledRequest(fingerprint, http.MethodGet, "/keys")
 	server.requireAuth(auth.ActionListKeys, auth.Resource{Type: "keys"}, func(w http.ResponseWriter, r *http.Request) {
 		ident := auth.IdentityFromContext(r.Context())
-		if ident == nil || ident.ID != auth.SystemProductAdminPrincipalID {
+		if ident == nil || ident.ID != auth.ClientPrincipalPrefix+fingerprint {
 			t.Fatalf("authenticated principal = %#v", ident)
 		}
 		ir, status, errMsg := server.productRuntimeFromRequest(r)
@@ -298,7 +346,7 @@ func TestRequireAuthBindsProductPrincipalAndRuntime(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
-	if authorizer.got.identityID != auth.SystemProductAdminPrincipalID {
+	if authorizer.got.identityID != auth.ClientPrincipalPrefix+fingerprint {
 		t.Fatalf("authorization binding = %#v", authorizer.got)
 	}
 }
@@ -312,7 +360,7 @@ func TestIdentityFromRequestIgnoresPrincipalIDAndPreservesNodeFailClosed(t *test
 		r = r.WithContext(auth.ContextWithIdentity(r.Context(), &auth.Identity{
 			ID:     "missing",
 			Type:   "system",
-			Method: "aplane-token",
+			Method: auth.MethodSSHKey,
 		}))
 
 		ir, status, errMsg := server.productRuntimeFromRequest(r)

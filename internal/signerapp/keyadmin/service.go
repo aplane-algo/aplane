@@ -188,7 +188,7 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		}, nil
 	}
 
-	mut := storemut.New(activeKeyPaths, nil, nil)
+	mut := storemut.New(activeKeyPaths)
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
@@ -270,7 +270,7 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-	delResult, err := storemut.New(activeKeyPaths, nil, nil).DeleteKey(address, keyFile)
+	delResult, err := storemut.New(activeKeyPaths).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
 	}

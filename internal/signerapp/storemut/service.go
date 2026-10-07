@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -22,53 +21,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
-
-// TokenUpdater is implemented by components that must observe token rotation.
-type TokenUpdater interface {
-	UpdateToken(token string)
-}
 
 // Service performs signer-owned persistent mutations.
 type Service struct {
-	keyPaths        storepaths.Paths
-	httpTokenUpdate TokenUpdater
-	sshTokenUpdate  TokenUpdater
+	keyPaths storepaths.Paths
 }
 
 // New creates a new signer mutation service for the product store.
-func New(keyPaths storepaths.Paths, httpTokenUpdate, sshTokenUpdate TokenUpdater) *Service {
-	return &Service{
-		keyPaths:        keyPaths,
-		httpTokenUpdate: httpTokenUpdate,
-		sshTokenUpdate:  sshTokenUpdate,
-	}
-}
-
-// RevokeToken rotates the signer API token on disk and updates in-process users.
-func (s *Service) RevokeToken() (string, error) {
-	newToken, err := tokenfile.GenerateToken()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate new token: %w", err)
-	}
-
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(s.keyPaths.Root())
-	if err := fsutil.MkdirAllPrivate(filepath.Dir(tokenPath)); err != nil {
-		return "", fmt.Errorf("failed to create token directory: %w", err)
-	}
-	if err := tokenfile.WriteToken(tokenPath, newToken); err != nil {
-		return "", fmt.Errorf("failed to write new token: %w", err)
-	}
-
-	if s.httpTokenUpdate != nil {
-		s.httpTokenUpdate.UpdateToken(newToken)
-	}
-	if s.sshTokenUpdate != nil {
-		s.sshTokenUpdate.UpdateToken(newToken)
-	}
-
-	return tokenPath, nil
+func New(keyPaths storepaths.Paths) *Service {
+	return &Service{keyPaths: keyPaths}
 }
 
 // DeleteKey moves a key file out of the active key set into the identity

@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -384,48 +382,6 @@ func TestApplyCacheChangesReloadsOnlyCurrentNetworkCaches(t *testing.T) {
 	}
 	if got, ok := state.AuthCache.GetAuthAddress("ADDR_TEST"); !ok || got != "AUTH_TEST" {
 		t.Fatalf("testnet auth = (%q,%v), want (AUTH_TEST,true)", got, ok)
-	}
-}
-
-func TestSaveApshellTokenPersistsTokenFile(t *testing.T) {
-	state := newTestState(t)
-
-	tokenPath, err := state.SaveApshellToken("deadbeef")
-	if err != nil {
-		t.Fatalf("SaveApshellToken() error = %v", err)
-	}
-
-	wantPath := filepath.Join(state.DataDir, tokenfile.APlaneTokenFile)
-	if tokenPath != wantPath {
-		t.Fatalf("token path = %q, want %q", tokenPath, wantPath)
-	}
-
-	got, err := tokenfile.LoadApshellTokenFromDataDir(state.DataDir)
-	if err != nil {
-		t.Fatalf("LoadApshellTokenFromDataDir() error = %v", err)
-	}
-	if got != "deadbeef" {
-		t.Fatalf("persisted token = %q, want %q", got, "deadbeef")
-	}
-}
-
-func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
-	state := newTestState(t)
-	tokenPath := filepath.Join(state.DataDir, "tokens", "cosigner-local.token")
-
-	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "cosigner-token")
-	if err != nil {
-		t.Fatalf("SaveApshellTokenToPath() error = %v", err)
-	}
-	if gotPath != tokenPath {
-		t.Fatalf("token path = %q, want %q", gotPath, tokenPath)
-	}
-	got, err := tokenfile.ReadToken(tokenPath)
-	if err != nil {
-		t.Fatalf("ReadToken() error = %v", err)
-	}
-	if got != "cosigner-token" {
-		t.Fatalf("persisted token = %q, want cosigner-token", got)
 	}
 }
 

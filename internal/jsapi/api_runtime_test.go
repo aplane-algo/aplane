@@ -505,7 +505,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		eng.AlgodClient = algodClient
 
 		var gotReq signerapi.GroupSignRequest
-		signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+		signerClient := signerclient.NewSignerClient("http://signer.test")
 		signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			if r.URL.Path != "/plan" {
 				t.Fatalf("path = %s, want /plan", r.URL.Path)
@@ -607,7 +607,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 func TestKeyTypesMapsFullMetadata(t *testing.T) {
 	eng, _, api := newTestAPI(t)
 
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/keytypes" {
 			t.Fatalf("path = %s, want /keytypes", r.URL.Path)

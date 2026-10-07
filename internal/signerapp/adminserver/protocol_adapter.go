@@ -43,13 +43,44 @@ func ProtocolAuthResultMessage(success bool, code, errMsg string) protocol.AuthR
 	}
 }
 
-func ProtocolRevokeTokenResultMessage(id string, err error) protocol.RevokeTokenResultMessage {
-	result := protocol.RevokeTokenResultMessage{
+func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo) protocol.EnrolledKeysListMessage {
+	if keys == nil {
+		keys = []protocol.EnrolledKeyInfo{}
+	}
+	return protocol.EnrolledKeysListMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRevokeTokenResult,
+			Type: protocol.MsgTypeEnrolledKeysList,
 			ID:   id,
 		},
-		Success: err == nil,
+		Keys: keys,
+	}
+}
+
+func ProtocolRevokeEnrolledKeyResultMessage(id string, closedConnections int, err error) protocol.RevokeEnrolledKeyResultMessage {
+	result := protocol.RevokeEnrolledKeyResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeRevokeEnrolledKeyResult,
+			ID:   id,
+		},
+		Success:           err == nil,
+		ClosedConnections: closedConnections,
+	}
+	if err != nil {
+		result.Code = protocol.CodeForError(err)
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func ProtocolRevokeAllEnrolledKeysResultMessage(id string, revoked, closedConnections int, err error) protocol.RevokeAllEnrolledKeysResultMessage {
+	result := protocol.RevokeAllEnrolledKeysResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeRevokeAllEnrolledKeysResult,
+			ID:   id,
+		},
+		Success:           err == nil,
+		RevokedCount:      revoked,
+		ClosedConnections: closedConnections,
 	}
 	if err != nil {
 		result.Code = protocol.CodeForError(err)
@@ -931,23 +962,24 @@ func ProtocolSignRequestCanceledMessage(msg signerapproval.SignRequestCanceled) 
 	}
 }
 
-func ProtocolTokenProvisioningRequestCanceledMessage(msg signerapproval.TokenProvisioningCanceled) protocol.TokenProvisioningRequestCanceledMessage {
-	return protocol.TokenProvisioningRequestCanceledMessage{
+func ProtocolClientEnrollmentRequestCanceledMessage(msg signerapproval.ClientEnrollmentCanceled) protocol.ClientEnrollmentRequestCanceledMessage {
+	return protocol.ClientEnrollmentRequestCanceledMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeTokenProvisioningRequestCanceled,
+			Type: protocol.MsgTypeClientEnrollmentRequestCanceled,
 			ID:   msg.ID,
 		},
 		Reason: msg.Reason,
 	}
 }
 
-func ProtocolTokenProvisioningRequestMessage(req signerapproval.TokenProvisioningRequest) protocol.TokenProvisioningRequestMessage {
-	return protocol.TokenProvisioningRequestMessage{
+func ProtocolClientEnrollmentRequestMessage(req signerapproval.ClientEnrollmentRequest) protocol.ClientEnrollmentRequestMessage {
+	return protocol.ClientEnrollmentRequestMessage{
 		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeTokenProvisioningRequest,
+			Type: protocol.MsgTypeClientEnrollmentRequest,
 			ID:   req.ID,
 		},
 		SSHFingerprint: req.SSHFingerprint,
+		Label:          req.Label,
 		RemoteAddr:     req.RemoteAddr,
 		Timestamp:      req.Timestamp,
 	}

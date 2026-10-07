@@ -10,4 +10,3 @@ endpoints:
     url: ssh://127.0.0.1:1127
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token

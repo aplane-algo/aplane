@@ -71,14 +71,10 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 		}
 	})
 
-	token := readSignerToken(t, signerd.GetTokenPath())
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("copy signer token to apshell fixture: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	startUnlock := func() {
 		t.Helper()
@@ -107,10 +103,10 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 		}
 
 		iterations++
-		runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), token, ed25519KeyType, "ed25519")
+		runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), ed25519KeyType, "ed25519")
 		if falconEvery > 0 && iterations%falconEvery == 0 {
 			falconCycles++
-			runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), token, falcon1024V1KeyType, "falcon1024-v1")
+			runAccountCycle(t, network, funder, apadmin, apshell, signerd.GetURL(), falcon1024V1KeyType, "falcon1024-v1")
 		}
 
 		if restartEvery > 0 && iterations%restartEvery == 0 {
@@ -121,7 +117,6 @@ func TestLocalNetSignerTransactionSoak(t *testing.T) {
 			if err := signerd.Start(); err != nil {
 				t.Fatalf("restart signer at iteration %d: %v", iterations, err)
 			}
-			token = readSignerToken(t, signerd.GetTokenPath())
 			startUnlock()
 			t.Logf("restarted signer after %d ed25519 iterations", iterations)
 		}
@@ -139,7 +134,6 @@ func runAccountCycle(
 	apadmin *harness.ApAdminHarness,
 	apshell *harness.ApshellHarness,
 	signerURL string,
-	token string,
 	keyType string,
 	label string,
 ) {
@@ -149,7 +143,7 @@ func runAccountCycle(
 	if err != nil {
 		t.Fatalf("generate %s key: %v", label, err)
 	}
-	waitForSignerKey(t, signerURL, token, address, 15*time.Second)
+	waitForSignerKey(t, signerURL, address, 15*time.Second)
 
 	if err := funder.FundMicroAlgosAndWait(address, defaultFundMicroAlgos); err != nil {
 		t.Fatalf("fund %s account %s: %v", label, address, err)
@@ -177,18 +171,18 @@ func runAccountCycle(
 	if err := apadmin.DeleteGeneratedKey(address); err != nil {
 		t.Fatalf("delete %s key %s after cycle: %v", label, address, err)
 	}
-	waitForSignerKeyMissing(t, signerURL, token, address, 15*time.Second)
+	waitForSignerKeyMissing(t, signerURL, address, 15*time.Second)
 	t.Logf("%s cycle ok: address=%s send=%s close=%s", label, address, txid, closeTxID)
 }
 
-func waitForSignerKey(t *testing.T, signerURL, token, address string, timeout time.Duration) {
+func waitForSignerKey(t *testing.T, signerURL, address string, timeout time.Duration) {
 	t.Helper()
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		found, err := signerHasKey(client, signerURL, token, address)
+		found, err := signerHasKey(client, signerURL, address)
 		if err == nil && found {
 			return
 		}
@@ -201,14 +195,14 @@ func waitForSignerKey(t *testing.T, signerURL, token, address string, timeout ti
 	t.Fatalf("timed out waiting for signer key %s after %s: %v", address, timeout, lastErr)
 }
 
-func waitForSignerKeyMissing(t *testing.T, signerURL, token, address string, timeout time.Duration) {
+func waitForSignerKeyMissing(t *testing.T, signerURL, address string, timeout time.Duration) {
 	t.Helper()
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		found, err := signerHasKey(client, signerURL, token, address)
+		found, err := signerHasKey(client, signerURL, address)
 		if err == nil && !found {
 			return
 		}
@@ -221,12 +215,11 @@ func waitForSignerKeyMissing(t *testing.T, signerURL, token, address string, tim
 	t.Fatalf("timed out waiting for signer key %s to disappear after %s: %v", address, timeout, lastErr)
 }
 
-func signerHasKey(client *http.Client, signerURL, token, address string) (bool, error) {
+func signerHasKey(client *http.Client, signerURL, address string) (bool, error) {
 	req, err := http.NewRequest(http.MethodGet, signerURL+"/keys", nil)
 	if err != nil {
 		return false, fmt.Errorf("build /keys request: %w", err)
 	}
-	req.Header.Set("Authorization", "aplane "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -251,19 +244,6 @@ func signerHasKey(client *http.Client, signerURL, token, address string) (bool, 
 		}
 	}
 	return false, nil
-}
-
-func readSignerToken(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read signer token %s: %v", path, err)
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		t.Fatalf("signer token %s is empty", path)
-	}
-	return token
 }
 
 func durationFromEnv(t *testing.T, name string, fallback time.Duration) time.Duration {

@@ -74,20 +74,24 @@ const (
 	MsgTypeReconcileStoreResult     = "reconcile_store_result"
 	MsgTypeSignRequest              = "sign_request"
 	MsgTypeSignRequestCanceled      = "sign_request_canceled"
-	// MsgTypeTokenProvisioningRequestCanceled withdraws a delivered client
+	// MsgTypeClientEnrollmentRequestCanceled withdraws a delivered client
 	// access request, for example when a signing request takes the turn.
-	MsgTypeTokenProvisioningRequestCanceled = "token_provisioning_request_canceled"
-	MsgTypeSignResponse                     = "sign_response"
-	MsgTypeStatus                           = "status"
-	MsgTypeError                            = "error"
+	MsgTypeClientEnrollmentRequestCanceled = "client_enrollment_request_canceled"
+	MsgTypeSignResponse                    = "sign_response"
+	MsgTypeStatus                          = "status"
+	MsgTypeError                           = "error"
 
-	// Token provisioning message types (SSH-based token request approval)
-	MsgTypeTokenProvisioningRequest  = "token_provisioning_request"
-	MsgTypeTokenProvisioningResponse = "token_provisioning_response"
+	// Client enrollment message types (SSH request-enrollment approval)
+	MsgTypeClientEnrollmentRequest  = "client_enrollment_request"
+	MsgTypeClientEnrollmentResponse = "client_enrollment_response"
 
-	// Token revocation message types
-	MsgTypeRevokeToken       = "revoke_token"
-	MsgTypeRevokeTokenResult = "revoke_token_result"
+	// Enrolled client key management
+	MsgTypeListEnrolledKeys            = "list_enrolled_keys"
+	MsgTypeEnrolledKeysList            = "enrolled_keys_list"
+	MsgTypeRevokeEnrolledKey           = "revoke_enrolled_key"
+	MsgTypeRevokeEnrolledKeyResult     = "revoke_enrolled_key_result"
+	MsgTypeRevokeAllEnrolledKeys       = "revoke_all_enrolled_keys"
+	MsgTypeRevokeAllEnrolledKeysResult = "revoke_all_enrolled_keys_result"
 
 	// Key management message types
 	MsgTypeListKeys       = "list_keys"
@@ -205,9 +209,9 @@ const (
 	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
 	SignRequestCancelReasonTimeout = "timeout"
 
-	// TokenProvisioningCancelReasonPreempted means a signing request took the
+	// ClientEnrollmentCancelReasonPreempted means a signing request took the
 	// approval turn from a delivered client access request.
-	TokenProvisioningCancelReasonPreempted = "preempted"
+	ClientEnrollmentCancelReasonPreempted = "preempted"
 )
 
 // AuthResultMessage is sent back after an authentication attempt
@@ -536,10 +540,10 @@ type SignRequestCanceledMessage struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// TokenProvisioningRequestCanceledMessage is sent to apadmin when a delivered
+// ClientEnrollmentRequestCanceledMessage is sent to apadmin when a delivered
 // client access request is no longer actionable. Reason "preempted" means a
 // signing request took the approval turn; the SSH client is told to retry.
-type TokenProvisioningRequestCanceledMessage struct {
+type ClientEnrollmentRequestCanceledMessage struct {
 	BaseMessage
 	Reason string `json:"reason,omitempty"`
 }
@@ -551,32 +555,72 @@ type SignResponseMessage struct {
 	Reason   string `json:"reason,omitempty"` // Optional rejection reason
 }
 
-// TokenProvisioningRequestMessage is sent to apadmin when a client requests a token via SSH
-type TokenProvisioningRequestMessage struct {
+// ClientEnrollmentRequestMessage is sent to apadmin when a client asks, over
+// SSH, to have its key enrolled.
+type ClientEnrollmentRequestMessage struct {
 	BaseMessage
 	SSHFingerprint string `json:"ssh_fingerprint"` // SSH key fingerprint of requester
+	Label          string `json:"label,omitempty"` // Display label the client asked for
 	RemoteAddr     string `json:"remote_addr"`     // Remote address of requester
 	Timestamp      int64  `json:"timestamp"`       // Unix timestamp of request
 }
 
-// TokenProvisioningResponseMessage is sent by apadmin with approval/rejection
-type TokenProvisioningResponseMessage struct {
+// ClientEnrollmentResponseMessage is sent by apadmin with approval/rejection
+type ClientEnrollmentResponseMessage struct {
 	BaseMessage
 	Approved bool   `json:"approved"`
 	Reason   string `json:"reason,omitempty"` // Optional rejection reason
 }
 
-// RevokeTokenMessage is sent by apadmin to revoke the current API token
-type RevokeTokenMessage struct {
+// ListEnrolledKeysMessage asks for the enrolled client keys.
+type ListEnrolledKeysMessage struct {
 	BaseMessage
 }
 
-// RevokeTokenResultMessage is the response to a token revocation request
-type RevokeTokenResultMessage struct {
+// EnrolledKeyInfo describes one enrolled client key.
+type EnrolledKeyInfo struct {
+	Fingerprint string `json:"fingerprint"`
+	Label       string `json:"label,omitempty"`
+	KeyType     string `json:"key_type"`
+	Connected   bool   `json:"connected"` // The key has at least one live SSH connection
+}
+
+// EnrolledKeysListMessage lists the enrolled client keys.
+type EnrolledKeysListMessage struct {
 	BaseMessage
-	Success bool   `json:"success"`
-	Code    string `json:"code,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Keys []EnrolledKeyInfo `json:"keys"`
+}
+
+// RevokeEnrolledKeyMessage removes one enrolled client key and closes its
+// connections.
+type RevokeEnrolledKeyMessage struct {
+	BaseMessage
+	Fingerprint string `json:"fingerprint"`
+}
+
+// RevokeEnrolledKeyResultMessage is the response to a key revocation.
+type RevokeEnrolledKeyResultMessage struct {
+	BaseMessage
+	Success           bool   `json:"success"`
+	Code              string `json:"code,omitempty"`
+	Error             string `json:"error,omitempty"`
+	ClosedConnections int    `json:"closed_connections"`
+}
+
+// RevokeAllEnrolledKeysMessage removes every enrolled client key and closes
+// every client connection: the emergency lever.
+type RevokeAllEnrolledKeysMessage struct {
+	BaseMessage
+}
+
+// RevokeAllEnrolledKeysResultMessage is the response to revoking every key.
+type RevokeAllEnrolledKeysResultMessage struct {
+	BaseMessage
+	Success           bool   `json:"success"`
+	Code              string `json:"code,omitempty"`
+	Error             string `json:"error,omitempty"`
+	RevokedCount      int    `json:"revoked_count"`
+	ClosedConnections int    `json:"closed_connections"`
 }
 
 // StatusMessage is sent to communicate signer status

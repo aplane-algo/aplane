@@ -4,15 +4,18 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
-	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -49,7 +52,7 @@ func encodeTxnToHex(txn types.Transaction) string {
 type Signer struct {
 	runtime           *productruntime.Runtime            // The one product runtime
 	nodeFailState     *productruntime.NodeFailState      // Process-wide first-error-sticky failure state
-	httpAuth          auth.Authenticator                 // Product token authenticator; never selects a runtime
+	httpAuth          auth.Authenticator                 // Connection-identity authenticator; never selects a runtime
 	authorizer        auth.Authorizer                    // Pluggable authorization
 	auditLog          *AuditLogger                       // Audit logger for security events
 	ipcServer         *IPCServer                         // IPC server for local Unix socket connections
@@ -57,6 +60,7 @@ type Signer struct {
 	sshServer         *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
 	sshRuntime        *sshRuntime                        // SSH runtime holder for live listener restarts
 	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime and sshServer swaps
+	apiListener       *sshtunnel.APIListener             // Receives tunneled API channels for the HTTP server
 	config            *serverconfig.ServerConfig         // Server configuration (includes policy settings)
 	configMu          sync.RWMutex                       // Protects live-mutable ServerConfig fields.
 	configMutationMu  sync.Mutex                         // Serializes process-owned config.yaml mutations
@@ -125,27 +129,52 @@ func (fs *Signer) nodeFailure() error {
 	return fs.nodeFailState.Err()
 }
 
-// RevokeProductToken generates a new API token for the product runtime.
-// The token authenticator is updated before active SSH connections for the
-// product are closed, so connections authenticated with the old token are
-// invalidated after rotation.
-func (fs *Signer) RevokeProductToken(ir *productruntime.Runtime) error {
-	var httpUpdater storemut.TokenUpdater
-	var tokenGeneration uint64
-	if ta, ok := ir.Authenticator().(*auth.TokenAuthenticator); ok {
-		httpUpdater = ta
+// RevokeClientKey removes an enrolled client key and closes its connections.
+// The registry is published and installed before any connection is closed,
+// and the SSH server re-checks enrollment after every handshake, so a
+// connection authenticating during the revocation is refused rather than
+// registered after the close pass.
+func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) (int, error) {
+	if ir == nil {
+		return 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-
-	tokenPath, err := storemut.New(ir.KeyPaths(), httpUpdater, nil).RevokeToken()
+	entry, err := ir.RevokeAuthorizedKey(fingerprint)
 	if err != nil {
-		return err
+		if errors.Is(err, clientregistry.ErrNotEnrolled) {
+			return 0, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("client key %s is not enrolled", fingerprint))
+		}
+		return 0, err
 	}
-	if ta, ok := ir.Authenticator().(*auth.TokenAuthenticator); ok {
-		tokenGeneration = ta.Generation()
-	}
+	closed := 0
 	if sshServer := fs.currentSSHServer(); sshServer != nil {
-		sshServer.CloseProductConnections(tokenGeneration, "token revoked")
+		closed = sshServer.CloseConnectionsForFingerprint(fingerprint, "key revoked")
 	}
-	logInfof("api token revoked and regenerated: %s", tokenPath)
-	return nil
+	if fs.auditLog != nil {
+		fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
+	}
+	logInfof("client key revoked: %s (closed %d connection(s))", fingerprint, closed)
+	return closed, nil
+}
+
+// RevokeAllClientKeys removes every enrolled client key and closes every
+// client connection: the emergency lever.
+func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *productruntime.Runtime) (int, int, error) {
+	if ir == nil {
+		return 0, 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	entries, err := ir.RevokeAllAuthorizedKeys()
+	if err != nil {
+		return 0, 0, err
+	}
+	closed := 0
+	if sshServer := fs.currentSSHServer(); sshServer != nil {
+		closed = sshServer.CloseAllClientConnections("all client keys revoked")
+	}
+	if fs.auditLog != nil {
+		for _, entry := range entries {
+			fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
+		}
+	}
+	logInfof("all client keys revoked: %d key(s), closed %d connection(s)", len(entries), closed)
+	return len(entries), closed, nil
 }

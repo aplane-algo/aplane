@@ -165,7 +165,11 @@ func (s *stubServices) NewSessionIdentity(method string) *auth.Identity {
 	}
 	return auth.NewProductIdentity(method)
 }
-func (s *stubServices) RevokeProductToken() error { return nil }
+func (s *stubServices) EnrolledKeys() []protocol.EnrolledKeyInfo { return nil }
+func (s *stubServices) RevokeEnrolledKey(SessionContext, string) (int, error) {
+	return 0, nil
+}
+func (s *stubServices) RevokeAllEnrolledKeys(SessionContext) (int, int, error) { return 0, 0, nil }
 func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }
@@ -355,10 +359,7 @@ func currentAdminProtocolVersion() *protocol.ProtocolVersion {
 }
 
 func TestSessionAuthenticateSuccess(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	authMsg, err := json.Marshal(protocol.AuthMessage{
@@ -437,10 +438,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 }
 
 func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	authMsg, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthOnly},
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
@@ -624,10 +622,7 @@ func TestSessionDispatchRejectsNonRequestEnvelope(t *testing.T) {
 }
 
 func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	conn := &queueConn{}
@@ -649,10 +644,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 }
 
 func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	conn := &queueConn{}
 	svc := &stubServices{}
 	session := NewSession(conn, SessionDeps{
@@ -673,10 +665,7 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 }
 
 func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	authMsg, err := json.Marshal(protocol.AuthMessage{
@@ -706,10 +695,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 }
 
 func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 
 	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":6,"minor":0}}`)
 
@@ -747,10 +733,7 @@ func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 }
 
 func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 
 	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"alice","protocol_version":{"major":4,"minor":5}}`)
 
@@ -781,10 +764,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 }
 
 func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	msg1, _ := json.Marshal(protocol.AuthMessage{
@@ -946,10 +926,7 @@ func TestValidateAdminProtocolVersionAcceptsCurrentAndMinorSkew(t *testing.T) {
 }
 
 func TestSessionBindUpdatesSessionContext(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{})
 	session.SetAuthMethod("test-method")
@@ -990,10 +967,7 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 
 func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 	conn := &queueConn{}
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	got := make(chan signerapproval.SignResponse, 1)
 	sent := make(chan struct{}, 1)
 	ir.SetApprovalCoordinator(signerapproval.New(

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -44,10 +43,9 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 	cfg := serverconfig.DefaultServerConfig()
 	deps := &fakeDeps{dataDir: root, config: &cfg, keyPaths: paths}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore:      keystore.NewAtomicFileKeyStoreForPaths(paths),
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		NodeRole:      role,
+		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyPaths: paths,
+		NodeRole: role,
 	})
 	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)

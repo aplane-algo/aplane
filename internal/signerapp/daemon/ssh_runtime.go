@@ -5,15 +5,13 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
-
-	gossh "golang.org/x/crypto/ssh"
 )
 
 type sshRuntime struct {
@@ -28,43 +26,36 @@ type sshRuntimeStopper interface {
 	StopContext(context.Context) error
 }
 
-func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath, authorizedKeysPath string, auditLog *AuditLogger) (*sshRuntime, error) {
+func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath string, auditLog *AuditLogger) (*sshRuntime, error) {
 	sshCtx, sshCancel := context.WithCancel(context.Background())
-	provisioning := server.sshProvisioningService()
+	enrollmentSvc := server.enrollmentService()
 
 	listenAddress = strings.TrimSpace(listenAddress)
 	if listenAddress == "" {
 		listenAddress = apconfig.DefaultSSHListenAddress
 	}
 	listenAddr := net.JoinHostPort(listenAddress, strconv.Itoa(port))
-	cfg := server.ConfigSnapshot()
-	targetAddr := httpBindAddr(cfg.Endpoint.SignerPort)
-	sshServer, err := sshtunnel.NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, "")
+	sshServer, err := sshtunnel.NewServer(listenAddr, hostKeyPath)
 	if err != nil {
 		sshCancel()
 		return nil, err
 	}
 
 	productRuntime := server.productRuntime()
-	if loadErr := productRuntime.LoadAuthorizedKeys(); loadErr != nil {
-		logWarnf("failed to load product authorized keys: %v", loadErr)
+	// A registry the daemon cannot read completely refuses to serve rather
+	// than serving with partial authority.
+	if err := productRuntime.LoadAuthorizedKeys(); err != nil {
+		sshCancel()
+		return nil, fmt.Errorf("enrolled client registry: %w", err)
 	}
 
 	sshServer.SetProductHooks(sshtunnel.ProductHooks{
-		ComputeTokenMACs: func(serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
-			ta, ok := productRuntime.Authenticator().(*auth.TokenAuthenticator)
-			if !ok {
-				return nil, nil, 0, false
-			}
-			return ta.ComputeHMACPair(serverInput, clientInput)
-		},
-		CheckKey: func(key gossh.PublicKey) bool {
-			return productRuntime.HasAuthorizedKey(key)
-		},
-		EnrollKey: func(key gossh.PublicKey) error {
-			return productRuntime.EnrollAuthorizedKey(key)
-		},
+		CheckKey:  productRuntime.HasAuthorizedKey,
+		EnrollKey: productRuntime.EnrollAuthorizedKey,
 	})
+	if server.apiListener != nil {
+		sshServer.SetAPIHandoff(server.apiListener.Handoff)
+	}
 
 	if auditLog != nil {
 		sshServer.SetSessionCallback(func(remoteAddr string, connected bool) {
@@ -76,19 +67,10 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		})
 	}
 
-	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, remoteAddr string) (bool, error) {
-			return provisioning.ApproveContext(ctx, sshFingerprint, remoteAddr)
-		},
-		Issue: func() (string, error) {
-			return provisioning.Issue()
-		},
-		AuditProvisioned: func(sshFingerprint, remoteAddr string) {
-			provisioning.AuditProvisioned(sshFingerprint, remoteAddr)
-		},
-		OperatorConnected: func() bool {
-			return server.hasAdminClient()
-		},
+	sshServer.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{
+		ApproveContext:    enrollmentSvc.ApproveContext,
+		AuditEnrolled:     enrollmentSvc.AuditEnrolled,
+		OperatorConnected: server.hasAdminClient,
 	})
 
 	if err := sshServer.Start(sshCtx); err != nil {
@@ -96,7 +78,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		return nil, err
 	}
 
-	logInfof("SSH server started on %s (public key authentication)", listenAddr)
+	logInfof("SSH server started on %s (enrolled-key authentication)", listenAddr)
 	logInfof("host key fingerprint: %s", sshServer.GetHostKeyFingerprint())
 
 	return &sshRuntime{

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
@@ -77,10 +76,8 @@ func setupServiceWithReload(
 	deps := &stubDeps{keyPaths: keyPaths}
 	var reloadCount atomic.Int64
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      ks,
-		KeyPaths:      keyPaths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
+		KeyStore: ks,
+		KeyPaths: keyPaths,
 	})
 	ir.SetReloadFunc(func(masterKey []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		reloadCount.Add(1)

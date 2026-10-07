@@ -140,7 +140,6 @@ func TestSignerRejectsWhenLocked(t *testing.T) {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
 	signReq := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: address,
@@ -148,7 +147,7 @@ func TestSignerRejectsWhenLocked(t *testing.T) {
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, signReq)
+	status, body := postSignRequest(t, signerd.GetURL(), signReq)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 when signer is locked, got %d: %s", status, string(body))
 	}
@@ -208,8 +207,7 @@ func TestLockOnDisconnectControlsPostDisconnectSigningState(t *testing.T) {
 				t.Fatalf("failed to generate key: %v", err)
 			}
 
-			token := readSignerToken(t, signerd)
-			if !tc.lockOnDisconnect && !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+			if !tc.lockOnDisconnect && !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 				t.Fatalf("signer did not reload generated key %s", address)
 			}
 
@@ -232,7 +230,7 @@ func TestLockOnDisconnectControlsPostDisconnectSigningState(t *testing.T) {
 					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "lock-on-disconnect"),
 				}},
 			}
-			status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+			status, body := postSignRequest(t, signerd.GetURL(), req)
 			if status != tc.wantStatus {
 				t.Fatalf("expected status %d, got %d: %s", tc.wantStatus, status, string(body))
 			}
@@ -260,27 +258,22 @@ func TestSignerRejectsUnauthorizedRequest(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	reqBody := signerapi.GroupSignRequest{}
-
-	cases := []struct {
-		name       string
-		authHeader string
-	}{
-		{name: "missing auth", authHeader: ""},
-		{name: "malformed auth", authHeader: "Bearer wrong"},
-		{name: "wrong token", authHeader: "aplane wrong-token"},
+	// The loopback REST listener carries no client identity: a local process
+	// that is not an enrolled SSH client gets only /health.
+	status, body := postSignRequest(t, signerd.LoopbackURL(), signerapi.GroupSignRequest{})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", status, string(body))
 	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			status, body := postSignRequest(t, signerd.GetURL(), tc.authHeader, reqBody)
-			if status != http.StatusUnauthorized {
-				t.Fatalf("expected 401, got %d: %s", status, string(body))
-			}
-			if !strings.Contains(string(body), "Authorization header required") {
-				t.Fatalf("expected auth failure body, got %s", string(body))
-			}
-		})
+	if !strings.Contains(string(body), "Authentication required") {
+		t.Fatalf("expected auth failure body, got %s", string(body))
+	}
+	resp, err := http.Get(signerd.LoopbackURL() + "/health")
+	if err != nil {
+		t.Fatalf("loopback /health: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("loopback /health status = %d, want 200", resp.StatusCode)
 	}
 }
 
@@ -315,8 +308,7 @@ func TestPolicyApprovalRejection(t *testing.T) {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 	signReq := signerapi.GroupSignRequest{
@@ -326,7 +318,7 @@ func TestPolicyApprovalRejection(t *testing.T) {
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, signReq)
+	status, body := postSignRequest(t, signerd.GetURL(), signReq)
 	if status != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when approval client is absent, got %d: %s", status, string(body))
 	}
@@ -358,12 +350,11 @@ func TestOperatorApprovalRejectionReturnsForbiddenWithNoSignedOutput(t *testing.
 		t.Fatalf("failed to generate key: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 	mustReplaceIPCPolicySetting(t, ipcClient, "reject_asset_close", false)
 
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -386,7 +377,7 @@ func TestOperatorApprovalRejectionReturnsForbiddenWithNoSignedOutput(t *testing.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, body = postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+		status, body = postSignRequest(t, signerd.GetURL(), req)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -438,8 +429,7 @@ func TestPolicyHardRejectSkipsApprovalAndReturnsForbidden(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -471,7 +461,7 @@ func TestPolicyHardRejectSkipsApprovalAndReturnsForbidden(t *testing.T) {
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+	status, body := postSignRequest(t, signerd.GetURL(), req)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 for policy hard reject, got %d: %s", status, string(body))
 	}
@@ -516,8 +506,7 @@ func TestPolicyHardRejectCloseRemainderSkipsApprovalAndReturnsForbidden(t *testi
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -549,7 +538,7 @@ func TestPolicyHardRejectCloseRemainderSkipsApprovalAndReturnsForbidden(t *testi
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+	status, body := postSignRequest(t, signerd.GetURL(), req)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 for close remainder policy hard reject, got %d: %s", status, string(body))
 	}
@@ -606,8 +595,7 @@ func TestHiddenRekeyPaymentEmitsCriticalAlertAndChangesAuthAddr(t *testing.T) {
 	}
 	stealthAuthAccount := crypto.GenerateAccount()
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, sourceAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), sourceAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload imported source key %s", sourceAddr)
 	}
 
@@ -655,7 +643,7 @@ func TestHiddenRekeyPaymentEmitsCriticalAlertAndChangesAuthAddr(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, body = postSignRequest(t, signerd.GetURL(), "aplane "+token, signReqBody)
+		status, body = postSignRequest(t, signerd.GetURL(), signReqBody)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -768,8 +756,7 @@ func TestHiddenCloseRemainderPaymentEmitsCriticalAlertAndClosesAccount(t *testin
 		t.Fatalf("failed to import source account into signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, sourceAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), sourceAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload imported source key %s", sourceAddr)
 	}
 
@@ -809,7 +796,7 @@ func TestHiddenCloseRemainderPaymentEmitsCriticalAlertAndClosesAccount(t *testin
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, body = postSignRequest(t, signerd.GetURL(), "aplane "+token, signReqBody)
+		status, body = postSignRequest(t, signerd.GetURL(), signReqBody)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -906,8 +893,7 @@ func TestAssetCloseTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -945,7 +931,7 @@ func TestAssetCloseTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, body = postSignRequest(t, signerd.GetURL(), "aplane "+token, reqBody)
+		status, body = postSignRequest(t, signerd.GetURL(), reqBody)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -1022,8 +1008,7 @@ func TestClawbackTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -1060,7 +1045,7 @@ func TestClawbackTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		status, body = postSignRequest(t, signerd.GetURL(), "aplane "+token, reqBody)
+		status, body = postSignRequest(t, signerd.GetURL(), reqBody)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -1137,8 +1122,7 @@ func TestPolicyHardRejectAssetCloseSkipsApprovalAndReturnsForbidden(t *testing.T
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -1171,7 +1155,7 @@ func TestPolicyHardRejectAssetCloseSkipsApprovalAndReturnsForbidden(t *testing.T
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+	status, body := postSignRequest(t, signerd.GetURL(), req)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 for asset close policy hard reject, got %d: %s", status, string(body))
 	}
@@ -1216,8 +1200,7 @@ func TestPolicyHardRejectClawbackSkipsApprovalAndReturnsForbidden(t *testing.T) 
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -1250,7 +1233,7 @@ func TestPolicyHardRejectClawbackSkipsApprovalAndReturnsForbidden(t *testing.T) 
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+	status, body := postSignRequest(t, signerd.GetURL(), req)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 for clawback policy hard reject, got %d: %s", status, string(body))
 	}
@@ -1303,10 +1286,7 @@ func TestRekeyedAccountSignsViaAuthAddress(t *testing.T) {
 		t.Fatalf("failed to generate rekeyed account: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy signer token to apshell: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := apadmin.StartUnlockBackground(); err != nil {
 		t.Fatalf("failed to keep signer unlocked: %v", err)
@@ -1382,10 +1362,7 @@ func TestRekeyedAccountRejectsMissingAuthAddress(t *testing.T) {
 		t.Fatalf("failed to generate rekeyed account: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy signer token to apshell: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := apadmin.StartUnlockBackground(); err != nil {
 		t.Fatalf("failed to keep signer unlocked: %v", err)
@@ -1401,8 +1378,7 @@ func TestRekeyedAccountRejectsMissingAuthAddress(t *testing.T) {
 		if _, err := apadmin.ImportKey(authMnemonic); err != nil {
 			t.Fatalf("failed to restore auth account for cleanup: %v", err)
 		}
-		token := readSignerToken(t, signerd)
-		if !waitForKey(t, signerd.GetURL(), token, authAddr, 10*time.Second) {
+		if !waitForKey(t, signerd.GetURL(), authAddr, 10*time.Second) {
 			t.Fatalf("signer did not reload restored auth key %s", authAddr)
 		}
 		unrekeyOutput, err := apshell.RunWithInput(fmt.Sprintf("unrekey %s\nquit\n", rekeyedAddr))
@@ -1432,8 +1408,7 @@ func TestRekeyedAccountRejectsMissingAuthAddress(t *testing.T) {
 	if err := apadmin.DeleteKey(authAddr); err != nil {
 		t.Fatalf("failed to delete auth key from signer: %v", err)
 	}
-	token := readSignerToken(t, signerd)
-	if !waitForKeyMissing(t, signerd.GetURL(), token, authAddr, 10*time.Second) {
+	if !waitForKeyMissing(t, signerd.GetURL(), authAddr, 10*time.Second) {
 		t.Fatalf("signer still reports deleted auth key %s", authAddr)
 	}
 
@@ -1506,21 +1481,17 @@ func TestRekeyRejectsTargetThatIsItselfRekeyed(t *testing.T) {
 		t.Fatalf("failed to import account C: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, addrA, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addrA, 10*time.Second) {
 		t.Fatalf("signer did not reload account A %s", addrA)
 	}
-	if !waitForKey(t, signerd.GetURL(), token, addrB, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addrB, 10*time.Second) {
 		t.Fatalf("signer did not reload account B %s", addrB)
 	}
-	if !waitForKey(t, signerd.GetURL(), token, addrC, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addrC, 10*time.Second) {
 		t.Fatalf("signer did not reload account C %s", addrC)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy signer token to apshell: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := apadmin.StartUnlockBackground(); err != nil {
 		t.Fatalf("failed to keep signer unlocked: %v", err)
@@ -1603,8 +1574,7 @@ func TestFalconPassphraseSigning(t *testing.T) {
 		t.Fatalf("failed to generate Falcon key: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForSignerLocked(t, signerd.GetURL(), token, 10*time.Second) {
+	if !waitForSignerLocked(t, signerd.GetURL(), 10*time.Second) {
 		t.Fatal("signer did not lock after apadmin key generation session disconnected")
 	}
 
@@ -1621,7 +1591,7 @@ func TestFalconPassphraseSigning(t *testing.T) {
 	}
 
 	// Step 1: signing must fail while signer is locked
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, signReq)
+	status, body := postSignRequest(t, signerd.GetURL(), signReq)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 when locked, got %d: %s", status, string(body))
 	}
@@ -1636,14 +1606,11 @@ func TestFalconPassphraseSigning(t *testing.T) {
 	}
 	t.Cleanup(apadmin.StopUnlockBackground)
 
-	if !waitForKey(t, signerd.GetURL(), token, falconAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), falconAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload Falcon key %s after unlock", falconAddr)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := funder.FundMicroAlgosAndWait(falconAddr, 300_000); err != nil {
 		t.Fatalf("failed to fund Falcon account: %v", err)
@@ -1695,7 +1662,6 @@ func TestSignerRejectsUnknownSigningAddress(t *testing.T) {
 
 	// Use a well-known address that the signer does not hold
 	unknownAddr := integrationBurnAddress
-	token := readSignerToken(t, signerd)
 	signReq := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: unknownAddr,
@@ -1703,7 +1669,7 @@ func TestSignerRejectsUnknownSigningAddress(t *testing.T) {
 		}},
 	}
 
-	status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, signReq)
+	status, body := postSignRequest(t, signerd.GetURL(), signReq)
 	if status == http.StatusOK {
 		t.Fatalf("expected failure for unknown signing address, got 200")
 	}
@@ -1745,10 +1711,7 @@ func TestSignerRestartPreservesUsableKeys(t *testing.T) {
 		t.Fatalf("failed to generate key: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := apadmin.StartUnlockBackground(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
@@ -1787,8 +1750,7 @@ func TestSignerRestartPreservesUsableKeys(t *testing.T) {
 	}
 	t.Cleanup(apadmin.StopUnlockBackground)
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, addr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addr, 10*time.Second) {
 		t.Fatalf("key %s not available after restart", addr)
 	}
 
@@ -1822,14 +1784,12 @@ func TestPolicyValidationRejectsInvalidTxn(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, addr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addr, 10*time.Second) {
 		t.Fatalf("signer did not reload key %s", addr)
 	}
-	auth := "aplane " + token
 
 	t.Run("empty request body", func(t *testing.T) {
-		status, body := postSignRequest(t, signerd.GetURL(), auth, signerapi.GroupSignRequest{})
+		status, body := postSignRequest(t, signerd.GetURL(), signerapi.GroupSignRequest{})
 		if status == http.StatusOK {
 			t.Fatalf("expected rejection for empty request, got 200: %s", string(body))
 		}
@@ -1843,7 +1803,7 @@ func TestPolicyValidationRejectsInvalidTxn(t *testing.T) {
 				TxnBytesHex: "deadbeef",
 			}},
 		}
-		status, body := postSignRequest(t, signerd.GetURL(), auth, signReq)
+		status, body := postSignRequest(t, signerd.GetURL(), signReq)
 		if status == http.StatusOK {
 			t.Fatalf("expected rejection for malformed txn, got 200: %s", string(body))
 		}
@@ -1857,7 +1817,7 @@ func TestPolicyValidationRejectsInvalidTxn(t *testing.T) {
 				TxnBytesHex: "not-valid-hex!",
 			}},
 		}
-		status, body := postSignRequest(t, signerd.GetURL(), auth, signReq)
+		status, body := postSignRequest(t, signerd.GetURL(), signReq)
 		if status == http.StatusOK {
 			t.Fatalf("expected rejection for invalid hex, got 200: %s", string(body))
 		}
@@ -1870,7 +1830,7 @@ func TestPolicyValidationRejectsInvalidTxn(t *testing.T) {
 				AuthAddress: addr,
 			}},
 		}
-		status, body := postSignRequest(t, signerd.GetURL(), auth, signReq)
+		status, body := postSignRequest(t, signerd.GetURL(), signReq)
 		if status == http.StatusOK {
 			t.Fatalf("expected rejection for empty sign request, got 200: %s", string(body))
 		}
@@ -1910,8 +1870,7 @@ func TestLSigSigningFlow(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 
 	status, err := testnet.Client.Status().Do(context.Background())
 	if err != nil {
@@ -1929,10 +1888,7 @@ func TestLSigSigningFlow(t *testing.T) {
 
 	lsigAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", params)
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := funder.FundMicroAlgosAndWait(lsigAddr, 300_000); err != nil {
 		t.Fatalf("failed to fund generic LSig account: %v", err)
@@ -1972,8 +1928,7 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
-	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	signerClient := signerclient.NewSignerClient(signerd.GetURL())
 
 	genericPreimage := bytes.Repeat([]byte("g"), 32)
 	genericPreimageHash := sha256.Sum256(genericPreimage)
@@ -1999,7 +1954,7 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 				},
 			}},
 		}
-		status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+		status, body := postSignRequest(t, signerd.GetURL(), req)
 		if status != http.StatusBadRequest {
 			t.Fatalf("expected 400 for invalid preimage length, got %d: %s", status, string(body))
 		}
@@ -2018,7 +1973,7 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 				},
 			}},
 		}
-		status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+		status, body := postSignRequest(t, signerd.GetURL(), req)
 		if status != http.StatusOK {
 			t.Fatalf("expected 200 for valid arg set, got %d: %s", status, string(body))
 		}
@@ -2066,11 +2021,10 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 		t.Fatalf("failed to generate key: %v", err)
 	}
 
-	token := readSignerToken(t, signerd)
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	if !waitForKey(t, signerd.GetURL(), token, address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", address)
 	}
 
@@ -2093,7 +2047,7 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		firstStatus, firstBody = postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+		firstStatus, firstBody = postSignRequest(t, signerd.GetURL(), req)
 	}()
 
 	signReq := mustReadIPCSignRequest(t, ipcClient, 10*time.Second)
@@ -2121,7 +2075,7 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 	secondWG.Add(1)
 	go func() {
 		defer secondWG.Done()
-		secondStatus, secondBody = postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
+		secondStatus, secondBody = postSignRequest(t, signerd.GetURL(), req)
 	}()
 
 	secondReq := mustReadIPCSignRequest(t, secondClient, 10*time.Second)
@@ -2141,16 +2095,6 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed txn after reconnect, got %d", len(signResp.Signed))
 	}
-}
-
-func readSignerToken(t *testing.T, signerd *harness.SignerHarness) string {
-	t.Helper()
-
-	data, err := os.ReadFile(signerd.GetTokenPath())
-	if err != nil {
-		t.Fatalf("failed to read signer token: %v", err)
-	}
-	return strings.TrimSpace(string(data))
 }
 
 func mustUnsignedPaymentTxnHex(t *testing.T, sp types.SuggestedParams, from, to string, amount uint64, note string) string {
@@ -2253,7 +2197,7 @@ func mustUnsignedAssetTransferTxnHexWithClawback(
 	return hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...))
 }
 
-func postSignRequest(t *testing.T, signerURL, authHeader string, reqBody signerapi.GroupSignRequest) (int, []byte) {
+func postSignRequest(t *testing.T, signerURL string, reqBody signerapi.GroupSignRequest) (int, []byte) {
 	t.Helper()
 
 	body, err := json.Marshal(reqBody)
@@ -2266,9 +2210,6 @@ func postSignRequest(t *testing.T, signerURL, authHeader string, reqBody signera
 		t.Fatalf("failed to build sign request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
-	}
 
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
@@ -2283,14 +2224,13 @@ func postSignRequest(t *testing.T, signerURL, authHeader string, reqBody signera
 	return resp.StatusCode, respBody
 }
 
-func waitForSignerLocked(t *testing.T, baseURL, token string, timeout time.Duration) bool {
+func waitForSignerLocked(t *testing.T, baseURL string, timeout time.Duration) bool {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{}
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", baseURL+"/status", nil)
-		req.Header.Set("Authorization", "aplane "+token)
 		resp, err := client.Do(req)
 		if err == nil {
 			body, _ := io.ReadAll(resp.Body)
@@ -2305,14 +2245,13 @@ func waitForSignerLocked(t *testing.T, baseURL, token string, timeout time.Durat
 	return false
 }
 
-func waitForKeyMissing(t *testing.T, baseURL, token, address string, timeout time.Duration) bool {
+func waitForKeyMissing(t *testing.T, baseURL, address string, timeout time.Duration) bool {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{}
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", baseURL+"/keys", nil)
-		req.Header.Set("Authorization", "aplane "+token)
 		resp, err := client.Do(req)
 		if err == nil {
 			body, _ := io.ReadAll(resp.Body)
@@ -2442,8 +2381,7 @@ func mustAdminGenerateKey(t *testing.T, signerClient *signerclient.Client, signe
 			t.Fatalf("failed to delete generated key %s: %v", resp.Address, err)
 		}
 	})
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, resp.Address, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), resp.Address, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", resp.Address)
 	}
 	return resp.Address

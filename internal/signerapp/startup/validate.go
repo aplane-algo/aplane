@@ -134,9 +134,6 @@ func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths
 	if config.Endpoint.SSH.HostKeyPath == "" {
 		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.host_key_path is required")
 	}
-	if config.Endpoint.SSH.AuthorizedKeysPath == "" {
-		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.authorized_keys_path is required")
-	}
 
 	if !crypto.StoreRootExistsIn(keyPaths.KeystoreMetadataDir()) {
 		info.KeystoreExists = false

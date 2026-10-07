@@ -3,25 +3,16 @@
 
 package apshellapp
 
-import (
-	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
-)
+import "github.com/aplane-algo/aplane/internal/config"
 
-// StartupConnectDecision reports the app-layer startup decision for signer connectivity.
+// StartupConnectDecision reports the app-layer startup decision for signer
+// connectivity: connect when a default signer endpoint is configured. Whether
+// this client's key is enrolled is known only to the node, so an unenrolled
+// key is discovered as an authentication failure at connect time.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
 	registry := a.Config.ClientEndpointsOrDefault()
 	alias, endpoint, ok := registry.DefaultEndpoint()
-	tokenPath := endpoint.TokenFile
-	if tokenPath == "" {
-		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
-	}
-	token, _ := tokenfile.ReadToken(tokenPath)
-	decision := &StartupConnectDecision{
-		EndpointName: alias,
-		HasToken:     token != "",
-		TokenPath:    tokenPath,
-	}
+	decision := &StartupConnectDecision{EndpointName: alias}
 
 	if ok {
 		endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
@@ -32,6 +23,6 @@ func (a *App) StartupConnectDecision() *StartupConnectDecision {
 		}
 	}
 
-	decision.ShouldConnect = decision.HasToken && decision.HasSSHConfig
+	decision.ShouldConnect = decision.HasSSHConfig
 	return decision
 }

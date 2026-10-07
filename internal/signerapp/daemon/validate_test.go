@@ -26,7 +26,7 @@ func TestValidateStartupRejectsInvalidSSHConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := serverconfig.DefaultServerConfig()
-	cfg.Endpoint.SSH.AuthorizedKeysPath = ""
+	cfg.Endpoint.SSH.HostKeyPath = ""
 	runtime := &signerstartup.RuntimeState{}
 
 	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir())); err == nil {

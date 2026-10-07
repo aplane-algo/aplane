@@ -52,12 +52,8 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
-	token := readSignerToken(t, signerd)
-	requirePolicyTestKeyLoaded(t, signerd, token, fundingAddr)
+	apshell := harness.NewApshellHarness(t)
+	requirePolicyTestKeyLoaded(t, signerd, fundingAddr)
 
 	dir := t.TempDir()
 	writeFile := func(name, content string) string {
@@ -137,7 +133,7 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	if got := runPolicy(t, apadmin, "", 0, "export").Stdout; got != restrictive {
 		t.Fatalf("policy export after apply is not the applied file:\n%s", got)
 	}
-	requirePolicyTestKeyLoaded(t, signerd, token, fundingAddr)
+	requirePolicyTestKeyLoaded(t, signerd, fundingAddr)
 	expectRejectedSend("after online apply")
 
 	if out := runPolicy(t, apadmin, "", 0, "apply", "--yes", restrictivePath).Stdout; !strings.Contains(out, "policy unchanged") {
@@ -153,7 +149,7 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	if got := runPolicy(t, apadmin, "", 0, "export").Stdout; got != permissive {
 		t.Fatalf("policy export after stdin apply is not the applied document:\n%s", got)
 	}
-	requirePolicyTestKeyLoaded(t, signerd, token, fundingAddr)
+	requirePolicyTestKeyLoaded(t, signerd, fundingAddr)
 	txid, err := apshell.SendTransaction(fundingAddr, fundingAddr, 0.1)
 	if err != nil {
 		t.Fatalf("0.1 ALGO self-send failed after applying the permissive policy: %v", err)
@@ -195,7 +191,7 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	}
 
 	// The restarted daemon loads and enforces the rescue-applied policy.
-	startSignerAndLoadKey(t, signerd, apadmin, token, fundingAddr)
+	startSignerAndLoadKey(t, signerd, apadmin, fundingAddr)
 	if sha := policyStatusSHA(t, apadmin); sha != rescueSHA {
 		t.Fatalf("policy_set_sha256 after restart = %s, want the rescue-applied %s", sha, rescueSHA)
 	}

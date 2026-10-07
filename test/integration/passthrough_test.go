@@ -154,13 +154,6 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		},
 	}
 
-	// Read the API token
-	tokenBytes, err := os.ReadFile(signerd.GetTokenPath())
-	if err != nil {
-		t.Fatalf("Failed to read API token from %s: %v", signerd.GetTokenPath(), err)
-	}
-	token := string(bytes.TrimSpace(tokenBytes))
-
 	// Submit to /sign endpoint
 	reqBody, _ := json.Marshal(groupReq)
 	req, err := http.NewRequest("POST", signerd.GetURL()+"/sign", bytes.NewReader(reqBody))
@@ -168,7 +161,6 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		t.Fatalf("Failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "aplane "+token)
 
 	t.Log("Submitting mixed sign + passthrough request to /sign...")
 	client := &http.Client{}
@@ -298,17 +290,11 @@ func TestPassthroughResign(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	// Read API token
-	tokenBytes, err := os.ReadFile(signerd.GetTokenPath())
-	if err != nil {
-		t.Fatalf("Failed to read API token from %s: %v", signerd.GetTokenPath(), err)
-	}
-	token := string(bytes.TrimSpace(tokenBytes))
 	client := &http.Client{}
 
 	// Wait for the generated key to be available in the signer
 	t.Logf("Waiting for key %s to be available...", addr2)
-	if !waitForKey(t, signerd.GetURL(), token, addr2, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), addr2, 10*time.Second) {
 		t.Fatalf("Timeout waiting for key %s to appear in signer", addr2)
 	}
 	t.Log("Key available")
@@ -365,7 +351,6 @@ func TestPassthroughResign(t *testing.T) {
 	reqBody, _ := json.Marshal(groupReq)
 	req, _ := http.NewRequest("POST", signerd.GetURL()+"/sign", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "aplane "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -422,7 +407,6 @@ func TestPassthroughResign(t *testing.T) {
 	reqBody, _ = json.Marshal(resignReq)
 	req, _ = http.NewRequest("POST", signerd.GetURL()+"/sign", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "aplane "+token)
 
 	resp, err = client.Do(req)
 	if err != nil {
@@ -485,13 +469,12 @@ func TestPassthroughResign(t *testing.T) {
 }
 
 // waitForKey polls the /keys endpoint until the given address appears or timeout expires.
-func waitForKey(t *testing.T, baseURL, token, address string, timeout time.Duration) bool {
+func waitForKey(t *testing.T, baseURL, address string, timeout time.Duration) bool {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{}
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", baseURL+"/keys", nil)
-		req.Header.Set("Authorization", "aplane "+token)
 		resp, err := client.Do(req)
 		if err == nil {
 			body, _ := io.ReadAll(resp.Body)
@@ -565,14 +548,9 @@ func TestPassthroughRequiresPreGrouped(t *testing.T) {
 		},
 	}
 
-	// Read token and make request
-	tokenBytes, _ := os.ReadFile(signerd.GetTokenPath())
-	token := string(bytes.TrimSpace(tokenBytes))
-
 	reqBody, _ := json.Marshal(groupReq)
 	req, _ := http.NewRequest("POST", signerd.GetURL()+"/sign", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "aplane "+token)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

@@ -1038,7 +1038,7 @@ check_local_config_consistency() {
     echo "    ssh.port:    $client_ssh_port"
     echo ""
     if [ "$client_ports_source" = "endpoints" ]; then
-        echo "'apshell request-token' and 'connect' use $client_endpoints."
+        echo "'apshell request-enrollment' and 'connect' use $client_endpoints."
         echo "Edit $client_endpoints manually before connecting."
         return 0
     fi
@@ -1157,7 +1157,6 @@ $advertise_line
     listen_address: "$listen_address"
     port: $ssh_port
     host_key_path: .ssh/ssh_host_key
-    authorized_keys_path: .ssh/authorized_keys
 
 # Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes
 passphrase_timeout: "15m"
@@ -1235,7 +1234,6 @@ endpoints:
     url: ssh://$host:$ssh_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 EOF
 }
 
@@ -1254,7 +1252,6 @@ endpoints:
     url: ssh://$host:$ssh_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-cosigner.token
 EOF
 }
 
@@ -2086,10 +2083,10 @@ ENVEOF
     if [ -f "$SSH_KEY.pub" ]; then
         echo "  3. Give your public key to the signer operator:"
         echo "     cat $SSH_KEY.pub"
-        echo "  4. Run apshell, then use 'request-token' to get an API token"
+        echo "  4. Run apshell, then use 'request-enrollment' to have the operator enroll your key"
     else
         echo "  3. Generate an SSH key and give the public key to the signer operator"
-        echo "  4. Run apshell, then use 'request-token' to get an API token"
+        echo "  4. Run apshell, then use 'request-enrollment' to have the operator enroll your key"
     fi
     exit 0
 fi
@@ -2355,10 +2352,10 @@ STARTEOF
     offer_localnet_setup "$CLIENT_BINDIR/aplocalnet" "$APCLIENT_DIR" "$DATA_DIR"
 
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+        echo "The client's SSH key is its credential; run 'request-enrollment' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; after unlocking the cosigner, run"
-        echo "'request-token --endpoint local-cosigner' from apshell in another terminal."
+        echo "The client's SSH key is its credential; after unlocking the cosigner, run"
+        echo "'request-enrollment --endpoint local-cosigner' from apshell in another terminal."
     fi
 
     # Offer to add apenv.sh to shell rc
@@ -2387,12 +2384,12 @@ STARTEOF
     echo "  $(shell_quote "$START_SH")"
     echo ""
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
+        echo "On first launch, unlock the signer pane, run 'request-enrollment' in the shell pane,"
         echo "and approve the request in the signer pane."
     else
         echo "On first launch, unlock the cosigner admin pane. Then open another terminal,"
         echo "source $(shell_quote "$ENV_SH"), start apshell, and run"
-        echo "  request-token --endpoint local-cosigner"
+        echo "  request-enrollment --endpoint local-cosigner"
         echo "Approve the request in the cosigner admin pane."
     fi
     echo ""
@@ -2653,10 +2650,10 @@ if [ -n "$SUDO_USER" ]; then
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 
     if [ "$NODE_ROLE" = "signer" ]; then
-        echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+        echo "The client's SSH key is its credential; run 'request-enrollment' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; after unlocking the cosigner, run"
-        echo "'request-token --endpoint local-cosigner' from apshell."
+        echo "The client's SSH key is its credential; after unlocking the cosigner, run"
+        echo "'request-enrollment --endpoint local-cosigner' from apshell."
     fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
@@ -2793,12 +2790,8 @@ echo "  $DATA_DIR/install/uninstall.sh"
 echo ""
 echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/aplane/apclient}."
 if [ "$NODE_ROLE" = "signer" ]; then
-    echo "Use 'request-token' in apshell to obtain an API token via SSH provisioning."
+    echo "Use 'request-enrollment' in apshell to have the operator enroll this client's SSH key."
 else
-    echo "Use 'request-token --endpoint local-cosigner' in apshell to obtain a cosigner API token via SSH provisioning."
+    echo "Use 'request-enrollment --endpoint local-cosigner' in apshell to have the operator enroll this client's SSH key at the cosigner."
 fi
-if [ "$NODE_ROLE" = "signer" ]; then
-    echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."
-else
-    echo "After token enrollment has written tokens/local-cosigner.token and known_hosts, use apconsole for the unified secure-machine console."
-fi
+echo "After enrollment has been approved and known_hosts written, use apconsole for the unified secure-machine console."

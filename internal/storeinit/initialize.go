@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 type Options struct {
@@ -86,13 +85,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	// leave an initialized identity behind while reporting failure.
 	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
 		return result, fmt.Errorf("failed to prepare initialized identity ownership: %w", err)
-	}
-
-	// Generate the non-authority API token before publishing the store root.
-	// A token-path failure must not turn an otherwise committed root into an
-	// initialization error that appears safe to retry.
-	if _, err := tokenfile.LoadAPlaneToken(opts.Paths.Root()); err != nil {
-		return result, fmt.Errorf("failed to generate API token: %w", err)
 	}
 
 	createdNodeRole := false
@@ -173,13 +165,7 @@ func HasPartialState(paths storepaths.Paths) bool {
 	if err != nil {
 		return true
 	}
-	for _, entry := range entries {
-		if entry.Name() == "aplane.token" {
-			continue
-		}
-		return true
-	}
-	return false
+	return len(entries) > 0
 }
 
 func requireLocalOwnerOrRoot(dataDir string) error {

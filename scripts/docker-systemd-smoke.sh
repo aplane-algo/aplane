@@ -32,9 +32,9 @@ This test requires Docker privileges. It starts an Ubuntu 24.04 container with
 systemd, installs the local release tarball in --systemd mode, verifies the
 service/files/permissions, verifies the installer refuses to run while the
 systemd service is active, runs appass --check to confirm systemd-mode detection,
-drives `apshell request-token` end-to-end as the non-root installing user (with
-apapprover unlocking the signer and auto-approving), confirms the client can
-reach the signer with the issued token, verifies a stopped in-place systemd
+drives `apshell request-enrollment` end-to-end as the non-root installing user
+(with apapprover unlocking the signer and auto-approving), confirms the client
+can reach the signer with its enrolled key, verifies a stopped in-place systemd
 upgrade preserves state, stages the on-disk state of
 the appass **Systemd credentials** action (passphrase.cred + unlock.yaml + unit
 LoadCredentialEncrypted= directive), then runs the bundled systemd uninstaller
@@ -419,15 +419,15 @@ EXPECT_SCRIPT
     die "apapprover did not authenticate within 20s"
 }
 
-run_request_token() {
+run_request_enrollment() {
     # AutoConfirm=true in script mode rejects unknown hosts; known_hosts is
-    # seeded, so request-token proceeds without interactive prompts. The
-    # issued token lands at $APCLIENT_DATA/aplane.token.
-    docker_exec_as_tester "echo 'request-token' > /tmp/req-token.script"
+    # seeded, so request-enrollment proceeds without interactive prompts.
+    # Success enrolls the client key at the signer.
+    docker_exec_as_tester "echo 'request-enrollment' > /tmp/req-enrollment.script"
     docker_exec_as_tester ". $OPERATOR_ROOT/apenv.sh && \
-        apshell -script /tmp/req-token.script 2>&1 | tee /tmp/req-token.log"
-    docker_exec_as_tester "test -s $OPERATOR_ROOT/apclient/aplane.token" \
-        || die "request-token did not produce a client token file"
+        apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
+    docker_exec_as_tester "grep -q 'enrolled at endpoint' /tmp/req-enrollment.log" \
+        || die "request-enrollment did not report an enrolled client key"
 }
 
 verify_signer_reachable() {
@@ -454,7 +454,6 @@ files='
 /var/lib/apsigner/config.yaml
 /var/lib/apsigner/identities/default/.keystore
 $OPERATOR_ROOT/apclient/config.yaml
-$OPERATOR_ROOT/apclient/aplane.token
 $OPERATOR_ROOT/apclient/.ssh/id_ed25519
 $OPERATOR_ROOT/apclient/.ssh/known_hosts
 $OPERATOR_ROOT/apclient/plugins.yaml
@@ -472,7 +471,6 @@ files='
 /var/lib/apsigner/config.yaml
 /var/lib/apsigner/identities/default/.keystore
 $OPERATOR_ROOT/apclient/config.yaml
-$OPERATOR_ROOT/apclient/aplane.token
 $OPERATOR_ROOT/apclient/.ssh/id_ed25519
 $OPERATOR_ROOT/apclient/.ssh/known_hosts
 $OPERATOR_ROOT/apclient/plugins.yaml
@@ -741,10 +739,10 @@ main() {
     log "Starting apapprover as $TEST_USER (unlocks signer, auto-approves)"
     start_apapprover
 
-    log "Requesting API token via apshell (as $TEST_USER)"
-    run_request_token
+    log "Enrolling the client key via apshell (as $TEST_USER)"
+    run_request_enrollment
 
-    log "Verifying client can reach signer with issued token"
+    log "Verifying client can reach signer with its enrolled key"
     verify_signer_reachable
 
     log "Creating preserved systemd operator state markers"

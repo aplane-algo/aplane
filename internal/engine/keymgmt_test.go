@@ -228,7 +228,7 @@ func newConnectedEngineForKeyMgmtTestWithSignerCache(t *testing.T, signerCache c
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
-	client := signerclient.NewSignerClientWithToken("http://signer.test", "token")
+	client := signerclient.NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: keyMgmtRoundTripper{t: t, handler: handler}}
 	eng.Connection = &engconnect.ConnectionState{SignerClient: client}
 	return eng

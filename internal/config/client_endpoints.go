@@ -5,7 +5,6 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,10 +39,9 @@ type ClientEndpointConfig struct {
 	// Role declares how apshell may use this endpoint. A client has at most one
 	// signer endpoint and any number of cosigner endpoints.
 	Role           string `yaml:"role"`
-	URL            string `yaml:"url" description:"Endpoint URL: https://..., loopback http://..., or ssh://host[:port]"`
-	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
-	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
-	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
+	URL            string `yaml:"url" description:"Endpoint URL: ssh://host[:port]"`
+	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path; the enrolled client key"`
+	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path pinning the node's host key"`
 }
 
 // ClientEndpointSSH contains runtime SSH transport settings resolved from one
@@ -54,7 +51,6 @@ type ClientEndpointSSH struct {
 	Port           int
 	IdentityFile   string
 	KnownHostsPath string
-	TokenFile      string
 }
 
 func GetClientEndpointsPath(dataDir string) string {
@@ -148,42 +144,31 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 		return endpoint, err
 	}
 
-	if endpoint.TokenFile == "" {
-		if alias == DefaultClientEndpointName {
-			endpoint.TokenFile = tokenfile.APlaneTokenFile
-		} else {
-			endpoint.TokenFile = filepath.Join("tokens", alias+".token")
-		}
+	if endpoint.IdentityFile == "" {
+		endpoint.IdentityFile = ".ssh/id_ed25519"
 	}
-	if endpoint.TokenFile != "" {
-		endpoint.TokenFile = ResolvePath(endpoint.TokenFile, dataDir)
+	if endpoint.KnownHostsPath == "" {
+		endpoint.KnownHostsPath = ".ssh/known_hosts"
 	}
-
-	if strings.HasPrefix(endpoint.URL, "ssh://") {
-		if endpoint.IdentityFile == "" {
-			endpoint.IdentityFile = ".ssh/id_ed25519"
-		}
-		if endpoint.KnownHostsPath == "" {
-			endpoint.KnownHostsPath = ".ssh/known_hosts"
-		}
-		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
-		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
-	}
+	endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
+	endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
 	return endpoint, nil
 }
 
-func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) error {
+// validateClientEndpointURL accepts only ssh:// endpoints. A node is reached
+// through its SSH server, which authenticates the client's enrolled key and
+// hands the API channel to the node's REST handler with that identity; there
+// is no credential a raw HTTP endpoint could present.
+func validateClientEndpointURL(_ string, endpoint ClientEndpointConfig) error {
 	if endpoint.URL == "self" {
-		return fmt.Errorf("url %q is not supported; configure an explicit ssh://, https://, or loopback http:// endpoint", endpoint.URL)
+		return fmt.Errorf("url %q is not supported; configure an explicit ssh://host[:port] endpoint", endpoint.URL)
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
 		return fmt.Errorf("invalid url: %w", err)
 	}
-	switch parsed.Scheme {
-	case "ssh", "https", "http":
-	default:
-		return fmt.Errorf("unsupported url scheme %q", parsed.Scheme)
+	if parsed.Scheme != "ssh" {
+		return fmt.Errorf("unsupported url scheme %q; endpoints are ssh://host[:port]", parsed.Scheme)
 	}
 	if parsed.Hostname() == "" {
 		return fmt.Errorf("url host is required")
@@ -193,9 +178,6 @@ func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) erro
 		if err != nil || port <= 0 || port > 65535 {
 			return fmt.Errorf("invalid url port %q", parsed.Port())
 		}
-	}
-	if parsed.Scheme == "http" && !isLoopbackEndpointHost(parsed.Hostname()) {
-		return fmt.Errorf("raw http endpoints must be loopback; use ssh:// or https:// for remote endpoint %q", alias)
 	}
 	return nil
 }
@@ -237,17 +219,7 @@ func ResolveClientEndpointSSH(endpoint ClientEndpointConfig) (ClientEndpointSSH,
 		Port:           port,
 		IdentityFile:   endpoint.IdentityFile,
 		KnownHostsPath: endpoint.KnownHostsPath,
-		TokenFile:      endpoint.TokenFile,
 	}, nil
-}
-
-func isLoopbackEndpointHost(host string) bool {
-	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
@@ -332,10 +304,11 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 
 // retiredClientEndpointFields are endpoint fields earlier builds wrote and
 // nothing reads: the node's SSH server forwards every channel to its own REST
-// listener, so a client never chose the remote port, and the local tunnel
-// port is picked at connect time. They are dropped on load and are gone from
+// listener, so a client never chose the remote port, the local tunnel port is
+// picked at connect time, and the client's enrolled SSH key is its only
+// credential, so there is no token file. They are dropped on load and are gone from
 // the file after its next write.
-var retiredClientEndpointFields = []string{"signer_port", "local_port"}
+var retiredClientEndpointFields = []string{"signer_port", "local_port", "token_file"}
 
 // decodeClientEndpointRegistry reads endpoints.yaml, which must carry the
 // current schema_version.

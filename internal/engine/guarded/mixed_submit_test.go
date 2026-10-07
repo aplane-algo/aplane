@@ -54,7 +54,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
@@ -158,7 +158,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerResources(t *testing.T)
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
@@ -255,7 +255,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
@@ -297,7 +297,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	captured := &capturedSignRequest{emptyAll: true}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClient(server.URL)
 
 	_, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,

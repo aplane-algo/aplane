@@ -14,12 +14,13 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-// ConnectWithTunnel establishes an SSH tunnel connection using 2FA: API token + public key.
+// ConnectWithTunnel establishes an SSH tunnel connection authenticated by the
+// client's enrolled key.
 // This method handles the tunnel setup and returns the result.
 // hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
-func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, localPort int, token string, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
+func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, localPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
 	result, err := e.Connection.ConnectWithTunnel(
-		target, host, sshPort, localPort, token, identityFile, knownHostsPath, hostKeyApproval,
+		target, host, sshPort, localPort, identityFile, knownHostsPath, hostKeyApproval,
 		e.populateSignerCache,
 		e.handleConnectionClosed(onDisconnect),
 	)
@@ -68,13 +69,14 @@ func (e *Core) GetConnectionTarget() string {
 	return e.Connection.GetConnectionTarget()
 }
 
-// RequestTokenWithContext connects to the SSH server and requests a token provisioning.
-func (e *Core) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func(string)) (string, error) {
-	// Disconnect if currently connected (old token will be invalid after provisioning)
+// RequestEnrollmentWithContext asks a node to enroll this client's SSH key.
+func (e *Core) RequestEnrollmentWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onEnrollmentStart func(string)) (string, error) {
+	// Disconnect if currently connected: the session is replaced once the key
+	// is enrolled.
 	if e.IsTunnelConnected() {
 		_ = e.Disconnect()
 	}
-	return e.Connection.RequestTokenWithContext(ctx, host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
+	return e.Connection.RequestEnrollmentWithContext(ctx, host, sshPort, identityFile, knownHostsPath, label, hostKeyApproval, onEnrollmentStart)
 }
 
 func (e *Core) GetKeysWithContext(ctx context.Context) (*signerclient.KeysResult, error) {

@@ -113,12 +113,55 @@ func TestProductAllowedActionsCoverAuthenticatedHandlerActions(t *testing.T) {
 		auth.ActionTemplatesInstall,
 		auth.ActionTemplatesRemove,
 		auth.ActionTemplatesView,
-		auth.ActionTokenProvision,
-		auth.ActionTokenRevoke,
+		auth.ActionClientsView,
+		auth.ActionClientsEnroll,
+		auth.ActionClientsRevoke,
 	}
 	for _, action := range handlerActions {
 		if !allowed[action] {
 			t.Errorf("authenticated handler action %q is absent from ProductAllowedActions", action)
+		}
+	}
+}
+
+// A client principal is authorized by its role table, never by the product
+// admin set, and an empty or unknown role is denied.
+func TestClientRoleActions(t *testing.T) {
+	a := NewProductSingleAuthorizer()
+	client := auth.NewClientIdentity("SHA256:abc", "laptop")
+	for _, action := range ClientAllowedActions() {
+		if err := a.Authorize(context.Background(), client, action, auth.Resource{}); err != nil {
+			t.Errorf("client denied %q: %v", action, err)
+		}
+	}
+	for _, action := range []auth.Action{auth.ActionPolicyUpdate, auth.ActionClientsRevoke, auth.ActionIdentityUnlock, auth.ActionKeysImport, auth.ActionClientsView} {
+		if err := a.Authorize(context.Background(), client, action, auth.Resource{}); !errors.Is(err, auth.ErrForbidden) {
+			t.Errorf("client allowed %q: %v", action, err)
+		}
+	}
+	noRole := &auth.Identity{ID: auth.ClientPrincipalPrefix + "SHA256:abc", Type: "client"}
+	if err := a.Authorize(context.Background(), noRole, auth.ActionKeysView, auth.Resource{}); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("client without a role allowed: %v", err)
+	}
+	unknownRole := auth.NewClientIdentity("SHA256:abc", "")
+	unknownRole.Role = "admin"
+	if err := a.Authorize(context.Background(), unknownRole, auth.ActionKeysView, auth.Resource{}); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("client with an unknown role allowed: %v", err)
+	}
+	if err := a.Authorize(context.Background(), &auth.Identity{ID: "other:thing", Role: auth.RoleClient}, auth.ActionKeysView, auth.Resource{}); !errors.Is(err, auth.ErrForbidden) {
+		t.Fatalf("non-client principal with a client role allowed: %v", err)
+	}
+}
+
+func TestClientAllowedActionsAreKnownAndNeverAdministrative(t *testing.T) {
+	for _, action := range ClientAllowedActions() {
+		if !auth.IsKnownAction(action) {
+			t.Errorf("client action %q is unknown", action)
+		}
+		switch action {
+		case auth.ActionIdentityUnlock, auth.ActionIdentityPassphrase, auth.ActionKeysImport, auth.ActionKeysExport,
+			auth.ActionPolicyUpdate, auth.ActionSettingsUpdate, auth.ActionClientsEnroll, auth.ActionClientsRevoke, auth.ActionClientsView:
+			t.Errorf("client action set grants administrative action %q", action)
 		}
 	}
 }

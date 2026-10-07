@@ -172,7 +172,7 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}
 	}
 
-	mut := storemut.New(activeKeyPaths, nil, nil)
+	mut := storemut.New(activeKeyPaths)
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error

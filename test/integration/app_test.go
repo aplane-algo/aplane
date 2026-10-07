@@ -248,7 +248,7 @@ func TestAppReadCommands(t *testing.T) {
 		t.Fatalf("set_box setup failed: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, "")
+	apshell := harness.NewApshellHarness(t)
 
 	t.Run("Info", func(t *testing.T) {
 		var result struct {
@@ -450,10 +450,7 @@ func TestAppDeployCommands(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	approvalPath := appFixturePath(t, "approval.teal")
 	clearPath := appFixturePath(t, "clear.teal")
@@ -578,10 +575,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	updatedApprovalPath := appFixturePath(t, "approval_updated.teal")
 	clearPath := appFixturePath(t, "clear.teal")
@@ -686,10 +680,7 @@ func TestAppCallRawCommand(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	t.Run("Increment", func(t *testing.T) {
 		command := fmt.Sprintf(
@@ -830,10 +821,7 @@ func TestAppCallRawPayCommand(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	depositAmount := uint64(100_000)
 
@@ -925,10 +913,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	t.Run("Increment", func(t *testing.T) {
 		command := fmt.Sprintf(
@@ -1052,10 +1037,7 @@ func TestAppCallMethodPayCommand(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	depositAmount := uint64(100_000)
 
@@ -1154,10 +1136,7 @@ func TestAppJSAPI(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	depositAmount := uint64(100_000)
 	command := fmt.Sprintf(
@@ -1369,7 +1348,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	eng, err := newIntegrationEngine(t, testnet.Client, signerd.GetURL(), signerd.GetTokenPath())
+	eng, err := newIntegrationEngine(t, testnet.Client, signerd.GetURL())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -1508,7 +1487,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 	}
 	defer apadmin.StopUnlockBackground()
 
-	eng, err := newIntegrationEngine(t, testnet.Client, signerd.GetURL(), signerd.GetTokenPath())
+	eng, err := newIntegrationEngine(t, testnet.Client, signerd.GetURL())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -1619,16 +1598,11 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 	})
 }
 
-func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL, tokenPath string) (*engine.Engine, error) {
+func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL string) (*engine.Engine, error) {
 	t.Helper()
 
 	cache.InitLogger()
 	cacheStore := cache.NewStore(t.TempDir())
-
-	tokenBytes, err := os.ReadFile(tokenPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read signer token: %w", err)
-	}
 
 	eng, err := engine.NewEngine(harness.IntegrationNetwork(),
 		engine.WithAlgodClient(algodClient),
@@ -1640,7 +1614,7 @@ func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL, to
 		return nil, err
 	}
 
-	eng.Connection.SignerClient = util.NewSignerClientWithToken(signerURL, strings.TrimSpace(string(tokenBytes)))
+	eng.Connection.SignerClient = util.NewSignerClient(signerURL)
 	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ package integration_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,6 +51,20 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 		t.Fatalf("keys dir missing after apstore initialize: %v", err)
 	}
 
+	// A fresh store enrolls no client; enroll the test client's key the way
+	// an operator approval would, so the harness tunnel is accepted.
+	clientKey, err := os.ReadFile(filepath.Join(env.ClientDataDir, ".ssh", "id_ed25519.pub"))
+	if err != nil {
+		t.Fatalf("read client public key: %v", err)
+	}
+	registryDir := filepath.Join(paths.ProductDir(), ".ssh")
+	if err := os.MkdirAll(registryDir, 0o700); err != nil {
+		t.Fatalf("create registry dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(registryDir, "authorized_keys"), clientKey, 0o600); err != nil {
+		t.Fatalf("write enrolled client registry: %v", err)
+	}
+
 	t.Setenv("TEST_PASSPHRASE", passphrase)
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -57,8 +72,7 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	token := readSignerToken(t, signerd)
-	client := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	client := signerclient.NewSignerClient(signerd.GetURL())
 	keys, err := client.GetKeys()
 	if err != nil {
 		t.Fatalf("failed to fetch keys after initialize: %v", err)

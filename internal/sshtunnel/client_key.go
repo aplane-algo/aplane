@@ -31,7 +31,7 @@ var clientKeyAlgorithms = []string{
 const clientKeyRequirement = "Ed25519, ECDSA (P-256/384/521), or hardware-backed sk- Ed25519/ECDSA"
 
 // checkEnrollmentKey reports whether key may be enrolled through
-// request-token. clientKeyAlgorithms already refuses other keys during
+// request-enrollment. clientKeyAlgorithms already refuses other keys during
 // authentication; this check keeps enrollment correct if that list changes.
 func checkEnrollmentKey(key ssh.PublicKey) error {
 	if !slices.Contains(clientKeyAlgorithms, key.Type()) {

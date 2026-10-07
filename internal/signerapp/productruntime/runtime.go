@@ -5,23 +5,21 @@
 package productruntime
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -88,16 +86,17 @@ type Runtime struct {
 	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock      func() sync.Locker
 
-	approval      atomic.Pointer[signerapproval.Coordinator]
-	authenticator auth.Authenticator
-	runtimeCfg    *RuntimeConfig
-	nodeRole      noderole.Role
-	policyMu      sync.RWMutex
-	nodePolicy    *policyruntime.NodePolicy
+	approval   atomic.Pointer[signerapproval.Coordinator]
+	runtimeCfg *RuntimeConfig
+	nodeRole   noderole.Role
+	policyMu   sync.RWMutex
+	nodePolicy *policyruntime.NodePolicy
 
-	// SSH authorized keys for this identity
-	sshKeys   []ssh.PublicKey
-	sshKeysMu sync.RWMutex
+	// Enrolled client keys for this identity: the validated view of the
+	// authorized_keys registry. The daemon is its only writer; see
+	// publishRegistry for the validate, publish, install sequence.
+	clients   *clientregistry.Registry
+	clientsMu sync.RWMutex
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -138,7 +137,6 @@ type KeyPublicMetadata struct {
 type Config struct {
 	KeyStore         *keystore.FileKeyStore
 	KeyPaths         storepaths.Paths
-	Authenticator    auth.Authenticator // Required. Token authority for this identity.
 	SessionTimeout   time.Duration
 	ApprovalWait     time.Duration
 	UserAutoApprove  *bool
@@ -148,12 +146,7 @@ type Config struct {
 }
 
 // New creates a product Runtime in the locked state.
-// Panics if Authenticator is nil.
 func New(cfg Config) *Runtime {
-	if cfg.Authenticator == nil {
-		panic("productruntime.New: Authenticator is required")
-	}
-
 	session := keystore.NewKeySession(cfg.KeyStore)
 	rt := signerruntime.New()
 	userAutoApprove := false
@@ -166,17 +159,16 @@ func New(cfg Config) *Runtime {
 	}
 
 	ir := &Runtime{
-		keyStore:      cfg.KeyStore,
-		keyPaths:      cfg.KeyPaths,
-		lockRuntime:   rt,
-		keySession:    session,
-		authenticator: cfg.Authenticator,
-		runtimeCfg:    NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
-		nodeRole:      nodeRole,
-		keys:          make(map[string]string),
-		keyTypes:      make(map[string]string),
-		keyMetadata:   make(map[string]KeyPublicMetadata),
-		onLocked:      cfg.OnLocked,
+		keyStore:    cfg.KeyStore,
+		keyPaths:    cfg.KeyPaths,
+		lockRuntime: rt,
+		keySession:  session,
+		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		nodeRole:    nodeRole,
+		keys:        make(map[string]string),
+		keyTypes:    make(map[string]string),
+		keyMetadata: make(map[string]KeyPublicMetadata),
+		onLocked:    cfg.OnLocked,
 	}
 
 	rt.SetOnLock(ir.performLockCleanup)
@@ -418,24 +410,24 @@ func (ir *Runtime) FailAllPendingApprovals(reason string) {
 	}
 }
 
-// HandleTokenProvisioningApprovalResponse routes a token provisioning response.
-func (ir *Runtime) HandleTokenProvisioningApprovalResponse(msg *signerapproval.TokenProvisioningResponse) {
+// HandleClientEnrollmentApprovalResponse routes a client enrollment response.
+func (ir *Runtime) HandleClientEnrollmentApprovalResponse(msg *signerapproval.ClientEnrollmentResponse) {
 	if c := ir.approval.Load(); c != nil {
-		c.HandleTokenProvisioningResponse(msg)
+		c.HandleClientEnrollmentResponse(msg)
 	}
 }
 
-// RequestTokenProvisioning requests operator approval for token provisioning.
-func (ir *Runtime) RequestTokenProvisioning(requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
-	return ir.RequestTokenProvisioningContext(context.Background(), requestID, sshFingerprint, remoteAddr, timeout)
+// RequestClientEnrollment requests operator approval for enrolling a client key.
+func (ir *Runtime) RequestClientEnrollment(requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
+	return ir.RequestClientEnrollmentContext(context.Background(), requestID, sshFingerprint, label, remoteAddr, timeout)
 }
 
-func (ir *Runtime) RequestTokenProvisioningContext(ctx context.Context, requestID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
+func (ir *Runtime) RequestClientEnrollmentContext(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
 	c := ir.approval.Load()
 	if c == nil {
 		return false, fmt.Errorf("approval coordinator not initialized")
 	}
-	return c.RequestTokenProvisioningContext(ctx, requestID, sshFingerprint, remoteAddr, timeout)
+	return c.RequestClientEnrollmentContext(ctx, requestID, sshFingerprint, label, remoteAddr, timeout)
 }
 
 // --- Product runtime config ---
@@ -447,98 +439,124 @@ func (ir *Runtime) Config() *RuntimeConfig {
 
 // --- Token authority ---
 
-// Authenticator returns the authenticator for this identity.
-func (ir *Runtime) Authenticator() auth.Authenticator {
-	return ir.authenticator
-}
-
-// --- SSH authorized keys ---
+// --- Enrolled client keys ---
 
 // AuthorizedKeysPath returns the product store's authorized_keys path.
 func (ir *Runtime) AuthorizedKeysPath() string {
 	return filepath.Join(ir.keyPaths.ProductDir(), ".ssh", "authorized_keys")
 }
 
-// LoadAuthorizedKeys loads SSH public keys from this identity's authorized_keys file.
+// LoadAuthorizedKeys loads and validates the enrolled-key registry. A
+// rejected file is an error naming the offending line; the caller refuses to
+// serve rather than run with a registry it could not read completely. The
+// file is read only here, at startup: afterwards the daemon is its only
+// writer and an external edit takes effect at the next start.
 func (ir *Runtime) LoadAuthorizedKeys() error {
-	path := ir.AuthorizedKeysPath()
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		// No file yet — TOFU mode
-		ir.sshKeysMu.Lock()
-		ir.sshKeys = nil
-		ir.sshKeysMu.Unlock()
-		return nil
-	}
+	reg, err := clientregistry.Load(ir.AuthorizedKeysPath())
 	if err != nil {
-		return fmt.Errorf("failed to read authorized keys: %w", err)
+		return err
 	}
-
-	var keys []ssh.PublicKey
-	rest := data
-	for len(rest) > 0 {
-		key, _, _, r, parseErr := ssh.ParseAuthorizedKey(rest)
-		if parseErr != nil {
-			return fmt.Errorf("failed to parse authorized keys: %w", parseErr)
-		}
-		keys = append(keys, key)
-		rest = r
-	}
-
-	ir.sshKeysMu.Lock()
-	ir.sshKeys = keys
-	ir.sshKeysMu.Unlock()
+	ir.clientsMu.Lock()
+	ir.clients = reg
+	ir.clientsMu.Unlock()
 	return nil
 }
 
-// HasAuthorizedKey checks whether the given SSH public key is authorized for this identity.
+func (ir *Runtime) registry() *clientregistry.Registry {
+	ir.clientsMu.RLock()
+	defer ir.clientsMu.RUnlock()
+	return ir.clients
+}
+
+// HasAuthorizedKey reports whether key is currently enrolled.
 func (ir *Runtime) HasAuthorizedKey(key ssh.PublicKey) bool {
-	ir.sshKeysMu.RLock()
-	defer ir.sshKeysMu.RUnlock()
-	keyBytes := key.Marshal()
-	for _, allowed := range ir.sshKeys {
-		if bytes.Equal(allowed.Marshal(), keyBytes) {
-			return true
-		}
-	}
-	return false
+	return ir.registry().Has(key)
 }
 
-// EnrollAuthorizedKey adds a public key to this identity's authorized_keys file.
-// Idempotent — skips if the key is already enrolled.
-func (ir *Runtime) EnrollAuthorizedKey(key ssh.PublicKey) error {
-	ir.sshKeysMu.Lock()
-	defer ir.sshKeysMu.Unlock()
+// EnrolledKey returns the enrollment entry for a key fingerprint.
+func (ir *Runtime) EnrolledKey(fingerprint string) (clientregistry.Entry, bool) {
+	return ir.registry().LookupFingerprint(fingerprint)
+}
 
-	// Check for duplicate
-	keyBytes := key.Marshal()
-	for _, existing := range ir.sshKeys {
-		if bytes.Equal(existing.Marshal(), keyBytes) {
-			return nil // Already enrolled
-		}
-	}
+// EnrolledKeys returns the enrolled keys in registry order.
+func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
+	return ir.registry().Entries()
+}
 
-	// Write to file
-	keyLine := string(ssh.MarshalAuthorizedKey(key))
-	path := ir.AuthorizedKeysPath()
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+// publishRegistry applies mutate to the current registry and, if it changed
+// anything, validates the complete candidate, publishes it atomically, and
+// installs it as the runtime view, all under one lock. An invalid candidate
+// or a failed publish leaves the current registry and connections untouched.
+// Installation is an assignment and cannot fail after publication, so the
+// published file and the live view never disagree.
+func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
+	ir.clientsMu.Lock()
+	defer ir.clientsMu.Unlock()
+	current := ir.clients
+	if current == nil {
+		current, _ = clientregistry.Parse(nil)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	next, changed, err := mutate(current)
 	if err != nil {
-		return fmt.Errorf("failed to open authorized_keys: %w", err)
+		return false, err
 	}
-	if _, err := f.WriteString(keyLine); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to write key: %w", err)
+	if !changed {
+		return false, nil
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("failed to close authorized_keys: %w", err)
+	if _, err := clientregistry.Parse(next.Marshal()); err != nil {
+		return false, fmt.Errorf("candidate registry is invalid: %w", err)
 	}
+	if err := clientregistry.Publish(ir.AuthorizedKeysPath(), next); err != nil {
+		return false, err
+	}
+	ir.clients = next
+	return true, nil
+}
 
-	ir.sshKeys = append(ir.sshKeys, key)
-	return nil
+// EnrollAuthorizedKey enrolls key with a display label. Enrolling a key that
+// is already enrolled changes nothing and writes nothing.
+func (ir *Runtime) EnrollAuthorizedKey(key ssh.PublicKey, label string) error {
+	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		next, added := current.WithKey(key, label)
+		return next, added, nil
+	})
+	return err
+}
+
+// RevokeAuthorizedKey removes the key with the given fingerprint from the
+// registry and returns its entry. The caller closes the key's connections
+// after this returns; a connection authenticating meanwhile re-checks
+// enrollment against the installed view and is refused.
+func (ir *Runtime) RevokeAuthorizedKey(fingerprint string) (clientregistry.Entry, error) {
+	var revoked clientregistry.Entry
+	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		entry, ok := current.LookupFingerprint(fingerprint)
+		if !ok {
+			return nil, false, clientregistry.ErrNotEnrolled
+		}
+		revoked = entry
+		next, err := current.WithoutFingerprint(fingerprint)
+		if err != nil {
+			return nil, false, err
+		}
+		return next, true, nil
+	})
+	return revoked, err
+}
+
+// RevokeAllAuthorizedKeys empties the registry and returns the entries it
+// held.
+func (ir *Runtime) RevokeAllAuthorizedKeys() ([]clientregistry.Entry, error) {
+	var revoked []clientregistry.Entry
+	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		revoked = current.Entries()
+		if len(revoked) == 0 {
+			return current, false, nil
+		}
+		next, _ := clientregistry.Parse(nil)
+		return next, true, nil
+	})
+	return revoked, err
 }
 
 // --- Key access ---

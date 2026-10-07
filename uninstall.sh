@@ -875,7 +875,6 @@ if [ "$DATA_DIR_RETAINED" = "1" ]; then
                     while IFS= read -r sub_entry; do
                         case "$sub_entry" in
                             .keystore)        sub_note="keystore metadata (master salt, verifier)" ;;
-                            aplane.token)     sub_note="HTTP API token" ;;
                             keys)             sub_note="encrypted private keys" ;;
                             passphrase.cred)  sub_note="systemd-creds passphrase (host-bound TPM2/host key)"
                                               HAS_SYSTEMD_CREDS=1 ;;

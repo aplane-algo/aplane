@@ -364,12 +364,13 @@ else
   fi
 fi
 signer_host_key_path=""
-signer_authorized_keys_path=""
+# The enrolled-client registry has a fixed location in the product store;
+# the daemon is its only writer.
+signer_authorized_keys_path="$SIGNER_DATA/identities/default/.ssh/authorized_keys"
 if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
   signer_port="$(read_top_level_value "$SIGNER_CONFIG" "signer_port")"
   signer_ssh_port="$(read_section_value "$SIGNER_CONFIG" "ssh" "port")"
   signer_host_key_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "host_key_path")"
-  signer_authorized_keys_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "authorized_keys_path")"
 fi
 
 client_ssh_host="$(read_section_value "$CLIENT_CONFIG" "ssh" "host")"
@@ -378,12 +379,10 @@ client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file
 client_known_hosts_path="$(read_section_value "$CLIENT_CONFIG" "ssh" "known_hosts_path")"
 
 [ -n "$signer_host_key_path" ] || signer_host_key_path=".ssh/ssh_host_key"
-[ -n "$signer_authorized_keys_path" ] || signer_authorized_keys_path=".ssh/authorized_keys"
 [ -n "$client_identity_file" ] || client_identity_file=".ssh/id_ed25519"
 [ -n "$client_known_hosts_path" ] || client_known_hosts_path=".ssh/known_hosts"
 
 signer_host_key_path="$(resolve_path "$signer_host_key_path" "$SIGNER_DATA")"
-signer_authorized_keys_path="$(resolve_path "$signer_authorized_keys_path" "$SIGNER_DATA")"
 client_identity_file="$(resolve_path "$client_identity_file" "$CLIENT_DATA")"
 client_known_hosts_path="$(resolve_path "$client_known_hosts_path" "$CLIENT_DATA")"
 
@@ -464,8 +463,7 @@ else
   warn "IPC socket" "missing or not a socket: $signer_ipc_path"
 fi
 
-section "Tokens And SSH Keys"
-check_mode_exact "client token" "$CLIENT_DATA/aplane.token" "600"
+section "SSH Keys"
 check_mode_exact "client SSH key" "$client_identity_file" "600"
 if [ -f "$client_identity_file.pub" ]; then
   pass "client SSH pubkey" "$client_identity_file.pub"
@@ -474,9 +472,8 @@ else
 fi
 check_file_exists "known_hosts" "$client_known_hosts_path"
 if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
-  check_mode_exact "signer token" "$SIGNER_DATA/identities/default/aplane.token" "600"
   check_mode_exact "signer host key" "$signer_host_key_path" "600"
-  check_file_exists "authorized_keys" "$signer_authorized_keys_path"
+  check_file_exists "enrolled clients registry" "$signer_authorized_keys_path"
 else
   info "signer credentials" "private store contents not inspected"
 fi

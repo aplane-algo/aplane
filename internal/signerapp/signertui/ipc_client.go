@@ -182,11 +182,11 @@ func (c *IPCClient) SendSignResponse(requestID string, approved bool, reason str
 	return c.sendMessage(msg)
 }
 
-// SendTokenProvisioningResponse sends a token provisioning approval/rejection
-func (c *IPCClient) SendTokenProvisioningResponse(requestID string, approved bool, reason string) error {
-	msg := TokenProvisioningResponseMessage{
+// SendClientEnrollmentResponse sends a client enrollment approval/rejection
+func (c *IPCClient) SendClientEnrollmentResponse(requestID string, approved bool, reason string) error {
+	msg := ClientEnrollmentResponseMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeTokenProvisioningResponse,
+			Type: MsgTypeClientEnrollmentResponse,
 			ID:   requestID,
 		},
 		Approved: approved,
@@ -438,10 +438,22 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Error:   delResult.Error,
 		}
 	}),
-	MsgTypeRevokeTokenResult: decodeAs(func(revokeResult RevokeTokenResultMessage) tea.Msg {
-		return RevokeTokenResultMsg{
-			Success: revokeResult.Success,
-			Error:   revokeResult.Error,
+	MsgTypeEnrolledKeysList: decodeAs(func(list EnrolledKeysListMessage) tea.Msg {
+		return EnrolledKeysListMsg{Keys: list.Keys}
+	}),
+	MsgTypeRevokeEnrolledKeyResult: decodeAs(func(result RevokeEnrolledKeyResultMessage) tea.Msg {
+		return RevokeEnrolledKeyResultMsg{
+			Success:           result.Success,
+			Error:             result.Error,
+			ClosedConnections: result.ClosedConnections,
+		}
+	}),
+	MsgTypeRevokeAllEnrolledKeysResult: decodeAs(func(result RevokeAllEnrolledKeysResultMessage) tea.Msg {
+		return RevokeAllEnrolledKeysResultMsg{
+			Success:           result.Success,
+			Error:             result.Error,
+			RevokedCount:      result.RevokedCount,
+			ClosedConnections: result.ClosedConnections,
 		}
 	}),
 	MsgTypeImportResult: decodeAs(func(impResult ImportResultMessage) tea.Msg {
@@ -548,14 +560,15 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			KeyCount: keysChanged.KeyCount,
 		}
 	}),
-	MsgTypeTokenProvisioningRequestCanceled: decodeAs(func(canceled TokenProvisioningRequestCanceledMessage) tea.Msg {
-		return TokenProvisioningCanceledMsg{ID: canceled.ID, Reason: canceled.Reason}
+	MsgTypeClientEnrollmentRequestCanceled: decodeAs(func(canceled ClientEnrollmentRequestCanceledMessage) tea.Msg {
+		return ClientEnrollmentCanceledMsg{ID: canceled.ID, Reason: canceled.Reason}
 	}),
-	MsgTypeTokenProvisioningRequest: decodeAs(func(req TokenProvisioningRequestMessage) tea.Msg {
-		return TokenProvisioningRequestReceivedMsg{
-			Request: PendingTokenRequest{
+	MsgTypeClientEnrollmentRequest: decodeAs(func(req ClientEnrollmentRequestMessage) tea.Msg {
+		return ClientEnrollmentRequestReceivedMsg{
+			Request: PendingEnrollmentRequest{
 				ID:             req.ID,
 				SSHFingerprint: req.SSHFingerprint,
+				Label:          req.Label,
 				RemoteAddr:     req.RemoteAddr,
 				Timestamp:      time.Unix(req.Timestamp, 0),
 			},
@@ -764,14 +777,14 @@ func (m Model) sendSignResponseCmd(requestID string, approved bool) tea.Cmd {
 	})
 }
 
-// sendTokenProvisioningResponseCmd returns a tea.Cmd that sends a token provisioning response
-func (m Model) sendTokenProvisioningResponseCmd(requestID string, approved bool) tea.Cmd {
+// sendClientEnrollmentResponseCmd returns a tea.Cmd that sends a client enrollment response
+func (m Model) sendClientEnrollmentResponseCmd(requestID string, approved bool) tea.Cmd {
 	return ipcCmd(m.adminClient, func(c *IPCClient) error {
 		reason := ""
 		if !approved {
 			reason = "rejected by user"
 		}
-		return c.SendTokenProvisioningResponse(requestID, approved, reason)
+		return c.SendClientEnrollmentResponse(requestID, approved, reason)
 	})
 }
 
@@ -996,20 +1009,43 @@ func (m Model) sendDeleteKeyCmd(address, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeleteKey(address, id) })
 }
 
-// SendRevokeToken sends a request to revoke and regenerate the API token
-func (c *IPCClient) SendRevokeToken() error {
-	msg := RevokeTokenMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRevokeToken,
-			ID:   fmt.Sprintf("revoke-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
+// SendListEnrolledKeys asks for the enrolled client keys.
+func (c *IPCClient) SendListEnrolledKeys() error {
+	return c.sendMessage(ListEnrolledKeysMessage{BaseMessage: BaseMessage{
+		Type: MsgTypeListEnrolledKeys,
+		ID:   fmt.Sprintf("clients-%d", time.Now().UnixNano()),
+	}})
 }
 
-// SendRevokeTokenCmd returns a tea.Cmd that sends a revoke token request
-func (m Model) sendRevokeTokenCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeToken() })
+// SendRevokeEnrolledKey revokes one enrolled client key.
+func (c *IPCClient) SendRevokeEnrolledKey(fingerprint string) error {
+	return c.sendMessage(RevokeEnrolledKeyMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeRevokeEnrolledKey,
+			ID:   fmt.Sprintf("revoke-%d", time.Now().UnixNano()),
+		},
+		Fingerprint: fingerprint,
+	})
+}
+
+// SendRevokeAllEnrolledKeys revokes every enrolled client key.
+func (c *IPCClient) SendRevokeAllEnrolledKeys() error {
+	return c.sendMessage(RevokeAllEnrolledKeysMessage{BaseMessage: BaseMessage{
+		Type: MsgTypeRevokeAllEnrolledKeys,
+		ID:   fmt.Sprintf("revoke-all-%d", time.Now().UnixNano()),
+	}})
+}
+
+func (m Model) sendListEnrolledKeysCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListEnrolledKeys() })
+}
+
+func (m Model) sendRevokeEnrolledKeyCmd(fingerprint string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeEnrolledKey(fingerprint) })
+}
+
+func (m Model) sendRevokeAllEnrolledKeysCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeAllEnrolledKeys() })
 }
 
 // SendImportKey sends a request to import a key from mnemonic

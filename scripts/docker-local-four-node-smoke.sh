@@ -79,8 +79,8 @@ Options:
 This test requires Docker privileges. LocalNet starts signer, cosigner,
 client/admin, and an AlgoKit-style algod/KMD node.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
-signer container DNS name, adds the cosigner endpoint through apshell, requests
-API tokens for both nodes, generates a cosigner key through the cosigner endpoint,
+signer container DNS name, adds the cosigner endpoint through apshell, enrolls
+the client key at both nodes, generates a cosigner key through the cosigner endpoint,
 then exports and imports the public cosigner reference with local IPC apadmin,
 enables guarded Falcon/Falcon,
 imports the optional Corridor template, and verifies apshell can create, fund,
@@ -758,7 +758,7 @@ configure_client_endpoints() {
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
     [ -n "$signer_ssh_port" ] || die "could not read signer SSH port"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/aplane/apclient/tokens && cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
+    docker_exec_as_tester "$CLIENT_CONTAINER" "cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
 schema_version: 2
 default: primary
 endpoints:
@@ -767,7 +767,6 @@ endpoints:
     url: ssh://signer:$signer_ssh_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 YAML"
 }
 
@@ -892,20 +891,20 @@ start_cosigner_apapprover() {
     start_apapprover "$COSIGNER_CONTAINER" /tmp/apapprover.log cosigner
 }
 
-run_request_token() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-token' > /tmp/req-token.script"
+run_request_enrollment() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment' > /tmp/req-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/req-token.script 2>&1 | tee /tmp/req-token.log"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/aplane.token" \
-        || die "request-token did not produce a client token file"
+        apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'enrolled at endpoint' /tmp/req-enrollment.log" \
+        || die "request-enrollment did not report an enrolled client key"
 }
 
-request_cosigner_token() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-token --endpoint local-cosigner' > /tmp/req-cosigner-token.script"
+request_cosigner_enrollment() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment --endpoint local-cosigner' > /tmp/req-cosigner-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/req-cosigner-token.script 2>&1 | tee /tmp/req-cosigner-token.log"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token" \
-        || die "request-token did not produce a local-cosigner token file"
+        apshell -script /tmp/req-cosigner-enrollment.script 2>&1 | tee /tmp/req-cosigner-enrollment.log"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'enrolled at endpoint local-cosigner' /tmp/req-cosigner-enrollment.log" \
+        || die "request-enrollment did not report an enrolled client key at local-cosigner"
 }
 
 install_python_sdk_client() {
@@ -954,15 +953,14 @@ write_sdk_data_dir() {
     local data_dir="$1"
     local host="$2"
     local ssh_port="$3"
-    local token_path="$4"
 
+    # The SDK client reuses the enrolled apshell key: the key is the credential.
     docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$data_dir' && \
         mkdir -p '$data_dir/.ssh' && \
         cp /home/$TEST_USER/aplane/apclient/.ssh/id_ed25519 '$data_dir/.ssh/id_ed25519' && \
         cp /home/$TEST_USER/aplane/apclient/.ssh/known_hosts '$data_dir/.ssh/known_hosts' && \
-        cp '$token_path' '$data_dir/aplane.token' && \
         chmod 700 '$data_dir/.ssh' && \
-        chmod 600 '$data_dir/.ssh/id_ed25519' '$data_dir/.ssh/known_hosts' '$data_dir/aplane.token' && \
+        chmod 600 '$data_dir/.ssh/id_ed25519' '$data_dir/.ssh/known_hosts' && \
         cat > '$data_dir/config.yaml' <<YAML
 schema_version: 1
 YAML
@@ -975,7 +973,6 @@ endpoints:
     url: ssh://$host:$ssh_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: aplane.token
 YAML"
 }
 
@@ -989,13 +986,11 @@ configure_python_sdk_client_data() {
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-primary" \
         "signer" \
-        "$signer_ssh_port" \
-        "/home/$TEST_USER/aplane/apclient/aplane.token"
+        "$signer_ssh_port"
     write_sdk_data_dir \
         "/home/$TEST_USER/aplane/apclient-sdk-cosigner" \
         "cosigner" \
-        "$cosigner_ssh_port" \
-        "/home/$TEST_USER/aplane/apclient/tokens/local-cosigner.token"
+        "$cosigner_ssh_port"
 }
 
 run_python_sdk_guarded_validate() {
@@ -1360,24 +1355,20 @@ verify_guided_cosigner_setup() {
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
     [ -n "$cosigner_ssh_port" ] || die "could not read cosigner SSH port"
     if [ "$RELEASE_INSTALL" = "1" ]; then
-        # A release may predate 'endpoints add' and token retirement on
-        # delete. 'cosigner add' works in both, and the token is removed by
-        # hand so setup always has to obtain a fresh one.
+        # A release may predate 'endpoints add'; 'cosigner add' works in both.
         add_command="cosigner add"
-        token_check="rm -f $client_data/tokens/local-cosigner.token"
     else
-        # Deleting the endpoint retires its token.
         add_command="endpoints add"
-        token_check="test ! -e $client_data/tokens/local-cosigner.token"
     fi
 
     # The client is told the cosigner's address; the key file never reaches it.
+    # The client key stays enrolled at the cosigner, so setup reconnects
+    # without another approval.
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints delete local-cosigner\n' > /tmp/delete-cosigner-endpoint.script && \
         . $client_data/apenv.sh && \
         apshell -script /tmp/delete-cosigner-endpoint.script >/tmp/delete-cosigner-endpoint.log 2>&1 && \
-        $token_check && \
         echo '$add_command ssh://cosigner:$cosigner_ssh_port --alias local-cosigner' > /tmp/add-cosigner.script" \
-        || die "endpoints delete did not remove the cosigner endpoint and its token"
+        || die "endpoints delete did not remove the cosigner endpoint"
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". $client_data/apenv.sh && \
         apshell -script /tmp/add-cosigner.script 2>&1")"; then
         printf '%s\n' "$out" >&2
@@ -1388,13 +1379,11 @@ verify_guided_cosigner_setup() {
         grep -Fq -e 'Connection local-cosigner ready' -e 'Connected; expected witness found' <<<"$out" \
             || die "guided cosigner setup did not report a ready connection"
     else
-        grep -Fq 'Connection local-cosigner ready; access token saved.' <<<"$out" \
-            || die "guided cosigner setup did not report a ready connection with a new token"
+        grep -Fq 'Connection local-cosigner ready' <<<"$out" \
+            || die "guided cosigner setup did not report a ready connection"
         grep -Fq 'cosigner key(s) advertised.' <<<"$out" \
             || die "guided cosigner setup did not report the advertised keys"
     fi
-    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s $client_data/tokens/local-cosigner.token" \
-        || die "guided cosigner setup did not save the cosigner token"
 }
 
 enable_guarded_keytype() {
@@ -1842,17 +1831,17 @@ main() {
     log "Importing optional Corridor template on signer"
     import_corridor_template
 
-    log "Starting signer-side approver for token bootstrap"
+    log "Starting signer-side approver for client enrollment"
     start_signer_apapprover
 
-    log "Starting cosigner-side approver for token bootstrap"
+    log "Starting cosigner-side approver for client enrollment"
     start_cosigner_apapprover
 
-    log "Requesting signer API token from client container"
-    run_request_token
+    log "Enrolling the client key at the signer from the client container"
+    run_request_enrollment
 
-    log "Requesting cosigner API token from client container"
-    request_cosigner_token
+    log "Enrolling the client key at the cosigner from the client container"
+    request_cosigner_enrollment
 
     log "Generating cosigner key through client/cosigner flow"
     generate_cosigner_component_key
@@ -1940,7 +1929,7 @@ main() {
     log "Validating generated Falcon key with 0 ALGO self-send"
     validate_falcon_self_send
 
-    log "Verifying client can reach signer with issued token"
+    log "Verifying client can reach signer with its enrolled key"
     verify_signer_reachable
 
     log "Verifying apadmin is present on client/admin node"

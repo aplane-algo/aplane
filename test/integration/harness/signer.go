@@ -14,10 +14,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 // SignerHarness manages an Signer process for testing.
@@ -33,6 +37,14 @@ type SignerHarness struct {
 	stderr                io.ReadCloser
 	cancelFunc            context.CancelFunc
 	omitTestPassphraseEnv bool
+
+	// The REST API is reachable only through the signer's SSH server. GetURL
+	// opens a tunnel with the client identity from APCLIENT_DATA on first
+	// use and reopens it after a restart.
+	tunnelMu     sync.Mutex
+	tunnel       *sshtunnel.Client
+	tunnelCancel context.CancelFunc
+	tunnelURL    string
 }
 
 // OmitTestPassphraseEnv starts apsigner without TEST_PASSPHRASE so tests can
@@ -224,6 +236,10 @@ func (s *SignerHarness) Stop() error {
 		return nil
 	}
 
+	s.tunnelMu.Lock()
+	s.closeTunnelLocked()
+	s.tunnelMu.Unlock()
+
 	// Cancel context to signal shutdown
 	if s.cancelFunc != nil {
 		s.cancelFunc()
@@ -282,20 +298,74 @@ func (s *SignerHarness) WaitForReady(timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for apsigner to be ready")
 }
 
-// GetURL returns the URL for connecting to this Signer instance
+// GetURL returns a loopback URL that reaches this Signer's REST API through
+// an SSH tunnel authenticated with the client identity configured in
+// APCLIENT_DATA. The tunnel is opened on first use and reopened when the
+// previous one has dropped, for example after a signer restart.
 func (s *SignerHarness) GetURL() string {
+	s.t.Helper()
+	s.tunnelMu.Lock()
+	defer s.tunnelMu.Unlock()
+	if s.tunnel != nil && s.tunnel.IsConnected() {
+		return s.tunnelURL
+	}
+	s.closeTunnelLocked()
+
+	clientDataDir := os.Getenv("APCLIENT_DATA")
+	cfg, err := config.LoadConfig(clientDataDir)
+	if err != nil {
+		s.t.Fatalf("load client config for signer tunnel: %v", err)
+	}
+	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	if !ok {
+		s.t.Fatalf("client endpoint registry in %s has no default signer endpoint", clientDataDir)
+	}
+	sshCfg, err := config.ResolveClientEndpointSSH(endpoint)
+	if err != nil {
+		s.t.Fatalf("resolve client signer endpoint: %v", err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		s.t.Fatalf("allocate tunnel port: %v", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	client := sshtunnel.NewClient(sshCfg.Host, sshCfg.Port, localPort, sshCfg.IdentityFile, sshCfg.KnownHostsPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := client.ConnectWithKey(ctx); err != nil {
+		cancel()
+		s.t.Fatalf("open signer tunnel with %s: %v", sshCfg.IdentityFile, err)
+	}
+	if err := client.StartPortForwarding(ctx); err != nil {
+		cancel()
+		_ = client.Close()
+		s.t.Fatalf("forward signer tunnel: %v", err)
+	}
+	s.tunnel, s.tunnelCancel = client, cancel
+	s.tunnelURL = fmt.Sprintf("http://127.0.0.1:%d", localPort)
+	return s.tunnelURL
+}
+
+// LoopbackURL returns the signer's loopback REST listener, which carries no
+// client identity and therefore answers only /health.
+func (s *SignerHarness) LoopbackURL() string {
 	return fmt.Sprintf("http://localhost:%s", s.port)
+}
+
+func (s *SignerHarness) closeTunnelLocked() {
+	if s.tunnel != nil {
+		_ = s.tunnel.Close()
+	}
+	if s.tunnelCancel != nil {
+		s.tunnelCancel()
+	}
+	s.tunnel, s.tunnelCancel, s.tunnelURL = nil, nil, ""
 }
 
 // GetWorkDir returns the data directory (APSIGNER_DATA)
 func (s *SignerHarness) GetWorkDir() string {
 	return s.dataDir
-}
-
-// GetTokenPath returns the path to the API token file.
-// Token is stored in: <dataDir>/identities/default/aplane.token
-func (s *SignerHarness) GetTokenPath() string {
-	return filepath.Join(s.dataDir, "identities", "default", "aplane.token")
 }
 
 // captureOutput reads from a pipe and writes to log file

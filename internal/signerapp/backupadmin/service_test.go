@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -166,7 +165,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 	autoApprove := false
 	ir := productruntime.New(productruntime.Config{
 		KeyStore: keyStore, KeyPaths: paths,
-		Authenticator: auth.NewTokenAuthenticator("token"), NodeRole: noderole.RoleSigner,
+		NodeRole:        noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
 	})
 	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
@@ -234,9 +233,7 @@ func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths st
 }
 
 func testBackupIdentityRuntime() *productruntime.Runtime {
-	return productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	return productruntime.New(productruntime.Config{})
 }
 
 type backupServiceTestDeps struct {

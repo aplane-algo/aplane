@@ -21,14 +21,14 @@ func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 	dir := t.TempDir()
 	public := testCosignerPublicKeyHex()
 	id := testComponentSelector(t, witness.Falcon1024V1, public)
-	cosigner := newEndpointKeysServer(t, "cosigner-token", []signerapi.KeyInfo{{Address: id, PublicKeyHex: public, KeyType: witness.Falcon1024V1, IsWitnessKey: true}})
-	writeLiveCosignerEndpoint(t, dir, "cosigner", cosigner.URL, "cosigner-token")
-	signer := newEndpointKeysServer(t, "signer-token", []signerapi.KeyInfo{
+	cosigner := newEndpointKeysServer(t, []signerapi.KeyInfo{{Address: id, PublicKeyHex: public, KeyType: witness.Falcon1024V1, IsWitnessKey: true}})
+	writeLiveCosignerEndpoint(t, dir, "cosigner", cosigner)
+	signer := newEndpointKeysServerHTTP(t, []signerapi.KeyInfo{
 		{Address: "guarded", SigningFlow: signerapi.SigningFlowCosigner1, CosignerComponentKeyType: witness.Falcon1024V1, Parameters: map[string]string{"cosigner_public_key": public}},
 		{Address: "bounded", SigningFlow: signerapi.SigningFlowBoundedCosigner1, CosignerComponentKeyType: witness.Falcon1024V1, BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: public}}},
 	})
 	app := newEndpointTestApp(t, dir)
-	client := signerclient.NewSignerClientWithToken(signer.URL, "signer-token")
+	client := signerclient.NewSignerClient(signer.URL)
 	app.eng.Connection.SignerClient = client
 	cfgBefore := app.Config
 	registryBefore := app.eng.EndpointRegistry.Clone()
@@ -73,13 +73,13 @@ func TestCosignerStatusUnavailableSignerAndPartialEndpoints(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			app := newEndpointTestApp(t, dir)
-			server := newEndpointKeysServer(t, "token", nil)
-			writeLiveCosignerEndpoint(t, dir, "healthy", server.URL, "token")
-			bad := newEndpointKeysServer(t, "token", nil)
-			writeLiveCosignerEndpoint(t, dir, "unauthorized", bad.URL, "wrong")
+			server := newEndpointKeysServer(t, nil)
+			writeLiveCosignerEndpoint(t, dir, "healthy", server)
+			bad := newUnenrolledEndpointKeysServer(t, nil)
+			writeLiveCosignerEndpoint(t, dir, "unauthorized", bad)
 			if tc.status != 0 {
-				primary := newEndpointKeysStatusServer(t, "token", tc.status, tc.body)
-				app.eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(primary.URL, "token")
+				primary := newEndpointKeysStatusServer(t, tc.status, tc.body)
+				app.eng.Connection.SignerClient = signerclient.NewSignerClient(primary.URL)
 			}
 			result, err := app.CosignerStatus(t.Context(), CosignerStatusRequest{})
 			if err != nil {
@@ -102,8 +102,8 @@ func TestCosignerStatusEmptyRegistryAndDuplicateWitness(t *testing.T) {
 	public := testCosignerPublicKeyHex()
 	id := testComponentSelector(t, witness.Falcon1024V1, public)
 	for _, alias := range []string{"a", "b"} {
-		server := newEndpointKeysServer(t, "token", []signerapi.KeyInfo{{Address: id, PublicKeyHex: public, KeyType: witness.Falcon1024V1, IsWitnessKey: true}})
-		writeLiveCosignerEndpoint(t, dir, alias, server.URL, "token")
+		server := newEndpointKeysServer(t, []signerapi.KeyInfo{{Address: id, PublicKeyHex: public, KeyType: witness.Falcon1024V1, IsWitnessKey: true}})
+		writeLiveCosignerEndpoint(t, dir, alias, server)
 	}
 	result, err = app.CosignerStatus(t.Context(), CosignerStatusRequest{})
 	if err != nil || len(result.DuplicateRoutes[id]) != 2 {

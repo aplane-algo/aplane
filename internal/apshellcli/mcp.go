@@ -33,9 +33,8 @@ import (
 func runMCPMode(network string, cfg config.Config, dataDir string) {
 	if _, err := clientenroll.LoadEnrolledClient(dataDir, clientenroll.Options{
 		Product:              "apshell --mcp",
-		MissingSSHHint:       "MCP cannot perform first-time enrollment; run interactive apshell request-token first",
-		MissingTokenHint:     fmt.Sprintf("MCP cannot perform first-time enrollment; run interactive apshell -d %s request-token first", dataDir),
-		MissingKnownHostHint: "MCP cannot trust a new signer host non-interactively; run interactive apshell request-token or connect first",
+		MissingSSHHint:       "MCP cannot perform first-time enrollment; run interactive apshell request-enrollment first",
+		MissingKnownHostHint: "MCP cannot trust a new signer host non-interactively; run interactive apshell request-enrollment or connect first",
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP startup refused: %v\n", err)
 		os.Exit(1)

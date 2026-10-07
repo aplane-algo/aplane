@@ -20,10 +20,9 @@ import (
 
 // SSHServerConfig holds SSH server configuration for apsigner.
 type SSHServerConfig struct {
-	ListenAddress      string `yaml:"listen_address" description:"SSH listen address to bind" default:"127.0.0.1"`
-	Port               int    `yaml:"port" description:"SSH port to listen on" default:"1127"`
-	HostKeyPath        string `yaml:"host_key_path" description:"Server's private host key path" default:".ssh/ssh_host_key"`
-	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Process-global authorized client public keys file" default:".ssh/authorized_keys"`
+	ListenAddress string `yaml:"listen_address" description:"SSH listen address to bind" default:"127.0.0.1"`
+	Port          int    `yaml:"port" description:"SSH port to listen on" default:"1127"`
+	HostKeyPath   string `yaml:"host_key_path" description:"Server's private host key path" default:".ssh/ssh_host_key"`
 }
 
 // ServerEndpointConfig holds the signer endpoint surface exposed to clients.
@@ -115,10 +114,9 @@ func (c ServerConfig) Clone() ServerConfig {
 // (used when ssh block exists but fields are missing)
 func DefaultSSHServerConfig() SSHServerConfig {
 	return SSHServerConfig{
-		ListenAddress:      apconfig.DefaultSSHListenAddress,
-		Port:               apconfig.DefaultSSHPort,
-		HostKeyPath:        ".ssh/ssh_host_key",    // Relative to data directory
-		AuthorizedKeysPath: ".ssh/authorized_keys", // Relative to data directory
+		ListenAddress: apconfig.DefaultSSHListenAddress,
+		Port:          apconfig.DefaultSSHPort,
+		HostKeyPath:   ".ssh/ssh_host_key", // Relative to data directory
 	}
 }
 
@@ -317,9 +315,6 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	if config.Endpoint.SSH.HostKeyPath == "" {
 		config.Endpoint.SSH.HostKeyPath = sshDefaults.HostKeyPath
 	}
-	if config.Endpoint.SSH.AuthorizedKeysPath == "" {
-		config.Endpoint.SSH.AuthorizedKeysPath = sshDefaults.AuthorizedKeysPath
-	}
 	config.Endpoint.AdvertiseURL = strings.TrimRight(strings.TrimSpace(config.Endpoint.AdvertiseURL), "/")
 	if config.Endpoint.AdvertiseURL != "" {
 		if err := endpointrefs.ValidatePortableURL(config.Endpoint.AdvertiseURL); err != nil {
@@ -328,7 +323,6 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	}
 	// Resolve relative SSH paths to absolute paths.
 	config.Endpoint.SSH.HostKeyPath = apconfig.ResolvePath(config.Endpoint.SSH.HostKeyPath, dataDir)
-	config.Endpoint.SSH.AuthorizedKeysPath = apconfig.ResolvePath(config.Endpoint.SSH.AuthorizedKeysPath, dataDir)
 
 	// Resolve relative paths in passphrase_command_argv against the data directory.
 	// All elements (binary and arguments) use the same resolution logic.

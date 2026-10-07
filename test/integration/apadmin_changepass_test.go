@@ -49,8 +49,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 			_ = signerd.Stop()
 			t.Fatalf("connect to LocalNet for rotation acceptance: %v", networkErr)
 		}
-		beforeToken := readSignerToken(t, signerd)
-		beforeClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), beforeToken)
+		beforeClient := signerclient.NewSignerClient(signerd.GetURL())
 		generated, generateErr := beforeClient.AdminGenerate("ed25519", nil)
 		if generateErr != nil {
 			_ = signerd.Stop()
@@ -95,8 +94,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	token := readSignerToken(t, signerd)
-	client := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
+	client := signerclient.NewSignerClient(signerd.GetURL())
 	keys, err := client.GetKeys()
 	if err != nil {
 		t.Fatalf("failed to fetch keys after restart: %v", err)

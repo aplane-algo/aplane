@@ -2,18 +2,21 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // localnet-clean-test-keys deletes keys from the generated LocalNet integration
-// signer fixture. It does not touch algod/KMD accounts or production signer
-// data directories.
+// signer fixture. It connects as the fixture's enrolled client, through the
+// signer's SSH server, and does not touch algod/KMD accounts or production
+// signer data directories.
 package main
 
 import (
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 )
 
@@ -22,7 +25,7 @@ const (
 	integrationNetworkEnv = "APLANE_INTEGRATION_NETWORK"
 	defaultTestEnv        = "/tmp/aplane-test-env"
 	defaultSignerData     = defaultTestEnv + "/apsigner"
-	defaultIdentity       = "default"
+	defaultClientData     = defaultTestEnv + "/apclient"
 )
 
 func main() {
@@ -36,9 +39,7 @@ func run() error {
 	var opts options
 	flag.BoolVar(&opts.yes, "yes", false, "delete keys; without -yes, only print a dry run")
 	flag.StringVar(&opts.signerData, "signer-data", envDefault("APSIGNER_DATA", defaultSignerData), "generated integration signer data directory")
-	flag.StringVar(&opts.identity, "identity", defaultIdentity, "identity whose token file should be used")
-	flag.StringVar(&opts.baseURL, "base-url", "", "signer REST URL; defaults to http://localhost:<signer_port> from signer config")
-	flag.StringVar(&opts.tokenFile, "token-file", "", "API token file; defaults to <signer-data>/identities/default/aplane.token")
+	flag.StringVar(&opts.clientData, "client-data", envDefault("APCLIENT_DATA", defaultClientData), "generated integration client data directory, whose default endpoint and enrolled key reach the signer")
 	flag.Parse()
 
 	resolved, err := resolveOptions(opts)
@@ -46,16 +47,20 @@ func run() error {
 		return err
 	}
 
-	client := signerclient.NewSignerClientWithToken(resolved.baseURL, resolved.token)
+	client, closeClient, err := connectFixtureClient(resolved)
+	if err != nil {
+		return err
+	}
+	defer closeClient()
 	keys, err := client.GetKeys()
 	if err != nil {
-		return fmt.Errorf("list signer keys from %s: %w", resolved.baseURL, err)
+		return fmt.Errorf("list signer keys from %s: %w", resolved.endpointURL, err)
 	}
 	if keys.Locked {
-		return fmt.Errorf("signer at %s is locked; unlock it before deleting test keys", resolved.baseURL)
+		return fmt.Errorf("signer at %s is locked; unlock it before deleting test keys", resolved.endpointURL)
 	}
 	if len(keys.Keys) == 0 {
-		fmt.Printf("No APlane signer test keys found at %s.\n", resolved.baseURL)
+		fmt.Printf("No APlane signer test keys found at %s.\n", resolved.endpointURL)
 		return nil
 	}
 
@@ -97,15 +102,43 @@ func run() error {
 type options struct {
 	yes        bool
 	signerData string
-	identity   string
-	baseURL    string
-	tokenFile  string
+	clientData string
 }
 
 type resolvedOptions struct {
-	signerData string
-	baseURL    string
-	token      string
+	signerData  string
+	endpointURL string
+	host        string
+	sshPort     int
+	endpoint    config.ClientEndpointConfig
+}
+
+// connectFixtureClient opens an SSH tunnel to the signer as the fixture's
+// enrolled client and returns a REST client over it.
+func connectFixtureClient(resolved resolvedOptions) (*signerclient.Client, func(), error) {
+	localPort, err := connect.FindAvailableLocalPort()
+	if err != nil {
+		return nil, nil, err
+	}
+	state := connect.NewState()
+	result, err := state.ConnectWithTunnel(
+		resolved.endpointURL, resolved.host, resolved.sshPort, localPort,
+		resolved.endpoint.IdentityFile, resolved.endpoint.KnownHostsPath,
+		nil, nil, nil,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect to signer %s as the fixture client: %w", resolved.endpointURL, err)
+	}
+	if result == nil || !result.Connected {
+		_ = state.Disconnect(nil)
+		return nil, nil, fmt.Errorf("signer %s did not establish a connection", resolved.endpointURL)
+	}
+	client := state.SignerClient
+	if client == nil {
+		_ = state.Disconnect(nil)
+		return nil, nil, fmt.Errorf("signer %s connected without a REST client", resolved.endpointURL)
+	}
+	return client, func() { _ = state.Disconnect(nil) }, nil
 }
 
 func resolveOptions(opts options) (resolvedOptions, error) {
@@ -136,32 +169,32 @@ func resolveOptions(opts options) (resolvedOptions, error) {
 		return resolvedOptions{}, fmt.Errorf("refusing to clean keys because %s does not look like a localnet signer fixture", configPath)
 	}
 
-	baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
-	if baseURL == "" {
-		baseURL = fmt.Sprintf("http://localhost:%d", cfg.Endpoint.SignerPort)
-	}
-
-	tokenFile := strings.TrimSpace(opts.tokenFile)
-	if tokenFile == "" {
-		identity := strings.TrimSpace(opts.identity)
-		if identity == "" {
-			return resolvedOptions{}, fmt.Errorf("identity must not be empty")
-		}
-		tokenFile = filepath.Join(signerData, "identities", identity, "aplane.token")
-	}
-	tokenBytes, err := os.ReadFile(tokenFile)
+	clientData, err := filepath.Abs(strings.TrimSpace(opts.clientData))
 	if err != nil {
-		return resolvedOptions{}, fmt.Errorf("read token file %s: %w", tokenFile, err)
+		return resolvedOptions{}, fmt.Errorf("resolve client data path: %w", err)
 	}
-	token := strings.TrimSpace(string(tokenBytes))
-	if token == "" {
-		return resolvedOptions{}, fmt.Errorf("token file %s is empty", tokenFile)
+	if err := requirePathInside(clientData, defaultTestEnv); err != nil {
+		return resolvedOptions{}, err
+	}
+	clientCfg, err := config.LoadConfig(clientData)
+	if err != nil {
+		return resolvedOptions{}, fmt.Errorf("load fixture client config: %w", err)
+	}
+	alias, endpoint, ok := clientCfg.ClientEndpointsOrDefault().DefaultEndpoint()
+	if !ok {
+		return resolvedOptions{}, fmt.Errorf("fixture client %s has no default signer endpoint", clientData)
+	}
+	host, sshPort, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		return resolvedOptions{}, fmt.Errorf("fixture client endpoint %q: %w", alias, err)
 	}
 
 	return resolvedOptions{
-		signerData: signerData,
-		baseURL:    baseURL,
-		token:      token,
+		signerData:  signerData,
+		endpointURL: endpoint.URL,
+		host:        host,
+		sshPort:     sshPort,
+		endpoint:    endpoint,
 	}, nil
 }
 

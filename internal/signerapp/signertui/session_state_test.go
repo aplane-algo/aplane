@@ -67,9 +67,9 @@ func TestRecoveryReconcileLoadsWhatUnlockLoads(t *testing.T) {
 func TestEveryNotificationTypeIsDecoded(t *testing.T) {
 	for _, msgType := range []string{
 		protocol.MsgTypeAuthRequired, protocol.MsgTypeStatus, protocol.MsgTypeSignRequest,
-		protocol.MsgTypeSignRequestCanceled, protocol.MsgTypeTokenProvisioningRequest,
+		protocol.MsgTypeSignRequestCanceled, protocol.MsgTypeClientEnrollmentRequest,
 		protocol.MsgTypeKeysChanged, protocol.MsgTypeSignerLocked, protocol.MsgTypeClientExists,
-		protocol.MsgTypeTokenProvisioningRequestCanceled,
+		protocol.MsgTypeClientEnrollmentRequestCanceled,
 	} {
 		if kind, ok := protocol.InferMessageKind(msgType); !ok || kind != protocol.MessageKindNotification {
 			t.Fatalf("%s is not a notification type", msgType)

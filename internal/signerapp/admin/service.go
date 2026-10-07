@@ -213,7 +213,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	}
 
 	if err == nil && saveKey != "" {
-		mut := storemut.New(s.Deps.KeyPaths(), nil, nil)
+		mut := storemut.New(s.Deps.KeyPaths())
 		var saveErr error
 		if saveKey == adminproto.AdminSettingTheme {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)

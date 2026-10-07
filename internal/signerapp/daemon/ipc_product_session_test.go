@@ -44,12 +44,12 @@ func TestIPCSendSignRequestUsesActiveProductSession(t *testing.T) {
 func TestIPCTokenProvisioningUsesActiveProductSession(t *testing.T) {
 	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	recorder := addActiveProductSession(t, ipcServer)
-	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{ID: "token-1"}) {
-		t.Fatal("SendTokenProvisioningRequest() = false, want true")
+	if !ipcServer.SendClientEnrollmentRequest(&signerapproval.ClientEnrollmentRequest{ID: "token-1"}) {
+		t.Fatal("SendClientEnrollmentRequest() = false, want true")
 	}
 	messages := recorder.messages(t)
 	if len(messages) != 1 || !reflectJSONSubset(messages[0], map[string]any{
-		"type": protocol.MsgTypeTokenProvisioningRequest,
+		"type": protocol.MsgTypeClientEnrollmentRequest,
 		"id":   "token-1",
 	}) {
 		t.Fatalf("token provisioning shape mismatch: %#v", messages)
@@ -113,10 +113,10 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 	}) {
 		t.Fatal("SendSignRequestCanceled() = false, want true")
 	}
-	if !ipcServer.SendTokenProvisioningRequest(&signerapproval.TokenProvisioningRequest{
+	if !ipcServer.SendClientEnrollmentRequest(&signerapproval.ClientEnrollmentRequest{
 		ID: "token-1",
 	}) {
-		t.Fatal("SendTokenProvisioningRequest() = false, want true")
+		t.Fatal("SendClientEnrollmentRequest() = false, want true")
 	}
 	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 3})
 	ipcServer.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})

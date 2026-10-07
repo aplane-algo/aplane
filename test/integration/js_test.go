@@ -24,7 +24,6 @@ type jsHarnessEnv struct {
 	signerd     *harness.SignerHarness
 	apadmin     *harness.ApAdminHarness
 	apshell     *harness.ApshellHarness
-	token       string
 	fundingAddr string
 }
 
@@ -67,13 +66,9 @@ func setupJavaScriptHarness(t *testing.T) *jsHarnessEnv {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("failed to copy API token: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
-	token := readSignerToken(t, signerd)
-	if !waitForKey(t, signerd.GetURL(), token, fundingAddr, 10*time.Second) {
+	if !waitForKey(t, signerd.GetURL(), fundingAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload imported funding key %s", fundingAddr)
 	}
 
@@ -83,7 +78,6 @@ func setupJavaScriptHarness(t *testing.T) *jsHarnessEnv {
 		signerd:     signerd,
 		apadmin:     apadmin,
 		apshell:     apshell,
-		token:       token,
 		fundingAddr: fundingAddr,
 	}
 }
@@ -133,7 +127,7 @@ func TestJavaScriptSignerQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate JS test key: %v", err)
 	}
-	if !waitForKey(t, env.signerd.GetURL(), env.token, addr, 10*time.Second) {
+	if !waitForKey(t, env.signerd.GetURL(), addr, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", addr)
 	}
 
@@ -185,10 +179,10 @@ func TestJavaScriptTransactionFlows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate recipient key: %v", err)
 	}
-	if !waitForKey(t, env.signerd.GetURL(), env.token, sourceAddr, 10*time.Second) {
+	if !waitForKey(t, env.signerd.GetURL(), sourceAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload source key %s", sourceAddr)
 	}
-	if !waitForKey(t, env.signerd.GetURL(), env.token, recipientAddr, 10*time.Second) {
+	if !waitForKey(t, env.signerd.GetURL(), recipientAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload recipient key %s", recipientAddr)
 	}
 
@@ -231,7 +225,7 @@ func TestJavaScriptSignAndRekeyFlows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate rekey target account: %v", err)
 	}
-	if !waitForKey(t, env.signerd.GetURL(), env.token, rekeyedAddr, 10*time.Second) {
+	if !waitForKey(t, env.signerd.GetURL(), rekeyedAddr, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", rekeyedAddr)
 	}
 	if err := env.funder.FundMicroAlgosAndWait(rekeyedAddr, 200_000); err != nil {

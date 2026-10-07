@@ -36,7 +36,6 @@ var productStoreLocatorRoots = []string{
 	"internal/storepaths",
 	"internal/templatelibrary",
 	"internal/templatestore",
-	"internal/tokenfile",
 }
 
 var allowedCompatibilityIdentityParameters = map[string]bool{}

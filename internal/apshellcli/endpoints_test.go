@@ -21,7 +21,6 @@ func TestEndpointMachineProjectionOmitsCredentialPaths(t *testing.T) {
 	projection := projectEndpointEntry(apshellapp.EndpointEntry{
 		Alias: "remote", Role: "signer", URL: "ssh://signer.example:22",
 		IdentityFile: "/secret/id", KnownHostsPath: "/secret/known_hosts",
-		TokenFile: "/secret/token", TokenPresent: true,
 	})
 	data, err := json.Marshal(projection)
 	if err != nil {
@@ -63,7 +62,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 	rendered := out.String()
 	if !strings.Contains(rendered, "Configured cosigner endpoint cosigner-local") ||
 		strings.Contains(rendered, "port:") ||
-		!strings.Contains(rendered, "request-token --endpoint cosigner-local") {
+		!strings.Contains(rendered, "request-enrollment --endpoint cosigner-local") {
 		t.Fatalf("output missing create details:\n%s", rendered)
 	}
 
@@ -79,7 +78,7 @@ func TestEndpointCreateCosignerCommandWritesManualEndpoint(t *testing.T) {
 		t.Fatalf("endpoint = %#v, want cosigner ssh endpoint", endpoint)
 	}
 	if live, ok := state.App.Config.Endpoints.Endpoint("cosigner-local"); !ok || live.URL != endpoint.URL {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve cosigner-local", live, ok)
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-enrollment would not resolve cosigner-local", live, ok)
 	}
 }
 
@@ -116,7 +115,7 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	}
 	endpoint, ok := state.App.Config.Endpoints.Endpoint("local-cosigner")
 	if !ok || endpoint.Role != config.ClientEndpointRoleCosigner || endpoint.URL != "ssh://127.0.0.1:2223" {
-		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-token would not resolve local-cosigner", endpoint, ok)
+		t.Fatalf("REPL config endpoint = %#v, %v; same-session request-enrollment would not resolve local-cosigner", endpoint, ok)
 	}
 }
 
@@ -202,8 +201,8 @@ func TestEndpointAliasCommandsSeeEndpointsAddedElsewhere(t *testing.T) {
 	if _, err := state.cmdEndpoints([]string{"list"}, nil); err != nil {
 		t.Fatalf("cmdEndpoints(list) error = %v", err)
 	}
-	if _, err := state.App.ResolveTokenRequestTarget("added"); err != nil {
-		t.Fatalf("alias listed by endpoints list is unknown to request-token: %v", err)
+	if _, err := state.App.ResolveEnrollmentTarget("added"); err != nil {
+		t.Fatalf("alias listed by endpoints list is unknown to request-enrollment: %v", err)
 	}
 	if _, ok := eng.EndpointRegistry.Endpoint("added"); !ok {
 		t.Fatal("endpoints list left the engine's routing registry without the listed endpoint")

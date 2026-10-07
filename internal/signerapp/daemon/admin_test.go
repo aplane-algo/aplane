@@ -124,8 +124,6 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	}
 
 	ir := productruntime.New(productruntime.Config{
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-
 		KeyStore: ks,
 		KeyPaths: keyPaths,
 		NodeRole: noderole.RoleSigner,

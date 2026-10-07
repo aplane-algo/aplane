@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -148,11 +147,9 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 	}
 
 	ir := productruntime.New(productruntime.Config{
-
-		KeyStore:      ks,
-		KeyPaths:      keyPaths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		NodeRole:      role,
+		KeyStore: ks,
+		KeyPaths: keyPaths,
+		NodeRole: role,
 	})
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, reloadKeysForTest(ir, keyPaths)
@@ -1078,10 +1075,8 @@ func keyTypesResponseContains(items []signerapi.KeyTypeInfo, keyType string) boo
 
 func restMatrixRuntime(paths storepaths.Paths) *productruntime.Runtime {
 	return productruntime.New(productruntime.Config{
-
-		KeyPaths:      paths,
-		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		NodeRole:      noderole.RoleSigner,
+		KeyPaths: paths,
+		NodeRole: noderole.RoleSigner,
 	})
 }
 

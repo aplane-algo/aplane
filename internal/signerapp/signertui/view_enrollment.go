@@ -3,7 +3,7 @@
 
 package tui
 
-// Token provisioning popup view rendering.
+// Client enrollment popup view rendering.
 
 import (
 	"fmt"
@@ -12,29 +12,34 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderTokenProvisioningPopup renders the token provisioning approval popup
-func (m Model) renderTokenProvisioningPopup() string {
-	if m.tokenApproval.request == nil {
+// renderClientEnrollmentPopup renders the client enrollment approval popup
+func (m Model) renderClientEnrollmentPopup() string {
+	if m.enrollmentApproval.request == nil {
 		return m.renderKeyListView()
 	}
 
+	req := m.enrollmentApproval.request
 	rows := []string{
-		"Client Access Request",
-		fmt.Sprintf("Client SSH key fingerprint: %s", m.tokenApproval.request.SSHFingerprint),
-		fmt.Sprintf("Remote Addr: %s", m.tokenApproval.request.RemoteAddr),
+		"Client Enrollment Request",
+		fmt.Sprintf("Client SSH key fingerprint: %s", req.SSHFingerprint),
+		fmt.Sprintf("Remote Addr: %s", req.RemoteAddr),
+	}
+	if req.Label != "" {
+		rows = append(rows, fmt.Sprintf("Requested label: %s", req.Label))
 	}
 	var sb strings.Builder
 
 	sb.WriteString(titleStyle.Render(rows[0]))
 	sb.WriteString("\n\n")
-
-	sb.WriteString(rows[1] + "\n")
-	sb.WriteString(rows[2] + "\n")
-	sb.WriteString("\n")
+	for _, row := range rows[1:] {
+		sb.WriteString(row + "\n")
+	}
+	sb.WriteString(subtitleStyle.Render("Approving enrolls this key as a client. No credential is issued."))
+	sb.WriteString("\n\n")
 
 	// Buttons - use JoinHorizontal for proper alignment
 	var approveBtn, rejectBtn string
-	if m.tokenApproval.focus == 0 {
+	if m.enrollmentApproval.focus == 0 {
 		approveBtn = buttonActiveStyle.Render("> APPROVE")
 		rejectBtn = buttonInactiveStyle.Render("  REJECT")
 	} else {
@@ -46,10 +51,10 @@ func (m Model) renderTokenProvisioningPopup() string {
 	rows = append(rows, buttons)
 	sb.WriteString(buttons)
 
-	return m.renderPopup(tokenProvisioningPopupWidth(rows), sb.String())
+	return m.renderPopup(enrollmentPopupWidth(rows), sb.String())
 }
 
-func tokenProvisioningPopupWidth(rows []string) int {
+func enrollmentPopupWidth(rows []string) int {
 	width := 0
 	for _, row := range rows {
 		if w := lipgloss.Width(row); w > width {

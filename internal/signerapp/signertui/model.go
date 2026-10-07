@@ -23,7 +23,7 @@ const (
 	ViewKeyDetails // Shows key metadata (parameters for generic LogicSigs)
 	ViewTEALFullDisplay
 	ViewSigningPopup
-	ViewTokenProvisioningPopup // Token provisioning approval popup
+	ViewClientEnrollmentPopup // Client enrollment approval popup
 	ViewGenerateForm
 	ViewGenerateParams // Parameter input modal for generic LogicSigs
 	ViewCosignerPicker // Select an enrolled cosigner reference for guarded generation
@@ -42,29 +42,30 @@ const (
 	ViewGenerating      // Loading state while generating
 	ViewGenerateDisplay // Shows generated key confirmation
 	ViewImportForm
-	ViewImportParams       // Parameter input modal for DSA hybrids with params
-	ViewImporting          // Loading state while importing
-	ViewImportDisplay      // Shows import success confirmation
-	ViewBackupConfirm      // Confirm export passphrase and create managed backup
-	ViewBackingUp          // Loading state while creating backup
-	ViewBackupDisplay      // Shows created backup archive path
-	ViewRestoreList        // Browse signer-managed backup archives
-	ViewRestorePassphrase  // Enter export passphrase before previewing restore metadata
-	ViewRestorePreview     // Select keys to restore from a backup archive
-	ViewRestoring          // Loading state while restoring backup keys
-	ViewRestoreDisplay     // Shows backup restore result
-	ViewDeleteConfirm      // Delete confirmation dialog
-	ViewDeleting           // Loading state while deleting
-	ViewRevokeTokenConfirm // Token revocation confirmation dialog
-	ViewLockConfirm        // Manual signer lock confirmation dialog
-	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
-	ViewAdminPanel         // Admin control panel
-	ViewPolicies           // Read-only list of the node's policy documents
-	ViewPolicyDocument     // Read-only view of one policy document
-	ViewPolicyApplyForm    // File path prompt for loading a policy file
-	ViewPolicyApplyReview  // Diff review and confirmation before a policy apply
-	ViewPolicyEdit         // In-place JSON editor for one policy document
-	ViewTemplateLibrary    // Browse optional KeyType Library entries
+	ViewImportParams        // Parameter input modal for DSA hybrids with params
+	ViewImporting           // Loading state while importing
+	ViewImportDisplay       // Shows import success confirmation
+	ViewBackupConfirm       // Confirm export passphrase and create managed backup
+	ViewBackingUp           // Loading state while creating backup
+	ViewBackupDisplay       // Shows created backup archive path
+	ViewRestoreList         // Browse signer-managed backup archives
+	ViewRestorePassphrase   // Enter export passphrase before previewing restore metadata
+	ViewRestorePreview      // Select keys to restore from a backup archive
+	ViewRestoring           // Loading state while restoring backup keys
+	ViewRestoreDisplay      // Shows backup restore result
+	ViewDeleteConfirm       // Delete confirmation dialog
+	ViewDeleting            // Loading state while deleting
+	ViewEnrolledClients     // Enrolled client keys with per-key revocation
+	ViewRevokeClientConfirm // Client key revocation confirmation dialog
+	ViewLockConfirm         // Manual signer lock confirmation dialog
+	ViewDisplaceConfirm     // Confirmation modal for displacing existing client
+	ViewAdminPanel          // Admin control panel
+	ViewPolicies            // Read-only list of the node's policy documents
+	ViewPolicyDocument      // Read-only view of one policy document
+	ViewPolicyApplyForm     // File path prompt for loading a policy file
+	ViewPolicyApplyReview   // Diff review and confirmation before a policy apply
+	ViewPolicyEdit          // In-place JSON editor for one policy document
+	ViewTemplateLibrary     // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling
 	ViewLibraryTemplateDetails // Full-screen view of a library entry's source (YAML or synthesized parameters)
@@ -134,10 +135,11 @@ type PendingSignRequest struct {
 	Mode        string // "dsa" (default) or "attach" for generic lsigs
 }
 
-// PendingTokenRequest holds a token provisioning request waiting for approval
-type PendingTokenRequest struct {
+// PendingEnrollmentRequest holds a token provisioning request waiting for approval
+type PendingEnrollmentRequest struct {
 	ID             string
 	SSHFingerprint string
+	Label          string
 	RemoteAddr     string
 	Timestamp      time.Time
 }
@@ -176,9 +178,9 @@ type signingState struct {
 	viewport viewport.Model // scrollable transaction description
 }
 
-// tokenApprovalState is the token-provisioning approval popup.
-type tokenApprovalState struct {
-	request *PendingTokenRequest
+// enrollmentApprovalState is the client enrollment approval popup.
+type enrollmentApprovalState struct {
+	request *PendingEnrollmentRequest
 	focus   int // 0 = approve, 1 = reject
 }
 
@@ -312,11 +314,23 @@ type deleteConfirmState struct {
 
 // adminPanelState is the admin control panel.
 type adminPanelState struct {
-	settings         *AdminSettings
-	selectedRow      int
-	editingRow       int // -1 = none
-	editValue        string
-	revokeTokenFocus int // 0 = cancel, 1 = revoke
+	settings    *AdminSettings
+	selectedRow int
+	editingRow  int // -1 = none
+	editValue   string
+}
+
+// clientsState is the enrolled-clients screen and its revocation dialog.
+type clientsState struct {
+	keys         []protocol.EnrolledKeyInfo
+	selected     int
+	loading      bool
+	status       string
+	returnView   ViewState
+	confirmFocus int    // 0 = cancel, 1 = revoke
+	confirmAll   bool   // the dialog revokes every key
+	confirmKey   string // fingerprint the dialog revokes when confirmAll is false
+	confirmLabel string
 }
 
 // manualLockState is the manual signer-lock confirmation dialog.
@@ -389,24 +403,25 @@ type Model struct {
 	serverKeyTypes    []protocol.KeyTypeInfo
 
 	// Per-view sub-models
-	activity      activityState
-	auth          authState
-	keylist       keyListState
-	signing       signingState
-	tokenApproval tokenApprovalState
-	approval      approvalOverlay
-	operation     pendingOperation
-	backup        backupState
-	restore       restoreState
-	forms         formsState
-	cosigner      cosignerState
-	del           deleteConfirmState
-	admin         adminPanelState
-	policies      policiesState
-	manualLock    manualLockState
-	details       keyDetailsState
-	library       libraryState
-	errorPopup    errorPopupState
+	activity           activityState
+	auth               authState
+	keylist            keyListState
+	signing            signingState
+	enrollmentApproval enrollmentApprovalState
+	approval           approvalOverlay
+	operation          pendingOperation
+	backup             backupState
+	restore            restoreState
+	forms              formsState
+	cosigner           cosignerState
+	del                deleteConfirmState
+	admin              adminPanelState
+	clients            clientsState
+	policies           policiesState
+	manualLock         manualLockState
+	details            keyDetailsState
+	library            libraryState
+	errorPopup         errorPopupState
 
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
@@ -543,16 +558,16 @@ type SignRequestCanceledMsg struct {
 	Reason string
 }
 
-// TokenProvisioningCanceledMsg is sent when apsigner withdraws a delivered
+// ClientEnrollmentCanceledMsg is sent when apsigner withdraws a delivered
 // client access request.
-type TokenProvisioningCanceledMsg struct {
+type ClientEnrollmentCanceledMsg struct {
 	ID     string
 	Reason string
 }
 
-// TokenProvisioningRequestReceivedMsg is sent when a token provisioning request is received
-type TokenProvisioningRequestReceivedMsg struct {
-	Request PendingTokenRequest
+// ClientEnrollmentRequestReceivedMsg is sent when a token provisioning request is received
+type ClientEnrollmentRequestReceivedMsg struct {
+	Request PendingEnrollmentRequest
 }
 
 // KeysListMsg is sent when key list is received
@@ -587,10 +602,25 @@ type DeleteResultMsg struct {
 	Error   string
 }
 
-// RevokeTokenResultMsg is sent when token revocation completes
-type RevokeTokenResultMsg struct {
-	Success bool
-	Error   string
+// EnrolledKeysListMsg carries the enrolled client keys.
+type EnrolledKeysListMsg struct {
+	Keys []protocol.EnrolledKeyInfo
+}
+
+// RevokeEnrolledKeyResultMsg is sent when a client key revocation completes.
+type RevokeEnrolledKeyResultMsg struct {
+	Success           bool
+	Error             string
+	ClosedConnections int
+}
+
+// RevokeAllEnrolledKeysResultMsg is sent when revoking every client key
+// completes.
+type RevokeAllEnrolledKeysResultMsg struct {
+	Success           bool
+	Error             string
+	RevokedCount      int
+	ClosedConnections int
 }
 
 // BackupResultMsg is sent when signer-managed backup creation completes.

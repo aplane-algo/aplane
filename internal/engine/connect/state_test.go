@@ -19,7 +19,7 @@ func TestSetSignerProgressWriterPersistsAcrossClients(t *testing.T) {
 	state := NewState()
 	state.SetSignerProgressWriter(&progress)
 
-	first := util.NewSignerClientWithToken("http://localhost:1", "token")
+	first := util.NewSignerClient("http://localhost:1")
 	state.SignerClient = first
 	state.SetSignerProgressWriter(&progress)
 
@@ -27,7 +27,7 @@ func TestSetSignerProgressWriterPersistsAcrossClients(t *testing.T) {
 		t.Fatal("first signer client did not receive progress writer")
 	}
 
-	second := util.NewSignerClientWithToken("http://localhost:2", "token")
+	second := util.NewSignerClient("http://localhost:2")
 	state.SignerClient = second
 
 	client, err := state.signerClient()
@@ -55,7 +55,7 @@ func TestBeginConnectRejectsConcurrentAttempt(t *testing.T) {
 
 func TestDisconnectInvokesCallbackOutsideLock(t *testing.T) {
 	state := NewState()
-	state.SignerClient = util.NewSignerClientWithToken("http://localhost:1", "token")
+	state.SignerClient = util.NewSignerClient("http://localhost:1")
 	state.ConnectionTarget = "remote"
 
 	done := make(chan struct{})
@@ -75,7 +75,7 @@ func TestDisconnectInvokesCallbackOutsideLock(t *testing.T) {
 
 func TestBindSignerClientContextConcurrentClearIsRaceSafe(t *testing.T) {
 	state := NewState()
-	client := util.NewSignerClientWithToken("http://localhost:1", "token")
+	client := util.NewSignerClient("http://localhost:1")
 	state.SignerClient = client
 	ctx := context.Background()
 

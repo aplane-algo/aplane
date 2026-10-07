@@ -55,22 +55,18 @@ func TestLocalNetApshellCommandCoverage(t *testing.T) {
 		}
 	})
 
-	token := readSignerToken(t, signerd.GetTokenPath())
 	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
 	t.Cleanup(apadmin.Cleanup)
 
-	apshell := harness.NewApshellHarness(t, signerd.GetURL())
-	if err := apshell.CopyTokenFrom(signerd.GetWorkDir()); err != nil {
-		t.Fatalf("copy signer token to apshell fixture: %v", err)
-	}
+	apshell := harness.NewApshellHarness(t)
 
 	if err := apadmin.StartUnlockBackground(); err != nil {
 		t.Fatalf("start background unlock: %v", err)
 	}
 	t.Cleanup(apadmin.StopUnlockBackground)
 
-	primary := generateFundedCommandCoverageKey(t, network, funder, apshell, signerd.GetURL(), token, "primary")
-	auth := generateFundedCommandCoverageKey(t, network, funder, apshell, signerd.GetURL(), token, "auth")
+	primary := generateFundedCommandCoverageKey(t, network, funder, apshell, signerd.GetURL(), "primary")
+	auth := generateFundedCommandCoverageKey(t, network, funder, apshell, signerd.GetURL(), "auth")
 
 	app := deployCommandCoverageApp(t, network, funder)
 	assetID := createCommandCoverageAsset(t, network, funder)
@@ -158,8 +154,8 @@ func TestLocalNetApshellCommandCoverage(t *testing.T) {
 		"y",
 	}, "Deleted set", "Removed alias:", "Close transaction submitted:", "Key deleted.")
 
-	waitForSignerKeyMissing(t, signerd.GetURL(), token, primary, 15*time.Second)
-	waitForSignerKeyMissing(t, signerd.GetURL(), token, auth, 15*time.Second)
+	waitForSignerKeyMissing(t, signerd.GetURL(), primary, 15*time.Second)
+	waitForSignerKeyMissing(t, signerd.GetURL(), auth, 15*time.Second)
 
 	t.Logf("completed localnet apshell command coverage: primary=%s auth=%s asset=%d app=%d",
 		primary, auth, assetID, app.AppID)
@@ -171,7 +167,6 @@ func generateFundedCommandCoverageKey(
 	funder *harness.FundTestAccount,
 	apshell *harness.ApshellHarness,
 	signerURL string,
-	token string,
 	label string,
 ) string {
 	t.Helper()
@@ -183,7 +178,7 @@ func generateFundedCommandCoverageKey(
 	if address == "" {
 		t.Fatalf("could not find generated %s command coverage address in output:\n%s", label, output)
 	}
-	waitForSignerKey(t, signerURL, token, address, 15*time.Second)
+	waitForSignerKey(t, signerURL, address, 15*time.Second)
 	if err := funder.FundMicroAlgosAndWait(address, commandCoverageFundMicroAlgos); err != nil {
 		t.Fatalf("fund %s command coverage key %s: %v", label, address, err)
 	}

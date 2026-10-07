@@ -5,27 +5,57 @@ package authz
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
 // ProductAuthorizer is the complete authorization model for the
 // single-operator product. It has no mutable principal, group, grant, or target
-// graph: every decision is an exact principal, action, and product-resource
-// check.
+// graph: the product admin principal has one fixed action set, and each client
+// role has one fixed action set. The fingerprint identifies a credential and
+// the role selects its permissions; neither is proof of authentication.
 type ProductAuthorizer struct {
 	allowed map[auth.Action]struct{}
+	roles   map[string]map[auth.Action]struct{}
 }
 
 // NewProductSingleAuthorizer constructs the closed product authorization
-// boundary. The copied map prevents callers from mutating the package-level
-// action definition.
+// boundary. The copied maps prevent callers from mutating the package-level
+// action definitions.
 func NewProductSingleAuthorizer() *ProductAuthorizer {
-	a := &ProductAuthorizer{allowed: make(map[auth.Action]struct{}, len(ProductAllowedActions()))}
-	for _, action := range ProductAllowedActions() {
-		a.allowed[action] = struct{}{}
+	a := &ProductAuthorizer{
+		allowed: actionSet(ProductAllowedActions()),
+		roles: map[string]map[auth.Action]struct{}{
+			auth.RoleClient: actionSet(ClientAllowedActions()),
+		},
 	}
 	return a
+}
+
+func actionSet(actions []auth.Action) map[auth.Action]struct{} {
+	set := make(map[auth.Action]struct{}, len(actions))
+	for _, action := range actions {
+		set[action] = struct{}{}
+	}
+	return set
+}
+
+// ClientAllowedActions returns the explicit action vocabulary granted to an
+// enrolled client key over HTTP. It names the actions the authenticated HTTP
+// routes expose; a new route's action remains denied until it is deliberately
+// added here. Clients never receive administrative actions.
+func ClientAllowedActions() []auth.Action {
+	return []auth.Action{
+		auth.ActionIdentityView,
+		auth.ActionSignRequest,
+		auth.ActionSignComponent,
+		auth.ActionSignAssemble,
+		auth.ActionKeysView,
+		auth.ActionKeysGenerate,
+		auth.ActionKeysDelete,
+		auth.ActionKeyTypesView,
+	}
 }
 
 // ProductAllowedActions returns the explicit action vocabulary granted to the
@@ -64,8 +94,9 @@ func ProductAllowedActions() []auth.Action {
 		auth.ActionPolicyUpdate,
 		auth.ActionSettingsView,
 		auth.ActionSettingsUpdate,
-		auth.ActionTokenProvision,
-		auth.ActionTokenRevoke,
+		auth.ActionClientsView,
+		auth.ActionClientsEnroll,
+		auth.ActionClientsRevoke,
 	}
 }
 
@@ -73,13 +104,20 @@ func (a *ProductAuthorizer) Authorize(_ context.Context, identity *auth.Identity
 	if identity == nil || identity.ID == "" {
 		return auth.ErrUnauthorized
 	}
-	if identity.ID != auth.SystemProductAdminPrincipalID {
-		return auth.ErrForbidden
-	}
 	if !auth.IsKnownAction(action) {
 		return auth.ErrForbidden
 	}
-	if _, ok := a.allowed[action]; !ok {
+	var allowed map[auth.Action]struct{}
+	switch {
+	case identity.ID == auth.SystemProductAdminPrincipalID:
+		allowed = a.allowed
+	case strings.HasPrefix(identity.ID, auth.ClientPrincipalPrefix):
+		allowed = a.roles[identity.Role]
+	}
+	if allowed == nil {
+		return auth.ErrForbidden
+	}
+	if _, ok := allowed[action]; !ok {
 		return auth.ErrForbidden
 	}
 	return nil

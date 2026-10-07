@@ -52,7 +52,7 @@ func signedTxnHex(txn types.Transaction) string {
 }
 
 func TestSignAndSubmitViaGroupRejectsForeignPlaceholders(t *testing.T) {
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -83,7 +83,7 @@ func TestSignAndSubmitViaGroupRejectsForeignPlaceholders(t *testing.T) {
 }
 
 func TestSignAndSubmitViaGroupIncludesAppCallMetadata(t *testing.T) {
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -126,7 +126,7 @@ func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 			Fee:    5000,
 		},
 	}
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		signerPaths = append(signerPaths, r.URL.Path)
 		if r.URL.Path != "/sign" {
@@ -215,7 +215,7 @@ func TestSignAndSubmitViaGroupSimulateSignsThenUsesClientAlgod(t *testing.T) {
 func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
 	var signCalls int
 	txn := types.Transaction{Header: types.Header{Sender: types.Address{1}}}
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -264,7 +264,7 @@ func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
 
 func TestSignAndSubmitViaGroupRejectsNilAlgodBeforeSigning(t *testing.T) {
 	var signCalls int
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		signCalls++
 		if r.URL.Path != "/sign" {
@@ -308,7 +308,7 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 	submitted := original
 	submitted.Fee = 5000
 
-	signerClient := signerclient.NewSignerClientWithToken("http://signer.test", "test-token")
+	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/sign" {
 			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})

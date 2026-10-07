@@ -219,17 +219,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
 
-	case TokenProvisioningCanceledMsg:
+	case ClientEnrollmentCanceledMsg:
 		var warningCmd tea.Cmd
-		if m.tokenApproval.request != nil && m.tokenApproval.request.ID == msg.ID {
-			m.tokenApproval.request = nil
+		if m.enrollmentApproval.request != nil && m.enrollmentApproval.request.ID == msg.ID {
+			m.enrollmentApproval.request = nil
 			warningCmd = m.setTransientWarning(tokenProvisioningCanceledWarning(msg.Reason))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
 
-	case TokenProvisioningRequestReceivedMsg:
-		m.tokenApproval.request = &msg.Request
-		m.tokenApproval.focus = 1 // Default to reject button (safety-first)
+	case ClientEnrollmentRequestReceivedMsg:
+		m.enrollmentApproval.request = &msg.Request
+		m.enrollmentApproval.focus = 1 // Default to reject button (safety-first)
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
 
@@ -327,17 +327,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMessageCmd()
 
-	case RevokeTokenResultMsg:
-		if msg.Success {
-			m.lastError = ""
-			warningCmd := m.setTransientWarning("Token revoked - clients must re-enroll")
-			m.viewState = ViewAdminPanel
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), adminRefreshTickCmd(), warningCmd)
-		} else {
-			m.lastError = "Token revocation failed: " + msg.Error
-		}
-		m.viewState = ViewAdminPanel
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetAdminSettingsCmd(), adminRefreshTickCmd())
+	case EnrolledKeysListMsg:
+		return m.handleEnrolledKeysList(msg)
+
+	case RevokeEnrolledKeyResultMsg:
+		return m.handleRevokeEnrolledKeyResult(msg)
+
+	case RevokeAllEnrolledKeysResultMsg:
+		return m.handleRevokeAllEnrolledKeysResult(msg)
 
 	case DeleteResultMsg:
 		if msg.Success {
@@ -859,8 +856,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyListKeys(msg)
 	case ViewSigningPopup:
 		return m.handleSigningPopupKeys(msg)
-	case ViewTokenProvisioningPopup:
-		return m.handleTokenProvisioningPopupKeys(msg)
+	case ViewClientEnrollmentPopup:
+		return m.handleClientEnrollmentPopupKeys(msg)
 	case ViewBackupConfirm:
 		return m.handleBackupConfirmKeys(msg)
 	case ViewBackupDisplay:
@@ -907,8 +904,10 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleImportParamsKeys(msg)
 	case ViewDeleteConfirm:
 		return m.handleDeleteConfirmKeys(msg)
-	case ViewRevokeTokenConfirm:
-		return m.handleRevokeTokenConfirmKeys(msg)
+	case ViewEnrolledClients:
+		return m.handleEnrolledClientsKeys(msg)
+	case ViewRevokeClientConfirm:
+		return m.handleRevokeClientConfirmKeys(msg)
 	case ViewLockConfirm:
 		return m.handleLockConfirmKeys(msg)
 	case ViewDisplaceConfirm:
@@ -949,7 +948,7 @@ func (m Model) usesSharedPopupViewport() bool {
 	switch m.viewState {
 	case ViewAuth,
 		ViewUnlock,
-		ViewTokenProvisioningPopup,
+		ViewClientEnrollmentPopup,
 		ViewGenerateForm,
 		ViewGenerateParams,
 		ViewCosignerPicker,
@@ -976,7 +975,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewRestoring,
 		ViewDeleteConfirm,
 		ViewDeleting,
-		ViewRevokeTokenConfirm,
+		ViewRevokeClientConfirm,
 		ViewLockConfirm,
 		ViewDisplaceConfirm,
 		ViewPolicyApplyForm,

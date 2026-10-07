@@ -5,16 +5,16 @@ package tui
 
 import "testing"
 
-func TestRevokeTokenWarningClearsOnlyMatchingGeneration(t *testing.T) {
+func TestEnrollmentWithdrawnWarningClearsOnlyMatchingGeneration(t *testing.T) {
 	m := activityReadyModel()
-	m.viewState = ViewRevokeTokenConfirm
+	m.enrollmentApproval.request = &PendingEnrollmentRequest{ID: "enroll-1"}
 
-	got, cmd := updateForTest(t, m, RevokeTokenResultMsg{Success: true})
-	if got.lastWarning != "Token revoked - clients must re-enroll" {
+	got, cmd := updateForTest(t, m, ClientEnrollmentCanceledMsg{ID: "enroll-1"})
+	if got.lastWarning != tokenProvisioningCanceledWarning("") {
 		t.Fatalf("lastWarning = %q", got.lastWarning)
 	}
 	if cmd == nil {
-		t.Fatal("RevokeTokenResultMsg returned nil cmd, want warning clear timer")
+		t.Fatal("ClientEnrollmentCanceledMsg returned nil cmd, want warning clear timer")
 	}
 	generation := got.lastWarningGeneration
 

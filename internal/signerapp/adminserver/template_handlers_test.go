@@ -15,10 +15,7 @@ import (
 )
 
 func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 
 	svc := &stubServices{
@@ -227,10 +224,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 }
 
 func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 
 	svc := &stubServices{}
 	conn := &queueConn{}
@@ -307,10 +301,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 }
 
 func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{
-
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
+	ir := productruntime.New(productruntime.Config{})
 
 	svc := &stubServices{
 		keyTypesResult: adminproto.ListKeyTypesResult{

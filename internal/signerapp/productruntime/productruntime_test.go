@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -100,9 +99,7 @@ func TestValidateProductStoreLayout(t *testing.T) {
 }
 
 func TestRuntimePolicyReturnsDefensiveCopies(t *testing.T) {
-	ir := New(Config{
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
+	ir := New(Config{})
 	signer := policy.DefaultConfig()
 	signer.MaxFeeMicroAlgos = 7000
 	ir.SetPolicy(signer)
@@ -138,9 +135,7 @@ func TestRuntimePolicyReturnsDefensiveCopies(t *testing.T) {
 }
 
 func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
-	ir := New(Config{
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
+	ir := New(Config{})
 
 	if got := ir.KeysetRevision(); got != 0 {
 		t.Fatalf("initial KeysetRevision() = %d, want 0", got)
@@ -170,9 +165,7 @@ func TestKeysetRevisionIncrementsOnSnapshotPublish(t *testing.T) {
 }
 
 func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
-	ir := New(Config{
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
+	ir := New(Config{})
 	ir.PublishSnapshot(
 		map[string]string{"ADDR1": "keys/ADDR1.key"},
 		map[string]string{"ADDR1": "ed25519"},
@@ -240,9 +233,7 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 }
 
 func TestWatcherReloadUsesMutationLock(t *testing.T) {
-	ir := New(Config{
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-	})
+	ir := New(Config{})
 	ir.SetUnlocked()
 
 	reloaded := make(chan struct{}, 1)
@@ -523,8 +514,7 @@ func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 func TestLoadAuthorizedKeysRejectsMalformedFile(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{
-		Authenticator: auth.NewTokenAuthenticator("tok"),
-		KeyPaths:      utilkeys.NewPaths(root),
+		KeyPaths: utilkeys.NewPaths(root),
 	})
 
 	path := ir.AuthorizedKeysPath()

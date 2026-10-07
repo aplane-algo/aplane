@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -18,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -77,11 +74,7 @@ type CosignerSetupPlan struct {
 	Updated             bool
 	ReplacementRequired bool
 	DestinationChanged  bool
-	// RetiresToken reports that applying the plan removes a stored token: one
-	// issued by the previous destination, or one left over under the name of a
-	// connection this plan creates.
-	RetiresToken bool
-	DryRun       bool
+	DryRun              bool
 }
 
 // Unchanged reports that the plan reuses an existing connection as it is.
@@ -93,12 +86,14 @@ func (p CosignerSetupPlan) Unchanged() bool {
 // credential values or paths. Connection and route outcomes are separate and
 // are never folded into one readiness flag.
 type CosignerSetupResult struct {
-	Alias        string
-	URL          string
-	Created      bool
-	Updated      bool
-	TokenIssued  bool
-	TokenRetired bool
+	Alias   string
+	URL     string
+	Created bool
+	Updated bool
+	// Enrolled reports that this run enrolled the client's key at the
+	// cosigner, after operator approval, because the first connection was
+	// refused as unenrolled.
+	Enrolled bool
 	// Connected reports that the endpoint was reached, authenticated, and
 	// reported the cosigner role.
 	Connected      bool
@@ -263,7 +258,7 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 		Alias: alias, Endpoint: preview.Endpoint,
 		Created: preview.Created, Updated: preview.Updated,
 		ReplacementRequired: exists && preview.Updated, DryRun: req.DryRun,
-		DestinationChanged: preview.DestinationChanged, RetiresToken: preview.RetiresExistingToken,
+		DestinationChanged: preview.DestinationChanged,
 	}
 	if exists {
 		copy := existing
@@ -273,9 +268,7 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 }
 
 // ApplyCosignerSetupEndpoint revalidates and applies a reviewed route under the
-// shared client lock. Network and token operations must run after it returns.
-// Creating the alias or changing its destination retires any stored token in
-// the same locked step, before the new route is written.
+// shared client lock. Network operations must run after it returns.
 func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (config.ClientEndpointConfig, error) {
 	if plan.DryRun {
 		return plan.Endpoint, nil
@@ -329,7 +322,7 @@ func (a *App) ApplyCosignerSetupEndpoint(plan CosignerSetupPlan, replace bool) (
 // The returned error covers only this connection: access, node role, and
 // duplicate routes that involve it. The result is returned alongside an error
 // so callers can report completed effects.
-func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) (*CosignerSetupResult, error) {
+func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onEnrollmentStarted func(string)) (*CosignerSetupResult, error) {
 	result := &CosignerSetupResult{
 		Alias: plan.Alias, URL: endpoint.URL, Created: plan.Created, Updated: plan.Updated,
 		DryRun: plan.DryRun,
@@ -338,38 +331,25 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 		result.RenderLines = cosignerSetupRenderLines(result, nil)
 		return result, nil
 	}
-	result.TokenRetired = plan.RetiresToken
 
-	token, err := tokenfile.ReadToken(endpoint.TokenFile)
-	if err != nil {
-		return result, fmt.Errorf("read cosigner endpoint token: %w", err)
-	}
-	// Applying the plan already retired any token that predates this route, so
-	// a token found here was issued for it.
-	if token == "" || plan.DestinationChanged {
-		if !strings.HasPrefix(endpoint.URL, "ssh://") {
-			switch {
-			case plan.DestinationChanged:
-				return result, fmt.Errorf("endpoint %q changed destinations; the previous destination's token was retired; install a token for the new endpoint and rerun", plan.Alias)
-			case plan.Created && plan.RetiresToken:
-				return result, fmt.Errorf("endpoint %q has no token; a token file left over under this name was removed; automatic enrollment requires ssh://; install this endpoint's token and rerun", plan.Alias)
-			}
-			return result, fmt.Errorf("endpoint %q has no token; automatic enrollment requires ssh://; install its token and rerun", plan.Alias)
-		}
-		if err := a.requestCosignerTokenIsolated(ctx, plan.Alias, endpoint, approve, onProvisioningStarted); err != nil {
+	// The client's key is its credential. Try the connection first; a node
+	// that refuses the key as unenrolled is asked to enroll it, which waits
+	// for operator approval there, and the connection is tried once more.
+	inspection, err := a.eng.InspectCosignerEndpointWithHostKeyApproval(ctx, endpoint, approve)
+	if err != nil && errors.Is(err, engine.ErrCosignerDiscoveryAuth) {
+		if err := a.requestCosignerEnrollment(ctx, plan.Alias, endpoint, approve, onEnrollmentStarted); err != nil {
 			return result, err
 		}
-		result.TokenIssued = true
+		result.Enrolled = true
+		inspection, err = a.eng.InspectCosignerEndpointWithHostKeyApproval(ctx, endpoint, approve)
 	}
-
-	inspection, err := a.eng.InspectCosignerEndpointWithHostKeyApproval(ctx, endpoint, approve)
 	result.NodeRole = inspection.NodeRole
 	if err != nil {
 		switch {
 		case errors.Is(err, engine.ErrCosignerDiscoveryLocked):
 			return result, fmt.Errorf("connected and authenticated; cosigner is locked; unlock it in apadmin and rerun: %w", err)
-		case errors.Is(err, engine.ErrCosignerDiscoveryAuth) && !result.TokenIssued:
-			return result, fmt.Errorf("stored token for endpoint %q was rejected; run request-token --endpoint %s to re-enroll: %w", plan.Alias, plan.Alias, err)
+		case errors.Is(err, engine.ErrCosignerDiscoveryAuth):
+			return result, fmt.Errorf("endpoint %q still refuses this client's key after enrollment: %w", plan.Alias, err)
 		case inspection.NodeRole == "":
 			return result, fmt.Errorf("%w: %w", ErrCosignerSetupRoleUnverified, err)
 		default:
@@ -380,7 +360,7 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	case engine.NodeRoleCosigner:
 	case config.ClientEndpointRoleSigner:
 		return result, fmt.Errorf(
-			"%w: %s reports the signer role; set up a signer connection with 'endpoints import --alias <alias> --role signer <endpoint-json>', then 'request-token' and 'connect'",
+			"%w: %s reports the signer role; set up a signer connection with 'endpoints import --alias <alias> --role signer <endpoint-json>', then 'request-enrollment' and 'connect'",
 			ErrCosignerSetupNotCosigner, endpoint.URL,
 		)
 	case "":
@@ -410,9 +390,8 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 
 // RemoveCreatedCosignerConnection removes a connection that this setup run
 // created and that turned out not to be usable. It revalidates under the client
-// lock that the route is still the one this run wrote. Its token is retired
-// with it, as for any deleted endpoint. Host trust is left for separate
-// cleanup.
+// lock that the route is still the one this run wrote. Host trust, and any
+// enrollment the node recorded, are left for separate cleanup.
 func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 	if !plan.Created || plan.DryRun {
 		return fmt.Errorf("connection %q was not created by this setup run", plan.Alias)
@@ -438,55 +417,17 @@ func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 	return a.reloadConfigAfterEndpointChange()
 }
 
-func (a *App) requestCosignerTokenIsolated(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onProvisioningStarted func(string)) error {
+// requestCosignerEnrollment asks the cosigner to enroll this client's key.
+// Nothing is stored on the client; the node records the enrollment.
+func (a *App) requestCosignerEnrollment(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onEnrollmentStarted func(string)) error {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
 		return err
 	}
-	token, err := a.eng.Connection.RequestTokenWithContext(ctx, endpointSSH.Host, endpointSSH.Port, endpointSSH.IdentityFile, endpointSSH.KnownHostsPath, approve, onProvisioningStarted)
-	if err != nil {
-		return fmt.Errorf("request token from endpoint %q: %w", alias, err)
-	}
-	if _, err := a.saveEndpointTokenIfCurrent(alias, endpoint, token); err != nil {
-		return fmt.Errorf("save token for endpoint %q: %w", alias, err)
+	if _, err := a.eng.Connection.RequestEnrollmentWithContext(ctx, endpointSSH.Host, endpointSSH.Port, endpointSSH.IdentityFile, endpointSSH.KnownHostsPath, "", approve, onEnrollmentStarted); err != nil {
+		return fmt.Errorf("request enrollment from endpoint %q: %w", alias, err)
 	}
 	return nil
-}
-
-// saveEndpointTokenIfCurrent stores a freshly issued token only while alias
-// still names the destination and token file that enrollment started with.
-// Enrollment waits for operator approval with the client lock released, so the
-// alias can be replaced in the meantime; a token issued by the old destination
-// must not land under the new route.
-func (a *App) saveEndpointTokenIfCurrent(alias string, requested config.ClientEndpointConfig, token string) (string, error) {
-	if a.DataDir == "" {
-		// Without a data directory there is no stored registry to revalidate.
-		return a.eng.SaveApshellTokenToPath(requested.TokenFile, token)
-	}
-	var tokenPath string
-	err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		registry, err := config.LoadClientEndpointRegistry(a.DataDir)
-		if err != nil {
-			return err
-		}
-		current, ok := registry.Endpoint(alias)
-		if !ok {
-			return fmt.Errorf("endpoint %q was removed while its access request was pending; the issued token was discarded", alias)
-		}
-		sameTokenFile := requested.TokenFile == "" || config.SameClientEndpointTokenFile(a.DataDir, requested, current)
-		if config.ClientEndpointDestinationChanged(requested, current) || !sameTokenFile {
-			return fmt.Errorf("endpoint %q changed while its access request was pending; the issued token was discarded; rerun to request access for the current destination", alias)
-		}
-		tokenPath = current.TokenFile
-		if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-			return err
-		}
-		return tokenfile.WriteToken(tokenPath, token)
-	})
-	if err != nil {
-		return "", err
-	}
-	return tokenPath, nil
 }
 
 func (a *App) accountLabel(address string) string {
@@ -553,8 +494,8 @@ func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(str
 		return nil
 	}
 	connection := fmt.Sprintf("Connection %s ready", result.Alias)
-	if result.TokenIssued {
-		connection += "; access token saved"
+	if result.Enrolled {
+		connection += "; this client's key was enrolled"
 	}
 	lines := []string{connection + ".", fmt.Sprintf("%d cosigner key(s) advertised.", result.AdvertisedKeys)}
 	routes := result.Routes

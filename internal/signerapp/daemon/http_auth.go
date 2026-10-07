@@ -22,11 +22,12 @@ func authFailureReason(err error) string {
 	}
 }
 
-func authRequiredError(method string) string {
-	if method == "aplane-token" {
-		return "Authorization header required"
-	}
-	return "Authentication required"
+// authRequiredError is the response body for an unauthenticated request. A
+// request is authenticated by its connection, so there is no header to ask
+// for: a client that reaches this did not arrive through an enrolled SSH
+// connection.
+func authRequiredError(string) string {
+	return "Authentication required: connect through an enrolled SSH key"
 }
 
 // requireAuth is middleware that validates authentication and authorization

@@ -38,16 +38,8 @@ func attemptStartupConnection(r *REPLState) error {
 	return connectConfigured(r)
 }
 
-const missingAplaneTokenStartupMessage = "No aplane token found. Run 'request-token' to obtain token from the signer."
-
 func printInteractiveStartupConnectionStatus(r *REPLState) {
 	decision := r.app().StartupConnectDecision()
-	if !decision.HasToken {
-		fmt.Println()
-		fmt.Println(missingAplaneTokenStartupMessage)
-		fmt.Println()
-		return
-	}
 	if !decision.ShouldConnect {
 		fmt.Println("Error: No default signer endpoint in endpoints.yaml.")
 		fmt.Println("  Add a signer endpoint to connect.")

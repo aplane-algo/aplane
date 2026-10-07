@@ -20,9 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
-
-	"github.com/aplane-algo/aplane/internal/auth"
 )
 
 // ProductBuildOptions describes the config and paths needed to construct the
@@ -37,17 +34,17 @@ type ProductBuildOptions struct {
 // ProductBuildHooks provides the non-owning process callbacks needed by
 // product runtime assembly.
 type ProductBuildHooks struct {
-	HasAdminClient               func() bool
-	SendSignRequest              func(req *approval.SignRequest) bool
-	SendSignRequestCanceled      func(msg *approval.SignRequestCanceled) bool
-	SendTokenProvisioningRequest func(req *approval.TokenProvisioningRequest) bool
-	// SendTokenProvisioningCanceled withdraws a delivered client access
+	HasAdminClient              func() bool
+	SendSignRequest             func(req *approval.SignRequest) bool
+	SendSignRequestCanceled     func(msg *approval.SignRequestCanceled) bool
+	SendClientEnrollmentRequest func(req *approval.ClientEnrollmentRequest) bool
+	// SendClientEnrollmentCanceled withdraws a delivered client access
 	// request; a signing request preempts one.
-	SendTokenProvisioningCanceled func(msg *approval.TokenProvisioningCanceled) bool
-	NotifyLocked                  func()
-	NotifyKeysChanged             func(keyCount int)
-	ReloadAuditLog                signertemplates.AuditLogger
-	NodeFailClosed                func(error)
+	SendClientEnrollmentCanceled func(msg *approval.ClientEnrollmentCanceled) bool
+	NotifyLocked                 func()
+	NotifyKeysChanged            func(keyCount int)
+	ReloadAuditLog               signertemplates.AuditLogger
+	NodeFailClosed               func(error)
 	// ReloadMutationLock returns the process-wide store mutation lock that
 	// watcher-triggered reloads must hold while scanning disk.
 	ReloadMutationLock func() sync.Locker
@@ -70,18 +67,6 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	if err != nil {
 		return nil, fmt.Errorf("failed to load product config: %w", err)
 	}
-	tokenPath := tokenfile.GetAPlaneTokenPathForRoot(opts.KeyPaths.Root())
-	token, err := tokenfile.ReadToken(tokenPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read product token: %w", err)
-	}
-	if token == "" {
-		token, err = tokenfile.LoadAPlaneToken(opts.KeyPaths.Root())
-		if err != nil {
-			return nil, fmt.Errorf("failed to load product token: %w", err)
-		}
-	}
-
 	defaultApprovalWait, err := serverconfig.ParseApprovalWait(opts.Config.ApprovalWait)
 	if err != nil {
 		return nil, fmt.Errorf("invalid product approval_wait: %w", err)
@@ -113,7 +98,6 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	ir := productruntime.New(productruntime.Config{
 		KeyStore:         keystore.NewAtomicFileKeyStoreForPaths(opts.KeyPaths),
 		KeyPaths:         opts.KeyPaths,
-		Authenticator:    auth.NewTokenAuthenticator(token),
 		SessionTimeout:   sessionTimeout,
 		ApprovalWait:     approvalWait,
 		UserAutoApprove:  &userAutoApprove,
@@ -153,18 +137,18 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 			}
 			return hooks.SendSignRequestCanceled(msg)
 		},
-		func(msg *approval.TokenProvisioningRequest) bool {
-			if hooks.SendTokenProvisioningRequest == nil {
+		func(msg *approval.ClientEnrollmentRequest) bool {
+			if hooks.SendClientEnrollmentRequest == nil {
 				return false
 			}
-			return hooks.SendTokenProvisioningRequest(msg)
+			return hooks.SendClientEnrollmentRequest(msg)
 		},
 	)
-	coordinator.SetTokenProvisioningCanceledSender(func(msg *approval.TokenProvisioningCanceled) bool {
-		if hooks.SendTokenProvisioningCanceled == nil {
+	coordinator.SetClientEnrollmentCanceledSender(func(msg *approval.ClientEnrollmentCanceled) bool {
+		if hooks.SendClientEnrollmentCanceled == nil {
 			return false
 		}
-		return hooks.SendTokenProvisioningCanceled(msg)
+		return hooks.SendClientEnrollmentCanceled(msg)
 	})
 	ir.SetApprovalCoordinator(coordinator)
 }
