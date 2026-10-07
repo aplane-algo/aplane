@@ -962,7 +962,9 @@ of a waiting request, with `--label` replacing the label the client asked for;
 `reject` drops a waiting request; `revoke` removes an enrolled key and closes
 its connections. `import` pre-enrolls a client's key from a file holding one
 OpenSSH public-key line (such as `id_ed25519.pub`); the line's comment is the
-label unless `--label` is given. With `-` the line is read from stdin, which
+label unless `--label` is given. A line carrying authorized_keys options
+(`from=`, `restrict`, ...) is refused: the signer implements none, so import
+the bare key instead. With `-` the line is read from stdin, which
 then requires `APSIGNER_PASSPHRASE` or a controlling terminal for the
 passphrase, as with `cosigner import`. Fingerprints are the `SHA256:` form
 apshell prints.

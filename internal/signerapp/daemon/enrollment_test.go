@@ -146,6 +146,38 @@ func TestEnrollmentRejectAndImport(t *testing.T) {
 	}
 }
 
+// An imported line follows the registry's option rule: this version
+// implements no authorized_keys options, so a line carrying one is refused
+// instead of being enrolled without the restriction it asks for. A second
+// line after the key is refused too; the import takes one line.
+func TestImportClientKeyRefusesOptionsAndExtraLines(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	key := testClientKey(t)
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+	other := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(testClientKey(t))))
+	for _, input := range []string{
+		`from="127.0.0.1",restrict ` + line + " laptop",
+		"restrict " + line,
+		"no-pty " + line,
+		clientregistry.ReservedOptionPrefix + "future " + line,
+		line + "\n" + other,
+	} {
+		_, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, ir, input, "")
+		if err == nil || added || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+			t.Fatalf("ImportClientKey(%q) = added %v, err %v, want invalid_request", input, added, err)
+		}
+	}
+	if ir.HasAuthorizedKey(key) || len(ir.EnrolledKeys()) != 0 {
+		t.Fatalf("a refused line enrolled a key: enrolled = %d", len(ir.EnrolledKeys()))
+	}
+	if _, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, ir, line+" laptop\n", ""); err != nil || !added {
+		t.Fatalf("ImportClientKey(plain line) = added %v, err %v", added, err)
+	}
+}
+
 // Labels supplied over the admin protocol follow the registry's label rule:
 // a line break or an over-long label is refused before anything is written,
 // since the registry emits labels verbatim on the key's authorized_keys

@@ -4,12 +4,13 @@
 package daemon
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
-	"golang.org/x/crypto/ssh"
 	"strings"
 	"sync"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -17,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -228,13 +230,23 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 // ImportClientKey enrolls an OpenSSH public-key line the operator supplied,
 // the pre-enrollment path. The line's comment is the label unless one is
 // given. A waiting request for the same key is cleared.
+//
+// The line follows the registry's rule: this version implements no
+// authorized_keys options, so an option-bearing line (from=, restrict, ...)
+// is refused rather than enrolled without the restriction it asks for.
 func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, publicKey, label string) (string, string, bool, error) {
 	if ir == nil {
 		return "", "", false, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-	key, comment, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
+	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
 	if err != nil {
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
+	}
+	if len(options) != 0 {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: option %q is not implemented by this version; import the key without options", options[0]))
+	}
+	if len(bytes.TrimSpace(rest)) != 0 {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, errors.New("invalid public key: expected one OpenSSH public-key line"))
 	}
 	if err := sshtunnel.CheckClientKey(key); err != nil {
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, err)
