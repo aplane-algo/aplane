@@ -474,11 +474,11 @@ func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
 	return ir.registry().Entries()
 }
 
-// ErrAppliedNotDurable reports a registry change that is installed and in
-// force but whose file may not survive a crash: the publish failed after its
-// rename. The caller treats the change as made (audits it, acts on it) and
-// still reports the error; the next registry operation re-publishes the
-// file before doing anything else.
+// ErrAppliedNotDurable reports a registry or enrollment-queue change that
+// is installed and in force but whose file may not survive a crash: the
+// publish failed after its rename. The caller treats the change as made
+// (audits it, acts on it) and still reports the error; the next operation on
+// that file re-publishes it before doing anything else.
 var ErrAppliedNotDurable = errors.New("change applied but not yet durable")
 
 // publishRegistry applies mutate to the current registry and, if it changed
@@ -625,35 +625,54 @@ func (ir *Runtime) LoadEnrollmentQueue() error {
 }
 
 // publishQueueLocked publishes next as the enrollment queue and installs it,
-// with clientsMu held.
+// with clientsMu held. It follows the registry rule: a publish that fails
+// after its rename installs the queue the file now holds and, when that is
+// next, reports the change as applied with an error wrapping
+// ErrAppliedNotDurable, so the caller records the change separately from
+// its durability outcome.
 func (ir *Runtime) publishQueueLocked(next *enrollqueue.Queue) error {
+	applied, err := ir.publishQueueFileLocked(next)
+	if err != nil && applied {
+		return fmt.Errorf("%w: %w", ErrAppliedNotDurable, err)
+	}
+	return err
+}
+
+// publishQueueFileLocked writes next durably and installs it. On failure
+// the view follows the file, whichever queue it now holds, and the queue is
+// marked as needing a successful sync; applied then reports whether the
+// file, and so the view, holds next.
+func (ir *Runtime) publishQueueFileLocked(next *enrollqueue.Queue) (applied bool, err error) {
 	if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), next); err != nil {
 		// As for the registry: the file is either the old queue or the new
 		// one, so serve what it holds; an unreadable queue holds nothing.
 		// Either way it may not be durable, which the next queue operation
 		// repairs before acknowledging anything.
 		ir.pendingUnsynced = true
-		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
+		now := time.Now()
+		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), now)
 		if loadErr != nil {
 			ir.pending = &enrollqueue.Queue{}
-			return fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests dropped until it is repaired: %v)", err, loadErr)
+			return false, fmt.Errorf("%w (queue unreadable after the failed publish, waiting requests dropped until it is repaired: %v)", err, loadErr)
 		}
 		ir.pending = reloaded
-		return err
+		return bytes.Equal(reloaded.Marshal(), next.Pruned(now).Marshal()), err
 	}
 	ir.pending = next
 	ir.pendingUnsynced = false
-	return nil
+	return true, nil
 }
 
 // ensureQueueDurableLocked re-publishes the queue left by an earlier failed
 // write, so a retried operation is acknowledged only once the file is
-// durable rather than on the strength of the unsynced file.
+// durable rather than on the strength of the unsynced file. Its failure
+// never wraps ErrAppliedNotDurable: the change it re-publishes was reported
+// when it was made.
 func (ir *Runtime) ensureQueueDurableLocked() error {
 	if !ir.pendingUnsynced {
 		return nil
 	}
-	if err := ir.publishQueueLocked(ir.pendingLocked()); err != nil {
+	if _, err := ir.publishQueueFileLocked(ir.pendingLocked()); err != nil {
 		return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
 	}
 	return nil
@@ -670,7 +689,9 @@ func (ir *Runtime) pendingLocked() *enrollqueue.Queue {
 // already enrolled is reported as such and nothing is queued; otherwise the
 // request waits for the operator, and added reports whether it was new
 // rather than a refresh of a request already waiting. enrollqueue.ErrQueueFull
-// refuses a new request when the queue is at its cap.
+// refuses a new request when the queue is at its cap. A request that is
+// queued by a write that is not yet durable is reported as pending together
+// with an error wrapping ErrAppliedNotDurable.
 func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) (pending bool, added bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
@@ -685,6 +706,9 @@ func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) 
 		return false, false, err
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
+		if errors.Is(err, ErrAppliedNotDurable) {
+			return true, added, err
+		}
 		return false, false, err
 	}
 	return true, added, nil
@@ -699,60 +723,70 @@ func (ir *Runtime) PendingEnrollments() []enrollqueue.Entry {
 }
 
 // ApproveEnrollment enrolls the key of a pending request and removes the
-// request. label, when set, replaces the label the client asked for. The
-// registry is published before the queue, so a failure between the two
-// leaves an enrolled key whose request is still listed; approving it again
-// is a no-op for the registry and clears the request.
-func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (enrollqueue.Entry, error) {
+// request. label, when set, replaces the label the client asked for.
+// enrolled reports that the key is now in the live registry when it was not
+// before; the caller audits that whether or not err is set, since the
+// registry is published before the queue and a failure between the two (or
+// a registry write that is not yet durable, err wrapping
+// ErrAppliedNotDurable) leaves an enrolled key whose request is still
+// listed. Approving it again is a no-op for the registry and clears the
+// request.
+func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollqueue.Entry, enrolled bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
-		return enrollqueue.Entry{}, err
+		return enrollqueue.Entry{}, false, err
 	}
 	entry, ok := ir.pendingLocked().Pruned(time.Now()).Lookup(fingerprint)
 	if !ok {
-		return enrollqueue.Entry{}, enrollqueue.ErrNotPending
+		return enrollqueue.Entry{}, false, enrollqueue.ErrNotPending
 	}
 	if label == "" {
 		label = entry.Label
 	}
-	if _, err := ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+	entry.Label = label
+	enrolled, err = ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(entry.Key, label)
 		return next, added, nil
-	}); err != nil {
-		return enrollqueue.Entry{}, err
+	})
+	if err != nil {
+		return entry, enrolled, err
 	}
 	next, _, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
-		return enrollqueue.Entry{}, err
+		return entry, enrolled, err
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
-		return enrollqueue.Entry{}, err
+		return entry, enrolled, err
 	}
-	entry.Label = label
-	return entry, nil
+	return entry, enrolled, nil
 }
 
 // RejectEnrollment removes a pending request without enrolling its key.
-func (ir *Runtime) RejectEnrollment(fingerprint string) (enrollqueue.Entry, error) {
+// rejected reports that the request is gone from the live queue, which can
+// hold alongside an error wrapping ErrAppliedNotDurable; the caller audits
+// the rejection regardless.
+func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry, rejected bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
-		return enrollqueue.Entry{}, err
+		return enrollqueue.Entry{}, false, err
 	}
 	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
-		return enrollqueue.Entry{}, err
+		return enrollqueue.Entry{}, false, err
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
-		return enrollqueue.Entry{}, err
+		return entry, errors.Is(err, ErrAppliedNotDurable), err
 	}
-	return entry, nil
+	return entry, true, nil
 }
 
 // ImportClientKey enrolls a public key the operator supplied directly, the
 // pre-enrollment path. A pending request for the same key is cleared. added
-// reports whether the key was new to the registry.
+// reports whether the key is now in the live registry when it was not
+// before; as for ApproveEnrollment the caller audits that whether or not
+// err is set.
 func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
@@ -764,7 +798,7 @@ func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool,
 		return next, added, nil
 	})
 	if err != nil {
-		return false, err
+		return added, err
 	}
 	if next, _, err := ir.pendingLocked().WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
 		if err := ir.publishQueueLocked(next); err != nil {

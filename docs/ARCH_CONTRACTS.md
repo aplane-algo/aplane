@@ -1035,7 +1035,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation, a revoked key's connections are closed, and an enrollment is acknowledged to the client) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -2212,7 +2212,10 @@ Client enrollment flow:
    with exit 0 and nothing is queued
 5. otherwise the server records the request (public key, label, remote
    address, time) in `identities/default/.ssh/pending_enrollments.json`,
-   written atomically and durably like the registry; a new request is audited as
+   written atomically and durably like the registry, and under the same
+   rule for a write that fails after its rename: a request the file then
+   holds is a queued request (audited, announced, answered `pending`) and
+   the queue is re-published before its next write; a new request is audited as
    `CLIENT_ENROLLMENT_REQUESTED` and announced to a connected admin session
    as `client_enrollment_request`; a repeat for a waiting key refreshes its
    entry. Refusals are `ERROR: enrollment queue is full; ask the operator to
@@ -2224,7 +2227,12 @@ Client enrollment flow:
 7. later, an admin session approves (`approve_enrollment`: the key and label
    are added to the registry under the publication rule, the entry is
    removed, `CLIENT_ENROLLED` is audited) or rejects (`reject_enrollment`:
-   the entry is removed, `CLIENT_ENROLLMENT_REJECTED` is audited). Every
+   the entry is removed, `CLIENT_ENROLLMENT_REJECTED` is audited). The audit
+   event follows the change that took effect, not the command's outcome: a
+   key that entered the live registry is audited as enrolled even when the
+   approval then reports a durability failure or could not clear the entry
+   (a repeat approval clears it without a second `CLIENT_ENROLLED`), and a
+   request dropped by a write that is not yet durable is audited as rejected. Every
    waiting request is announced again when an admin session authenticates
 8. the client learns the outcome by connecting: an enrolled key is accepted,
    anything else is refused at the handshake

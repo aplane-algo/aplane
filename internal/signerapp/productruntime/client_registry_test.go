@@ -164,8 +164,12 @@ func TestRejectEnrollmentFailedPublishResyncsQueue(t *testing.T) {
 		return nil
 	}
 	defer func() { fsutil.TestHook = nil }()
-	if _, err := ir.RejectEnrollment(ssh.FingerprintSHA256(key)); err == nil {
+	entry, rejected, err := ir.RejectEnrollment(ssh.FingerprintSHA256(key))
+	if err == nil {
 		t.Fatal("RejectEnrollment() succeeded despite the publish failure")
+	}
+	if !rejected || !errors.Is(err, ErrAppliedNotDurable) || entry.Label != "laptop" {
+		t.Fatalf("RejectEnrollment() = (%+v, %v, %v), want the applied-not-durable outcome", entry, rejected, err)
 	}
 	if got := ir.PendingEnrollments(); len(got) != 0 {
 		t.Fatalf("pending after failed rejection = %+v; the file no longer holds the request", got)
@@ -189,24 +193,70 @@ func TestQueueRetriesRequireSuccessfulSync(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if _, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil {
-		t.Fatal("first QueueEnrollment() succeeded despite the sync failure")
+	// The first request is in the live queue: reported as pending and new,
+	// so the caller records and announces it, with the durability failure.
+	if pending, added, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); !pending || !added || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("first QueueEnrollment() = (%v, %v, %v), want pending and added with the applied-not-durable error", pending, added, err)
 	}
 	if got := ir.PendingEnrollments(); len(got) != 1 {
 		t.Fatalf("pending = %+v; the file holds the request", got)
 	}
-	if _, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "not durable") {
-		t.Fatalf("retried QueueEnrollment() error = %v, want the pending-durability failure", err)
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil || pending || errors.Is(err, ErrAppliedNotDurable) || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("retried QueueEnrollment() = (%v, %v), want the pending-durability failure with nothing applied", pending, err)
 	}
-	if _, err := ir.RejectEnrollment(fingerprint); err == nil || !strings.Contains(err.Error(), "not durable") {
-		t.Fatalf("RejectEnrollment() during unsynced state error = %v, want the pending-durability failure", err)
+	if _, rejected, err := ir.RejectEnrollment(fingerprint); err == nil || rejected || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("RejectEnrollment() during unsynced state = (%v, %v), want the pending-durability failure with nothing applied", rejected, err)
 	}
 
 	syncFails = false
-	if _, err := ir.RejectEnrollment(fingerprint); err != nil {
-		t.Fatalf("RejectEnrollment() after syncs recover error = %v", err)
+	if _, rejected, err := ir.RejectEnrollment(fingerprint); err != nil || !rejected {
+		t.Fatalf("RejectEnrollment() after syncs recover = (%v, %v)", rejected, err)
 	}
 	if got := ir.PendingEnrollments(); len(got) != 0 {
 		t.Fatalf("pending after rejection = %+v, want none", got)
+	}
+}
+
+// An approval whose registry write fails after the rename has enrolled the
+// key: it is reported as enrolled with the durability failure, the request
+// stays listed, and once syncs recover a repeat approval clears the request
+// without reporting a second enrollment.
+func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	fingerprint := ssh.FingerprintSHA256(key)
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || !pending {
+		t.Fatalf("QueueEnrollment() = %v, %v", pending, err)
+	}
+
+	syncFails := true
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op == fsutil.OpDirSync && syncFails {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops")
+	if !enrolled || !errors.Is(err, ErrAppliedNotDurable) || entry.Label != "ops" || entry.RemoteAddr != "10.0.0.1:1" {
+		t.Fatalf("ApproveEnrollment() = (%+v, %v, %v), want enrolled with the applied-not-durable error", entry, enrolled, err)
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("the registry file holds the key, so the runtime should honor it")
+	}
+	if got := ir.PendingEnrollments(); len(got) != 1 {
+		t.Fatalf("pending after the incomplete approval = %+v, want the request still listed", got)
+	}
+	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("retry while syncs fail = (%v, %v), want the pending-durability failure with nothing applied", enrolled, err)
+	}
+
+	syncFails = false
+	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err != nil || enrolled {
+		t.Fatalf("retry after syncs recover = (%v, %v), want success without a second enrollment", enrolled, err)
+	}
+	if got := ir.PendingEnrollments(); len(got) != 0 || !ir.HasAuthorizedKey(key) {
+		t.Fatalf("after recovery: pending = %+v, authorized = %v", got, ir.HasAuthorizedKey(key))
 	}
 }

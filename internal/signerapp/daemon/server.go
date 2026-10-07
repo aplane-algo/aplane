@@ -166,22 +166,30 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 }
 
 // ApproveClientEnrollment enrolls the key of a waiting request. label, when
-// set, replaces the label the client asked for.
+// set, replaces the label the client asked for. A key that entered the live
+// registry is audited as enrolled even when the write is not yet durable or
+// the request could not be cleared; that failure is reported on top.
 func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint, label string) (string, error) {
 	if ir == nil {
 		return "", protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-	entry, err := ir.ApproveEnrollment(fingerprint, label)
+	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, label)
+	if enrolled {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
+		}
+		if err != nil {
+			logWarnf("client key enrolled: %s (label %q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
+		} else {
+			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
+		}
+	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
 			return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
 		}
-		return "", err
+		return entry.Label, err
 	}
-	if fs.auditLog != nil {
-		fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
-	}
-	logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 	return entry.Label, nil
 }
 
@@ -190,17 +198,23 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 	if ir == nil {
 		return protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-	entry, err := ir.RejectEnrollment(fingerprint)
+	entry, rejected, err := ir.RejectEnrollment(fingerprint)
+	if rejected {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
+		}
+		if err != nil {
+			logWarnf("client enrollment request rejected: %s but the queue write is not yet durable: %v", fingerprint, err)
+		} else {
+			logInfof("client enrollment request rejected: %s", fingerprint)
+		}
+	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
 			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
 		}
 		return err
 	}
-	if fs.auditLog != nil {
-		fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
-	}
-	logInfof("client enrollment request rejected: %s", fingerprint)
 	return nil
 }
 
@@ -224,16 +238,20 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
 	added, err := ir.ImportClientKey(key, label)
-	if err != nil {
-		return "", "", false, err
-	}
 	if added {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
 		}
-		logInfof("client key imported: %s (label %q)", fingerprint, label)
-	} else {
+		if err != nil {
+			logWarnf("client key imported: %s (label %q) but the import did not complete: %v", fingerprint, label, err)
+		} else {
+			logInfof("client key imported: %s (label %q)", fingerprint, label)
+		}
+	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)
+	}
+	if err != nil {
+		return fingerprint, label, added, err
 	}
 	return fingerprint, label, added, nil
 }

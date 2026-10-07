@@ -4,12 +4,14 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/ssh"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollment"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // enrollmentService builds the service the SSH server hands enrollment
@@ -26,7 +28,16 @@ func (fs *Signer) enrollmentService() enrollment.Service {
 			if ir == nil {
 				return false, false, fmt.Errorf("product runtime is not initialized")
 			}
-			return ir.QueueEnrollment(key, label, remoteAddr)
+			pending, added, err := ir.QueueEnrollment(key, label, remoteAddr)
+			if err != nil && errors.Is(err, productruntime.ErrAppliedNotDurable) {
+				// The request is in the live queue and the operator can act
+				// on it, so it is recorded and announced as queued; only
+				// its durability is in doubt, which the next queue write
+				// repairs first.
+				logWarnf("enrollment request from %s (key: %s) is queued but the queue write is not yet durable: %v", remoteAddr, ssh.FingerprintSHA256(key), err)
+				return pending, added, nil
+			}
+			return pending, added, err
 		},
 		Notify:   fs.notifyEnrollmentRequest,
 		AuditLog: auditLog,
