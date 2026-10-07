@@ -110,7 +110,7 @@ func (m Model) viewFooterText() string {
 	case ViewDisplaceConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
-		return "p: Policies | k: KeyTypes | c: Clients | l: Lock | esc: Back"
+		return "p: Policies | k: KeyTypes | l: Lock | esc: Back"
 	case ViewPolicies, ViewPolicyDocument:
 		return m.policiesFooterText()
 	case ViewPolicyApplyForm, ViewPolicyApplyReview:

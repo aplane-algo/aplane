@@ -74,3 +74,27 @@ func TestDeferredRequestIsOnTheListUnderneath(t *testing.T) {
 		t.Fatalf("pending under the popup = %+v, want the deferred request", m.clients.pending)
 	}
 }
+
+// Enrolled Clients is a top-level screen: c on the key list opens it, and
+// esc returns to the key list. Settings no longer binds c.
+func TestKeyListCShortcutOpensEnrolledClients(t *testing.T) {
+	m := Model{viewState: ViewKeyList}
+	next, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	got := next.(Model)
+	if got.viewState != ViewEnrolledClients || !got.clients.loading || got.clients.returnView != ViewKeyList {
+		t.Fatalf("viewState = %v clients = %+v, want the enrolled clients screen loading", got.viewState, got.clients)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want the list request")
+	}
+	got = updateModel(t, got, tea.KeyMsg{Type: tea.KeyEsc})
+	if got.viewState != ViewKeyList {
+		t.Fatalf("view after esc = %v, want the key list", got.viewState)
+	}
+
+	admin := Model{viewState: ViewAdminPanel, admin: adminPanelState{editingRow: -1, settings: &AdminSettings{PassphraseMethod: "none", Theme: "auto"}}}
+	next, _ = admin.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if next.(Model).viewState != ViewAdminPanel {
+		t.Fatalf("settings still binds c: view = %v", next.(Model).viewState)
+	}
+}

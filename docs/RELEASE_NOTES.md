@@ -55,7 +55,7 @@ The SSH username for the request is now `request-enrollment`. Guided cosigner
 setup (`endpoints add`) enrolls automatically when a cosigner refuses the key.
 
 The operator manages keys from the new **Enrolled Clients** panel in `apadmin`
-(`c` on the Admin panel): it lists each key's fingerprint, label, type, and
+(`c` on the key list): it lists each key's fingerprint, label, type, and
 connection state, and can revoke one key or every key. Revocation closes the
 key's live connections at once and the next handshake is refused. The old
 token revoke (`t`) and the `revoke_token` admin message are gone, replaced by

@@ -74,9 +74,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.admin.selectedRow++
 		}
 
-	case "c", "C":
-		return m.openEnrolledClients()
-
 	case "l":
 		return m.openManualLockConfirm()
 

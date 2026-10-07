@@ -78,8 +78,8 @@ identifies the current screen. The enum has families for:
 - Authentication and unlock (`ViewAuth`, `ViewUnlock`)
 - Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
 - Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
-- Enrolled clients (`ViewEnrolledClients`, opened with `c` from the Admin
-  panel): the enrollment requests waiting for approval (`a` approve, `x`
+- Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
+  list): the enrollment requests waiting for approval (`a` approve, `x`
   reject) followed by every enrolled key with fingerprint, label, key type,
   and live connection state (`r` revoke, `A` revoke all); `i` opens the key
   import form (`ViewImportClientKey`: a public-key file on this machine plus
