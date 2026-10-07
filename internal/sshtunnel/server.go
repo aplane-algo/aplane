@@ -1147,33 +1147,47 @@ func (s *Server) handleChannel(sshConn *ssh.ServerConn, info sshConnInfo, newCha
 		_ = tunnelSide.Close()
 		return
 	}
-	defer func() {
-		if err := channel.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close SSH channel: %v\n", err)
-		}
-		_ = tunnelSide.Close()
-	}()
 	go ssh.DiscardRequests(requests)
+
+	// The forwarded connection lives exactly as long as both of its halves.
+	// net.Pipe has no half-close, and the HTTP server treats a client's EOF
+	// as abandonment of the request anyway (it cancels the request context),
+	// so whichever side finishes first tears the whole connection down: the
+	// client going away cancels the in-flight request and frees the HTTP
+	// side at once, and the HTTP side closing ends the channel instead of
+	// waiting for the client to notice its EOF.
+	var teardown sync.Once
+	closeBoth := func() {
+		teardown.Do(func() {
+			_ = tunnelSide.Close()
+			if err := channel.Close(); err != nil && !isClosedConnError(err) {
+				fmt.Printf("Failed to close SSH channel: %v\n", err)
+			}
+		})
+	}
+	defer closeBoth()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		if _, err := io.Copy(channel, tunnelSide); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
 			fmt.Printf("Error copying API to channel: %v\n", err)
 		}
+		// Everything the HTTP side wrote has been handed to the channel (a
+		// pipe write returns only once read), so the client sees an orderly
+		// EOF before the close that follows.
 		if err := channel.CloseWrite(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close channel write: %v\n", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		if _, err := io.Copy(tunnelSide, channel); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
 			fmt.Printf("Error copying channel to API: %v\n", err)
 		}
-		// The client finished sending; let the HTTP side see EOF once its
-		// response is written by closing the pipe only after the other copy
-		// ends (deferred above).
 	}()
 	wg.Wait()
 }

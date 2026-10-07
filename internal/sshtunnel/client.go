@@ -131,6 +131,7 @@ type Client struct {
 	keepaliveStop    *keepaliveStopSignal // Signal to stop keepalive goroutine
 	onDisconnect     func()               // Callback when connection dies
 	disconnectReason string               // Set by server before closing (e.g. "key-revoked")
+	interceptDone    chan struct{}        // Closed once the global-request interceptor has drained
 }
 
 // DisconnectReasonKeyRevoked is the disconnect reason recorded when the server
@@ -221,7 +222,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	// Connect to SSH server
 	addr := net.JoinHostPort(c.host, fmt.Sprint(c.sshPort))
 
-	sshClient, err := c.dialAndIntercept(ctx, "tcp", addr, config)
+	sshClient, interceptDone, err := c.dialAndIntercept(ctx, "tcp", addr, config)
 	if err != nil {
 		if agentConn != nil {
 			_ = agentConn.Close()
@@ -231,6 +232,7 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 
 	c.mu.Lock()
 	c.sshClient = sshClient
+	c.interceptDone = interceptDone
 	c.agentConn = agentConn
 	c.connected = true
 	c.disconnectReason = ""
@@ -907,6 +909,20 @@ func (c *Client) monitorConnection(ctx context.Context, sshClient *ssh.Client, k
 	keepaliveStop.stop()
 	<-keepaliveDone
 
+	// The server's revocation notice precedes its close on the wire, and
+	// the SSH mux closes the request stream before Wait returns, so the
+	// interceptor is about to finish; wait for it so the disconnect reason
+	// is in place before the callback reads it.
+	c.mu.Lock()
+	interceptDone := c.interceptDone
+	c.mu.Unlock()
+	if interceptDone != nil {
+		select {
+		case <-interceptDone:
+		case <-time.After(time.Second):
+		}
+	}
+
 	// Handle disconnection
 	c.handleDisconnect()
 }
@@ -932,16 +948,21 @@ func (c *Client) handleDisconnect() {
 }
 
 // dialAndIntercept connects to the SSH server and intercepts global requests
-// from the server (the revocation notice) before forwarding them to ssh.NewClient.
-func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+// from the server (the revocation notice) before forwarding them to
+// ssh.NewClient. The returned channel closes once the interceptor has
+// drained the request stream, which the SSH mux closes when the connection
+// ends.
+func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, chan struct{}, error) {
 	sshConn, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Intercept global requests: capture server signals, forward the rest
 	filteredReqs := make(chan *ssh.Request, 16)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for req := range reqs {
 			if req.Type == RevokedRequestType {
 				c.mu.Lock()
@@ -960,7 +981,7 @@ func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, con
 	}()
 
 	client := ssh.NewClient(sshConn, chans, filteredReqs)
-	return client, nil
+	return client, done, nil
 }
 
 func forwardInterceptedGlobalRequest(ctx context.Context, filteredReqs chan<- *ssh.Request, req *ssh.Request) bool {
