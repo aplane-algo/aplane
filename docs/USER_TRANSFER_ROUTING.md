@@ -22,7 +22,7 @@ identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.jso
 Write or edit routes in a policy file outside the node, run
 `apadmin policy check FILE`, then `apadmin policy apply FILE` while `apsigner`
 is running. `apadmin` applies changes as whole-document replacements through
-the running signer; it does not merge independent route fragments. Every apply
+the running signer; it does not merge independent route fragments. Every apply that changes the policy set
 commits a new store generation.
 
 ```bash
@@ -1079,7 +1079,8 @@ Routing resolves the transaction `GenesisHash` to a network token before route
 matching. Built-in Algorand networks are known automatically. Custom and
 localnet networks must be configured under signer `networks.<token>.genesis_hash`.
 
-If the hash cannot be resolved, routing emits
+Normal planning rejects an unknown hash before policy evaluation. In isolated
+routing evaluation, if the hash cannot be resolved, routing emits
 `transfer_policy:unknown_genesis_hash` using the `on_no_route` tier:
 
 - `reject` rejects,

@@ -32,7 +32,7 @@ guarded cosigner provider (`aplane.falcon1024-cosigner1024.v1`) is Go-defined.
 versioned YAML templates and remain compatibility boundaries.
 
 Installing a user-loaded template with `apadmin template import` requires the
-identity master passphrase through an authenticated daemon admin session. An AI
+product-store passphrase through an authenticated daemon admin session. An AI
 agent cannot perform this step. Generate the YAML file and let the user run
 the install command themselves.
 
@@ -112,7 +112,8 @@ For bounded1 work, read
 - base DSA authentication executes on every accepted path;
 - composer-owned fee, type, and danger-field checks execute before author
   Layer 3;
-- only pure `pay`/`axfer` spends can reach author Layer 3;
+- admitted pure `pay`/`axfer` spends can reach author Layer 3; a spending-key
+  rekey reaches it only when the profile explicitly selects `policy_gate: layer3`;
 - rekey detection precedes transaction-type dispatch and accepts only the
   frozen pure-rekey normal form;
 - bounded1 uses only a Falcon-1024 contract admin key and has no algorithm
@@ -283,7 +284,7 @@ apadmin template import <template.yaml>
 
 After installing:
 
-1. Unlock or reload `apsigner`.
+1. The authenticated install reloads `apsigner` before reporting success.
 2. Confirm discovery:
    ```text
    apshell keytypes
@@ -298,19 +299,19 @@ Do not tell the user that editing top-level `library/templates/` installs a temp
 Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. The default template
 (`aplane.falcon1024-allowlist.v1`) is installed during new signer-store
-initialization; other templates become installed only after
-`apadmin template import`.
+initialization; other templates require an authenticated import or KeyType
+Library install.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see
-[DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Identity Filesystem State and YAML Template
+[DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Product Filesystem State and YAML Template
 Notes).
 
 Agent-facing rules that follow from those mechanics:
 
 - Never describe a disabled installed template as removed; disable is
   reversible state-only, remove archives the encrypted source.
-- Do not propose disable or remove while any identity keys still use the key
+- Do not propose disable or remove while any product-store keys still use the key
   type — the operation is rejected by the in-use guard.
 - Do not claim existing keys stop signing after disable or remove; they keep
   signing from their own stored metadata.
@@ -338,7 +339,7 @@ Negative cases should show forbidden behavior fails, for example:
 For integration tests, prefer the normal end-to-end harness path:
 
 ```bash
-make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run <TestName>'
+make integration-test-localnet INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run <TestName>'
 ```
 
 ## When To Ask

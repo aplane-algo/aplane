@@ -540,7 +540,7 @@ populates the signer cache after connection.
 
 ```go
 result, err := engine.ConnectWithTunnel(
-    target,      // "user@host"
+    target,      // display target derived from the selected endpoint
     host,        // "host.example.com"
     sshPort,     // 1127
     localPort,   // free loopback port chosen by the caller
@@ -611,22 +611,26 @@ count, err := engine.RemoveSet("team")
 
 ### Cache Staleness & Integrity
 
-Caches are optimistic — they can become stale if external state changes mid-session.
-The design ensures that **staleness can only cause failed transactions, never incorrect ones**:
+Caches can become stale when chain state or another process changes shared
+client data. Signer and network checks reject some stale authority/state inputs,
+but cache validation is not a guarantee that resolved addresses or amounts
+match an operator's intent:
 
 | Cache | Source of Truth | Staleness Cause | Worst Case |
 |-------|----------------|-----------------|------------|
 | **SignerCache** | apsigner `/keys` | Key added/deleted on signer | Missing key → signing error; stale key → server rejects |
 | **AuthCache** | Blockchain `auth-addr` | Account rekeyed externally | Wrong signer → transaction rejected by network |
-| **AliasCache** | User commands | User-managed only | N/A — user controls all mutations |
-| **SetCache** | User commands | User-managed only | N/A — user controls all mutations |
-| **ASACache** | Blockchain + builtins | Asset params changed (rare) | Wrong decimals in display; amounts are base units at signing |
+| **AliasCache** | Persisted operator alias state | Another client changes an alias | A stale resolved address may still be a valid recipient; inspect the resolved transaction |
+| **SetCache** | Persisted operator set state | Another client changes membership | Stale recipients may still be valid addresses |
+| **ASACache** | Blockchain + builtins | Stale or incorrect metadata | Display-unit conversion may select unintended base units; the signer sees those base units |
 
 **Note**: There is no LSig cache in the Engine. LSig bytecode is stored in the signer's key files and retrieved per-signing-operation.
 
-**Key safety property**: No cache staleness can cause funds to be sent to a wrong address
-or signed by an unintended key. The blockchain and apsigner enforce correctness at
-submission time — caches only affect address resolution and display.
+The blockchain enforces the effective authorizer, and apsigner applies policy
+to decoded transaction bytes. Neither can infer an intended recipient or
+display-unit amount from a stale alias/set/ASA cache. Shared client mutations
+use the cooperative lock, and passive cache watching refreshes snapshots at
+command boundaries; those mechanisms improve freshness rather than prove intent.
 
 **Self-healing mechanisms**:
 - SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,

@@ -21,8 +21,8 @@ The spec lives at [formal/session_ownership.tla](formal/session_ownership.tla).
 Admin authentication unlocks the product runtime as a side effect of verifying the
 passphrase (`adminserver/session.go` `AuthenticateOutcome`), *before* the
 session becomes the active owner. Ownership is only established afterwards
-(`BindPreAuthPending` for IPC, optional displacement offer,
-`PromoteToActive`).
+(`PromoteToActive`). Pending-slot binding and any displacement offer precede
+authentication; promotion still follows the unlock side effect.
 Any failure in that window — pending-slot contention, displacement rejection,
 promotion failure, connection drop — must not strand the product runtime unlocked
 with no session left whose exit re-locks it. That is exactly the hole the
@@ -92,7 +92,7 @@ The restored spec passes.
 - **`lock_on_disconnect` chosen at Init, never changed.** SO2 is vacuous when
   it is FALSE (the operator opted out of re-locking); TLC explores both.
 - **`AuthSucceed` models `auth`, not `auth_only`.** The current admin protocol
-  v5 retains `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
+  v6.0 retains `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
   `transport/protocol_flow.go` `authenticateOnly`), which verifies the
   passphrase and binds the runtime without authorizing or invoking
   `identity.unlock`. It is a non-owning, authenticated read-only observer:

@@ -108,11 +108,12 @@ The system enforces a strict security boundary between APlane Shell (client) and
 ```
 
 Remote shell clients connect through an SSH tunnel to the signer HTTP API.
-Local clients may use loopback REST directly or through local console
-composition. In all cases, signer operations use the signer's HTTP/JSON API or
+Local API clients also use an enrolled SSH connection; direct loopback REST
+serves only `/health`. Local console administration uses IPC. In all cases, signer operations use the signer's HTTP/JSON API or
 authenticated admin protocol.
 
-**Key principle**: Signer-managed private keys never leave the signing device.
+**Key principle**: ordinary signing does not return private keys. Explicit
+authenticated backup/export workflows can release encrypted credential artifacts.
 
 ## Layer Responsibilities
 
@@ -205,7 +206,6 @@ aplane/
 │   ├── transport/                 # IPC admin client transport
 │   ├── sshtunnel/                 # SSH server and client tunnel support
 │   ├── signerclient/              # Signer REST client
-│   ├── signerapi/                 # Internal aliases for pkg/signerapi DTOs
 │   ├── keytypecatalog/            # Compiled key type visibility catalog
 │   ├── keytypestate/              # Product-store key type state records
 │   ├── templatelibrary/           # Plaintext KeyType Library parsing/install
@@ -230,7 +230,7 @@ aplane/
 ├── lsig/                          # LogicSig provider implementations
 │   ├── all.go                     # Built-in LogicSig registration aggregator
 │   ├── falcon1024/                # Falcon-1024 DSA provider
-│   │   ├── derivation/, family/, keygen/, keys/, signing/
+│   │   ├── derivation/, family/, keygen/, keys/, signerops/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
 │   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + cosigner) LogicSig provider
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
@@ -291,6 +291,7 @@ See [USER_CONFIG.md](USER_CONFIG.md) for full reference.
 
 Clients send `TxnBytesHex` to the signer and the server derives what to sign based on key type:
 - **Ed25519**: sign full transaction bytes (`TX` + msgpack)
+- **Native Falcon-1024**: native PQ domain and `PQsig` authorization
 - **LogicSig DSA**: sign 32-byte transaction ID hash
 - **Generic LogicSig**: no signature
 

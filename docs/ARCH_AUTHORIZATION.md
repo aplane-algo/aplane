@@ -73,6 +73,7 @@ The one product store owns signer state:
 - keystore metadata
 - product runtime config
 - enrolled client registry (`.ssh/authorized_keys`)
+- pending enrollment queue (`.ssh/pending_enrollments.json`)
 - approval coordinator
 - runtime lock/unlock state
 - watcher and reload ownership
@@ -120,7 +121,8 @@ mode: product_single
 admin principal: system:product-admin
 client principals: client:<fingerprint>, role client
 authorization source: closed action allowlists (product admin, client role)
-identity/principal/group/grant management UI: enrolled-client list and revocation only
+identity/principal/group/grant management: no mutable management graph
+client enrollment UI: pending/enrolled lists, approve, reject, import, revoke
 ```
 
 The authorization path is:
@@ -196,8 +198,9 @@ not by a signer-side activity grant.
 ### No Remote Admin Transport
 
 The admin protocol is carried only over the local IPC socket. SSH carries
-port forwarding to the HTTP API and `request-enrollment` bootstrap; it refuses
-session channels, so no admin subsystem is reachable over SSH. Remote
+API port forwarding and `request-enrollment` bootstrap. API-authenticated
+connections refuse session channels; enrollment connections accept only the
+enrollment exec flow, so no admin subsystem is reachable over SSH. Remote
 administration means logging in to the signer host and running `apadmin`
 there.
 
@@ -262,8 +265,11 @@ these conditions hold:
   whose role is `client`;
 - the action is in the closed known-action vocabulary;
 - the action is independently present in the allowlist for that principal
-  kind; and
-- the callsite supplies a concrete resource type and, where applicable, ID.
+  kind.
+
+Callsites supply a concrete resource type and, where applicable, ID for target
+attribution and audit. The current product authorizer decides on principal,
+role, and action membership; it does not match resource-specific grants.
 
 Adding a known action does not add it to the product allowlist. This preserves
 a deliberate review point for new sensitive operations. There is no runtime
@@ -302,8 +308,9 @@ Enforced callsites:
   template list/install/remove, policy view/update, settings view/update,
   signer-managed backup creation/list, credential restore preview/apply,
   restore rollback/reconciliation,
-  passphrase rotation, signing approval response, client enrollment response,
-  enrolled-key listing, and key revocation through `s.authorize`.
+  passphrase rotation, signing approval response, queued-enrollment
+  approve/reject, public client-key import, pending/enrolled-key listing, and
+  key revocation through `s.authorize`.
 
 `/health` is intentionally absent from the enforcement list. It is an
 unauthenticated health endpoint in [ARCH_HTTP_API.md](ARCH_HTTP_API.md);

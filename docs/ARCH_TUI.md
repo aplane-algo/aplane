@@ -44,12 +44,13 @@ overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
 
 Signing and client-enrollment approval popups stay in front of every other
-screen until the operator answers them or apsigner withdraws the request.
+screen until the operator answers, apsigner withdraws the request, or the
+operator defers an enrollment popup with Esc.
 Results that arrive meanwhile update the screen underneath, and answering or a
 withdrawal returns to that screen; a second pending approval shows next.
-apsigner rejects every pending approval when the admin session ends or the
-signer locks, so disconnect, reconnect, reauthentication, displacement, and lock
-drop them from the TUI as well.
+apsigner rejects pending signing approvals when the admin session ends or the
+signer locks. Those transitions clear local popups too; persisted enrollment
+requests remain queued and can be announced again on a later login.
 
 Each in-progress generate, import, delete, key-type install, or backup records
 its request ID. An untyped failure (an authorization denial, a send error, or a
@@ -87,13 +88,15 @@ identifies the current screen. The enum has families for:
   lists on every `enrollment_changed` notification while it, one of its
   sub-views, or a popup raised over it is showing, so requests arriving over
   SSH, answers from another admin client, and clients connecting or
-  disconnecting appear on their own. The enrollment popup queues requests announced while
+  disconnecting appear on their own when a notification is emitted. Known
+  refresh/removal notification gaps are recorded in
+  [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md). The enrollment popup queues requests announced while
   one is on screen and shows them in turn; a request announced again at
   login is shown once. `Esc` on the popup defers the request rather than
   rejecting it: nothing is sent, the request stays in the signer's queue and
   on the Enrolled Clients screen, the next waiting request takes the popup,
-  and a later announcement (the next login, or the client asking again)
-  shows it again. `Esc` on the signing popup still rejects, since a signing
+  and a later announcement at the next login shows it again. A repeated client
+  request currently refreshes the persisted entry without announcing it again. `Esc` on the signing popup still rejects, since a signing
   client is waiting on the answer
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,

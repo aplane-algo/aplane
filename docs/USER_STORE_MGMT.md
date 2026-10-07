@@ -21,7 +21,8 @@ This guide explains how to back up and restore your keys.
 
 ### Key Management Architecture
 
-Key management is handled by **apadmin** and **apstore**, not directly by apsigner:
+Live key management is requested through **apadmin** and executed by
+**apsigner**. **apstore** owns stopped-daemon bootstrap and rescue:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -90,8 +91,8 @@ In the TUI:
    or 24 words for the `aplane.falcon1024.v1` LogicSig
 4. Confirm the import
 
-Mnemonic import is accepted only by local AP Admin over IPC. Remote AP Admin
-over SSH is rejected for mnemonic import.
+Mnemonic import uses AP Admin over local IPC. For remote operation, log in
+to the signer host and run AP Admin there; the node has no SSH admin channel.
 
 Mnemonic export is disabled. Use encrypted backup archives for recovery.
 
@@ -183,7 +184,7 @@ It does **not** include:
 - the store's `store-root.enc` root and `.keystore` marker
 - the enrolled client key registry
 - any unlocked runtime state
-- policy, approval defaults, network/genesis mappings, templates, or key-type state
+- signer policy, approval defaults, network/genesis mappings, templates, or key-type state
 - algod URLs, algod tokens, endpoints, or other network credentials
 
 **Important:** Backup files use standalone `envelope_version 2` encryption. Each `.apb` file embeds its own salt, so only the file and the export passphrase are needed to decrypt it.
@@ -437,9 +438,10 @@ A different credential is a conflict. An unreadable destination credential is
 also a replaceable conflict, allowing a recovery-mode restore to repair store
 damage with `--replace-existing`.
 
-The daemon automatically rolls back to the sealed parent if the newly restored
-generation cannot reload. If commit durability or rollback becomes uncertain,
-the product enters recovery mode and signing remains blocked. Recovery tools:
+A reload failure after restore publication enters recovery mode and blocks
+signing. The operator reconciles, repairs, or requests an eligible explicit
+rollback; the daemon does not automatically select the parent. Uncertain
+commit durability also enters recovery mode. Recovery tools:
 
 ```bash
 ./apadmin restore reconcile
@@ -486,7 +488,7 @@ directories. Such a mix may select older valid authority; quarantine preserves
 ambiguous newer ciphertext but cannot make the mixed snapshot valid or
 decryptable.
 
-Every policy apply or removal (`apadmin policy apply|remove`, online or
+Every policy apply or removal that changes the set (`apadmin policy apply|remove`, online or
 rescue) also commits a new generation, so each policy change leaves a retained
 prior generation until explicit generation pruning. Key mutations do not mint
 generations.
@@ -534,7 +536,7 @@ apadmin archive prune --confirm deleted/keys/<selector>.key
 The limit is 4,096 entries and 256 MiB, with emergency-deletion reserve below
 the hard bound. A delete that would exceed the limit fails before changing the
 active credential. Archive prune accepts only canonical deleted credential or
-template paths, requires `identity.archive.prune`, and durably audits intent.
+template paths or complete archived cosigner policy/sidecar pairs, requires `identity.archive.prune`, and durably audits intent.
 
 Passphrase rotation does not require generation pruning. Retained generations
 remain rollback targets and stay readable under their historical key terms.
@@ -560,8 +562,8 @@ above still apply.
 Managed backups contain complete encrypted credential records and archive
 integrity metadata. They deliberately exclude:
 
-- policy documents (`policy.json`, `policies/*.json`) and policy integrity
-  sidecars
+- signer `policy.json` and policy integrity sidecars; verified per-key
+  cosigner documents are included as encrypted `policies/<WitnessKeyID>.apb`
 - `user_auto_approve` and other product settings
 - network/genesis mappings and endpoints
 - installed or library templates and key-type enable/disable state
@@ -580,8 +582,8 @@ credentials; they are not needed to reconstruct the signing authority already
 stored in a valid credential.
 
 Archive authentication proves exact membership under the export passphrase. It
-does not authorize any destination policy choice. The operator is responsible
-for the destination policy and configuration under which restored credentials
+does not authorize any destination policy choice. Explicit replacement authorizes a differing archived cosigner policy. The
+operator is responsible for destination signer policy and configuration under which restored credentials
 will run.
 ### Rebuild an Absent Keystore
 
@@ -819,18 +821,18 @@ compiled-provider enablement and YAML-template import/enable, see
 
 **Solution**:
 1. Check if the key is already loaded in the apadmin TUI key list
-2. If you need to overwrite, delete the existing key first
+2. Review a restore preview and use `--replace-existing` only for intentional replacement; an identical credential is a no-op
 3. Or restore to a fresh keystore directory
 
 ### "Template/provider unavailable" Error
 
-**Problem**: A restored template-backed key requires a provider or
-installed product template that is not present on the destination. Credential
+**Problem**: A restored DSA-backed key references a base signing provider
+that the destination binary does not support. Credential
 backups do not carry template YAML.
 
 **Solution**:
 1. Keep bundled library key types on the definition bundled with the active installation.
-2. Install or enable the required destination provider/template explicitly.
+2. Use a binary with the required base signing provider. Installing or enabling the creation template is unnecessary for complete stored signing authority.
 3. For custom templates, use a new versioned `key_type` such as
    `example.my_escrow.v2` instead of changing the meaning of an existing one.
 
@@ -855,7 +857,8 @@ backups do not carry template YAML.
 
 **Problem**: You expected an apadmin mnemonic export command
 
-**Cause**: The signer disables key export over the admin protocol. Generated
+**Cause**: The signer does not expose mnemonic export. Encrypted credential
+backup/export remains available over the admin protocol. Generated
 mnemonics are stored in encrypted key files for recovery metadata, but are not
 sent back to apadmin.
 

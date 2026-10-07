@@ -27,7 +27,7 @@ way `js_reference` serves `USER_JSAPI.md`.
 ```
 +----------+  JSON-RPC / stdio  +------------------+  SSH tunnel   +-----------+
 |   LLM    | <----------------> |  apshell --mcp   | <-----------> |  apsigner |
-|  client  |   (MCP tools)      |  (client/REPL)   |   or loopback |  (signer) |
+|  client  |   (MCP tools)      |  (client/REPL)   |               |  (signer) |
 +----------+                    +--------+---------+   REST        +-----------+
                                          |
                                          v
@@ -40,13 +40,12 @@ Three distinct processes:
 1. **You (the MCP client)** issue tool calls over stdio.
 2. **apshell** is the *client*: it parses commands, resolves aliases, builds
    transactions, talks to the network (algod/indexer), and routes signing
-   requests to the signer. **It holds no private keys.**
+   requests to the signer. **Account signing keys remain on apsigner; the client holds its SSH key.**
 3. **apsigner** is the *signer*: a network-isolated daemon that owns the keys,
-   applies policy, and signs. Reached over an SSH tunnel (remote) or loopback
-   REST (local).
+   applies policy, and signs. Reached over enrolled SSH for local and remote API calls; direct loopback
+   REST serves only health.
 
-**The one rule that explains everything else:** *signer-managed private keys
-never leave the signing device.* The client builds and submits; the signer
+**The one rule that explains everything else:** *ordinary signing returns authorization, not private keys.* The client builds and submits; the signer
 signs. This is why scripts have no key access, why signing is a request/approve
 round-trip rather than a local call, and why a key generation request returns
 only an address.
@@ -55,7 +54,7 @@ only an address.
 
 ```json
 {"network":"localnet","signer_connected":true,
- "connection_target":"127.0.0.1 (ssh:49467, signer:60040)","ssh_tunnel":true,
+ "connection_target":"ssh://127.0.0.1:49467","ssh_tunnel":true,
  "write_mode":false,"signer_key_count":0, ...}
 ```
 
@@ -264,9 +263,11 @@ hybrid rekey-and-spend forms are rejected.
 Mnemonic import exists only for families whose provider supports it (generic
 LogicSig templates have no key to import).
 
-> ⚠️ **Rekey gotcha:** after a `rekey`, run `rekey refresh` (or
-> `rekey refresh <addr>`) — otherwise the signer keeps using the *old*
-> authorizer. See [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
+> **Rekey refresh:** confirmed rekeys through the ordinary single-transaction
+> workflow and bounded-admin completion refresh affected client auth-cache
+> entries automatically. Run `rekey refresh <addr>` after other submission
+> workflows, external changes, an unconfirmed submission, or a reported refresh
+> failure. See [USER_COMMANDS.md](USER_COMMANDS.md#rekeying-commands).
 
 > Full detail: [USER_KEYTYPES.md](USER_KEYTYPES.md),
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md),
@@ -286,7 +287,7 @@ signer decides what to sign:
 | Key type | Message signed |
 |----------|----------------|
 | Ed25519 | the full transaction (`"TX"` + msgpack) |
-| Native Falcon | the full transaction (`"TX"` + msgpack), emitted as top-level `PQsig` |
+| Native Falcon | `TX` + msgpack transaction bytes, emitted as top-level `PQsig` |
 | LogicSig DSA | the 32-byte transaction ID (`SHA512/256("TX"+msgpack)`) |
 | Generic LogicSig | nothing — TEAL logic authorizes, args come from the stored schema |
 
@@ -331,8 +332,8 @@ passthrough.
 - **Pre-grouped transactions are immutable.** If a pre-grouped batch needs more
   dummies than its budget allows, the request is **rejected** — submit the
   transactions *ungrouped* and let the signer build the group.
-- Mixed groups (Ed25519 + DSA LogicSig + generic LogicSig + foreign +
-  passthrough) are supported in one atomic group, subject to the rules above.
+- Mixed native and LogicSig groups are supported; foreign and passthrough
+  entries cannot coexist in the same request.
 
 ### Client-side pre-flight (before the signer is involved)
 
@@ -405,7 +406,7 @@ Guarded account key types embed a cosigner's public key in their LogicSig, so a
 transaction needs **two** authorizations: the user signer proves control, and a
 separate **cosigner** signer authorizes the facts under cosigner policy. The client
 orchestrates this automatically when any effective signer is a guarded account —
-it never holds keys:
+it never receives account signing keys:
 
 - Guarded/cosigner keys are **never** signed via plain `/sign` (it rejects them).
   They go through `/sign/component` (roles `user` and `cosigner`) and
@@ -425,7 +426,7 @@ it never holds keys:
 
 ## 7. Rehearse before you commit
 
-Four levers let you inspect a transaction before it is real:
+These controls help inspect planning, signature release, and submission:
 
 | Lever | Shell | JS | Effect |
 |-------|-------|-----|--------|
@@ -548,11 +549,11 @@ appCall(123, "deposit(uint64)void", "artifacts/app.arc32.json", "alice", [100], 
 })
 ```
 
-### Rekey (with the required refresh)
+### Rekey and explicit refresh
 
 ```text
 rekey hot to cold
-rekey refresh hot          # REQUIRED — else the signer uses the old authorizer
+rekey refresh hot          # explicit refresh after external/unconfirmed changes
 rekey list
 ```
 
@@ -595,7 +596,7 @@ each MCP server instance uses its own:
 - **Pre-grouped + insufficient LogicSig resources or fees → rejected.** Submit
   ungrouped.
 - **All-foreign sign/plan requests are rejected.**
-- **After `rekey`, run `rekey refresh`.**
+- **Refresh after external or unconfirmed rekeys, or a reported cache refresh failure.**
 - **`request-enrollment`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
   (no args) are not available via the `execute` tool** — use the dedicated
   tools or a terminal.

@@ -35,7 +35,7 @@ Each line is a JSON object with the following fields:
 | `txid` | string | Transaction ID (after signing) |
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
-| `policy_rule_id` | string | Policy rule that forced manual review before the operator decision |
+| `policy_rule_id` | string | Matching policy rule for rejection, forced review, or explicit auto-approval |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
@@ -49,8 +49,8 @@ Fields are omitted when empty.
 ```json
 {"timestamp":"2026-02-28T16:00:00Z","event":"SERVER_START","key_count":3}
 {"timestamp":"2026-02-28T16:00:05Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","admin_session_id":"admin-1","transport":"ipc","outcome":"connected","remote_addr":"local"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","requester_principal":"system:product-admin","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
-{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","requester_principal":"system:product-admin","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_REQUEST","requester_principal":"client:SHA256:example","transport":"http","outcome":"requested","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_type":"pay","txn_details":"pay 1.5 ALGO to DEF...UVW"}
+{"timestamp":"2026-02-28T16:01:12Z","event":"SIGN_APPROVED","requester_principal":"client:SHA256:example","approver_principal":"system:product-admin","transport":"http","outcome":"approved","txn_auth":"ABC...XYZ","txn_sender":"ABC...XYZ","txn_details":"txn 1/1 signed"}
 {"timestamp":"2026-02-28T16:05:00Z","event":"SERVER_STOP"}
 ```
 
@@ -81,7 +81,7 @@ Fields are omitted when empty.
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
 | `CREDENTIAL_RESTORE_SUCCEEDED` | Credential restore committed and reloaded successfully |
-| `CREDENTIAL_RESTORE_FAILED` | Credential restore failed or was automatically rolled back |
+| `CREDENTIAL_RESTORE_FAILED` | Credential restore failed; a committed reload failure enters recovery and requires explicit repair or eligible rollback |
 | `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` is visible but durability is unconfirmed; signing remains recovery-blocked pending reconciliation |
 | `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded or failed |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
@@ -138,7 +138,8 @@ If rotation fails, logging continues to the current file.
 
 ## Durability
 
-Each log entry is flushed to disk immediately (`fsync`) after writing. This ensures entries survive unexpected crashes but may have a minor performance cost under high signing throughput.
+Each log entry attempts an immediate disk flush (`fsync`) after writing. Write/sync
+failures are reported; a failed flush cannot guarantee crash durability but may have a minor performance cost under high signing throughput.
 
 ## Inspecting the Log
 

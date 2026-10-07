@@ -186,7 +186,8 @@ Fingerprint authoring rules:
 
 Credential backups do not bundle template YAML. Restored keys retain durable
 signing metadata, and the destination must provide any required signer-side
-provider or installed product template through its normal installation flow.
+base provider through its normal installation flow. The creation template
+is not required for restoring or signing a key with complete durable metadata.
 
 Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into the product namespace before use. Source-tree
@@ -347,10 +348,11 @@ Choose exactly one primary category.
 
 Examples:
 - `ed25519`
+- `falcon1024` (native PQ)
 
 Characteristics:
-- native Algorand signature
-- signature goes in `SignedTxn.Sig`
+- native Algorand authorization
+- Ed25519 signature goes in `SignedTxn.Sig`; native Falcon uses `SignedTxn.PQsig`
 - not a LogicSig
 
 Typical code areas:
@@ -658,12 +660,12 @@ runtime_args:               # optional
     byte_length: <n>        # 0 = variable length
 
 teal: |
-  #pragma version 10
+  #pragma version 13
   // strict mode: $variable constant references
 ```
 
 Strict variable constants by type. These constant blocks are emitted by the
-APlane renderer alongside any APlane-generated salt anchor; template authors
+APlane renderer before compiler-owned auto-salting; template authors
 should still avoid hand-written constant blocks in TEAL source.
 
 | Type | Input | TEAL Output |
@@ -729,7 +731,7 @@ if len(publicKey) != family.PublicKeySize {
 
 // Require algod client before derivation
 if a.algodClient == nil {
-    return nil, "", fmt.Errorf("algod client not set: configure algod.testnet.server")
+    return nil, "", fmt.Errorf("algod client not set: configure networks.<network>.algod.server and teal_compile_network")
 }
 ```
 
@@ -863,7 +865,7 @@ runtime_args:
     byte_length: 0
 
 teal: |
-  #pragma version 10
+  #pragma version 13
   // Escrow: claim with approval code, or refund after timeout
 
   // Security: Prevent RekeyTo
@@ -1073,7 +1075,7 @@ Examples:
 
 ### TUI / Discovery
 
-- [ ] `go test ./cmd/apadmin/...`
+- [ ] `go test ./cmd/apadmin/... ./internal/signerapp/signertui/...`
 - [ ] ensure default-enabled key types are discoverable without product-store enablement
 - [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after product-store enablement
 - [ ] ensure user-loaded templates appear after installation and runtime reload/unlock, disappear when disabled, and reappear when enabled again

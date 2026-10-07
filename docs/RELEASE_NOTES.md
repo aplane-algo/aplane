@@ -1,5 +1,10 @@
 # Release Notes
 
+Entries are newest first and include pre-release development history. Older
+token, setup-file, and protocol-v5 entries describe behavior superseded by the
+enrolled-key model and current admin protocol v6.0; they are not current setup
+instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
+
 ## Enrollment requests wait for the operator
 
 `request-enrollment` no longer waits for the operator. The node queues the
@@ -42,7 +47,9 @@ than from Settings, and keeps itself current: the signer sends a new
 `enrollment_changed` admin notification whenever a request is queued,
 approved, rejected, imported, or a key is revoked, and whenever an enrolled
 client connects or disconnects, and the screen re-fetches its lists on each
-one. The screen's `R` refresh key is gone. Admin clients that do not know the
+one. Repeated-request refreshes and some queue-removal retries currently lack
+that notification; see the implementation gaps in
+[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md). The screen's `R` refresh key is gone. Admin clients that do not know the
 notification ignore it.
 
 ## The client's SSH key is its only credential

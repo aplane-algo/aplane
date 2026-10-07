@@ -46,7 +46,8 @@ Envelope(P) = PureSpend(P) union enabled AdminOperation(P, kind)
 
 Accepted(P) =
   {tx in PureSpend(P) where SpendingPolicy(tx)}
-  union enabled AdminOperation(P, kind)
+  union {tx in enabled AdminOperation(P, kind)
+         where operation authentication and its declared policy gate pass}
 ```
 
 The guaranteed containment property is `Accepted(P) subset-of Envelope(P)`.
@@ -78,8 +79,8 @@ is a complete value-spending policy.
 | Admin endpoint | `POST /sign/bounded-admin` |
 | Bundled composed templates | five schema-v2 profiles listed below |
 
-`bounded1` is an administrative custody operation, not a send-flow variant.
-It is intentionally packaged through the separate `aprekey` binary and the
+Contract-admin rekey is an administrative custody operation. It is
+intentionally packaged through the separate `aprekey` binary and the
 typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
@@ -137,11 +138,11 @@ Compiler-backed maximum-path measurements are frozen by
 
 | Key type | Final bytecode | Spend args / v42 group / fee | Admin args / v42 group / fee |
 |---|---:|---:|---:|
-| Falcon inline allowlist | 3,155 | 1,423 / 2 / 2,117 | n/a |
-| Falcon Merkle allowlist | 2,184 | 1,935 / 2 / 2,019 | n/a |
-| Falcon timelock | 1,943 | 1,423 / 2 / 2,000 | n/a |
-| Falcon rekey-locked allowlist | 5,308 | 1,423 / 2 / 2,332 | 2,846 / 3 / 3,232 |
-| Corridor | 5,936 | 3,358 / 4 / 4,196 | 2,846 / 3 / 3,295 |
+| Falcon inline allowlist | 3,142 | 1,423 / 2 / 2,115 | n/a |
+| Falcon Merkle allowlist | 2,161 | 1,935 / 2 / 2,017 | n/a |
+| Falcon timelock | 1,934 | 1,423 / 2 / 2,000 | n/a |
+| Falcon rekey-locked allowlist | 5,285 | 1,423 / 2 / 2,330 | 2,846 / 3 / 3,230 |
+| Corridor | 5,926 | 3,358 / 4 / 4,195 | 2,846 / 3 / 3,294 |
 
 Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
 pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
@@ -340,7 +341,7 @@ The first implementation must freeze and test a vector using:
 ```text
 full_key_type: aplane.falcon1024-allowlist-alock.v1
 base_primitive: falcon1024
-teal_version: 12
+teal_version: 13
 spending_public_key: 1,793 bytes of 0x11
 falcon_admin_public_key: 1,793 bytes of 0x22
 spend_effects: [pay, axfer, asset_opt_in]

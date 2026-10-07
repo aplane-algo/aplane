@@ -47,12 +47,11 @@ covered by the concrete Go test
 represent client submission or simulation transport.
 
 **Model drift: SSH authentication boundary.**
-The runtime now authenticates normal SSH connections with verified public-key
-partial success followed by a mutual, host-key-and-nonce-bound token proof.
-Clients also enforce a postcondition that rejects servers which skip the proof
-stage. Existing formal models do not model SSH transport authentication, so no
-modeled invariant changed, but any future transport-boundary model must use
-this two-stage boundary rather than the former token-in-username assumption.
+Normal SSH connections authenticate possession of a supported enrolled public
+key under username `aplane`. API connections carry its verified fingerprint,
+and HTTP rechecks enrollment per request. There is no token proof stage or
+header credential. Existing formal models do not model the SSH handshake;
+a future transport model must describe this enrolled-key boundary.
 
 **Model drift: lock-during-unlock race handling.**
 The runtime lock state machine gained a lock-generation counter: `TryUnlock`
@@ -96,7 +95,7 @@ section.
 
 **Out of model: non-owning authenticate-without-unlock (`auth_only`).**
 The admin protocol retains a second pre-auth message, `auth_only`, in the
-current v5 surface. `auth_only`
+current v6.0 surface. `auth_only`
 (`internal/signerapp/adminserver/session.go` `AuthenticateOutcome`,
 `internal/transport/protocol_flow.go` `authenticateOnly`) verifies the
 passphrase and binds the session runtime but never authorizes or invokes
@@ -143,8 +142,8 @@ audit cover:
 - passthrough signed-transaction txid mismatch rejection during
   `/sign/assemble`,
 - direct `/sign` rejection for all guarded account key types,
-- malformed component-sign response rejection before local cosigner signature
-  verification.
+- malformed component-sign response rejection before forwarding opaque signatures
+  to signer assembly.
 
 ## Deferred until design decision
 

@@ -70,9 +70,8 @@ composed DSA templates and schema v2 for bounded templates; each version rejects
 the other's shape.
 
 **Restore invariant:** credential backups do not carry template YAML. Restored
-keys retain their durable signing metadata, while any required provider or
-installed product template must already be available on the destination under the
-normal registry and template precedence rules.
+keys retain their durable signing metadata, while any required base signing provider must already be available on the destination.
+Credential restore does not require installing or enabling the creation template.
 The key file remains the signing authority: generic v1 signing-metadata keys can
 sign from stored bytecode/runtime args, and DSA v1 signing-metadata keys require
 the stored `base_key_type` signer-side provider rather than the composed
@@ -363,7 +362,8 @@ salt style is not exposed through public wire DTOs.
 
 Schema-v2 composed templates add a composer-owned transaction envelope ahead
 of the author suffix. Authentication remains first; fee/type/effect dispatch
-is second; author Layer 3 is reachable only from the pure-spend branch. The
+is second; author Layer 3 runs on admitted spends and on spending-key rekeys only when
+the profile selects `policy_gate: layer3`; external-admin rekeys skip Layer 3. The
 composer owns all `__aplane_bounded1_` labels and the `bounded_` parameter
 namespace.
 
@@ -556,7 +556,7 @@ lsig/signerreg.RegisterSigner()
 
 Runtime templates (from keystore) are loaded after unlock:
 ```go
-signertemplates.NewManager(paths).RegisterKeystoreTemplates(identityID, keyring)
+signertemplates.NewManager(paths).RegisterKeystoreTemplates(keyring)
 ```
 
 ## Algod Client Configuration
@@ -584,13 +584,13 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 
 ## Key Types Summary
 
-| Key Type | Key-type family | Category | Description |
+| Key Type | Display family | Category | Description |
 |----------|--------|----------|-------------|
-| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
-| `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
-| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
+| `aplane.falcon1024.v1` | `falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
+| `aplane.falcon1024-cosigner1024.v1` | `falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
+| `aplane.falcon1024-allowlist-alock.v1` | `falcon1024-allowlist-alock` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
-| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
+| `aplane.ed25519.v1` | `ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |

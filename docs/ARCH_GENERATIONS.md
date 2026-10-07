@@ -20,6 +20,7 @@ the retired `CURRENT` plus `keyring.enc` layout.
     config.yaml
     unlock.yaml
     .ssh/authorized_keys
+    .ssh/pending_enrollments.json
     passphrase | passphrase.cred
     cosigners/<name>.json
     quarantine/generations/<gen-id>/
@@ -39,7 +40,8 @@ the retired `CURRENT` plus `keyring.enc` layout.
 
 The generation boundary includes all mutable state whose confidentiality or
 integrity depends on a keyring term. Process and product configuration,
-unlock helpers, SSH state including the enrolled-client registry, cosigner
+unlock helpers, SSH state including the enrolled-client registry and pending
+enrollment queue, cosigner
 references, backups, the plaintext template library, and the root node-role
 document are not generational.
 
@@ -126,10 +128,11 @@ they are immutable except for explicit generation pruning.
 ## Ordinary generation commit
 
 Credential restore, restore rollback reconstruction, initialization, rebuild,
-passphrase change, and policy apply mint generations. Every policy apply or
-removal, online or rescue, mints one generation with operation `policy-apply`
+passphrase change, and policy apply mint generations. A policy apply or
+removal that changes the set, online or rescue, mints one generation with operation `policy-apply`
 (`internal/signerapp/policyapply`), so each committed apply leaves a retained
-generation until explicit generation pruning. Ordinary key mutations do not
+generation until explicit generation pruning; an unchanged policy set mints
+nothing. Ordinary key mutations do not
 mint.
 
 The commit order is:

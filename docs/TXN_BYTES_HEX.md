@@ -37,10 +37,13 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 - `txn_sender` — transaction sender, used for approval display.
 - `txn_bytes_hex` — TX-prefixed msgpack-encoded unsigned transaction, hex
   encoded. Required for sign mode and foreign mode.
-- `lsig_args` — name-keyed runtime arguments for generic LogicSigs.
+- `lsig_args` — name-keyed caller runtime arguments for generic or composed LogicSigs.
 - `lsig_resources` — optional structured LogicSig resource hint used in
   foreign mode. It carries `program_bytes`, `argument_bytes`, and
-  `max_opcode_cost` for the selected authorization path.
+  `max_opcode_cost` for the selected authorization path. Required for passthrough
+  LogicSigs as well, where observed program/argument sizes are checked.
+- `pq_scheme` — foreign native-PQ hint (`"f1"`), mutually exclusive with
+  `lsig_resources`; passthrough PQ is derived from the signed envelope.
 - `app_call_info` — optional approval metadata for app-call transactions; the
   `mode` is `"raw"` or `"abi"` and `method` carries the ABI method signature
   when available.
@@ -69,7 +72,7 @@ Plan response semantics:
 - `/plan` returns `GroupPlanResponse.transactions`
 - each entry is a TX-prefixed hex-encoded unsigned transaction in final group order
 - server-added dummy transactions, fee pooling, and group-ID assignment are reflected in the returned transactions
-- clients that need multi-party planning or simulate-without-signing should consume `/plan` output instead of `/sign` output
+- clients that need multi-party planning or unsigned inspection should consume `/plan` output instead of `/sign` output
 
 ## How It Works
 
@@ -80,6 +83,7 @@ on key type:
 | Key type | Message to sign | Inspection source |
 |----------|-----------------|-------------------|
 | `ed25519` | Full transaction bytes (`TX` + msgpack) | `TxnBytesHex` |
+| Native `falcon1024` | Native PQ signing domain | `TxnBytesHex` |
 | LogicSig DSA (Falcon, etc.) | 32-byte transaction ID hash | `TxnBytesHex` |
 | Generic LogicSig | N/A (no signature) | `TxnBytesHex` |
 
@@ -196,4 +200,4 @@ group-ID assignment.
 - `internal/signerapp/signing/execution.go` - key-type-specific message selection and assembly
 - `internal/signerapp/signing/approval.go` - policy and approval description flow
 - `lsig/falcon1024/signerops/ops.go` - Falcon signer-side operations
-- `internal/signing/ed25519.go` - Ed25519 signing provider
+- `internal/signing/ed25519/signerreg/provider.go` - Ed25519 signing provider

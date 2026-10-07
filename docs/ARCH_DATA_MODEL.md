@@ -64,10 +64,11 @@ and UI/admin projections backed by those objects.
 
 Important vocabulary:
 
-- **identity** means a signer-owned security domain. Product mode exposes the
-  `default` signing identity.
-- **principal** means an authorization actor. In product mode compatibility
-  credentials map to `system:product-admin`.
+- **product store** means the fixed signer-owned domain at
+  `identities/default/`; there is no selectable runtime identity.
+- **principal** means an authorization actor. The admin passphrase maps to
+  `system:product-admin`; enrolled SSH keys map to `client:<fingerprint>`
+  with role `client`.
 - **network context token** means a local namespace such as `testnet`,
   `mainnet`, or `localnet`. It is not cryptographic chain identity.
 - **genesis hash** is the cryptographic transaction chain identity used by
@@ -86,7 +87,7 @@ Important vocabulary:
 
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
-- identity keystores and key files,
+- the fixed product keystore and key files,
 - product runtime config, node-role policy documents (`policy.json` or
   `policies/<WitnessKeyID>.json`), the enrolled-client registry,
   and key type state,
@@ -97,7 +98,7 @@ Important vocabulary:
 - managed backup archives,
 - SSH host key and IPC socket.
 
-Private key material never crosses this boundary. Clients send transaction
+Plaintext signer-managed private key material never crosses this boundary. Clients send transaction
 intent and receive finalized signed transaction bytes, not key material.
 
 ### Client Boundary
@@ -111,7 +112,8 @@ intent and receive finalized signed transaction bytes, not key material.
 - operation-scoped live cosigner routing,
 - plugins and plugin activation,
 - saved JavaScript scripts,
-- local swap proposal state.
+- external standalone swap-client state in the shared client-data layout
+  (implemented outside this repository).
 
 Client data is operational state. It can reference signer-owned accounts, but
 it is not signing authority.
@@ -142,13 +144,14 @@ DTOs and contract fixtures.
 | Cosigner witness authority | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.cos` | Witness Key ID -> witness credential index | `/keys`, cosigner component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/productruntime` |
 | Cosigner public sidecar | Selected generation | `generations/<gen-id>/keys/<witness_key_id>.wit.json` | public cosigner-key export metadata | `apadmin cosigner export` | `internal/keys`, `internal/cosigner/cosignerrefs` |
 | Public cosigner reference | Signer identity | `identities/default/cosigners/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/cosigner/cosignerrefs`, `internal/signerapp/rest`, `internal/apadminapp` |
-| Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
+| Key type | Process plus product store | compiled provider registry plus enabled product-store records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Node-role policy | Signer identity | signer: `policy.json` plus `policy.json.hmac`; cosigner: `policies/<WitnessKeyID>.json` plus `.json.hmac` per key | client-signing `policy.Config` or per-key cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | Enrolled client registry | Product signer | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` published into the product runtime | SSH auth, HTTP principal resolution, enrollment, revocation | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` |
+| Pending enrollment queue | Product signer | `identities/default/.ssh/pending_enrollments.json` | bounded waiting requests, distinct from signing approvals | pending list and enrollment notifications | `internal/signerapp/enrollqueue`, `internal/signerapp/productruntime`, `internal/signerapp/enrollment` |
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
@@ -159,7 +162,7 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/default/*.tar.gz` containing canonical credential `.apb` files and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/default/*.tar.gz` containing canonical credential `.apb` files, optional cosigner policy `.apb` files, and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | none | `internal/backup` |
 | Credential backup manifest | Backup archive | `manifest.sealed` (schema `aplane.credential-backup.manifest.v1`) | exact member inventory and source node role | preview/direct restore | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
@@ -187,7 +190,8 @@ Signer data dir
       -> key type state + installed templates -> /keytypes and generation
       -> policy documents + HMAC -> signer approval verdicts or per-key cosigner component-sign authorization by node role
       -> enrolled client registry -> SSH authn and client principals
-      -> approval coordinator -> sign/enrollment prompts
+      -> approval coordinator -> signing prompts
+      -> persisted enrollment queue -> later admin enrollment decisions
       -> process-wide admin session -> admin mutations and approvals
 ```
 
@@ -256,12 +260,12 @@ identities/default/
     policies/<WitnessKeyID>.json       # cosigner nodes only, one per key
     policies/<WitnessKeyID>.json.hmac
     node.yaml.hmac
-    cosigners/*.json
     deleted/{keys,keytypes,policies}/
   quarantine/generations/<gen-id>/
   config.yaml
   unlock.yaml
   .ssh/authorized_keys
+  .ssh/pending_enrollments.json
   cosigners/*.json
   passphrase | passphrase.cred   # optional helper artifacts
 ```
@@ -277,7 +281,7 @@ generation and commits it with one durable `store-root.enc` replacement.
 - key session,
 - key indexes,
 - approval coordinator,
-- enrolled client registry,
+- enrolled client registry and pending enrollment queue,
 - effective product runtime config,
 - effective node-role policy: client-signing policy on signer nodes or cosigner
   component policy on cosigner nodes,
@@ -301,6 +305,7 @@ payload families are:
 | Category | Meaning |
 |----------|---------|
 | `ed25519` | Native Algorand signing key. |
+| `native_pq` | Protocol-native Falcon-1024 account; top-level `PQsig`, scheme f1, and PQ address salt. |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
 | `witness` | Signer-custodied witness key (`.cos`) used only through cosigner-role `/sign/component`. |
@@ -406,7 +411,7 @@ inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
 visibility metadata, not the assembled list.
 
 Default-enabled compiled providers include signer account providers
-(`ed25519`, `aplane.falcon1024.v1`) and witness providers
+(`ed25519`, `falcon1024`, `aplane.falcon1024.v1`) and witness providers
 (`aplane.witness-falcon1024.v1`). Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
@@ -446,9 +451,10 @@ policies/<WitnessKeyID>.json.hmac
 ```
 
 Each HMAC authenticates exact document bytes with a key derived from the
-identity's current term key. Policy load verifies every sidecar before applying
+product store's current term key. Policy load verifies every sidecar before applying
 policy; a missing or mismatched sidecar, or a document that fails to decode,
-fails the node closed. Every policy change mints a new generation.
+fails the node closed. Every committed change to the policy set mints a new generation; an
+unchanged set commits nothing.
 
 On signer nodes, `policy.json` is the client-signing policy. Runtime
 client-signing policy is an effective `policy.Config` compiled from defaults
@@ -515,7 +521,7 @@ cache/
 plugins.yaml
 plugins.available/
 scripts/*.js
-swap/<network>/
+swap/<network>/             # external standalone swap client
 ```
 
 ### Client Config And Network Context
@@ -554,7 +560,8 @@ local, rebuildable state:
 - signer inventory cache,
 - network ASA cache,
 - network auth-address cache,
-- swap session files and tombstones.
+- external standalone swap-client sessions and tombstones, whose owner is
+  outside this repository.
 
 JSON cache files use an HMAC envelope version plus a payload-level
 `schema_version`, which every write records. A missing or unsupported payload
@@ -728,7 +735,8 @@ The admin protocol projects:
 - template library and installed-template state,
 - key type metadata,
 - sign approval prompts and responses,
-- client enrollment prompts, the enrolled-key list, and key revocation,
+- pending enrollment notifications/lists, approve/reject/import results,
+  enrolled-key lists, key revocation, and enrollment list invalidation,
 - backup/restore results,
 - cosigner-reference and generation inventory,
 - admin and policy settings.
@@ -794,7 +802,7 @@ current. Existing key signing still depends on key files.
 | Operation | Durable change | Runtime effect |
 |-----------|----------------|----------------|
 | Enable compiled provider | write enabled key type state record | provider appears in key generation/discovery |
-| Disable compiled provider | delete state record after unused-key guard | provider hidden for that identity |
+| Disable compiled provider | delete state record after unused-key guard | provider hidden for the product store |
 | Install YAML template | encrypt `.template`, write enabled record | template provider registered on reload |
 | Disable YAML template | set state disabled after unused-key guard | hidden from discovery/generation |
 | Remove YAML template | archive `.template`, delete record after unused-key guard | inactive and outside active scans |
@@ -827,16 +835,16 @@ durable sign request table.
 
 1. Client detects a guarded account key from `/keys` metadata and local signer
    inventory.
-2. Client prepares the canonical group, classifies guarded target indices and
-   non-guarded original indices, budgets every LogicSig by effective signer,
-   and signs required dummy transactions locally.
+2. Client sends intended originals to `/plan`, freezes its canonical group,
+   classifies guarded/non-guarded/dummy positions, and signs only the planned
+   dummy suffix locally.
 3. Client calls the user signer `/sign/component` for user-role signatures.
-4. Client routes by embedded cosigner public key to a cosigner endpoint from
-   `endpoints.yaml` and calls cosigner `/sign/component`.
-5. If non-guarded originals exist, client calls the primary signer `/sign` over
+4. If non-guarded originals exist, client calls the primary signer `/sign` over
    the full canonical group: non-guarded originals are sign-mode entries,
    guarded targets are `foreign` entries with accurate `lsig_resources` hints, and
    dummies are `foreign` context entries.
+5. Only then does the client request cosigner `/sign/component` using the
+   operation-scoped endpoint route for the embedded verifier.
 6. Client calls user signer `/sign/assemble` with guarded targets plus
    passthrough signed bytes for non-guarded originals and dummies.
 7. User signer verifies cosigner signatures against the cosigner public key
@@ -872,12 +880,13 @@ and audits `CLIENT_KEY_REVOKED`; the client must enroll again.
 ### Backup And Restore Lifecycle
 
 Managed backup archives live under `backups/default/`. Each archive contains
-encrypted canonical credential `.apb` payloads and `manifest.sealed` — the
+encrypted canonical credential `.apb` payloads, optional per-key cosigner
+policy `.apb` payloads, and `manifest.sealed` — the
 archive's authenticated description, carrying the member inventory and source
 node role. Opening an archive
 verifies every member against that inventory. The manifest role is a rebuild
-default; explicit `apstore rebuild --role` is the replacement store authority
-when supplied.
+default; an explicit `apstore rebuild --role` overrides that default. Credential
+classes must be compatible with the chosen destination role.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
 Live restore is generation-transaction oriented:
@@ -890,11 +899,15 @@ Live restore is generation-transaction oriented:
 - an uncommitted attempt leaves the prior generation active; a commit with
   unconfirmed durability blocks signing in recovery mode until
   reconciliation,
-- policy, templates, network mappings, approval defaults, and other
-  configuration are absent from the backup and remain destination-owned.
+- archived cosigner policy is installed with its key; a differing destination
+  document requires `replace_existing`, and an existing document is kept when
+  the archive carries none,
+- signer policy, templates, network mappings, approval defaults, and other
+  operational configuration are absent and remain destination-owned.
 
-`apstore rebuild` is the separate absent-store rescue path and may write active
-credentials directly because no live signer store is being mutated.
+`apstore rebuild` is the separate absent-store rescue path. It stages restored
+credentials and cosigner policies in the first generation and publishes it
+through `genstore.Mint`; no live signer store is being mutated.
 
 ## Security-Sensitive Data
 
@@ -910,11 +923,11 @@ credentials directly because no live signer store is being mutated.
 | `policy.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; v1 signer or cosigner documents according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | Enrolled client registry | authoritative access list | `identities/default/.ssh/authorized_keys`, daemon-written; a key listed here authenticates as `client:<fingerprint>` |
-| SSH private key | client secret | client-side file or agent key; the client's only credential |
+| SSH private key | client secret | client-side private-key file or SSH agent key; the client's only credential |
 | Backup export passphrase | secret | protects `.apb` payloads |
 | Audit log | sensitive operational record | mode `0600`; append/rotate |
 | Public cosigner reference | public metadata | generation input only; not endpoint trust or ownership proof |
-| Endpoint-published cosigners | public routing metadata | routing input only; not endpoint trust or ownership proof |
+| Live cosigner inventory | public routing metadata | authenticated `/keys` routing input only; not endpoint trust or ownership proof |
 
 Signer-wide ASA metadata and product-store key type state records are not secrets.
 They still must be mutated through supported paths because they affect UX,

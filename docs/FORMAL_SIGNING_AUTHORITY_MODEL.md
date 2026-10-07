@@ -210,7 +210,8 @@ Rules:
 
 Address identity derives from key material:
 
-- native keys derive their address from stored public/private key material,
+- native Ed25519 keys derive their address from stored public/private key material;
+  native PQ keys additionally bind the scheme and stored PQ address salt,
 - DSA-backed LogicSig keys derive their account address from stored LogicSig
   bytecode,
 - generic LogicSig keys may persist an `address` field for inventory and lookup,
@@ -402,7 +403,7 @@ its decrypted payload. The filename is not trusted as authority.
 ```text
 CanonicalName(p) = Selector(p) || ExtensionForCategory(Category(p))
 
-Category(p) in {ed25519, dsa_lsig, generic_lsig} =>
+Category(p) in {ed25519, native_pq, dsa_lsig, generic_lsig} =>
   ExtensionForCategory(Category(p)) = ".key"
 
 Category(p) = witness =>
@@ -414,7 +415,7 @@ FileName(f) != CanonicalName(Payload(f)) =>
 ```
 
 Canonical writers use the same function. Restore may replace an exact
-canonical destination only with `overwrite:true` and always rejects a
+canonical destination only with `replace_existing:true` in the live restore request (`overwrite` is an internal persistence option) and always rejects a
 contradictory `.key`/`.cos` class for the same selector. `.wit` and `.wit.json`
 are outside the managed-credential candidate set. Accepted duplicate selectors
 remain a fatal collision fallback rather than selecting by directory order.

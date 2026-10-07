@@ -721,7 +721,7 @@ When designing or reviewing a LogicSig TEAL policy:
 
 APlane bundles both signer-gated LogicSig providers and template library
 entries. New signer stores install the Falcon allowlist v1 template by default;
-the Ed25519 allowlist v1 is an optional import. Users should understand the
+other bundled templates require explicit import. Users should understand the
 security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
@@ -948,8 +948,7 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
 - use deterministic nonzero leases for single-use periodic LogicSig templates
 - check `OnCompletion` for companion app calls that must run approval logic
 - keep template TEAL relocatable: do not depend on raw `bytecblock`/`intcblock`
-  layout or numeric `bytec`/`intc` references, because APlane owns a generated
-  compiler-owned salt placement used to keep generated LogicSig addresses
+  layout or numeric `bytec`/`intc` references, because the TEAL v13 compiler owns salt placement used to keep generated LogicSig addresses
   off-curve
 
 ## Related Documents

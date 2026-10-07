@@ -63,7 +63,7 @@ Every request entry has exactly one mode:
 |------|--------|---------|
 | `sign` | `auth_address` and `txn_bytes_hex` | signer-controlled slot that may be signed by this signer |
 | `passthrough` | `signed_txn_hex` | already-signed slot preserved by this signer |
-| `foreign` | `txn_bytes_hex` without `auth_address`; optional `lsig_resources` | context slot owned by another signer |
+| `foreign` | `txn_bytes_hex` without `auth_address`; optional `lsig_resources` or native `pq_scheme` | context slot owned by another signer |
 
 Invalid field combinations reject before planning starts.
 
@@ -241,7 +241,7 @@ ungrouped, matching the current transaction-flow contract.
 
 A `presign-plan` plugin group reaches the signer as exactly this foreign-entry
 case: the plugin-owned slots arrive as `foreign` entries carrying
-`lsig_resources`, so they contribute to the resource plan but are never signed
+`lsig_resources` for LogicSigs or `pq_scheme` for native PQ, so they contribute to the resource plan but are never signed
 by this signer (see
 Signing Output Rules). The plugin's own signing of those slots, and the fully
 `pregrouped-signed` all-plugin path that bypasses the signer entirely, are out

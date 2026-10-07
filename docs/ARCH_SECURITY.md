@@ -644,7 +644,7 @@ type Resource struct {
 ```
 
 **Implementation:**
-- `internal/authz.ProductAuthorizer` - exact principal, action-allowlist, and product-resource checks with no mutable principal/group/grant graph
+- `internal/authz.ProductAuthorizer` - exact principal/role and action-allowlist checks with no mutable principal/group/grant graph; resource fields are call-site attribution, not a resource-grant condition
 - `authz.NewProductSingleAuthorizer()` - maps product credentials to the reserved `system:product-admin` principal and a copied explicit action allowlist
 
 See [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the action vocabulary,
@@ -836,7 +836,7 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 
 **Benefits:**
 - Single Argon2id derivation at unlock time instead of per-file
-- O(1) unlock regardless of number of keys
+- One KDF operation to open the keyring; full unlock also validates and scans the selected generation, so its cost grows with store contents
 - Term keys held in signer memory during session and covered by process memory
   locking when that protection is enabled successfully
 - The KEK never outlives the unwrap, so a memory disclosure yields term keys but
@@ -905,7 +905,9 @@ require root, `CAP_IPC_LOCK`, or a raised `RLIMIT_MEMLOCK`.
 
 Set `require_memory_protection: true` in production environments where key security is critical. The server will refuse to start without full memory protection.
 
-**Note:** apshell does not require memory protection because it never handles private keys directly—it only constructs transactions and sends them to apsigner for signing.
+**Note:** apshell keeps account signing authority on apsigner, but it does handle
+its client SSH authentication key. External plugins may also hold their own
+private signing material within the plugin sandbox.
 
 ### Term Key Lifecycle and Concurrency
 

@@ -3,7 +3,7 @@
 ## Overview
 
 The `send` command verifies that each sender has sufficient balance before
-submitting a transaction. This prevents many avoidable submission failures and
+submitting a transaction. This catches many avoidable submission failures and
 provides clear local errors before the signer approval flow begins.
 
 ## What Gets Verified
@@ -83,7 +83,10 @@ For ALGO transfers, the engine fetches the sender's account from algod, derives
 the effective transaction fee (default 1000 microAlgos, or the caller-supplied
 fee when flat-fee mode is requested), and checks that the sender's amount
 covers `send_amount + txn_fee`. Implementation: `internal/engine/payment.go`
-(`checkPaymentBalances`).
+(`checkPaymentBalances`). This pre-check uses 1,000 microAlgos unless an
+explicit flat fee is supplied; it does not predict later LogicSig dummy/program
+or native-PQ fee additions. Final planning and ledger validation can still fail
+for insufficient ALGO.
 
 For ASA transfers, the engine fetches the sender's account from algod, locates
 the holding for the requested asset ID, and checks both that the holding exists
@@ -140,7 +143,7 @@ Transaction submitted: TXID...
 
 - The balance check uses algod account lookups during transaction preparation
 - This is a small overhead compared to the cost of a failed transaction
-- Balance can change between check and actual send (rare, but possible if account receives funds)
+- Balance can change between check and actual send (possible with concurrent account activity)
 - The verification happens locally before involving Signer for approval
 
 ## Limitations with Complex Atomic Groups

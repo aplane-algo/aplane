@@ -12,8 +12,7 @@ new Falcon address from the LocalNet KMD wallet, and submits a local transaction
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
 ```
 
-If you are on Linux, you will be asked if you want a local or systemd install.
-Select "local".
+The bootstrap defaults to a local install; pass `--systemd` only for a managed service install.
 
 The installer will:
 - Download the latest release for your platform

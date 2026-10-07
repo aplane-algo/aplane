@@ -23,7 +23,7 @@ For ordinary changes, run the narrowest checks that cover the touched surface:
 gofmt -s -w <changed-go-files>
 go test ./path/to/touched/package
 make contract-test        # when signer API wire shapes change
-make integration-test     # when signer, shell, SSH, app, or network flows change
+make integration-test-localnet # when signer, shell, SSH, app, or network flows change
 ```
 
 For release-quality or broad cross-cutting changes, run:
@@ -41,7 +41,7 @@ contract tests, integration tests, and a clean-tree check.
 - [ ] Code is formatted: `gofmt -s -w <changed-go-files>` or `make fmt-check`
 - [ ] Unit tests for touched packages pass
 - [ ] `make contract-test` passes for signer API changes
-- [ ] `make integration-test` passes for end-to-end signer/shell/network changes
+- [ ] `make integration-test-localnet` or `make integration-test-testnet` passes for end-to-end signer/shell/network changes
 - [ ] `make security-analysis` passes for security-sensitive changes
 - [ ] Documentation is updated for behavior, protocol, config, or operator-facing changes
 - [ ] Compatibility-sensitive fixture updates under `test/contracts/signerapi/` are intentional
@@ -120,11 +120,12 @@ make contract-test
 ### Integration Tests
 
 Integration tests live in `test/integration/`. The canonical target regenerates
-the shared fixture and `.env.test` before running the suite:
+the shared fixture and `.env.test` before running the suite. Select
+`APLANE_INTEGRATION_NETWORK=testnet|localnet`, or use an explicit profile target:
 
 ```bash
 export TEST_FUNDING_MNEMONIC="your twenty five word mnemonic..."
-make integration-test
+make integration-test-testnet
 ```
 
 `TEST_FUNDING_MNEMONIC` is always interpreted as a protocol-native
@@ -138,7 +139,7 @@ shell. When `APLANE_SDKS_REPO` points at a local `aplanesdk` checkout,
 `make integration-test` also runs that repo's live signer integration suites
 against the regenerated fixture. CI runs unit, race, contract, build, and
 security jobs; integration tests remain a local or release-gate responsibility
-because they require funded testnet access.
+because they require a configured integration network (public testnet funding or a running LocalNet).
 
 ## Security Analyzers
 

@@ -9,7 +9,9 @@ There are two distinct config.yaml formats:
 | Tool | Purpose |
 |------|---------|
 | **apshell** | Client configuration (network defaults); endpoint routing lives in `endpoints.yaml` |
-| **apsigner, apadmin, apapprover, apstore** | Server/admin configuration (keystore, ports, admin interface) |
+| **apsigner** | Process-global server configuration; product settings and unlock configuration are separate |
+| **apadmin / apapprover** | Resolve local IPC and read live settings through the daemon; managed clients do not read private server config |
+| **apstore / appass** | Offline store/bootstrap and unlock setup; stopped-daemon ownership rules apply |
 
 Both programs use a **data directory** for configuration and state:
 
@@ -65,8 +67,9 @@ authenticates the key at the SSH handshake and hands the tunneled API
 connection to its REST handler with that identity attached. There is no API
 token and no HTTP authentication header. Older `token_file`, `signer_port`,
 and `local_port` keys are ignored on load and dropped by the next write.
-APlane does not read or write the operating-system user's personal SSH
-directory; client keys and host trust are isolated under `$APCLIENT_DATA/.ssh/`.
+Default client keys and host trust live under `$APCLIENT_DATA/.ssh/`.
+Explicit endpoint paths may select other operator-controlled files; an SSH
+agent is also supported by the first-party tunnel client.
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -304,7 +307,8 @@ running `request-enrollment --endpoint <alias>`.
 
 ## apsigner / apadmin / apapprover Configuration
 
-The server and admin tools share the same config format and data directory.
+The daemon owns server configuration. Admin clients target its IPC socket;
+offline tools target the same store under stopped-daemon ownership rules.
 
 ### Live vs Offline Configuration
 
@@ -1005,6 +1009,7 @@ compromised.
 | Endpoint | Authentication |
 |----------|----------------|
 | `POST /sign` | Required |
+| `POST /sign/bounded-admin` | Required |
 | `POST /sign/component` | Required |
 | `POST /sign/assemble` | Required |
 | `POST /sign/cancel` | Required |
@@ -1084,8 +1089,7 @@ Three effective settings work together to enable headless operation:
 
 #### 1. `passphrase_command_argv` (`unlock.yaml`, or process-global `config.yaml`)
 
-Specifies a helper command that can read and store the passphrase (or master
-key). The helper receives a **verb** (`read` or `write`) as its first argument,
+Specifies a helper command that can read and store the passphrase. The helper receives a **verb** (`read` or `write`) as its first argument,
 following the `git credential.helper` pattern.
 
 **Protocol:**
@@ -1125,7 +1129,7 @@ Use `appass`, not manual line editing, if you want to switch between prompt mode
 
 `appass-systemd-creds` encrypts the passphrase via `systemd-creds`, binding it to the machine's TPM2 chip and/or host key. Recommended for Systemd deployments. Requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+). Stop `apsigner`, then run `sudo appass -d <data-dir>` and select `Systemd` to set it up.
 
-See [ARCH_SECURITY.md — Usage Guide: appass-systemd-creds](ARCH_SECURITY.md#usage-guide-appass-systemd-creds) for full setup instructions.
+See [ARCH_SECURITY.md — Passphrase Command Helper Protocol](ARCH_SECURITY.md#passphrase-command-helper-protocol) for full setup instructions.
 
 **Writing a custom helper:**
 
@@ -1180,7 +1184,7 @@ lock_on_disconnect: false
 - Default is `true` (signer locks when apadmin disconnects)
 - Product-store `unlock.yaml` forces the effective value to `false`
 - Process-global helper configuration must set this to `false`
-- Without this, the signer would lock immediately after startup
+- Startup rejects a conflicting process-global helper/lock configuration
 
 #### 3. User Auto-Approve
 

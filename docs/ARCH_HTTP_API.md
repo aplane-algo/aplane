@@ -423,7 +423,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
   is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
-- `state`: lock state (`locked`, `unlocked`, or `unknown`)
+- `state`: runtime state (`locked`, `unlocked`, `recovery`, or `unknown`)
 - `signer_locked`
 - `ready_for_signing`
 - `key_count`: number of loaded keys
@@ -456,9 +456,9 @@ has populated signer-side signing, keygen, mnemonic, or key-processor registries
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning. The `family` field carries the middle segment of the canonical
 `publisher.family.vN` identifier and is intended for display and grouping;
-the canonical `key_type` is what clients send back on subsequent requests and
-what they should consult to decide which signing provider a composed template
-uses.
+the canonical `key_type` is what clients send back on subsequent requests.
+Clients route signing by the advertised `signing_flow`; server registries and
+stored metadata resolve the provider and any composed template's base primitive.
 For a bounded profile with `authorization: admin_key`, creation metadata includes
 the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
 accepts the 1,793-byte Falcon-1024 public key from an external

@@ -2,8 +2,9 @@
 
 **Status:** superseded by the credential-only archive and direct atomic restore
 contract first introduced with admin protocol v4. The current admin wire is
-v5. Retained only as historical rationale; the normative contract lives in
-ARCH_CONTRACTS.md.
+v6.0. Retained only as historical rationale; the normative contract lives in
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). Current cosigner archives also carry
+verified per-key policy; source signer settings/policy remain excluded.
 **Historical scope:** the pre-release archive format, recovered-review
 source-context machinery, and admin protocol v3 fields. None of those formats
 or operations are supported migration inputs.

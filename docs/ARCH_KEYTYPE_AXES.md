@@ -138,7 +138,7 @@ from the presence of a witness key alone.
 | Key type | Account authorization | Contract/profile | Base primitive | Auxiliary authority | Advertised flow and choreography |
 |---|---|---|---|---|---|
 | `ed25519` | Native | none | Ed25519, self-owned | none | empty flow; `/sign` |
-| `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; consensus v42+; top-level `PQsig` |
+| `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42; top-level `PQsig` |
 | `aplane.falcon1024.v1` | DSA LogicSig | plain DSA | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient allowlist | `aplane.falcon1024.v1` | none | `bounded1`; spend/rekey through `/sign` as permitted by the profile |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | bounded `bounded1`; fixed recipient/asset/amount allowlist | `aplane.falcon1024.v1` | external Falcon contract admin for rekey | `bounded1`; spend through `/sign`, admin rekey through `/sign/bounded-admin` plus `aprekey` |
@@ -179,7 +179,7 @@ collapsed into one flat key-type hierarchy.
 
 | Type | Account authority | Signer representation |
 |---|---|---|
-| **Native** | A protocol-native account signature, currently Algorand Ed25519. | Encrypted signer `.key` with native private material. |
+| **Native** | A protocol-native account signature: Algorand Ed25519 or Falcon-1024 native PQ. | Encrypted signer `.key` with native private material. |
 | **DSA LogicSig** | A LogicSig verifies one or more digital signatures and may enforce additional transaction policy. | Encrypted signer `.key` with DSA private material, compiled bytecode, and signing metadata. |
 | **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 

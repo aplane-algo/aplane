@@ -604,14 +604,14 @@ transactions:
   and `destinations`.
 
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
-`clawback` are the supported cosigner transfer-movement surface in MVP; a
-target transaction must extract at least one of these movements to be eligible
-for cosigner-role component signing.
+`clawback` are the supported cosigner transfer-movement surface. A pure rekey
+uses the separate `rekey_policy.allowed` authorization path; other target
+transactions must extract at least one supported movement.
 
 For client signing, other transaction types produce no routing movement and
-continue through the remaining policy phases. For cosigner MVP, target
-transactions that produce no supported transfer movement are rejected because
-there is no route coverage that can authorize them. Passthrough, foreign, and
+continue through the remaining policy phases. For cosigner, target
+transactions that produce no supported movement and are not an allowed pure
+rekey are rejected because no policy path can authorize them. Passthrough, foreign, and
 non-target group slots are not governed by this signer's route table because
 this signer is not producing signatures for those slots.
 
@@ -782,7 +782,7 @@ the whole document set. `get_policy_document` returns one document's exact
 bytes.
 `check_policy` validates candidate documents without writing and returns
 errors and warnings. `apply_policy` requires `expected_policy_set_sha256` for
-optimistic concurrency, validates the resulting document set, and commits it as
+optimistic concurrency, validates the resulting document set, and, when the resulting set changes, commits it as
 one new generation (operation `policy-apply`); the runtime publishes the new
 policy immediately. On a signer node an apply carries exactly one document; on a
 cosigner node it adds or replaces the listed keys' documents, deletes the keys in

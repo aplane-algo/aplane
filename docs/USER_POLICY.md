@@ -7,8 +7,8 @@ approved, or left to the operator default.
 ## Policies Govern Account Sets
 
 A policy document is a rulebook for a set of accounts. Both node roles use
-the same document format and the same rules; they differ only in which
-accounts the set holds.
+the v1 JSON policy framework, with role-specific fields and verdicts; they
+also differ in how their governed account set is defined.
 
 - **On a signer node, the set is the accounts the node holds.** There is one
   document, `policy.json`, and it governs every key on the node, whatever
@@ -209,7 +209,7 @@ applies the change against the `policy_set_sha256` it read at the start, so the
 signer rejects the change if the active policy changed in the meantime. On
 success the signer writes the exact submitted bytes plus fresh sidecars as a
 new store generation and activates the resulting runtime policy immediately;
-`apply` prints the new generation ID and `policy_set_sha256`. Each apply leaves
+`apply` prints the new generation ID and `policy_set_sha256`. Each apply that changes the set leaves
 a retained generation until explicit generation pruning; see
 [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
 
@@ -569,7 +569,7 @@ Before relying on a policy:
 
 | Symptom | Likely cause |
 |---------|--------------|
-| Edited policy has no effect | The file was checked but not applied, or a hand-placed document was signed while the signer was running and it has not restarted since. |
+| Edited policy has no effect | The file was checked but not applied, or a document repaired in a stopped store has not been loaded by a successful start, unlock, or reload. |
 | Signer refuses to load policy | A sidecar is missing or does not match its document, or a document does not decode. |
 | `apply` fails with `policy_snapshot_changed` | The active policy changed after `apply` read it; check the current state with `apadmin policy status` and apply again. |
 | A cosigner request is rejected with `cosigner_policy:key_has_no_policy` | The cosigner key has no policy document; apply one for that Witness Key ID. |

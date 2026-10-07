@@ -137,12 +137,10 @@ Algorand mappings with configured custom mappings. Config load fails closed on:
 - duplicate hashes mapped to different tokens,
 - duplicate custom tokens mapped to different hashes.
 
-Managed backups project only the validated custom genesis-hash-to-network
-bindings into the archive's sealed manifest. Built-in mappings are not
-duplicated, and algod URLs, tokens, endpoints, and the rest of the network
-connection configuration are excluded. Recovery treats this projection as
-operator context only; it never imports the mappings or changes the
-destination resolver.
+Managed credential backups exclude genesis-hash mappings, algod URLs and tokens,
+endpoint routing, and runtime configuration. Their sealed manifest authenticates
+archive members and source node role. Restore and rebuild retain the destination
+resolver; operators configure network context separately.
 
 ## Transaction Planning
 

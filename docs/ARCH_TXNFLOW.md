@@ -6,11 +6,12 @@ This document describes the information flow between apshell (client) and apsign
 
 APlane separates group construction from cryptographic authorization. The server first canonicalizes the group shape (group ID, fees, dummy budget), then authorizes each entry according to its key type: native signature, DSA-backed LogicSig, or pure-TEAL LogicSig assembly.
 
-APlane supports three fundamentally different authorization mechanisms:
+APlane supports four authorization mechanisms:
 
 | Type | Example | Where Signature Goes | Server Handles |
 |------|---------|---------------------|----------------|
 | **Ed25519** | Native Algorand keys | `SignedTxn.Sig` | Derive standard signing bytes and produce native Ed25519 signature |
+| **Native PQ** | Native `falcon1024` | `SignedTxn.PQsig` | Produce consensus v42 Falcon authorization over its native message domain |
 | **LogicSig DSA** | Falcon-1024 | `LogicSig.Args[0]` | Derive DSA message (transaction ID), sign it, assemble LogicSig |
 | **Generic LogicSig** | Timelock, Hashlock | No signature | Assemble LogicSig bytecode and canonical runtime args |
 
@@ -179,6 +180,7 @@ type SignRequest struct {
     TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
+    PQScheme string `json:"pq_scheme,omitempty"` // Foreign native PQ hint ("f1"); mutually exclusive with lsig_resources
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
     AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
 
@@ -880,11 +882,14 @@ requests := []signerapi.SignRequest{
 // Send to server
 resp, err := signerClient.RequestGroupSign(requests)
 
-// Decode and submit
+// After checking the response, decode every nonempty slot and submit the group once.
+var groupBytes []byte
 for _, hexStr := range resp.Signed {
-    signedBytes, _ := hex.DecodeString(hexStr)
-    algodClient.SendRawTransaction(signedBytes)
+    signedBytes, err := hex.DecodeString(hexStr)
+    if err != nil || len(signedBytes) == 0 { /* abort incomplete/invalid group */ }
+    groupBytes = append(groupBytes, signedBytes...)
 }
+_, err = algodClient.SendRawTransaction(groupBytes).Do(ctx)
 ```
 
 ---
@@ -899,7 +904,8 @@ The server looks up the key type for `auth_address` and derives the message to s
 | `aplane.falcon1024.v1` (or other DSA) | 32-byte transaction ID | LogicSig DSA schemes sign the transaction ID |
 | `aplane.htlc.v1` (or other generic) | N/A (no signing) | Generic LogicSigs don't need signatures |
 
-This design achieves **true client key-type agnosticism**: clients never need to know what type of key they're using or how to format messages for signing.
+This design achieves **true client key-type agnosticism**: clients send transaction bytes rather than cryptographic signing preimages.
+They still route on advertised signing flows and resource metadata.
 
 ---
 
@@ -907,13 +913,14 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 For inventory rows with `signing_flow: bounded-cosigner1`, the client must:
 
-1. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
+1. call `POST /plan` to freeze canonical bytes, dummies, fees, and group ID;
+2. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
    group and applies signer policy/operator approval before returning base args
    and the assembly receipt;
-2. request the cosigner-role signature over those exact finalized bytes with
+3. finish any ordinary signer slots through `/sign`, then request the cosigner-role signature over those exact finalized bytes with
    `POST /sign/component`;
-3. call `POST /sign/assemble` on the user signer with both components;
-4. submit or simulate the exact returned signed group.
+4. call `POST /sign/assemble` on the user signer with both components;
+5. submit or simulate the exact returned signed group.
 
 Ordinary `/sign` rejects these spends. Contract-admin rekey remains a separate
 flow and never contacts the cosigner.
@@ -950,7 +957,7 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 |--------|---------|--------------|------------------|
 | **What server signs** | Full txn bytes | 32-byte transaction ID | N/A |
 | **Signature size** | 64 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
-| **Needs dummies** | No | Yes (if sig > 1000 bytes) | No |
+| **Needs dummies** | No additional LogicSig resources | According to pooled argument/opcode resources | According to pooled argument/opcode resources |
 | **Runtime args** | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | TEAL verifies sig | TEAL logic only |
 

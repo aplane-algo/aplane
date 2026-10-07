@@ -2,9 +2,9 @@
 
 > Compatibility-bearing wire shapes for the apsigner admin RPC carried over local IPC.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
-> For the principal/grant authorization model that gates these messages, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+> For the principal/action authorization model that gates these messages, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
-This contract is consumed by `apadmin` (TUI and test mode), `apapprover`, `appass`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, and error codes.
+This contract is consumed by `apadmin` (TUI and batch mode), `apapprover`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, and error codes.
 
 ## Envelope
 
@@ -26,7 +26,7 @@ The `apadmin` TUI may see `client_exists` before auth for displacement
 negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
 
-Admin sessions bind directly to the one product runtime. The v5 auth shape has
+Admin sessions bind directly to the one product runtime. The auth shape has
 no runtime selector. Strict known-field decoding rejects unknown fields before
 passphrase verification or runtime work.
 
@@ -61,7 +61,7 @@ Transport notes:
   pre-auth `client_exists`/`displace_confirm` exchange, but a later successful
   `auth_only` handshake remains non-owning and does not replace the owner,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
-- admin frames are bounded to 4 MiB before JSON decoding on both transports.
+- admin frames are bounded to 4 MiB before JSON decoding on both the client and server.
 
 ## Implementation Boundary
 
@@ -250,6 +250,7 @@ Client to Server:
 - `export_cosigner_public`
 - `list_generations`
 - `prune_generation_quarantine`
+- `discard_abandoned_generations`
 - `list_deleted_archive`
 - `prune_deleted_archive`
 
@@ -262,6 +263,7 @@ Server to Client:
 - `export_cosigner_public_result`
 - `generations_list`
 - `prune_generation_quarantine_result`
+- `discard_abandoned_generations_result`
 - `deleted_archive_list`
 - `prune_deleted_archive_result`
 
@@ -308,7 +310,7 @@ notifications or trigger disconnect cleanup. The server permits only
 `get_admin_settings`, cosigner-reference list/get/public-export, generation
 inventory, and enrolled-client inventory (`list_enrolled_keys`,
 `list_pending_enrollments`) requests; those requests still pass through their
-ordinary grant checks and locked/unlocked/recovery-state interlocks.
+ordinary principal/action authorization checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
@@ -336,7 +338,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 ### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted on every admin session because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; requires an authenticated session with an unlocked runtime; it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions
@@ -352,7 +354,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
 - `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`request-enrollment` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
-- `enrollment_changed`: `reason`, optional `fingerprint`; server-originated notification that what `list_pending_enrollments` or `list_enrolled_keys` would return has changed, whatever made the change: a request arriving over SSH, an answer or import from this admin session or from another admin client, or an enrolled key's client connection opening or closing (the `connected` flag). `reason` is one of `requested`, `approved`, `rejected`, `imported`, `revoked`, `revoked_all`, `connected`, `disconnected`; `fingerprint` names the key concerned and is absent for `revoked_all`. It is sent once the change has taken effect in the live state, before the result of the request that made it, and is sent even when the write behind the change is not yet durable (the result reports that). A refused change, or one that changed nothing (a repeat request, an import of an enrolled key), is not announced, and neither is an enrollment-request connection, whose request is announced instead. It carries no list: an admin client showing the queue or the registry re-fetches it with `list_pending_enrollments` and `list_enrolled_keys`. There is no response to this notification.
+- `enrollment_changed`: `reason`, optional `fingerprint`; server-originated notification that what `list_pending_enrollments` or `list_enrolled_keys` would return has changed, whatever made the change: a request arriving over SSH, an answer or import from this admin session or from another admin client, or an enrolled key's client connection opening or closing (the `connected` flag). `reason` is one of `requested`, `approved`, `rejected`, `imported`, `revoked`, `revoked_all`, `connected`, `disconnected`; `fingerprint` names the key concerned and is absent for `revoked_all`. It is sent once the change has taken effect in the live state, before the result of the request that made it, and is sent even when the write behind the change is not yet durable (the result reports that). Refused operations and imports that add no registry key are not announced, and neither is an enrollment-request connection, whose request is announced instead. It carries no list: an admin client showing the queue or the registry re-fetches it with `list_pending_enrollments` and `list_enrolled_keys`. There is no response to this notification.
 - `list_pending_enrollments` -> `pending_enrollments_list`: `requests[]`, oldest first, each with `fingerprint`, optional `label`, `key_type`, optional `remote_addr`, and `requested_at` (Unix seconds)
 - `approve_enrollment`: `fingerprint`, optional `label` -> `approve_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`, `label`; enrolls the waiting request's key in `identities/default/.ssh/authorized_keys` with the request's label (or `label`, which replaces it), removes the request, and audits `CLIENT_ENROLLED` with the admin session's attribution. No credential is issued, because the client's key is its credential. A fingerprint with no waiting request, or a `label` that is not printable single-line text of at most 64 bytes, fails with `code:"invalid_request"`. A registry write that took effect but is not yet durable still clears the request and audits the enrollment; the result then carries the durability failure.
 - `reject_enrollment`: `fingerprint` -> `reject_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`; removes the waiting request without enrolling its key and audits `CLIENT_ENROLLMENT_REJECTED`. A fingerprint with no waiting request fails with `code:"invalid_request"`, as does a request whose key is already enrolled (an approval that enrolled the key but could not clear its request): approving again clears it, or the key is revoked.
@@ -360,6 +362,14 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection); waiting requests are listed by `list_pending_enrollments`
 - `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
 - `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
+
+Current notification coverage has implementation gaps: refreshing a waiting
+request can change its label, remote address, timestamp, and order without
+`enrollment_changed`. An approval/import retry that only clears a request for
+an already-enrolled key also lacks that notification. These are gaps against
+the intended invalidation contract, not guarantees that those lists stay
+unchanged. See `internal/signerapp/daemon/enrollment_service.go` and
+`internal/signerapp/daemon/server.go`.
 
 ### Backup and Restore
 
@@ -566,8 +576,10 @@ audit before mutation.
 Deleted-archive inspection requires `generations.view`. Live archive pruning
 requires `identity.archive.prune`, an unlocked or recovery-admin runtime,
 explicit confirmation, and a durable audit intent written before any removal.
-Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
-are accepted; arbitrary filesystem paths are not an admin-protocol surface.
+Only selected-generation `deleted/keys/`, `deleted/keytypes/`, and
+`deleted/policies/` canonical paths are accepted. An archived policy document
+and its `.hmac` sidecar must be selected together; arbitrary filesystem paths
+are not an admin-protocol surface.
 
 Policy key-override semantics:
 

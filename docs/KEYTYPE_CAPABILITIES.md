@@ -30,6 +30,7 @@ included as normal user-account operations.
 | Key type | Pay | ALGO close | ASA transfer | ASA opt-in | ASA close | ASA clawback | ASA config | ASA freeze | App ops | Keyreg | Rekey |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `ed25519` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `falcon1024` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
@@ -58,7 +59,7 @@ included as normal user-account operations.
 
 ## Condition Notes
 
-- `ed25519`, `aplane.falcon1024.v1`, and `aplane.ed25519.v1` do not restrict
+- `ed25519`, native `falcon1024`, `aplane.falcon1024.v1`, and `aplane.ed25519.v1` do not restrict
   transaction type or special transaction fields at the key-type layer. Local
   signer policy remains the safety boundary.
 - `aplane.falcon1024-allowlist.v1` is a bounded1 template. It admits only pure
@@ -85,8 +86,9 @@ included as normal user-account operations.
   guarded-account LogicSig does not restrict transaction type or special
   transaction fields. The cosigner policy that decides whether to issue the
   cosigner component signature is separate from this table: current cosigner
-  authorization is transfer-route based, rejects non-transfer cosigner targets,
-  and rejects rekey by default.
+  authorization requires transfer-route coverage or an explicitly allowed pure
+  rekey edge. Other non-transfer targets reject, and rekeys without a matching
+  `rekey_policy.allowed` edge reject. Bounded-cosigner rekeys do not use this gate.
 - `aplane.corridor.v1` is a bounded-cosigner template. Its on-chain LogicSig
   requires the Falcon spending signature and cosigner signature for every spend,
   then permits `pay` and `axfer` only when the receiver is self or is proven by

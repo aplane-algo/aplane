@@ -50,7 +50,7 @@ It does not model:
 - TEAL opcode semantics or LogicSig budget internals,
 - account registration or account-binding databases,
 - trust in endpoint metadata as a security control,
-- SSH host-key or token issuance state machines,
+- SSH host-key trust or client-key enrollment state machines,
 - operator behavior or manual approval for cosigner component requests.
 
 ## Abstract Objects
@@ -120,8 +120,8 @@ CosignerPolicyFor(snapshot, component_key) =
 ```
 
 Unlike client-signing policy, cosigner policy has no manual-review verdict and
-no operator default. If no positive transfer route authorizes every target
-transaction, the request rejects.
+no operator default. If neither positive transfer routing nor the pure-rekey allowlist authorizes
+every target transaction, the request rejects.
 
 ### Endpoint Registry
 
@@ -141,7 +141,7 @@ consults the primary signer's key cache for the effective signer. Detection is
 flow-driven: signer inventory labels each guarded key with
 `signing_flow: cosigner1` plus its `cosigner_component_key_type`, and any
 effective signer with a non-empty signing flow routes through guarded
-orchestration, which then rejects flow labels other than `cosigner1` before any
+orchestration, which supports `cosigner1` and `bounded-cosigner1` and rejects unknown labels before any
 signing request (A15). The client does not classify key-type strings itself.
 Mixed ordinary positions, direct guarded senders, and senders rekeyed to
 guarded authorizers are supported: guarded positions become component-signing
@@ -173,11 +173,13 @@ sequence only narrows the accepted set and is not yet modeled; see the
 guarded-signing entry in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
 
 The signer loads `auth_address` as a local guarded account key. The decoded
-target sender may differ from `component_key`; authorizer binding is verified
+target sender may differ from `target.auth_address`; authorizer binding is verified
 during assembly. The signer signs the user-role component message with the user
 component private key stored in that guarded account key.
 
 ### Cosigner Component Sign
+
+The client finishes non-guarded originals before requesting cosigner components.
 
 For each distinct embedded cosigner public key, the client resolves a cosigner
 endpoint and calls:
@@ -232,11 +234,13 @@ trust endpoint metadata supplied during the transaction flow.
 ### Live Cosigner Discovery
 
 Each guarded or bounded-cosigner operation queries reachable configured cosigner
-endpoints with valid tokens and constructs an operation-scoped route snapshot.
+endpoints authenticated with enrolled client SSH keys and constructs an operation-scoped route snapshot.
 Every required embedded public key must resolve to exactly one live endpoint.
 Discovery does not write `endpoints.yaml` or the signer generation catalog;
-authentication, malformed metadata, duplicate public-key routing, and pinned
-SSH host-key mismatch errors fail closed.
+endpoint-local authentication, availability, configuration, or metadata failures
+contribute no route and may be skipped if the complete sweep still uniquely
+covers all required keys. Duplicate routes, unresolved required keys, incomplete
+sweeps, cancellation, and pinned SSH host-key mismatches abort the operation.
 
 ## Invariants
 
@@ -261,11 +265,11 @@ KeyType in CosignerComponentTypes union GuardedAccountTypes =>
 
 ### A3: User Component Key Binding
 
-User-role component signing loads the requested `component_key` as a local
+User-role component signing loads the requested `target.auth_address` as a local
 guarded account key before signing any user-role component message.
 
 ```text
-not LoadGuardedAccount(component_key) =>
+not LoadGuardedAccount(target.auth_address) =>
   Reject(UserComponentSign)
 ```
 
@@ -365,9 +369,9 @@ ResponseTargets != RequestedTargets or DuplicateTarget or WrongScheme =>
 
 ### A12: Endpoint Sync Is Atomic Around Hard Failures
 
-Cosigner discovery may preserve stale inventory for unavailable or locked
-endpoints, but authentication failures, malformed metadata, and duplicate
-cosigner public keys reject without writing partial routing updates.
+Operation-scoped discovery writes no persisted routing state, including when
+an endpoint fails. Failed endpoints contribute no routes; usable results must
+still uniquely cover every required cosigner key.
 
 ```text
 HardDiscoveryFailure => EndpointRegistryAfter = EndpointRegistryBefore
@@ -426,7 +430,7 @@ This model assumes:
 - cryptographic verification primitives are correct,
 - stored guarded account key metadata accurately describes its bytecode and
   embedded cosigner key,
-- endpoint tokens and host-key trust are handled by the connection layer,
+- enrolled client SSH keys and host-key trust are handled by the connection layer,
 - the on-chain LogicSig program enforces the same embedded cosigner public key
   requirement that assembly checks locally.
 

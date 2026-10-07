@@ -121,7 +121,7 @@ aplane/
 │   │   ├── file_test.go              # File keystore tests
 │   │   └── session_test.go           # Key session tests
 │   ├── mnemonic/
-│   │   ├── bip39_test.go             # BIP-39 mnemonic tests
+│   │   ├── bip39impl/bip39_test.go   # BIP-39 mnemonic tests
 │   │   ├── ed25519_test.go           # Ed25519 mnemonic tests
 │   │   └── handler_test.go           # Mnemonic handler registry tests
 │   ├── plugin/
@@ -132,7 +132,7 @@ aplane/
 │   └── transport/
 │       ├── client_test.go            # IPC transport tests
 │       ├── protocol_flow_test.go     # Admin protocol flow tests
-│       └── ssh_test.go               # SSH transport tests
+│       └── stream_test.go            # Framed stream transport tests
 ```
 
 ### Example Unit Test
@@ -140,11 +140,13 @@ aplane/
 ```go
 func TestGenerateFromSeed(t *testing.T) {
     paths := storepaths.NewPaths(t.TempDir())
+    kr, active := genstoretest.MintFirstAtomic(t, paths, []byte("test-store-passphrase"))
+    defer kr.Zero()
+    paths = genstoretest.BindActive(t, paths, active)
     generator := &keygen.Ed25519Generator{}
     seed := make([]byte, ed25519.SeedSize)
-    masterKey := bytes.Repeat([]byte{0x11}, 32)
 
-    result, err := generator.GenerateFromSeed(paths, "default", seed, masterKey, "ed25519", nil)
+    result, err := generator.GenerateFromSeed(context.Background(), paths, seed, kr, "ed25519", nil)
     if err != nil {
         t.Fatalf("GenerateFromSeed() error = %v", err)
     }
@@ -173,11 +175,11 @@ func TestGenerateFromSeed(t *testing.T) {
 ### Selecting test packages
 
 Most ad-hoc `go test` commands below exclude integration tests, vendored
-JavaScript, scratch packages, and the unbuildable `apshell` shim. Build the
+JavaScript, and scratch packages. Build the
 `PKGS` list once:
 
 ```bash
-PKGS=$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/' | grep -v '^apshell$')
+PKGS=$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
 ```
 
 Other sections refer to this as the canonical `$PKGS` definition.
@@ -315,7 +317,7 @@ This creates `/tmp/aplane-test-env/` containing:
 │           ├── policy.json        # Permissive integration-test signer policy
 │           ├── policy.json.hmac   # Integrity sidecar for policy.json
 │           └── keys/              # Empty key directory (tests generate keys)
-├── library/templates/              # Plaintext KeyType Library copied from repo
+│   └── library/templates/          # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
     ├── config.yaml                # Client config (network and algod settings)
     ├── endpoints.yaml             # Client endpoint registry (SSH signer route)
@@ -532,7 +534,7 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 
 | Test | What it validates |
 |------|-------------------|
-| `TestBasicFalconTransaction` | Full lifecycle: import ed25519 funding key, generate Falcon key, fund it, send Falcon-signed payment, confirm on the selected network, close account back to funder |
+| `TestBasicFalconTransaction` | Full lifecycle: use native Falcon funding key, generate Falcon key, fund it, send Falcon-signed payment, confirm on the selected network, close account back to funder |
 | `TestFalconGroupTransaction` | Generate two Falcon keys, fund them, sign an atomic payment group, and close accounts back to the funder |
 | `TestFalconPassphraseSigning` | Verify passphrase-protected Falcon signing flow |
 | `TestSignerRestartPreservesUsableKeys` | Generate key, stop signer, restart, verify key remains usable |
@@ -1038,7 +1040,7 @@ CI runs automatically on all pushes and PRs to master/main branches via GitHub A
 
 | Job | Checks | Runs On |
 |-----|--------|---------|
-| **Lint** | gofmt, go vet, staticcheck, golangci-lint | Every push/PR |
+| **Lint** | gofmt, go vet, staticcheck, golangci-lint, deadcode | Every push/PR |
 | **Test** | Unit tests with race detector and coverage | After lint passes |
 | **Contract** | Signer API contract fixtures | After lint passes |
 | **Formal Models** | TLC model checking (tla2tools v1.8.0) via `make formal-test` | After lint passes |

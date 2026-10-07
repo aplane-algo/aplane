@@ -212,7 +212,8 @@ otherwise auto-approve. Current review sources include:
 
 - `always_review_warnings`,
 - network- and asset-scoped `limits` `review_above` thresholds,
-- transfer routing `on_no_route: review` and `review_above` thresholds.
+- transfer routing `on_no_route: review` and `review_above` thresholds,
+- bounded administrative operations, which require review regardless of operator default.
 
 Warnings are displayed even when they do not force review.
 
@@ -425,7 +426,7 @@ This model assumes:
 This model does not prove:
 
 - HTTP authentication or principal authorization,
-- policy YAML parser correctness,
+- policy JSON parser correctness,
 - HMAC algorithm correctness,
 - algod transaction validity,
 - transfer-route schema validation in full detail,

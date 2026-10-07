@@ -147,7 +147,7 @@ client.
 
 ### Corrected behavior
 
-Managed backups contain complete encrypted credential records and no source
+Managed backups contain complete encrypted credential records and verified per-key cosigner policies when present, but no signer
 policy, approval settings, templates, or operational configuration. Restore
 preview exposes credential selectors, key types, and destination conflicts.
 Apply authenticates and validates the whole selected set before any write;
@@ -163,11 +163,13 @@ in recovery mode until reconciliation.
 
 ### Security significance
 
-Credential restoration and policy migration are deliberately separate.
+Credential restoration and signer-policy migration are deliberately separate;
+cosigner policy travels with its witness credential and differing destination
+policy requires explicit replacement.
 Restoring a native spending key, or a LogicSig whose intrinsic program is less
 restrictive than the source signer policy, into a more permissive destination
 can widen effective authority. The operator owns that decision; the archive
-does not carry source policy or claim to reproduce source security posture.
+does not carry source signer policy or claim to reproduce source security posture.
 
 ### Implemented boundary
 
@@ -179,15 +181,16 @@ archive -> validate credentials -> atomic generation -> reload
 ```
 
 Credentials do not enter the runtime index until the generation commit and
-successful reload. Reload failure rolls the pointer back to the sealed parent;
-uncertain durability enters recovery mode. The apadmin TUI and batch client use
+successful reload. Reload failure after publication enters recovery mode; it does not automatically
+roll the pointer back. Explicit eligible rollback reconstructs the sealed parent
+into a fresh generation. Uncertain durability also enters recovery mode. The apadmin TUI and batch client use
 the same server operation. Restore intent/outcome and rollback
 carry structured audit events with product-runtime, principal, session, transport,
 operation ID, archive SHA-256, and generation ID.
 
 ### Resolution status
 
-Implemented in admin protocol v5. Earlier internal backup formats and recovered
+Implemented; the current admin protocol is v6.0. Earlier internal backup formats and recovered
 batch operations are unsupported because this is the first supported release.
 Offline `apstore rebuild` remains an explicitly separate, absent-store rescue
 path.
@@ -264,11 +267,10 @@ microAlgos. The framework requires LogicSig budget dummy transactions for large
 Falcon programs and pools their minimum-fee cost onto protected LogicSig
 transactions.
 
-The audited maximum rekey-locked allowlist profile requires an eight-entry
-group for its largest spend and admin paths. With one protected LogicSig
-transaction, the required pooled fee is eight times the network minimum fee.
-The current ceiling is therefore viable only while the minimum fee is at most
-1,250 microAlgos. The planner correctly rejects combinations that cannot fit
+The current bundled rekey-locked allowlist budget test records a two-entry
+spend group and three-entry admin group (5,285 program bytes). Fee planning
+includes program-byte surcharge as well as pooled minimum fees, so viable
+headroom is path-specific and must be computed from current resource metadata. The planner correctly rejects combinations that cannot fit
 under the compiled ceiling.
 
 The fee assertion runs before spend/admin routing, so the same ceiling applies

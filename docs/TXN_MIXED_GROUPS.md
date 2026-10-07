@@ -140,7 +140,8 @@ not increase `N`.
 ### Why Group IDs Cannot Be Modified
 
 ```
-GroupID = SHA-512/256(concat(encodedTxn1, encodedTxn2, ..., encodedTxnN))
+txids = TransactionID(txn with Group cleared), in transaction order
+GroupID = SDK ComputeGroupID(txns) // TG-domain hash of msgpack TxGroup(txids)
 ```
 
 Properties:
@@ -188,7 +189,7 @@ positions.
 ```go
 // Planner resolves an explicit consensus profile and the selected path of
 // every local or foreign LogicSig.
-plan := lsigresource.Solve(profile, lsigresource.PlanInput{
+plan, err := lsigresource.Solve(profile, lsigresource.PlanInput{
     TransactionCount: uint64(len(txns)),
     LogicSigs:        selectedPathResources,
     Dummy:            dummyResources,
@@ -210,7 +211,7 @@ gid := crypto.ComputeGroupID(allTxns)
 // leave foreign slots unsigned.
 ```
 
-### Client Usage (multi.go)
+### Client Usage (`internal/clientsign/submit.go`)
 
 ```go
 // Send ungrouped transactions - server handles everything
@@ -342,7 +343,7 @@ For scenarios where one party already has signed transactions, use passthrough m
 
 **Key constraints:**
 - Group must be pre-formed with group ID set
-- No server modifications (no dummy calculation)
+- No server modifications; server resource calculation validates the immutable shape
 - Passthrough transactions are decoded for group consistency, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots

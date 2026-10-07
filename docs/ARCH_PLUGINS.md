@@ -630,7 +630,7 @@ selects the flow:
 | `presign-plan` | plugin-owned slots **and** APlane-managed slots | canonicalize the group, call the plugin back to sign its slots, sign the managed slots, submit |
 
 A plugin runs as an external process that holds its own keys; it can already build, sign,
-and — unless it is network-sandboxed (`--unshare-net`) — submit its own groups. These
+and submit its own groups through the network access enabled by the host. These
 flows therefore add two things, and it is worth being precise about which is which.
 
 **1. A governed submission path (`pregrouped-signed`) — not a new capability.** The plugin
@@ -639,8 +639,7 @@ checks the group is internally consistent and submits it without modification �
 never involved. The plugin could have signed and broadcast these exact bytes itself; what
 APlane adds is governance, not signing power: a **mandatory client-side review** is the
 human-acceptance gate, it **fails closed** when run non-interactively (it will not
-broadcast a group the operator never saw), and for a network-sandboxed plugin APlane is
-also the only path to algod.
+broadcast a group the operator never saw), within this host submission path.
 
 **2. Co-signing with managed accounts (`presign-plan`) — the one genuinely new capability.**
 Only apsigner can produce a signature for an apsigner-held account, so atomically combining
@@ -723,8 +722,7 @@ A plugin could always compose groups with keys held anywhere — its own LogicSi
 key, an MPC quorum, a counterparty's signature — and submit them itself. What these flows
 add is narrower and more precise: the ability to **atomically include apsigner's
 managed-key signatures in such a group, under apsigner's policy and approval**, plus a
-**uniform operator conduit** — honest review, approval, audit, and (when the plugin is
-network-sandboxed) the only egress — over plugin-built groups, including ones APlane never
+**uniform operator conduit** — honest review, approval, audit, over plugin-built groups, including ones APlane never
 signs. That is a general extension point, not a one-off; it is the substrate for whole
 classes of plugin:
 
@@ -810,6 +808,7 @@ import (
     "bufio"
     "encoding/json"
     "os"
+    "strings"
 )
 
 type Request struct {
@@ -937,7 +936,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 1. Use `type: "raw"` with base64-encoded msgpack transactions
 2. Set `requiresApproval: true` for transactions requiring user confirmation
 3. Include metadata in `data` field for user information
-4. Ensure transactions use the correct network genesis hash from context
+4. Query the configured algod for network genesis parameters; the context genesis fields are reserved and may be absent
 
 ### Plugin Directory Layout
 
@@ -1094,7 +1093,7 @@ or
   secret keys.
 
 **User Approval:**
-- Transactions with `requiresApproval: true` require user confirmation
+- In interactive mode, `requiresApproval: true` requests client confirmation; `AutoConfirm` skips this ordinary prompt. The `pregrouped-signed` review always requires interactive confirmation. Signer policy and approval remain independent.
 - User sees decoded transaction details before approval
 
 **Resource Limits:**

@@ -346,7 +346,7 @@ bin/apadmin backup create address ABC123...
 # Import and restore credentials. Import prompts for the export passphrase and
 # validates the archive before publishing it in managed backup storage.
 # Restore validates the selected credentials and commits them atomically under
-# the destination's current policy and configuration.
+# the destination's signer policy/configuration, including archived per-key cosigner policy.
 bin/apadmin backup import /path/to/aplane-backup.tar.gz
 bin/apadmin restore preview aplane-backup.tar.gz
 bin/apadmin restore apply aplane-backup.tar.gz
@@ -454,7 +454,7 @@ make test
 make contract-test
 
 # Integration tests; regenerates .env.test and the shared fixture first
-make integration-test
+make integration-test-localnet
 
 # Full stack gate: formatting, vet, module tidy, lint, deadcode, security
 # analyzers, race tests, cross-builds, smoke tests, contracts, integration,

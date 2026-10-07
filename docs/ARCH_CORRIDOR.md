@@ -84,10 +84,11 @@ Generation resolves three distinct Falcon keypairs:
 
 Visible collisions reject. The generated `.key` stores the resolved public
 parameters, bytecode, and complete signing-metadata version 2
-`bounded_authorization` object. Existing keys therefore remain signable if the
-installed product template is later disabled or removed.
+`bounded_authorization` object. Signing uses that stored authority rather than
+the installed template. Supported disable/remove operations refuse while a
+stored key still uses the template's key type.
 
-The repository YAML is an install source only. Fresh signer identities do not
+The repository YAML is an install source only. Fresh signer stores do not
 enable Corridor by default; operators import and enable it through the normal
 KeyType Library workflow before generation.
 
@@ -107,16 +108,19 @@ for spending-key recovery.
 The frozen online flow is:
 
 ```text
+client -> user signer  POST /plan (sole group canonicalization)
 client -> user signer  POST /sign/component (kind=bounded-base)
 client -> cosigner node  POST /sign/component (kind=cosigner)
 client -> user signer  POST /sign/assemble (kind=bounded-cosigner)
 client -> algod         submit or simulate exact signed group
 ```
 
-The first call finalizes group bytes and fees, applies user-signer policy and
+`/plan` finalizes group bytes and fees before any component signing. The
+bounded-base call consumes those frozen bytes, applies user-signer policy and
 operator approval, and releases the base signature args plus a spending-key
-assembly receipt. First-party clients contact the cosigner only after that
-release. The cosigner endpoint does not verify a prior base component, so this
+assembly receipt; it does not re-plan or repair the group. First-party clients
+contact the cosigner only after that release. The cosigner endpoint does not
+verify a prior base component, so this
 order is client choreography for audit quality, efficiency, and predictable
 operator UX rather than a cosigner-enforced security property. Final assembly
 verifies the base signature, receipt, cosigner signature, durable metadata,
@@ -155,8 +159,10 @@ transaction authorized by Corridor itself.
 ## Compiler and Resource Budget
 
 Corridor stores one resource profile over its final compiler-auto-salted
-bytecode. The spend, spending-key rekey, and contract-admin rekey paths each
-publish their own maximum argument bytes and reviewed opcode ceiling. Under
+bytecode. Inventory materializes maximum argument bytes and reviewed opcode
+ceilings for all three bounded path cells (spend, spending-key rekey, and
+contract-admin rekey); a resource cell does not authorize a path. Corridor
+admits spend and contract-admin rekey, not spending-key-only rekey. Under
 v42, argument/opcode capacity determines the minimum group size; bytecode above
 the final group's free program pool contributes to the aggregate fee instead
 of manufacturing extra dummies.

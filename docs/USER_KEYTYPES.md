@@ -121,8 +121,8 @@ The names intentionally describe different account types:
 
 | Key type | Authorization | Recovery | Network requirement |
 |---|---|---|---|
-| `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | consensus v42 or an explicitly supported compatible protocol |
-| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized consensus-v42-compatible network |
+| `falcon1024` | Protocol-native top-level `PQsig` | 25-word Algorand mnemonic | this release supports exactly consensus v42 |
+| `aplane.falcon1024.v1` | TEAL v13 LogicSig containing a Falcon signature | 24-word BIP-39 mnemonic | recognized network using the supported consensus v42 |
 
 There is no conversion between them. A mnemonic or backup entry for one type
 cannot be imported as the other. Native Falcon transactions also consume a
@@ -186,8 +186,9 @@ File export and the batch stdout command also preserve the original JSON bytes.
 In apshell, run `endpoints add <cosigner-url>`, using the address the cosigner
 export screen showed. Approve the **Client Access Request**
 in cosigner-side apadmin after comparing the complete client SSH key
-fingerprint on both screens. Apshell configures the connection, obtains access,
-confirms the node is a cosigner, and checks for the key from the file. The
+fingerprint on both screens. If enrollment is pending, rerun setup after approval. Apshell then
+confirms node role and advertised witness metadata. The client does not
+compare against the exported key file; the signer embeds that trust anchor. The
 client stores the connection, not the key: another key on the same cosigner
 needs no client change.
 
@@ -358,7 +359,7 @@ handles the storage difference behind the scenes.
 
 For the full filesystem layout and state-record transitions for disable,
 enable, remove, and reload, see
-[DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Identity Filesystem State).
+[DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Product Filesystem State).
 
 ## Reload Behavior
 

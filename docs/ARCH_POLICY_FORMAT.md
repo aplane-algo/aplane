@@ -118,7 +118,8 @@ Cosigner rules:
   document. `apply_policy` requires it as the optimistic-concurrency base.
 - Passphrase rotation re-signs every policy sidecar: the signer document,
   every cosigner document, and archived cosigner documents. Rollback restores
-  only `keys/` and `keytypes/`, so the outgoing policy is kept.
+  `keys/`, `keytypes/`, and per-key cosigner `policies/`; the outgoing signer
+  policy and archived policies are retained.
 - Store validation loads and verifies the policy and verifies archived policy
   sidecars.
 

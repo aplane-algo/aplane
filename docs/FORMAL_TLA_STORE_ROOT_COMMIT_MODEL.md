@@ -9,7 +9,7 @@
 
 This model checks the atomic store-root commit protocol introduced by the
 generation store: one durable `store-root.enc` record carries generation
-selection, keyring epoch, and current term, and a mint becomes authoritative
+selection and wrapped term-key authority, and a mint becomes authoritative
 only through a single root replacement after staged validation, publication
 durability, and the outgoing-generation seal.
 
@@ -58,6 +58,10 @@ The negative control is a first-class run: with `VerifyPins = FALSE`,
 silently stop being load-bearing.
 
 ## Modeling choices and limits
+
+- `epoch` is an abstract model tag for the wrapped-keyring authority change,
+  not an on-disk field. Current `aplane.store-root.v1` contains the wrapped
+  `aplane.keyring.v3`, generation selector, selection term, and selection MAC.
 
 - The instantiated cutover is the changepass shape from
   `internal/storepass/rotate.go`, where generation, epoch, and term all move
