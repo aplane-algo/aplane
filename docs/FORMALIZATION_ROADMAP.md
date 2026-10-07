@@ -200,7 +200,7 @@ reverting to the durable content, request/refresh with the cap, approve
 (registry before queue), reject (refused for an enrolled key), import, revoke,
 and lapse. EQ1-EQ6 hold over 2,340 states (depth 11; deep 12,168 at depth
 15), and the negative control `RequireDurableAck = FALSE` violates EQ2 after
-175 states at depth 3. Prose companion
+175 states at depth 3 (167 once import followed the approval rule). Prose companion
 `FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md`; traceability rows and module section
 added. Items (2) and (3) remain flagged.
 

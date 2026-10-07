@@ -71,7 +71,7 @@
     "spec": "enrollment_queue",
     "cfg": "enrollment_queue_negative",
     "expected_invariant_violation": "EQ2_PendingAckSurvivesCrash",
-    "distinct_states": 175,
+    "distinct_states": 167,
     "depth": 3
   },
   {

@@ -276,6 +276,45 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	}
 }
 
+// Import follows the approval rule: a registry write that landed but is not
+// yet durable still clears the key's waiting request, so an imported key is
+// never left listed as pending.
+func TestImportClientKeyAppliedNotDurableClearsRequest(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || !pending {
+		t.Fatalf("QueueEnrollment() = %v, %v", pending, err)
+	}
+
+	syncFails := true
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op == fsutil.OpDirSync && syncFails {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	added, err := ir.ImportClientKey(key, "ops")
+	if !added || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("ImportClientKey() = (%v, %v), want added with the applied-not-durable error", added, err)
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("the registry file holds the key, so the runtime should honor it")
+	}
+	if got := ir.PendingEnrollments(); len(got) != 0 {
+		t.Fatalf("pending after the import = %+v, want the request cleared alongside the enrollment", got)
+	}
+
+	syncFails = false
+	if added, err := ir.ImportClientKey(key, "ops"); err != nil || added {
+		t.Fatalf("repeat import after recovery = (%v, %v), want a durable no-op", added, err)
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("key lost after recovery")
+	}
+}
+
 // A request whose key is already enrolled (the approval enrolled it but the
 // queue write failed) cannot be rejected: that would drop the request while
 // the key stays usable. Approving again clears it instead.

@@ -830,26 +830,30 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 // pre-enrollment path. A pending request for the same key is cleared. added
 // reports whether the key is now in the live registry when it was not
 // before; as for ApproveEnrollment the caller audits that whether or not
-// err is set.
+// err is set, and a registry write that is not yet durable (err wrapping
+// ErrAppliedNotDurable) still goes on to clear the request.
 func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
 		return false, err
 	}
-	added, err = ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+	added, registryErr := ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(key, label)
 		return next, added, nil
 	})
-	if err != nil {
-		return added, err
+	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
+		return added, registryErr
 	}
 	if next, _, err := ir.pendingLocked().WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
 		if err := ir.publishQueueLocked(next); err != nil {
+			if registryErr != nil {
+				return added, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
+			}
 			return added, err
 		}
 	}
-	return added, nil
+	return added, registryErr
 }
 
 // --- Key access ---

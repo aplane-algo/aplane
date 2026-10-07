@@ -444,7 +444,7 @@ symmetry, 2,340 distinct states, depth 11, no counterexamples; the deep run
 with four keys and `MaxPending = 3` reaches 12,168 states at depth 15. The
 expected-failure [formal/enrollment_queue_negative.cfg](formal/enrollment_queue_negative.cfg)
 acknowledges a request on a late-failed write and must violate
-`EQ2_PendingAckSurvivesCrash` after 175 distinct states at depth 3.
+`EQ2_PendingAckSurvivesCrash` after 167 distinct states at depth 3.
 
 | Invariant | TLA+ predicate |
 |---|---|

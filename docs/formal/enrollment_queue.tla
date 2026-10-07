@@ -41,9 +41,8 @@ Code anchors:
     (registry before queue; a late registry write still clears the request;
     an enrolled key is audited whether or not the write was durable),
     RejectEnrollment (refuses a request whose key is already enrolled),
-    ImportClientKey (clears the request only after a fully durable registry
-    write), and RevokeAuthorizedKey, over publishRegistryLocked and
-    publishQueueLocked.
+    ImportClientKey (same registry-before-queue rule as approval), and
+    RevokeAuthorizedKey, over publishRegistryLocked and publishQueueLocked.
   - ResyncRegistry/ResyncQueue are ensureRegistryDurableLocked and
     ensureQueueDurableLocked; Crash is the restart that reloads both files
     (LoadAuthorizedKeys, LoadEnrollmentQueue); Lapse is enrollqueue.TTL
@@ -202,9 +201,10 @@ Reject(k) ==
     /\ UNCHANGED <<enrolledAcked, audited, ackedUnsynced>>
 
 \* Import enrolls a key the operator supplied directly. A waiting request for
-\* the same key is cleared, but only after a fully durable registry write:
-\* a late registry failure returns before touching the queue, so the key is
-\* enrolled (and audited) while its request stays listed.
+\* the same key is cleared under the approval rule: a key that reached the
+\* live registry is audited whether or not that write was durable, and the
+\* request is then cleared; only an early registry failure leaves the queue
+\* untouched.
 Import(k) ==
     /\ queueSynced /\ regSynced
     /\ IF k \in reg
@@ -216,7 +216,7 @@ Import(k) ==
        ELSE \E oR \in Outcomes :
             /\ PublishRegistry(reg \cup {k}, oR)
             /\ audited' = IF Applied(oR) THEN audited \cup {k} ELSE audited
-            /\ IF oR = "ok" /\ k \in queue
+            /\ IF Applied(oR) /\ k \in queue
                THEN ClearRequest(k)
                ELSE QueueUnchanged /\ pendingAcked' = pendingAcked
     /\ UNCHANGED <<enrolledAcked, ackedUnsynced, rejectedEnrolled>>

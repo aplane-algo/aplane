@@ -6,7 +6,7 @@
 > (`enrollment_queue_deep.cfg`, four keys, `MaxPending = 3`) 12,168 distinct
 > states at depth 15. The expected-failure negative control
 > (`enrollment_queue_negative.cfg`, `RequireDurableAck = FALSE`) violates
-> `EQ2_PendingAckSurvivesCrash` after 175 distinct states at depth 3 and must
+> `EQ2_PendingAckSurvivesCrash` after 167 distinct states at depth 3 and must
 > keep producing that exact counterexample.
 
 This model checks the two daemon-written documents that decide which SSH
@@ -55,8 +55,8 @@ and the packages around it:
   publishes the registry before the queue; a key that reached the live
   registry is audited whether or not the write was durable, and only an early
   registry failure leaves the request untouched. Rejection refuses a request
-  whose key is enrolled (`ErrAlreadyEnrolled`). Import clears a waiting
-  request only after a fully durable registry write. Each operation first
+  whose key is enrolled (`ErrAlreadyEnrolled`). Import follows the same
+  registry-before-queue rule as approval. Each operation first
   re-publishes a file left unsynced by an earlier failure
   (`ensureRegistryDurableLocked`, `ensureQueueDurableLocked`), modeled as the
   `ResyncRegistry` and `ResyncQueue` actions that gate the operations.
