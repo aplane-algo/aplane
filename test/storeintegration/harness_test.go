@@ -18,8 +18,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -108,8 +111,20 @@ type storeEnv struct {
 	dataDir    string
 	passphrase string
 	port       int
+	sshPort    int
 	signer     *signerProcess
 	checkpoint checkpointConfig
+
+	// The REST API is reachable only through the signer's SSH server, with
+	// the client's enrolled key as its credential. The harness owns one
+	// client identity per environment and tunnels with it.
+	clientKeyPath   string
+	clientPublicKey []byte
+	knownHostsPath  string
+	tunnelMu        sync.Mutex
+	tunnel          *sshtunnel.Client
+	tunnelCancel    context.CancelFunc
+	tunnelURL       string
 }
 
 type checkpointConfig struct {
@@ -147,8 +162,34 @@ func newFreshStoreEnv(t *testing.T, passphrase string) *storeEnv {
 	if err := os.WriteFile(filepath.Join(sshDir, "host_key"), pem.EncodeToMemory(privateBlock), 0o600); err != nil {
 		t.Fatalf("write signer SSH host key: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sshDir, "authorized_keys"), nil, 0o600); err != nil {
-		t.Fatalf("write signer SSH authorized keys: %v", err)
+	hostPublicKey, err := ssh.NewPublicKey(hostPrivateKey.Public())
+	if err != nil {
+		t.Fatalf("derive signer SSH host public key: %v", err)
+	}
+	clientDir := filepath.Join(root, "client", ".ssh")
+	if err := os.MkdirAll(clientDir, 0o700); err != nil {
+		t.Fatalf("create client SSH directory: %v", err)
+	}
+	clientPublicKey, clientPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate client SSH key: %v", err)
+	}
+	clientBlock, err := ssh.MarshalPrivateKey(clientPrivateKey, "")
+	if err != nil {
+		t.Fatalf("marshal client SSH key: %v", err)
+	}
+	clientKeyPath := filepath.Join(clientDir, "id_ed25519")
+	if err := os.WriteFile(clientKeyPath, pem.EncodeToMemory(clientBlock), 0o600); err != nil {
+		t.Fatalf("write client SSH key: %v", err)
+	}
+	clientSSHKey, err := ssh.NewPublicKey(clientPublicKey)
+	if err != nil {
+		t.Fatalf("derive client SSH public key: %v", err)
+	}
+	knownHostsPath := filepath.Join(clientDir, "known_hosts")
+	knownHosts := fmt.Sprintf("[127.0.0.1]:%d %s\n", sshPort, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hostPublicKey))))
+	if err := os.WriteFile(knownHostsPath, []byte(knownHosts), 0o600); err != nil {
+		t.Fatalf("write client known_hosts: %v", err)
 	}
 	config := fmt.Sprintf(`ipc_path: run/aplane.sock
 endpoint:
@@ -156,7 +197,6 @@ endpoint:
   ssh:
     port: %d
     host_key_path: .ssh/host_key
-    authorized_keys_path: .ssh/authorized_keys
 passphrase_timeout: "0m"
 lock_on_disconnect: false
 user_auto_approve: true
@@ -171,9 +211,73 @@ require_memory_protection: false
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write signer config: %v", err)
 	}
-	env := &storeEnv{t: t, root: root, dataDir: dataDir, passphrase: passphrase, port: port}
+	env := &storeEnv{
+		t: t, root: root, dataDir: dataDir, passphrase: passphrase, port: port, sshPort: sshPort,
+		clientKeyPath:   clientKeyPath,
+		clientPublicKey: ssh.MarshalAuthorizedKey(clientSSHKey),
+		knownHostsPath:  knownHostsPath,
+	}
 	t.Cleanup(func() { _ = env.stopSigner() })
 	return env
+}
+
+// enrollClient writes the harness client key into the daemon-owned registry.
+// The signer is stopped when this runs; the registry is the credential the
+// tunnel authenticates with, so each start sees the key enrolled.
+func (e *storeEnv) enrollClient() {
+	e.t.Helper()
+	registryDir := filepath.Join(e.dataDir, "identities", "default", ".ssh")
+	if err := os.MkdirAll(registryDir, 0o700); err != nil {
+		e.t.Fatalf("create enrolled client registry directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(registryDir, "authorized_keys"), e.clientPublicKey, 0o600); err != nil {
+		e.t.Fatalf("enroll harness client key: %v", err)
+	}
+}
+
+// url returns a loopback URL that reaches the signer's REST API through an
+// SSH tunnel authenticated with the harness client key. The tunnel opens on
+// first use and reopens once the previous one has dropped, as it does after
+// a signer restart.
+func (e *storeEnv) url() string {
+	e.t.Helper()
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	if e.tunnel != nil && e.tunnel.IsConnected() {
+		return e.tunnelURL
+	}
+	e.closeTunnelLocked()
+	localPort := reservePorts(e.t, 1)[0]
+	client := sshtunnel.NewClient("127.0.0.1", e.sshPort, localPort, e.clientKeyPath, e.knownHostsPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := client.ConnectWithKey(ctx); err != nil {
+		cancel()
+		e.t.Fatalf("open signer tunnel: %v", err)
+	}
+	if err := client.StartPortForwarding(ctx); err != nil {
+		cancel()
+		_ = client.Close()
+		e.t.Fatalf("forward signer tunnel: %v", err)
+	}
+	e.tunnel, e.tunnelCancel = client, cancel
+	e.tunnelURL = fmt.Sprintf("http://127.0.0.1:%d", localPort)
+	return e.tunnelURL
+}
+
+func (e *storeEnv) closeTunnel() {
+	e.tunnelMu.Lock()
+	defer e.tunnelMu.Unlock()
+	e.closeTunnelLocked()
+}
+
+func (e *storeEnv) closeTunnelLocked() {
+	if e.tunnel != nil {
+		_ = e.tunnel.Close()
+	}
+	if e.tunnelCancel != nil {
+		e.tunnelCancel()
+	}
+	e.tunnel, e.tunnelCancel, e.tunnelURL = nil, nil, ""
 }
 
 // reservePorts returns count distinct free ports. Every listener stays open
@@ -206,6 +310,7 @@ func (e *storeEnv) startSigner(passphrase string) {
 	if e.signer != nil {
 		e.t.Fatal("signer already started")
 	}
+	e.enrollClient()
 	logPath := filepath.Join(e.root, fmt.Sprintf("apsigner-%d.log", time.Now().UnixNano()))
 	logFile, err := os.Create(logPath)
 	if err != nil {
@@ -264,6 +369,7 @@ type signerProcess struct {
 }
 
 func (e *storeEnv) stopSigner() error {
+	e.closeTunnel()
 	if e.signer == nil {
 		return nil
 	}
@@ -285,6 +391,7 @@ func (e *storeEnv) stopSigner() error {
 }
 
 func (e *storeEnv) crashSigner() error {
+	e.closeTunnel()
 	if e.signer == nil {
 		return nil
 	}
