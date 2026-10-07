@@ -213,6 +213,16 @@ new store generation and activates the resulting runtime policy immediately;
 a retained generation until explicit generation pruning; see
 [USER_STORE_MGMT.md](USER_STORE_MGMT.md).
 
+"Immediately" means for requests that arrive after the apply. A request is
+evaluated against the policy in force when it arrives, and it keeps that
+verdict for its whole life, including while its approval prompt waits in
+apadmin or apapprover and while it is queued behind another prompt. Approving
+such a request signs it under the policy it was evaluated against, not the one
+you just applied. If a tighter policy must also cover requests already waiting,
+reject the waiting prompts (or lock the signer, which fails every pending
+approval) before or after the apply; the clients retry and are evaluated under
+the new policy.
+
 Every online verb authenticates first; if the daemon is locked, even the
 read-only `status`, `export`, and `check` commands unlock it before reading
 policy state and are therefore not guaranteed to preserve the daemon's lock

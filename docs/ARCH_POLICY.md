@@ -290,7 +290,14 @@ evaluation, approval waiting, and final signature execution. A later successful
 policy reload or `apadmin` online policy apply applies only to signing requests
 that start after the new snapshot is published. In-flight requests are not
 re-evaluated or canceled merely because the policy changed while they were
-waiting for approval.
+waiting for approval. This is a deliberate contract, not a gap: deny and
+review verdicts are decided with the policy at the time the request is
+presented, not at the time the operator approves it. A request whose prompt
+is in front of the operator, or queued behind another prompt for up to
+`approval_wait`, signs under the policy it was evaluated against when
+approved. An operator who needs a tighter policy to cover requests already
+waiting rejects those prompts or locks the signer, which fails every pending
+approval (see [USER_POLICY.md](USER_POLICY.md), "Editing Policy").
 
 ## Always Deny
 
