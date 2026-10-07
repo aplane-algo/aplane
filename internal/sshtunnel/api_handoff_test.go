@@ -37,11 +37,13 @@ func (s *enrolledSet) hooks() ProductHooks {
 			defer s.mu.Unlock()
 			return s.keys[ssh.FingerprintSHA256(key)]
 		},
-		EnrollKey: func(key ssh.PublicKey, _ string) error {
+		EnrollKey: func(key ssh.PublicKey, _ string) (bool, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			s.keys[ssh.FingerprintSHA256(key)] = true
-			return nil
+			fp := ssh.FingerprintSHA256(key)
+			added := !s.keys[fp]
+			s.keys[fp] = true
+			return added, nil
 		},
 	}
 }
@@ -83,11 +85,28 @@ func connectEnrolledClient(t *testing.T, srv *Server, set *enrolledSet, tmpDir, 
 	_, pub, identityPath := generateClientIdentityFile(t, t.TempDir())
 	set.add(pub)
 	client := NewClient(host, port, 0, identityPath, knownHostsPath)
+	before := srv.ActiveConnectionCount()
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
+	// The client's handshake completes before the server's goroutine
+	// registers the connection for revocation; wait for that registration
+	// so a revocation issued next cannot miss it.
+	waitForActiveConnections(t, srv, before+1)
 	return client, ssh.FingerprintSHA256(pub)
+}
+
+// waitForActiveConnections waits until the server tracks n connections.
+func waitForActiveConnections(t *testing.T, srv *Server, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.ActiveConnectionCount() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("ActiveConnectionCount() = %d, want %d", srv.ActiveConnectionCount(), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // An API channel reaches the handoff as a connection that names the enrolled

@@ -35,7 +35,7 @@ func testSSHKey(t *testing.T) ssh.PublicKey {
 func TestRevokeAuthorizedKeyFailedPublishDoesNotRetainStaleAuthority(t *testing.T) {
 	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
 	key := testSSHKey(t)
-	if err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil {
+	if _, err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil {
 		t.Fatalf("EnrollAuthorizedKey() error = %v", err)
 	}
 	if err := ir.LoadAuthorizedKeys(); err != nil {
@@ -50,9 +50,12 @@ func TestRevokeAuthorizedKeyFailedPublishDoesNotRetainStaleAuthority(t *testing.
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	_, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key))
+	entry, revoked, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key))
 	if err == nil || !strings.Contains(err.Error(), "injected dir sync failure") {
 		t.Fatalf("RevokeAuthorizedKey() error = %v, want the publish failure", err)
+	}
+	if !revoked || !errors.Is(err, ErrAppliedNotDurable) || entry.Label != "laptop" {
+		t.Fatalf("RevokeAuthorizedKey() = (%+v, %v, %v), want the applied-not-durable outcome", entry, revoked, err)
 	}
 	if ir.HasAuthorizedKey(key) {
 		t.Fatal("revoked key still authorized in memory after the file dropped it")
@@ -68,7 +71,7 @@ func TestRevokeAuthorizedKeyFailedPublishDoesNotRetainStaleAuthority(t *testing.
 func TestEnrollAuthorizedKeyFailedStagingKeepsRegistry(t *testing.T) {
 	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
 	existing := testSSHKey(t)
-	if err := ir.EnrollAuthorizedKey(existing, "one"); err != nil {
+	if _, err := ir.EnrollAuthorizedKey(existing, "one"); err != nil {
 		t.Fatal(err)
 	}
 	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
@@ -80,8 +83,8 @@ func TestEnrollAuthorizedKeyFailedStagingKeepsRegistry(t *testing.T) {
 	defer func() { fsutil.TestHook = nil }()
 
 	added := testSSHKey(t)
-	if err := ir.EnrollAuthorizedKey(added, "two"); err == nil {
-		t.Fatal("EnrollAuthorizedKey() succeeded despite the rename failure")
+	if enrolled, err := ir.EnrollAuthorizedKey(added, "two"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("EnrollAuthorizedKey() = (%v, %v), want a plain failure with nothing applied", enrolled, err)
 	}
 	if ir.HasAuthorizedKey(added) || !ir.HasAuthorizedKey(existing) {
 		t.Fatal("runtime registry changed after a failed publish")
@@ -110,17 +113,21 @@ func TestRegistryRetriesRequireSuccessfulSync(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if err := ir.EnrollAuthorizedKey(key, "laptop"); err == nil {
-		t.Fatal("first EnrollAuthorizedKey() succeeded despite the sync failure")
+	// The first attempt installs the key: it is reported as enrolled, so the
+	// caller audits it, together with the durability failure.
+	if enrolled, err := ir.EnrollAuthorizedKey(key, "laptop"); !enrolled || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("first EnrollAuthorizedKey() = (%v, %v), want enrolled with the applied-not-durable error", enrolled, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("the file holds the key, so the runtime should honor it")
 	}
-	if err := ir.EnrollAuthorizedKey(key, "laptop"); err == nil || !strings.Contains(err.Error(), "not durable") {
-		t.Fatalf("retry error = %v, want the pending-durability failure", err)
+	// A retry re-publishes the unsynced file and fails before applying
+	// anything, so it is not reported as a fresh enrollment.
+	if enrolled, err := ir.EnrollAuthorizedKey(key, "laptop"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("retry = (%v, %v), want the pending-durability failure with nothing applied", enrolled, err)
 	}
-	if _, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err == nil || !strings.Contains(err.Error(), "not durable") {
-		t.Fatalf("revoke during unsynced state error = %v, want the pending-durability failure", err)
+	if _, revoked, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err == nil || revoked || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("revoke during unsynced state = (%v, %v), want the pending-durability failure with nothing applied", revoked, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("a refused revocation must not drop the key")
@@ -128,16 +135,16 @@ func TestRegistryRetriesRequireSuccessfulSync(t *testing.T) {
 
 	syncFails = false
 	before := dirSyncs
-	if err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil {
-		t.Fatalf("retry after syncs recover error = %v", err)
+	if enrolled, err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil || enrolled {
+		t.Fatalf("retry after syncs recover = (%v, %v), want success without a fresh enrollment", enrolled, err)
 	}
 	if dirSyncs != before+1 {
 		t.Fatalf("directory syncs during the successful retry = %d, want exactly 1", dirSyncs-before)
 	}
-	if err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil || dirSyncs != before+1 {
+	if _, err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil || dirSyncs != before+1 {
 		t.Fatalf("once durable, an unchanged enrollment must write nothing: err = %v, syncs = %d", err, dirSyncs-before)
 	}
-	if _, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err != nil || ir.HasAuthorizedKey(key) {
+	if _, _, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err != nil || ir.HasAuthorizedKey(key) {
 		t.Fatalf("revoke after recovery: err = %v, authorized = %v", err, ir.HasAuthorizedKey(key))
 	}
 }
