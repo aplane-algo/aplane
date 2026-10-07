@@ -104,6 +104,8 @@ type Runtime struct {
 	// crash. The next registry operation re-publishes it before doing
 	// anything else, so no retry is acknowledged on top of an unsynced file.
 	clientsUnsynced bool
+	// pendingUnsynced is the same marker for the enrollment queue file.
+	pendingUnsynced bool
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -607,6 +609,9 @@ func (ir *Runtime) publishQueueLocked(next *enrollqueue.Queue) error {
 	if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), next); err != nil {
 		// As for the registry: the file is either the old queue or the new
 		// one, so serve what it holds; an unreadable queue holds nothing.
+		// Either way it may not be durable, which the next queue operation
+		// repairs before acknowledging anything.
+		ir.pendingUnsynced = true
 		reloaded, loadErr := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
 		if loadErr != nil {
 			ir.pending = &enrollqueue.Queue{}
@@ -616,6 +621,20 @@ func (ir *Runtime) publishQueueLocked(next *enrollqueue.Queue) error {
 		return err
 	}
 	ir.pending = next
+	ir.pendingUnsynced = false
+	return nil
+}
+
+// ensureQueueDurableLocked re-publishes the queue left by an earlier failed
+// write, so a retried operation is acknowledged only once the file is
+// durable rather than on the strength of the unsynced file.
+func (ir *Runtime) ensureQueueDurableLocked() error {
+	if !ir.pendingUnsynced {
+		return nil
+	}
+	if err := ir.publishQueueLocked(ir.pendingLocked()); err != nil {
+		return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
+	}
 	return nil
 }
 
@@ -636,6 +655,9 @@ func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) 
 	defer ir.clientsMu.Unlock()
 	if ir.clients != nil && ir.clients.Has(key) {
 		return false, false, nil
+	}
+	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return false, false, err
 	}
 	next, _, added, err := ir.pendingLocked().WithRequest(key, label, remoteAddr, time.Now())
 	if err != nil {
@@ -663,6 +685,9 @@ func (ir *Runtime) PendingEnrollments() []enrollqueue.Entry {
 func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (enrollqueue.Entry, error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
+	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return enrollqueue.Entry{}, err
+	}
 	entry, ok := ir.pendingLocked().Pruned(time.Now()).Lookup(fingerprint)
 	if !ok {
 		return enrollqueue.Entry{}, enrollqueue.ErrNotPending
@@ -691,6 +716,9 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (enrollqueue.Ent
 func (ir *Runtime) RejectEnrollment(fingerprint string) (enrollqueue.Entry, error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
+	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return enrollqueue.Entry{}, err
+	}
 	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
 		return enrollqueue.Entry{}, err
@@ -707,6 +735,9 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (enrollqueue.Entry, erro
 func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
+	if err := ir.ensureQueueDurableLocked(); err != nil {
+		return false, err
+	}
 	added, err = ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(key, label)
 		return next, added, nil

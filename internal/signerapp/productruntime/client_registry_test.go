@@ -164,3 +164,42 @@ func TestRejectEnrollmentFailedPublishResyncsQueue(t *testing.T) {
 		t.Fatalf("pending after failed rejection = %+v; the file no longer holds the request", got)
 	}
 }
+
+// The queue follows the same rule as the registry: while syncs keep failing,
+// a retried request or rejection reports the durability failure, and a
+// retry succeeds only once a sync has.
+func TestQueueRetriesRequireSuccessfulSync(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	fingerprint := ssh.FingerprintSHA256(key)
+
+	syncFails := true
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op == fsutil.OpDirSync && syncFails {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	if _, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil {
+		t.Fatal("first QueueEnrollment() succeeded despite the sync failure")
+	}
+	if got := ir.PendingEnrollments(); len(got) != 1 {
+		t.Fatalf("pending = %+v; the file holds the request", got)
+	}
+	if _, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("retried QueueEnrollment() error = %v, want the pending-durability failure", err)
+	}
+	if _, err := ir.RejectEnrollment(fingerprint); err == nil || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("RejectEnrollment() during unsynced state error = %v, want the pending-durability failure", err)
+	}
+
+	syncFails = false
+	if _, err := ir.RejectEnrollment(fingerprint); err != nil {
+		t.Fatalf("RejectEnrollment() after syncs recover error = %v", err)
+	}
+	if got := ir.PendingEnrollments(); len(got) != 0 {
+		t.Fatalf("pending after rejection = %+v, want none", got)
+	}
+}
