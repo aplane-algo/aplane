@@ -807,7 +807,7 @@ This pipeline keeps handler code behind the `Authorizer` interface.
 | Encryption | AES-256-GCM (authenticated encryption) |
 | Socket security | `/run/apsigner` mode 0750, Unix socket mode 0660, strict non-writable parent validation |
 | Memory protection | `mlockall()` prevents swap when enabled successfully, keys zeroed after use (see below) |
-| Single active admin session | Only one apadmin/apapprover admin connection at a time across IPC and SSH |
+| Single active admin session | Only one apadmin/apapprover admin connection at a time over IPC |
 
 ### Keyring Encryption
 
@@ -1266,7 +1266,7 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 |--------|-------------|-------------------|------------|
 | Auth credential | Enrolled SSH key of the connection | Passphrase | Enrolled SSH key |
 | Auth frequency | Every request | Once per connection | Once per tunnel |
-| Authorization | Authorizer interface | Authorizer interface | Transport only; tunneled HTTP/admin paths authorize separately |
+| Authorization | Authorizer interface | Authorizer interface | Transport only; tunneled HTTP requests authorize separately |
 | Connection model | Stateless | Persistent session | Persistent transport |
 | Security boundary | Possession of the enrolled private key | Knowledge of passphrase | Possession of the enrolled private key |
 | Target user | Scripts/automation | Human operator | Remote agents/users |

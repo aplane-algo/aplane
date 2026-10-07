@@ -364,7 +364,7 @@ name a test inline:
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing file, config,
   wire, SDK, plugin, and lifecycle contracts.
 - [ARCH_HTTP_API.md](ARCH_HTTP_API.md): HTTP DTO and status-code contract.
-- [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md): admin IPC/SSH message
+- [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md): admin IPC message
   catalog.
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict and routing semantics.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): stable action/resource model.

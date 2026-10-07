@@ -54,9 +54,9 @@ a key.
 |-------------|---------|-----------------|
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
 | **aprekey** | External witness custody and bounded contract-admin rekey/unrekey orchestration, including separated ceremonies | Client orchestration + Bounded Admin + Witness Artifact |
-| **apadmin** | Signer admin TUI and batch client over IPC or SSH, owning all general live administration | UI (TUI/CLI) + admin protocol + Providers |
+| **apadmin** | Signer admin TUI and batch client over local IPC, owning all general live administration | UI (TUI/CLI) + admin protocol + Providers |
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local cosigner nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
-| **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
+| **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Stopped-daemon keystore bootstrap, policy integrity, external backup verification, rebuild rescue, permission migration, and generation pruning | Providers (KeyGen) + Crypto + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
@@ -197,7 +197,8 @@ aplane/
 │   │   ├── backupadmin/           # Signer-managed backup/restore admin workflows
 │   │   ├── rest/                  # Signer REST service layer
 │   │   ├── clientregistry/        # Enrolled client key registry (authorized_keys)
-│   │   ├── enrollment/            # Client enrollment approval and audit service
+│   │   ├── enrollment/            # Client enrollment requests, approval, and audit
+│   │   ├── enrollqueue/           # Persisted pending-enrollment queue (pending_enrollments.json)
 │   │   └── templates/             # Template reload and state reporting
 │   ├── adminproto/                # Admin service vocabulary and framed server connection
 │   ├── protocol/                  # IPC/admin wire message definitions

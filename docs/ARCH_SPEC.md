@@ -139,7 +139,7 @@ All under `cmd/`:
 |--------|------|
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
 | `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
-| `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
+| `apsigner` | Signing daemon: HTTP API, admin protocol over local IPC, key management, approval coordination, SSH tunnel server, audit logging |
 | `apadmin` | TUI and batch admin client over local IPC; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, cosigner references, endpoint export, and generation inventory, plus explicit offline policy rescue |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
@@ -164,7 +164,7 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest` |
@@ -495,7 +495,7 @@ opens carries that key's identity.
 The runtime enforces these single-product invariants:
 
 - `adminserver.SessionManager` owns one pre-auth pending slot, one authenticated
-  displacement slot, and one active product session across IPC and SSH;
+  displacement slot, and one active product session;
 - template/provider registration is process-global and
   `internal/lsigprovider.registerMu` has no per-owner reference counts;
 - one product runtime owns the watcher, approval coordinator, enrolled-client
@@ -751,7 +751,7 @@ registry.
 | Concern | Owner |
 |---------|-------|
 | Lock/unlock state | `internal/signerapp/runtime` |
-| Sign request lifecycle, approval queues, cancellation (sign + enrollment) | `internal/signerapp/approval` |
+| Sign request lifecycle, approval queue, cancellation | `internal/signerapp/approval` |
 | Planning, approval flow, execution, signing orchestration | `internal/signerapp/signing` |
 | Template registration, reload coordination | `internal/signerapp/templates` |
 | Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
@@ -785,7 +785,7 @@ sends explicit cancellation.
 - key generation, mnemonic import, delete, and export rejection
   admin operations,
 - approval orchestration,
-- admin protocol interactions over IPC and SSH,
+- admin protocol interactions over local IPC,
 - SSH tunnel hosting,
 - audit logging,
 - signer lock/unlock lifecycle,
@@ -875,7 +875,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
-| `Coordinator.pendingEnrollmentRequestsLock` | Pending client enrollment approvals |
+| `productruntime.Runtime.clientsMu` | Enrolled-client registry and pending enrollment queue together, so an approval is one step |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
 | `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
@@ -964,7 +964,7 @@ The server-side plan/sign boundary is split as follows:
 - signer transaction description formatting in `internal/signerapp/txdesc`,
 - template registration and reload lifecycle in `internal/signerapp/templates`,
 - template library, install, show, import, remove, activate, and deactivate workflows in `internal/signerapp/templateadmin`,
-- client enrollment approval and audit service in `internal/signerapp/enrollment`,
+- client enrollment requests (queued at once, answered by the operator later) and their audit in `internal/signerapp/enrollment`, with the persisted queue file in `internal/signerapp/enrollqueue`,
 - the enrolled-client registry (strict parser, validate-then-publish) in `internal/signerapp/clientregistry`,
 - append-only audit logging in `internal/signerapp/audit`, with HTTP/request
   attribution and operational side effects wired from
@@ -1960,7 +1960,7 @@ Strong existing seams:
   result boundary in `internal/apshellcli`
 - `internal/config` for configuration normalization
 - `internal/keystore` for storage/session separation
-- `internal/protocol` for the compatibility-bearing IPC/SSH wire contract,
+- `internal/protocol` for the compatibility-bearing IPC wire contract,
   envelopes, and framing primitives
 - `internal/adminproto` for transport-neutral admin service requests/results
   and framed server connections; these are not the external JSON message types

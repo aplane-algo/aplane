@@ -872,7 +872,7 @@ func (m model) renderHelpOverlay() string {
 	}
 	lines = append(lines,
 		"",
-		kv("Signer pane", "apadmin Bubble Tea UI over local IPC or SSH admin"),
+		kv("Signer pane", "apadmin Bubble Tea UI over local IPC"),
 		kv("Daemon pane", "local apsigner status and owned-daemon logs"),
 		"",
 		kv("focus", m.focus.String()),

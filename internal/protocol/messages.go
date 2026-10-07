@@ -2,8 +2,8 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package protocol defines the line-delimited JSON admin protocol message
-// types shared between apsigner (server) and apadmin/TUI (client) over IPC
-// and SSH admin transport.
+// types shared between apsigner (server) and apadmin/TUI (client) over local
+// IPC.
 // This is the single source of truth for the wire protocol.
 package protocol
 
@@ -20,7 +20,7 @@ const (
 	AdminProtocolVersionMinor = 0
 )
 
-// ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
+// ProtocolVersion is the admin IPC protocol version shape surfaced during
 // the auth hello. Clients must provide a matching major version.
 type ProtocolVersion struct {
 	Major int `json:"major"`
@@ -195,7 +195,7 @@ type AuthRequiredMessage struct {
 	ProtocolVersion ProtocolVersion `json:"protocol_version"`
 }
 
-// AuthMessage is sent by an admin client to authenticate the IPC/SSH session.
+// AuthMessage is sent by an admin client to authenticate the IPC session.
 // ProtocolVersion is required by the server.
 type AuthMessage struct {
 	BaseMessage

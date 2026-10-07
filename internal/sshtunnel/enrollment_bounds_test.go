@@ -84,7 +84,7 @@ func TestEnrollmentConnectionRequestsOnce(t *testing.T) {
 }
 
 // A enrollment connection that never starts provisioning is closed.
-func TestIdleRequestTokenConnectionIsClosed(t *testing.T) {
+func TestIdleEnrollmentConnectionIsClosed(t *testing.T) {
 	srv, _ := testServer(t)
 	srv.enrollmentExecDeadline = 100 * time.Millisecond
 	setEnrollmentHooks(srv, EnrollmentHooks{
@@ -97,7 +97,7 @@ func TestIdleRequestTokenConnectionIsClosed(t *testing.T) {
 }
 
 // Live enrollment connections are capped.
-func TestRequestTokenConnectionsAreCapped(t *testing.T) {
+func TestEnrollmentConnectionsAreCapped(t *testing.T) {
 	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
 		Request: pendingHook(nil),
@@ -146,7 +146,7 @@ func (c *closeRecordingConn) Close() error {
 
 // A client that stops reading cannot hold the provisioning slot: the response
 // deadline closes its connection, which fails the blocked write.
-func TestProvisioningResponseToStalledClientTimesOut(t *testing.T) {
+func TestEnrollmentReplyToStalledClientTimesOut(t *testing.T) {
 	srv, _ := testServer(t)
 	srv.enrollmentRespDeadline = 50 * time.Millisecond
 	closed := make(chan struct{})
@@ -166,7 +166,7 @@ func TestProvisioningResponseToStalledClientTimesOut(t *testing.T) {
 
 // A enrollment connection cannot open channels without bound: channels
 // beyond the cap are rejected before a handler is started.
-func TestRequestTokenChannelsAreCapped(t *testing.T) {
+func TestEnrollmentChannelsAreCapped(t *testing.T) {
 	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
 		Request: pendingHook(nil),

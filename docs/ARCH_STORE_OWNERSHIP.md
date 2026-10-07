@@ -73,8 +73,9 @@ moved behind an existing owner.
 | `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |
+| `internal/signerapp/enrollqueue` when invoked by the daemon | Pending enrollment queue (`identities/default/.ssh/pending_enrollments.json`) |
 
-Normal operators reach these owners through authenticated HTTP or the admin protocol over IPC/SSH;
+Normal operators reach these owners through authenticated HTTP or the admin protocol over local IPC;
 they do not call the storage packages directly.
 
 `internal/signerapp/productruntime` owns the product runtime aggregate; the

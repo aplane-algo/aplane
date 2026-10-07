@@ -120,7 +120,7 @@ func prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath string, start 
 			Status:  daemonStatusDisabled,
 			DataDir: dataDir,
 			IPCPath: ipcPath,
-			Detail:  "daemon management disabled; admin pane will attach over configured IPC/SSH",
+			Detail:  "daemon management disabled; admin pane will attach over configured IPC",
 		}
 	}
 	if filepath.Clean(ipcPath) != filepath.Clean(daemonIPCPath) {

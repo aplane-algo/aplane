@@ -116,7 +116,7 @@ principal/transport attribution.
 
 | Event | Description |
 |-------|-------------|
-| `SESSION_CONNECTED` | IPC or SSH session established |
+| `SESSION_CONNECTED` | IPC admin session established |
 | `SESSION_DISCONNECTED` | Session ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
 | `CLIENT_ENROLLMENT_REQUESTED` | A client asked to be enrolled; the request waits for the operator (principal `client:<fingerprint>`, `client_label` carries the requested label) |

@@ -10,7 +10,7 @@ import (
 	"io"
 )
 
-// MaxAdminMessageBytes bounds every IPC/SSH admin frame before JSON decode.
+// MaxAdminMessageBytes bounds every IPC admin frame before JSON decode.
 // Current messages are normally kilobytes; this leaves room for template and
 // policy documents without permitting an authenticated or pre-auth peer to
 // grow memory without bound.

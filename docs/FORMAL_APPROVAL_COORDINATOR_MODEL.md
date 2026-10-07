@@ -68,12 +68,12 @@ liveness configurations are all recorded in `formal/metrics*.json`.
 - `internal/signerapp/approval/coordinator.go`: serialized request delivery,
   cancellation, terminal resolution, and `FailAllPendingRequests`.
 - `internal/signerapp/approval/coordinator_test.go`:
-  `TestCoordinatorFailAllClearsPendingMaps`,
-  `TestCoordinatorFailAllUnblocksPendingRequest`,
-  `TestSigningPreemptsDeliveredTokenRequest`, and
-  `TestSigningQueuesAheadOfTokenRequests`.
-- `internal/sshtunnel/token_provisioning_bounds_test.go`: the SSH-side limit
-  of one pending token request, which only shrinks the modeled token set.
+  `TestCoordinatorFailAllClearsPendingMaps` and
+  `TestCoordinatorFailAllUnblocksPendingRequest`. The preemption tests
+  earlier revisions cited went with the token request kind.
+- `internal/sshtunnel/enrollment_bounds_test.go`: the SSH-side caps on
+  enrollment connections and channels. Enrollment no longer enters the
+  coordinator, so these bound nothing in the model.
 - `internal/signerapp/daemon/hub_test.go`: daemon-level fail-all forwarding.
 - `internal/signerapp/daemon/ipc.go`: displacement fails pending approvals
   before changing the active operator session.

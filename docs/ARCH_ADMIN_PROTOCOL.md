@@ -30,9 +30,9 @@ Admin sessions bind directly to the one product runtime. The v5 auth shape has
 no runtime selector. Strict known-field decoding rejects unknown fields before
 passphrase verification or runtime work.
 
-IPC and SSH share one process-wide authenticated-pending slot and one active
-admin slot. Local IPC additionally has one pre-auth pending slot until its
-passphrase has been verified.
+Admin sessions share one process-wide authenticated-pending slot and one
+active admin slot, plus one pre-auth pending slot until a session's passphrase
+has been verified.
 
 Transport notes:
 
@@ -65,7 +65,7 @@ Transport notes:
 
 ## Implementation Boundary
 
-`internal/protocol` is the compatibility-bearing IPC/SSH wire contract. It
+`internal/protocol` is the compatibility-bearing IPC wire contract. It
 owns protocol versions, message types and IDs, JSON field names, envelopes,
 framing primitives, sensitive wire values, and stable error codes.
 
@@ -311,7 +311,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
-- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC and SSH, but generated recovery material is not returned over the admin protocol
+- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery
@@ -335,7 +335,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 ### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted over IPC and SSH because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted on every admin session because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions

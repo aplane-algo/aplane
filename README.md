@@ -75,7 +75,7 @@ npm install aplanesdk
 │  apsigner: signer daemon                                    │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ HTTP signing API    • Admin protocol                  │  │
-│  │ SSH tunnel server   • SSH admin subsystem             │  │
+│  │ SSH tunnel server   • Client enrollment               │  │
 │  │ Product runtime     • Approval + audit                │  │
 │  │ Encrypted keys      • Locked memory • Key zeroing     │  │
 │  └───────────────────────────────────────────────────────┘  │
