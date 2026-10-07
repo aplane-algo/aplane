@@ -82,8 +82,15 @@ func (m *Model) nextEnrollmentRequest() bool {
 
 // handleClientEnrollmentPopupKeys handles keyboard input on the enrollment
 // request popup. The answer names the key; the request waits in the signer's
-// queue until then, so there is nothing to time out.
+// queue until then, so there is nothing to time out. Esc defers the request:
+// nothing is sent, the request stays in the signer's queue and on the
+// Enrolled Clients screen, and the popup moves on to the next waiting request
+// (or closes).
 func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		return m.leaveEnrollmentPopup(nil)
+	}
+
 	requestID := ""
 	fingerprint := ""
 	if m.enrollmentApproval.request != nil {
@@ -98,20 +105,26 @@ func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 				answer = m.sendApproveEnrollmentCmd(fingerprint, "")
 			}
 			m.markEnrollmentAnswered(fingerprint)
-			if m.nextEnrollmentRequest() {
-				// Another request is waiting; keep the popup up for it.
-				return m, tea.Batch(answer, m.waitForMessageCmd())
-			}
-			if m.signerState == signerRuntimeRecovery {
-				// Recovery is blocking: resolving an enrollment popup must
-				// return to the blocking recovery screen, never to normal
-				// navigation.
-				m.viewState = ViewStoreRecovery
-				return m, tea.Batch(answer, m.waitForMessageCmd())
-			}
-			m.viewState = m.screenUnderApproval()
-			return m, answer
+			return m.leaveEnrollmentPopup(answer)
 		})
 	m.enrollmentApproval.focus = focus
+	return m, cmd
+}
+
+// leaveEnrollmentPopup moves the popup on from the request it showed, after
+// an answer (sent by cmd) or a deferral (cmd is nil): the next waiting
+// request takes the popup, or the popup closes onto the screen beneath it.
+func (m Model) leaveEnrollmentPopup(cmd tea.Cmd) (Model, tea.Cmd) {
+	if m.nextEnrollmentRequest() {
+		// Another request is waiting; keep the popup up for it.
+		return m, tea.Batch(cmd, m.waitForMessageCmd())
+	}
+	if m.signerState == signerRuntimeRecovery {
+		// Recovery is blocking: leaving an enrollment popup must return to
+		// the blocking recovery screen, never to normal navigation.
+		m.viewState = ViewStoreRecovery
+		return m, tea.Batch(cmd, m.waitForMessageCmd())
+	}
+	m.viewState = m.screenUnderApproval()
 	return m, cmd
 }

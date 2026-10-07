@@ -35,7 +35,7 @@ func (m Model) renderClientEnrollmentPopup() string {
 		sb.WriteString(row + "\n")
 	}
 	queued := len(m.enrollmentApproval.queue)
-	note := "Approving enrolls this key as a client; the client then connects on its own. No credential is issued."
+	note := "Approving enrolls this key as a client; the client then connects on its own. No credential is issued. Esc leaves the request waiting."
 	if queued > 0 {
 		note += fmt.Sprintf(" %d more request(s) waiting.", queued)
 	}

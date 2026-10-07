@@ -34,8 +34,10 @@ func (m Model) viewFooterText() string {
 			footer += " | up/down/pgup/pgdown: Scroll"
 		}
 		return footer
-	case ViewSigningPopup, ViewClientEnrollmentPopup:
+	case ViewSigningPopup:
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
+	case ViewClientEnrollmentPopup:
+		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r: Reject | esc: Defer"
 	case ViewBackupConfirm:
 		return "Tab: Next | Enter: Create backup | Esc: Back"
 	case ViewGenerateDisplay:

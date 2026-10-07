@@ -80,7 +80,8 @@ request-enrollment
 The command returns at once with the request waiting. You will see an
 approval prompt in the signer admin pane (or, if it was not open, the request
 is shown when you log in and on the Enrolled Clients screen). Navigate to it
-with F1 or <Shift>-LeftArrow and accept it. 
+with F1 or <Shift>-LeftArrow and accept it. (`Esc` leaves the request
+waiting for later; it does not reject it.)
 
 ![Quickstart screenshot 2](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs2.png)
 

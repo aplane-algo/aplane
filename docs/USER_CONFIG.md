@@ -955,7 +955,9 @@ request: `Enrollment request for client key <fingerprint> is waiting for the
 operator at endpoint <alias>`. The operator sees the client's full SSH
 fingerprint in apadmin, immediately if connected or at the next login and on
 the **Enrolled Clients** screen, and compares it with the fingerprint apshell
-prints before approving. Run `connect` once it is approved; until then the
+prints before approving. `Esc` on the prompt leaves the request waiting
+instead of rejecting it; it stays on the Enrolled Clients screen and is shown
+again at the next login. Run `connect` once it is approved; until then the
 signer refuses the key. A request for a key that is already enrolled is
 answered as such and, for the default signer, `apshell` connects at once.
 

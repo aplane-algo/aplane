@@ -85,7 +85,12 @@ identifies the current screen. The enum has families for:
   import form (`ViewImportClientKey`: a public-key file on this machine plus
   an optional label). The enrollment popup queues requests announced while
   one is on screen and shows them in turn; a request announced again at
-  login is shown once
+  login is shown once. `Esc` on the popup defers the request rather than
+  rejecting it: nothing is sent, the request stays in the signer's queue and
+  on the Enrolled Clients screen, the next waiting request takes the popup,
+  and a later announcement (the next login, or the client asking again)
+  shows it again. `Esc` on the signing popup still rejects, since a signing
+  client is waiting on the answer
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress)

@@ -226,3 +226,54 @@ func TestEnrollmentAnswerFromPopupIsReported(t *testing.T) {
 		t.Fatalf("status = %q, warning = %q", m.clients.status, m.lastWarning)
 	}
 }
+
+// Esc on the enrollment popup defers the request instead of rejecting it:
+// nothing is sent, the request stays in the signer's queue (so a later
+// announcement shows it again), the next waiting request takes the popup,
+// and the last Esc returns to the screen underneath.
+func TestEscDefersEnrollmentRequest(t *testing.T) {
+	m := approvalTestModel(ViewKeyDetails)
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-2", SSHFingerprint: "SHA256:two"}})
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.viewState != ViewClientEnrollmentPopup || m.enrollmentApproval.request == nil || m.enrollmentApproval.request.ID != "enroll-2" {
+		t.Fatalf("after deferring enroll-1: view %v request %+v", m.viewState, m.enrollmentApproval.request)
+	}
+	if len(m.enrollmentApproval.answering) != 0 {
+		t.Fatalf("deferring recorded an answer in flight: %v", m.enrollmentApproval.answering)
+	}
+	_ = cmd
+
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.viewState != ViewKeyDetails || m.enrollmentApproval.request != nil || cmd != nil {
+		t.Fatalf("after deferring the last request: view %v request %+v cmd %v", m.viewState, m.enrollmentApproval.request, cmd)
+	}
+	if len(m.enrollmentApproval.answering) != 0 {
+		t.Fatalf("deferring recorded an answer in flight: %v", m.enrollmentApproval.answering)
+	}
+
+	// A deferred request is still waiting at the signer; its next
+	// announcement (a login replay, or the client asking again) shows it.
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	if m.viewState != ViewClientEnrollmentPopup || m.enrollmentApproval.request == nil || m.enrollmentApproval.request.ID != "enroll-1" {
+		t.Fatalf("deferred request announced again was not shown: view %v request %+v", m.viewState, m.enrollmentApproval.request)
+	}
+
+	// In recovery, closing the popup returns to the blocking recovery screen.
+	m.signerState = signerRuntimeRecovery
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.viewState != ViewStoreRecovery || m.enrollmentApproval.request != nil {
+		t.Fatalf("deferring in recovery: view %v request %+v", m.viewState, m.enrollmentApproval.request)
+	}
+
+	// Esc on the signing popup still rejects: a signing client is waiting.
+	m = approvalTestModel(ViewKeyList)
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.viewState != ViewKeyList || m.signing.request != nil {
+		t.Fatalf("esc on the signing popup: view %v request %+v", m.viewState, m.signing.request)
+	}
+}
