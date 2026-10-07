@@ -159,6 +159,7 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 	if fs.auditLog != nil {
 		fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
 	}
+	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevoked, fingerprint)
 	if err != nil {
 		logWarnf("client key revoked: %s (closed %d connection(s)) but the registry write is not yet durable: %v", fingerprint, closed, err)
 		return closed, err
@@ -189,6 +190,7 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 		} else {
 			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 		}
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeApproved, fingerprint)
 	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
@@ -214,6 +216,7 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 		} else {
 			logInfof("client enrollment request rejected: %s", fingerprint)
 		}
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRejected, fingerprint)
 	}
 	if err != nil {
 		if errors.Is(err, enrollqueue.ErrNotPending) {
@@ -270,6 +273,7 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		} else {
 			logInfof("client key imported: %s (label %q)", fingerprint, label)
 		}
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)
 	}
@@ -298,6 +302,7 @@ func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *produc
 			fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
 		}
 	}
+	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevokedAll, "")
 	if err != nil {
 		logWarnf("all client keys revoked: %d key(s), closed %d connection(s), but the registry write is not yet durable: %v", len(entries), closed, err)
 		return len(entries), closed, err

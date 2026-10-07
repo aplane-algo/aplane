@@ -590,6 +590,14 @@ type KeysChangedMsg struct {
 	KeyCount int
 }
 
+// EnrollmentChangedMsg is sent when the server notifies that the enrollment
+// queue or the enrolled-client registry changed, whatever made the change.
+// The Enrolled Clients screen re-fetches both lists when it is up.
+type EnrollmentChangedMsg struct {
+	Reason      string
+	Fingerprint string
+}
+
 // ErrorMsg is sent when an error occurs. ID is the request the daemon's error
 // answers; it is empty for local failures and uncorrelated daemon errors.
 type ErrorMsg struct {

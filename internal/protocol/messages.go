@@ -136,8 +136,9 @@ const (
 	MsgTypeKeyTypes                      = "key_types"
 
 	// Server-initiated notification message types
-	MsgTypeKeysChanged  = "keys_changed"  // Sent when keys are reloaded
-	MsgTypeSignerLocked = "signer_locked" // Sent when signer locks
+	MsgTypeKeysChanged       = "keys_changed"       // Sent when keys are reloaded
+	MsgTypeSignerLocked      = "signer_locked"      // Sent when signer locks
+	MsgTypeEnrollmentChanged = "enrollment_changed" // Sent when the enrollment queue or client registry changes
 
 	// Admin settings message types
 	MsgTypeGetAdminSettings         = "get_admin_settings"          // Client → server: request current settings
@@ -1047,6 +1048,26 @@ type KeyTypesMessage struct {
 type KeysChangedMessage struct {
 	BaseMessage
 	KeyCount int `json:"key_count"` // Number of keys after reload
+}
+
+// Reasons carried by EnrollmentChangedMessage: what changed in the
+// enrollment queue or the client registry.
+const (
+	EnrollmentChangeRequested  = "requested"   // a new request joined the queue
+	EnrollmentChangeApproved   = "approved"    // a request was approved and its key enrolled
+	EnrollmentChangeRejected   = "rejected"    // a request was dropped without enrolling
+	EnrollmentChangeImported   = "imported"    // a key was enrolled directly by import
+	EnrollmentChangeRevoked    = "revoked"     // one enrolled key was removed
+	EnrollmentChangeRevokedAll = "revoked_all" // every enrolled key was removed
+)
+
+// EnrollmentChangedMessage is sent by the server whenever the enrollment
+// queue or the enrolled-client registry changes, whatever the origin of the
+// change. Admin clients showing either list re-fetch it on receipt.
+type EnrollmentChangedMessage struct {
+	BaseMessage
+	Reason      string `json:"reason"`                // One of the EnrollmentChange* values
+	Fingerprint string `json:"fingerprint,omitempty"` // The key concerned; empty for revoked_all
 }
 
 // SignerLockedMessage is sent by the server to notify clients that the signer

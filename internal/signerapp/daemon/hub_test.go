@@ -295,13 +295,14 @@ func (s *hubStubConn) SetReadDeadline(time.Time) error  { return nil }
 func (s *hubStubConn) SetWriteDeadline(time.Time) error { return nil }
 
 type recordingAdminHub struct {
-	hasClientCalled bool
-	signCalled      bool
-	cancelCalled    bool
-	tokenCalled     bool
-	lockedCalled    bool
-	keysCalled      bool
-	statusCalled    bool
+	hasClientCalled   bool
+	signCalled        bool
+	cancelCalled      bool
+	tokenCalled       bool
+	lockedCalled      bool
+	keysCalled        bool
+	enrollmentChanges []adminproto.EnrollmentChangedNotification
+	statusCalled      bool
 }
 
 func (h *recordingAdminHub) HasClient() bool {
@@ -330,6 +331,10 @@ func (h *recordingAdminHub) NotifyLocked(_ adminproto.SignerLockedNotification) 
 
 func (h *recordingAdminHub) NotifyKeysChanged(_ adminproto.KeysChangedNotification) {
 	h.keysCalled = true
+}
+
+func (h *recordingAdminHub) NotifyEnrollmentChanged(n adminproto.EnrollmentChangedNotification) {
+	h.enrollmentChanges = append(h.enrollmentChanges, n)
 }
 
 func (h *recordingAdminHub) NotifyStatus(_ string, _ int) {

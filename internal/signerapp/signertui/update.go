@@ -225,6 +225,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.queueEnrollmentRequest(msg.Request)
 		return m, m.waitForMessageCmd()
 
+	case EnrollmentChangedMsg:
+		return m.handleEnrollmentChanged()
 	case PendingEnrollmentsListMsg:
 		return m.handlePendingEnrollmentsList(msg)
 	case ApproveEnrollmentResultMsg:

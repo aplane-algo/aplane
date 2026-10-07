@@ -135,6 +135,7 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 		MsgTypeSignRequestCanceled,
 		MsgTypeClientEnrollmentRequest,
 		MsgTypeKeysChanged,
+		MsgTypeEnrollmentChanged,
 		MsgTypeSignerLocked,
 		MsgTypeClientExists,
 		MsgTypeDisplaced:

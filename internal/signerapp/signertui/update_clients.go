@@ -42,6 +42,35 @@ func (m *Model) clientsClampSelection() {
 	}
 }
 
+// handleEnrollmentChanged re-fetches the Enrolled Clients lists when that
+// screen (or one of its sub-views, which return to it) is up. The signer
+// sends the notification for every change to the enrollment queue or the
+// client registry, whatever made it: this session's own answers, a request
+// arriving over SSH, or an answer given from another admin client. Off the
+// screen there is nothing to refresh; the screen loads afresh when opened.
+func (m Model) handleEnrollmentChanged() (tea.Model, tea.Cmd) {
+	if m.showsEnrolledClients() {
+		return m, m.refreshClientsCmd()
+	}
+	return m, m.waitForMessageCmd()
+}
+
+// showsEnrolledClients reports whether the Enrolled Clients lists are on
+// screen or will be once the view on top returns: the screen itself, its
+// sub-views, or an approval popup raised over it (a request's own popup is
+// up when its enrollment_changed arrives, and Esc returns to the list).
+func (m Model) showsEnrolledClients() bool {
+	view := m.viewState
+	if m.approvalPending(view) {
+		view = m.screenUnderApproval()
+	}
+	switch view {
+	case ViewEnrolledClients, ViewRevokeClientConfirm, ViewImportClientKey:
+		return true
+	}
+	return false
+}
+
 func (m Model) handlePendingEnrollmentsList(msg PendingEnrollmentsListMsg) (tea.Model, tea.Cmd) {
 	m.clients.pending = msg.Requests
 	m.clientsClampSelection()

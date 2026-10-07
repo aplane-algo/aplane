@@ -8,6 +8,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollment"
 )
@@ -28,7 +30,10 @@ func (fs *Signer) enrollmentService() enrollment.Service {
 			}
 			return ir.QueueEnrollment(key, label, remoteAddr)
 		},
-		Notify:   fs.notifyEnrollmentRequest,
+		Notify: func(req enrollment.Request) {
+			fs.notifyEnrollmentRequest(req)
+			fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRequested, req.Fingerprint)
+		},
 		AuditLog: auditLog,
 		Logf:     logInfof,
 	}
@@ -49,6 +54,15 @@ func (fs *Signer) notifyEnrollmentRequest(req enrollment.Request) {
 		RemoteAddr:     req.RemoteAddr,
 		Timestamp:      req.RequestedAt.Unix(),
 	})
+}
+
+// notifyEnrollmentChanged tells the connected operator that the enrollment
+// queue or the client registry changed, so a screen showing either list
+// re-fetches it. Delivery is best effort, like every notification.
+func (fs *Signer) notifyEnrollmentChanged(reason, fingerprint string) {
+	if hub := fs.adminHub(); hub != nil {
+		hub.NotifyEnrollmentChanged(adminproto.EnrollmentChangedNotification{Reason: reason, Fingerprint: fingerprint})
+	}
 }
 
 // notifyPendingEnrollments tells the operator who just connected about every

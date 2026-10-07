@@ -55,6 +55,15 @@ type KeysChangedNotification struct {
 	KeyCount int
 }
 
+// EnrollmentChangedNotification is the admin-domain notification emitted when
+// the enrollment queue or the enrolled-client registry changes. Reason is one
+// of the protocol.EnrollmentChange* values; Fingerprint names the key
+// concerned and is empty when every key was revoked.
+type EnrollmentChangedNotification struct {
+	Reason      string
+	Fingerprint string
+}
+
 // BackupIdentityRequest is the admin-domain request to create a signer-managed
 // backup archive for the currently bound identity.
 type BackupIdentityRequest struct {

@@ -197,6 +197,26 @@ func TestNotifyKeysChangedEmitsNotificationShape(t *testing.T) {
 	}
 }
 
+func TestNotifyEnrollmentChangedEmitsNotificationShape(t *testing.T) {
+	recorder := &ipcJSONRecorderConn{}
+	ipcServer := newIPCServerWithActiveConn(recorder)
+
+	ipcServer.NotifyEnrollmentChanged(adminproto.EnrollmentChangedNotification{Reason: protocol.EnrollmentChangeRevoked, Fingerprint: "SHA256:abc"})
+
+	msgs := recorder.messages(t)
+	if len(msgs) != 1 {
+		t.Fatalf("message count = %d, want 1", len(msgs))
+	}
+	if !reflectJSONSubset(msgs[0], map[string]any{
+		"kind":        string(protocol.MessageKindNotification),
+		"type":        protocol.MsgTypeEnrollmentChanged,
+		"reason":      protocol.EnrollmentChangeRevoked,
+		"fingerprint": "SHA256:abc",
+	}) {
+		t.Fatalf("enrollment_changed shape mismatch: %#v", msgs[0])
+	}
+}
+
 func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
