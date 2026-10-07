@@ -37,6 +37,14 @@ stops with the connection configured when the cosigner's operator has to
 approve it; rerun setup afterwards. The SDKs' `requestEnrollment` now reports
 whether the request is pending.
 
+The **Enrolled Clients** screen now opens with `c` from the key list rather
+than from Settings, and keeps itself current: the signer sends a new
+`enrollment_changed` admin notification whenever a request is queued,
+approved, rejected, imported, or a key is revoked, and whenever an enrolled
+client connects or disconnects, and the screen re-fetches its lists on each
+one. The screen's `R` refresh key is gone. Admin clients that do not know the
+notification ignore it.
+
 ## The client's SSH key is its only credential
 
 The API token is gone. A client no longer holds `aplane.token` or

@@ -83,7 +83,11 @@ identifies the current screen. The enum has families for:
   reject) followed by every enrolled key with fingerprint, label, key type,
   and live connection state (`r` revoke, `A` revoke all); `i` opens the key
   import form (`ViewImportClientKey`: a public-key file on this machine plus
-  an optional label). The enrollment popup queues requests announced while
+  an optional label). The screen has no manual refresh: it re-fetches both
+  lists on every `enrollment_changed` notification while it, one of its
+  sub-views, or a popup raised over it is showing, so requests arriving over
+  SSH, answers from another admin client, and clients connecting or
+  disconnecting appear on their own. The enrollment popup queues requests announced while
   one is on screen and shows them in turn; a request announced again at
   login is shown once. `Esc` on the popup defers the request rather than
   rejecting it: nothing is sent, the request stays in the signer's queue and
