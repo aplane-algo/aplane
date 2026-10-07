@@ -249,6 +249,37 @@ func (s signerAdminServices) RevokeAllEnrolledKeys(ctx adminserver.SessionContex
 	return s.signer.RevokeAllClientKeys(ctx, s.ProductRuntime())
 }
 
+func (s signerAdminServices) PendingEnrollments() []protocol.PendingEnrollmentInfo {
+	ir := s.ProductRuntime()
+	if ir == nil {
+		return nil
+	}
+	entries := ir.PendingEnrollments()
+	out := make([]protocol.PendingEnrollmentInfo, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, protocol.PendingEnrollmentInfo{
+			Fingerprint: entry.Fingerprint,
+			Label:       entry.Label,
+			KeyType:     entry.Key.Type(),
+			RemoteAddr:  entry.RemoteAddr,
+			RequestedAt: entry.RequestedAt.Unix(),
+		})
+	}
+	return out
+}
+
+func (s signerAdminServices) ApproveEnrollment(ctx adminserver.SessionContext, fingerprint, label string) (string, error) {
+	return s.signer.ApproveClientEnrollment(ctx, s.ProductRuntime(), fingerprint, label)
+}
+
+func (s signerAdminServices) RejectEnrollment(ctx adminserver.SessionContext, fingerprint string) error {
+	return s.signer.RejectClientEnrollment(ctx, s.ProductRuntime(), fingerprint)
+}
+
+func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (string, string, bool, error) {
+	return s.signer.ImportClientKey(ctx, s.ProductRuntime(), publicKey, label)
+}
+
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	ir := s.Runtime
 	wasRecovery := ir.IsRecovery()

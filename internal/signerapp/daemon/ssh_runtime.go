@@ -43,10 +43,15 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 
 	productRuntime := server.productRuntime()
 	// A registry the daemon cannot read completely refuses to serve rather
-	// than serving with partial authority.
+	// than serving with partial authority; the same goes for the queue of
+	// requests waiting on the operator, which the daemon alone writes.
 	if err := productRuntime.LoadAuthorizedKeys(); err != nil {
 		sshCancel()
 		return nil, fmt.Errorf("enrolled client registry: %w", err)
+	}
+	if err := productRuntime.LoadEnrollmentQueue(); err != nil {
+		sshCancel()
+		return nil, fmt.Errorf("enrollment queue: %w", err)
 	}
 
 	sshServer.SetProductHooks(sshtunnel.ProductHooks{
@@ -67,11 +72,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		})
 	}
 
-	sshServer.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{
-		ApproveContext:    enrollmentSvc.ApproveContext,
-		AuditEnrolled:     enrollmentSvc.AuditEnrolled,
-		OperatorConnected: server.hasAdminClient,
-	})
+	sshServer.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{Request: enrollmentSvc.Request})
 
 	if err := sshServer.Start(sshCtx); err != nil {
 		sshCancel()

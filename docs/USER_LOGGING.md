@@ -119,7 +119,9 @@ principal/transport attribution.
 | `SESSION_CONNECTED` | IPC or SSH session established |
 | `SESSION_DISCONNECTED` | Session ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
-| `CLIENT_ENROLLED` | Client SSH key enrolled after operator approval (`client_label` carries its display label) |
+| `CLIENT_ENROLLMENT_REQUESTED` | A client asked to be enrolled; the request waits for the operator (principal `client:<fingerprint>`, `client_label` carries the requested label) |
+| `CLIENT_ENROLLED` | Client SSH key enrolled by the operator, by approving its request or importing the key (`client_label` carries its display label; `remote_addr` is empty for an import) |
+| `CLIENT_ENROLLMENT_REJECTED` | The operator rejected a waiting enrollment request |
 | `CLIENT_KEY_REVOKED` | Enrolled client SSH key revoked by the operator; its connections were closed |
 
 ## Log Rotation

@@ -68,30 +68,12 @@ type SignResponse struct {
 	ApproverPrincipal string
 }
 
-// ClientEnrollmentRequest is the domain-level approval request for enrolling
-// a client key.
+// ClientEnrollmentRequest tells the operator that a client's enrollment
+// request is waiting in the queue.
 type ClientEnrollmentRequest struct {
 	ID             string
 	SSHFingerprint string
 	Label          string
 	RemoteAddr     string
 	Timestamp      int64
-}
-
-// ClientEnrollmentCanceled withdraws a delivered client enrollment request
-// from the approval client.
-type ClientEnrollmentCanceled struct {
-	ID     string
-	Reason string
-}
-
-// ClientEnrollmentCancelReasonPreempted means a signing request took the
-// approval turn from the client enrollment request.
-const ClientEnrollmentCancelReasonPreempted = protocol.ClientEnrollmentCancelReasonPreempted
-
-// ClientEnrollmentResponse is the domain-level approval response for client enrollment.
-type ClientEnrollmentResponse struct {
-	ID       string
-	Approved bool
-	Reason   string
 }

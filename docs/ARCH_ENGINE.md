@@ -564,9 +564,10 @@ target := engine.GetConnectionTarget()
 // Disconnect
 err := engine.Disconnect()
 
-// Ask the node to enroll this client's key (operator approval required);
-// returns the enrolled key's SHA256 fingerprint
-fingerprint, err := engine.RequestEnrollmentWithContext(ctx, host, sshPort, identityFile,
+// Ask the node to enroll this client's key; returns at once with the key's
+// SHA256 fingerprint and whether the request now waits for the operator
+// (Pending) or the key was already enrolled
+result, err := engine.RequestEnrollmentWithContext(ctx, host, sshPort, identityFile,
     knownHostsPath, label, hostKeyApproval, onEnrollmentStart)
 ```
 

@@ -701,22 +701,31 @@ func (c *Client) DialSignerAPI(ctx context.Context) (net.Conn, error) {
 	return sshClient.DialContext(ctx, "tcp", forwardedAPIAddress)
 }
 
-// RequestEnrollment connects as the enrollment user and asks the operator to
+// EnrollmentResult is a node's answer to a request-enrollment: the client
+// key's fingerprint and whether the request now waits for the operator
+// (Pending) or the key was already enrolled.
+type EnrollmentResult struct {
+	Fingerprint string
+	Pending     bool
+}
+
+// RequestEnrollment connects as the enrollment user and asks the node to
 // enroll this client's key, with an optional display label. It is a one-shot
-// operation: connect, request, receive the acknowledgement, disconnect. On
-// success it returns the enrolled key's fingerprint. No credential is
-// returned: the key is the credential.
-func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, error) {
+// operation: connect, submit, receive the answer, disconnect. The request is
+// recorded for the operator to approve later; the client learns the outcome
+// by connecting. No credential is returned: the key is the credential.
+func (c *Client) RequestEnrollment(ctx context.Context, label string) (EnrollmentResult, error) {
+	var none EnrollmentResult
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if _, ok := parseEnrollmentCommand(enrollmentCommandLine(label)); !ok {
-		return "", fmt.Errorf("enrollment label must be printable, single-line, and at most %d bytes", maxEnrollmentLabelBytes)
+		return none, fmt.Errorf("enrollment label must be printable, single-line, and at most %d bytes", maxEnrollmentLabelBytes)
 	}
 	var clientFingerprint string
 	authMethod, agentConn, err := c.authMethod(func(fingerprint string) { clientFingerprint = fingerprint })
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if agentConn != nil {
 		defer func() { _ = agentConn.Close() }()
@@ -724,7 +733,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, e
 
 	hostKeyCallback, err := c.hostKeyCallback()
 	if err != nil {
-		return "", err
+		return none, err
 	}
 
 	config := &ssh.ClientConfig{
@@ -741,16 +750,16 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, e
 		if strings.Contains(err.Error(), "unable to authenticate") {
 			// The enrollment username accepts any key of a supported type,
 			// so a refusal here is a key-type problem, not enrollment.
-			return "", fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, clientKeyRequirement)
+			return none, fmt.Errorf("SSH connection failed: %w (client access accepts %s keys)", err, clientKeyRequirement)
 		}
-		return "", fmt.Errorf("SSH connection failed: %w", err)
+		return none, fmt.Errorf("SSH connection failed: %w", err)
 	}
 	defer func() { _ = sshClient.Close() }()
 
 	// Open a session channel
 	session, err := sshClient.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
+		return none, fmt.Errorf("failed to create session: %w", err)
 	}
 	defer func() { _ = session.Close() }()
 
@@ -763,19 +772,19 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, e
 	// Set up pipes for output
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+		return none, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	stderr, err := session.StderrPipe()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+		return none, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := session.Start(enrollmentCommandLine(label)); err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return none, ctx.Err()
 		}
-		return "", fmt.Errorf("failed to start enrollment: %w", err)
+		return none, fmt.Errorf("failed to start enrollment: %w", err)
 	}
 	c.mu.Lock()
 	onEnrollmentStart := c.onEnrollmentStart
@@ -797,38 +806,45 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (string, e
 	output, err := io.ReadAll(stdout)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return none, ctx.Err()
 		}
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return none, fmt.Errorf("failed to read response: %w", err)
 	}
 	<-stderrDone
 	if ctx.Err() != nil {
-		return "", ctx.Err()
+		return none, ctx.Err()
 	}
 
 	// Wait for command to complete
 	if err := session.Wait(); err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return none, ctx.Err()
 		}
 		errMsg := strings.TrimSpace(string(errOutput))
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(string(output))
 		}
 		if errMsg != "" {
-			return "", fmt.Errorf("%s", errMsg)
+			return none, fmt.Errorf("%s", errMsg)
 		}
-		return "", fmt.Errorf("enrollment failed: %w", err)
+		return none, fmt.Errorf("enrollment failed: %w", err)
 	}
 
-	fingerprint, ok := strings.CutPrefix(strings.TrimSpace(string(output)), "enrolled ")
-	if !ok || fingerprint == "" {
-		return "", fmt.Errorf("unexpected enrollment response: %s", quoteClientText(strings.TrimSpace(string(output))))
+	reply := strings.TrimSpace(string(output))
+	var result EnrollmentResult
+	switch {
+	case strings.HasPrefix(reply, "pending "):
+		result = EnrollmentResult{Fingerprint: strings.TrimPrefix(reply, "pending "), Pending: true}
+	case strings.HasPrefix(reply, "enrolled "):
+		result = EnrollmentResult{Fingerprint: strings.TrimPrefix(reply, "enrolled ")}
 	}
-	if clientFingerprint != "" && fingerprint != clientFingerprint {
-		return "", fmt.Errorf("server enrolled %s, but this client authenticated with %s", fingerprint, clientFingerprint)
+	if result.Fingerprint == "" {
+		return none, fmt.Errorf("unexpected enrollment response: %s", quoteClientText(reply))
 	}
-	return fingerprint, nil
+	if clientFingerprint != "" && result.Fingerprint != clientFingerprint {
+		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", result.Fingerprint, clientFingerprint)
+	}
+	return result, nil
 }
 
 // enrollmentCommandLine renders the exec command for an enrollment request.

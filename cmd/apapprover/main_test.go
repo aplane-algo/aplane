@@ -37,11 +37,12 @@ func TestBuildApprovalResponseForSigning(t *testing.T) {
 	}
 }
 
-func TestBuildApprovalResponseForTokenProvisioning(t *testing.T) {
+func TestBuildApprovalResponseForClientEnrollment(t *testing.T) {
 	req := approvalRequest{
 		kind: approvalKindClientEnrollment,
 		enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{
-			BaseMessage: protocol.BaseMessage{ID: "token-1"},
+			BaseMessage:    protocol.BaseMessage{ID: "enroll-1"},
+			SSHFingerprint: "SHA256:abc",
 		},
 	}
 
@@ -49,18 +50,24 @@ func TestBuildApprovalResponseForTokenProvisioning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildApprovalResponse() error = %v", err)
 	}
-	tokenResp, ok := resp.(protocol.ClientEnrollmentResponseMessage)
+	reject, ok := resp.(protocol.RejectEnrollmentMessage)
 	if !ok {
-		t.Fatalf("response type = %T, want protocol.ClientEnrollmentResponseMessage", resp)
+		t.Fatalf("response type = %T, want protocol.RejectEnrollmentMessage", resp)
 	}
-	if tokenResp.Type != protocol.MsgTypeClientEnrollmentResponse {
-		t.Fatalf("response type field = %q, want %q", tokenResp.Type, protocol.MsgTypeClientEnrollmentResponse)
+	if reject.Type != protocol.MsgTypeRejectEnrollment || reject.ID != "enroll-1" || reject.Fingerprint != "SHA256:abc" {
+		t.Fatalf("unexpected rejection: %#v", reject)
 	}
-	if tokenResp.ID != "token-1" || tokenResp.Approved {
-		t.Fatalf("unexpected token provisioning response: %#v", tokenResp)
+
+	resp, err = buildApprovalResponse(req, true, "")
+	if err != nil {
+		t.Fatalf("buildApprovalResponse() error = %v", err)
 	}
-	if tokenResp.Reason != "rejected by user" {
-		t.Fatalf("response reason = %q, want rejected by user", tokenResp.Reason)
+	approve, ok := resp.(protocol.ApproveEnrollmentMessage)
+	if !ok {
+		t.Fatalf("response type = %T, want protocol.ApproveEnrollmentMessage", resp)
+	}
+	if approve.Type != protocol.MsgTypeApproveEnrollment || approve.ID != "enroll-1" || approve.Fingerprint != "SHA256:abc" {
+		t.Fatalf("unexpected approval: %#v", approve)
 	}
 }
 
@@ -252,7 +259,7 @@ func TestRemoveCanceledSignRequest(t *testing.T) {
 	}
 }
 
-func TestDecodeNotificationTokenProvisioningRequest(t *testing.T) {
+func TestDecodeNotificationClientEnrollmentRequest(t *testing.T) {
 	raw, err := protocol.MarshalAdminMessage(protocol.ClientEnrollmentRequestMessage{
 		BaseMessage:    protocol.BaseMessage{Type: protocol.MsgTypeClientEnrollmentRequest, ID: "token-1"},
 		SSHFingerprint: "fp",
@@ -301,32 +308,6 @@ func TestDecodeNotificationErrorMessage(t *testing.T) {
 	}
 	if decoded.errMsg == nil || decoded.errMsg.Error != "boom" {
 		t.Fatalf("decoded.errMsg = %#v, want error message boom", decoded.errMsg)
-	}
-}
-
-func TestTokenProvisioningCancellationRemovesOnlyThatRequest(t *testing.T) {
-	raw, err := protocol.MarshalAdminMessage(protocol.ClientEnrollmentRequestCanceledMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeClientEnrollmentRequestCanceled, ID: "token-1"},
-		Reason:      protocol.ClientEnrollmentCancelReasonPreempted,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, handled, err := decodeNotification(transport.Notification{
-		Base: protocol.BaseMessage{Type: protocol.MsgTypeClientEnrollmentRequestCanceled, ID: "token-1"},
-		Raw:  raw,
-	})
-	if err != nil || !handled || decoded.enrollmentCanceled == nil || decoded.enrollmentCanceled.ID != "token-1" {
-		t.Fatalf("decodeNotification() = %+v, %v, %v", decoded, handled, err)
-	}
-
-	queue := []approvalRequest{
-		{kind: approvalKindClientEnrollment, enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{BaseMessage: protocol.BaseMessage{ID: "token-1"}}},
-		{kind: approvalKindSign, signRequest: &protocol.SignRequestMessage{BaseMessage: protocol.BaseMessage{ID: "token-1"}}},
-	}
-	next, removed, active := removeCanceledRequest(queue, approvalKindClientEnrollment, "token-1")
-	if !removed || !active || len(next) != 1 || next[0].kind != approvalKindSign {
-		t.Fatalf("removeCanceledRequest() = %#v, %v, %v; want only the token request removed", next, removed, active)
 	}
 }
 
@@ -385,19 +366,27 @@ func TestApproverAnswersHeadOfQueue(t *testing.T) {
 func TestApproverWithdrawnRequestLeavesQueue(t *testing.T) {
 	var sent []any
 	a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
-	a.enqueue(enrollmentApproval("token-1"))
+	a.enqueue(enrollmentApproval("enroll-1"))
 	a.enqueue(signApproval("sign-1"))
+	// An enrollment request announced again (as at login) is not queued twice.
+	a.enqueue(enrollmentApproval("enroll-1"))
+	if len(a.queue) != 2 {
+		t.Fatalf("queue after a repeated announcement = %d, want 2", len(a.queue))
+	}
 
-	a.handleCanceled(approvalKindSign, "Signing request", "token-1", "")
+	a.handleCanceled(approvalKindSign, "Signing request", "enroll-1", "")
 	if len(a.queue) != 2 {
 		t.Fatalf("queue after a cancellation of another kind = %d, want 2", len(a.queue))
 	}
-	a.handleCanceled(approvalKindClientEnrollment, "Client access request", "token-1", protocol.ClientEnrollmentCancelReasonPreempted)
-	if len(a.queue) != 1 || a.queue[0].id() != "sign-1" {
-		t.Fatalf("queue after withdrawal = %+v, want only sign-1", a.queue)
+	a.handleCanceled(approvalKindSign, "Signing request", "sign-1", "")
+	if len(a.queue) != 1 || a.queue[0].id() != "enroll-1" {
+		t.Fatalf("queue after withdrawal = %+v, want only enroll-1", a.queue)
 	}
 	a.handleInput("y")
 	if len(sent) != 1 || len(a.queue) != 0 {
 		t.Fatalf("after answering: sent %d, queue %d", len(sent), len(a.queue))
+	}
+	if _, ok := sent[0].(protocol.ApproveEnrollmentMessage); !ok {
+		t.Fatalf("sent %T, want an enrollment approval", sent[0])
 	}
 }

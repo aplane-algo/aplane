@@ -34,17 +34,13 @@ type ProductBuildOptions struct {
 // ProductBuildHooks provides the non-owning process callbacks needed by
 // product runtime assembly.
 type ProductBuildHooks struct {
-	HasAdminClient              func() bool
-	SendSignRequest             func(req *approval.SignRequest) bool
-	SendSignRequestCanceled     func(msg *approval.SignRequestCanceled) bool
-	SendClientEnrollmentRequest func(req *approval.ClientEnrollmentRequest) bool
-	// SendClientEnrollmentCanceled withdraws a delivered client access
-	// request; a signing request preempts one.
-	SendClientEnrollmentCanceled func(msg *approval.ClientEnrollmentCanceled) bool
-	NotifyLocked                 func()
-	NotifyKeysChanged            func(keyCount int)
-	ReloadAuditLog               signertemplates.AuditLogger
-	NodeFailClosed               func(error)
+	HasAdminClient          func() bool
+	SendSignRequest         func(req *approval.SignRequest) bool
+	SendSignRequestCanceled func(msg *approval.SignRequestCanceled) bool
+	NotifyLocked            func()
+	NotifyKeysChanged       func(keyCount int)
+	ReloadAuditLog          signertemplates.AuditLogger
+	NodeFailClosed          func(error)
 	// ReloadMutationLock returns the process-wide store mutation lock that
 	// watcher-triggered reloads must hold while scanning disk.
 	ReloadMutationLock func() sync.Locker
@@ -137,19 +133,7 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 			}
 			return hooks.SendSignRequestCanceled(msg)
 		},
-		func(msg *approval.ClientEnrollmentRequest) bool {
-			if hooks.SendClientEnrollmentRequest == nil {
-				return false
-			}
-			return hooks.SendClientEnrollmentRequest(msg)
-		},
 	)
-	coordinator.SetClientEnrollmentCanceledSender(func(msg *approval.ClientEnrollmentCanceled) bool {
-		if hooks.SendClientEnrollmentCanceled == nil {
-			return false
-		}
-		return hooks.SendClientEnrollmentCanceled(msg)
-	})
 	ir.SetApprovalCoordinator(coordinator)
 }
 

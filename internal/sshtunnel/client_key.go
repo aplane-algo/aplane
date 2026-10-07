@@ -30,6 +30,13 @@ var clientKeyAlgorithms = []string{
 // clientKeyRequirement describes the accepted client keys for error messages.
 const clientKeyRequirement = "Ed25519, ECDSA (P-256/384/521), or hardware-backed sk- Ed25519/ECDSA"
 
+// CheckClientKey reports whether key is of a type the server accepts for
+// client access, for a key enrolled outside the SSH flow (an operator
+// import).
+func CheckClientKey(key ssh.PublicKey) error {
+	return checkEnrollmentKey(key)
+}
+
 // checkEnrollmentKey reports whether key may be enrolled through
 // request-enrollment. clientKeyAlgorithms already refuses other keys during
 // authentication; this check keeps enrollment correct if that list changes.

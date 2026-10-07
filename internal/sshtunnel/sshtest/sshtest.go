@@ -47,7 +47,8 @@ type Node struct {
 
 	mu       sync.Mutex
 	enrolled map[string]bool
-	approve  func(fingerprint, label string) bool
+	pending  map[string]ssh.PublicKey
+	queue    bool
 	requests []EnrollmentRequest
 }
 
@@ -55,7 +56,6 @@ type Node struct {
 type EnrollmentRequest struct {
 	Fingerprint string
 	Label       string
-	Approved    bool
 }
 
 // Options adjust how the node starts.
@@ -63,8 +63,9 @@ type Options struct {
 	// Unenrolled starts the node without the client key enrolled, so the
 	// first connection is refused until the client enrolls.
 	Unenrolled bool
-	// Approve decides enrollment requests; nil approves every request.
-	Approve func(fingerprint, label string) bool
+	// Queue makes enrollment requests wait for Approve, as a real node does;
+	// otherwise a request enrolls the key at once.
+	Queue bool
 	// Dir holds the client identity (id_ed25519), known_hosts, and host key;
 	// a temp dir when empty. Pointing it at a client data directory's .ssh
 	// makes the node reachable through that client's default identity.
@@ -90,7 +91,8 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 		IdentityFile: identityFile,
 		Fingerprint:  ssh.FingerprintSHA256(clientPub),
 		enrolled:     make(map[string]bool),
-		approve:      opts.Approve,
+		pending:      make(map[string]ssh.PublicKey),
+		queue:        opts.Queue,
 	}
 	if !opts.Unenrolled {
 		node.enrolled[node.Fingerprint] = true
@@ -115,15 +117,21 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 		},
 	})
 	server.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{
-		ApproveContext: func(_ context.Context, fingerprint, label, _ string) (bool, error) {
-			approved := node.approve == nil || node.approve(fingerprint, label)
+		Request: func(key ssh.PublicKey, label, _ string) (bool, error) {
+			fingerprint := ssh.FingerprintSHA256(key)
 			node.mu.Lock()
-			node.requests = append(node.requests, EnrollmentRequest{Fingerprint: fingerprint, Label: label, Approved: approved})
-			node.mu.Unlock()
-			return approved, nil
+			defer node.mu.Unlock()
+			node.requests = append(node.requests, EnrollmentRequest{Fingerprint: fingerprint, Label: label})
+			if node.enrolled[fingerprint] {
+				return false, nil
+			}
+			if node.queue {
+				node.pending[fingerprint] = key
+				return true, nil
+			}
+			node.enrolled[fingerprint] = true
+			return false, nil
 		},
-		AuditEnrolled:     func(string, string, string) {},
-		OperatorConnected: func() bool { return true },
 	})
 
 	listener := sshtunnel.NewAPIListener(64)
@@ -171,6 +179,27 @@ func (n *Node) Enrolled(fingerprint string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.enrolled[fingerprint]
+}
+
+// Approve enrolls a key whose request is waiting, as an operator approval
+// would. It reports whether such a request existed.
+func (n *Node) Approve(fingerprint string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if _, ok := n.pending[fingerprint]; !ok {
+		return false
+	}
+	delete(n.pending, fingerprint)
+	n.enrolled[fingerprint] = true
+	return true
+}
+
+// Pending reports whether a request for the key is waiting.
+func (n *Node) Pending(fingerprint string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	_, ok := n.pending[fingerprint]
+	return ok
 }
 
 // Revoke removes the key from the registry and closes its connections.

@@ -74,16 +74,22 @@ const (
 	MsgTypeReconcileStoreResult     = "reconcile_store_result"
 	MsgTypeSignRequest              = "sign_request"
 	MsgTypeSignRequestCanceled      = "sign_request_canceled"
-	// MsgTypeClientEnrollmentRequestCanceled withdraws a delivered client
-	// access request, for example when a signing request takes the turn.
-	MsgTypeClientEnrollmentRequestCanceled = "client_enrollment_request_canceled"
-	MsgTypeSignResponse                    = "sign_response"
-	MsgTypeStatus                          = "status"
-	MsgTypeError                           = "error"
+	MsgTypeSignResponse             = "sign_response"
+	MsgTypeStatus                   = "status"
+	MsgTypeError                    = "error"
 
-	// Client enrollment message types (SSH request-enrollment approval)
-	MsgTypeClientEnrollmentRequest  = "client_enrollment_request"
-	MsgTypeClientEnrollmentResponse = "client_enrollment_response"
+	// Client enrollment: a request-enrollment over SSH queues a request
+	// (notified as client_enrollment_request) that the operator approves,
+	// rejects, or lists later; import_client_key pre-enrolls a key.
+	MsgTypeClientEnrollmentRequest = "client_enrollment_request"
+	MsgTypeListPendingEnrollments  = "list_pending_enrollments"
+	MsgTypePendingEnrollmentsList  = "pending_enrollments_list"
+	MsgTypeApproveEnrollment       = "approve_enrollment"
+	MsgTypeApproveEnrollmentResult = "approve_enrollment_result"
+	MsgTypeRejectEnrollment        = "reject_enrollment"
+	MsgTypeRejectEnrollmentResult  = "reject_enrollment_result"
+	MsgTypeImportClientKey         = "import_client_key"
+	MsgTypeImportClientKeyResult   = "import_client_key_result"
 
 	// Enrolled client key management
 	MsgTypeListEnrolledKeys            = "list_enrolled_keys"
@@ -208,10 +214,6 @@ const (
 
 	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
 	SignRequestCancelReasonTimeout = "timeout"
-
-	// ClientEnrollmentCancelReasonPreempted means a signing request took the
-	// approval turn from a delivered client access request.
-	ClientEnrollmentCancelReasonPreempted = "preempted"
 )
 
 // AuthResultMessage is sent back after an authentication attempt
@@ -540,14 +542,6 @@ type SignRequestCanceledMessage struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// ClientEnrollmentRequestCanceledMessage is sent to apadmin when a delivered
-// client access request is no longer actionable. Reason "preempted" means a
-// signing request took the approval turn; the SSH client is told to retry.
-type ClientEnrollmentRequestCanceledMessage struct {
-	BaseMessage
-	Reason string `json:"reason,omitempty"`
-}
-
 // SignResponseMessage is sent by apadmin with approval/rejection
 type SignResponseMessage struct {
 	BaseMessage
@@ -555,8 +549,11 @@ type SignResponseMessage struct {
 	Reason   string `json:"reason,omitempty"` // Optional rejection reason
 }
 
-// ClientEnrollmentRequestMessage is sent to apadmin when a client asks, over
-// SSH, to have its key enrolled.
+// ClientEnrollmentRequestMessage tells apadmin that a client's enrollment
+// request is waiting. It is sent when a client queues a request and, for
+// every request still waiting, when an admin session authenticates. The
+// operator answers with approve_enrollment or reject_enrollment by
+// fingerprint; its ID is derived from the fingerprint.
 type ClientEnrollmentRequestMessage struct {
 	BaseMessage
 	SSHFingerprint string `json:"ssh_fingerprint"` // SSH key fingerprint of requester
@@ -565,11 +562,80 @@ type ClientEnrollmentRequestMessage struct {
 	Timestamp      int64  `json:"timestamp"`       // Unix timestamp of request
 }
 
-// ClientEnrollmentResponseMessage is sent by apadmin with approval/rejection
-type ClientEnrollmentResponseMessage struct {
+// PendingEnrollmentInfo describes one enrollment request waiting for the
+// operator.
+type PendingEnrollmentInfo struct {
+	Fingerprint string `json:"fingerprint"`
+	Label       string `json:"label,omitempty"`
+	KeyType     string `json:"key_type"`
+	RemoteAddr  string `json:"remote_addr,omitempty"`
+	RequestedAt int64  `json:"requested_at"` // Unix timestamp
+}
+
+// ListPendingEnrollmentsMessage asks for the enrollment requests waiting for
+// the operator.
+type ListPendingEnrollmentsMessage struct {
 	BaseMessage
-	Approved bool   `json:"approved"`
-	Reason   string `json:"reason,omitempty"` // Optional rejection reason
+}
+
+// PendingEnrollmentsListMessage lists the waiting enrollment requests,
+// oldest first.
+type PendingEnrollmentsListMessage struct {
+	BaseMessage
+	Requests []PendingEnrollmentInfo `json:"requests"`
+}
+
+// ApproveEnrollmentMessage enrolls the key of a waiting request. Label, when
+// set, replaces the label the client asked for.
+type ApproveEnrollmentMessage struct {
+	BaseMessage
+	Fingerprint string `json:"fingerprint"`
+	Label       string `json:"label,omitempty"`
+}
+
+// ApproveEnrollmentResultMessage is the response to an approval.
+type ApproveEnrollmentResultMessage struct {
+	BaseMessage
+	Success     bool   `json:"success"`
+	Code        string `json:"code,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Label       string `json:"label,omitempty"`
+}
+
+// RejectEnrollmentMessage drops a waiting request without enrolling its key.
+type RejectEnrollmentMessage struct {
+	BaseMessage
+	Fingerprint string `json:"fingerprint"`
+}
+
+// RejectEnrollmentResultMessage is the response to a rejection.
+type RejectEnrollmentResultMessage struct {
+	BaseMessage
+	Success bool   `json:"success"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// ImportClientKeyMessage enrolls a public key the operator supplies
+// directly (pre-enrollment). PublicKey is one OpenSSH public-key line; its
+// comment is the label unless Label is set.
+type ImportClientKeyMessage struct {
+	BaseMessage
+	PublicKey string `json:"public_key"`
+	Label     string `json:"label,omitempty"`
+}
+
+// ImportClientKeyResultMessage is the response to a key import. Added is
+// false when the key was already enrolled.
+type ImportClientKeyResultMessage struct {
+	BaseMessage
+	Success     bool   `json:"success"`
+	Code        string `json:"code,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Label       string `json:"label,omitempty"`
+	Added       bool   `json:"added"`
 }
 
 // ListEnrolledKeysMessage asks for the enrolled client keys.
@@ -585,10 +651,12 @@ type EnrolledKeyInfo struct {
 	Connected   bool   `json:"connected"` // The key has at least one live SSH connection
 }
 
-// EnrolledKeysListMessage lists the enrolled client keys.
+// EnrolledKeysListMessage lists the enrolled client keys and how many
+// enrollment requests are waiting.
 type EnrolledKeysListMessage struct {
 	BaseMessage
-	Keys []EnrolledKeyInfo `json:"keys"`
+	Keys         []EnrolledKeyInfo `json:"keys"`
+	PendingCount int               `json:"pending_count"`
 }
 
 // RevokeEnrolledKeyMessage removes one enrolled client key and closes its

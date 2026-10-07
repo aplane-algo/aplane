@@ -1,5 +1,42 @@
 # Release Notes
 
+## Enrollment requests wait for the operator
+
+`request-enrollment` no longer waits for the operator. The node queues the
+request and answers `pending <fingerprint>` at once; apshell prints that the
+request is waiting and returns. The operator approves or rejects it whenever
+convenient: it pops up in `apadmin` if an operator is connected, every
+waiting request is shown again at the next login, and the **Enrolled
+Clients** screen lists them under *Waiting for approval* (`a` approve, `x`
+reject). `apapprover` shows them too and answers by fingerprint. Once
+approved, the client runs `connect`. The old "no operator connected"
+refusal, the wait for approval, the one-request-at-a-time limit, and the
+preemption of an enrollment prompt by a signing request are gone, along with
+the `client_enrollment_response` and `client_enrollment_request_canceled`
+admin messages.
+
+The queue is `identities/default/.ssh/pending_enrollments.json`, written only
+by the daemon and loaded at startup like the registry, so requests survive a
+restart. It holds one entry per key (a repeat refreshes it), at most 16 keys,
+and drops an entry after 7 days. A client that finds the queue full is told
+so.
+
+The operator can also pre-enroll a client without a request from it, by
+importing its public key file: `i` on the Enrolled Clients screen, or
+`apadmin clients import <public-key-file|-> [--label <text>]`. The new batch
+commands `apadmin clients list|approve|reject|revoke|import` cover the whole
+registry without the TUI. Admin protocol: `list_pending_enrollments`,
+`approve_enrollment`, `reject_enrollment`, and `import_client_key` (with their
+results), and `pending_count` on `enrolled_keys_list`. Audit logs record
+`CLIENT_ENROLLMENT_REQUESTED` when a request is queued and
+`CLIENT_ENROLLMENT_REJECTED` when one is rejected; `CLIENT_ENROLLED` now
+carries the approving admin session.
+
+Guided cosigner setup (`endpoints add`) submits the enrollment request and
+stops with the connection configured when the cosigner's operator has to
+approve it; rerun setup afterwards. The SDKs' `requestEnrollment` now reports
+whether the request is pending.
+
 ## The client's SSH key is its only credential
 
 The API token is gone. A client no longer holds `aplane.token` or

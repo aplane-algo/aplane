@@ -55,20 +55,6 @@ func (fs *Signer) productBuildHooks() signerstartup.ProductBuildHooks {
 			}
 			return hub.SendSignRequestCanceled(msg)
 		},
-		SendClientEnrollmentCanceled: func(msg *signerapproval.ClientEnrollmentCanceled) bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendClientEnrollmentCanceled(msg)
-		},
-		SendClientEnrollmentRequest: func(msg *signerapproval.ClientEnrollmentRequest) bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendClientEnrollmentRequest(msg)
-		},
 		NotifyLocked: func() {
 			if hub := fs.adminHub(); hub != nil {
 				hub.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})

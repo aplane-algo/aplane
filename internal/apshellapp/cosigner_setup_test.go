@@ -264,17 +264,14 @@ func TestCompleteCosignerSetupReportsLockedCosigner(t *testing.T) {
 	}
 }
 
-// A node that refuses the client's key is asked to enroll it; once the
-// operator approves, the connection is retried and setup completes.
+// A node that refuses the client's key is asked to enroll it; a node that
+// enrolls it at once (as the in-process node does without a queue) is
+// retried and setup completes.
 func TestCompleteCosignerSetupEnrollsUnenrolledClient(t *testing.T) {
 	dataDir := t.TempDir()
 	reference := testCosignerReference(t)
 	keys := []signerapi.KeyInfo{advertisedWitness(reference)}
-	var label string
-	server := sshtest.ServeWithOptions(t, endpointRoleKeysHandler("cosigner", keys), sshtest.Options{
-		Unenrolled: true,
-		Approve:    func(_, requested string) bool { label = requested; return true },
-	})
+	server := sshtest.ServeWithOptions(t, endpointRoleKeysHandler("cosigner", keys), sshtest.Options{Unenrolled: true})
 	writeLiveCosignerEndpoint(t, dataDir, "field", server)
 	app := newEndpointTestApp(t, dataDir)
 	plan, err := app.PrepareCosignerSetup(CosignerSetupRequest{Alias: "field"})
@@ -293,17 +290,19 @@ func TestCompleteCosignerSetupEnrollsUnenrolledClient(t *testing.T) {
 	if !result.Connected || !result.Enrolled || result.AdvertisedKeys != 1 {
 		t.Fatalf("result = %#v, want a connected setup that enrolled the client", result)
 	}
-	if shownFingerprint != server.Fingerprint || !server.Enrolled(server.Fingerprint) || label != "" {
-		t.Fatalf("shown %q enrolled %v label %q", shownFingerprint, server.Enrolled(server.Fingerprint), label)
+	requests := server.EnrollmentRequests()
+	if shownFingerprint != server.Fingerprint || !server.Enrolled(server.Fingerprint) || len(requests) != 1 || requests[0].Label != "" {
+		t.Fatalf("shown %q enrolled %v requests %+v", shownFingerprint, server.Enrolled(server.Fingerprint), requests)
 	}
 	if output := strings.Join(result.RenderLines, "\n"); !strings.Contains(output, "this client's key was enrolled") {
 		t.Fatalf("output = %q", output)
 	}
 }
 
-// A node whose operator rejects the enrollment leaves setup failed with the
-// authentication error, and nothing claims a connection.
-func TestCompleteCosignerSetupReportsRejectedEnrollment(t *testing.T) {
+// A node that queues the enrollment request for its operator leaves setup
+// stopped with the request pending: the connection stays configured, nothing
+// claims a connection, and the output says to rerun setup after approval.
+func TestCompleteCosignerSetupReportsPendingEnrollment(t *testing.T) {
 	dataDir := t.TempDir()
 	server := newUnenrolledEndpointKeysServer(t, nil)
 	writeLiveCosignerEndpoint(t, dataDir, "field", server)
@@ -317,11 +316,20 @@ func TestCompleteCosignerSetupReportsRejectedEnrollment(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := app.CompleteCosignerSetup(context.Background(), plan, endpoint, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "rejected by operator") {
-		t.Fatalf("CompleteCosignerSetup() error = %v, want the operator rejection", err)
+	if !errors.Is(err, ErrCosignerSetupEnrollmentPending) {
+		t.Fatalf("CompleteCosignerSetup() error = %v, want %v", err, ErrCosignerSetupEnrollmentPending)
 	}
-	if result.Connected || result.Enrolled {
-		t.Fatalf("result = %#v, want neither connection nor enrollment", result)
+	if result.Connected || result.Enrolled || !result.EnrollmentPending {
+		t.Fatalf("result = %#v, want a pending enrollment and no connection", result)
+	}
+	if !server.Pending(server.Fingerprint) {
+		t.Fatal("node did not record the enrollment request")
+	}
+	if output := strings.Join(result.RenderLines, "\n"); !strings.Contains(output, "waiting for the cosigner's operator") {
+		t.Fatalf("output = %q", output)
+	}
+	if _, ok := app.Config.Endpoints.Endpoint("field"); !ok {
+		t.Fatal("connection was dropped while the request is pending")
 	}
 }
 

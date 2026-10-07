@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -22,6 +23,7 @@ type fakeEnrollmentClient struct {
 	approval       sshtunnel.HostKeyApprovalHandler
 	progressCalled bool
 	fingerprint    string
+	pending        bool
 	requestErr     error
 }
 
@@ -34,7 +36,7 @@ func (f *fakeEnrollmentClient) RequestEnrollmentWithContext(
 	label string,
 	approval sshtunnel.HostKeyApprovalHandler,
 	onEnrollmentStart func(string),
-) (string, error) {
+) (connect.EnrollmentResult, error) {
 	f.host = host
 	f.port = port
 	f.identityFile = identityFile
@@ -45,12 +47,12 @@ func (f *fakeEnrollmentClient) RequestEnrollmentWithContext(
 		onEnrollmentStart("SHA256:test-client")
 		f.progressCalled = true
 	}
-	return f.fingerprint, f.requestErr
+	return connect.EnrollmentResult{Fingerprint: f.fingerprint, Pending: f.pending}, f.requestErr
 }
 
 func TestRequestEndpointEnrollmentResolvesEndpointScope(t *testing.T) {
 	dataDir := t.TempDir()
-	client := &fakeEnrollmentClient{fingerprint: "SHA256:test-client"}
+	client := &fakeEnrollmentClient{fingerprint: "SHA256:test-client", pending: true}
 	approval := func(string, string) (bool, error) { return true, nil }
 	result, err := RequestEndpointEnrollment(
 		context.Background(),
@@ -69,7 +71,7 @@ func TestRequestEndpointEnrollmentResolvesEndpointScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RequestEndpointEnrollment() error = %v", err)
 	}
-	if result.Alias != "east" || result.Fingerprint != "SHA256:test-client" {
+	if result.Alias != "east" || result.Fingerprint != "SHA256:test-client" || !result.Pending {
 		t.Fatalf("result = %+v", result)
 	}
 	if client.host != "cosigner.example" || client.port != 2222 || client.label != "laptop" {

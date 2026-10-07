@@ -19,20 +19,14 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 	srv, _ := testServer(t)
 
 	srv.SetSessionCallback(func(remoteAddr string, connected bool) {})
-	srv.SetEnrollmentHooks(EnrollmentHooks{
-		ApproveContext:    func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) { return true, nil },
-		AuditEnrolled:     func(sshFingerprint, label, remoteAddr string) {},
-		OperatorConnected: func() bool { return true },
-	})
+	srv.SetEnrollmentHooks(EnrollmentHooks{Request: pendingHook(nil)})
 	srv.SetProductHooks(ProductHooks{
 		CheckKey:  func(key ssh.PublicKey) bool { return true },
 		EnrollKey: func(key ssh.PublicKey, label string) error { return nil },
 	})
 
 	if srv.sessionCallback == nil ||
-		srv.enrollmentApprovalCallback == nil ||
-		srv.enrollmentAuditCallback == nil ||
-		srv.operatorCheckCallback == nil ||
+		srv.enrollmentRequest == nil ||
 		srv.keyChecker == nil ||
 		srv.keyEnroller == nil {
 		t.Fatal("expected all callback setters to apply before Start")
@@ -205,11 +199,7 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 		{
 			name: "SetEnrollmentHooks",
 			call: func() {
-				srv.SetEnrollmentHooks(EnrollmentHooks{
-					ApproveContext:    func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) { return true, nil },
-					AuditEnrolled:     func(sshFingerprint, label, remoteAddr string) {},
-					OperatorConnected: func() bool { return true },
-				})
+				srv.SetEnrollmentHooks(EnrollmentHooks{Request: pendingHook(nil)})
 			},
 		},
 		{

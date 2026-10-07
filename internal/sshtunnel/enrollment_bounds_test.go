@@ -4,7 +4,6 @@
 package sshtunnel
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net"
@@ -63,90 +62,24 @@ func closedWithin(client *ssh.Client, d time.Duration) bool {
 	}
 }
 
-// Only one client access request may be pending server-wide, so an
-// unauthenticated client cannot queue a stream of operator prompts.
-func TestOnlyOneClientAccessRequestPendsAtATime(t *testing.T) {
+// A connection may request once: the connection closes when its request has
+// been answered, so a client cannot hold a connection slot or submit again
+// on it.
+func TestEnrollmentConnectionRequestsOnce(t *testing.T) {
 	srv, _ := testServer(t)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, _, _, _ string) (bool, error) {
-			close(started)
-			select {
-			case <-release:
-			case <-ctx.Done():
-			}
-			return false, nil
-		},
-	})
-	addr := serveConnections(t, srv)
-
-	first, err := dialEnrollment(t, srv, addr).NewSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := first.Start("enroll"); err != nil {
-		t.Fatal(err)
-	}
-	<-started
-
-	second, err := dialEnrollment(t, srv, addr).NewSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, _ := second.CombinedOutput("enroll")
-	if !strings.Contains(string(out), "another enrollment request is pending") {
-		t.Fatalf("second request output = %q, want a pending-request refusal", out)
-	}
-	close(release)
-}
-
-// A connection may provision once: a concurrent second request on the same
-// connection is refused, and the connection closes when its request ends, so
-// a refused or rejected client cannot hold a connection slot.
-func TestRequestTokenConnectionProvisionsOnce(t *testing.T) {
-	srv, _ := testServer(t)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, _, _, _ string) (bool, error) {
-			close(started)
-			select {
-			case <-release:
-			case <-ctx.Done():
-			}
-			return false, nil
-		},
-	})
+	setEnrollmentHooks(srv, EnrollmentHooks{Request: pendingHook(nil)})
 	client := dialEnrollment(t, srv, serveConnections(t, srv))
 
 	first, err := client.NewSession()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var firstOut strings.Builder
-	first.Stdout = &firstOut
-	if err := first.Start("enroll"); err != nil {
-		t.Fatal(err)
-	}
-	<-started
-
-	second, err := client.NewSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, _ := second.CombinedOutput("enroll")
-	if !strings.Contains(string(out), "only one enrollment request is allowed per connection") {
-		t.Fatalf("second request output = %q, want a per-connection refusal", out)
-	}
-
-	close(release)
-	_ = first.Wait()
-	if !strings.Contains(firstOut.String(), "rejected by operator") {
-		t.Fatalf("first request output = %q, want the operator rejection", firstOut.String())
+	out, err := first.CombinedOutput("enroll")
+	if err != nil || !strings.HasPrefix(string(out), "pending ") {
+		t.Fatalf("first request = %q, %v; want a pending answer", out, err)
 	}
 	if !closedWithin(client, 2*time.Second) {
-		t.Fatal("enrollment connection stayed open after its provisioning request ended")
+		t.Fatal("enrollment connection stayed open after its request was answered")
 	}
 }
 
@@ -155,7 +88,7 @@ func TestIdleRequestTokenConnectionIsClosed(t *testing.T) {
 	srv, _ := testServer(t)
 	srv.enrollmentExecDeadline = 100 * time.Millisecond
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(context.Context, string, string, string) (bool, error) { return false, nil },
+		Request: pendingHook(nil),
 	})
 	client := dialEnrollment(t, srv, serveConnections(t, srv))
 	if !closedWithin(client, 2*time.Second) {
@@ -167,7 +100,7 @@ func TestIdleRequestTokenConnectionIsClosed(t *testing.T) {
 func TestRequestTokenConnectionsAreCapped(t *testing.T) {
 	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(context.Context, string, string, string) (bool, error) { return false, nil },
+		Request: pendingHook(nil),
 	})
 	addr := serveConnections(t, srv)
 	for i := 0; i < maxEnrollmentConns; i++ {
@@ -236,7 +169,7 @@ func TestProvisioningResponseToStalledClientTimesOut(t *testing.T) {
 func TestRequestTokenChannelsAreCapped(t *testing.T) {
 	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(context.Context, string, string, string) (bool, error) { return false, nil },
+		Request: pendingHook(nil),
 	})
 	client := dialEnrollment(t, srv, serveConnections(t, srv))
 	for i := 0; i < maxEnrollmentChannels; i++ {

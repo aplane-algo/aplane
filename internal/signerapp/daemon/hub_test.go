@@ -160,20 +160,6 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 		t.Fatal("SendSignRequest was not called")
 	}
 
-	hub.reset()
-	approved, err = signer.requestClientEnrollment("req-enroll", "fingerprint", "laptop", "remote", time.Second)
-	if err == nil {
-		t.Fatal("expected send failure, got nil")
-	}
-	if approved {
-		t.Fatal("approved = true, want false")
-	}
-	if !hub.hasClientCalled {
-		t.Fatal("HasClient was not called")
-	}
-	if !hub.tokenCalled {
-		t.Fatal("SendClientEnrollmentRequest was not called")
-	}
 }
 
 func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
@@ -318,10 +304,6 @@ type recordingAdminHub struct {
 	statusCalled    bool
 }
 
-func (h *recordingAdminHub) reset() {
-	*h = recordingAdminHub{}
-}
-
 func (h *recordingAdminHub) HasClient() bool {
 	h.hasClientCalled = true
 	return true
@@ -339,10 +321,6 @@ func (h *recordingAdminHub) SendSignRequestCanceled(_ *signerapproval.SignReques
 
 func (h *recordingAdminHub) SendClientEnrollmentRequest(_ *signerapproval.ClientEnrollmentRequest) bool {
 	h.tokenCalled = true
-	return false
-}
-
-func (h *recordingAdminHub) SendClientEnrollmentCanceled(_ *signerapproval.ClientEnrollmentCanceled) bool {
 	return false
 }
 

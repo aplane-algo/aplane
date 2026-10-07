@@ -50,9 +50,7 @@ func (r approvalRequest) id() string {
 type decodedNotification struct {
 	request  *approvalRequest
 	canceled *protocol.SignRequestCanceledMessage
-	// enrollmentCanceled withdraws a delivered client access request.
-	enrollmentCanceled *protocol.ClientEnrollmentRequestCanceledMessage
-	errMsg             *protocol.ErrorMessage
+	errMsg   *protocol.ErrorMessage
 }
 
 const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
@@ -212,8 +210,6 @@ func (a *approver) handleNotification(notification transport.Notification) {
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:
 		a.handleCanceled(approvalKindSign, "Signing request", decoded.canceled.ID, decoded.canceled.Reason)
-	case decoded.enrollmentCanceled != nil:
-		a.handleCanceled(approvalKindClientEnrollment, "Client enrollment request", decoded.enrollmentCanceled.ID, decoded.enrollmentCanceled.Reason)
 	case decoded.request != nil:
 		a.enqueue(*decoded.request)
 	}
@@ -236,6 +232,13 @@ func (a *approver) handleCanceled(kind approvalKind, label, id, reason string) {
 }
 
 func (a *approver) enqueue(req approvalRequest) {
+	// A waiting enrollment request is announced again whenever this client
+	// connects; one entry per request is enough.
+	for _, queued := range a.queue {
+		if queued.kind == req.kind && queued.id() == req.id() {
+			return
+		}
+	}
 	a.queue = append(a.queue, req)
 	if len(a.queue) == 1 {
 		displayRequest(a.queue[0], 1)
@@ -272,12 +275,6 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 			return decodedNotification{}, true, fmt.Errorf("malformed sign request cancellation: %w", err)
 		}
 		return decodedNotification{canceled: &canceled}, true, nil
-	case protocol.MsgTypeClientEnrollmentRequestCanceled:
-		var canceled protocol.ClientEnrollmentRequestCanceledMessage
-		if err := json.Unmarshal(notification.Raw, &canceled); err != nil {
-			return decodedNotification{}, true, fmt.Errorf("malformed client enrollment cancellation: %w", err)
-		}
-		return decodedNotification{enrollmentCanceled: &canceled}, true, nil
 	case protocol.MsgTypeClientEnrollmentRequest:
 		var req protocol.ClientEnrollmentRequestMessage
 		if err := json.Unmarshal(notification.Raw, &req); err != nil {
@@ -321,8 +318,6 @@ func approvalCancelReason(reason string) string {
 		return "requester canceled"
 	case "timeout":
 		return "timed out"
-	case protocol.ClientEnrollmentCancelReasonPreempted:
-		return "withdrawn for a signing request; the client can retry"
 	default:
 		return reason
 	}
@@ -361,13 +356,22 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 		if req.enrollmentRequest == nil {
 			return nil, fmt.Errorf("missing client enrollment request")
 		}
-		return protocol.ClientEnrollmentResponseMessage{
+		// The request waits in the signer's queue; the answer names the key.
+		if approved {
+			return protocol.ApproveEnrollmentMessage{
+				BaseMessage: protocol.BaseMessage{
+					Type: protocol.MsgTypeApproveEnrollment,
+					ID:   req.enrollmentRequest.ID,
+				},
+				Fingerprint: req.enrollmentRequest.SSHFingerprint,
+			}, nil
+		}
+		return protocol.RejectEnrollmentMessage{
 			BaseMessage: protocol.BaseMessage{
-				Type: protocol.MsgTypeClientEnrollmentResponse,
+				Type: protocol.MsgTypeRejectEnrollment,
 				ID:   req.enrollmentRequest.ID,
 			},
-			Approved: approved,
-			Reason:   reason,
+			Fingerprint: req.enrollmentRequest.SSHFingerprint,
 		}, nil
 	case approvalKindSign:
 		if req.signRequest == nil {
@@ -452,7 +456,8 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 		fmt.Printf("Label:       %s\n", req.Label)
 	}
 	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
-	fmt.Printf("Timestamp:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Print(approvalPrompt)
 }

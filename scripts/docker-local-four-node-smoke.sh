@@ -895,16 +895,16 @@ run_request_enrollment() {
     docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment' > /tmp/req-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'enrolled at endpoint' /tmp/req-enrollment.log" \
-        || die "request-enrollment did not report an enrolled client key"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'waiting for the operator at endpoint' /tmp/req-enrollment.log" \
+        || die "request-enrollment did not report a queued enrollment request"
 }
 
 request_cosigner_enrollment() {
     docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-enrollment --endpoint local-cosigner' > /tmp/req-cosigner-enrollment.script"
     docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/req-cosigner-enrollment.script 2>&1 | tee /tmp/req-cosigner-enrollment.log"
-    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'enrolled at endpoint local-cosigner' /tmp/req-cosigner-enrollment.log" \
-        || die "request-enrollment did not report an enrolled client key at local-cosigner"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "grep -q 'waiting for the operator at endpoint local-cosigner' /tmp/req-cosigner-enrollment.log" \
+        || die "request-enrollment did not report a queued enrollment request at local-cosigner"
 }
 
 install_python_sdk_client() {
@@ -1739,13 +1739,21 @@ validate_guarded_self_send_after_cosigner_delete_fails() {
 }
 
 verify_signer_reachable() {
+    # The enrollment request is approved asynchronously by apapprover, so
+    # retry until `apshell -script status` prints "Signer: Connected".
     docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'status' > /tmp/status.script"
-    local out
-    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
-        apshell -script /tmp/status.script 2>&1")"
+    local out attempt
+    for attempt in $(seq 1 30); do
+        out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+            apshell -script /tmp/status.script 2>&1")"
+        if grep -qE 'Signer:[[:space:]]*Connected' <<<"$out"; then
+            printf '%s\n' "$out"
+            return 0
+        fi
+        sleep 1
+    done
     printf '%s\n' "$out"
-    grep -qE 'Signer:[[:space:]]*Connected' <<<"$out" \
-        || die "apshell status did not report Signer: Connected"
+    die "apshell status did not report Signer: Connected"
 }
 
 verify_client_admin_node() {

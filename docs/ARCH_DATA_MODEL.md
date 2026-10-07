@@ -851,11 +851,20 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 
 1. Client connects over SSH as `request-enrollment` and runs `enroll [<label>]`.
 2. Server verifies the fixed enrollment username and key-only bootstrap path.
-3. Server asks the connected admin for approval.
-4. Admin approves.
-5. Server adds the SSH public key and label to the registry.
-6. Server replies `enrolled <fingerprint>` over the SSH channel.
-7. Audit records `CLIENT_ENROLLED` after confirmed delivery.
+3. Server records the request in `identities/default/.ssh/pending_enrollments.json`
+   (one entry per key, bounded), audits `CLIENT_ENROLLMENT_REQUESTED`, and
+   announces it to a connected admin session.
+4. Server replies `pending <fingerprint>` over the SSH channel (or
+   `enrolled <fingerprint>` for a key already in the registry); the client
+   disconnects.
+5. Later, an admin session approves (`approve_enrollment`) or rejects
+   (`reject_enrollment`) the request, or imports the public key directly
+   (`import_client_key`). Waiting requests are announced again at admin login
+   and survive a restart.
+6. On approval the server adds the SSH public key and label to the registry,
+   removes the request, and audits `CLIENT_ENROLLED`; on rejection it removes
+   the request and audits `CLIENT_ENROLLMENT_REJECTED`.
+7. The client connects as `aplane`; an enrolled key is accepted.
 
 Revocation removes the key from the registry, closes its live SSH connections,
 and audits `CLIENT_KEY_REVOKED`; the client must enroll again.

@@ -144,17 +144,23 @@ func TestUnrelatedErrorKeepsOperationInProgress(t *testing.T) {
 	}
 }
 
-// A signing request withdraws a pending client access request; its popup
-// closes and the operator returns to the screen underneath.
-func TestWithdrawnClientAccessRequestClosesItsPopup(t *testing.T) {
+// Enrollment requests announced while one is on screen wait their turn; a
+// request announced twice (as happens at login) is shown once.
+func TestEnrollmentRequestsQueueBehindThePopup(t *testing.T) {
 	m := approvalTestModel(ViewKeyDetails)
-	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
-	m = updateModel(t, m, ClientEnrollmentCanceledMsg{ID: "other", Reason: "preempted"})
-	if m.viewState != ViewClientEnrollmentPopup || m.enrollmentApproval.request == nil {
-		t.Fatalf("withdrawal for another request closed the popup: view %v", m.viewState)
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-2", SSHFingerprint: "SHA256:two"}})
+	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
+	if m.viewState != ViewClientEnrollmentPopup || m.enrollmentApproval.request == nil || m.enrollmentApproval.request.ID != "enroll-1" {
+		t.Fatalf("first request is not on screen: view %v request %+v", m.viewState, m.enrollmentApproval.request)
 	}
-	m = updateModel(t, m, ClientEnrollmentCanceledMsg{ID: "token-1", Reason: "preempted"})
-	if m.enrollmentApproval.request != nil || m.viewState != ViewKeyDetails {
-		t.Fatalf("after withdrawal: view %v, request %+v; want key details and no pending request", m.viewState, m.enrollmentApproval.request)
+	if len(m.enrollmentApproval.queue) != 1 || m.enrollmentApproval.queue[0].ID != "enroll-2" {
+		t.Fatalf("queue = %+v, want only enroll-2", m.enrollmentApproval.queue)
+	}
+	if !m.nextEnrollmentRequest() || m.enrollmentApproval.request.ID != "enroll-2" || len(m.enrollmentApproval.queue) != 0 {
+		t.Fatalf("after answering: request %+v queue %+v", m.enrollmentApproval.request, m.enrollmentApproval.queue)
+	}
+	if m.nextEnrollmentRequest() || m.enrollmentApproval.request != nil {
+		t.Fatalf("queue drained but a request remains: %+v", m.enrollmentApproval.request)
 	}
 }

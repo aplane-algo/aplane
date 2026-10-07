@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -96,7 +97,8 @@ type Runtime struct {
 	// authorized_keys registry. The daemon is its only writer; see
 	// publishRegistry for the validate, publish, install sequence.
 	clients   *clientregistry.Registry
-	clientsMu sync.RWMutex
+	pending   *enrollqueue.Queue // Enrollment requests waiting for the operator
+	clientsMu sync.RWMutex       // Guards clients and pending together, so approval is one step
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -410,26 +412,6 @@ func (ir *Runtime) FailAllPendingApprovals(reason string) {
 	}
 }
 
-// HandleClientEnrollmentApprovalResponse routes a client enrollment response.
-func (ir *Runtime) HandleClientEnrollmentApprovalResponse(msg *signerapproval.ClientEnrollmentResponse) {
-	if c := ir.approval.Load(); c != nil {
-		c.HandleClientEnrollmentResponse(msg)
-	}
-}
-
-// RequestClientEnrollment requests operator approval for enrolling a client key.
-func (ir *Runtime) RequestClientEnrollment(requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
-	return ir.RequestClientEnrollmentContext(context.Background(), requestID, sshFingerprint, label, remoteAddr, timeout)
-}
-
-func (ir *Runtime) RequestClientEnrollmentContext(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
-	c := ir.approval.Load()
-	if c == nil {
-		return false, fmt.Errorf("approval coordinator not initialized")
-	}
-	return c.RequestClientEnrollmentContext(ctx, requestID, sshFingerprint, label, remoteAddr, timeout)
-}
-
 // --- Product runtime config ---
 
 // Config returns the product runtime configuration.
@@ -492,6 +474,11 @@ func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
 func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
+	return ir.publishRegistryLocked(mutate)
+}
+
+// publishRegistryLocked is publishRegistry with clientsMu held.
+func (ir *Runtime) publishRegistryLocked(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
 	current := ir.clients
 	if current == nil {
 		current, _ = clientregistry.Parse(nil)
@@ -557,6 +544,139 @@ func (ir *Runtime) RevokeAllAuthorizedKeys() ([]clientregistry.Entry, error) {
 		return next, true, nil
 	})
 	return revoked, err
+}
+
+// --- Pending enrollment requests ---
+
+// PendingEnrollmentsPath returns the product store's enrollment queue path.
+func (ir *Runtime) PendingEnrollmentsPath() string {
+	return filepath.Join(ir.keyPaths.ProductDir(), ".ssh", enrollqueue.FileName)
+}
+
+// LoadEnrollmentQueue loads the persisted enrollment requests. Like the
+// registry it is read only at startup; the daemon is its only writer.
+func (ir *Runtime) LoadEnrollmentQueue() error {
+	q, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
+	if err != nil {
+		return err
+	}
+	ir.clientsMu.Lock()
+	ir.pending = q
+	ir.clientsMu.Unlock()
+	return nil
+}
+
+// publishQueueLocked publishes next as the enrollment queue and installs it,
+// with clientsMu held.
+func (ir *Runtime) publishQueueLocked(next *enrollqueue.Queue) error {
+	if err := enrollqueue.Publish(ir.PendingEnrollmentsPath(), next); err != nil {
+		return err
+	}
+	ir.pending = next
+	return nil
+}
+
+func (ir *Runtime) pendingLocked() *enrollqueue.Queue {
+	if ir.pending == nil {
+		ir.pending = &enrollqueue.Queue{}
+	}
+	return ir.pending
+}
+
+// QueueEnrollment records a client's request to be enrolled. A key that is
+// already enrolled is reported as such and nothing is queued; otherwise the
+// request waits for the operator, and added reports whether it was new
+// rather than a refresh of a request already waiting. enrollqueue.ErrQueueFull
+// refuses a new request when the queue is at its cap.
+func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) (pending bool, added bool, err error) {
+	ir.clientsMu.Lock()
+	defer ir.clientsMu.Unlock()
+	if ir.clients != nil && ir.clients.Has(key) {
+		return false, false, nil
+	}
+	next, _, added, err := ir.pendingLocked().WithRequest(key, label, remoteAddr, time.Now())
+	if err != nil {
+		return false, false, err
+	}
+	if err := ir.publishQueueLocked(next); err != nil {
+		return false, false, err
+	}
+	return true, added, nil
+}
+
+// PendingEnrollments returns the requests waiting for the operator, oldest
+// first, without those that lapsed.
+func (ir *Runtime) PendingEnrollments() []enrollqueue.Entry {
+	ir.clientsMu.RLock()
+	defer ir.clientsMu.RUnlock()
+	return ir.pending.Pruned(time.Now()).Entries()
+}
+
+// ApproveEnrollment enrolls the key of a pending request and removes the
+// request. label, when set, replaces the label the client asked for. The
+// registry is published before the queue, so a failure between the two
+// leaves an enrolled key whose request is still listed; approving it again
+// is a no-op for the registry and clears the request.
+func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (enrollqueue.Entry, error) {
+	ir.clientsMu.Lock()
+	defer ir.clientsMu.Unlock()
+	entry, ok := ir.pendingLocked().Pruned(time.Now()).Lookup(fingerprint)
+	if !ok {
+		return enrollqueue.Entry{}, enrollqueue.ErrNotPending
+	}
+	if label == "" {
+		label = entry.Label
+	}
+	if _, err := ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		next, added := current.WithKey(entry.Key, label)
+		return next, added, nil
+	}); err != nil {
+		return enrollqueue.Entry{}, err
+	}
+	next, _, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
+	if err != nil {
+		return enrollqueue.Entry{}, err
+	}
+	if err := ir.publishQueueLocked(next); err != nil {
+		return enrollqueue.Entry{}, err
+	}
+	entry.Label = label
+	return entry, nil
+}
+
+// RejectEnrollment removes a pending request without enrolling its key.
+func (ir *Runtime) RejectEnrollment(fingerprint string) (enrollqueue.Entry, error) {
+	ir.clientsMu.Lock()
+	defer ir.clientsMu.Unlock()
+	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
+	if err != nil {
+		return enrollqueue.Entry{}, err
+	}
+	if err := ir.publishQueueLocked(next); err != nil {
+		return enrollqueue.Entry{}, err
+	}
+	return entry, nil
+}
+
+// ImportClientKey enrolls a public key the operator supplied directly, the
+// pre-enrollment path. A pending request for the same key is cleared. added
+// reports whether the key was new to the registry.
+func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool, err error) {
+	ir.clientsMu.Lock()
+	defer ir.clientsMu.Unlock()
+	added, err = ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		next, added := current.WithKey(key, label)
+		return next, added, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if next, _, err := ir.pendingLocked().WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
+		if err := ir.publishQueueLocked(next); err != nil {
+			return added, err
+		}
+	}
+	return added, nil
 }
 
 // --- Key access ---

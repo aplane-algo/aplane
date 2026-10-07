@@ -5,31 +5,6 @@ package tui
 
 import "testing"
 
-func TestEnrollmentWithdrawnWarningClearsOnlyMatchingGeneration(t *testing.T) {
-	m := activityReadyModel()
-	m.enrollmentApproval.request = &PendingEnrollmentRequest{ID: "enroll-1"}
-
-	got, cmd := updateForTest(t, m, ClientEnrollmentCanceledMsg{ID: "enroll-1"})
-	if got.lastWarning != tokenProvisioningCanceledWarning("") {
-		t.Fatalf("lastWarning = %q", got.lastWarning)
-	}
-	if cmd == nil {
-		t.Fatal("ClientEnrollmentCanceledMsg returned nil cmd, want warning clear timer")
-	}
-	generation := got.lastWarningGeneration
-
-	got.setPersistentWarning("newer warning")
-	got, _ = updateForTest(t, got, clearWarningMsg{Generation: generation})
-	if got.lastWarning != "newer warning" {
-		t.Fatalf("stale clear removed warning, got %q", got.lastWarning)
-	}
-
-	got, _ = updateForTest(t, got, clearWarningMsg{Generation: got.lastWarningGeneration})
-	if got.lastWarning != "" {
-		t.Fatalf("matching clear left warning = %q", got.lastWarning)
-	}
-}
-
 func TestLocalIdleWarningClearsAfterSuccessfulAuth(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewAuth

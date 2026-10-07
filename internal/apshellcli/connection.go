@@ -90,7 +90,7 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 	}
 
 	r.printf("Requesting enrollment at endpoint %s...\n", alias)
-	r.println("This requires an operator (apadmin) to approve on the node.")
+	r.println("The node's operator approves the request later in apadmin; this command returns at once.")
 	r.println()
 
 	hostKeyApproval := buildHostKeyApproval(r)
@@ -101,7 +101,7 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 	for _, line := range result.RenderLines {
 		r.println(line)
 	}
-	if target.AutoConnect {
+	if target.AutoConnect && !result.Pending {
 		r.println("Connecting to signer with the enrolled key...")
 		connectResult, err := executeConnectEndpointAlias(r, alias)
 		if err != nil {
@@ -114,9 +114,7 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 
 func (r *REPLState) printEnrollmentWait(clientFingerprint string) {
 	r.progressPrintln("Client SSH key fingerprint: " + clientFingerprint)
-	r.progressPrintln("Compare this complete fingerprint with the Client Enrollment Request in apadmin.")
-	r.progressPrintln("Waiting for operator approval in apadmin...")
-	r.progressPrintln("Leave this shell open while the operator approves or rejects the enrollment request.")
+	r.progressPrintln("The operator compares this complete fingerprint with the enrollment request in apadmin before approving it.")
 }
 
 // buildHostKeyApproval returns a TOFU host key approval handler for SSH connections.

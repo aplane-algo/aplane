@@ -390,24 +390,31 @@ EXPECT_SCRIPT
 run_request_enrollment() {
     # Run request-enrollment non-interactively via apshell -script.
     # AutoConfirm=true is set by script mode; known_hosts is pre-populated so
-    # no trust prompt. Success enrolls the client key at the signer.
+    # no trust prompt. The request is queued for the operator; apapprover
+    # approves it asynchronously.
     docker_exec_as_tester "echo 'request-enrollment' > /tmp/req-enrollment.script"
     docker_exec_as_tester ". /home/$TEST_USER/aplane/apenv.sh && \
         apshell -script /tmp/req-enrollment.script 2>&1 | tee /tmp/req-enrollment.log"
-    docker_exec_as_tester "grep -q 'enrolled at endpoint' /tmp/req-enrollment.log" \
-        || die "request-enrollment did not report an enrolled client key"
+    docker_exec_as_tester "grep -q 'waiting for the operator at endpoint' /tmp/req-enrollment.log" \
+        || die "request-enrollment did not report a queued enrollment request"
 }
 
 verify_signer_reachable() {
-    # With the client key enrolled, `apshell -script status` should print
-    # "Signer: Connected" after attemptStartupConnection succeeds.
+    # The enrollment request is approved asynchronously by apapprover, so
+    # retry until `apshell -script status` prints "Signer: Connected".
     docker_exec_as_tester "echo 'status' > /tmp/status.script"
-    local out
-    out="$(docker_exec_as_tester ". /home/$TEST_USER/aplane/apenv.sh && \
-        apshell -script /tmp/status.script 2>&1")"
+    local out attempt
+    for attempt in $(seq 1 30); do
+        out="$(docker_exec_as_tester ". /home/$TEST_USER/aplane/apenv.sh && \
+            apshell -script /tmp/status.script 2>&1")"
+        if printf '%s' "$out" | grep -qE 'Signer:[[:space:]]*Connected'; then
+            printf '%s\n' "$out"
+            return 0
+        fi
+        sleep 1
+    done
     printf '%s\n' "$out"
-    printf '%s' "$out" | grep -qE 'Signer:[[:space:]]*Connected' \
-        || die "apshell status did not report Signer: Connected"
+    die "apshell status did not report Signer: Connected"
 }
 
 create_local_preserved_state_markers() {

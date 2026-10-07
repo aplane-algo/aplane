@@ -435,6 +435,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderEnrolledClients()
 	case ViewRevokeClientConfirm:
 		content = m.renderRevokeClientConfirm()
+	case ViewImportClientKey:
+		content = m.renderImportClientKey()
 	case ViewLockConfirm:
 		content = m.renderLockConfirm()
 	case ViewDeleting:

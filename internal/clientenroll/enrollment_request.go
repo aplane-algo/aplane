@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
@@ -24,18 +25,21 @@ type EnrollmentClient interface {
 		label string,
 		hostKeyApproval sshtunnel.HostKeyApprovalHandler,
 		onEnrollmentStart func(string),
-	) (string, error)
+	) (connect.EnrollmentResult, error)
 }
 
-// EnrollmentResult describes one endpoint-scoped enrollment.
+// EnrollmentResult describes one endpoint-scoped enrollment request.
 type EnrollmentResult struct {
 	Alias       string
 	Fingerprint string
+	// Pending reports that the request now waits for the node's operator;
+	// otherwise the key was already enrolled there.
+	Pending bool
 }
 
-// RequestEndpointEnrollment runs the synchronous SSH request-enrollment
-// protocol against one endpoint. Nothing is stored on the client: its key is
-// its credential, and the node records the enrollment.
+// RequestEndpointEnrollment submits an SSH request-enrollment to one
+// endpoint and returns at once. Nothing is stored on the client: its key is
+// its credential, and the node records the request for its operator.
 func RequestEndpointEnrollment(
 	ctx context.Context,
 	client EnrollmentClient,
@@ -55,7 +59,7 @@ func RequestEndpointEnrollment(
 	if err != nil {
 		return EnrollmentResult{}, fmt.Errorf("resolve endpoint %q SSH configuration: %w", alias, err)
 	}
-	fingerprint, err := client.RequestEnrollmentWithContext(
+	result, err := client.RequestEnrollmentWithContext(
 		ctx,
 		endpointSSH.Host,
 		endpointSSH.Port,
@@ -68,5 +72,5 @@ func RequestEndpointEnrollment(
 	if err != nil {
 		return EnrollmentResult{}, fmt.Errorf("request enrollment from endpoint %q: %w", alias, err)
 	}
-	return EnrollmentResult{Alias: alias, Fingerprint: fingerprint}, nil
+	return EnrollmentResult{Alias: alias, Fingerprint: result.Fingerprint, Pending: result.Pending}, nil
 }

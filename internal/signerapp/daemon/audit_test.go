@@ -50,7 +50,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogSignFailed("ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
 	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
-	logger.LogClientEnrolled("SHA256:abc", "laptop", "10.0.0.1")
+	logger.LogClientEnrolledContext(adminserver.SessionContext{}, "SHA256:abc", "laptop", "10.0.0.1")
 	logger.LogAuthFailedAttributed("alice", "10.0.0.1", "invalid_credentials")
 	logger.LogSessionConnected("10.0.0.1", "user")
 	logger.LogSessionDisconnected("10.0.0.1", "user")

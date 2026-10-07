@@ -128,7 +128,7 @@ JSON is rejected.
 | `help` | Use `mcp_reference` instead |
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
-| `request-enrollment` | Client enrollment requires interactive approval |
+| `request-enrollment` | Client enrollment needs interactive host trust; run it in a real apshell |
 | `cosigner` | Guided cosigner setup requires interactive trust/replacement decisions or a trusted-host script session |
 | `clear` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |

@@ -25,7 +25,9 @@ const (
 	AuditSessionConnected                 = signeraudit.AuditSessionConnected
 	AuditSessionDisconnected              = signeraudit.AuditSessionDisconnected
 	AuditIdentityLocked                   = signeraudit.AuditIdentityLocked
+	AuditClientEnrollmentRequested        = signeraudit.AuditClientEnrollmentRequested
 	AuditClientEnrolled                   = signeraudit.AuditClientEnrolled
+	AuditClientEnrollmentRejected         = signeraudit.AuditClientEnrollmentRejected
 	AuditKeyGenerated                     = signeraudit.AuditKeyGenerated
 	AuditKeyDeleted                       = signeraudit.AuditKeyDeleted
 	AuditKeyImported                      = signeraudit.AuditKeyImported

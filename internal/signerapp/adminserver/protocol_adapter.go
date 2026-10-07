@@ -43,7 +43,7 @@ func ProtocolAuthResultMessage(success bool, code, errMsg string) protocol.AuthR
 	}
 }
 
-func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo) protocol.EnrolledKeysListMessage {
+func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo, pendingCount int) protocol.EnrolledKeysListMessage {
 	if keys == nil {
 		keys = []protocol.EnrolledKeyInfo{}
 	}
@@ -52,8 +52,72 @@ func ProtocolEnrolledKeysListMessage(id string, keys []protocol.EnrolledKeyInfo)
 			Type: protocol.MsgTypeEnrolledKeysList,
 			ID:   id,
 		},
-		Keys: keys,
+		Keys:         keys,
+		PendingCount: pendingCount,
 	}
+}
+
+func ProtocolPendingEnrollmentsListMessage(id string, requests []protocol.PendingEnrollmentInfo) protocol.PendingEnrollmentsListMessage {
+	if requests == nil {
+		requests = []protocol.PendingEnrollmentInfo{}
+	}
+	return protocol.PendingEnrollmentsListMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypePendingEnrollmentsList,
+			ID:   id,
+		},
+		Requests: requests,
+	}
+}
+
+func ProtocolApproveEnrollmentResultMessage(id, fingerprint, label string, err error) protocol.ApproveEnrollmentResultMessage {
+	result := protocol.ApproveEnrollmentResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeApproveEnrollmentResult,
+			ID:   id,
+		},
+		Success:     err == nil,
+		Fingerprint: fingerprint,
+		Label:       label,
+	}
+	if err != nil {
+		result.Code = protocol.CodeForError(err)
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func ProtocolRejectEnrollmentResultMessage(id string, err error) protocol.RejectEnrollmentResultMessage {
+	result := protocol.RejectEnrollmentResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeRejectEnrollmentResult,
+			ID:   id,
+		},
+		Success: err == nil,
+	}
+	if err != nil {
+		result.Code = protocol.CodeForError(err)
+		result.Error = err.Error()
+	}
+	return result
+}
+
+func ProtocolImportClientKeyResultMessage(id, fingerprint, label string, added bool, err error) protocol.ImportClientKeyResultMessage {
+	result := protocol.ImportClientKeyResultMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeImportClientKeyResult,
+			ID:   id,
+		},
+		Success:     err == nil,
+		Fingerprint: fingerprint,
+		Label:       label,
+		Added:       added,
+	}
+	if err != nil {
+		result.Code = protocol.CodeForError(err)
+		result.Error = err.Error()
+	}
+	return result
 }
 
 func ProtocolRevokeEnrolledKeyResultMessage(id string, closedConnections int, err error) protocol.RevokeEnrolledKeyResultMessage {
@@ -956,16 +1020,6 @@ func ProtocolSignRequestCanceledMessage(msg signerapproval.SignRequestCanceled) 
 	return protocol.SignRequestCanceledMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeSignRequestCanceled,
-			ID:   msg.ID,
-		},
-		Reason: msg.Reason,
-	}
-}
-
-func ProtocolClientEnrollmentRequestCanceledMessage(msg signerapproval.ClientEnrollmentCanceled) protocol.ClientEnrollmentRequestCanceledMessage {
-	return protocol.ClientEnrollmentRequestCanceledMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeClientEnrollmentRequestCanceled,
 			ID:   msg.ID,
 		},
 		Reason: msg.Reason,

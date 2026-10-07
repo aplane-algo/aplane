@@ -6,6 +6,9 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"golang.org/x/crypto/ssh"
+	"strings"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -154,6 +157,79 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 	}
 	logInfof("client key revoked: %s (closed %d connection(s))", fingerprint, closed)
 	return closed, nil
+}
+
+// ApproveClientEnrollment enrolls the key of a waiting request. label, when
+// set, replaces the label the client asked for.
+func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint, label string) (string, error) {
+	if ir == nil {
+		return "", protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	entry, err := ir.ApproveEnrollment(fingerprint, label)
+	if err != nil {
+		if errors.Is(err, enrollqueue.ErrNotPending) {
+			return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
+		}
+		return "", err
+	}
+	if fs.auditLog != nil {
+		fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
+	}
+	logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
+	return entry.Label, nil
+}
+
+// RejectClientEnrollment drops a waiting request without enrolling its key.
+func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) error {
+	if ir == nil {
+		return protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	entry, err := ir.RejectEnrollment(fingerprint)
+	if err != nil {
+		if errors.Is(err, enrollqueue.ErrNotPending) {
+			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
+		}
+		return err
+	}
+	if fs.auditLog != nil {
+		fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
+	}
+	logInfof("client enrollment request rejected: %s", fingerprint)
+	return nil
+}
+
+// ImportClientKey enrolls an OpenSSH public-key line the operator supplied,
+// the pre-enrollment path. The line's comment is the label unless one is
+// given. A waiting request for the same key is cleared.
+func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, publicKey, label string) (string, string, bool, error) {
+	if ir == nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	key, comment, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
+	if err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
+	}
+	if err := sshtunnel.CheckClientKey(key); err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, err)
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = strings.TrimSpace(comment)
+	}
+	fingerprint := ssh.FingerprintSHA256(key)
+	added, err := ir.ImportClientKey(key, label)
+	if err != nil {
+		return "", "", false, err
+	}
+	if added {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
+		}
+		logInfof("client key imported: %s (label %q)", fingerprint, label)
+	} else {
+		logInfof("client key import: %s is already enrolled", fingerprint)
+	}
+	return fingerprint, label, added, nil
 }
 
 // RevokeAllClientKeys removes every enrolled client key and closes every

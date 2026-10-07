@@ -27,7 +27,45 @@ func (s *Session) HandleListEnrolledKeys(msg *protocol.ListEnrolledKeysMessage) 
 	if !s.authorize(msg.ID, auth.ActionClientsView, auth.Resource{Type: "clients"}) {
 		return
 	}
-	_ = s.WriteJSON(ProtocolEnrolledKeysListMessage(msg.ID, s.productServices.EnrolledKeys()))
+	_ = s.WriteJSON(ProtocolEnrolledKeysListMessage(msg.ID, s.productServices.EnrolledKeys(), len(s.productServices.PendingEnrollments())))
+}
+
+func (s *Session) HandleListPendingEnrollments(msg *protocol.ListPendingEnrollmentsMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsView, auth.Resource{Type: "client_enrollment"}) {
+		return
+	}
+	_ = s.WriteJSON(ProtocolPendingEnrollmentsListMessage(msg.ID, s.productServices.PendingEnrollments()))
+}
+
+func (s *Session) HandleApproveEnrollment(msg *protocol.ApproveEnrollmentMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client_enrollment", ID: msg.Fingerprint}) {
+		return
+	}
+	if msg.Fingerprint == "" {
+		_ = s.WriteJSON(ProtocolApproveEnrollmentResultMessage(msg.ID, "", "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("fingerprint is required"))))
+		return
+	}
+	label, err := s.productServices.ApproveEnrollment(s.SessionContext(), msg.Fingerprint, msg.Label)
+	_ = s.WriteJSON(ProtocolApproveEnrollmentResultMessage(msg.ID, msg.Fingerprint, label, err))
+}
+
+func (s *Session) HandleRejectEnrollment(msg *protocol.RejectEnrollmentMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client_enrollment", ID: msg.Fingerprint}) {
+		return
+	}
+	if msg.Fingerprint == "" {
+		_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("fingerprint is required"))))
+		return
+	}
+	_ = s.WriteJSON(ProtocolRejectEnrollmentResultMessage(msg.ID, s.productServices.RejectEnrollment(s.SessionContext(), msg.Fingerprint)))
+}
+
+func (s *Session) HandleImportClientKey(msg *protocol.ImportClientKeyMessage) {
+	if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client"}) {
+		return
+	}
+	fingerprint, label, added, err := s.productServices.ImportClientKey(s.SessionContext(), msg.PublicKey, msg.Label)
+	_ = s.WriteJSON(ProtocolImportClientKeyResultMessage(msg.ID, fingerprint, label, added, err))
 }
 
 func (s *Session) HandleRevokeEnrolledKey(msg *protocol.RevokeEnrolledKeyMessage) {
@@ -950,19 +988,6 @@ func (s *Session) HandleSignResponse(msg *protocol.SignResponseMessage) {
 			Approved:          msg.Approved,
 			Reason:            msg.Reason,
 			ApproverPrincipal: approver,
-		})
-	}
-}
-
-func (s *Session) HandleClientEnrollmentResponse(msg *protocol.ClientEnrollmentResponseMessage) {
-	if ir := s.BoundRuntime(); ir != nil {
-		if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client_enrollment", ID: msg.ID}) {
-			return
-		}
-		ir.HandleClientEnrollmentApprovalResponse(&signerapproval.ClientEnrollmentResponse{
-			ID:       msg.ID,
-			Approved: msg.Approved,
-			Reason:   msg.Reason,
 		})
 	}
 }

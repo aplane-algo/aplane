@@ -70,4 +70,5 @@ func (m Model) keepApprovalOnTop(preferred ViewState) Model {
 func (m *Model) clearPendingApprovals() {
 	m.signing.request = nil
 	m.enrollmentApproval.request = nil
+	m.enrollmentApproval.queue = nil
 }

@@ -70,7 +70,7 @@ func (e *Core) GetConnectionTarget() string {
 }
 
 // RequestEnrollmentWithContext asks a node to enroll this client's SSH key.
-func (e *Core) RequestEnrollmentWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onEnrollmentStart func(string)) (string, error) {
+func (e *Core) RequestEnrollmentWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onEnrollmentStart func(string)) (connect.EnrollmentResult, error) {
 	// Disconnect if currently connected: the session is replaced once the key
 	// is enrolled.
 	if e.IsTunnelConnected() {

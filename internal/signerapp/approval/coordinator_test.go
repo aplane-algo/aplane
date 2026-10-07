@@ -21,7 +21,6 @@ func TestCoordinatorSerializesSigningRequests(t *testing.T) {
 			return true
 		},
 		nil,
-		nil,
 	)
 
 	var wg sync.WaitGroup
@@ -88,7 +87,6 @@ func TestCoordinatorCancelSignRequestDismissesPendingApproval(t *testing.T) {
 			canceled <- *msg
 			return true
 		},
-		nil,
 	)
 
 	result := make(chan error, 1)
@@ -135,7 +133,6 @@ func TestCoordinatorCancelSignRequestBeforeApprovalIsPending(t *testing.T) {
 			return true
 		},
 		nil,
-		nil,
 	)
 
 	ctx, finish := c.BeginSignRequest(context.Background(), "sign-early")
@@ -162,7 +159,6 @@ func TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests(t *testing.
 	c := New(
 		func() bool { return true },
 		func(req *SignRequest) bool { return true },
-		nil,
 		nil,
 	)
 
@@ -199,7 +195,6 @@ func TestCoordinatorCancelSignRequestUnknownIsNotFound(t *testing.T) {
 		func() bool { return true },
 		func(req *SignRequest) bool { return true },
 		nil,
-		nil,
 	)
 
 	if got := c.CancelSignRequest("sign-missing", SignRequestCancelReasonClientCanceled); got.State != SignRequestCancelStateNotFound {
@@ -211,7 +206,6 @@ func TestCoordinatorRememberedCancelEvictsOldest(t *testing.T) {
 	c := New(
 		func() bool { return true },
 		func(req *SignRequest) bool { return true },
-		nil,
 		nil,
 	)
 
@@ -234,134 +228,15 @@ func TestCoordinatorRememberedCancelEvictsOldest(t *testing.T) {
 	}
 }
 
-func TestTokenProvisioningCanceledWhileQueuedReleasesSlot(t *testing.T) {
-	signDelivered := make(chan struct{}, 1)
-	c := New(
-		func() bool { return true },
-		func(req *SignRequest) bool {
-			signDelivered <- struct{}{}
-			return true
-		},
-		nil,
-		func(req *ClientEnrollmentRequest) bool {
-			t.Error("canceled token request must not be delivered")
-			return true
-		},
-	)
-
-	signDone := make(chan struct{})
-	go func() {
-		defer close(signDone)
-		_, _ = c.RequestSigningApproval("sign-hold", "A", "A", "first", 0, 0, nil, time.Second)
-	}()
-	<-signDelivered
-
-	// The sign approval holds the delivery turn; a token request queued
-	// behind it must return promptly when its context is canceled instead
-	// of blocking in the queue.
-	ctx, cancel := context.WithCancel(context.Background())
-	tokenErr := make(chan error, 1)
-	go func() {
-		_, err := c.RequestClientEnrollmentContext(ctx, "token-canceled", "fp", "", "addr", time.Second)
-		tokenErr <- err
-	}()
-
-	time.Sleep(20 * time.Millisecond) // let the token request enter the queue
-	cancel()
-
-	select {
-	case err := <-tokenErr:
-		if err == nil {
-			t.Fatal("RequestClientEnrollmentContext() error = nil, want cancellation error")
-		}
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("RequestClientEnrollmentContext() error = %v, want context.Canceled in chain", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("canceled token request did not return; still holding queue slot")
-	}
-
-	// Unblock the held sign approval so the goroutine exits.
-	c.HandleSignResponse(&SignResponse{ID: "sign-hold", Approved: true})
-	<-signDone
-}
-
-func TestCoordinatorSerializesAcrossApprovalTypes(t *testing.T) {
-	sent := make(chan string, 2)
-	c := New(
-		func() bool { return true },
-		func(req *SignRequest) bool {
-			sent <- "sign:" + req.ID
-			return true
-		},
-		nil,
-		func(req *ClientEnrollmentRequest) bool {
-			sent <- "token:" + req.ID
-			return true
-		},
-	)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		ok, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Second)
-		if err != nil {
-			t.Errorf("signing approval failed: %v", err)
-			return
-		}
-		if !ok {
-			t.Error("expected signing approval to be granted")
-		}
-	}()
-
-	if got := <-sent; got != "sign:sign-1" {
-		t.Fatalf("first delivered request = %q, want sign:sign-1", got)
-	}
-
-	go func() {
-		defer wg.Done()
-		ok, err := c.RequestClientEnrollment("token-1", "fp", "", "addr", time.Second)
-		if err != nil {
-			t.Errorf("token approval failed: %v", err)
-			return
-		}
-		if !ok {
-			t.Error("expected token approval to be granted")
-		}
-	}()
-
-	select {
-	case got := <-sent:
-		t.Fatalf("token request delivered before signing response: %s", got)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
-
-	if got := <-sent; got != "token:token-1" {
-		t.Fatalf("second delivered request = %q, want token:token-1", got)
-	}
-
-	c.HandleClientEnrollmentResponse(&ClientEnrollmentResponse{ID: "token-1", Approved: true})
-
-	wg.Wait()
-}
-
 func TestCoordinatorRejectsEmptyRequestID(t *testing.T) {
 	c := New(
 		func() bool { return true },
 		func(req *SignRequest) bool { return true },
 		nil,
-		func(req *ClientEnrollmentRequest) bool { return true },
 	)
 
 	if _, err := c.RequestSigningApproval("", "A", "A", "desc", 0, 0, nil, time.Second); err == nil {
 		t.Fatal("RequestSigningApproval() error = nil, want request ID rejection")
-	}
-	if _, err := c.RequestClientEnrollment("", "fp", "", "addr", time.Second); err == nil {
-		t.Fatal("RequestClientEnrollment() error = nil, want request ID rejection")
 	}
 }
 
@@ -370,18 +245,13 @@ func TestCoordinatorFailAllClearsPendingMaps(t *testing.T) {
 		func() bool { return true },
 		func(req *SignRequest) bool { return true },
 		nil,
-		func(req *ClientEnrollmentRequest) bool { return true },
 	)
 	c.pendingRequests["sign-1"] = make(chan SignResponse, 1)
-	c.pendingEnrollmentRequests["tok-1"] = make(chan ClientEnrollmentResponse, 1)
 
 	c.FailAllPendingRequests("disconnected")
 
 	if got := len(c.pendingRequests); got != 0 {
 		t.Fatalf("len(pendingRequests) = %d, want 0", got)
-	}
-	if got := len(c.pendingEnrollmentRequests); got != 0 {
-		t.Fatalf("len(pendingEnrollmentRequests) = %d, want 0", got)
 	}
 }
 
@@ -393,7 +263,6 @@ func TestCoordinatorLateResponseAfterTimeoutIsIgnored(t *testing.T) {
 			sent <- req.ID
 			return true
 		},
-		nil,
 		nil,
 	)
 
@@ -430,7 +299,6 @@ func TestCoordinatorRequestSigningApprovalContextCancelCleansPendingRequest(t *t
 			canceled <- *msg
 			return true
 		},
-		nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -466,7 +334,6 @@ func TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn(
 			sent <- req.ID
 			return true
 		},
-		nil,
 		nil,
 	)
 
@@ -523,7 +390,6 @@ func TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest(t *testing.T
 			return true
 		},
 		nil,
-		nil,
 	)
 
 	resultCh := make(chan struct {
@@ -577,7 +443,6 @@ func TestCoordinatorRequestSigningApprovalResponseReturnsApproverPrincipal(t *te
 			return true
 		},
 		nil,
-		nil,
 	)
 
 	resultCh := make(chan struct {
@@ -610,108 +475,6 @@ func TestCoordinatorRequestSigningApprovalResponseReturnsApproverPrincipal(t *te
 	}
 }
 
-func TestCoordinatorMismatchedTokenResponseIDDoesNotSatisfyActiveRequest(t *testing.T) {
-	sent := make(chan string, 1)
-	c := New(
-		func() bool { return true },
-		nil,
-		nil,
-		func(req *ClientEnrollmentRequest) bool {
-			sent <- req.ID
-			return true
-		},
-	)
-
-	resultCh := make(chan struct {
-		approved bool
-		err      error
-	}, 1)
-	go func() {
-		approved, err := c.RequestClientEnrollment("token-1", "fp", "", "addr", time.Second)
-		resultCh <- struct {
-			approved bool
-			err      error
-		}{approved: approved, err: err}
-	}()
-
-	if got := <-sent; got != "token-1" {
-		t.Fatalf("delivered token request = %q, want token-1", got)
-	}
-
-	c.HandleClientEnrollmentResponse(&ClientEnrollmentResponse{ID: "other-token-request", Approved: false})
-
-	select {
-	case result := <-resultCh:
-		t.Fatalf("active token request resolved after mismatched response: approved=%v err=%v", result.approved, result.err)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	c.pendingEnrollmentRequestsLock.Lock()
-	pendingCount := len(c.pendingEnrollmentRequests)
-	c.pendingEnrollmentRequestsLock.Unlock()
-	if pendingCount != 1 {
-		t.Fatalf("len(pendingEnrollmentRequests) = %d, want 1 after mismatched response", pendingCount)
-	}
-
-	c.HandleClientEnrollmentResponse(&ClientEnrollmentResponse{ID: "token-1", Approved: true})
-
-	result := <-resultCh
-	if result.err != nil {
-		t.Fatalf("RequestClientEnrollment() error = %v, want nil", result.err)
-	}
-	if !result.approved {
-		t.Fatal("RequestClientEnrollment() approved = false, want true")
-	}
-
-	c.pendingEnrollmentRequestsLock.Lock()
-	pendingCount = len(c.pendingEnrollmentRequests)
-	c.pendingEnrollmentRequestsLock.Unlock()
-	if pendingCount != 0 {
-		t.Fatalf("len(pendingEnrollmentRequests) = %d, want 0 after matching response", pendingCount)
-	}
-}
-
-func TestCoordinatorTokenProvisioningContextCancelClearsPending(t *testing.T) {
-	sent := make(chan string, 1)
-	c := New(
-		func() bool { return true },
-		nil,
-		nil,
-		func(req *ClientEnrollmentRequest) bool {
-			sent <- req.ID
-			return true
-		},
-	)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	resultCh := make(chan error, 1)
-	go func() {
-		_, err := c.RequestClientEnrollmentContext(ctx, "token-1", "fp", "", "addr", time.Minute)
-		resultCh <- err
-	}()
-
-	if got := <-sent; got != "token-1" {
-		t.Fatalf("delivered token request = %q, want token-1", got)
-	}
-	cancel()
-
-	select {
-	case err := <-resultCh:
-		if err == nil {
-			t.Fatal("RequestClientEnrollmentContext() error = nil, want cancellation")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("RequestClientEnrollmentContext did not return after context cancellation")
-	}
-
-	c.pendingEnrollmentRequestsLock.Lock()
-	pendingCount := len(c.pendingEnrollmentRequests)
-	c.pendingEnrollmentRequestsLock.Unlock()
-	if pendingCount != 0 {
-		t.Fatalf("len(pendingEnrollmentRequests) = %d, want 0 after context cancellation", pendingCount)
-	}
-}
-
 func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 	sent := make(chan string, 1)
 	c := New(
@@ -720,7 +483,6 @@ func TestCoordinatorFailAllUnblocksPendingRequest(t *testing.T) {
 			sent <- req.ID
 			return true
 		},
-		nil,
 		nil,
 	)
 
@@ -767,85 +529,4 @@ func waitForDeliveryQueueLength(t *testing.T, c *Coordinator, want int) {
 	got := len(c.deliveryQueue)
 	c.deliveryMu.Unlock()
 	t.Fatalf("delivery queue length = %d, want %d", got, want)
-}
-
-// A signing request withdraws a delivered client access request: the
-// operator never has two requests delivered at once (AP4), and an
-// unauthenticated enrollment request cannot hold up signing.
-func TestSigningPreemptsDeliveredTokenRequest(t *testing.T) {
-	sent := make(chan string, 4)
-	c := New(
-		func() bool { return true },
-		func(req *SignRequest) bool { sent <- "sign:" + req.ID; return true },
-		nil,
-		func(req *ClientEnrollmentRequest) bool { sent <- "token:" + req.ID; return true },
-	)
-	c.SetClientEnrollmentCanceledSender(func(canceled *ClientEnrollmentCanceled) bool {
-		sent <- "token-canceled:" + canceled.ID + ":" + canceled.Reason
-		return true
-	})
-
-	tokenErr := make(chan error, 1)
-	go func() {
-		_, err := c.RequestClientEnrollment("token-1", "fp", "", "addr", time.Minute)
-		tokenErr <- err
-	}()
-	if got := <-sent; got != "token:token-1" {
-		t.Fatalf("first delivery = %q, want the token request", got)
-	}
-
-	signResult := make(chan bool, 1)
-	go func() {
-		ok, _ := c.RequestSigningApproval("sign-1", "A", "A", "pay", 0, 0, nil, time.Second)
-		signResult <- ok
-	}()
-	if got := <-sent; got != "token-canceled:token-1:"+ClientEnrollmentCancelReasonPreempted {
-		t.Fatalf("second message = %q, want the token request withdrawn first", got)
-	}
-	if got := <-sent; got != "sign:sign-1" {
-		t.Fatalf("third message = %q, want the signing request delivered", got)
-	}
-	if err := <-tokenErr; !errors.Is(err, ErrClientEnrollmentPreempted) {
-		t.Fatalf("token request error = %v, want ErrClientEnrollmentPreempted", err)
-	}
-	c.HandleSignResponse(&SignResponse{ID: "sign-1", Approved: true})
-	if !<-signResult {
-		t.Fatal("signing approval was not granted")
-	}
-}
-
-// A signing request waits ahead of a queued client access request.
-func TestSigningQueuesAheadOfTokenRequests(t *testing.T) {
-	sent := make(chan string, 4)
-	c := New(
-		func() bool { return true },
-		func(req *SignRequest) bool { sent <- "sign:" + req.ID; return true },
-		nil,
-		func(req *ClientEnrollmentRequest) bool { sent <- "token:" + req.ID; return true },
-	)
-	go func() { _, _ = c.RequestSigningApproval("sign-hold", "A", "A", "pay", 0, 0, nil, time.Second) }()
-	if got := <-sent; got != "sign:sign-hold" {
-		t.Fatalf("first delivery = %q", got)
-	}
-	tokenErr := make(chan error, 1)
-	go func() {
-		_, err := c.RequestClientEnrollment("token-1", "fp", "", "addr", time.Second)
-		tokenErr <- err
-	}()
-	waitForDeliveryQueueLength(t, c, 1)
-	go func() { _, _ = c.RequestSigningApproval("sign-next", "A", "A", "pay", 0, 0, nil, time.Second) }()
-	waitForDeliveryQueueLength(t, c, 2)
-
-	c.HandleSignResponse(&SignResponse{ID: "sign-hold", Approved: true})
-	if got := <-sent; got != "sign:sign-next" {
-		t.Fatalf("delivery after the first signing response = %q, want the second signing request", got)
-	}
-	c.HandleSignResponse(&SignResponse{ID: "sign-next", Approved: true})
-	if got := <-sent; got != "token:token-1" {
-		t.Fatalf("delivery after signing drained = %q, want the token request", got)
-	}
-	c.HandleClientEnrollmentResponse(&ClientEnrollmentResponse{ID: "token-1", Approved: true})
-	if err := <-tokenErr; err != nil {
-		t.Fatalf("token request error = %v", err)
-	}
 }

@@ -34,7 +34,12 @@ func (m Model) renderClientEnrollmentPopup() string {
 	for _, row := range rows[1:] {
 		sb.WriteString(row + "\n")
 	}
-	sb.WriteString(subtitleStyle.Render("Approving enrolls this key as a client. No credential is issued."))
+	queued := len(m.enrollmentApproval.queue)
+	note := "Approving enrolls this key as a client; the client then connects on its own. No credential is issued."
+	if queued > 0 {
+		note += fmt.Sprintf(" %d more request(s) waiting.", queued)
+	}
+	sb.WriteString(subtitleStyle.Render(note))
 	sb.WriteString("\n\n")
 
 	// Buttons - use JoinHorizontal for proper alignment

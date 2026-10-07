@@ -654,18 +654,31 @@ request-enrollment --endpoint main
 request-enrollment --label laptop
 ```
 
-**Note:** An operator using local `apadmin` (or `apapprover`) must approve the
-request on the node. Compare the full client fingerprint printed by apshell
-with the **Client Enrollment Request** shown there before approving. On
-success apshell prints `Client key <fingerprint> enrolled at endpoint <alias>`.
-It immediately attempts to connect only when the selected endpoint is the
-default signer; enrolling at a cosigner leaves the primary signer connection
-unchanged. For normal cosigner setup, use [endpoints add](#endpoints-add),
-which enrolls as part of setup.
+The command returns at once. The node queues the request for its operator and
+apshell prints `Enrollment request for client key <fingerprint> is waiting for
+the operator at endpoint <alias>`; nothing is stored on the client, and the
+shell does not wait. An operator using local `apadmin` (or `apapprover`)
+approves or rejects the request whenever convenient: it pops up if they are
+connected, is shown again when they log in, and is listed under **Waiting for
+approval** on the **Enrolled Clients** screen. They compare the full client
+fingerprint printed by apshell with the request before approving. Once
+approved, run `connect`; until then the signer refuses the key.
 
-Enrolling a key that is already enrolled is harmless: the operator approves
-again and nothing changes. Nothing is stored on the client; its key is its
-credential, and the node keeps the registry.
+If the key is already enrolled, apshell prints `Client key <fingerprint> is
+already enrolled at endpoint <alias>` and, when the endpoint is the default
+signer, connects immediately. Enrolling at a cosigner never touches the
+primary signer connection. For normal cosigner setup, use
+[endpoints add](#endpoints-add), which requests enrollment as part of setup.
+
+A request can also be refused: `enrollment queue is full` means the node
+already has 16 keys waiting and the operator must clear some first;
+`failed to record enrollment request` means the node could not write its
+queue. A request that waits 7 days without an answer lapses; just request
+again. Repeating a request before it is answered refreshes the same entry.
+
+The operator can also enroll a key without a request from the client, by
+importing its public key file in apadmin (`i` on Enrolled Clients) or with
+`apadmin clients import`.
 
 The client SSH key must be Ed25519, ECDSA (P-256/384/521), or a
 hardware-backed `sk-` Ed25519/ECDSA key. The default generated key is
@@ -780,7 +793,7 @@ the node keeps the registry of enrolled keys. `endpoints add`,
 | Situation | Behavior |
 |---|---|
 | Same URL | The connection is reused with its custom key and known-hosts paths |
-| Key not enrolled, `ssh://` | Enrollment is requested; compare the full client fingerprint with the Client Enrollment Request before approving |
+| Key not enrolled, `ssh://` | An enrollment request is queued at the cosigner and setup stops with the connection configured; the cosigner's operator approves it later, then rerun setup |
 | Key revoked, `ssh://` | Enrollment is requested again the same way |
 | Cosigner locked | Configuration is kept; unlock it in apadmin and rerun |
 | Cancelled midway | Completed effects are reported and kept for the rerun |
@@ -927,6 +940,32 @@ endpoints delete old-signer
 persisted key inventory to retain. SSH host trust is left as it is, and the
 client's enrollment at that node is not revoked; do that from the node's
 apadmin if it is no longer wanted.
+
+---
+
+### apadmin clients
+
+Manage enrolled client keys and the enrollment requests waiting for approval:
+
+```text
+apadmin clients list
+apadmin clients approve <fingerprint> [--label <text>]
+apadmin clients reject <fingerprint>
+apadmin clients revoke <fingerprint>
+apadmin clients import <public-key-file|-> [--label <text>]
+```
+
+`list` prints the requests waiting for approval (fingerprint, key type, label,
+origin, and time) followed by the enrolled keys; it needs only a read-only
+session. The other verbs take an unlocked session. `approve` enrolls the key
+of a waiting request, with `--label` replacing the label the client asked for;
+`reject` drops a waiting request; `revoke` removes an enrolled key and closes
+its connections. `import` pre-enrolls a client's key from a file holding one
+OpenSSH public-key line (such as `id_ed25519.pub`); the line's comment is the
+label unless `--label` is given. With `-` the line is read from stdin, which
+then requires `APSIGNER_PASSPHRASE` or a controlling terminal for the
+passphrase, as with `cosigner import`. Fingerprints are the `SHA256:` form
+apshell prints.
 
 ---
 

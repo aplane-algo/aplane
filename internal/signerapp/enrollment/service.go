@@ -1,62 +1,102 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package enrollment approves and records client key enrollment: the
-// operator-approved flow by which an SSH key becomes an enrolled client.
-// No credential is issued; the key itself is the client's credential.
+// Package enrollment records client key enrollment requests: a client that
+// asks to be enrolled is queued for the operator and answered at once; the
+// operator approves or rejects the request later. No credential is issued;
+// the key itself is the client's credential.
 package enrollment
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 )
 
-// ApprovalTimeout bounds how long an enrollment request waits for the
-// operator.
-const ApprovalTimeout = 5 * time.Minute
-
-// AuditLogger records enrollment outcomes.
+// AuditLogger records enrollment requests.
 type AuditLogger interface {
-	LogClientEnrolled(sshFingerprint, label, remoteAddr string)
+	LogClientEnrollmentRequested(sshFingerprint, label, remoteAddr string)
 }
 
-// Service brokers an enrollment request to the operator and audits the
-// result.
+// Request is a queued enrollment request as shown to the operator.
+type Request struct {
+	// ID identifies the notification; it is derived from the fingerprint so
+	// the same key never shows as two requests.
+	ID          string
+	Fingerprint string
+	Label       string
+	RemoteAddr  string
+	RequestedAt time.Time
+}
+
+// RequestID is the notification ID for a key's enrollment request.
+func RequestID(fingerprint string) string {
+	return "enroll-" + fingerprint
+}
+
+// Service queues enrollment requests and tells the operator about them.
 type Service struct {
-	// RequestEnrollmentContext asks the connected operator to approve the
-	// key. It is canceled when the SSH client disconnects.
-	RequestEnrollmentContext func(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error)
-	AuditLog                 AuditLogger
-	Logf                     func(format string, args ...interface{})
-	Now                      func() time.Time
+	// Queue records the request. It reports pending when the request now
+	// waits for the operator and added when it was new rather than a
+	// refresh; pending is false for a key that is already enrolled.
+	Queue func(key ssh.PublicKey, label, remoteAddr string) (pending, added bool, err error)
+	// Notify tells a connected operator about a new request. It may be nil
+	// and must not block.
+	Notify   func(req Request)
+	AuditLog AuditLogger
+	Logf     func(format string, args ...interface{})
+	Now      func() time.Time
 }
 
-// ApproveContext asks the operator to approve enrolling the key with the
-// given fingerprint and label.
-func (s Service) ApproveContext(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-	if s.RequestEnrollmentContext == nil {
-		return false, fmt.Errorf("enrollment requester not configured")
+// Request records a client's enrollment request and reports whether it is
+// now waiting for the operator (as opposed to the key being enrolled
+// already). A full queue is reported as an error the client can read.
+func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending bool, err error) {
+	if s.Queue == nil {
+		return false, fmt.Errorf("enrollment queue not configured")
 	}
-	now := time.Now
-	if s.Now != nil {
-		now = s.Now
+	if key == nil {
+		return false, fmt.Errorf("enrollment key is required")
 	}
-	requestID := fmt.Sprintf("enroll-%d", now().UnixNano())
-	return s.RequestEnrollmentContext(ctx, requestID, sshFingerprint, label, remoteAddr, ApprovalTimeout)
-}
-
-// AuditEnrolled records a completed enrollment, after the acknowledgement
-// reached the client.
-func (s Service) AuditEnrolled(sshFingerprint, label, remoteAddr string) {
-	if s.AuditLog != nil {
-		s.AuditLog.LogClientEnrolled(sshFingerprint, label, remoteAddr)
-	}
-	if s.Logf != nil {
-		if label != "" {
-			s.Logf("client key enrolled for %s (key: %s, label: %q)", remoteAddr, sshFingerprint, label)
-		} else {
-			s.Logf("client key enrolled for %s (key: %s)", remoteAddr, sshFingerprint)
+	fingerprint := ssh.FingerprintSHA256(key)
+	pending, added, err := s.Queue(key, label, remoteAddr)
+	if err != nil {
+		if errors.Is(err, enrollqueue.ErrQueueFull) {
+			return false, fmt.Errorf("enrollment queue is full; ask the operator to clear it and try again")
 		}
+		s.logf("failed to record enrollment request from %s (key: %s): %v", remoteAddr, fingerprint, err)
+		return false, fmt.Errorf("failed to record enrollment request")
+	}
+	switch {
+	case !pending:
+		s.logf("enrollment request from %s: key already enrolled (key: %s)", remoteAddr, fingerprint)
+	case added:
+		if s.AuditLog != nil {
+			s.AuditLog.LogClientEnrollmentRequested(fingerprint, label, remoteAddr)
+		}
+		s.logf("enrollment request queued from %s (key: %s, label: %q); approve it in apadmin", remoteAddr, fingerprint, label)
+		if s.Notify != nil {
+			s.Notify(Request{ID: RequestID(fingerprint), Fingerprint: fingerprint, Label: label, RemoteAddr: remoteAddr, RequestedAt: s.now()})
+		}
+	default:
+		s.logf("enrollment request refreshed from %s (key: %s); it is still waiting for the operator", remoteAddr, fingerprint)
+	}
+	return pending, nil
+}
+
+func (s Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+func (s Service) logf(format string, args ...interface{}) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
 	}
 }

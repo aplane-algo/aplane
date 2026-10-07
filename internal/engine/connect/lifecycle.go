@@ -155,8 +155,13 @@ func (s *ConnectionState) Disconnect(onDisconnect func()) error {
 	return nil
 }
 
-// RequestEnrollmentWithContext asks a node to enroll this client's SSH key
-// and returns the enrolled key's fingerprint.
+// EnrollmentResult is a node's answer to an enrollment request: the client
+// key's fingerprint and whether the request now waits for the operator.
+type EnrollmentResult = sshtunnel.EnrollmentResult
+
+// RequestEnrollmentWithContext asks a node to enroll this client's SSH key.
+// The request is queued for the operator; the answer says whether it is
+// pending or the key was already enrolled.
 func (s *ConnectionState) RequestEnrollmentWithContext(
 	ctx context.Context,
 	host string,
@@ -166,7 +171,7 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 	label string,
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
 	onEnrollmentStart func(string),
-) (string, error) {
+) (EnrollmentResult, error) {
 	client := sshtunnel.NewClient(host, sshPort, 0, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
@@ -174,11 +179,11 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 	if onEnrollmentStart != nil {
 		client.SetEnrollmentStartCallback(onEnrollmentStart)
 	}
-	fingerprint, err := client.RequestEnrollment(ctx, label)
+	result, err := client.RequestEnrollment(ctx, label)
 	if err != nil {
-		return "", fmt.Errorf("enrollment request failed: %w", err)
+		return EnrollmentResult{}, fmt.Errorf("enrollment request failed: %w", err)
 	}
-	return fingerprint, nil
+	return result, nil
 }
 
 func (s *ConnectionState) clearLocked() {

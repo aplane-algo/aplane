@@ -92,7 +92,6 @@ func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
 			return true
 		},
 		nil,
-		nil,
 	))
 
 	result := make(chan error, 1)

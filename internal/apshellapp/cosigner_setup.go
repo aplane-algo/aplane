@@ -41,6 +41,10 @@ var (
 	// ErrCosignerSetupDuplicateRoute marks a key advertised by both the new
 	// connection and another one, which blocks signing for that key.
 	ErrCosignerSetupDuplicateRoute = errors.New("duplicate cosigner route")
+	// ErrCosignerSetupEnrollmentPending reports that the cosigner refused
+	// this client's key and an enrollment request is now waiting for its
+	// operator; setup is rerun once it is approved.
+	ErrCosignerSetupEnrollmentPending = errors.New("enrollment request is waiting for the cosigner's operator")
 )
 
 // CosignerSetupRequest describes the client-local route choices used to
@@ -90,10 +94,13 @@ type CosignerSetupResult struct {
 	URL     string
 	Created bool
 	Updated bool
-	// Enrolled reports that this run enrolled the client's key at the
-	// cosigner, after operator approval, because the first connection was
-	// refused as unenrolled.
+	// Enrolled reports that the cosigner already held this client's key when
+	// it was asked to enroll it, so the retried connection succeeded.
 	Enrolled bool
+	// EnrollmentPending reports that the cosigner refused the key and an
+	// enrollment request is now waiting for its operator; the connection
+	// stays configured so setup can be rerun after approval.
+	EnrollmentPending bool
 	// Connected reports that the endpoint was reached, authenticated, and
 	// reported the cosigner role.
 	Connected      bool
@@ -333,12 +340,20 @@ func (a *App) CompleteCosignerSetup(ctx context.Context, plan CosignerSetupPlan,
 	}
 
 	// The client's key is its credential. Try the connection first; a node
-	// that refuses the key as unenrolled is asked to enroll it, which waits
-	// for operator approval there, and the connection is tried once more.
+	// that refuses the key as unenrolled is asked to enroll it. The request
+	// waits for the node's operator, so setup stops there with the
+	// connection configured; a node that answers that the key is enrolled
+	// after all is tried once more.
 	inspection, err := a.eng.InspectCosignerEndpointWithHostKeyApproval(ctx, endpoint, approve)
 	if err != nil && errors.Is(err, engine.ErrCosignerDiscoveryAuth) {
-		if err := a.requestCosignerEnrollment(ctx, plan.Alias, endpoint, approve, onEnrollmentStarted); err != nil {
-			return result, err
+		pending, enrollErr := a.requestCosignerEnrollment(ctx, plan.Alias, endpoint, approve, onEnrollmentStarted)
+		if enrollErr != nil {
+			return result, enrollErr
+		}
+		if pending {
+			result.EnrollmentPending = true
+			result.RenderLines = cosignerSetupRenderLines(result, nil)
+			return result, fmt.Errorf("%w: have the operator approve this client's key in apadmin at %s, then rerun setup for %s", ErrCosignerSetupEnrollmentPending, endpoint.URL, plan.Alias)
 		}
 		result.Enrolled = true
 		inspection, err = a.eng.InspectCosignerEndpointWithHostKeyApproval(ctx, endpoint, approve)
@@ -417,17 +432,19 @@ func (a *App) RemoveCreatedCosignerConnection(plan CosignerSetupPlan) error {
 	return a.reloadConfigAfterEndpointChange()
 }
 
-// requestCosignerEnrollment asks the cosigner to enroll this client's key.
-// Nothing is stored on the client; the node records the enrollment.
-func (a *App) requestCosignerEnrollment(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onEnrollmentStarted func(string)) error {
+// requestCosignerEnrollment asks the cosigner to enroll this client's key
+// and reports whether the request now waits for the operator. Nothing is
+// stored on the client; the node records the request.
+func (a *App) requestCosignerEnrollment(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, approve sshtunnel.HostKeyApprovalHandler, onEnrollmentStarted func(string)) (bool, error) {
 	endpointSSH, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if _, err := a.eng.Connection.RequestEnrollmentWithContext(ctx, endpointSSH.Host, endpointSSH.Port, endpointSSH.IdentityFile, endpointSSH.KnownHostsPath, "", approve, onEnrollmentStarted); err != nil {
-		return fmt.Errorf("request enrollment from endpoint %q: %w", alias, err)
+	result, err := a.eng.Connection.RequestEnrollmentWithContext(ctx, endpointSSH.Host, endpointSSH.Port, endpointSSH.IdentityFile, endpointSSH.KnownHostsPath, "", approve, onEnrollmentStarted)
+	if err != nil {
+		return false, fmt.Errorf("request enrollment from endpoint %q: %w", alias, err)
 	}
-	return nil
+	return result.Pending, nil
 }
 
 func (a *App) accountLabel(address string) string {
@@ -488,6 +505,13 @@ func cosignerSetupRenderLines(result *CosignerSetupResult, accountLabel func(str
 			"Cosigner connection dry run:",
 			fmt.Sprintf("  connection: %s (%s)", result.Alias, result.URL),
 			"  no files changed; host trust, access, node role, and routes were not checked",
+		}
+	}
+	if result.EnrollmentPending {
+		return []string{
+			fmt.Sprintf("Connection %s configured; the cosigner has not enrolled this client's key yet.", result.Alias),
+			"An enrollment request is waiting for the cosigner's operator (apadmin, Enrolled Clients).",
+			fmt.Sprintf("Rerun setup for %s once it is approved.", result.Alias),
 		}
 	}
 	if !result.Connected {

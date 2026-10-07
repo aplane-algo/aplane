@@ -27,8 +27,8 @@ func TestEnrollmentFingerprintMatchesApprovedKey(t *testing.T) {
 			srv, dir := testServer(t)
 			approval := make(chan string, 1)
 			setEnrollmentHooks(srv, EnrollmentHooks{
-				ApproveContext: func(_ context.Context, fingerprint, _, _ string) (bool, error) {
-					approval <- fingerprint
+				Request: func(key ssh.PublicKey, _, _ string) (bool, error) {
+					approval <- ssh.FingerprintSHA256(key)
 					return true, nil
 				},
 			})
@@ -106,14 +106,17 @@ func TestEnrollmentFingerprintMatchesApprovedKey(t *testing.T) {
 			client := NewClient(host, port, 0, identity, known)
 			var displayed string
 			client.SetEnrollmentStartCallback(func(fingerprint string) { displayed = fingerprint })
-			enrolledFingerprint, err := client.RequestEnrollment(ctx, "")
+			result, err := client.RequestEnrollment(ctx, "")
 			if err != nil {
 				t.Fatalf("RequestEnrollment() error = %v", err)
 			}
+			if !result.Pending {
+				t.Fatalf("RequestEnrollment() = %+v, want a pending request", result)
+			}
 			select {
 			case expected := <-approval:
-				if displayed == "" || displayed != expected || enrolledFingerprint != expected {
-					t.Fatalf("client=%q server=%q enrolled=%q", displayed, expected, enrolledFingerprint)
+				if displayed == "" || displayed != expected || result.Fingerprint != expected {
+					t.Fatalf("client=%q server=%q requested=%q", displayed, expected, result.Fingerprint)
 				}
 			default:
 				t.Fatal("approval missing")

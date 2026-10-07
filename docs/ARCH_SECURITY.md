@@ -84,8 +84,9 @@ the verified key fingerprint. A request carries no credential of its own.
 - Ed25519, ECDSA (P-256/384/521), or hardware-backed `sk-` Ed25519/ECDSA key
   at the endpoint's `identity_file` (default `$APCLIENT_DATA/.ssh/id_ed25519`,
   mode 0600) or held by an SSH agent
-- Enrolled once per node through the operator-approved `request-enrollment`
-  flow; the node records it in `identities/default/.ssh/authorized_keys`
+- Enrolled once per node, either by an operator approving the client's
+  `request-enrollment` request or by the operator importing the public key;
+  the node records it in `identities/default/.ssh/authorized_keys`
 - Identified everywhere by its SHA256 fingerprint; the principal is
   `client:<fingerprint>`
 
@@ -271,7 +272,8 @@ Client                                               Server
   │     that fingerprint -> HTTP handlers                 │
 ```
 
-Keys are enrolled exclusively through the `request-enrollment` operator-approved flow.
+Keys are enrolled only by the operator: by approving a queued
+`request-enrollment` request, or by importing a public key directly.
 
 **Key points:**
 - A key that is not enrolled fails the handshake with the standard SSH
@@ -320,7 +322,7 @@ secret of any kind.
 | Property | Implementation |
 |----------|----------------|
 | Client authentication | Enrolled SSH public key; the registry is `identities/default/.ssh/authorized_keys` |
-| Key enrollment | Operator-approved `request-enrollment` flow only |
+| Key enrollment | Operator approval of a queued `request-enrollment` request, or operator import of the public key |
 | Host key verification | TOFU model with persistent known_hosts |
 | Credential confidentiality | The private key never leaves the client; no shared secret exists on either side |
 | Replay resistance | Standard SSH public-key authentication over a session-bound exchange |
@@ -380,7 +382,9 @@ endpoint:
 ### Client Enrollment via SSH
 
 A client whose key is not yet enrolled asks the node to enroll it with the
-`request-enrollment` command. This is the only bootstrap mechanism.
+`request-enrollment` command. The request is queued for the operator and
+answered at once; the client learns the outcome by connecting. Together
+with operator import of a public key (below), this is the whole bootstrap.
 
 ```
 ┌──────────┐                                          ┌────────────┐
@@ -394,40 +398,66 @@ A client whose key is not yet enrolled asks the node to enroll it with the
      │  2. exec "enroll [<label>]"                           │
      │─────────────────────────────────────────────────────>│
      │                                                      │
-     │  3. Operator (apadmin) sees approval prompt          │
-     │     "Client <fingerprint> [<label>] requesting        │
-     │     enrollment"                                      │
-     │                                                      │
-     │  4. Operator approves/rejects                        │
-     │                                                      │
-     │  5. If approved: key written to the registry,        │
-     │     reply "enrolled <fingerprint>", exit 0           │
+     │  3. Request written to the pending queue             │
+     │     (identities/default/.ssh/pending_enrollments.json)│
+     │     reply "pending <fingerprint>", exit 0            │
      │<─────────────────────────────────────────────────────│
      │                                                      │
-     │  6. Client reconnects as "aplane" with the same key   │
+     │  4. Operator (apadmin) sees the request: at once if  │
+     │     connected, otherwise at the next login or in     │
+     │     the Enrolled Clients screen                      │
+     │                                                      │
+     │  5. Operator approves: key written to the registry,  │
+     │     request removed from the queue; or rejects:      │
+     │     request removed                                  │
+     │                                                      │
+     │  6. Client connects as "aplane" with the same key    │
+     │     (refused until the approval)                     │
      │                                                      │
 ```
 
 **Key points:**
-- Enrollment requires operator approval (human in the loop)
+- Enrollment requires operator approval (human in the loop), but the client
+  does not wait for it: the request is persisted and the operator answers it
+  whenever convenient, from the live popup, the Enrolled Clients screen, or
+  `apadmin clients approve`
 - The SSH public key identifies the requesting client; the label is display
-  information the client asked for, never authority
-- The reply names the fingerprint the server enrolled; the client checks it
-  against the key it authenticated with
-- Key enrollment is product-scoped under `identities/default/.ssh/authorized_keys`
-- Nothing is audited before approval and the registry write succeed; the
-  `CLIENT_ENROLLED` audit entry is written only after the acknowledgement has
-  been delivered
-- Failures are reported as `ERROR: ...` lines with exit status 1:
-  `enrollment rejected by operator`, `failed to enroll SSH key`, or
-  `no operator (apadmin) connected to approve the enrollment request`
+  information the client asked for, never authority. The operator may
+  replace it when approving
+- The reply names the fingerprint of the key the server recorded; the client
+  checks it against the key it authenticated with. `enrolled <fingerprint>`
+  (exit 0) is answered instead when the key is already in the registry
+- Key enrollment is product-scoped under `identities/default/.ssh/authorized_keys`;
+  the queue sits beside it in `pending_enrollments.json`, and both are
+  written only by the daemon
+- Audit: `CLIENT_ENROLLMENT_REQUESTED` when a new request is queued,
+  `CLIENT_ENROLLED` or `CLIENT_ENROLLMENT_REJECTED` with the admin session's
+  attribution when the operator answers
+- Refusals are reported as `ERROR: ...` lines with exit status 1:
+  `enrollment queue is full; ask the operator to clear it and try again`, or
+  `failed to record enrollment request` when the queue cannot be written
 - Nothing is stored on the client: its key is its credential, and the node
-  records the enrollment. Once enrolled, the client can connect normally
+  records the request and then the enrollment. A rejected or lapsed request
+  is simply gone; the client's next `connect` is refused and it may request
+  again
+
+**Pre-enrollment.** The operator can also enroll a key without a request
+from the client: the Enrolled Clients screen's import form and
+`apadmin clients import <public-key-file|-> [--label <text>]` take one
+OpenSSH public-key line (its comment is the label unless one is given). The
+operator must verify the key's fingerprint with the client's owner through a
+channel they trust; the public key itself is not secret. A waiting request
+for the same key is cleared by the import.
 
 **Limits.** `request-enrollment` accepts any supported client key, so the
-flow is reachable without credentials. It is bounded so that it cannot crowd out signing:
-- At most one enrollment request is pending server-wide; a concurrent
-  request is refused with a retry message
+flow is reachable without credentials, and the queue it writes to is bounded:
+- One queue entry per key: a repeated request refreshes the entry's
+  timestamp, remote address, and label (when given) rather than adding one,
+  and does not count against the cap
+- At most 16 keys may be waiting (`enrollqueue.MaxPending`); a further key is
+  refused with `enrollment queue is full` until the operator approves or
+  rejects an entry
+- An entry lapses after 7 days (`enrollqueue.TTL`); the client requests again
 - Each `request-enrollment` connection may make one enrollment request, and the
   connection closes when that request ends, whatever the outcome
 - A `request-enrollment` connection that has not started enrollment within 30
@@ -451,13 +481,11 @@ flow is reachable without credentials. It is bounded so that it cannot crowd out
   further channels are rejected before they are accepted
 - A client must accept the enrollment response within 10 seconds; a client
   that stops reading (for example by advertising a zero receive window) is
-  disconnected, which releases the pending-request slot
-- Signing has priority. Signing and enrollment share the coordinator's
-  single delivery turn (one prompt at a time), but a queued signing request
-  is delivered before any enrollment request, and an enrollment prompt
-  already shown is withdrawn (`client_enrollment_request_canceled`, reason
-  `preempted`) as soon as a signing request arrives. The SSH client is told
-  the operator is handling a signing request and to try again
+  disconnected
+- Enrollment never holds up signing: a request is answered without waiting
+  for the operator, so the approval coordinator's single delivery turn is
+  used by signing requests only. An enrollment request pops up in apadmin
+  when an operator is connected, but the signer does not wait on it
 - Client-supplied text (for example an unknown exec command) is quoted and
   truncated before it is logged, so it cannot inject terminal escapes into an
   operator console
@@ -488,8 +516,8 @@ revocation of every key.
      │                  │<────────────── [disconnected] ──│
      │                  │                                 │
      │                  │  4. Client must request-        │
-     │                  │     enrollment again            │
-     │                  │     (requires operator approval)│
+     │                  │     enrollment again; the       │
+     │                  │     operator approves it later  │
      │                  │                                 │
 ```
 
@@ -505,8 +533,8 @@ revocation of every key.
    closed-connection count with the admin session's attribution
 
 **Client re-authorization:**
-- The client must run `request-enrollment` again (same flow as initial enrollment)
-- The operator must approve the new request via the apadmin TUI
+- The client must run `request-enrollment` again (same flow as initial enrollment), or the operator re-imports its public key
+- The operator approves the new request from the apadmin TUI or `apadmin clients approve`, at any later time
 - If a client runs `request-enrollment` while still connected to that node, the session is disconnected first
 - Once re-enrolled, the client can `connect` normally with the same key
 
@@ -552,7 +580,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 **Bootstrap requirement:**
 Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `request-enrollment`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
 
-The `request-enrollment` flow is the only bootstrap path: one operator approval enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client.
+The `request-enrollment` flow (or an operator import of the public key) is the only bootstrap path: one operator decision enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client; the client does not wait for it, and connects once it has been made.
 
 ## Interface Architecture
 

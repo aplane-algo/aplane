@@ -182,17 +182,47 @@ func (c *IPCClient) SendSignResponse(requestID string, approved bool, reason str
 	return c.sendMessage(msg)
 }
 
-// SendClientEnrollmentResponse sends a client enrollment approval/rejection
-func (c *IPCClient) SendClientEnrollmentResponse(requestID string, approved bool, reason string) error {
-	msg := ClientEnrollmentResponseMessage{
+// SendApproveEnrollment enrolls the key of a waiting enrollment request.
+func (c *IPCClient) SendApproveEnrollment(fingerprint, label string) error {
+	return c.sendMessage(ApproveEnrollmentMessage{
 		BaseMessage: BaseMessage{
-			Type: MsgTypeClientEnrollmentResponse,
-			ID:   requestID,
+			Type: MsgTypeApproveEnrollment,
+			ID:   fmt.Sprintf("approve-%d", time.Now().UnixNano()),
 		},
-		Approved: approved,
-		Reason:   reason,
-	}
-	return c.sendMessage(msg)
+		Fingerprint: fingerprint,
+		Label:       label,
+	})
+}
+
+// SendRejectEnrollment drops a waiting enrollment request.
+func (c *IPCClient) SendRejectEnrollment(fingerprint string) error {
+	return c.sendMessage(RejectEnrollmentMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeRejectEnrollment,
+			ID:   fmt.Sprintf("reject-%d", time.Now().UnixNano()),
+		},
+		Fingerprint: fingerprint,
+	})
+}
+
+// SendListPendingEnrollments asks for the waiting enrollment requests.
+func (c *IPCClient) SendListPendingEnrollments() error {
+	return c.sendMessage(ListPendingEnrollmentsMessage{BaseMessage: BaseMessage{
+		Type: MsgTypeListPendingEnrollments,
+		ID:   fmt.Sprintf("pending-%d", time.Now().UnixNano()),
+	}})
+}
+
+// SendImportClientKey pre-enrolls an OpenSSH public-key line.
+func (c *IPCClient) SendImportClientKey(publicKey, label string) error {
+	return c.sendMessage(ImportClientKeyMessage{
+		BaseMessage: BaseMessage{
+			Type: MsgTypeImportClientKey,
+			ID:   fmt.Sprintf("import-client-%d", time.Now().UnixNano()),
+		},
+		PublicKey: publicKey,
+		Label:     label,
+	})
 }
 
 // sendMessage sends a message over IPC
@@ -439,7 +469,19 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		}
 	}),
 	MsgTypeEnrolledKeysList: decodeAs(func(list EnrolledKeysListMessage) tea.Msg {
-		return EnrolledKeysListMsg{Keys: list.Keys}
+		return EnrolledKeysListMsg{Keys: list.Keys, PendingCount: list.PendingCount}
+	}),
+	MsgTypePendingEnrollmentsList: decodeAs(func(list PendingEnrollmentsListMessage) tea.Msg {
+		return PendingEnrollmentsListMsg{Requests: list.Requests}
+	}),
+	MsgTypeApproveEnrollmentResult: decodeAs(func(result ApproveEnrollmentResultMessage) tea.Msg {
+		return ApproveEnrollmentResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label}
+	}),
+	MsgTypeRejectEnrollmentResult: decodeAs(func(result RejectEnrollmentResultMessage) tea.Msg {
+		return RejectEnrollmentResultMsg{Success: result.Success, Error: result.Error}
+	}),
+	MsgTypeImportClientKeyResult: decodeAs(func(result ImportClientKeyResultMessage) tea.Msg {
+		return ImportClientKeyResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label, Added: result.Added}
 	}),
 	MsgTypeRevokeEnrolledKeyResult: decodeAs(func(result RevokeEnrolledKeyResultMessage) tea.Msg {
 		return RevokeEnrolledKeyResultMsg{
@@ -559,9 +601,6 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return KeysChangedMsg{
 			KeyCount: keysChanged.KeyCount,
 		}
-	}),
-	MsgTypeClientEnrollmentRequestCanceled: decodeAs(func(canceled ClientEnrollmentRequestCanceledMessage) tea.Msg {
-		return ClientEnrollmentCanceledMsg{ID: canceled.ID, Reason: canceled.Reason}
 	}),
 	MsgTypeClientEnrollmentRequest: decodeAs(func(req ClientEnrollmentRequestMessage) tea.Msg {
 		return ClientEnrollmentRequestReceivedMsg{
@@ -778,14 +817,20 @@ func (m Model) sendSignResponseCmd(requestID string, approved bool) tea.Cmd {
 }
 
 // sendClientEnrollmentResponseCmd returns a tea.Cmd that sends a client enrollment response
-func (m Model) sendClientEnrollmentResponseCmd(requestID string, approved bool) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
-		reason := ""
-		if !approved {
-			reason = "rejected by user"
-		}
-		return c.SendClientEnrollmentResponse(requestID, approved, reason)
-	})
+func (m Model) sendApproveEnrollmentCmd(fingerprint, label string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendApproveEnrollment(fingerprint, label) })
+}
+
+func (m Model) sendRejectEnrollmentCmd(fingerprint string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRejectEnrollment(fingerprint) })
+}
+
+func (m Model) sendListPendingEnrollmentsCmd() tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListPendingEnrollments() })
+}
+
+func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
+	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportClientKey(publicKey, label) })
 }
 
 // WaitForMessageCmd returns a tea.Cmd that waits for the next message
