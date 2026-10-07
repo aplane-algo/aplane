@@ -175,21 +175,6 @@ func (n *Node) Enrolled(fingerprint string) bool {
 	return n.enrolled[fingerprint]
 }
 
-// Revoke removes the key from the registry and closes its connections.
-func (n *Node) Revoke(fingerprint string) int {
-	n.mu.Lock()
-	delete(n.enrolled, fingerprint)
-	n.mu.Unlock()
-	return n.Server.CloseConnectionsForFingerprint(fingerprint, "key revoked")
-}
-
-// EnrollmentRequests returns the enrollment requests received so far.
-func (n *Node) EnrollmentRequests() []EnrollmentRequest {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return append([]EnrollmentRequest(nil), n.requests...)
-}
-
 func writeClientIdentity(t testing.TB, dir string) (string, ssh.PublicKey) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)

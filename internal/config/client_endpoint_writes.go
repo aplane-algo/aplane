@@ -198,20 +198,9 @@ func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegist
 	return registry, nil
 }
 
-// DeleteStoredClientEndpoint removes an endpoint alias and retires its token.
-func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, error) {
-	removal, err := RemoveStoredClientEndpoint(dataDir, alias)
-	return removal.Registry, err
-}
-
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
-// client-data lock.
-//
-// A token's lifetime ends with its alias: the token file is retired before the
-// route is removed, so a later profile of the same name cannot inherit it and
-// an interruption leaves the route without a token rather than an orphaned
-// token without a route. A token file that another alias also uses is left in
-// place.
+// client-data lock. Nothing else is retired with the alias: the client's
+// credential is its SSH key, which no endpoint owns.
 func RemoveStoredClientEndpoint(dataDir, alias string) (StoredClientEndpointRemoval, error) {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
 		return StoredClientEndpointRemoval{}, err
@@ -223,18 +212,14 @@ func RemoveStoredClientEndpoint(dataDir, alias string) (StoredClientEndpointRemo
 	if registry.Default == alias {
 		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
-	endpoint, ok := registry.Endpoints[alias]
-	if !ok {
+	if _, ok := registry.Endpoints[alias]; !ok {
 		return StoredClientEndpointRemoval{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
-	var removal StoredClientEndpointRemoval
-	_ = endpoint
 	delete(registry.Endpoints, alias)
 	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
 		return StoredClientEndpointRemoval{}, err
 	}
-	removal.Registry = registry
-	return removal, nil
+	return StoredClientEndpointRemoval{Registry: registry}, nil
 }
 
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
