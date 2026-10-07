@@ -734,9 +734,9 @@ func TestEnrollment_RegistryFailure(t *testing.T) {
 	}
 }
 
-// A registry write that installed the key but is not yet durable still
-// enrolls the client: the authority change is audited and acknowledged, and
-// the durability failure is reported separately.
+// A registry write that installed the key but is not yet durable is audited
+// as an enrollment, since the key is usable, but the client is answered with
+// an error so it retries and is acknowledged only once the write is durable.
 func TestEnrollment_RegistryAppliedNotDurable(t *testing.T) {
 	srv, _ := testServer(t)
 
@@ -759,11 +759,11 @@ func TestEnrollment_RegistryAppliedNotDurable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
-	if exitCode != 0 {
-		t.Errorf("exit code = %d, want 0 (the key is enrolled); output: %s", exitCode, output)
+	if exitCode == 0 {
+		t.Errorf("exit code = 0, want a failure the client retries; output: %s", output)
 	}
-	if !strings.Contains(output, "enrolled "+ssh.FingerprintSHA256(clientPub)) {
-		t.Errorf("output = %q, want the enrollment acknowledgement", output)
+	if strings.Contains(output, "enrolled "+ssh.FingerprintSHA256(clientPub)) || !strings.Contains(output, "not yet durable") {
+		t.Errorf("output = %q, want the not-yet-durable error and no acknowledgement", output)
 	}
 	if !auditCalled {
 		t.Error("the applied enrollment must be audited even though its write is not durable")

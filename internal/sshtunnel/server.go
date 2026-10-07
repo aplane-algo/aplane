@@ -79,8 +79,9 @@ type KeyCheckerFunc func(key ssh.PublicKey) bool
 // KeyEnrollerFunc enrolls a public key with a display label. It must be
 // idempotent for an already-enrolled key. enrolled reports that the key is
 // now usable; it can be true alongside an error when the registry was
-// installed but its write is not yet durable, and the server then audits
-// the enrollment and still acknowledges it.
+// installed but its write is not yet durable. The server then audits the
+// enrollment but answers the client with an error, so the client retries
+// and is acknowledged only once the registry is durable.
 type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
 
 // ProductHooks connects the server to the product's enrolled-key registry.
@@ -1060,10 +1061,16 @@ func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, 
 		s.enrollmentAuditCallback(fingerprint, label, remoteAddr)
 	}
 	if err != nil {
+		// The key is usable, but a crash before the next successful sync can
+		// lose it, so the client is not told it is enrolled: it retries, the
+		// retry re-publishes the registry first, and the acknowledgement
+		// follows a durable write. The retry changes nothing and is not
+		// audited again.
 		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s) but the registry write is not yet durable: %v\n", remoteAddr, fingerprint, err)
-	} else {
-		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: enrollment recorded but not yet durable; retry the request\n", 1)
+		return
 	}
+	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
 
 	if ctx.Err() != nil {
 		fmt.Printf("[SSH] Enrollment client %s disconnected before acknowledgement; its key stays enrolled: %v\n", remoteAddr, ctx.Err())
