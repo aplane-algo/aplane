@@ -525,7 +525,10 @@ func TestEnrollmentIgnoresClientStdinEOF(t *testing.T) {
 	}
 }
 
-func TestEnrollmentDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *testing.T) {
+// The registry write succeeds, then the client is gone before the
+// acknowledgement: the enrollment stands and is audited, because the key is
+// usable whether or not the client heard the reply.
+func TestEnrollmentDeliveryFailureAfterEnrollmentStillAuditsEnrollment(t *testing.T) {
 	srv, _ := testServer(t)
 	clientSigner, clientPubKey := generateClientKey(t)
 
@@ -540,9 +543,8 @@ func TestEnrollmentDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *testing.
 			auditCalled = true
 		},
 	})
-	// The registry write succeeds, then the client is gone before the
-	// acknowledgement: the enrollment stands, but it is not audited as
-	// delivered. The hook blocks so the test controls that ordering.
+	// The hook blocks so the test controls the ordering of the registry
+	// write and the client's disconnect.
 	srv.SetProductHooks(ProductHooks{
 		CheckKey: func(key ssh.PublicKey) bool {
 			return enrolled && ssh.FingerprintSHA256(key) == ssh.FingerprintSHA256(clientPubKey)
@@ -655,8 +657,11 @@ func TestEnrollmentDeliveryFailureAfterEnrollmentDoesNotAuditSuccess(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("server did not finish after client disconnect")
 	}
-	if auditCalled {
-		t.Fatal("audit callback should not be called after acknowledgement delivery failure")
+	if !auditCalled {
+		t.Fatal("audit callback should record the enrollment even though the acknowledgement was not delivered")
+	}
+	if !enrolled {
+		t.Fatal("key should remain enrolled")
 	}
 }
 

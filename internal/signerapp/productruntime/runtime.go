@@ -507,6 +507,16 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 		return false, fmt.Errorf("candidate registry is invalid: %w", err)
 	}
 	if err := clientregistry.Publish(ir.AuthorizedKeysPath(), next); err != nil {
+		// The write may have failed before or after the rename, so the
+		// registry on disk is either the old one or the new one. Adopt
+		// whatever is there rather than keep authority the file no longer
+		// grants; if the file cannot be read back, grant nothing.
+		reloaded, loadErr := clientregistry.Load(ir.AuthorizedKeysPath())
+		if loadErr != nil {
+			ir.clients, _ = clientregistry.Parse(nil)
+			return false, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
+		}
+		ir.clients = reloaded
 		return false, err
 	}
 	ir.clients = next

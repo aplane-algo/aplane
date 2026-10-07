@@ -1035,7 +1035,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically, and installs it under one lock, so SSH authentication never observes a partial registry
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants, and the admin command that caused the write reports failure
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -2150,7 +2150,7 @@ Store-management audit semantics:
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
 - `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
-- `CLIENT_ENROLLED` is emitted after an operator-approved enrollment has been written to the registry and acknowledged to the client; it carries the key fingerprint, the `client_label`, the remote address, and the approver principal
+- `CLIENT_ENROLLED` is emitted as soon as an operator-approved enrollment has been written to the registry, whether or not the acknowledgement reaches the client (the key is usable from that write on); it carries the key fingerprint, the `client_label`, the remote address, and the approver principal
 - `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count, and admin session attribution
 
 ## Authentication, SSH, and Client Enrollment
@@ -2211,12 +2211,14 @@ Client enrollment flow:
    (`ERROR: enrollment rejected by operator`, exit 1, on rejection)
 6. server adds the public key and label to the registry under the publication
    rule (`ERROR: failed to enroll SSH key`, exit 1, if the write fails)
-7. server replies `enrolled <fingerprint>` with exit 0; the client checks the
-   fingerprint against the key it authenticated with
-8. `CLIENT_ENROLLED` is audited after confirmed delivery
+7. `CLIENT_ENROLLED` is audited: the registry now holds the key, so the
+   authority change is recorded whether or not the client hears the reply
+8. server replies `enrolled <fingerprint>` with exit 0; the client checks the
+   fingerprint against the key it authenticated with. A client that is gone
+   by then stays enrolled; the missed acknowledgement is only logged
 
-The callbacks are separated as approval, key enrollment, acknowledgement, then
-audit. No credential is issued at any step: the enrolled key is the credential.
+The callbacks are separated as approval, key enrollment, audit, then
+acknowledgement. No credential is issued at any step: the enrolled key is the credential.
 Enrolling a key that is already enrolled asks the operator like any request,
 changes nothing in the registry, and acknowledges normally.
 

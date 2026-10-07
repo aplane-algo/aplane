@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 // Load reads and validates the registry at path. A missing file is an empty
@@ -27,47 +29,20 @@ func Load(path string) (*Registry, error) {
 	return reg, nil
 }
 
-// Publish writes reg to path as one atomic replacement: a temporary file in
-// the same directory, fsync, rename, then fsync of the directory. The file is
-// private (0600) and its directory is created private (0700) if missing. A
-// failure leaves any existing file untouched.
+// Publish writes reg to path as one atomic, durable replacement: a temporary
+// file in the same directory, fsync, rename, then fsync of the directory,
+// with every step's failure reported. The file is private (0600) and its
+// directory is created private (0700) if missing. A failure before the
+// rename leaves any existing file untouched; a failure after it (the
+// directory fsync) means the new file is in place but may not survive a
+// crash, so callers must treat the on-disk state as unknown and reload.
 func Publish(path string, reg *Registry) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fsutil.MkdirAllPrivate(dir); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".authorized_keys.*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temporary registry: %w", err)
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpPath) }
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("set registry permissions: %w", err)
-	}
-	if _, err := tmp.Write(reg.Marshal()); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("write registry: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("sync registry: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("close registry: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		cleanup()
+	if err := fsutil.WriteFileDurable(path, reg.Marshal()); err != nil {
 		return fmt.Errorf("publish registry: %w", err)
-	}
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
 	}
 	return nil
 }

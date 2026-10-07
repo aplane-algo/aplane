@@ -1020,9 +1020,10 @@ func (s *Server) requestEnrollment(ctx context.Context, sshConn *ssh.ServerConn,
 }
 
 // approveAndEnroll asks the operator to approve the key, enrolls it, and
-// acknowledges. Each step runs only after the previous one succeeds, and
-// the request is audited as enrolled only once the acknowledgement has been
-// delivered. No credential is issued: the client's key is its credential.
+// acknowledges. Each step runs only after the previous one succeeds. The
+// enrollment is audited as soon as the registry holds the key, since that is
+// when the key becomes usable; a lost acknowledgement does not undo it. No
+// credential is issued: the client's key is its credential.
 func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) {
 	fmt.Printf("[SSH] Waiting for operator approval in apadmin for enrollment request from %s\n", remoteAddr)
 
@@ -1046,20 +1047,23 @@ func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, 
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
 		return
 	}
-
-	if ctx.Err() != nil {
-		fmt.Printf("[SSH] Enrollment client disconnected before acknowledgement: %v\n", ctx.Err())
-		return
-	}
-	if err := s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0); err != nil {
-		fmt.Printf("[SSH] Failed to acknowledge enrollment: %v\n", err)
-		return
-	}
-
+	// The registry changed: the key is enrolled and usable from here on,
+	// whether or not the client learns of it, so the audit event records
+	// the authority change itself. Acknowledgement delivery is logged
+	// separately below.
 	if s.enrollmentAuditCallback != nil {
 		s.enrollmentAuditCallback(fingerprint, label, remoteAddr)
 	}
 	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
+
+	if ctx.Err() != nil {
+		fmt.Printf("[SSH] Enrollment client %s disconnected before acknowledgement; its key stays enrolled: %v\n", remoteAddr, ctx.Err())
+		return
+	}
+	if err := s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0); err != nil {
+		fmt.Printf("[SSH] Failed to acknowledge enrollment to %s; its key stays enrolled: %v\n", remoteAddr, err)
+		return
+	}
 }
 
 // enrollmentPublicKey returns the key the enrollment connection authenticated
@@ -1208,33 +1212,47 @@ func (s *Server) handleChannel(sshConn *ssh.ServerConn, info sshConnInfo, newCha
 		_ = tunnelSide.Close()
 		return
 	}
-	defer func() {
-		if err := channel.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close SSH channel: %v\n", err)
-		}
-		_ = tunnelSide.Close()
-	}()
 	go ssh.DiscardRequests(requests)
+
+	// The forwarded connection lives exactly as long as both of its halves.
+	// net.Pipe has no half-close, and the HTTP server treats a client's EOF
+	// as abandonment of the request anyway (it cancels the request context),
+	// so whichever side finishes first tears the whole connection down: the
+	// client going away cancels the in-flight request and frees the HTTP
+	// side at once, and the HTTP side closing ends the channel instead of
+	// waiting for the client to notice its EOF.
+	var teardown sync.Once
+	closeBoth := func() {
+		teardown.Do(func() {
+			_ = tunnelSide.Close()
+			if err := channel.Close(); err != nil && !isClosedConnError(err) {
+				fmt.Printf("Failed to close SSH channel: %v\n", err)
+			}
+		})
+	}
+	defer closeBoth()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		if _, err := io.Copy(channel, tunnelSide); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
 			fmt.Printf("Error copying API to channel: %v\n", err)
 		}
+		// Everything the HTTP side wrote has been handed to the channel (a
+		// pipe write returns only once read), so the client sees an orderly
+		// EOF before the close that follows.
 		if err := channel.CloseWrite(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close channel write: %v\n", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		if _, err := io.Copy(tunnelSide, channel); err != nil && !isClosedConnError(err) && !errors.Is(err, io.ErrClosedPipe) {
 			fmt.Printf("Error copying channel to API: %v\n", err)
 		}
-		// The client finished sending; let the HTTP side see EOF once its
-		// response is written by closing the pipe only after the other copy
-		// ends (deferred above).
 	}()
 	wg.Wait()
 }

@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,5 +259,114 @@ func TestAPIChannelRequiresLoopbackDestination(t *testing.T) {
 	}
 	if handed {
 		t.Fatal("non-loopback channel reached the handoff")
+	}
+}
+
+// chanListener serves the handed-off API connections to an http.Server.
+type chanListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+func newChanListener() *chanListener {
+	return &chanListener{conns: make(chan net.Conn, 8), done: make(chan struct{})}
+}
+
+func (l *chanListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *chanListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return nil
+}
+
+func (l *chanListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+
+// A client that drops its connection mid-request cancels the request on the
+// HTTP side and frees the channel handler at once, rather than leaving both
+// waiting for a response that will never be read.
+func TestAPIChannelCloseCancelsHTTPRequest(t *testing.T) {
+	srv, tmpDir := testServer(t)
+	set := newEnrolledSet()
+	srv.SetProductHooks(set.hooks())
+
+	ln := newChanListener()
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	httpSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(canceled)
+	})}
+	go func() { _ = httpSrv.Serve(ln) }()
+	t.Cleanup(func() { _ = httpSrv.Close() })
+	srv.SetAPIHandoff(func(conn *APIConn) error {
+		ln.conns <- conn
+		return nil
+	})
+	host, port, known := startServer(t, srv, tmpDir)
+	client, _ := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
+
+	conn, err := client.DialSignerAPI(context.Background())
+	if err != nil {
+		t.Fatalf("DialSignerAPI() error = %v", err)
+	}
+	if _, err := conn.Write([]byte("GET /slow HTTP/1.1\r\nHost: signer\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("request did not reach the HTTP handler")
+	}
+	_ = conn.Close()
+	select {
+	case <-canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the channel did not cancel the HTTP request")
+	}
+
+	// With the channel torn down, the client's connection is the only
+	// handler Stop has to wait for; it must not be stuck on the channel.
+	_ = client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := srv.StopContext(ctx); err != nil {
+		t.Fatalf("StopContext() error = %v, want prompt shutdown", err)
+	}
+}
+
+// When the HTTP side closes the connection, the client sees EOF and the
+// channel is closed without waiting for the client to act.
+func TestAPIChannelHTTPCloseEndsChannel(t *testing.T) {
+	srv, tmpDir := testServer(t)
+	set := newEnrolledSet()
+	srv.SetProductHooks(set.hooks())
+	srv.SetAPIHandoff(func(conn *APIConn) error {
+		go func() {
+			_, _ = conn.Write([]byte("bye\n"))
+			_ = conn.Close()
+		}()
+		return nil
+	})
+	host, port, known := startServer(t, srv, tmpDir)
+	client, _ := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
+
+	conn, err := client.DialSignerAPI(context.Background())
+	if err != nil {
+		t.Fatalf("DialSignerAPI() error = %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	data, err := io.ReadAll(conn)
+	if string(data) != "bye\n" || err != nil {
+		t.Fatalf("ReadAll() = %q, %v, want the response then EOF", data, err)
 	}
 }

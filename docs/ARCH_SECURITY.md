@@ -416,8 +416,9 @@ A client whose key is not yet enrolled asks the node to enroll it with the
   against the key it authenticated with
 - Key enrollment is product-scoped under `identities/default/.ssh/authorized_keys`
 - Nothing is audited before approval and the registry write succeed; the
-  `CLIENT_ENROLLED` audit entry is written only after the acknowledgement has
-  been delivered
+  `CLIENT_ENROLLED` audit entry is written as soon as the registry holds the
+  key, because the key is usable from then on even if the client never
+  receives the acknowledgement
 - Failures are reported as `ERROR: ...` lines with exit status 1:
   `enrollment rejected by operator`, `failed to enroll SSH key`, or
   `no operator (apadmin) connected to approve the enrollment request`
