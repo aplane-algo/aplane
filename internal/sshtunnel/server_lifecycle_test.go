@@ -18,7 +18,7 @@ import (
 func TestServerCallbackSettersBeforeStart(t *testing.T) {
 	srv, _ := testServer(t)
 
-	srv.SetSessionCallback(func(remoteAddr string, connected bool) {})
+	srv.SetSessionCallback(func(SessionEvent) {})
 	srv.SetEnrollmentHooks(EnrollmentHooks{Request: pendingHook(nil)})
 	srv.SetProductHooks(ProductHooks{
 		CheckKey:  func(key ssh.PublicKey) bool { return true },
@@ -194,7 +194,7 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 	}{
 		{
 			name: "SetSessionCallback",
-			call: func() { srv.SetSessionCallback(func(remoteAddr string, connected bool) {}) },
+			call: func() { srv.SetSessionCallback(func(SessionEvent) {}) },
 		},
 		{
 			name: "SetEnrollmentHooks",

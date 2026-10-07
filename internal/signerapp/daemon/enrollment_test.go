@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
 func testClientKey(t *testing.T) ssh.PublicKey {
@@ -381,5 +382,31 @@ func TestEnrollmentRequestIsFollowedByChangeNotification(t *testing.T) {
 		"fingerprint": fingerprint,
 	}) {
 		t.Fatalf("enrollment_changed shape mismatch: %#v", messages[1])
+	}
+}
+
+// An enrolled key's client connection opening or closing is announced as a
+// connected/disconnected enrollment change, since the Enrolled Clients list
+// shows which keys are connected. An enrollment-request session is not: its
+// request is announced when queued.
+func TestSSHSessionCallbackAnnouncesEnrolledConnections(t *testing.T) {
+	hub := &recordingAdminHub{}
+	server := &Signer{hub: hub}
+	cb := server.sshSessionCallback(nil)
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.1:1", Fingerprint: "SHA256:req", Connected: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.1:1", Fingerprint: "SHA256:req"})
+	if len(hub.enrollmentChanges) != 0 {
+		t.Fatalf("an enrollment-request session was announced: %+v", hub.enrollmentChanges)
+	}
+
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:key", EnrolledKey: true, Connected: true})
+	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.2:1", Fingerprint: "SHA256:key", EnrolledKey: true})
+	want := []adminproto.EnrollmentChangedNotification{
+		{Reason: protocol.EnrollmentChangeConnected, Fingerprint: "SHA256:key"},
+		{Reason: protocol.EnrollmentChangeDisconnected, Fingerprint: "SHA256:key"},
+	}
+	if !reflect.DeepEqual(hub.enrollmentChanges, want) {
+		t.Fatalf("notifications = %+v, want %+v", hub.enrollmentChanges, want)
 	}
 }

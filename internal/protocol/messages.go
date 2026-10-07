@@ -1053,17 +1053,21 @@ type KeysChangedMessage struct {
 // Reasons carried by EnrollmentChangedMessage: what changed in the
 // enrollment queue or the client registry.
 const (
-	EnrollmentChangeRequested  = "requested"   // a new request joined the queue
-	EnrollmentChangeApproved   = "approved"    // a request was approved and its key enrolled
-	EnrollmentChangeRejected   = "rejected"    // a request was dropped without enrolling
-	EnrollmentChangeImported   = "imported"    // a key was enrolled directly by import
-	EnrollmentChangeRevoked    = "revoked"     // one enrolled key was removed
-	EnrollmentChangeRevokedAll = "revoked_all" // every enrolled key was removed
+	EnrollmentChangeRequested    = "requested"    // a new request joined the queue
+	EnrollmentChangeApproved     = "approved"     // a request was approved and its key enrolled
+	EnrollmentChangeRejected     = "rejected"     // a request was dropped without enrolling
+	EnrollmentChangeImported     = "imported"     // a key was enrolled directly by import
+	EnrollmentChangeRevoked      = "revoked"      // one enrolled key was removed
+	EnrollmentChangeRevokedAll   = "revoked_all"  // every enrolled key was removed
+	EnrollmentChangeConnected    = "connected"    // an enrolled key opened a client connection
+	EnrollmentChangeDisconnected = "disconnected" // an enrolled key's client connection closed
 )
 
-// EnrollmentChangedMessage is sent by the server whenever the enrollment
-// queue or the enrolled-client registry changes, whatever the origin of the
-// change. Admin clients showing either list re-fetch it on receipt.
+// EnrollmentChangedMessage is sent by the server whenever what
+// list_pending_enrollments or list_enrolled_keys would return changes: the
+// enrollment queue, the enrolled-client registry, or an enrolled key's
+// connection state, whatever the origin of the change. Admin clients
+// showing either list re-fetch it on receipt.
 type EnrollmentChangedMessage struct {
 	BaseMessage
 	Reason      string `json:"reason"`                // One of the EnrollmentChange* values
