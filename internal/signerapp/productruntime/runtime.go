@@ -753,21 +753,23 @@ func (ir *Runtime) PendingEnrollments() []enrollqueue.Entry {
 // ApproveEnrollment enrolls the key of a pending request and removes the
 // request. label, when set, replaces the label the client asked for.
 // enrolled reports that the key is now in the live registry when it was not
-// before; the caller audits that whether or not err is set. The registry is
-// published before the queue, and a registry write that is not yet durable
-// (err wrapping ErrAppliedNotDurable) still goes on to clear the request,
-// so only a failure of the queue write itself leaves an enrolled key whose
-// request is still listed. Approving it again is a no-op for the registry
-// and clears the request; rejecting it is refused with ErrAlreadyEnrolled.
-func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollqueue.Entry, enrolled bool, err error) {
+// before, and cleared that the request is now gone from the live queue; the
+// caller audits the enrollment and announces either change whether or not
+// err is set. The registry is published before the queue, and a registry
+// write that is not yet durable (err wrapping ErrAppliedNotDurable) still
+// goes on to clear the request, so only a failure of the queue write itself
+// leaves an enrolled key whose request is still listed. Approving it again
+// is a no-op for the registry and clears the request; rejecting it is
+// refused with ErrAlreadyEnrolled.
+func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollqueue.Entry, enrolled, cleared bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
-		return enrollqueue.Entry{}, false, err
+		return enrollqueue.Entry{}, false, false, err
 	}
 	entry, ok := ir.pendingLocked().Pruned(time.Now()).Lookup(fingerprint)
 	if !ok {
-		return enrollqueue.Entry{}, false, enrollqueue.ErrNotPending
+		return enrollqueue.Entry{}, false, false, enrollqueue.ErrNotPending
 	}
 	if label == "" {
 		label = entry.Label
@@ -778,19 +780,20 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollque
 		return next, added, nil
 	})
 	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
-		return entry, enrolled, registryErr
+		return entry, enrolled, false, registryErr
 	}
 	next, _, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
-		return entry, enrolled, firstError(registryErr, err)
+		return entry, enrolled, false, firstError(registryErr, err)
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
+		cleared = errors.Is(err, ErrAppliedNotDurable)
 		if registryErr != nil {
-			return entry, enrolled, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
+			return entry, enrolled, cleared, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
 		}
-		return entry, enrolled, err
+		return entry, enrolled, cleared, err
 	}
-	return entry, enrolled, registryErr
+	return entry, enrolled, true, registryErr
 }
 
 func firstError(errs ...error) error {
@@ -829,31 +832,35 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 // ImportClientKey enrolls a public key the operator supplied directly, the
 // pre-enrollment path. A pending request for the same key is cleared. added
 // reports whether the key is now in the live registry when it was not
-// before; as for ApproveEnrollment the caller audits that whether or not
-// err is set, and a registry write that is not yet durable (err wrapping
-// ErrAppliedNotDurable) still goes on to clear the request.
-func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added bool, err error) {
+// before, and cleared that a waiting request for it is now gone from the
+// live queue; as for ApproveEnrollment the caller audits the enrollment and
+// announces either change whether or not err is set, and a registry write
+// that is not yet durable (err wrapping ErrAppliedNotDurable) still goes on
+// to clear the request.
+func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added, cleared bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	if err := ir.ensureQueueDurableLocked(); err != nil {
-		return false, err
+		return false, false, err
 	}
 	added, registryErr := ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(key, label)
 		return next, added, nil
 	})
 	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
-		return added, registryErr
+		return added, false, registryErr
 	}
 	if next, _, err := ir.pendingLocked().WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
 		if err := ir.publishQueueLocked(next); err != nil {
+			cleared = errors.Is(err, ErrAppliedNotDurable)
 			if registryErr != nil {
-				return added, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
+				return added, cleared, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
 			}
-			return added, err
+			return added, cleared, err
 		}
+		cleared = true
 	}
-	return added, registryErr
+	return added, cleared, registryErr
 }
 
 // --- Key access ---

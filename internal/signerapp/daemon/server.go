@@ -180,7 +180,7 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 	if err != nil {
 		return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
-	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, label)
+	entry, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, label)
 	if enrolled {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
@@ -190,6 +190,10 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 		} else {
 			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 		}
+	}
+	// A retry after a failed queue write enrolls nothing but clears the
+	// request; the list changed either way.
+	if enrolled || cleared {
 		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeApproved, fingerprint)
 	}
 	if err != nil {
@@ -263,7 +267,7 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
-	added, err := ir.ImportClientKey(key, label)
+	added, cleared, err := ir.ImportClientKey(key, label)
 	if added {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
@@ -273,9 +277,13 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		} else {
 			logInfof("client key imported: %s (label %q)", fingerprint, label)
 		}
-		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)
+	}
+	// Importing a key that is already enrolled still clears its waiting
+	// request, if any; the list changed either way.
+	if added || cleared {
+		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	}
 	if err != nil {
 		return fingerprint, label, added, err

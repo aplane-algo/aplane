@@ -30,9 +30,9 @@ func (fs *Signer) enrollmentService() enrollment.Service {
 			}
 			return ir.QueueEnrollment(key, label, remoteAddr)
 		},
-		Notify: func(req enrollment.Request) {
-			fs.notifyEnrollmentRequest(req)
-			fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRequested, req.Fingerprint)
+		Notify: fs.notifyEnrollmentRequest,
+		Changed: func(fingerprint string) {
+			fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRequested, fingerprint)
 		},
 		AuditLog: auditLog,
 		Logf:     logInfof,

@@ -240,9 +240,9 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops")
-	if !enrolled || !errors.Is(err, ErrAppliedNotDurable) || entry.Label != "ops" || entry.RemoteAddr != "10.0.0.1:1" {
-		t.Fatalf("ApproveEnrollment() = (%+v, %v, %v), want enrolled with the applied-not-durable error", entry, enrolled, err)
+	entry, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, "ops")
+	if !enrolled || !cleared || !errors.Is(err, ErrAppliedNotDurable) || entry.Label != "ops" || entry.RemoteAddr != "10.0.0.1:1" {
+		t.Fatalf("ApproveEnrollment() = (%+v, %v, %v, %v), want enrolled and cleared with the applied-not-durable error", entry, enrolled, cleared, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("the registry file holds the key, so the runtime should honor it")
@@ -250,8 +250,8 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	if got := ir.PendingEnrollments(); len(got) != 0 {
 		t.Fatalf("pending after the approval = %+v, want the request cleared alongside the enrollment", got)
 	}
-	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) {
-		t.Fatalf("retry while syncs fail = (%v, %v), want the pending-durability failure with nothing applied", enrolled, err)
+	if _, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, "ops"); err == nil || enrolled || cleared || errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("retry while syncs fail = (%v, %v, %v), want the pending-durability failure with nothing applied", enrolled, cleared, err)
 	}
 	// The client's own retry must not be told "already enrolled" on the
 	// strength of the unsynced registry either.
@@ -265,8 +265,8 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || pending {
 		t.Fatalf("QueueEnrollment() after syncs recover = (%v, %v), want already enrolled", pending, err)
 	}
-	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); !errors.Is(err, enrollqueue.ErrNotPending) || enrolled {
-		t.Fatalf("repeat approval after recovery = (%v, %v), want not pending: the request was already cleared", enrolled, err)
+	if _, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, "ops"); !errors.Is(err, enrollqueue.ErrNotPending) || enrolled || cleared {
+		t.Fatalf("repeat approval after recovery = (%v, %v, %v), want not pending: the request was already cleared", enrolled, cleared, err)
 	}
 	if enrolled, err := ir.EnrollAuthorizedKey(key, "ops"); err != nil || enrolled {
 		t.Fatalf("registry write after recovery = (%v, %v), want a durable no-op", enrolled, err)
@@ -295,9 +295,9 @@ func TestImportClientKeyAppliedNotDurableClearsRequest(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	added, err := ir.ImportClientKey(key, "ops")
-	if !added || !errors.Is(err, ErrAppliedNotDurable) {
-		t.Fatalf("ImportClientKey() = (%v, %v), want added with the applied-not-durable error", added, err)
+	added, cleared, err := ir.ImportClientKey(key, "ops")
+	if !added || !cleared || !errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("ImportClientKey() = (%v, %v, %v), want added and cleared with the applied-not-durable error", added, cleared, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("the registry file holds the key, so the runtime should honor it")
@@ -307,8 +307,8 @@ func TestImportClientKeyAppliedNotDurableClearsRequest(t *testing.T) {
 	}
 
 	syncFails = false
-	if added, err := ir.ImportClientKey(key, "ops"); err != nil || added {
-		t.Fatalf("repeat import after recovery = (%v, %v), want a durable no-op", added, err)
+	if added, cleared, err := ir.ImportClientKey(key, "ops"); err != nil || added || cleared {
+		t.Fatalf("repeat import after recovery = (%v, %v, %v), want a durable no-op", added, cleared, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("key lost after recovery")
@@ -334,8 +334,8 @@ func TestRejectEnrollmentRefusesEnrolledKey(t *testing.T) {
 		}
 		return nil
 	}
-	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, ""); !enrolled || err == nil || errors.Is(err, ErrAppliedNotDurable) {
-		t.Fatalf("ApproveEnrollment() = (%v, %v), want enrolled with the queue failure", enrolled, err)
+	if _, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, ""); !enrolled || cleared || err == nil || errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("ApproveEnrollment() = (%v, %v, %v), want enrolled, not cleared, with the queue failure", enrolled, cleared, err)
 	}
 	fsutil.TestHook = nil
 	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
@@ -348,8 +348,8 @@ func TestRejectEnrollmentRefusesEnrolledKey(t *testing.T) {
 	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
 		t.Fatal("a refused rejection must change nothing")
 	}
-	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, ""); err != nil || enrolled {
-		t.Fatalf("repeat ApproveEnrollment() = (%v, %v), want the request cleared without a second enrollment", enrolled, err)
+	if _, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, ""); err != nil || enrolled || !cleared {
+		t.Fatalf("repeat ApproveEnrollment() = (%v, %v, %v), want the request cleared without a second enrollment", enrolled, cleared, err)
 	}
 	if len(ir.PendingEnrollments()) != 0 || !ir.HasAuthorizedKey(key) {
 		t.Fatal("repeat approval did not clear the request")
