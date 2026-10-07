@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 type auditRecorder struct {
@@ -115,5 +117,28 @@ func TestServiceRequestReportsFullQueueAndHidesOtherFailures(t *testing.T) {
 	}
 	if _, err := (Service{}).Request(key, "", ""); err == nil {
 		t.Fatal("Request() without a queue succeeded")
+	}
+}
+
+// A request that reached the live queue through a write that is not yet
+// durable is recorded and announced, but the client is answered with an
+// error so it retries.
+func TestServiceRequestAppliedNotDurableIsRecordedButRefused(t *testing.T) {
+	key := testKey(t)
+	audit := &auditRecorder{}
+	var notified []Request
+	svc := Service{
+		Queue: func(ssh.PublicKey, string, string) (bool, bool, error) {
+			return true, true, fmt.Errorf("%w: injected dir sync failure", productruntime.ErrAppliedNotDurable)
+		},
+		Notify:   func(req Request) { notified = append(notified, req) },
+		AuditLog: audit,
+	}
+	pending, err := svc.Request(key, "laptop", "10.0.0.1")
+	if err == nil || !strings.Contains(err.Error(), "not yet durable") || !pending {
+		t.Fatalf("Request() = (%v, %v), want pending with the not-yet-durable error", pending, err)
+	}
+	if audit.calls != 1 || len(notified) != 1 {
+		t.Fatalf("audit calls = %d, notified = %d, want the request recorded and announced once", audit.calls, len(notified))
 	}
 }

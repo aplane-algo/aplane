@@ -76,9 +76,9 @@ type KeyCheckerFunc func(key ssh.PublicKey) bool
 // KeyEnrollerFunc enrolls a public key with a display label. It must be
 // idempotent for an already-enrolled key. enrolled reports that the key is
 // now usable; it can be true alongside an error when the registry was
-// installed but its write is not yet durable. The server then audits the
-// enrollment but answers the client with an error, so the client retries
-// and is acknowledged only once the registry is durable.
+// installed but its write is not yet durable. The server answers any error
+// as a failure so the client retries; the product path does not use this
+// hook for client requests, which are queued through EnrollmentHooks.
 type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
 
 // ProductHooks connects the server to the product's enrolled-key registry.
@@ -995,7 +995,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 	if s.enrollmentRequest == nil {
 		// No product hook: the in-memory list exists for tests and enrolls
 		// immediately.
-		if enrolled, err := s.enrollKey(key, label); err != nil && !enrolled {
+		if _, err := s.enrollKey(key, label); err != nil {
 			_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
 			return true
 		}

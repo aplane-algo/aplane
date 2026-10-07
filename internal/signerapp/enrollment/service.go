@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // AuditLogger records enrollment requests.
@@ -54,7 +55,12 @@ type Service struct {
 
 // Request records a client's enrollment request and reports whether it is
 // now waiting for the operator (as opposed to the key being enrolled
-// already). A full queue is reported as an error the client can read.
+// already). A full queue is reported as an error the client can read. A
+// request that reached the live queue through a write that is not yet
+// durable (productruntime.ErrAppliedNotDurable) is recorded and announced
+// like any other, since the operator can act on it, but the client is
+// answered with an error so it retries: the retry refreshes the entry and is
+// acknowledged only once the queue is durable.
 func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending bool, err error) {
 	if s.Queue == nil {
 		return false, fmt.Errorf("enrollment queue not configured")
@@ -64,7 +70,8 @@ func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending b
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
 	pending, added, err := s.Queue(key, label, remoteAddr)
-	if err != nil {
+	notDurable := err != nil && errors.Is(err, productruntime.ErrAppliedNotDurable)
+	if err != nil && !notDurable {
 		if errors.Is(err, enrollqueue.ErrQueueFull) {
 			return false, fmt.Errorf("enrollment queue is full; ask the operator to clear it and try again")
 		}
@@ -84,6 +91,10 @@ func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending b
 		}
 	default:
 		s.logf("enrollment request refreshed from %s (key: %s); it is still waiting for the operator", remoteAddr, fingerprint)
+	}
+	if notDurable {
+		s.logf("enrollment request from %s (key: %s) is queued but the queue write is not yet durable; the client is told to retry: %v", remoteAddr, fingerprint, err)
+		return pending, fmt.Errorf("enrollment request recorded but not yet durable; retry the request")
 	}
 	return pending, nil
 }

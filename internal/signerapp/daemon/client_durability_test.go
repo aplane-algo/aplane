@@ -116,8 +116,8 @@ func TestApproveClientEnrollmentAppliedNotDurableIsAudited(t *testing.T) {
 }
 
 // A request that reached the live queue through a write that is not yet
-// durable is still a queued request: the client is told it is pending, it
-// is audited, and the operator is notified.
+// durable is a queued request for the operator (audited and announced), but
+// the client is told to retry rather than that it is pending.
 func TestEnrollmentRequestAppliedNotDurableIsQueued(t *testing.T) {
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
 	auditLog, err := NewAuditLogger(auditPath)
@@ -141,8 +141,8 @@ func TestEnrollmentRequestAppliedNotDurableIsQueued(t *testing.T) {
 
 	key := testClientKey(t)
 	fingerprint := ssh.FingerprintSHA256(key)
-	if pending, err := svc.Request(key, "laptop", "10.0.0.1:1"); err != nil || !pending {
-		t.Fatalf("Request() = (%v, %v), want pending without error", pending, err)
+	if pending, err := svc.Request(key, "laptop", "10.0.0.1:1"); err == nil || !strings.Contains(err.Error(), "not yet durable") || !pending {
+		t.Fatalf("Request() = (%v, %v), want the not-yet-durable error", pending, err)
 	}
 	if got := ir.PendingEnrollments(); len(got) != 1 || got[0].Fingerprint != fingerprint {
 		t.Fatalf("pending = %+v, want the request", got)

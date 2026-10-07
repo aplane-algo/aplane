@@ -2214,8 +2214,12 @@ Client enrollment flow:
    address, time) in `identities/default/.ssh/pending_enrollments.json`,
    written atomically and durably like the registry, and under the same
    rule for a write that fails after its rename: a request the file then
-   holds is a queued request (audited, announced, answered `pending`) and
-   the queue is re-published before its next write; a new request is audited as
+   holds is a queued request for the operator (audited, announced) and the
+   queue is re-published before its next write, but the client is answered
+   `ERROR: enrollment request recorded but not yet durable; retry the
+   request`, exit 1, so it retries and is answered `pending` only once the
+   queue is durable (the retry refreshes the entry and is not audited or
+   announced again); a new request is audited as
    `CLIENT_ENROLLMENT_REQUESTED` and announced to a connected admin session
    as `client_enrollment_request`; a repeat for a waiting key refreshes its
    entry. Refusals are `ERROR: enrollment queue is full; ask the operator to
