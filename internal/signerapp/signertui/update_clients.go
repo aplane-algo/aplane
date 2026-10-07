@@ -174,7 +174,8 @@ func (m Model) handleRevokeAllEnrolledKeysResult(msg RevokeAllEnrolledKeysResult
 // handleEnrolledClientsKeys handles keyboard input on the enrolled-clients
 // screen. The cursor moves over waiting requests first, then enrolled keys;
 // a and x answer a request, r revokes an enrolled key, A revokes every key,
-// i imports a public key file.
+// i imports a public key file. There is no manual refresh: the signer's
+// enrollment_changed notification keeps the lists current.
 func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
@@ -184,10 +185,6 @@ func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.clients = clientsState{}
 		return m, nil
-	case "R":
-		m.clients.status = ""
-		m.clients.loading = true
-		return m, m.refreshClientsCmd()
 	case "up", "k":
 		if m.clients.selected > 0 {
 			m.clients.selected--

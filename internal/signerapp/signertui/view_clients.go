@@ -68,7 +68,7 @@ func (m Model) renderEnrolledClients() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  R refresh  esc back"))
+	sb.WriteString(helpStyle.Render("a approve  x reject  r revoke  A revoke all  i import key file  esc back"))
 	sb.WriteString("\n")
 	if m.clients.status != "" {
 		sb.WriteString("\n")
