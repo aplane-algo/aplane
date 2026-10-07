@@ -557,6 +557,14 @@ func TestImportClientKeyPreEnrolls(t *testing.T) {
 	}
 	requireEnrolledKeys(t, env, 1)
 
+	// The batch listing authenticates read-only, so the inventory requests
+	// must be on the auth_only allowlist.
+	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
+	listing, err := apadmin.RunWithInput(os.Getenv("TEST_PASSPHRASE")+"\n", "clients", "list")
+	if err != nil || !strings.Contains(listing, "enrolled  "+want) || !strings.Contains(listing, "imported-laptop") {
+		t.Fatalf("apadmin clients list: %v\noutput:\n%s", err, listing)
+	}
+
 	apshell := harness.NewApshellHarness(t)
 	output, err := apshell.RunWithInput("quit\n")
 	if err != nil || !strings.Contains(output, "Signer verified via tunnel") {

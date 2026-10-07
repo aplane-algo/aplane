@@ -13,8 +13,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 )
 
 func testClientKey(t *testing.T) ssh.PublicKey {
@@ -140,5 +143,86 @@ func TestEnrollmentRejectAndImport(t *testing.T) {
 	var coded interface{ Code() string }
 	if errors.As(err, &coded) {
 		_ = coded
+	}
+}
+
+// Labels supplied over the admin protocol follow the registry's label rule:
+// a line break or an over-long label is refused before anything is written,
+// since the registry emits labels verbatim on the key's authorized_keys
+// line.
+func TestAdminEnrollmentLabelsAreValidated(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	svc := server.enrollmentService()
+
+	requested := testClientKey(t)
+	if _, err := svc.Request(requested, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := ssh.FingerprintSHA256(requested)
+	for _, label := range []string{"lab\nssh-ed25519 AAAA evil", strings.Repeat("x", clientregistry.MaxLabelBytes+1)} {
+		if _, err := server.ApproveClientEnrollment(adminserver.SessionContext{}, ir, fingerprint, label); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+			t.Fatalf("ApproveClientEnrollment(label %q) error = %v, want invalid_request", label, err)
+		}
+		if ir.HasAuthorizedKey(requested) || len(ir.PendingEnrollments()) != 1 {
+			t.Fatalf("a refused label changed state: authorized = %v, pending = %d", ir.HasAuthorizedKey(requested), len(ir.PendingEnrollments()))
+		}
+	}
+	if _, err := server.ApproveClientEnrollment(adminserver.SessionContext{}, ir, fingerprint, "  ops laptop  "); err != nil {
+		t.Fatalf("ApproveClientEnrollment() error = %v", err)
+	}
+	if entry, ok := ir.EnrolledKey(fingerprint); !ok || entry.Label != "ops laptop" {
+		t.Fatalf("enrolled entry = %+v, %v, want the trimmed label", entry, ok)
+	}
+
+	imported := testClientKey(t)
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported)))
+	if _, _, _, err := server.ImportClientKey(adminserver.SessionContext{}, ir, line, "lab\nssh-ed25519 AAAA evil"); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+		t.Fatalf("ImportClientKey(label with line break) error = %v, want invalid_request", err)
+	}
+	if _, _, _, err := server.ImportClientKey(adminserver.SessionContext{}, ir, line+" "+strings.Repeat("x", clientregistry.MaxLabelBytes+1), ""); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+		t.Fatalf("ImportClientKey(over-long comment) error = %v, want invalid_request", err)
+	}
+	if ir.HasAuthorizedKey(imported) {
+		t.Fatal("a refused label enrolled the key")
+	}
+	if reg, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil || reg.Len() != 1 {
+		t.Fatalf("registry on disk: err = %v, len = %d, want exactly the approved key", err, reg.Len())
+	}
+}
+
+// Rejecting a request whose key is already enrolled is refused: the request
+// is left for a repeat approval to clear, and the key stays enrolled.
+func TestRejectClientEnrollmentRefusesEnrolledKey(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	svc := server.enrollmentService()
+
+	key := testClientKey(t)
+	if _, err := svc.Request(key, "laptop", "10.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := ssh.FingerprintSHA256(key)
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && strings.Contains(path, enrollqueue.FileName) {
+			return errors.New("injected queue rename failure")
+		}
+		return nil
+	}
+	if _, err := server.ApproveClientEnrollment(adminserver.SessionContext{}, ir, fingerprint, ""); err == nil {
+		t.Fatal("ApproveClientEnrollment() succeeded despite the queue failure")
+	}
+	fsutil.TestHook = nil
+	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
+		t.Fatalf("setup: authorized = %v, pending = %d", ir.HasAuthorizedKey(key), len(ir.PendingEnrollments()))
+	}
+	err := server.RejectClientEnrollment(adminserver.SessionContext{}, ir, fingerprint)
+	if err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest || !strings.Contains(err.Error(), "already enrolled") {
+		t.Fatalf("RejectClientEnrollment() error = %v, want invalid_request naming the enrolled key", err)
+	}
+	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
+		t.Fatal("a refused rejection changed state")
 	}
 }

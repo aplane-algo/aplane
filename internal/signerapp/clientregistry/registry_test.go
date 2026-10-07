@@ -137,3 +137,28 @@ func TestWithoutFingerprint(t *testing.T) {
 		t.Fatalf("WithoutFingerprint(unknown) error = %v, want ErrNotEnrolled", err)
 	}
 }
+
+func TestNormalizeLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		label string
+		want  string
+		ok    bool
+	}{
+		{name: "plain", label: "  ops laptop  ", want: "ops laptop", ok: true},
+		{name: "empty", label: "   ", want: "", ok: true},
+		{name: "at the bound", label: strings.Repeat("a", MaxLabelBytes), want: strings.Repeat("a", MaxLabelBytes), ok: true},
+		{name: "over the bound", label: strings.Repeat("a", MaxLabelBytes+1)},
+		{name: "line break injects a key line", label: "lab\nssh-ed25519 AAAA evil"},
+		{name: "control character", label: "lab\x7fel"},
+		{name: "tab", label: "lab\tel"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeLabel(tt.label)
+			if (err == nil) != tt.ok || got != tt.want {
+				t.Fatalf("NormalizeLabel(%q) = (%q, %v), want (%q, ok=%v)", tt.label, got, err, tt.want, tt.ok)
+			}
+		})
+	}
+}

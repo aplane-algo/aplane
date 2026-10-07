@@ -36,7 +36,9 @@ const (
 	// enrollmentCommand is the one exec command an enrollment connection may
 	// run. An optional label follows it, separated by a space.
 	enrollmentCommand = "enroll"
-	// maxEnrollmentLabelBytes bounds the client-supplied display label.
+	// maxEnrollmentLabelBytes bounds the client-supplied display label. It
+	// mirrors clientregistry.MaxLabelBytes, which the registry enforces on
+	// every label it writes; this package cannot import the registry.
 	maxEnrollmentLabelBytes = 64
 	// RevokedRequestType is the global request the server sends before it
 	// closes a connection whose key was revoked, so the client can report why.

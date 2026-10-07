@@ -73,8 +73,8 @@ func TestRevokeClientKeyAppliedNotDurableIsAudited(t *testing.T) {
 }
 
 // An approval whose registry write fails after the rename has enrolled the
-// key: CLIENT_ENROLLED is recorded and the operator is told about the
-// durability failure, and the request stays listed for a repeat approval.
+// key: CLIENT_ENROLLED is recorded, the request is cleared, and the operator
+// is told about the durability failure.
 func TestApproveClientEnrollmentAppliedNotDurableIsAudited(t *testing.T) {
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
 	auditLog, err := NewAuditLogger(auditPath)
@@ -103,8 +103,8 @@ func TestApproveClientEnrollmentAppliedNotDurableIsAudited(t *testing.T) {
 	if !errors.Is(err, productruntime.ErrAppliedNotDurable) || label != "laptop" {
 		t.Fatalf("ApproveClientEnrollment() = (%q, %v), want the applied-not-durable failure", label, err)
 	}
-	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
-		t.Fatalf("after the incomplete approval: authorized = %v, pending = %d", ir.HasAuthorizedKey(key), len(ir.PendingEnrollments()))
+	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 0 {
+		t.Fatalf("after the approval: authorized = %v, pending = %d", ir.HasAuthorizedKey(key), len(ir.PendingEnrollments()))
 	}
 	data, err := os.ReadFile(auditPath)
 	if err != nil {

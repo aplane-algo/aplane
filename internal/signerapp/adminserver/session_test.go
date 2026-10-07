@@ -484,6 +484,8 @@ func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T)
 		protocol.MsgTypeGetCosignerReference:   true,
 		protocol.MsgTypeExportCosignerPublic:   true,
 		protocol.MsgTypeListGenerations:        true,
+		protocol.MsgTypeListEnrolledKeys:       true,
+		protocol.MsgTypeListPendingEnrollments: true,
 	}
 	if len(authOnlyDispatchTypes) != len(wantAllowed) {
 		t.Fatalf("auth_only allowlist size = %d, want %d", len(authOnlyDispatchTypes), len(wantAllowed))

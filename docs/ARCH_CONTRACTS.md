@@ -2231,8 +2231,12 @@ Client enrollment flow:
    event follows the change that took effect, not the command's outcome: a
    key that entered the live registry is audited as enrolled even when the
    approval then reports a durability failure or could not clear the entry
-   (a repeat approval clears it without a second `CLIENT_ENROLLED`), and a
-   request dropped by a write that is not yet durable is audited as rejected. Every
+   (a repeat approval clears it without a second `CLIENT_ENROLLED`; rejecting
+   such a request is refused so the queue and the registry never disagree
+   about the key), and a request dropped by a write that is not yet durable
+   is audited as rejected. Labels written by the admin protocol follow the
+   same rule as client-supplied ones: printable single-line text of at most
+   64 bytes. Every
    waiting request is announced again when an admin session authenticates
 8. the client learns the outcome by connecting: an enrolled key is accepted,
    anything else is refused at the handshake

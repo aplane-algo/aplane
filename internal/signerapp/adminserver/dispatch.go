@@ -117,6 +117,8 @@ var authOnlyDispatchTypes = map[string]bool{
 	protocol.MsgTypeGetCosignerReference:   true,
 	protocol.MsgTypeExportCosignerPublic:   true,
 	protocol.MsgTypeListGenerations:        true,
+	protocol.MsgTypeListEnrolledKeys:       true,
+	protocol.MsgTypeListPendingEnrollments: true,
 }
 
 // Dispatch handles the subset of protocol messages that already live entirely

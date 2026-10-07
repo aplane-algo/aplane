@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -218,9 +219,10 @@ func TestQueueRetriesRequireSuccessfulSync(t *testing.T) {
 }
 
 // An approval whose registry write fails after the rename has enrolled the
-// key: it is reported as enrolled with the durability failure, the request
-// stays listed, and once syncs recover a repeat approval clears the request
-// without reporting a second enrollment.
+// key: it is reported as enrolled with the durability failure, and the
+// request is still cleared, so the registry and the queue do not disagree
+// about the key. Once syncs recover the next registry write re-publishes
+// the registry first.
 func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
 	key := testSSHKey(t)
@@ -245,18 +247,62 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("the registry file holds the key, so the runtime should honor it")
 	}
-	if got := ir.PendingEnrollments(); len(got) != 1 {
-		t.Fatalf("pending after the incomplete approval = %+v, want the request still listed", got)
+	if got := ir.PendingEnrollments(); len(got) != 0 {
+		t.Fatalf("pending after the approval = %+v, want the request cleared alongside the enrollment", got)
 	}
 	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) {
 		t.Fatalf("retry while syncs fail = (%v, %v), want the pending-durability failure with nothing applied", enrolled, err)
 	}
 
 	syncFails = false
-	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err != nil || enrolled {
-		t.Fatalf("retry after syncs recover = (%v, %v), want success without a second enrollment", enrolled, err)
+	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); !errors.Is(err, enrollqueue.ErrNotPending) || enrolled {
+		t.Fatalf("retry after syncs recover = (%v, %v), want not pending: the request was already cleared", enrolled, err)
 	}
-	if got := ir.PendingEnrollments(); len(got) != 0 || !ir.HasAuthorizedKey(key) {
-		t.Fatalf("after recovery: pending = %+v, authorized = %v", got, ir.HasAuthorizedKey(key))
+	if enrolled, err := ir.EnrollAuthorizedKey(key, "ops"); err != nil || enrolled {
+		t.Fatalf("registry re-publish after recovery = (%v, %v), want a durable no-op", enrolled, err)
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("key lost after recovery")
+	}
+}
+
+// A request whose key is already enrolled (the approval enrolled it but the
+// queue write failed) cannot be rejected: that would drop the request while
+// the key stays usable. Approving again clears it instead.
+func TestRejectEnrollmentRefusesEnrolledKey(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	fingerprint := ssh.FingerprintSHA256(key)
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || !pending {
+		t.Fatalf("QueueEnrollment() = %v, %v", pending, err)
+	}
+
+	// Fail only the queue's rename so the registry write lands and the
+	// request survives.
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && strings.Contains(path, enrollqueue.FileName) {
+			return errors.New("injected queue rename failure")
+		}
+		return nil
+	}
+	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, ""); !enrolled || err == nil || errors.Is(err, ErrAppliedNotDurable) {
+		t.Fatalf("ApproveEnrollment() = (%v, %v), want enrolled with the queue failure", enrolled, err)
+	}
+	fsutil.TestHook = nil
+	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
+		t.Fatalf("after the failed queue write: authorized = %v, pending = %d", ir.HasAuthorizedKey(key), len(ir.PendingEnrollments()))
+	}
+
+	if _, rejected, err := ir.RejectEnrollment(fingerprint); !errors.Is(err, ErrAlreadyEnrolled) || rejected {
+		t.Fatalf("RejectEnrollment() = (%v, %v), want ErrAlreadyEnrolled", rejected, err)
+	}
+	if !ir.HasAuthorizedKey(key) || len(ir.PendingEnrollments()) != 1 {
+		t.Fatal("a refused rejection must change nothing")
+	}
+	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, ""); err != nil || enrolled {
+		t.Fatalf("repeat ApproveEnrollment() = (%v, %v), want the request cleared without a second enrollment", enrolled, err)
+	}
+	if len(ir.PendingEnrollments()) != 0 || !ir.HasAuthorizedKey(key) {
+		t.Fatal("repeat approval did not clear the request")
 	}
 }

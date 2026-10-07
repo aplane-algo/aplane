@@ -173,6 +173,10 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 	if ir == nil {
 		return "", protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
+	label, err := clientregistry.NormalizeLabel(label)
+	if err != nil {
+		return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
+	}
 	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, label)
 	if enrolled {
 		if fs.auditLog != nil {
@@ -213,6 +217,9 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 		if errors.Is(err, enrollqueue.ErrNotPending) {
 			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
 		}
+		if errors.Is(err, productruntime.ErrAlreadyEnrolled) {
+			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("client key %s is already enrolled; approve the request again to clear it, or revoke the key", fingerprint))
+		}
 		return err
 	}
 	return nil
@@ -234,7 +241,11 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 	}
 	label = strings.TrimSpace(label)
 	if label == "" {
-		label = strings.TrimSpace(comment)
+		label = comment
+	}
+	label, err = clientregistry.NormalizeLabel(label)
+	if err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
 	added, err := ir.ImportClientKey(key, label)

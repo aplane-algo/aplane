@@ -481,6 +481,12 @@ func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
 // that file re-publishes it before doing anything else.
 var ErrAppliedNotDurable = errors.New("change applied but not yet durable")
 
+// ErrAlreadyEnrolled reports a rejection of a request whose key is already
+// in the registry (an approval that enrolled the key but could not clear
+// its request). Rejecting would drop the request while the key stays
+// usable, so the operator approves again to clear it or revokes the key.
+var ErrAlreadyEnrolled = errors.New("key is already enrolled")
+
 // publishRegistry applies mutate to the current registry and, if it changed
 // anything, validates the complete candidate, publishes it atomically and
 // durably, and installs it as the runtime view, all under one lock. It
@@ -725,12 +731,12 @@ func (ir *Runtime) PendingEnrollments() []enrollqueue.Entry {
 // ApproveEnrollment enrolls the key of a pending request and removes the
 // request. label, when set, replaces the label the client asked for.
 // enrolled reports that the key is now in the live registry when it was not
-// before; the caller audits that whether or not err is set, since the
-// registry is published before the queue and a failure between the two (or
-// a registry write that is not yet durable, err wrapping
-// ErrAppliedNotDurable) leaves an enrolled key whose request is still
-// listed. Approving it again is a no-op for the registry and clears the
-// request.
+// before; the caller audits that whether or not err is set. The registry is
+// published before the queue, and a registry write that is not yet durable
+// (err wrapping ErrAppliedNotDurable) still goes on to clear the request,
+// so only a failure of the queue write itself leaves an enrolled key whose
+// request is still listed. Approving it again is a no-op for the registry
+// and clears the request; rejecting it is refused with ErrAlreadyEnrolled.
 func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollqueue.Entry, enrolled bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
@@ -745,27 +751,40 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollque
 		label = entry.Label
 	}
 	entry.Label = label
-	enrolled, err = ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+	enrolled, registryErr := ir.publishRegistryLocked(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(entry.Key, label)
 		return next, added, nil
 	})
-	if err != nil {
-		return entry, enrolled, err
+	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
+		return entry, enrolled, registryErr
 	}
 	next, _, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
-		return entry, enrolled, err
+		return entry, enrolled, firstError(registryErr, err)
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
+		if registryErr != nil {
+			return entry, enrolled, fmt.Errorf("%w; clearing the request also failed: %v", registryErr, err)
+		}
 		return entry, enrolled, err
 	}
-	return entry, enrolled, nil
+	return entry, enrolled, registryErr
+}
+
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RejectEnrollment removes a pending request without enrolling its key.
 // rejected reports that the request is gone from the live queue, which can
 // hold alongside an error wrapping ErrAppliedNotDurable; the caller audits
-// the rejection regardless.
+// the rejection regardless. A request whose key is already enrolled is
+// refused with ErrAlreadyEnrolled rather than silently left enrolled.
 func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry, rejected bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
@@ -775,6 +794,9 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
 	if err != nil {
 		return enrollqueue.Entry{}, false, err
+	}
+	if ir.clients != nil && ir.clients.Has(entry.Key) {
+		return entry, false, ErrAlreadyEnrolled
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
 		return entry, errors.Is(err, ErrAppliedNotDurable), err
