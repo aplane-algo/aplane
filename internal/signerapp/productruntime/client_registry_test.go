@@ -87,3 +87,57 @@ func TestEnrollAuthorizedKeyFailedStagingKeepsRegistry(t *testing.T) {
 		t.Fatal("runtime registry changed after a failed publish")
 	}
 }
+
+// While directory syncs keep failing, retrying an enrollment keeps failing
+// too, even though the file already holds the key: success is acknowledged
+// only once a sync has made the registry durable. A revocation retried in
+// the same state reports the durability failure, not "not enrolled".
+func TestRegistryRetriesRequireSuccessfulSync(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+
+	syncFails := true
+	var dirSyncs int
+	fsutil.TestHook = func(op fsutil.HookOp, _ string) error {
+		if op != fsutil.OpDirSync {
+			return nil
+		}
+		dirSyncs++
+		if syncFails {
+			return errors.New("injected dir sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	if err := ir.EnrollAuthorizedKey(key, "laptop"); err == nil {
+		t.Fatal("first EnrollAuthorizedKey() succeeded despite the sync failure")
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("the file holds the key, so the runtime should honor it")
+	}
+	if err := ir.EnrollAuthorizedKey(key, "laptop"); err == nil || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("retry error = %v, want the pending-durability failure", err)
+	}
+	if _, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err == nil || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("revoke during unsynced state error = %v, want the pending-durability failure", err)
+	}
+	if !ir.HasAuthorizedKey(key) {
+		t.Fatal("a refused revocation must not drop the key")
+	}
+
+	syncFails = false
+	before := dirSyncs
+	if err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil {
+		t.Fatalf("retry after syncs recover error = %v", err)
+	}
+	if dirSyncs != before+1 {
+		t.Fatalf("directory syncs during the successful retry = %d, want exactly 1", dirSyncs-before)
+	}
+	if err := ir.EnrollAuthorizedKey(key, "laptop"); err != nil || dirSyncs != before+1 {
+		t.Fatalf("once durable, an unchanged enrollment must write nothing: err = %v, syncs = %d", err, dirSyncs-before)
+	}
+	if _, err := ir.RevokeAuthorizedKey(ssh.FingerprintSHA256(key)); err != nil || ir.HasAuthorizedKey(key) {
+		t.Fatalf("revoke after recovery: err = %v, authorized = %v", err, ir.HasAuthorizedKey(key))
+	}
+}

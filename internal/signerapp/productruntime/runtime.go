@@ -97,6 +97,11 @@ type Runtime struct {
 	// publishRegistry for the validate, publish, install sequence.
 	clients   *clientregistry.Registry
 	clientsMu sync.RWMutex
+	// clientsUnsynced records a registry publish that failed after its
+	// rename: the file holds the intended registry but may not survive a
+	// crash. The next registry operation re-publishes it before doing
+	// anything else, so no retry is acknowledged on top of an unsynced file.
+	clientsUnsynced bool
 
 	// reloadFn performs template registration + key scan + snapshot publish.
 	// Injected by the process root after construction.
@@ -484,17 +489,29 @@ func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
 }
 
 // publishRegistry applies mutate to the current registry and, if it changed
-// anything, validates the complete candidate, publishes it atomically, and
-// installs it as the runtime view, all under one lock. An invalid candidate
-// or a failed publish leaves the current registry and connections untouched.
-// Installation is an assignment and cannot fail after publication, so the
-// published file and the live view never disagree.
+// anything, validates the complete candidate, publishes it atomically and
+// durably, and installs it as the runtime view, all under one lock. An
+// invalid candidate or a publish that fails before its rename leaves the
+// current registry and connections untouched. Installation is an assignment
+// and cannot fail after publication, so the published file and the live
+// view never disagree.
+//
+// A publish can also fail after its rename (the directory fsync): the file
+// then holds the intended registry, which the runtime adopts so it never
+// keeps authority the file no longer grants, but the file may not survive a
+// crash. That state is remembered, and the next call re-publishes the file
+// before applying mutate, so a retry succeeds only once a sync has.
 func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
 	current := ir.clients
 	if current == nil {
 		current, _ = clientregistry.Parse(nil)
+	}
+	if ir.clientsUnsynced {
+		if err := ir.publishRegistryFileLocked(current); err != nil {
+			return false, fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
+		}
 	}
 	next, changed, err := mutate(current)
 	if err != nil {
@@ -506,21 +523,29 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 	if _, err := clientregistry.Parse(next.Marshal()); err != nil {
 		return false, fmt.Errorf("candidate registry is invalid: %w", err)
 	}
-	if err := clientregistry.Publish(ir.AuthorizedKeysPath(), next); err != nil {
-		// The write may have failed before or after the rename, so the
-		// registry on disk is either the old one or the new one. Adopt
-		// whatever is there rather than keep authority the file no longer
-		// grants; if the file cannot be read back, grant nothing.
+	if err := ir.publishRegistryFileLocked(next); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// publishRegistryFileLocked writes reg durably and installs it as the
+// runtime view. On failure the view follows the file, whichever registry it
+// now holds, and the registry is marked as needing a successful sync.
+func (ir *Runtime) publishRegistryFileLocked(reg *clientregistry.Registry) error {
+	if err := clientregistry.Publish(ir.AuthorizedKeysPath(), reg); err != nil {
+		ir.clientsUnsynced = true
 		reloaded, loadErr := clientregistry.Load(ir.AuthorizedKeysPath())
 		if loadErr != nil {
 			ir.clients, _ = clientregistry.Parse(nil)
-			return false, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
+			return fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
 		}
 		ir.clients = reloaded
-		return false, err
+		return err
 	}
-	ir.clients = next
-	return true, nil
+	ir.clients = reg
+	ir.clientsUnsynced = false
+	return nil
 }
 
 // EnrollAuthorizedKey enrolls key with a display label. Enrolling a key that
