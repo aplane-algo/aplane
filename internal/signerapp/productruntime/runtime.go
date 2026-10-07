@@ -516,10 +516,8 @@ func (ir *Runtime) publishRegistryLocked(mutate func(current *clientregistry.Reg
 	if current == nil {
 		current, _ = clientregistry.Parse(nil)
 	}
-	if ir.clientsUnsynced {
-		if _, err := ir.publishRegistryFileLocked(current); err != nil {
-			return false, fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
-		}
+	if err := ir.ensureRegistryDurableLocked(); err != nil {
+		return false, err
 	}
 	next, changed, err := mutate(current)
 	if err != nil {
@@ -539,6 +537,25 @@ func (ir *Runtime) publishRegistryLocked(mutate func(current *clientregistry.Reg
 		return false, err
 	}
 	return true, nil
+}
+
+// ensureRegistryDurableLocked re-publishes the registry left by an earlier
+// failed write, so nothing is acknowledged on the strength of the unsynced
+// file: neither a retried change nor an answer that reads the registry,
+// such as "already enrolled". Its failure never wraps ErrAppliedNotDurable:
+// the change it re-publishes was reported when it was made.
+func (ir *Runtime) ensureRegistryDurableLocked() error {
+	if !ir.clientsUnsynced {
+		return nil
+	}
+	current := ir.clients
+	if current == nil {
+		current, _ = clientregistry.Parse(nil)
+	}
+	if _, err := ir.publishRegistryFileLocked(current); err != nil {
+		return fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
+	}
+	return nil
 }
 
 // publishRegistryFileLocked writes reg durably and installs it as the
@@ -701,6 +718,11 @@ func (ir *Runtime) pendingLocked() *enrollqueue.Queue {
 func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) (pending bool, added bool, err error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
+	// "Already enrolled" is a success answer read from the registry, so it
+	// is given only once the registry is durable.
+	if err := ir.ensureRegistryDurableLocked(); err != nil {
+		return false, false, err
+	}
 	if ir.clients != nil && ir.clients.Has(key) {
 		return false, false, nil
 	}

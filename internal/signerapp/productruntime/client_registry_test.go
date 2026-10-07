@@ -253,13 +253,23 @@ func TestApproveEnrollmentAppliedNotDurableReportsEnrollment(t *testing.T) {
 	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); err == nil || enrolled || errors.Is(err, ErrAppliedNotDurable) {
 		t.Fatalf("retry while syncs fail = (%v, %v), want the pending-durability failure with nothing applied", enrolled, err)
 	}
+	// The client's own retry must not be told "already enrolled" on the
+	// strength of the unsynced registry either.
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err == nil || pending || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("QueueEnrollment() while syncs fail = (%v, %v), want the pending-durability failure", pending, err)
+	}
 
 	syncFails = false
+	// The client's retry re-publishes the registry and is then answered
+	// already enrolled.
+	if pending, _, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); err != nil || pending {
+		t.Fatalf("QueueEnrollment() after syncs recover = (%v, %v), want already enrolled", pending, err)
+	}
 	if _, enrolled, err := ir.ApproveEnrollment(fingerprint, "ops"); !errors.Is(err, enrollqueue.ErrNotPending) || enrolled {
-		t.Fatalf("retry after syncs recover = (%v, %v), want not pending: the request was already cleared", enrolled, err)
+		t.Fatalf("repeat approval after recovery = (%v, %v), want not pending: the request was already cleared", enrolled, err)
 	}
 	if enrolled, err := ir.EnrollAuthorizedKey(key, "ops"); err != nil || enrolled {
-		t.Fatalf("registry re-publish after recovery = (%v, %v), want a durable no-op", enrolled, err)
+		t.Fatalf("registry write after recovery = (%v, %v), want a durable no-op", enrolled, err)
 	}
 	if !ir.HasAuthorizedKey(key) {
 		t.Fatal("key lost after recovery")

@@ -2209,7 +2209,10 @@ Client enrollment flow:
    connection; the label is at most 64 bytes of printable single-line text,
    and any other command is answered `ERROR: unknown command` with exit 1
 4. a key the registry already holds is answered `enrolled <fingerprint>`
-   with exit 0 and nothing is queued
+   with exit 0 and nothing is queued; like every success answer read from
+   the registry, it is given only once the registry is durable (a registry
+   left by an earlier failed write is re-published first, and the request
+   fails with `ERROR: failed to record enrollment request` if that fails)
 5. otherwise the server records the request (public key, label, remote
    address, time) in `identities/default/.ssh/pending_enrollments.json`,
    written atomically and durably like the registry, and under the same
