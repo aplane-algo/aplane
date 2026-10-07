@@ -77,8 +77,11 @@ type OperatorCheckCallback func() bool
 type KeyCheckerFunc func(key ssh.PublicKey) bool
 
 // KeyEnrollerFunc enrolls a public key with a display label. It must be
-// idempotent for an already-enrolled key.
-type KeyEnrollerFunc func(key ssh.PublicKey, label string) error
+// idempotent for an already-enrolled key. enrolled reports that the key is
+// now usable; it can be true alongside an error when the registry was
+// installed but its write is not yet durable, and the server then audits
+// the enrollment and still acknowledges it.
+type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
 
 // ProductHooks connects the server to the product's enrolled-key registry.
 // Both hooks are required together; without them the server keeps an
@@ -485,16 +488,17 @@ func (s *Server) handleEnrollmentAuth(key ssh.PublicKey, remoteAddr, keyFingerpr
 
 // enrollKey enrolls a public key through the product registry when hooks are
 // set, and into the in-memory list otherwise.
-func (s *Server) enrollKey(key ssh.PublicKey, label string) error {
+func (s *Server) enrollKey(key ssh.PublicKey, label string) (enrolled bool, err error) {
 	if s.keyEnroller != nil {
 		return s.keyEnroller(key, label)
 	}
 	s.authKeysMu.Lock()
 	defer s.authKeysMu.Unlock()
-	if !authorizedKeyInList(s.authKeys, key) {
-		s.authKeys = append(s.authKeys, key)
+	if authorizedKeyInList(s.authKeys, key) {
+		return false, nil
 	}
-	return nil
+	s.authKeys = append(s.authKeys, key)
+	return true, nil
 }
 
 func (s *Server) hasAuthorizedKey(key ssh.PublicKey) bool {
@@ -1042,19 +1046,24 @@ func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, 
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
 		return
 	}
-	if err := s.enrollKey(key, label); err != nil {
+	enrolled, err := s.enrollKey(key, label)
+	if err != nil && !enrolled {
 		fmt.Printf("[SSH] Failed to enroll SSH key: %v\n", err)
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
 		return
 	}
 	// The registry changed: the key is enrolled and usable from here on,
 	// whether or not the client learns of it, so the audit event records
-	// the authority change itself. Acknowledgement delivery is logged
-	// separately below.
-	if s.enrollmentAuditCallback != nil {
+	// the authority change itself, before the durability outcome is
+	// considered. Acknowledgement delivery is logged separately below.
+	if enrolled && s.enrollmentAuditCallback != nil {
 		s.enrollmentAuditCallback(fingerprint, label, remoteAddr)
 	}
-	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
+	if err != nil {
+		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s) but the registry write is not yet durable: %v\n", remoteAddr, fingerprint, err)
+	} else {
+		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
+	}
 
 	if ctx.Err() != nil {
 		fmt.Printf("[SSH] Enrollment client %s disconnected before acknowledgement; its key stays enrolled: %v\n", remoteAddr, ctx.Err())

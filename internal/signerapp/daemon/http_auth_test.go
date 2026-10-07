@@ -167,7 +167,7 @@ func enrollTestClient(t *testing.T, server *Signer, label string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.productRuntime().EnrollAuthorizedKey(key, label); err != nil {
+	if _, err := server.productRuntime().EnrollAuthorizedKey(key, label); err != nil {
 		t.Fatalf("EnrollAuthorizedKey() error = %v", err)
 	}
 	return ssh.FingerprintSHA256(key)
@@ -190,7 +190,7 @@ func TestProductAuthenticatorMintsClientPrincipalFromConnectionIdentity(t *testi
 	}
 
 	// Revocation takes effect on the next request, keep-alive or not.
-	if _, err := server.productRuntime().RevokeAuthorizedKey(fingerprint); err != nil {
+	if _, _, err := server.productRuntime().RevokeAuthorizedKey(fingerprint); err != nil {
 		t.Fatal(err)
 	}
 	if identity, err := authenticator.Authenticate(r.Context(), r); identity != nil || !errors.Is(err, auth.ErrInvalidCredentials) {

@@ -549,11 +549,11 @@ func TestEnrollmentDeliveryFailureAfterEnrollmentStillAuditsEnrollment(t *testin
 		CheckKey: func(key ssh.PublicKey) bool {
 			return enrolled && ssh.FingerprintSHA256(key) == ssh.FingerprintSHA256(clientPubKey)
 		},
-		EnrollKey: func(key ssh.PublicKey, label string) error {
+		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) {
 			enrolled = true
 			close(issueStarted)
 			<-allowIssue
-			return nil
+			return true, nil
 		},
 	})
 
@@ -711,8 +711,10 @@ func TestEnrollment_RegistryFailure(t *testing.T) {
 		},
 	})
 	srv.SetProductHooks(ProductHooks{
-		CheckKey:  func(key ssh.PublicKey) bool { return false },
-		EnrollKey: func(key ssh.PublicKey, label string) error { return fmt.Errorf("registry publish failed") },
+		CheckKey: func(key ssh.PublicKey) bool { return false },
+		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) {
+			return false, fmt.Errorf("registry publish failed")
+		},
 	})
 
 	clientSigner, _ := generateClientKey(t)
@@ -729,6 +731,42 @@ func TestEnrollment_RegistryFailure(t *testing.T) {
 	}
 	if auditCalled {
 		t.Error("audit callback should NOT have been called after registry failure")
+	}
+}
+
+// A registry write that installed the key but is not yet durable still
+// enrolls the client: the authority change is audited and acknowledged, and
+// the durability failure is reported separately.
+func TestEnrollment_RegistryAppliedNotDurable(t *testing.T) {
+	srv, _ := testServer(t)
+
+	var auditCalled bool
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
+			return true, nil
+		},
+		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
+			auditCalled = true
+		},
+	})
+	srv.SetProductHooks(ProductHooks{
+		CheckKey:  func(key ssh.PublicKey) bool { return false },
+		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, fmt.Errorf("directory sync failed") },
+	})
+
+	clientSigner, clientPub := generateClientKey(t)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
+	if err != nil {
+		t.Fatalf("session error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (the key is enrolled); output: %s", exitCode, output)
+	}
+	if !strings.Contains(output, "enrolled "+ssh.FingerprintSHA256(clientPub)) {
+		t.Errorf("output = %q, want the enrollment acknowledgement", output)
+	}
+	if !auditCalled {
+		t.Error("the applied enrollment must be audited even though its write is not durable")
 	}
 }
 

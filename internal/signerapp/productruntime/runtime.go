@@ -5,7 +5,9 @@
 package productruntime
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -488,19 +490,30 @@ func (ir *Runtime) EnrolledKeys() []clientregistry.Entry {
 	return ir.registry().Entries()
 }
 
+// ErrAppliedNotDurable reports a registry change that is installed and in
+// force but whose file may not survive a crash: the publish failed after its
+// rename. The caller treats the change as made (audits it, acts on it) and
+// still reports the error; the next registry operation re-publishes the
+// file before doing anything else.
+var ErrAppliedNotDurable = errors.New("change applied but not yet durable")
+
 // publishRegistry applies mutate to the current registry and, if it changed
 // anything, validates the complete candidate, publishes it atomically and
-// durably, and installs it as the runtime view, all under one lock. An
-// invalid candidate or a publish that fails before its rename leaves the
-// current registry and connections untouched. Installation is an assignment
-// and cannot fail after publication, so the published file and the live
-// view never disagree.
+// durably, and installs it as the runtime view, all under one lock. It
+// reports whether the live view now holds the mutated registry. An invalid
+// candidate or a publish that fails before its rename leaves the current
+// registry and connections untouched. Installation is an assignment and
+// cannot fail after publication, so the published file and the live view
+// never disagree.
 //
 // A publish can also fail after its rename (the directory fsync): the file
 // then holds the intended registry, which the runtime adopts so it never
 // keeps authority the file no longer grants, but the file may not survive a
-// crash. That state is remembered, and the next call re-publishes the file
-// before applying mutate, so a retry succeeds only once a sync has.
+// crash. The change is then reported as applied together with an error
+// wrapping ErrAppliedNotDurable, so the caller records the authority change
+// separately from its durability outcome. That state is remembered, and the
+// next call re-publishes the file before applying mutate, so a retry
+// succeeds only once a sync has.
 func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry) (next *clientregistry.Registry, changed bool, err error)) (bool, error) {
 	ir.clientsMu.Lock()
 	defer ir.clientsMu.Unlock()
@@ -509,7 +522,7 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 		current, _ = clientregistry.Parse(nil)
 	}
 	if ir.clientsUnsynced {
-		if err := ir.publishRegistryFileLocked(current); err != nil {
+		if _, err := ir.publishRegistryFileLocked(current); err != nil {
 			return false, fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
 		}
 	}
@@ -523,7 +536,11 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 	if _, err := clientregistry.Parse(next.Marshal()); err != nil {
 		return false, fmt.Errorf("candidate registry is invalid: %w", err)
 	}
-	if err := ir.publishRegistryFileLocked(next); err != nil {
+	applied, err := ir.publishRegistryFileLocked(next)
+	if err != nil {
+		if applied {
+			return true, fmt.Errorf("%w: %w", ErrAppliedNotDurable, err)
+		}
 		return false, err
 	}
 	return true, nil
@@ -531,67 +548,71 @@ func (ir *Runtime) publishRegistry(mutate func(current *clientregistry.Registry)
 
 // publishRegistryFileLocked writes reg durably and installs it as the
 // runtime view. On failure the view follows the file, whichever registry it
-// now holds, and the registry is marked as needing a successful sync.
-func (ir *Runtime) publishRegistryFileLocked(reg *clientregistry.Registry) error {
+// now holds, and the registry is marked as needing a successful sync;
+// applied then reports whether the file, and so the view, holds reg.
+func (ir *Runtime) publishRegistryFileLocked(reg *clientregistry.Registry) (applied bool, err error) {
 	if err := clientregistry.Publish(ir.AuthorizedKeysPath(), reg); err != nil {
 		ir.clientsUnsynced = true
 		reloaded, loadErr := clientregistry.Load(ir.AuthorizedKeysPath())
 		if loadErr != nil {
 			ir.clients, _ = clientregistry.Parse(nil)
-			return fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
+			return false, fmt.Errorf("%w (registry unreadable after the failed publish, all client keys refused until it is repaired: %v)", err, loadErr)
 		}
 		ir.clients = reloaded
-		return err
+		return bytes.Equal(reloaded.Marshal(), reg.Marshal()), err
 	}
 	ir.clients = reg
 	ir.clientsUnsynced = false
-	return nil
+	return true, nil
 }
 
-// EnrollAuthorizedKey enrolls key with a display label. Enrolling a key that
-// is already enrolled changes nothing and writes nothing.
-func (ir *Runtime) EnrollAuthorizedKey(key ssh.PublicKey, label string) error {
-	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+// EnrollAuthorizedKey enrolls key with a display label and reports whether
+// the key is now enrolled when it was not before. Enrolling a key that is
+// already enrolled changes nothing and writes nothing. enrolled can be true
+// alongside an error wrapping ErrAppliedNotDurable: the key is then usable
+// and the caller audits the enrollment even though the write is not durable.
+func (ir *Runtime) EnrollAuthorizedKey(key ssh.PublicKey, label string) (enrolled bool, err error) {
+	return ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		next, added := current.WithKey(key, label)
 		return next, added, nil
 	})
-	return err
 }
 
 // RevokeAuthorizedKey removes the key with the given fingerprint from the
-// registry and returns its entry. The caller closes the key's connections
-// after this returns; a connection authenticating meanwhile re-checks
-// enrollment against the installed view and is refused.
-func (ir *Runtime) RevokeAuthorizedKey(fingerprint string) (clientregistry.Entry, error) {
-	var revoked clientregistry.Entry
-	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+// registry and returns its entry. revoked reports that the live view no
+// longer holds the key, which can hold alongside an error wrapping
+// ErrAppliedNotDurable; the caller then closes the key's connections and
+// audits the revocation regardless. A connection authenticating meanwhile
+// re-checks enrollment against the installed view and is refused.
+func (ir *Runtime) RevokeAuthorizedKey(fingerprint string) (clientregistry.Entry, bool, error) {
+	var found clientregistry.Entry
+	revoked, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
 		entry, ok := current.LookupFingerprint(fingerprint)
 		if !ok {
 			return nil, false, clientregistry.ErrNotEnrolled
 		}
-		revoked = entry
+		found = entry
 		next, err := current.WithoutFingerprint(fingerprint)
 		if err != nil {
 			return nil, false, err
 		}
 		return next, true, nil
 	})
-	return revoked, err
+	return found, revoked, err
 }
 
 // RevokeAllAuthorizedKeys empties the registry and returns the entries it
-// held.
-func (ir *Runtime) RevokeAllAuthorizedKeys() ([]clientregistry.Entry, error) {
-	var revoked []clientregistry.Entry
-	_, err := ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
-		revoked = current.Entries()
-		if len(revoked) == 0 {
+// held. revoked has the same meaning as for RevokeAuthorizedKey.
+func (ir *Runtime) RevokeAllAuthorizedKeys() (entries []clientregistry.Entry, revoked bool, err error) {
+	revoked, err = ir.publishRegistry(func(current *clientregistry.Registry) (*clientregistry.Registry, bool, error) {
+		entries = current.Entries()
+		if len(entries) == 0 {
 			return current, false, nil
 		}
 		next, _ := clientregistry.Parse(nil)
 		return next, true, nil
 	})
-	return revoked, err
+	return entries, revoked, err
 }
 
 // --- Key access ---

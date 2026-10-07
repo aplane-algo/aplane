@@ -26,7 +26,7 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 	})
 	srv.SetProductHooks(ProductHooks{
 		CheckKey:  func(key ssh.PublicKey) bool { return true },
-		EnrollKey: func(key ssh.PublicKey, label string) error { return nil },
+		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil },
 	})
 
 	if srv.sessionCallback == nil ||
@@ -79,7 +79,7 @@ func TestSetProductHooksRejectsPartialConfiguration(t *testing.T) {
 		},
 		{
 			name:  "enroller only",
-			hooks: ProductHooks{EnrollKey: func(key ssh.PublicKey, label string) error { return nil }},
+			hooks: ProductHooks{EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil }},
 		},
 	}
 
@@ -109,7 +109,7 @@ func TestProductAuthChecksKeyAfterFixedUsernameValidation(t *testing.T) {
 		checked = true
 		return true
 	}
-	srv.keyEnroller = func(key ssh.PublicKey, label string) error { return nil }
+	srv.keyEnroller = func(key ssh.PublicKey, label string) (bool, error) { return true, nil }
 
 	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: productSSHUsername}, pub)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestProductAuthRejectsNonProductUsernameBeforeKeyCheck(t *testing.T) {
 		checked = true
 		return true
 	}
-	srv.keyEnroller = func(key ssh.PublicKey, label string) error { return nil }
+	srv.keyEnroller = func(key ssh.PublicKey, label string) (bool, error) { return true, nil }
 
 	for _, username := range []string{"other-identity", "request-enrollment:other-identity"} {
 		t.Run(username, func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 			call: func() {
 				srv.SetProductHooks(ProductHooks{
 					CheckKey:  func(key ssh.PublicKey) bool { return true },
-					EnrollKey: func(key ssh.PublicKey, label string) error { return nil },
+					EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, nil },
 				})
 			},
 		},

@@ -107,11 +107,13 @@ func ServeWithOptions(t testing.TB, handler http.Handler, opts Options) *Node {
 			defer node.mu.Unlock()
 			return node.enrolled[ssh.FingerprintSHA256(key)]
 		},
-		EnrollKey: func(key ssh.PublicKey, _ string) error {
+		EnrollKey: func(key ssh.PublicKey, _ string) (bool, error) {
 			node.mu.Lock()
 			defer node.mu.Unlock()
-			node.enrolled[ssh.FingerprintSHA256(key)] = true
-			return nil
+			fp := ssh.FingerprintSHA256(key)
+			added := !node.enrolled[fp]
+			node.enrolled[fp] = true
+			return added, nil
 		},
 	})
 	server.SetEnrollmentHooks(sshtunnel.EnrollmentHooks{

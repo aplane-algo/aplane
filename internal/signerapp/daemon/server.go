@@ -133,13 +133,15 @@ func (fs *Signer) nodeFailure() error {
 // The registry is published and installed before any connection is closed,
 // and the SSH server re-checks enrollment after every handshake, so a
 // connection authenticating during the revocation is refused rather than
-// registered after the close pass.
+// registered after the close pass. A revocation that took effect but is not
+// yet durable still closes the connections and is audited; the durability
+// failure is reported after that.
 func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) (int, error) {
 	if ir == nil {
 		return 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-	entry, err := ir.RevokeAuthorizedKey(fingerprint)
-	if err != nil {
+	entry, revoked, err := ir.RevokeAuthorizedKey(fingerprint)
+	if !revoked {
 		if errors.Is(err, clientregistry.ErrNotEnrolled) {
 			return 0, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("client key %s is not enrolled", fingerprint))
 		}
@@ -152,6 +154,10 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 	if fs.auditLog != nil {
 		fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
 	}
+	if err != nil {
+		logWarnf("client key revoked: %s (closed %d connection(s)) but the registry write is not yet durable: %v", fingerprint, closed, err)
+		return closed, err
+	}
 	logInfof("client key revoked: %s (closed %d connection(s))", fingerprint, closed)
 	return closed, nil
 }
@@ -162,8 +168,8 @@ func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *produc
 	if ir == nil {
 		return 0, 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
 	}
-	entries, err := ir.RevokeAllAuthorizedKeys()
-	if err != nil {
+	entries, revoked, err := ir.RevokeAllAuthorizedKeys()
+	if !revoked {
 		return 0, 0, err
 	}
 	closed := 0
@@ -174,6 +180,10 @@ func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *produc
 		for _, entry := range entries {
 			fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
 		}
+	}
+	if err != nil {
+		logWarnf("all client keys revoked: %d key(s), closed %d connection(s), but the registry write is not yet durable: %v", len(entries), closed, err)
+		return len(entries), closed, err
 	}
 	logInfof("all client keys revoked: %d key(s), closed %d connection(s)", len(entries), closed)
 	return len(entries), closed, nil
