@@ -40,5 +40,11 @@
     "cfg": "approval_coordinator_liveness_deep",
     "distinct_states": 3773,
     "depth": 13
+  },
+  {
+    "spec": "enrollment_queue",
+    "cfg": "enrollment_queue_deep",
+    "distinct_states": 12168,
+    "depth": 15
   }
 ]

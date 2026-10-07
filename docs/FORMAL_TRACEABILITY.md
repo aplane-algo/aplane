@@ -158,6 +158,19 @@ Source: [FORMAL_PLUGIN_SIGNING_MODEL.md](FORMAL_PLUGIN_SIGNING_MODEL.md)
 | PS6 | implemented | PS6 | `internal/engine/plugin_presign.go` (managed slots sign-mode, plugin/dummy slots passthrough in one `/sign` request); `internal/signerapp/signing/approval.go::EvaluateAutoApprovalRules` (auto-approval disabled for passthrough/foreign/pre-grouped groups; mixed-mode display); `always_review.go` (dangerous-field forced review) | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesForcesReviewOnDangerousPassthrough`; `test/integration/passthrough_test.go` (PassthroughMixedGroup end to end) | Machine-checked in `plugin_signing.tla` (`PS6_ManagedApprovalGated`). The approval pipeline's own invariants are the AP rows. |
 | PS7 | implemented | PS7 | Mode dispatch `internal/apshellcli/external_plugins.go`; `internal/engine/plugin_transactions.go::ProcessTransactionIntents` (raw-only); `internal/apshellapp/submission.go` (localSigners rejection) | `internal/apshellapp/submission_pregrouped_test.go::TestSubmitPluginTransactionsRejectsLocalSigners`; `internal/engine/plugin_pregrouped_test.go::TestProcessSignedTransactionIntents` | Machine-checked in `plugin_signing.tla` (`PS7_NoUngatedSubmission`). The removed `localSigners` path was the violation of this invariant. |
 
+## Client Enrollment
+
+Source: [ARCH_SECURITY.md](ARCH_SECURITY.md) ("Client Enrollment via SSH"); machine-checked in [formal/enrollment_queue.tla](formal/enrollment_queue.tla).
+
+| ID | Status | Property | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| EQ1 | implemented | No `pending` or `enrolled` answer is given on the strength of a registry or queue file whose last write did not complete its syncs | `internal/signerapp/productruntime/runtime.go::QueueEnrollment` (`::ensureRegistryDurableLocked`, `::ensureQueueDurableLocked`); `internal/signerapp/enrollment/service.go::Request` | `internal/signerapp/productruntime/client_registry_test.go::TestRegistryRetriesRequireSuccessfulSync`; `::TestQueueRetriesRequireSuccessfulSync`; `internal/signerapp/enrollment/service_test.go::TestServiceRequestAppliedNotDurableIsRecordedButRefused` | A late-failed queue write records the request and answers an error so the client retries; the retry is acknowledged only once a sync has succeeded. Machine-checked as `EQ1_NoAckFromUnsyncedFile` (history flag). |
+| EQ2 | implemented | A request answered `pending` survives a crash until the operator answers it or it lapses | `internal/signerapp/productruntime/runtime.go::publishQueueLocked`; `internal/signerapp/enrollqueue/store.go::Publish` | `internal/signerapp/enrollqueue/queue_test.go::TestLoadAndPublish`; `::TestPublishReportsDirectorySyncFailure`; `internal/signerapp/enrollment/service_test.go::TestServiceRequestAppliedNotDurableIsRecordedButRefused` | Machine-checked as `EQ2_PendingAckSurvivesCrash`; the negative control `enrollment_queue_negative.cfg` acknowledges on a late-failed write and must violate it. |
+| EQ3 | implemented | A key answered `enrolled` survives a crash until it is revoked | `internal/signerapp/productruntime/runtime.go::QueueEnrollment`; `::publishRegistryFileLocked` | `internal/signerapp/productruntime/client_registry_test.go::TestRegistryRetriesRequireSuccessfulSync`; `::TestRevokeAuthorizedKeyFailedPublishDoesNotRetainStaleAuthority` | The `already enrolled` answer is read from the registry only after it is durable. Machine-checked as `EQ3_EnrolledAckSurvivesCrash`. |
+| EQ4 | implemented | Every enrolled key is audited `CLIENT_ENROLLED`, including one whose registry write was applied but not durable | `internal/signerapp/daemon/server.go::ApproveClientEnrollment`; `::ImportClientKey`; `internal/signerapp/productruntime/runtime.go::ApproveEnrollment` | `internal/signerapp/productruntime/client_registry_test.go::TestApproveEnrollmentAppliedNotDurableReportsEnrollment`; `internal/signerapp/daemon/enrollment_test.go::TestEnrollmentRequestQueuesNotifiesAndApproves` | The `enrolled`/`added` result is reported separately from the durability error so the caller audits the authority change. Machine-checked as `EQ4_EnrolledKeysAudited`. |
+| EQ5 | implemented | The queue holds at most `MaxPending` keys; a repeated request refreshes its entry and does not count against the cap | `internal/signerapp/enrollqueue/queue.go::WithRequest` | `internal/signerapp/enrollqueue/queue_test.go::TestWithRequestAddsRefreshesAndCaps`; `internal/signerapp/enrollment/service_test.go::TestServiceRequestReportsFullQueueAndHidesOtherFailures` | Machine-checked as `EQ5_QueueBounded`. |
+| EQ6 | implemented | Rejecting never drops the request of a key that is already enrolled | `internal/signerapp/productruntime/runtime.go::RejectEnrollment` (`ErrAlreadyEnrolled`) | `internal/signerapp/productruntime/client_registry_test.go::TestRejectEnrollmentRefusesEnrolledKey`; `internal/signerapp/daemon/enrollment_test.go::TestRejectClientEnrollmentRefusesEnrolledKey` | The state arises when an approval's registry write applied but its queue write failed; the operator approves again or revokes. Machine-checked as `EQ6_RejectNeverStrandsEnrolledKey` (history flag). |
+
 ## Open Cross-Cutting Gaps
 
 No open cross-cutting gaps. The concrete sketches that previously lived
@@ -405,6 +418,37 @@ has no TLC predicate.
 Validated by mutation tests: dropping the digest conjunct violates PS2;
 dropping the review conjunct violates PS3/PS7 (the removed-`localSigners`
 bypass class, machine-reproduced).
+
+### Enrollment queue module
+
+[formal/enrollment_queue.tla](formal/enrollment_queue.tla) (see
+[FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md))
+models the enrolled-key registry and the pending-enrollment queue under the
+applied-vs-durable publication rule: each write to either file completes,
+fails before its rename, or fails after it; the live view follows the file;
+a file left unsynced is re-published before the next operation; and a crash
+reverts an unsynced file to its durable content. Client requests, operator
+approve/reject/import/revoke, and request lapse interleave with those
+failures. TLC checked under `Keys = {k1, k2, k3}`, `MaxPending = 2` with key
+symmetry, 2,340 distinct states, depth 11, no counterexamples; the deep run
+with four keys and `MaxPending = 3` reaches 12,168 states at depth 15. The
+expected-failure [formal/enrollment_queue_negative.cfg](formal/enrollment_queue_negative.cfg)
+acknowledges a request on a late-failed write and must violate
+`EQ2_PendingAckSurvivesCrash` after 175 distinct states at depth 3.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| EQ1 (no acknowledgement from an unsynced file) | `EQ1_NoAckFromUnsyncedFile` |
+| EQ2 (pending answer survives a crash) | `EQ2_PendingAckSurvivesCrash` |
+| EQ3 (enrolled answer survives a crash) | `EQ3_EnrolledAckSurvivesCrash` |
+| EQ4 (enrolled keys are audited) | `EQ4_EnrolledKeysAudited` |
+| EQ5 (queue bounded) | `EQ5_QueueBounded` |
+| EQ6 (reject refuses an enrolled key) | `EQ6_RejectNeverStrandsEnrolledKey` |
+
+Validated by mutation tests: dropping the `regSynced` guard on the
+`already enrolled` answer flips `ackedUnsynced` (EQ1) and, after a crash,
+violates EQ3; dropping the `k \notin reg` check in `Reject` flips
+`rejectedEnrolled` (EQ6).
 
 ### Unmodeled invariants
 

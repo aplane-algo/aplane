@@ -449,6 +449,12 @@ operator must verify the key's fingerprint with the client's owner through a
 channel they trust; the public key itself is not secret. A waiting request
 for the same key is cleared by the import.
 
+The publication rule both files follow (a write that fails after its rename
+is applied and audited but not acknowledged to the client until a sync
+succeeds, and a crash can only take back what was never acknowledged) is
+modeled in [`formal/enrollment_queue.tla`](formal/enrollment_queue.tla); see
+[FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md).
+
 **Limits.** `request-enrollment` accepts any supported client key, so the
 flow is reachable without credentials, and the queue it writes to is bounded:
 - One queue entry per key: a repeated request refreshes the entry's

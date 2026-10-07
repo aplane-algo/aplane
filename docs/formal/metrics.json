@@ -61,5 +61,17 @@
     "expected_invariant_violation": "S5_NoUnpinnedPromotion",
     "distinct_states": 13,
     "depth": 7
+  },
+  {
+    "spec": "enrollment_queue",
+    "distinct_states": 2340,
+    "depth": 11
+  },
+  {
+    "spec": "enrollment_queue",
+    "cfg": "enrollment_queue_negative",
+    "expected_invariant_violation": "EQ2_PendingAckSurvivesCrash",
+    "distinct_states": 175,
+    "depth": 3
   }
 ]

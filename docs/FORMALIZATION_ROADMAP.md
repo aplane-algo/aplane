@@ -17,6 +17,7 @@ contracts; these models cover narrower security-critical transitions.
 | `plugin_signing.tla` | plugin signing trust boundary |
 | `bounded_cosigner.tla` | bounded-cosigner composition |
 | `store_root_commit.tla` | atomic generation/key-authority commit, exact-input promotion, crash classification, and quarantine |
+| `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -188,3 +189,16 @@ reducing `approval_coordinator.tla` to signing-only, the shape it had before
 `Progress`; both suites match. Both model docs lost their drift notes and
 token prose and now say that enrollment never takes the delivery turn. The
 enrollment queue remains flagged above as a model-extension candidate.
+
+Follow-up (2026-10-07, same day): flagged item (1), the enrollment queue, is
+now modeled. `enrollment_queue.tla` covers the enrolled-key registry and the
+pending-enrollment queue under the applied-vs-durable publication rule:
+three publish outcomes (synced, failed before the rename, failed after it),
+the view following the file, resync before the next operation, crash
+reverting to the durable content, request/refresh with the cap, approve
+(registry before queue), reject (refused for an enrolled key), import, revoke,
+and lapse. EQ1-EQ6 hold over 2,340 states (depth 11; deep 12,168 at depth
+15), and the negative control `RequireDurableAck = FALSE` violates EQ2 after
+175 states at depth 3. Prose companion
+`FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md`; traceability rows and module section
+added. Items (2) and (3) remain flagged.

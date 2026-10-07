@@ -1775,10 +1775,11 @@ The repo uses:
   `docs/formal/metrics.json`. It covers `sign_boundary`,
   `policy_precedence`, `composition`, `approval_coordinator`,
   `approval_composition`, `session_ownership`,
-  `guarded_assembly`, `bounded_cosigner`, `plugin_signing`, and
-  `store_root_commit`, plus liveness
-  configurations for `approval_coordinator` and an expected-failure
-  outgoing-seal-pinning negative control for `store_root_commit`.
+  `guarded_assembly`, `bounded_cosigner`, `plugin_signing`,
+  `store_root_commit`, and `enrollment_queue`, plus liveness
+  configurations for `approval_coordinator` and expected-failure negative
+  controls (outgoing-seal pinning for `store_root_commit`, durable
+  acknowledgement for `enrollment_queue`).
   `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
   pre-release or scheduled bounds. Both targets run
   `formal-copy-sync-check` first and require `tla2tools.jar` through
