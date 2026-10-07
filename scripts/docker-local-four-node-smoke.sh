@@ -6,7 +6,7 @@
 #   4. AlgoKit-style LocalNet algod/KMD node
 #
 # The test keeps the existing docker-local behavior surface focused on install,
-# SSH token provisioning, client reachability, shared LocalNet wiring, cosigner
+# SSH client enrollment, client reachability, shared LocalNet wiring, cosigner
 # endpoint enrollment, local IPC cosigner-reference import,
 # guarded transaction-signing flows, and corridor allowlist enforcement. It
 # also validates the guarded account
@@ -542,7 +542,6 @@ read_node_endpoint_field() {
             if (in_endpoint && indent == 0 && \$0 !~ /^endpoint[[:space:]]*:/) { in_endpoint=0 }
             if (in_endpoint && indent == 2 && \$0 ~ /^[[:space:]]*ssh[[:space:]]*:/) { in_ssh=1; next }
             if (in_ssh && indent <= 2 && \$0 !~ /^[[:space:]]*ssh[[:space:]]*:/) { in_ssh=0 }
-            if (\"$field\" == \"signer_port\" && in_endpoint && indent == 2 && \$0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) { print \$2; exit }
             if (\"$field\" == \"ssh_port\" && in_ssh && indent == 4 && \$0 ~ /^[[:space:]]*port[[:space:]]*:/) { print \$2; exit }
         }
     ' /home/$TEST_USER/aplane/apsigner/config.yaml"
@@ -729,6 +728,40 @@ SCRIPT
         APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
         bash /tmp/cosigner-policy-smoke.sh '$COSIGNER_COMPONENT_KEY' /home/$TEST_USER/aplane/apsigner" \
         || die "cosigner policy CLI checks failed"
+}
+
+configure_signer_policy() {
+    # A new signer store starts with routing enabled and a single
+    # self-transfer route, so the Corridor payments below to other LocalNet
+    # accounts would be rejected at the signer before the cosigner or the
+    # Corridor allowlist ever sees them. Open routing on the signer; the
+    # allowlist checks that follow belong to the Corridor itself.
+    local policy_file out
+    policy_file="$(mktemp)"
+    cat > "$policy_file" <<'JSON'
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
+    ]
+  }
+}
+JSON
+    docker cp "$policy_file" "$SIGNER_CONTAINER:/tmp/signer-policy.json"
+    rm -f "$policy_file"
+    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/signer-policy.json
+    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
+        apadmin -d /home/$TEST_USER/aplane/apsigner policy apply --yes /tmp/signer-policy.json 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "signer policy apply failed"
+    fi
+    printf '%s\n' "$out"
+    grep -q '^policy applied as generation ' <<<"$out" \
+        || die "signer policy apply did not report a new generation"
 }
 
 verify_localnet_reachable_from_nodes() {
@@ -1349,7 +1382,7 @@ enroll_cosigner_reference_to_signer() {
 }
 
 verify_guided_cosigner_setup() {
-    local out client_data add_command token_check cosigner_ssh_port
+    local out client_data add_command cosigner_ssh_port
 
     client_data="/home/$TEST_USER/aplane/apclient"
     cosigner_ssh_port="$(read_node_endpoint_field "$COSIGNER_CONTAINER" ssh_port)"
@@ -1859,6 +1892,9 @@ main() {
 
     log "Checking apadmin policy verbs and applying the cosigner key's policy for guarded smoke transactions"
     configure_cosigner_policy
+
+    log "Applying an open transfer route on the signer for the Corridor smoke transactions"
+    configure_signer_policy
 
     # Local IPC export, import, and policy apply displace the node approval sessions.
     # Re-establish both approval sessions before component signing.
