@@ -69,6 +69,9 @@ Batch commands use the same local IPC transport as the TUI:
 ./apadmin template list
 ./apadmin keytype enable aplane.falcon1024-cosigner1024.v1
 ./apadmin cosigner list
+./apadmin clients list
+./apadmin clients approve SHA256:... --label laptop
+./apadmin clients import id_ed25519.pub
 ./apadmin endpoint export --out endpoint.json
 ./apadmin generations list
 ```

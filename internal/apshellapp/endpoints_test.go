@@ -450,13 +450,13 @@ func newEndpointRoleKeysServer(t *testing.T, nodeRole string, keys []signerapi.K
 }
 
 // newUnenrolledEndpointKeysServer starts a cosigner node that refuses the
-// test client's key and rejects its enrollment request, so every connection
-// fails authentication.
+// test client's key and queues its enrollment request for an operator who
+// never answers, so every connection fails authentication.
 func newUnenrolledEndpointKeysServer(t *testing.T, keys []signerapi.KeyInfo) *sshtest.Node {
 	t.Helper()
 	return sshtest.ServeWithOptions(t, endpointRoleKeysHandler("cosigner", keys), sshtest.Options{
 		Unenrolled: true,
-		Approve:    func(string, string) bool { return false },
+		Queue:      true,
 	})
 }
 

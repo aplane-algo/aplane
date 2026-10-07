@@ -266,9 +266,12 @@ which it suggests one derived from the endpoint host. Under the shared
 client-data lock it revalidates and writes only the chosen endpoint alias, then
 releases the lock before any SSH trust, enrollment, or network operation.
 Setup first tries the connection with the client's key; a node that refuses
-the key as unenrolled is asked to enroll it, which waits for operator approval
-there, and the connection is tried once more. The enrollment request uses a
-standalone SSH connection and does not disturb the primary signer tunnel. Cosigner HTTP requests use restricted direct channels on
+the key as unenrolled is asked to enroll it. The request is queued for that
+node's operator, so setup stops with the connection configured
+(`ErrCosignerSetupEnrollmentPending`) and is rerun once the operator approves;
+only a node that answers that the key is already enrolled is tried again at
+once. The enrollment request uses a standalone SSH connection and does not
+disturb the primary signer tunnel. Cosigner HTTP requests use restricted direct channels on
 that authenticated SSH connection instead of a transient local forwarding
 listener.
 
@@ -331,9 +334,10 @@ when an alias is created, re-pointed, or deleted: the route is all the client
 keeps. Revoking this client's access to a cosigner is that node operator's
 action, in its apadmin, not a client-side edit.
 
-Enrollment waits for operator approval with the client lock released. Nothing
-is written on the client when it completes: the route was published before the
-request, and the node recorded the enrollment.
+The enrollment request is submitted with the client lock released and answered
+at once; the node's operator approves it later. Nothing is written on the
+client: the route was published before the request, and the node records the
+request and then the enrollment.
 
 Hand-editing `endpoints.yaml` bypasses the write-side locking rules.
 

@@ -202,7 +202,10 @@ focused approval workflows.
 Signing and client-enrollment requests share a single FIFO queue. Policy
 violations included in sign requests are shown to the approver. Signing
 approval requests time out after the product runtime's effective `approval_wait` value,
-which defaults to 60 seconds.
+which defaults to 60 seconds. Enrollment requests do not time out: they wait
+in the signer's queue, every request still waiting is announced to
+`apapprover` when it connects, and `y`/`n` answers one by fingerprint with
+`approve_enrollment` or `reject_enrollment`.
 
 ## Key Files
 

@@ -47,11 +47,15 @@ var dispatchTable = map[string]dispatchFunc{
 		s.HandleReconcileStore(m.ID)
 	}),
 
-	protocol.MsgTypeListEnrolledKeys:      typed("list enrolled keys", (*Session).HandleListEnrolledKeys),
-	protocol.MsgTypeRevokeEnrolledKey:     typed("revoke enrolled key", (*Session).HandleRevokeEnrolledKey),
-	protocol.MsgTypeRevokeAllEnrolledKeys: typed("revoke all enrolled keys", (*Session).HandleRevokeAllEnrolledKeys),
-	protocol.MsgTypeGetAdminSettings:      typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
-	protocol.MsgTypeUpdateAdminSetting:    typed("update admin setting", (*Session).HandleUpdateAdminSetting),
+	protocol.MsgTypeListEnrolledKeys:       typed("list enrolled keys", (*Session).HandleListEnrolledKeys),
+	protocol.MsgTypeRevokeEnrolledKey:      typed("revoke enrolled key", (*Session).HandleRevokeEnrolledKey),
+	protocol.MsgTypeRevokeAllEnrolledKeys:  typed("revoke all enrolled keys", (*Session).HandleRevokeAllEnrolledKeys),
+	protocol.MsgTypeListPendingEnrollments: typed("list pending enrollments", (*Session).HandleListPendingEnrollments),
+	protocol.MsgTypeApproveEnrollment:      typed("approve enrollment", (*Session).HandleApproveEnrollment),
+	protocol.MsgTypeRejectEnrollment:       typed("reject enrollment", (*Session).HandleRejectEnrollment),
+	protocol.MsgTypeImportClientKey:        typed("import client key", (*Session).HandleImportClientKey),
+	protocol.MsgTypeGetAdminSettings:       typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
+	protocol.MsgTypeUpdateAdminSetting:     typed("update admin setting", (*Session).HandleUpdateAdminSetting),
 
 	protocol.MsgTypeGetPolicy:         typed("get policy", (*Session).HandleGetPolicy),
 	protocol.MsgTypeGetPolicyDocument: typed("get policy document", (*Session).HandleGetPolicyDocument),
@@ -100,8 +104,7 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeDeactivateKeyType: typed("deactivate key type", (*Session).HandleDeactivateKeyType),
 	protocol.MsgTypeListKeyTypes:      typed("list key types", func(s *Session, m *protocol.ListKeyTypesMessage) { s.HandleListKeyTypes(m.ID) }),
 
-	protocol.MsgTypeSignResponse:             typed("sign response", (*Session).HandleSignResponse),
-	protocol.MsgTypeClientEnrollmentResponse: typed("client enrollment response", (*Session).HandleClientEnrollmentResponse),
+	protocol.MsgTypeSignResponse: typed("sign response", (*Session).HandleSignResponse),
 }
 
 // authOnlyDispatchTypes is the complete server-enforced capability granted to
@@ -114,6 +117,8 @@ var authOnlyDispatchTypes = map[string]bool{
 	protocol.MsgTypeGetCosignerReference:   true,
 	protocol.MsgTypeExportCosignerPublic:   true,
 	protocol.MsgTypeListGenerations:        true,
+	protocol.MsgTypeListEnrolledKeys:       true,
+	protocol.MsgTypeListPendingEnrollments: true,
 }
 
 // Dispatch handles the subset of protocol messages that already live entirely

@@ -36,7 +36,9 @@ const (
 	// enrollmentCommand is the one exec command an enrollment connection may
 	// run. An optional label follows it, separated by a space.
 	enrollmentCommand = "enroll"
-	// maxEnrollmentLabelBytes bounds the client-supplied display label.
+	// maxEnrollmentLabelBytes bounds the client-supplied display label. It
+	// mirrors clientregistry.MaxLabelBytes, which the registry enforces on
+	// every label it writes; this package cannot import the registry.
 	maxEnrollmentLabelBytes = 64
 	// RevokedRequestType is the global request the server sends before it
 	// closes a connection whose key was revoked, so the client can report why.
@@ -62,16 +64,11 @@ func isClosedConnError(err error) bool {
 // SessionCallback is called when SSH sessions connect or disconnect
 type SessionCallback func(remoteAddr string, connected bool)
 
-// EnrollmentApprovalCallback asks the operator to approve enrolling the key
-// with the given fingerprint. It is canceled when the SSH client disconnects.
-type EnrollmentApprovalCallback func(ctx context.Context, sshFingerprint, label, remoteAddr string) (approved bool, err error)
-
-// EnrollmentAuditCallback is called after the enrollment acknowledgement has
-// been delivered to the client.
-type EnrollmentAuditCallback func(sshFingerprint, label, remoteAddr string)
-
-// OperatorCheckCallback is called to check if the product operator is connected.
-type OperatorCheckCallback func() bool
+// EnrollmentRequestFunc records a client's request to be enrolled. It
+// returns pending when the request now waits for the operator, and false
+// when the key is already enrolled. An error refuses the request with its
+// message.
+type EnrollmentRequestFunc func(key ssh.PublicKey, label, remoteAddr string) (pending bool, err error)
 
 // KeyCheckerFunc reports whether a public key is currently enrolled.
 type KeyCheckerFunc func(key ssh.PublicKey) bool
@@ -79,9 +76,9 @@ type KeyCheckerFunc func(key ssh.PublicKey) bool
 // KeyEnrollerFunc enrolls a public key with a display label. It must be
 // idempotent for an already-enrolled key. enrolled reports that the key is
 // now usable; it can be true alongside an error when the registry was
-// installed but its write is not yet durable. The server then audits the
-// enrollment but answers the client with an error, so the client retries
-// and is acknowledged only once the registry is durable.
+// installed but its write is not yet durable. The server answers any error
+// as a failure so the client retries; the product path does not use this
+// hook for client requests, which are queued through EnrollmentHooks.
 type KeyEnrollerFunc func(key ssh.PublicKey, label string) (enrolled bool, err error)
 
 // ProductHooks connects the server to the product's enrolled-key registry.
@@ -92,13 +89,13 @@ type ProductHooks struct {
 	EnrollKey KeyEnrollerFunc
 }
 
-// EnrollmentHooks configures the operator-approved request-enrollment flow.
-// The server enrolls the key only after approval and audits only after the
-// acknowledgement reached the client.
+// EnrollmentHooks configures the request-enrollment flow. A request is
+// recorded and answered at once; the operator approves it later, and the
+// client learns the outcome by connecting. Without the hook the server
+// enrolls the key immediately into its in-memory list, which exists for
+// tests.
 type EnrollmentHooks struct {
-	ApproveContext    EnrollmentApprovalCallback
-	AuditEnrolled     EnrollmentAuditCallback
-	OperatorConnected OperatorCheckCallback
+	Request EnrollmentRequestFunc
 }
 
 // APIHandoff receives each accepted API channel as a connection carrying the
@@ -173,10 +170,8 @@ type Server struct {
 	// API channel handoff; nil refuses every API channel.
 	apiHandoff APIHandoff
 
-	// Enrollment callbacks
-	enrollmentApprovalCallback EnrollmentApprovalCallback
-	enrollmentAuditCallback    EnrollmentAuditCallback
-	operatorCheckCallback      OperatorCheckCallback
+	// Enrollment request hook; nil enrolls immediately into the in-memory list.
+	enrollmentRequest EnrollmentRequestFunc
 
 	mu        sync.Mutex
 	started   bool
@@ -199,7 +194,6 @@ type Server struct {
 	keepaliveInterval      time.Duration // Tests may shorten keepaliveInterval
 	keepaliveTimeout       time.Duration // Tests may shorten keepaliveReplyTimeout
 	enrollmentClaims       sync.Map      // *ssh.ServerConn -> struct{}: connections that already requested enrollment
-	enrollmentActive       atomic.Bool   // One enrollment request is pending at a time, server-wide
 }
 
 // sshConnInfo is what the server remembers about an authenticated connection.
@@ -223,9 +217,7 @@ func (s *Server) SetEnrollmentHooks(hooks EnrollmentHooks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.assertNotStartedLocked("SetEnrollmentHooks")
-	s.enrollmentApprovalCallback = hooks.ApproveContext
-	s.enrollmentAuditCallback = hooks.AuditEnrolled
-	s.operatorCheckCallback = hooks.OperatorConnected
+	s.enrollmentRequest = hooks.Request
 }
 
 // SetAPIHandoff installs the receiver of forwarded API channels. It is
@@ -776,9 +768,6 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		s.monitorClientConnection(sshConn, remoteAddr, keepaliveDone)
 	}()
 
-	connCtx, cancelConnCtx := context.WithCancel(context.Background())
-	defer cancelConnCtx()
-
 	if isEnrollment {
 		if !s.admitEnrollmentConn() {
 			fmt.Printf("[SSH] Too many pending enrollment requests; closing %s\n", remoteAddr)
@@ -813,7 +802,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 			go func(ch ssh.NewChannel) {
 				defer s.activeConns.Done()
 				defer enrollmentChannels.Add(-1)
-				s.handleEnrollmentChannel(connCtx, sshConn, ch)
+				s.handleEnrollmentChannel(sshConn, ch)
 			}(newChannel)
 			continue
 		}
@@ -899,7 +888,7 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 
 // handleEnrollmentChannel handles the session channel of an enrollment
 // connection. Only an "exec" request running "enroll [<label>]" is accepted.
-func (s *Server) handleEnrollmentChannel(connCtx context.Context, sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
+func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
 	if newChannel.ChannelType() != "session" {
 		if err := newChannel.Reject(ssh.UnknownChannelType, "only session channels are supported for enrollment"); err != nil {
 			fmt.Printf("Failed to reject channel: %v\n", err)
@@ -924,9 +913,6 @@ func (s *Server) handleEnrollmentChannel(connCtx context.Context, sshConn *ssh.S
 			_ = sshConn.Close()
 		}
 	}()
-	approvalCtx, cancelApproval := context.WithCancel(connCtx)
-	defer cancelApproval()
-
 	fingerprint := ""
 	if sshConn.Permissions != nil && sshConn.Permissions.Extensions != nil {
 		fingerprint = sshConn.Permissions.Extensions["key_fingerprint"]
@@ -955,8 +941,7 @@ func (s *Server) handleEnrollmentChannel(connCtx context.Context, sshConn *ssh.S
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
-			go cancelOnEnrollmentChannelClosed(requests, cancelApproval)
-			claimed = s.requestEnrollment(approvalCtx, sshConn, channel, fingerprint, label, remoteAddr)
+			claimed = s.requestEnrollment(sshConn, channel, fingerprint, label, remoteAddr)
 			return
 
 		default:
@@ -990,96 +975,47 @@ func parseEnrollmentCommand(command string) (label string, ok bool) {
 	return rest, true
 }
 
-// requestEnrollment runs the connection's single enrollment request. It
-// reports whether the request claimed the connection, which then closes when
-// the request ends.
-func (s *Server) requestEnrollment(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) bool {
-	if s.operatorCheckCallback == nil || !s.operatorCheckCallback() {
-		fmt.Printf("[SSH] Enrollment rejected from %s: no operator connected\n", remoteAddr)
-		_, _ = channel.Write([]byte("no operator (apadmin) connected to approve the enrollment request\n"))
-		_ = s.sendExitStatus(channel, 1)
-		return false
-	}
-	if s.enrollmentApprovalCallback == nil {
-		_, _ = channel.Write([]byte("enrollment is not configured on this server\n"))
-		_ = s.sendExitStatus(channel, 1)
-		return false
-	}
-
-	// One enrollment request per connection, and one pending request
-	// server-wide: an unauthenticated client cannot queue a stream of
-	// operator prompts.
+// requestEnrollment runs the connection's single enrollment request and
+// answers it at once. It reports whether the request claimed the
+// connection, which then closes when the request ends.
+func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) bool {
+	// One enrollment request per connection.
 	if _, already := s.enrollmentClaims.LoadOrStore(sshConn, struct{}{}); already {
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: only one enrollment request is allowed per connection\n", 1)
 		return false
 	}
-	if !s.enrollmentActive.CompareAndSwap(false, true) {
-		fmt.Printf("[SSH] Enrollment request from %s refused: another request is pending\n", remoteAddr)
-		_ = s.respondEnrollment(sshConn, channel, "ERROR: another enrollment request is pending; try again later\n", 1)
-		return true
-	}
-	defer s.enrollmentActive.Store(false)
-
-	s.approveAndEnroll(ctx, sshConn, channel, fingerprint, label, remoteAddr)
-	return true
-}
-
-// approveAndEnroll asks the operator to approve the key, enrolls it, and
-// acknowledges. Each step runs only after the previous one succeeds. The
-// enrollment is audited as soon as the registry holds the key, since that is
-// when the key becomes usable; a lost acknowledgement does not undo it. No
-// credential is issued: the client's key is its credential.
-func (s *Server) approveAndEnroll(ctx context.Context, sshConn *ssh.ServerConn, channel ssh.Channel, fingerprint, label, remoteAddr string) {
-	fmt.Printf("[SSH] Waiting for operator approval in apadmin for enrollment request from %s\n", remoteAddr)
-
-	approved, err := s.enrollmentApprovalCallback(ctx, fingerprint, label, remoteAddr)
-	if err != nil {
-		_ = s.respondEnrollment(sshConn, channel, fmt.Sprintf("ERROR: %s\n", err.Error()), 1)
-		return
-	}
-	if !approved {
-		_ = s.respondEnrollment(sshConn, channel, "ERROR: enrollment rejected by operator\n", 1)
-		return
-	}
 
 	key, ok := enrollmentPublicKey(sshConn.Permissions)
 	if !ok {
-		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-		return
-	}
-	enrolled, err := s.enrollKey(key, label)
-	if err != nil && !enrolled {
-		fmt.Printf("[SSH] Failed to enroll SSH key: %v\n", err)
-		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
-		return
-	}
-	// The registry changed: the key is enrolled and usable from here on,
-	// whether or not the client learns of it, so the audit event records
-	// the authority change itself, before the durability outcome is
-	// considered. Acknowledgement delivery is logged separately below.
-	if enrolled && s.enrollmentAuditCallback != nil {
-		s.enrollmentAuditCallback(fingerprint, label, remoteAddr)
-	}
-	if err != nil {
-		// The key is usable, but a crash before the next successful sync can
-		// lose it, so the client is not told it is enrolled: it retries, the
-		// retry re-publishes the registry first, and the acknowledgement
-		// follows a durable write. The retry changes nothing and is not
-		// audited again.
-		fmt.Printf("[SSH] SSH key enrolled for %s (key: %s) but the registry write is not yet durable: %v\n", remoteAddr, fingerprint, err)
-		_ = s.respondEnrollment(sshConn, channel, "ERROR: enrollment recorded but not yet durable; retry the request\n", 1)
-		return
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to record enrollment request\n", 1)
+		return true
 	}
 	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
 
-	if ctx.Err() != nil {
-		fmt.Printf("[SSH] Enrollment client %s disconnected before acknowledgement; its key stays enrolled: %v\n", remoteAddr, ctx.Err())
-		return
+	if s.enrollmentRequest == nil {
+		// No product hook: the in-memory list exists for tests and enrolls
+		// immediately.
+		if _, err := s.enrollKey(key, label); err != nil {
+			_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to enroll SSH key\n", 1)
+			return true
+		}
+		_ = s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0)
+		return true
 	}
-	if err := s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0); err != nil {
-		fmt.Printf("[SSH] Failed to acknowledge enrollment to %s; its key stays enrolled: %v\n", remoteAddr, err)
-		return
+
+	pending, err := s.enrollmentRequest(key, label, remoteAddr)
+	switch {
+	case err != nil:
+		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v\n", remoteAddr, fingerprint, err)
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+quoteClientText(err.Error())+"\n", 1)
+	case pending:
+		fmt.Printf("[SSH] Enrollment request from %s is waiting for the operator (key: %s)\n", remoteAddr, fingerprint)
+		_ = s.respondEnrollment(sshConn, channel, "pending "+fingerprint+"\n", 0)
+	default:
+		fmt.Printf("[SSH] Enrollment request from %s: key already enrolled (key: %s)\n", remoteAddr, fingerprint)
+		_ = s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0)
 	}
+	return true
 }
 
 // enrollmentPublicKey returns the key the enrollment connection authenticated
@@ -1151,15 +1087,6 @@ func parseExecCommand(payload []byte) (string, bool) {
 	}
 	cmdLenInt := int(cmdLen)
 	return string(payload[4 : 4+cmdLenInt]), true
-}
-
-func cancelOnEnrollmentChannelClosed(requests <-chan *ssh.Request, cancel context.CancelFunc) {
-	for req := range requests {
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-	}
-	cancel()
 }
 
 // sendExitStatus sends an exit-status message on an SSH channel

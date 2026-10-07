@@ -56,6 +56,27 @@ func (e *Error) Error() string {
 // ErrNotEnrolled reports a key the registry does not hold.
 var ErrNotEnrolled = errors.New("key is not enrolled")
 
+// MaxLabelBytes bounds a display label. The SSH enrollment command enforces
+// the same bound and character rule on client-supplied labels.
+const MaxLabelBytes = 64
+
+// NormalizeLabel trims label and checks that it is a bounded, printable,
+// single-line display text, the only form the registry writes: a label is
+// emitted verbatim after the key on its authorized_keys line, so a line
+// break would become a key line of its own.
+func NormalizeLabel(label string) (string, error) {
+	label = strings.TrimSpace(label)
+	if len(label) > MaxLabelBytes {
+		return "", fmt.Errorf("label exceeds %d bytes", MaxLabelBytes)
+	}
+	for _, r := range label {
+		if r < 0x20 || r == 0x7f {
+			return "", errors.New("label must be printable single-line text")
+		}
+	}
+	return label, nil
+}
+
 // Parse validates data as a complete registry. Blank lines and "#" comment
 // lines are allowed; everything else must be an option-free public-key line.
 func Parse(data []byte) (*Registry, error) {

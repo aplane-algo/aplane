@@ -4,7 +4,6 @@
 package sshtunnel
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -88,7 +87,7 @@ func TestRSAClientKeyRefusedBeforeVerification(t *testing.T) {
 		return callback(conn, key)
 	}
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(context.Context, string, string, string) (bool, error) { prompted = true; return false, nil },
+		Request: func(ssh.PublicKey, string, string) (bool, error) { prompted = true; return true, nil },
 	})
 	weak, err := rsa.GenerateKey(rand.Reader, 3072)
 	if err != nil {

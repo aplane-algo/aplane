@@ -71,7 +71,7 @@ func TestUnansweredKeepaliveClosesConnection(t *testing.T) {
 	srv.keepaliveTimeout = 50 * time.Millisecond
 	srv.enrollmentExecDeadline = time.Minute // only the keepalive may close it
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(context.Context, string, string, string) (bool, error) { return false, nil },
+		Request: pendingHook(nil),
 	})
 	addr := serveConnections(t, srv)
 

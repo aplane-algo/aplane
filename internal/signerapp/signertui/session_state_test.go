@@ -69,7 +69,6 @@ func TestEveryNotificationTypeIsDecoded(t *testing.T) {
 		protocol.MsgTypeAuthRequired, protocol.MsgTypeStatus, protocol.MsgTypeSignRequest,
 		protocol.MsgTypeSignRequestCanceled, protocol.MsgTypeClientEnrollmentRequest,
 		protocol.MsgTypeKeysChanged, protocol.MsgTypeSignerLocked, protocol.MsgTypeClientExists,
-		protocol.MsgTypeClientEnrollmentRequestCanceled,
 	} {
 		if kind, ok := protocol.InferMessageKind(msgType); !ok || kind != protocol.MessageKindNotification {
 			t.Fatalf("%s is not a notification type", msgType)

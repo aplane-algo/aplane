@@ -227,11 +227,12 @@ For a cosigner node:
 3. Follow [Configure a cosigner for guarded accounts](#configure-a-cosigner-for-guarded-accounts)
    below to export the key and add the connection in apshell.
 
-`request-enrollment` creates the client SSH key if it is missing, then waits
-for an operator to approve the key in `apadmin` or `apapprover`. The key is
-the client's only credential; nothing else is issued or stored. After approval,
-the shell immediately attempts to connect only when the selected endpoint is
-the default signer. Enrolling at a cosigner leaves the primary signer
+`request-enrollment` creates the client SSH key if it is missing, queues the
+request at the node, and returns at once. An operator approves the key in
+`apadmin` or `apapprover` whenever convenient; the request pops up if they are
+connected and is shown again at their next login. The key is the client's
+only credential; nothing else is issued or stored. Run `connect` once the
+request is approved. Enrolling at a cosigner leaves the primary signer
 connection unchanged.
 
 ### Configure a cosigner for guarded accounts
@@ -268,9 +269,9 @@ on the same cosigner needs no client change.
 For an already configured `local-cosigner` endpoint, you can enroll the
 client's key separately. In another terminal, source the install's `apenv.sh`,
 start apshell, and run `request-enrollment --endpoint local-cosigner`. Approve
-the request in the cosigner admin pane after comparing the complete client SSH
-fingerprint. This manual access step does not import a public cosigner key
-into the primary signer.
+the queued request in the cosigner admin pane after comparing the complete
+client SSH fingerprint. This manual access step does not import a public
+cosigner key into the primary signer.
 
 For new guarded-account setup, use the guided flow above. See
 [advanced endpoint commands](USER_COMMANDS.md#advanced-manual-endpoint-configuration-and-discovery)
@@ -471,8 +472,8 @@ This installs:
 
 1. Ensure `~/aplane/apclient/bin` is on your `PATH`, or invoke `apshell` by full path
 2. Edit `~/aplane/apclient/endpoints.yaml` to set your remote signer host
-3. Run `apshell`, then use `request-enrollment` to generate or reuse your SSH key and ask the signer to enroll it
-4. Ask the signer operator to approve the enrollment in `apadmin` or `apapprover`
+3. Run `apshell`, then use `request-enrollment` to generate or reuse your SSH key and ask the signer to enroll it; the command returns at once
+4. Ask the signer operator to approve the queued request in `apadmin` or `apapprover` (or to import your public key), then run `connect`
 
 The `request-enrollment` flow enrolls the client's SSH key, which is its only
 credential. It does not enroll a cosigner witness as a guarded-account
@@ -1041,8 +1042,9 @@ its policy is applied with `apadmin policy apply`. Every policy apply commits a
 new generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. `identities/default/.ssh/authorized_keys` is the daemon-owned
-registry of client SSH keys enrolled via `request-enrollment`; do not hand-edit
-it. `passphrase.cred` exists only when `appass` configures auto-unlock with
+registry of enrolled client SSH keys, and `pending_enrollments.json` beside it
+holds the `request-enrollment` requests waiting for approval; do not hand-edit
+either. `passphrase.cred` exists only when `appass` configures auto-unlock with
 `systemd-creds`.
 
 Treat `identities/default/` as one filesystem restore unit. Restoring

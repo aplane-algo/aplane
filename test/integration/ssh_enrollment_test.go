@@ -10,19 +10,19 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -30,11 +30,15 @@ import (
 )
 
 // The client's SSH key is its only credential. These tests cover the
-// request-enrollment protocol (operator approval over IPC, TOFU host trust,
-// agent-held keys), the registry the signer keeps, and revocation closing
-// live tunnels.
+// request-enrollment protocol: a request is queued for the operator and
+// answered at once, the operator approves or rejects it over IPC (apadmin)
+// at any later time, waiting requests survive a restart and are announced
+// to an operator at login, a key can be pre-enrolled by import, and
+// revocation closes live tunnels.
 
-func TestRequestEnrollmentHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
+// A request is queued and announced to the connected operator; once the
+// operator approves it the client connects with its key.
+func TestRequestEnrollmentQueuesAndApprovalEnrolls(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, false)
 
 	signerd := harness.NewSignerHarness(t)
@@ -52,46 +56,51 @@ func TestRequestEnrollmentHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
 	}
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	var (
-		fingerprint string
-		reqErr      error
-		reqDone     sync.WaitGroup
-		started     string
+	var started string
+	result, err := eng.RequestEnrollmentWithContext(context.Background(),
+		sshCfg.Host,
+		sshCfg.Port,
+		sshCfg.IdentityFile,
+		sshCfg.KnownHostsPath,
+		"ci-laptop",
+		func(host, hostFingerprint string) (bool, error) {
+			if host == "" || hostFingerprint == "" {
+				t.Errorf("unexpected empty host-key approval values: host=%q fingerprint=%q", host, hostFingerprint)
+			}
+			return true, nil
+		},
+		func(fp string) { started = fp },
 	)
-	reqDone.Add(1)
-	go func() {
-		defer reqDone.Done()
-		fingerprint, reqErr = eng.RequestEnrollmentWithContext(context.Background(),
-			sshCfg.Host,
-			sshCfg.Port,
-			sshCfg.IdentityFile,
-			sshCfg.KnownHostsPath,
-			"ci-laptop",
-			func(host, hostFingerprint string) (bool, error) {
-				if host == "" || hostFingerprint == "" {
-					t.Errorf("unexpected empty host-key approval values: host=%q fingerprint=%q", host, hostFingerprint)
-				}
-				return true, nil
-			},
-			func(fp string) { started = fp },
-		)
-	}()
-
-	req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-	if req.SSHFingerprint == "" {
-		t.Fatal("expected SSH fingerprint in enrollment request")
-	}
-	if req.Label != "ci-laptop" {
-		t.Fatalf("enrollment request label = %q, want ci-laptop", req.Label)
-	}
-	mustRespondIPCEnrollmentRequest(t, ipcClient, req.ID, true)
-	reqDone.Wait()
-	if reqErr != nil {
-		t.Fatalf("engine request-enrollment failed unexpectedly: %v", reqErr)
+	if err != nil {
+		t.Fatalf("engine request-enrollment failed unexpectedly: %v", err)
 	}
 	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
-	if fingerprint != want || req.SSHFingerprint != want || started != want {
-		t.Fatalf("fingerprints: enrolled %q, requested %q, started %q, want %q", fingerprint, req.SSHFingerprint, started, want)
+	if !result.Pending || result.Fingerprint != want || started != want {
+		t.Fatalf("result = %+v, started %q, want pending request for %q", result, started, want)
+	}
+
+	req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
+	if req.SSHFingerprint != want || req.Label != "ci-laptop" {
+		t.Fatalf("enrollment request notification = %+v, want %s ci-laptop", req, want)
+	}
+	requireEnrolledKeys(t, env, 0)
+
+	// Until the operator answers, the key is refused.
+	apshell := harness.NewApshellHarness(t)
+	output, err := apshell.RunWithInput("quit\n")
+	if err != nil {
+		t.Fatalf("apshell before approval: %v\noutput:\n%s", err, output)
+	}
+	if !strings.Contains(output, "not enrolled at the signer") {
+		t.Fatalf("expected a refused connection before approval, got output:\n%s", output)
+	}
+
+	if label := mustApproveEnrollmentViaIPC(t, ipcClient, want, ""); label != "ci-laptop" {
+		t.Fatalf("approval recorded label %q, want ci-laptop", label)
+	}
+	requireEnrolledKeys(t, env, 1)
+	if pending := mustListPendingEnrollmentsViaIPC(t, ipcClient); len(pending) != 0 {
+		t.Fatalf("pending after approval = %+v, want none", pending)
 	}
 
 	knownHostsData, err := os.ReadFile(env.KnownHostsPath)
@@ -101,15 +110,19 @@ func TestRequestEnrollmentHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
 	if !strings.Contains(string(knownHostsData), fmt.Sprintf("[%s]:%d", sshCfg.Host, sshCfg.Port)) {
 		t.Fatalf("known_hosts does not contain expected host entry:\n%s", string(knownHostsData))
 	}
-	requireEnrolledKeys(t, env, 1)
 
-	apshell := harness.NewApshellHarness(t)
 	connectOutput, err := apshell.RunWithInput("quit\n")
 	if err != nil {
 		t.Fatalf("expected apshell startup auto-connect to succeed: %v\noutput:\n%s", err, connectOutput)
 	}
 	if !strings.Contains(connectOutput, "Signer verified via tunnel") {
-		t.Fatalf("expected tunnel verification on follow-up start, got output:\n%s", connectOutput)
+		t.Fatalf("expected tunnel verification after approval, got output:\n%s", connectOutput)
+	}
+
+	// The audit trail records the request and the approval.
+	audit := readFileIfExists(t, filepath.Join(env.SignerDataDir, "audit.log"))
+	if !strings.Contains(audit, "CLIENT_ENROLLMENT_REQUESTED") || !strings.Contains(audit, "CLIENT_ENROLLED") {
+		t.Fatalf("audit log lacks the enrollment events:\n%s", audit)
 	}
 }
 
@@ -153,9 +166,14 @@ func TestRequestEnrollmentTOFURejectsUnknownHost(t *testing.T) {
 		t.Fatalf("expected known_hosts to remain empty, got:\n%s", data)
 	}
 	requireEnrolledKeys(t, env, 0)
+	if data := readFileIfExists(t, env.PendingPath); strings.Contains(data, mustClientKeyBlob(t, env.ClientPublicKeyPath)) {
+		t.Fatalf("a request was queued without host trust:\n%s", data)
+	}
 }
 
-func TestRequestEnrollmentNoOperatorConnected(t *testing.T) {
+// A request needs no operator to be present: it is queued, apshell reports
+// it as waiting, and an operator who connects later sees it at login.
+func TestRequestEnrollmentQueuesWithoutOperatorAndReplaysAtLogin(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, true)
 
 	signerd := harness.NewSignerHarness(t)
@@ -165,14 +183,34 @@ func TestRequestEnrollmentNoOperatorConnected(t *testing.T) {
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	apshell := harness.NewApshellHarness(t)
-	output, err := apshell.RunWithInput("request-enrollment\nquit\n")
+	output, err := apshell.RunWithInput("request-enrollment --label field-laptop\nquit\n")
 	if err != nil {
 		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "no operator (apadmin) connected") {
-		t.Fatalf("expected no-operator error in output, got:\n%s", output)
+	if !strings.Contains(output, "waiting for the operator") {
+		t.Fatalf("expected a pending request in output, got:\n%s", output)
 	}
 	requireEnrolledKeys(t, env, 0)
+	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
+	if data := readFileIfExists(t, env.PendingPath); !strings.Contains(data, mustClientKeyBlob(t, env.ClientPublicKeyPath)) {
+		t.Fatalf("request was not persisted to %s:\n%s", env.PendingPath, data)
+	}
+
+	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
+	req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
+	if req.SSHFingerprint != want || req.Label != "field-laptop" {
+		t.Fatalf("request announced at login = %+v, want %s field-laptop", req, want)
+	}
+	if pending := mustListPendingEnrollmentsViaIPC(t, ipcClient); len(pending) != 1 || pending[0].Fingerprint != want || pending[0].Label != "field-laptop" {
+		t.Fatalf("pending list = %+v, want the one request", pending)
+	}
+
+	mustApproveEnrollmentViaIPC(t, ipcClient, want, "")
+	connectOutput, err := apshell.RunWithInput("quit\n")
+	if err != nil || !strings.Contains(connectOutput, "Signer verified via tunnel") {
+		t.Fatalf("expected a connection after approval: %v\noutput:\n%s", err, connectOutput)
+	}
 }
 
 func TestRequestEnrollmentOperatorRejects(t *testing.T) {
@@ -187,21 +225,39 @@ func TestRequestEnrollmentOperatorRejects(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	apshell := harness.NewApshellHarness(t)
-	output, err := runApshellAsyncWithInput(t, apshell, "request-enrollment\nquit\n", func() {
-		req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-		mustRespondIPCEnrollmentRequest(t, ipcClient, req.ID, false)
-	})
+	eng, err := engine.NewEngine(harness.IntegrationNetwork())
 	if err != nil {
-		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
+		t.Fatalf("failed to create engine: %v", err)
 	}
-	if !strings.Contains(output, "enrollment rejected by operator") {
-		t.Fatalf("expected operator rejection in output, got:\n%s", output)
+	sshCfg := mustLoadClientSSHConfig(t)
+	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, nil)
+	if err != nil || !result.Pending {
+		t.Fatalf("request = %+v, %v, want pending", result, err)
 	}
+	_ = mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
+
+	mustRejectEnrollmentViaIPC(t, ipcClient, result.Fingerprint)
 	requireEnrolledKeys(t, env, 0)
+	if pending := mustListPendingEnrollmentsViaIPC(t, ipcClient); len(pending) != 0 {
+		t.Fatalf("pending after rejection = %+v, want none", pending)
+	}
+	if errText := mustSendRejectEnrollmentViaIPC(t, ipcClient, result.Fingerprint); !strings.Contains(errText, "no enrollment request is waiting") {
+		t.Fatalf("second rejection error = %q, want no request waiting", errText)
+	}
+	audit := readFileIfExists(t, filepath.Join(env.SignerDataDir, "audit.log"))
+	if !strings.Contains(audit, "CLIENT_ENROLLMENT_REJECTED") {
+		t.Fatalf("audit log lacks the rejection:\n%s", audit)
+	}
+
+	apshell := harness.NewApshellHarness(t)
+	output, err := apshell.RunWithInput("quit\n")
+	if err != nil || !strings.Contains(output, "not enrolled at the signer") {
+		t.Fatalf("expected the key to stay refused after rejection: %v\noutput:\n%s", err, output)
+	}
 }
 
-func TestRequestEnrollmentApprovalClientDisconnectsBeforeResponding(t *testing.T) {
+// A waiting request survives a daemon restart.
+func TestRequestEnrollmentPersistsAcrossRestart(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, true)
 
 	signerd := harness.NewSignerHarness(t)
@@ -210,20 +266,39 @@ func TestRequestEnrollmentApprovalClientDisconnectsBeforeResponding(t *testing.T
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
+	eng, err := engine.NewEngine(harness.IntegrationNetwork())
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+	sshCfg := mustLoadClientSSHConfig(t)
+	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, nil)
+	if err != nil || !result.Pending {
+		t.Fatalf("request = %+v, %v, want pending", result, err)
+	}
+
+	if err := signerd.Stop(); err != nil {
+		t.Fatalf("stop signer: %v", err)
+	}
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("restart signer: %v", err)
+	}
+
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
+	if pending := mustListPendingEnrollmentsViaIPC(t, ipcClient); len(pending) != 1 || pending[0].Fingerprint != result.Fingerprint {
+		t.Fatalf("pending after restart = %+v, want the request", pending)
+	}
+	mustApproveEnrollmentViaIPC(t, ipcClient, result.Fingerprint, "after-restart")
+	requireEnrolledKeys(t, env, 1)
+	if !strings.Contains(readFileIfExists(t, env.AuthorizedKeysPath), "after-restart") {
+		t.Fatal("the label given at approval was not recorded")
+	}
 
 	apshell := harness.NewApshellHarness(t)
-	output, err := runApshellAsyncWithInput(t, apshell, "request-enrollment\nquit\n", func() {
-		_ = mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-		ipcClient.Close()
-	})
-	if err != nil {
-		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
+	output, err := apshell.RunWithInput("quit\n")
+	if err != nil || !strings.Contains(output, "Signer verified via tunnel") {
+		t.Fatalf("expected a connection after approval: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "enrollment rejected by operator") {
-		t.Fatalf("expected disconnect-driven rejection in output, got:\n%s", output)
-	}
-	requireEnrolledKeys(t, env, 0)
 }
 
 func TestConnectKnownHostMismatchRejected(t *testing.T) {
@@ -315,8 +390,8 @@ func TestRequestEnrollmentAutoConfirmRejectsUnknownHost(t *testing.T) {
 	requireEnrolledKeys(t, env, 0)
 }
 
-// Enrolling a key that is already enrolled is approved by the operator like
-// any request, changes nothing in the registry, and needs no new host trust.
+// Repeated requests for one key refresh a single queue entry and need no new
+// host trust; once the key is enrolled a further request says so.
 func TestRequestEnrollmentDuplicateIsIdempotent(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, false)
 
@@ -336,32 +411,32 @@ func TestRequestEnrollmentDuplicateIsIdempotent(t *testing.T) {
 	sshCfg := mustLoadClientSSHConfig(t)
 
 	hostApprovals := 0
-	first, err := requestEnrollmentViaEngine(t, eng, sshCfg, ipcClient, func(host, fingerprint string) (bool, error) {
+	first, err := requestEnrollmentViaEngine(t, eng, sshCfg, func(host, fingerprint string) (bool, error) {
 		hostApprovals++
 		return true, nil
 	})
-	if err != nil {
-		t.Fatalf("first request-enrollment failed unexpectedly: %v", err)
+	if err != nil || !first.Pending {
+		t.Fatalf("first request = %+v, %v, want pending", first, err)
 	}
 	if hostApprovals != 1 {
 		t.Fatalf("first request should prompt exactly once for TOFU, got %d", hostApprovals)
 	}
+	_ = mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
 
 	secondHostApprovals := 0
-	second, err := requestEnrollmentViaEngine(t, eng, sshCfg, ipcClient, func(host, fingerprint string) (bool, error) {
+	second, err := requestEnrollmentViaEngine(t, eng, sshCfg, func(host, fingerprint string) (bool, error) {
 		secondHostApprovals++
 		return true, nil
 	})
-	if err != nil {
-		t.Fatalf("second request-enrollment failed unexpectedly: %v", err)
-	}
-	if second != first {
-		t.Fatalf("expected repeated enrollment to report the same fingerprint, got %q want %q", second, first)
+	if err != nil || !second.Pending || second.Fingerprint != first.Fingerprint {
+		t.Fatalf("second request = %+v, %v, want the same pending request", second, err)
 	}
 	if secondHostApprovals != 0 {
 		t.Fatalf("second request should not require TOFU, got %d approval prompts", secondHostApprovals)
 	}
-	requireEnrolledKeys(t, env, 1)
+	if pending := mustListPendingEnrollmentsViaIPC(t, ipcClient); len(pending) != 1 {
+		t.Fatalf("pending list = %+v, want one entry for the repeated request", pending)
+	}
 
 	knownHostsData, err := os.ReadFile(env.KnownHostsPath)
 	if err != nil {
@@ -372,19 +447,18 @@ func TestRequestEnrollmentDuplicateIsIdempotent(t *testing.T) {
 		t.Fatalf("expected exactly one known_hosts entry for %s, got %d in:\n%s", hostEntry, count, string(knownHostsData))
 	}
 
-	apshell := harness.NewApshellHarness(t)
-	connectOutput, err := apshell.RunWithInput("quit\n")
-	if err != nil {
-		t.Fatalf("expected apshell startup auto-connect to succeed: %v\noutput:\n%s", err, connectOutput)
+	mustApproveEnrollmentViaIPC(t, ipcClient, first.Fingerprint, "")
+	requireEnrolledKeys(t, env, 1)
+	third, err := requestEnrollmentViaEngine(t, eng, sshCfg, nil)
+	if err != nil || third.Pending || third.Fingerprint != first.Fingerprint {
+		t.Fatalf("request after enrollment = %+v, %v, want already enrolled", third, err)
 	}
-	if !strings.Contains(connectOutput, "Signer verified via tunnel") {
-		t.Fatalf("expected tunnel verification on follow-up start, got output:\n%s", connectOutput)
-	}
+	requireEnrolledKeys(t, env, 1)
 }
 
-// An approved request whose registry write fails is reported as a failure
-// and leaves nothing enrolled.
-func TestRequestEnrollmentRegistryWriteFailureIsReported(t *testing.T) {
+// A request the signer cannot record is refused with a clear message and
+// leaves nothing behind.
+func TestRequestEnrollmentReportsQueueWriteFailure(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, true)
 
 	registryDir := filepath.Dir(env.AuthorizedKeysPath)
@@ -399,21 +473,114 @@ func TestRequestEnrollmentRegistryWriteFailureIsReported(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
-	defer ipcClient.Close()
-
 	apshell := harness.NewApshellHarness(t)
-	output, err := runApshellAsyncWithInput(t, apshell, "request-enrollment\nquit\n", func() {
-		req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-		mustRespondIPCEnrollmentRequest(t, ipcClient, req.ID, true)
-	})
+	output, err := apshell.RunWithInput("request-enrollment\nquit\n")
 	if err != nil {
 		t.Fatalf("request-enrollment command failed unexpectedly: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "failed to enroll SSH key") {
-		t.Fatalf("expected key-enrollment failure, got output:\n%s", output)
+	if !strings.Contains(output, "failed to record enrollment request") {
+		t.Fatalf("expected the recording failure, got output:\n%s", output)
 	}
 	requireEnrolledKeys(t, env, 0)
+}
+
+// The queue is bounded: once MaxPending distinct keys are waiting, a further
+// key is refused until the operator clears the queue.
+func TestRequestEnrollmentQueueIsCapped(t *testing.T) {
+	env := prepareFreshEnrollmentEnv(t, true)
+
+	signerd := harness.NewSignerHarness(t)
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("failed to start signer: %v", err)
+	}
+	t.Cleanup(func() { _ = signerd.Stop() })
+
+	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
+	sshCfg := mustLoadClientSSHConfig(t)
+	submit := func() (string, int) {
+		keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+		writeSSHIdentity(t, keyPath, keyPath+".pub")
+		client, err := dialEnrollmentClient(t, sshCfg.Host, sshCfg.Port, "request-enrollment", mustLoadSSHSigner(t, keyPath), hostKey)
+		if err != nil {
+			t.Fatalf("dial enrollment: %v", err)
+		}
+		defer func() { _ = client.Close() }()
+		output, exitCode, err := runEnrollmentExec(t, client, "enroll")
+		if err != nil {
+			t.Fatalf("enrollment exec: %v", err)
+		}
+		return output, exitCode
+	}
+	for i := 0; i < enrollqueue.MaxPending; i++ {
+		if output, exitCode := submit(); exitCode != 0 || !strings.HasPrefix(output, "pending ") {
+			t.Fatalf("request %d = %d %q, want pending", i+1, exitCode, output)
+		}
+	}
+	output, exitCode := submit()
+	if exitCode == 0 || !strings.Contains(output, "enrollment queue is full") {
+		t.Fatalf("request beyond the cap = %d %q, want the full-queue refusal", exitCode, output)
+	}
+
+	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
+	pending := mustListPendingEnrollmentsViaIPC(t, ipcClient)
+	if len(pending) != enrollqueue.MaxPending {
+		t.Fatalf("pending = %d, want %d", len(pending), enrollqueue.MaxPending)
+	}
+	mustRejectEnrollmentViaIPC(t, ipcClient, pending[0].Fingerprint)
+	if output, exitCode := submit(); exitCode != 0 || !strings.HasPrefix(output, "pending ") {
+		t.Fatalf("request after clearing one entry = %d %q, want pending", exitCode, output)
+	}
+}
+
+// An operator can enroll a key without a request from the client.
+func TestImportClientKeyPreEnrolls(t *testing.T) {
+	env := prepareFreshEnrollmentEnv(t, true)
+
+	signerd := harness.NewSignerHarness(t)
+	if err := signerd.Start(); err != nil {
+		t.Fatalf("failed to start signer: %v", err)
+	}
+	t.Cleanup(func() { _ = signerd.Stop() })
+
+	line := strings.TrimSpace(readFileIfExists(t, env.ClientPublicKeyPath))
+	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
+
+	// The documented batch form puts --label after the file; the import
+	// goes through apadmin so that ordering is exercised end to end. The
+	// IPC client connects afterwards: the daemon keeps one active admin
+	// session, and apadmin's unlocked session would displace an earlier one.
+	apadmin := harness.NewApAdminHarness(t, signerd.GetWorkDir())
+	imported, err := apadmin.RunWithInput(os.Getenv("TEST_PASSPHRASE")+"\n", "clients", "import", env.ClientPublicKeyPath, "--label", "imported-laptop")
+	if err != nil || !strings.Contains(imported, "client key "+want+" enrolled (label \"imported-laptop\")") {
+		t.Fatalf("apadmin clients import: %v\noutput:\n%s", err, imported)
+	}
+	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
+	if _, _, added := mustImportClientKeyViaIPC(t, ipcClient, line, ""); added {
+		t.Fatal("second import reported the key as new")
+	}
+	requireEnrolledKeys(t, env, 1)
+
+	// The batch listing authenticates read-only, so the inventory requests
+	// must be on the auth_only allowlist.
+	listing, err := apadmin.RunWithInput(os.Getenv("TEST_PASSPHRASE")+"\n", "clients", "list")
+	if err != nil || !strings.Contains(listing, "enrolled  "+want) || !strings.Contains(listing, "imported-laptop") {
+		t.Fatalf("apadmin clients list: %v\noutput:\n%s", err, listing)
+	}
+
+	apshell := harness.NewApshellHarness(t)
+	output, err := apshell.RunWithInput("quit\n")
+	if err != nil || !strings.Contains(output, "Signer verified via tunnel") {
+		t.Fatalf("expected a connection with the imported key: %v\noutput:\n%s", err, output)
+	}
+	eng, err := engine.NewEngine(harness.IntegrationNetwork())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := requestEnrollmentViaEngine(t, eng, mustLoadClientSSHConfig(t), nil); err != nil || result.Pending {
+		t.Fatalf("request for an imported key = %+v, %v, want already enrolled", result, err)
+	}
 }
 
 func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
@@ -440,19 +607,20 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 
-	fingerprint, err := requestEnrollmentViaEngineWithIdentity(t, eng, clientCfg, "", ipcClient, nil)
-	if err != nil {
-		t.Fatalf("agent-backed request-enrollment failed unexpectedly: %v", err)
+	result, err := requestEnrollmentViaEngineWithIdentity(t, eng, clientCfg, "", nil)
+	if err != nil || !result.Pending {
+		t.Fatalf("agent-backed request = %+v, %v, want pending", result, err)
 	}
-	if want := mustClientKeyFingerprint(t, agentKeyPath+".pub"); fingerprint != want {
-		t.Fatalf("enrolled fingerprint = %q, want agent key %q", fingerprint, want)
+	if want := mustClientKeyFingerprint(t, agentKeyPath+".pub"); result.Fingerprint != want {
+		t.Fatalf("requested fingerprint = %q, want agent key %q", result.Fingerprint, want)
 	}
+	mustApproveEnrollmentViaIPC(t, ipcClient, result.Fingerprint, "")
 	if !strings.Contains(readFileIfExists(t, env.AuthorizedKeysPath), mustClientKeyBlob(t, agentKeyPath+".pub")) {
 		t.Fatalf("authorized_keys does not contain agent key:\n%s", readFileIfExists(t, env.AuthorizedKeysPath))
 	}
 
 	localPort := mustAvailableLocalPort(t)
-	result, err := eng.ConnectWithTunnel(
+	connected, err := eng.ConnectWithTunnel(
 		fmt.Sprintf("%s:%d", clientCfg.Host, clientCfg.Port),
 		clientCfg.Host,
 		clientCfg.Port,
@@ -465,8 +633,8 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent-backed connect failed unexpectedly: %v", err)
 	}
-	if !result.Connected {
-		t.Fatalf("expected connected result, got %+v", result)
+	if !connected.Connected {
+		t.Fatalf("expected connected result, got %+v", connected)
 	}
 	if !eng.IsTunnelConnected() {
 		t.Fatal("expected tunnel to be marked connected")
@@ -508,12 +676,15 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 	}
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	fingerprint, err := requestEnrollmentViaEngine(t, eng, sshCfg, ipcClient, func(host, hostFingerprint string) (bool, error) {
+	result, err := requestEnrollmentViaEngine(t, eng, sshCfg, func(host, hostFingerprint string) (bool, error) {
 		return true, nil
 	})
-	if err != nil {
-		t.Fatalf("request-enrollment failed unexpectedly: %v", err)
+	if err != nil || !result.Pending {
+		t.Fatalf("request = %+v, %v, want pending", result, err)
 	}
+	_ = mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
+	mustApproveEnrollmentViaIPC(t, ipcClient, result.Fingerprint, "")
+	fingerprint := result.Fingerprint
 
 	disconnectCh := make(chan struct{}, 1)
 	onDisconnect := func() {
@@ -523,7 +694,7 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		}
 	}
 	localPort := mustAvailableLocalPort(t)
-	result, err := eng.ConnectWithTunnel(
+	connected, err := eng.ConnectWithTunnel(
 		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
 		sshCfg.Host,
 		sshCfg.Port,
@@ -536,8 +707,8 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect failed unexpectedly: %v", err)
 	}
-	if !result.Connected {
-		t.Fatalf("expected connected result, got %+v", result)
+	if !connected.Connected {
+		t.Fatalf("expected connected result, got %+v", connected)
 	}
 
 	closed := mustRevokeKeyViaIPC(t, ipcClient, fingerprint)
@@ -632,6 +803,9 @@ func TestEnrollmentRejectsUnknownExecCommand(t *testing.T) {
 		t.Fatalf("expected unknown-command log entry, got logs:\n%s", logs)
 	}
 	requireEnrolledKeys(t, env, 0)
+	if data := readFileIfExists(t, env.PendingPath); strings.Contains(data, mustClientKeyBlob(t, env.ClientPublicKeyPath)) {
+		t.Fatalf("an unknown command queued a request:\n%s", data)
+	}
 }
 
 func TestConnectFailsWhenKnownHostsPathMissingOrUnwritable(t *testing.T) {
@@ -677,10 +851,9 @@ func TestConnectFailsWhenKnownHostsPathMissingOrUnwritable(t *testing.T) {
 	requireEnrolledKeys(t, env, 0)
 }
 
-// A client that drops right after the operator approves leaves the server
-// consistent: the registry holds at most that one key, and the server keeps
-// serving enrollment and connections.
-func TestEnrollmentConnectionDropAfterApprovalResponseIsHandledSafely(t *testing.T) {
+// A client that drops as soon as it has submitted leaves its request queued
+// for the operator; the server keeps serving.
+func TestEnrollmentRequestOutlivesTheSubmittingConnection(t *testing.T) {
 	env := prepareFreshEnrollmentEnv(t, true)
 
 	signerd := harness.NewSignerHarness(t)
@@ -688,9 +861,6 @@ func TestEnrollmentConnectionDropAfterApprovalResponseIsHandledSafely(t *testing
 		t.Fatalf("failed to start signer: %v", err)
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
-
-	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
-	defer ipcClient.Close()
 
 	clientSigner := mustLoadSSHSigner(t, filepath.Join(env.ClientDataDir, ".ssh", "id_ed25519"))
 	hostKey := mustLoadSSHPublicKey(t, filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub"))
@@ -700,48 +870,37 @@ func TestEnrollmentConnectionDropAfterApprovalResponseIsHandledSafely(t *testing
 	if err != nil {
 		t.Fatalf("failed to establish enrollment SSH client: %v", err)
 	}
-
 	session, err := client.NewSession()
 	if err != nil {
 		_ = client.Close()
 		t.Fatalf("failed to create enrollment session: %v", err)
 	}
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		_ = session.Close()
-		_ = client.Close()
-		t.Fatalf("failed to create enrollment stdout pipe: %v", err)
-	}
-	if err := session.Start("enroll"); err != nil {
+	if err := session.Start("enroll dropped"); err != nil {
 		_ = session.Close()
 		_ = client.Close()
 		t.Fatalf("failed to start enrollment session: %v", err)
 	}
-
-	req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-	mustRespondIPCEnrollmentRequest(t, ipcClient, req.ID, true)
-
 	_ = client.Close()
 	_ = session.Close()
-	_, _ = io.ReadAll(stdout)
 
-	time.Sleep(500 * time.Millisecond)
-
-	blob := mustClientKeyBlob(t, env.ClientPublicKeyPath)
-	if count := strings.Count(readFileIfExists(t, env.AuthorizedKeysPath), blob); count > 1 {
-		t.Fatalf("expected at most one registry entry for the client key, got %d", count)
-	}
 	if err := signerd.WaitForReady(5 * time.Second); err != nil {
-		t.Fatalf("signer not healthy after enrollment client drop: %v", err)
+		t.Fatalf("signer not healthy after the client dropped: %v", err)
 	}
-
-	eng, err := engine.NewEngine(harness.IntegrationNetwork())
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
+	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
+	defer ipcClient.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	want := mustClientKeyFingerprint(t, env.ClientPublicKeyPath)
+	for {
+		pending := mustListPendingEnrollmentsViaIPC(t, ipcClient)
+		if len(pending) == 1 && pending[0].Fingerprint == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pending = %+v, want the dropped client's request", pending)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	if _, err := requestEnrollmentViaEngine(t, eng, sshCfg, ipcClient, nil); err != nil {
-		t.Fatalf("enrollment after a dropped request failed: %v", err)
-	}
+	mustApproveEnrollmentViaIPC(t, ipcClient, want, "")
 	requireEnrolledKeys(t, env, 1)
 }
 
@@ -751,6 +910,7 @@ type sshEnrollmentEnv struct {
 	KnownHostsPath      string
 	ClientPublicKeyPath string
 	AuthorizedKeysPath  string
+	PendingPath         string
 	HostPublicKeyPath   string
 }
 
@@ -766,11 +926,12 @@ func prepareFreshEnrollmentEnv(t *testing.T, prepopulateKnownHosts bool) *sshEnr
 	clientPrivateKeyPath := filepath.Join(env.ClientDataDir, ".ssh", "id_ed25519")
 	clientPublicKeyPath := clientPrivateKeyPath + ".pub"
 	authorizedKeysPath := filepath.Join(env.SignerDataDir, "identities", "default", ".ssh", "authorized_keys")
+	pendingPath := filepath.Join(env.SignerDataDir, "identities", "default", ".ssh", enrollqueue.FileName)
 	legacyAuthorizedKeysPath := filepath.Join(env.SignerDataDir, ".ssh", "authorized_keys")
 	hostPublicKeyPath := filepath.Join(env.SignerDataDir, ".ssh", "ssh_host_key.pub")
 
-	removeIfExists(t, filepath.Join(env.ClientDataDir, "aplane.token"))
 	removeIfExists(t, knownHostsPath)
+	removeIfExists(t, pendingPath)
 	if err := os.WriteFile(authorizedKeysPath, nil, 0o600); err != nil {
 		t.Fatalf("failed to clear authorized_keys: %v", err)
 	}
@@ -789,6 +950,7 @@ func prepareFreshEnrollmentEnv(t *testing.T, prepopulateKnownHosts bool) *sshEnr
 		KnownHostsPath:      knownHostsPath,
 		ClientPublicKeyPath: clientPublicKeyPath,
 		AuthorizedKeysPath:  authorizedKeysPath,
+		PendingPath:         pendingPath,
 		HostPublicKeyPath:   hostPublicKeyPath,
 	}
 }
@@ -802,25 +964,6 @@ func requireEnrolledKeys(t *testing.T, env *sshEnrollmentEnv, want int) {
 	if got := strings.Count(data, blob); got != want {
 		t.Fatalf("authorized_keys lists the client key %d times, want %d:\n%s", got, want, data)
 	}
-}
-
-func runApshellAsyncWithInput(t *testing.T, apshell *harness.ApshellHarness, input string, during func()) (string, error) {
-	t.Helper()
-
-	var (
-		output string
-		err    error
-		wg     sync.WaitGroup
-	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		output, err = apshell.RunWithInput(input)
-	}()
-
-	during()
-	wg.Wait()
-	return output, err
 }
 
 func writeCurrentKnownHosts(t *testing.T, clientDataDir, hostPublicKeyPath string) {
@@ -940,41 +1083,6 @@ func mustLoadClientConfig(t *testing.T) config.Config {
 	return cfg
 }
 
-func requestEnrollmentViaEngine(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
-	t.Helper()
-	return requestEnrollmentViaEngineWithIdentity(t, eng, sshCfg, sshCfg.IdentityFile, ipcClient, hostKeyApproval)
-}
-
-// requestEnrollmentViaEngineWithIdentity runs request-enrollment through the
-// engine while approving the resulting operator prompt over IPC.
-func requestEnrollmentViaEngineWithIdentity(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, identityFile string, ipcClient *transport.IPCClient, hostKeyApproval func(host string, fingerprint string) (bool, error)) (string, error) {
-	t.Helper()
-
-	var (
-		fingerprint string
-		reqErr      error
-		reqDone     sync.WaitGroup
-	)
-	reqDone.Add(1)
-	go func() {
-		defer reqDone.Done()
-		fingerprint, reqErr = eng.RequestEnrollmentWithContext(context.Background(),
-			sshCfg.Host,
-			sshCfg.Port,
-			identityFile,
-			sshCfg.KnownHostsPath,
-			"",
-			hostKeyApproval,
-			nil,
-		)
-	}()
-
-	req := mustReadIPCEnrollmentRequest(t, ipcClient, 10*time.Second)
-	mustRespondIPCEnrollmentRequest(t, ipcClient, req.ID, true)
-	reqDone.Wait()
-	return fingerprint, reqErr
-}
-
 type sshAgentEnv struct {
 	sock string
 	pid  string
@@ -1068,6 +1176,135 @@ func readFileIfExists(t *testing.T, path string) string {
 	return string(data)
 }
 
+func requestEnrollmentViaEngine(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, hostKeyApproval func(host string, fingerprint string) (bool, error)) (connect.EnrollmentResult, error) {
+	t.Helper()
+	return requestEnrollmentViaEngineWithIdentity(t, eng, sshCfg, sshCfg.IdentityFile, hostKeyApproval)
+}
+
+// requestEnrollmentViaEngineWithIdentity submits a request through the
+// engine; a nil host-key approval trusts the host on first use.
+func requestEnrollmentViaEngineWithIdentity(t *testing.T, eng *engine.Engine, sshCfg config.ClientEndpointSSH, identityFile string, hostKeyApproval func(host string, fingerprint string) (bool, error)) (connect.EnrollmentResult, error) {
+	t.Helper()
+	if hostKeyApproval == nil {
+		hostKeyApproval = func(string, string) (bool, error) { return true, nil }
+	}
+	return eng.RequestEnrollmentWithContext(context.Background(),
+		sshCfg.Host,
+		sshCfg.Port,
+		identityFile,
+		sshCfg.KnownHostsPath,
+		"",
+		hostKeyApproval,
+		nil,
+	)
+}
+
+// ipcRequest sends an admin message and decodes the response of the given
+// type that carries the same ID, skipping notifications.
+func ipcRequest(t *testing.T, ipcClient *transport.IPCClient, msg interface{}, id, wantType string, out interface{}) {
+	t.Helper()
+	if err := ipcClient.WriteJSON(msg); err != nil {
+		t.Fatalf("failed to send %s over IPC: %v", wantType, err)
+	}
+	ipcClient.SetReadDeadline(10 * time.Second)
+	for {
+		message, err := ipcClient.ReadMessage()
+		if err != nil {
+			t.Fatalf("failed to read %s response: %v", wantType, err)
+		}
+		var base protocol.BaseMessage
+		if err := json.Unmarshal(message, &base); err != nil {
+			t.Fatalf("failed to parse IPC base message: %v", err)
+		}
+		if base.Type != wantType || base.ID != id {
+			continue
+		}
+		if err := json.Unmarshal(message, out); err != nil {
+			t.Fatalf("failed to parse %s: %v", wantType, err)
+		}
+		return
+	}
+}
+
+func mustListPendingEnrollmentsViaIPC(t *testing.T, ipcClient *transport.IPCClient) []protocol.PendingEnrollmentInfo {
+	t.Helper()
+	id := fmt.Sprintf("pending-%d", time.Now().UnixNano())
+	var result protocol.PendingEnrollmentsListMessage
+	ipcRequest(t, ipcClient, protocol.ListPendingEnrollmentsMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListPendingEnrollments, ID: id},
+	}, id, protocol.MsgTypePendingEnrollmentsList, &result)
+	return result.Requests
+}
+
+// mustApproveEnrollmentViaIPC approves a waiting request and returns the
+// label recorded.
+func mustApproveEnrollmentViaIPC(t *testing.T, ipcClient *transport.IPCClient, fingerprint, label string) string {
+	t.Helper()
+	id := fmt.Sprintf("approve-%d", time.Now().UnixNano())
+	var result protocol.ApproveEnrollmentResultMessage
+	ipcRequest(t, ipcClient, protocol.ApproveEnrollmentMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeApproveEnrollment, ID: id},
+		Fingerprint: fingerprint, Label: label,
+	}, id, protocol.MsgTypeApproveEnrollmentResult, &result)
+	if !result.Success {
+		t.Fatalf("approve-enrollment failed: %s", result.Error)
+	}
+	return result.Label
+}
+
+// mustSendRejectEnrollmentViaIPC rejects a request and returns the error
+// text, empty on success.
+func mustSendRejectEnrollmentViaIPC(t *testing.T, ipcClient *transport.IPCClient, fingerprint string) string {
+	t.Helper()
+	id := fmt.Sprintf("reject-%d", time.Now().UnixNano())
+	var result protocol.RejectEnrollmentResultMessage
+	ipcRequest(t, ipcClient, protocol.RejectEnrollmentMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRejectEnrollment, ID: id},
+		Fingerprint: fingerprint,
+	}, id, protocol.MsgTypeRejectEnrollmentResult, &result)
+	if result.Success {
+		return ""
+	}
+	return result.Error
+}
+
+func mustRejectEnrollmentViaIPC(t *testing.T, ipcClient *transport.IPCClient, fingerprint string) {
+	t.Helper()
+	if errText := mustSendRejectEnrollmentViaIPC(t, ipcClient, fingerprint); errText != "" {
+		t.Fatalf("reject-enrollment failed: %s", errText)
+	}
+}
+
+func mustImportClientKeyViaIPC(t *testing.T, ipcClient *transport.IPCClient, publicKey, label string) (fingerprint, recordedLabel string, added bool) {
+	t.Helper()
+	id := fmt.Sprintf("import-%d", time.Now().UnixNano())
+	var result protocol.ImportClientKeyResultMessage
+	ipcRequest(t, ipcClient, protocol.ImportClientKeyMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeImportClientKey, ID: id},
+		PublicKey:   publicKey, Label: label,
+	}, id, protocol.MsgTypeImportClientKeyResult, &result)
+	if !result.Success {
+		t.Fatalf("import-client-key failed: %s", result.Error)
+	}
+	return result.Fingerprint, result.Label, result.Added
+}
+
+// mustRevokeKeyViaIPC revokes one enrolled key and returns how many live
+// connections the signer closed for it.
+func mustRevokeKeyViaIPC(t *testing.T, ipcClient *transport.IPCClient, fingerprint string) int {
+	t.Helper()
+	id := fmt.Sprintf("revoke-%d", time.Now().UnixNano())
+	var result protocol.RevokeEnrolledKeyResultMessage
+	ipcRequest(t, ipcClient, protocol.RevokeEnrolledKeyMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRevokeEnrolledKey, ID: id},
+		Fingerprint: fingerprint,
+	}, id, protocol.MsgTypeRevokeEnrolledKeyResult, &result)
+	if !result.Success {
+		t.Fatalf("revoke-key failed: %s", result.Error)
+	}
+	return result.ClosedConnections
+}
+
 func mustReadIPCEnrollmentRequest(t *testing.T, ipcClient *transport.IPCClient, timeout time.Duration) protocol.ClientEnrollmentRequestMessage {
 	t.Helper()
 
@@ -1096,67 +1333,6 @@ func mustReadIPCEnrollmentRequest(t *testing.T, ipcClient *transport.IPCClient, 
 
 	t.Fatalf("timed out waiting for enrollment request over IPC")
 	return protocol.ClientEnrollmentRequestMessage{}
-}
-
-func mustRespondIPCEnrollmentRequest(t *testing.T, ipcClient *transport.IPCClient, requestID string, approved bool) {
-	t.Helper()
-
-	reason := ""
-	if !approved {
-		reason = "rejected by test"
-	}
-	if err := ipcClient.WriteJSON(protocol.ClientEnrollmentResponseMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeClientEnrollmentResponse,
-			ID:   requestID,
-		},
-		Approved: approved,
-		Reason:   reason,
-	}); err != nil {
-		t.Fatalf("failed to send enrollment response over IPC: %v", err)
-	}
-}
-
-// mustRevokeKeyViaIPC revokes one enrolled key and returns how many live
-// connections the signer closed for it.
-func mustRevokeKeyViaIPC(t *testing.T, ipcClient *transport.IPCClient, fingerprint string) int {
-	t.Helper()
-
-	reqID := fmt.Sprintf("revoke-%d", time.Now().UnixNano())
-	if err := ipcClient.WriteJSON(protocol.RevokeEnrolledKeyMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeRevokeEnrolledKey,
-			ID:   reqID,
-		},
-		Fingerprint: fingerprint,
-	}); err != nil {
-		t.Fatalf("failed to send revoke-key IPC message: %v", err)
-	}
-
-	ipcClient.SetReadDeadline(10 * time.Second)
-	for {
-		message, err := ipcClient.ReadMessage()
-		if err != nil {
-			t.Fatalf("failed to read revoke-key response: %v", err)
-		}
-
-		var base protocol.BaseMessage
-		if err := json.Unmarshal(message, &base); err != nil {
-			t.Fatalf("failed to parse revoke-key base message: %v", err)
-		}
-		if base.Type != protocol.MsgTypeRevokeEnrolledKeyResult || base.ID != reqID {
-			continue
-		}
-
-		var result protocol.RevokeEnrolledKeyResultMessage
-		if err := json.Unmarshal(message, &result); err != nil {
-			t.Fatalf("failed to parse revoke-key result: %v", err)
-		}
-		if !result.Success {
-			t.Fatalf("revoke-key failed: %s", result.Error)
-		}
-		return result.ClosedConnections
-	}
 }
 
 func mustLoadSSHSigner(t *testing.T, privateKeyPath string) ssh.Signer {

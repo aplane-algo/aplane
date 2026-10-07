@@ -548,7 +548,7 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 | `TestPassthroughMixedGroup` | Sign + passthrough in one group: server signs txn A, pre-signed txn B passes through unchanged |
 | `TestPassthroughResign` | Sign full group, strip one signature, resubmit with mix of sign + passthrough |
 | `TestPassthroughRequiresPreGrouped` | Verify passthrough rejects transactions without pre-set group ID |
-| `TestRequestEnrollmentHappyPathEnrollsKeyAndConnectWorks` | Exercise SSH client enrollment with operator approval, then connect |
+| `TestRequestEnrollmentQueuesAndApprovalEnrolls` | Queue an SSH client enrollment request, approve it over IPC, then connect; companions cover replay at login, rejection, restart persistence, the queue cap, and key import |
 
 `TestKeyDerivationRegression` is a compatibility golden, not a generated test
 artifact. If a derivation path intentionally changes, such as a LogicSig salt

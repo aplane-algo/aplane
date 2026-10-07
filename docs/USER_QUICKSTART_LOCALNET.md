@@ -97,10 +97,12 @@ a human-approved step. In the shell pane, run:
 request-enrollment
 ```
 
-You will see an approval prompt in the signer admin pane. Navigate to it with
-`F1` or `Shift`+left arrow and accept it.
+The command returns at once with the request waiting. You will see an approval
+prompt in the signer admin pane (or, if it was not open, the request is shown
+when you log in and on the Enrolled Clients screen). Navigate to it with `F1`
+or `Shift`+left arrow and accept it.
 
-If the shell does not auto-connect after approval, run:
+Once approved, connect from the shell pane:
 
 ```
 connect

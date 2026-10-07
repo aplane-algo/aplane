@@ -244,8 +244,8 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `policy.update` | Update signer policy | `policy` | No |
 | `settings.view` | View admin settings | `settings` | No |
 | `settings.update` | Update admin settings | `settings` | No |
-| `clients.view` | List enrolled client keys and their live connections | `clients` | No |
-| `clients.enroll` | Approve a client enrollment request | `client_enrollment` | No |
+| `clients.view` | List enrolled client keys and their live connections, and the enrollment requests waiting for approval | `clients`, `client_enrollment` | No |
+| `clients.enroll` | Approve or reject a queued client enrollment request, or import a client public key directly | `client_enrollment`, `client` | No |
 | `clients.revoke` | Revoke one enrolled client key, or every key, closing its connections | `client`, `clients` | No |
 | `health.get` | Reserved action name; `/health` is unauthenticated and does not call the authorizer | `system` | No |
 

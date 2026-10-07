@@ -219,19 +219,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
 
-	case ClientEnrollmentCanceledMsg:
-		var warningCmd tea.Cmd
-		if m.enrollmentApproval.request != nil && m.enrollmentApproval.request.ID == msg.ID {
-			m.enrollmentApproval.request = nil
-			warningCmd = m.setTransientWarning(tokenProvisioningCanceledWarning(msg.Reason))
-		}
-		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
-
 	case ClientEnrollmentRequestReceivedMsg:
-		m.enrollmentApproval.request = &msg.Request
-		m.enrollmentApproval.focus = 1 // Default to reject button (safety-first)
-		// Continue listening for messages
+		// Requests are announced when queued and again at login; one popup
+		// per request, shown in turn.
+		m.queueEnrollmentRequest(msg.Request)
 		return m, m.waitForMessageCmd()
+
+	case PendingEnrollmentsListMsg:
+		return m.handlePendingEnrollmentsList(msg)
+	case ApproveEnrollmentResultMsg:
+		return m.handleApproveEnrollmentResult(msg)
+	case RejectEnrollmentResultMsg:
+		return m.handleRejectEnrollmentResult(msg)
+	case ImportClientKeyResultMsg:
+		return m.handleImportClientKeyResult(msg)
 
 	case KeysListMsg:
 		// Sort keys alphabetically by address
@@ -908,6 +909,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleEnrolledClientsKeys(msg)
 	case ViewRevokeClientConfirm:
 		return m.handleRevokeClientConfirmKeys(msg)
+	case ViewImportClientKey:
+		return m.handleImportClientKeyKeys(msg)
 	case ViewLockConfirm:
 		return m.handleLockConfirmKeys(msg)
 	case ViewDisplaceConfirm:
@@ -976,6 +979,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewDeleteConfirm,
 		ViewDeleting,
 		ViewRevokeClientConfirm,
+		ViewImportClientKey,
 		ViewLockConfirm,
 		ViewDisplaceConfirm,
 		ViewPolicyApplyForm,

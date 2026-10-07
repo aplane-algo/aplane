@@ -53,7 +53,9 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditClientEnrollmentRequested        AuditEventType = "CLIENT_ENROLLMENT_REQUESTED"
 	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
+	AuditClientEnrollmentRejected         AuditEventType = "CLIENT_ENROLLMENT_REJECTED"
 	AuditClientKeyRevoked                 AuditEventType = "CLIENT_KEY_REVOKED"
 	AuditKeyGenerated                     AuditEventType = "KEY_GENERATED"
 	AuditKeyDeleted                       AuditEventType = "KEY_DELETED"
@@ -686,12 +688,41 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	a.Log(entry)
 }
 
-// LogClientEnrolled logs that an operator enrolled a client key over SSH.
-func (a *AuditLogger) LogClientEnrolled(sshFingerprint, label, remoteAddr string) {
-	entry := productPrincipalAuditFields()
+// LogClientEnrollmentRequested logs that a client asked, over SSH, to be
+// enrolled; the request now waits for the operator. The requester is the
+// principal the key would become.
+func (a *AuditLogger) LogClientEnrollmentRequested(sshFingerprint, label, remoteAddr string) {
+	entry := AuditEntry{
+		Principal:          auth.ClientPrincipalPrefix + sshFingerprint,
+		RequesterPrincipal: auth.ClientPrincipalPrefix + sshFingerprint,
+	}
+	entry.Event = AuditClientEnrollmentRequested
+	entry.Outcome = "pending"
+	entry.RemoteAddr = remoteAddr
+	entry.Reason = sshFingerprint
+	entry.ClientLabel = label
+	a.Log(entry)
+}
+
+// LogClientEnrolledContext logs that an admin session enrolled a client key,
+// by approving its request (remoteAddr is where the request came from) or
+// by importing it (remoteAddr empty).
+func (a *AuditLogger) LogClientEnrolledContext(ctx adminserver.SessionContext, sshFingerprint, label, remoteAddr string) {
+	entry := sessionAuditFields(ctx)
 	entry.Event = AuditClientEnrolled
 	entry.Outcome = "enrolled"
 	entry.RemoteAddr = remoteAddr
+	entry.Reason = sshFingerprint
+	entry.ClientLabel = label
+	a.Log(entry)
+}
+
+// LogClientEnrollmentRejectedContext logs that an admin session rejected a
+// waiting enrollment request.
+func (a *AuditLogger) LogClientEnrollmentRejectedContext(ctx adminserver.SessionContext, sshFingerprint, label string) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditClientEnrollmentRejected
+	entry.Outcome = "rejected"
 	entry.Reason = sshFingerprint
 	entry.ClientLabel = label
 	a.Log(entry)

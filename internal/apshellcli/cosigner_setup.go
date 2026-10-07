@@ -30,16 +30,17 @@ type cosignerSetupCLIOptions struct {
 }
 
 type cosignerSetupProjection struct {
-	Alias          string                          `json:"alias"`
-	URL            string                          `json:"url"`
-	Created        bool                            `json:"created,omitempty"`
-	Updated        bool                            `json:"updated,omitempty"`
-	Enrolled       bool                            `json:"enrolled,omitempty"`
-	Connected      bool                            `json:"connected,omitempty"`
-	NodeRole       string                          `json:"node_role,omitempty"`
-	AdvertisedKeys int                             `json:"advertised_keys,omitempty"`
-	Routes         *apshellapp.CosignerSetupRoutes `json:"routes,omitempty"`
-	DryRun         bool                            `json:"dry_run,omitempty"`
+	Alias             string                          `json:"alias"`
+	URL               string                          `json:"url"`
+	Created           bool                            `json:"created,omitempty"`
+	Updated           bool                            `json:"updated,omitempty"`
+	Enrolled          bool                            `json:"enrolled,omitempty"`
+	EnrollmentPending bool                            `json:"enrollment_pending,omitempty"`
+	Connected         bool                            `json:"connected,omitempty"`
+	NodeRole          string                          `json:"node_role,omitempty"`
+	AdvertisedKeys    int                             `json:"advertised_keys,omitempty"`
+	Routes            *apshellapp.CosignerSetupRoutes `json:"routes,omitempty"`
+	DryRun            bool                            `json:"dry_run,omitempty"`
 }
 
 func (r *REPLState) cmdCosigner(args []string, _ interface{}) (command.Result, error) {
@@ -173,7 +174,7 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 		})
 	}, cosignerSetupProjection{
 		Alias: result.Alias, URL: result.URL,
-		Created: result.Created, Updated: result.Updated, Enrolled: result.Enrolled,
+		Created: result.Created, Updated: result.Updated, Enrolled: result.Enrolled, EnrollmentPending: result.EnrollmentPending,
 		Connected: result.Connected, NodeRole: result.NodeRole,
 		AdvertisedKeys: result.AdvertisedKeys, Routes: result.Routes, DryRun: result.DryRun,
 	})
@@ -190,6 +191,9 @@ func cosignerSetupCompletedEffects(plan apshellapp.CosignerSetupPlan, result *ap
 	}
 	if result != nil && result.Enrolled {
 		completed += " and this client's key was enrolled at the cosigner"
+	}
+	if result != nil && result.EnrollmentPending {
+		completed += " and an enrollment request for this client's key is waiting for the cosigner's operator"
 	}
 	return completed
 }

@@ -692,11 +692,14 @@ type DisconnectResult struct {
 
 // RequestEnrollmentResult describes the outcome of a client key enrollment.
 type RequestEnrollmentResult struct {
-	Alias            string
-	Fingerprint      string
-	DisconnectedPrev bool
-	RenderLines      []string
-	Summary          Summary
+	Alias       string
+	Fingerprint string
+	// Pending reports that the request waits for the node's operator; the
+	// client connects once it is approved. Otherwise the key was already
+	// enrolled.
+	Pending     bool
+	RenderLines []string
+	Summary     Summary
 }
 
 // EndpointEntry describes one client-local signer endpoint profile.

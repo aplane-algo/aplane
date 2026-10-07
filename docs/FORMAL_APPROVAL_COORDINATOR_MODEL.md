@@ -5,6 +5,15 @@ Status: implemented and machine-checked by
 
 ## Scope
 
+> **Drift note (October 2026):** the production coordinator now serves
+> signing requests only. SSH client enrollment requests no longer wait for
+> the operator through the coordinator; they are queued on disk and answered
+> at once (see `docs/ARCH_SECURITY.md`, "Client Enrollment via SSH"). The
+> token-request states, `Preempt`, and claim AP8 below describe behavior the
+> code no longer has, and the listed preemption tests were removed. The model
+> has not yet been reduced to match; until it is, read its token requests as
+> a historical second request kind.
+
 The approval coordinator serializes delivery to one operator. Requests are
 transaction signing or SSH client-access token provisioning. A request moves
 from `New` to `Queued` to `Delivered`, then to exactly one terminal state:

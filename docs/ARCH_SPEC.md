@@ -499,7 +499,7 @@ The runtime enforces these single-product invariants:
 - template/provider registration is process-global and
   `internal/lsigprovider.registerMu` has no per-owner reference counts;
 - one product runtime owns the watcher, approval coordinator, enrolled-client
-  registry, runtime settings, and lock state;
+  registry, pending enrollment queue, runtime settings, and lock state;
 - SSH uses the fixed usernames `aplane` and `request-enrollment` and carries no
   store or runtime identifier;
 - audit records attribute actors through principal and session fields and carry
@@ -1568,8 +1568,9 @@ Primary implementation ownership:
   explicit-endpoint ID discovery, and bounded read-only unique-route
   verification. Discovery and verification persist neither fetched inventory
   nor a reference-to-endpoint binding.
-- `internal/clientenroll`: shared client-owned synchronous enrollment request
-  and remote preflight used by shell and MCP surfaces.
+- `internal/clientenroll`: shared client-owned enrollment request (answered at
+  once as pending or already enrolled) and remote preflight used by shell and
+  MCP surfaces.
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog used by
   generation UIs.
 - `internal/policy`: shared signer/cosigner policy grammar, validation, and
@@ -1879,8 +1880,9 @@ Verification expectations remain:
   binds to the product runtime after passphrase verification.
 - SSH: enrolled public key for tunnel connections. The fixed non-secret
   username is `aplane`; the key must be in the node's registry, which is
-  re-checked after the handshake. Enrollment is a key-only, operator-approved
-  bootstrap using the `request-enrollment` username.
+  re-checked after the handshake. Enrollment is a key-only bootstrap using the
+  `request-enrollment` username: the request is queued for the operator,
+  who approves it later, and the client connects once it is approved.
 
 ## Approval Model
 

@@ -57,6 +57,7 @@ const (
 	ViewDeleting            // Loading state while deleting
 	ViewEnrolledClients     // Enrolled client keys with per-key revocation
 	ViewRevokeClientConfirm // Client key revocation confirmation dialog
+	ViewImportClientKey     // Pre-enroll a client public key from a file
 	ViewLockConfirm         // Manual signer lock confirmation dialog
 	ViewDisplaceConfirm     // Confirmation modal for displacing existing client
 	ViewAdminPanel          // Admin control panel
@@ -182,6 +183,14 @@ type signingState struct {
 type enrollmentApprovalState struct {
 	request *PendingEnrollmentRequest
 	focus   int // 0 = approve, 1 = reject
+	// queue holds requests announced while another was on screen; each is
+	// shown in turn once the operator answers the current one.
+	queue []PendingEnrollmentRequest
+	// answering lists the fingerprints whose approve or reject is in flight,
+	// from the popup or the Enrolled Clients list. A request announced again
+	// meanwhile (at login, or by a replay) is not shown a second time; the
+	// signer's result settles it.
+	answering []string
 }
 
 // backupState is the managed-backup confirm/result flow.
@@ -322,8 +331,9 @@ type adminPanelState struct {
 
 // clientsState is the enrolled-clients screen and its revocation dialog.
 type clientsState struct {
+	pending      []protocol.PendingEnrollmentInfo // requests waiting for approval, listed first
 	keys         []protocol.EnrolledKeyInfo
-	selected     int
+	selected     int // row over pending then keys
 	loading      bool
 	status       string
 	returnView   ViewState
@@ -331,6 +341,10 @@ type clientsState struct {
 	confirmAll   bool   // the dialog revokes every key
 	confirmKey   string // fingerprint the dialog revokes when confirmAll is false
 	confirmLabel string
+	importPath   string // key import form
+	importLabel  string
+	importFocus  int
+	importError  string
 }
 
 // manualLockState is the manual signer-lock confirmation dialog.
@@ -560,11 +574,6 @@ type SignRequestCanceledMsg struct {
 
 // ClientEnrollmentCanceledMsg is sent when apsigner withdraws a delivered
 // client access request.
-type ClientEnrollmentCanceledMsg struct {
-	ID     string
-	Reason string
-}
-
 // ClientEnrollmentRequestReceivedMsg is sent when a token provisioning request is received
 type ClientEnrollmentRequestReceivedMsg struct {
 	Request PendingEnrollmentRequest
@@ -605,6 +614,36 @@ type DeleteResultMsg struct {
 // EnrolledKeysListMsg carries the enrolled client keys.
 type EnrolledKeysListMsg struct {
 	Keys []protocol.EnrolledKeyInfo
+}
+
+// PendingEnrollmentsListMsg carries the enrollment requests waiting for
+// approval.
+type PendingEnrollmentsListMsg struct {
+	Requests []protocol.PendingEnrollmentInfo
+}
+
+// ApproveEnrollmentResultMsg is sent when an enrollment approval completes.
+type ApproveEnrollmentResultMsg struct {
+	Success     bool
+	Error       string
+	Fingerprint string
+	Label       string
+}
+
+// RejectEnrollmentResultMsg is sent when an enrollment rejection completes.
+type RejectEnrollmentResultMsg struct {
+	Success     bool
+	Error       string
+	Fingerprint string
+}
+
+// ImportClientKeyResultMsg is sent when a client key import completes.
+type ImportClientKeyResultMsg struct {
+	Success     bool
+	Error       string
+	Fingerprint string
+	Label       string
+	Added       bool
 }
 
 // RevokeEnrolledKeyResultMsg is sent when a client key revocation completes.

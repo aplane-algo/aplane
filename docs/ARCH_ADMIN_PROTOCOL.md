@@ -165,7 +165,10 @@ Server to Client:
 Client to Server:
 
 - `sign_response`
-- `client_enrollment_response`
+- `list_pending_enrollments`
+- `approve_enrollment`
+- `reject_enrollment`
+- `import_client_key`
 - `list_enrolled_keys`
 - `revoke_enrolled_key`
 - `revoke_all_enrolled_keys`
@@ -175,7 +178,10 @@ Server to Client:
 - `sign_request`
 - `sign_request_canceled`
 - `client_enrollment_request`
-- `client_enrollment_request_canceled`
+- `pending_enrollments_list`
+- `approve_enrollment_result`
+- `reject_enrollment_result`
+- `import_client_key_result`
 - `enrolled_keys_list`
 - `revoke_enrolled_key_result`
 - `revoke_all_enrolled_keys_result`
@@ -298,9 +304,10 @@ of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
 occupy or replace the active admin-owner slot and cannot receive approval
 notifications or trigger disconnect cleanup. The server permits only
-`get_admin_settings`, cosigner-reference list/get/public-export, and generation
-inventory requests; those requests still pass through their ordinary grant
-checks and locked/unlocked/recovery-state interlocks.
+`get_admin_settings`, cosigner-reference list/get/public-export, generation
+inventory, and enrolled-client inventory (`list_enrolled_keys`,
+`list_pending_enrollments`) requests; those requests still pass through their
+ordinary grant checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
@@ -343,10 +350,12 @@ checks and locked/unlocked/recovery-state interlocks.
 - `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
-- `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`request-enrollment` username, `enroll [<label>]` command) to have its key enrolled. The label is the client's requested display text, bounded and printable, and carries no authority.
-- `client_enrollment_response`: `approved`, optional `reason`; an approval enrolls the key in `identities/default/.ssh/authorized_keys` and acknowledges the client with `enrolled <fingerprint>`; no credential is issued, because the client's key is its credential. The server-side handling attaches the admin session's approver principal to the `CLIENT_ENROLLED` audit entry.
-- `client_enrollment_request_canceled`: `reason`; server-originated notification that a delivered `client_enrollment_request` was withdrawn. The only reason is `preempted`: a signing request is waiting, and signing has priority over enrollment. The coordinator sends it before releasing the delivery turn, so it precedes the next `sign_request`. Admin clients must close the matching prompt and must not send a later `client_enrollment_response` for it; the SSH client is told to retry.
-- `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection)
+- `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`request-enrollment` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
+- `list_pending_enrollments` -> `pending_enrollments_list`: `requests[]`, oldest first, each with `fingerprint`, optional `label`, `key_type`, optional `remote_addr`, and `requested_at` (Unix seconds)
+- `approve_enrollment`: `fingerprint`, optional `label` -> `approve_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`, `label`; enrolls the waiting request's key in `identities/default/.ssh/authorized_keys` with the request's label (or `label`, which replaces it), removes the request, and audits `CLIENT_ENROLLED` with the admin session's attribution. No credential is issued, because the client's key is its credential. A fingerprint with no waiting request, or a `label` that is not printable single-line text of at most 64 bytes, fails with `code:"invalid_request"`. A registry write that took effect but is not yet durable still clears the request and audits the enrollment; the result then carries the durability failure.
+- `reject_enrollment`: `fingerprint` -> `reject_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`; removes the waiting request without enrolling its key and audits `CLIENT_ENROLLMENT_REJECTED`. A fingerprint with no waiting request fails with `code:"invalid_request"`, as does a request whose key is already enrolled (an approval that enrolled the key but could not clear its request): approving again clears it, or the key is revoked.
+- `import_client_key`: `public_key` (one OpenSSH public-key line), optional `label` -> `import_client_key_result`: `success`, optional `code`, `error`, `fingerprint`, `label`, `added`; enrolls the key directly (pre-enrollment), using the line's comment as the label when none is given, and clears a waiting request for the same key. `added` is false when the key was already enrolled. A malformed line, a line carrying authorized_keys options (`from=`, `restrict`, ...; this version implements none, so the key would otherwise be enrolled without the restriction asked for), more than one line, an unsupported key type, or a label (given or taken from the comment) that is not printable single-line text of at most 64 bytes fails with `code:"invalid_request"`.
+- `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection); waiting requests are listed by `list_pending_enrollments`
 - `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
 - `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
 

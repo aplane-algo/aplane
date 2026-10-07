@@ -107,7 +107,7 @@ These return an error telling you the right path:
 | Blocked | Use instead |
 |---------|-------------|
 | `js`, `jssave`, `jslist` | the dedicated MCP tools |
-| `request-enrollment` | interactive approval — run real `apshell` in a terminal |
+| `request-enrollment` | interactive host trust — run real `apshell` in a terminal |
 | `quit`, `exit` | MCP disconnect |
 | `keyreg` with no args | provide args directly (`keyreg alice online`) — paste mode is interactive |
 
@@ -447,10 +447,11 @@ bytes even though apshell does not submit them.
 
 - **`connect [alias]`** opens the SSH tunnel to the signer (default endpoint, or
   a named one). **`disconnect`** closes it.
-- **`request-enrollment`** enrolls this client's SSH key at the signer —
+- **`request-enrollment`** asks the signer to enroll this client's SSH key —
   **interactive and not available via MCP**; run real `apshell` in a terminal
-  once to enroll. MCP refuses to start without a trusted host, and the signer
-  refuses the tunnel until the key is enrolled.
+  once to submit the request, then have the operator approve it. MCP refuses
+  to start without a trusted host, and the signer refuses the tunnel until the
+  key is enrolled.
 - **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
   `create`, `import`, `discover-cosigners`, `default`, `delete`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`

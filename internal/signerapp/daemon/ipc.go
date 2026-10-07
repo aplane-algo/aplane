@@ -267,6 +267,11 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 
 	// Send initial status after successful authentication
 	_ = session.SendStatus()
+	// After the status, the operator who now owns the session sees every
+	// enrollment request still waiting, oldest first.
+	if s.signer != nil {
+		s.signer.notifyPendingEnrollments()
+	}
 
 	s.serveAdminMessages(session, adminConn)
 }
@@ -317,17 +322,8 @@ func (s *IPCServer) SendSignRequestCanceled(msg *signerapproval.SignRequestCance
 	return active.WriteJSON(adminserver.ProtocolSignRequestCanceledMessage(*msg)) == nil
 }
 
-// SendClientEnrollmentCanceled tells the IPC client that a delivered client
-// access request was withdrawn.
-func (s *IPCServer) SendClientEnrollmentCanceled(msg *signerapproval.ClientEnrollmentCanceled) bool {
-	active := s.activeSession()
-	if active == nil || msg == nil {
-		return false
-	}
-	return active.WriteJSON(adminserver.ProtocolClientEnrollmentRequestCanceledMessage(*msg)) == nil
-}
-
-// SendClientEnrollmentRequest sends a token provisioning request to the IPC client.
+// SendClientEnrollmentRequest tells the IPC client that an enrollment
+// request is waiting for the operator.
 func (s *IPCServer) SendClientEnrollmentRequest(req *signerapproval.ClientEnrollmentRequest) bool {
 	active := s.activeSession()
 	if active == nil {

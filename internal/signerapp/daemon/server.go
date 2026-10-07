@@ -4,9 +4,13 @@
 package daemon
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -14,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
+	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
@@ -160,6 +165,118 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 	}
 	logInfof("client key revoked: %s (closed %d connection(s))", fingerprint, closed)
 	return closed, nil
+}
+
+// ApproveClientEnrollment enrolls the key of a waiting request. label, when
+// set, replaces the label the client asked for. A key that entered the live
+// registry is audited as enrolled even when the write is not yet durable or
+// the request could not be cleared; that failure is reported on top.
+func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint, label string) (string, error) {
+	if ir == nil {
+		return "", protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	label, err := clientregistry.NormalizeLabel(label)
+	if err != nil {
+		return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
+	}
+	entry, enrolled, err := ir.ApproveEnrollment(fingerprint, label)
+	if enrolled {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
+		}
+		if err != nil {
+			logWarnf("client key enrolled: %s (label %q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
+		} else {
+			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
+		}
+	}
+	if err != nil {
+		if errors.Is(err, enrollqueue.ErrNotPending) {
+			return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
+		}
+		return entry.Label, err
+	}
+	return entry.Label, nil
+}
+
+// RejectClientEnrollment drops a waiting request without enrolling its key.
+func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) error {
+	if ir == nil {
+		return protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	entry, rejected, err := ir.RejectEnrollment(fingerprint)
+	if rejected {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
+		}
+		if err != nil {
+			logWarnf("client enrollment request rejected: %s but the queue write is not yet durable: %v", fingerprint, err)
+		} else {
+			logInfof("client enrollment request rejected: %s", fingerprint)
+		}
+	}
+	if err != nil {
+		if errors.Is(err, enrollqueue.ErrNotPending) {
+			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("no enrollment request is waiting for key %s", fingerprint))
+		}
+		if errors.Is(err, productruntime.ErrAlreadyEnrolled) {
+			return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("client key %s is already enrolled; approve the request again to clear it, or revoke the key", fingerprint))
+		}
+		return err
+	}
+	return nil
+}
+
+// ImportClientKey enrolls an OpenSSH public-key line the operator supplied,
+// the pre-enrollment path. The line's comment is the label unless one is
+// given. A waiting request for the same key is cleared.
+//
+// The line follows the registry's rule: this version implements no
+// authorized_keys options, so an option-bearing line (from=, restrict, ...)
+// is refused rather than enrolled without the restriction it asks for.
+func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, publicKey, label string) (string, string, bool, error) {
+	if ir == nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
+	}
+	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
+	if err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
+	}
+	if len(options) != 0 {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: option %q is not implemented by this version; import the key without options", options[0]))
+	}
+	if len(bytes.TrimSpace(rest)) != 0 {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, errors.New("invalid public key: expected one OpenSSH public-key line"))
+	}
+	if err := sshtunnel.CheckClientKey(key); err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, err)
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = comment
+	}
+	label, err = clientregistry.NormalizeLabel(label)
+	if err != nil {
+		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
+	}
+	fingerprint := ssh.FingerprintSHA256(key)
+	added, err := ir.ImportClientKey(key, label)
+	if added {
+		if fs.auditLog != nil {
+			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
+		}
+		if err != nil {
+			logWarnf("client key imported: %s (label %q) but the import did not complete: %v", fingerprint, label, err)
+		} else {
+			logInfof("client key imported: %s (label %q)", fingerprint, label)
+		}
+	} else if err == nil {
+		logInfof("client key import: %s is already enrolled", fingerprint)
+	}
+	if err != nil {
+		return fingerprint, label, added, err
+	}
+	return fingerprint, label, added, nil
 }
 
 // RevokeAllClientKeys removes every enrolled client key and closes every

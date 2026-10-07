@@ -77,7 +77,10 @@ In the shell pane, run:
 ```
 request-enrollment
 ```
-You will see an approval prompt in the signer admin pane. Navigate to it with F1 or <Shift>-LeftArrow and accept it. 
+The command returns at once with the request waiting. You will see an
+approval prompt in the signer admin pane (or, if it was not open, the request
+is shown when you log in and on the Enrolled Clients screen). Navigate to it
+with F1 or <Shift>-LeftArrow and accept it. 
 
 ![Quickstart screenshot 2](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/qs2.png)
 
@@ -86,7 +89,7 @@ only credential.
 
 ## 6. Confirm or reconnect
 
-After the key is enrolled, the shell will auto-connect to the signer. If for some reason it does not, retry from apshell:
+After the key is enrolled, connect from the shell pane:
 
 ```
 connect

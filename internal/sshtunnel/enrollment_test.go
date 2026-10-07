@@ -4,22 +4,16 @@
 package sshtunnel
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"errors"
 	"fmt"
-	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestParseExecCommandRejectsOversizedLength(t *testing.T) {
@@ -91,10 +85,17 @@ func testServer(t *testing.T) (*Server, string) {
 }
 
 func setEnrollmentHooks(srv *Server, hooks EnrollmentHooks) {
-	if hooks.OperatorConnected == nil {
-		hooks.OperatorConnected = func() bool { return true }
-	}
 	srv.SetEnrollmentHooks(hooks)
+}
+
+// pendingHook records requests and answers that they wait for the operator.
+func pendingHook(record *[]string) EnrollmentRequestFunc {
+	return func(key ssh.PublicKey, label, _ string) (bool, error) {
+		if record != nil {
+			*record = append(*record, ssh.FingerprintSHA256(key)+" "+label)
+		}
+		return true, nil
+	}
 }
 
 // generateClientKey creates an ephemeral Ed25519 SSH key pair for testing.
@@ -145,7 +146,7 @@ func runEnrollmentSessionWithCommand(t *testing.T, srv *Server, clientSigner ssh
 		go ssh.DiscardRequests(globalReqs)
 
 		for newChannel := range chans {
-			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
+			srv.handleEnrollmentChannel(sshServerConn, newChannel)
 		}
 	}()
 
@@ -194,487 +195,78 @@ func runEnrollmentSessionWithCommand(t *testing.T, srv *Server, clientSigner ssh
 	return outStr, 0, nil
 }
 
-func TestEnrollment_FullSuccess(t *testing.T) {
+// Without a product hook the server enrolls the key at once into its
+// in-memory list and answers "enrolled".
+func TestEnrollment_ImmediateWithoutProductHook(t *testing.T) {
 	srv, _ := testServer(t)
-
-	var approvalCalled, auditCalled bool
-	var approvedLabel, auditedLabel string
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			approvalCalled = true
-			approvedLabel = label
-			return true, nil
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
-			auditCalled = true
-			auditedLabel = label
-		},
-	})
 
 	clientSigner, clientPub := generateClientKey(t)
 	output, exitCode, err := runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll laptop")
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
-
 	if exitCode != 0 {
 		t.Errorf("expected exit 0, got %d; output: %s", exitCode, output)
 	}
 	if want := "enrolled " + ssh.FingerprintSHA256(clientPub) + "\n"; output != want {
 		t.Errorf("output = %q, want %q", output, want)
 	}
-	if !approvalCalled || approvedLabel != "laptop" {
-		t.Errorf("approval callback called=%v label=%q", approvalCalled, approvedLabel)
-	}
-	if !auditCalled || auditedLabel != "laptop" {
-		t.Errorf("audit callback called=%v label=%q", auditCalled, auditedLabel)
-	}
 	if !srv.hasAuthorizedKey(clientPub) {
 		t.Error("key was not enrolled")
 	}
 }
 
-func TestEnrollmentApprovalCanceledOnClientDisconnect(t *testing.T) {
+// With the product hook a request is recorded with its label and answered
+// "pending"; nothing is enrolled until the operator approves.
+func TestEnrollment_Pending(t *testing.T) {
 	srv, _ := testServer(t)
-	clientSigner, _ := generateClientKey(t)
+	var requests []string
+	setEnrollmentHooks(srv, EnrollmentHooks{Request: pendingHook(&requests)})
 
-	approvalStarted := make(chan struct{})
-	approvalDone := make(chan error, 1)
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			close(approvalStarted)
-			<-ctx.Done()
-			approvalDone <- ctx.Err()
-			return false, ctx.Err()
-		},
-	})
-
-	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
-	if listenErr != nil {
-		t.Fatalf("listen: %v", listenErr)
+	clientSigner, clientPub := generateClientKey(t)
+	output, exitCode, err := runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll laptop")
+	if err != nil {
+		t.Fatalf("session error: %v", err)
 	}
-	defer func() { _ = ln.Close() }()
-
-	serverDone := make(chan struct{})
-	go func() {
-		defer close(serverDone)
-		conn, acceptErr := ln.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		sshServerConn, chans, globalReqs, sshErr := ssh.NewServerConn(conn, srv.sshConfig)
-		if sshErr != nil {
-			return
-		}
-		defer func() { _ = sshServerConn.Close() }()
-		go ssh.DiscardRequests(globalReqs)
-
-		for newChannel := range chans {
-			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
-		}
-	}()
-
-	clientConfig := &ssh.ClientConfig{
-		User: enrollmentSSHUsername,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
+	if exitCode != 0 {
+		t.Errorf("expected exit 0, got %d; output: %s", exitCode, output)
 	}
-	clientConn, dialErr := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
-	if dialErr != nil {
-		t.Fatalf("dial: %v", dialErr)
+	fingerprint := ssh.FingerprintSHA256(clientPub)
+	if want := "pending " + fingerprint + "\n"; output != want {
+		t.Errorf("output = %q, want %q", output, want)
 	}
-	cc, chans, reqs, connErr := ssh.NewClientConn(clientConn, ln.Addr().String(), clientConfig)
-	if connErr != nil {
-		_ = clientConn.Close()
-		t.Fatalf("client connect: %v", connErr)
+	if len(requests) != 1 || requests[0] != fingerprint+" laptop" {
+		t.Errorf("recorded requests = %q", requests)
 	}
-	client := ssh.NewClient(cc, chans, reqs)
-	session, sessErr := client.NewSession()
-	if sessErr != nil {
-		_ = client.Close()
-		t.Fatalf("new session: %v", sessErr)
-	}
-	if err := session.Start("enroll"); err != nil {
-		_ = session.Close()
-		_ = client.Close()
-		t.Fatalf("start provisioning: %v", err)
-	}
-
-	select {
-	case <-approvalStarted:
-	case <-time.After(time.Second):
-		t.Fatal("approval callback did not start")
-	}
-	_ = session.Close()
-	_ = client.Close()
-	_ = clientConn.Close()
-
-	select {
-	case err := <-approvalDone:
-		if err == nil {
-			t.Fatal("approval context error = nil, want cancellation")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("approval callback was not canceled after client disconnect")
-	}
-
-	select {
-	case <-serverDone:
-	case <-time.After(time.Second):
-		t.Fatal("server did not finish after client disconnect")
+	if srv.hasAuthorizedKey(clientPub) {
+		t.Error("key was enrolled before approval")
 	}
 }
 
-func TestClientRequestEnrollmentContextCancelClosesRequest(t *testing.T) {
-	srv, tmpDir := testServer(t)
-
-	approvalStarted := make(chan struct{})
-	approvalDone := make(chan error, 1)
+// A key the registry already holds is answered "enrolled" without a request.
+func TestEnrollment_AlreadyEnrolled(t *testing.T) {
+	srv, _ := testServer(t)
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			close(approvalStarted)
-			<-ctx.Done()
-			approvalDone <- ctx.Err()
-			return false, ctx.Err()
-		},
+		Request: func(ssh.PublicKey, string, string) (bool, error) { return false, nil },
 	})
 
-	serverCtx, stopServer := context.WithCancel(context.Background())
-	defer stopServer()
-	if err := srv.Start(serverCtx); err != nil {
-		t.Fatalf("Start() error = %v", err)
+	clientSigner, clientPub := generateClientKey(t)
+	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
+	if err != nil {
+		t.Fatalf("session error: %v", err)
 	}
-	defer func() { _ = srv.Stop() }()
-
-	_, _, identityPath := generateClientIdentityFile(t, tmpDir)
-	host, port := splitHostPort(t, srv.listener.Addr().String())
-	knownHostsPath := filepath.Join(tmpDir, "known_hosts")
-	line := knownhosts.Line([]string{hostWithPort(host, port)}, srv.hostKey.PublicKey()) + "\n"
-	if err := os.WriteFile(knownHostsPath, []byte(line), 0600); err != nil {
-		t.Fatalf("WriteFile(known_hosts) error = %v", err)
-	}
-
-	client := NewClient(host, port, 0, identityPath, knownHostsPath)
-	reqCtx, cancelReq := context.WithCancel(context.Background())
-	resultCh := make(chan error, 1)
-	go func() {
-		fingerprint, err := client.RequestEnrollment(reqCtx, "")
-		if fingerprint != "" {
-			resultCh <- fmt.Errorf("fingerprint = %q, want empty", fingerprint)
-			return
-		}
-		resultCh <- err
-	}()
-
-	select {
-	case <-approvalStarted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("approval callback did not start")
-	}
-	cancelReq()
-
-	select {
-	case err := <-resultCh:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("RequestEnrollment() error = %v, want context.Canceled", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("RequestEnrollment() did not return after cancellation")
-	}
-	select {
-	case err := <-approvalDone:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("approval context error = %v, want context.Canceled", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("server approval context was not canceled")
+	if exitCode != 0 || output != "enrolled "+ssh.FingerprintSHA256(clientPub)+"\n" {
+		t.Errorf("exit %d output %q", exitCode, output)
 	}
 }
 
-func TestEnrollmentIgnoresClientStdinEOF(t *testing.T) {
+// A request the product refuses (for example a full queue) is answered with
+// the refusal and a non-zero exit; nothing is enrolled.
+func TestEnrollment_Refused(t *testing.T) {
 	srv, _ := testServer(t)
-	clientSigner, _ := generateClientKey(t)
-
-	approvalStarted := make(chan struct{})
-	allowApproval := make(chan struct{})
-	approvalCanceled := make(chan error, 1)
 	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			close(approvalStarted)
-			select {
-			case <-allowApproval:
-				return true, nil
-			case <-ctx.Done():
-				approvalCanceled <- ctx.Err()
-				return false, ctx.Err()
-			}
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {},
-	})
-
-	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
-	if listenErr != nil {
-		t.Fatalf("listen: %v", listenErr)
-	}
-	defer func() { _ = ln.Close() }()
-
-	serverDone := make(chan struct{})
-	go func() {
-		defer close(serverDone)
-		conn, acceptErr := ln.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		sshServerConn, chans, globalReqs, sshErr := ssh.NewServerConn(conn, srv.sshConfig)
-		if sshErr != nil {
-			return
-		}
-		defer func() { _ = sshServerConn.Close() }()
-		go ssh.DiscardRequests(globalReqs)
-
-		for newChannel := range chans {
-			srv.handleEnrollmentChannel(context.Background(), sshServerConn, newChannel)
-		}
-	}()
-
-	clientConfig := &ssh.ClientConfig{
-		User: enrollmentSSHUsername,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	}
-	clientConn, dialErr := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
-	if dialErr != nil {
-		t.Fatalf("dial: %v", dialErr)
-	}
-	cc, chans, reqs, connErr := ssh.NewClientConn(clientConn, ln.Addr().String(), clientConfig)
-	if connErr != nil {
-		_ = clientConn.Close()
-		t.Fatalf("client connect: %v", connErr)
-	}
-	client := ssh.NewClient(cc, chans, reqs)
-	session, sessErr := client.NewSession()
-	if sessErr != nil {
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("new session: %v", sessErr)
-	}
-	stdin, stdinErr := session.StdinPipe()
-	if stdinErr != nil {
-		_ = session.Close()
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("stdin pipe: %v", stdinErr)
-	}
-	stdout, stdoutErr := session.StdoutPipe()
-	if stdoutErr != nil {
-		_ = session.Close()
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("stdout pipe: %v", stdoutErr)
-	}
-	if err := session.Start("enroll"); err != nil {
-		_ = session.Close()
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("start provisioning: %v", err)
-	}
-
-	select {
-	case <-approvalStarted:
-	case <-time.After(time.Second):
-		t.Fatal("approval callback did not start")
-	}
-	if err := stdin.Close(); err != nil {
-		t.Fatalf("close stdin: %v", err)
-	}
-	select {
-	case err := <-approvalCanceled:
-		t.Fatalf("approval context canceled after stdin EOF: %v", err)
-	case <-time.After(150 * time.Millisecond):
-	}
-
-	close(allowApproval)
-	output, readErr := io.ReadAll(stdout)
-	if readErr != nil {
-		t.Fatalf("read stdout: %v", readErr)
-	}
-	if err := session.Wait(); err != nil {
-		t.Fatalf("wait provisioning: %v; output: %s", err, string(output))
-	}
-	if !strings.Contains(string(output), "enrolled ") {
-		t.Fatalf("output = %q, want the enrollment acknowledgement", string(output))
-	}
-
-	_ = session.Close()
-	_ = client.Close()
-	_ = clientConn.Close()
-	select {
-	case <-serverDone:
-	case <-time.After(time.Second):
-		t.Fatal("server did not finish after client close")
-	}
-}
-
-// The registry write succeeds, then the client is gone before the
-// acknowledgement: the enrollment stands and is audited, because the key is
-// usable whether or not the client heard the reply.
-func TestEnrollmentDeliveryFailureAfterEnrollmentStillAuditsEnrollment(t *testing.T) {
-	srv, _ := testServer(t)
-	clientSigner, clientPubKey := generateClientKey(t)
-
-	issueStarted := make(chan struct{})
-	allowIssue := make(chan struct{})
-	var auditCalled, enrolled bool
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(ctx context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			return true, nil
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
-			auditCalled = true
-		},
-	})
-	// The hook blocks so the test controls the ordering of the registry
-	// write and the client's disconnect.
-	srv.SetProductHooks(ProductHooks{
-		CheckKey: func(key ssh.PublicKey) bool {
-			return enrolled && ssh.FingerprintSHA256(key) == ssh.FingerprintSHA256(clientPubKey)
-		},
-		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) {
-			enrolled = true
-			close(issueStarted)
-			<-allowIssue
-			return true, nil
-		},
-	})
-
-	ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
-	if listenErr != nil {
-		t.Fatalf("listen: %v", listenErr)
-	}
-	defer func() { _ = ln.Close() }()
-
-	serverDone := make(chan struct{})
-	connCanceled := make(chan struct{})
-	go func() {
-		defer close(serverDone)
-		conn, acceptErr := ln.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		sshServerConn, chans, globalReqs, sshErr := ssh.NewServerConn(conn, srv.sshConfig)
-		if sshErr != nil {
-			return
-		}
-		defer func() { _ = sshServerConn.Close() }()
-		go ssh.DiscardRequests(globalReqs)
-
-		connCtx, cancelConnCtx := context.WithCancel(context.Background())
-		var handlers sync.WaitGroup
-		for newChannel := range chans {
-			handlers.Add(1)
-			go func(ch ssh.NewChannel) {
-				defer handlers.Done()
-				srv.handleEnrollmentChannel(connCtx, sshServerConn, ch)
-			}(newChannel)
-		}
-		cancelConnCtx()
-		close(connCanceled)
-		handlers.Wait()
-	}()
-
-	clientConfig := &ssh.ClientConfig{
-		User: enrollmentSSHUsername,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	}
-	clientConn, dialErr := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
-	if dialErr != nil {
-		t.Fatalf("dial: %v", dialErr)
-	}
-	cc, chans, reqs, connErr := ssh.NewClientConn(clientConn, ln.Addr().String(), clientConfig)
-	if connErr != nil {
-		_ = clientConn.Close()
-		t.Fatalf("client connect: %v", connErr)
-	}
-	client := ssh.NewClient(cc, chans, reqs)
-	session, sessErr := client.NewSession()
-	if sessErr != nil {
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("new session: %v", sessErr)
-	}
-	stdout, stdoutErr := session.StdoutPipe()
-	if stdoutErr != nil {
-		_ = session.Close()
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("stdout pipe: %v", stdoutErr)
-	}
-	if err := session.Start("enroll"); err != nil {
-		_ = session.Close()
-		_ = client.Close()
-		_ = clientConn.Close()
-		t.Fatalf("start provisioning: %v", err)
-	}
-
-	select {
-	case <-issueStarted:
-	case <-time.After(time.Second):
-		t.Fatal("enrollment hook did not start")
-	}
-	if !enrolled {
-		t.Fatal("client key was not enrolled")
-	}
-
-	_ = session.Close()
-	_ = client.Close()
-	_ = clientConn.Close()
-	select {
-	case <-connCanceled:
-	case <-time.After(time.Second):
-		t.Fatal("server did not observe client disconnect")
-	}
-	close(allowIssue)
-	_, _ = io.ReadAll(stdout)
-
-	select {
-	case <-serverDone:
-	case <-time.After(time.Second):
-		t.Fatal("server did not finish after client disconnect")
-	}
-	if !auditCalled {
-		t.Fatal("audit callback should record the enrollment even though the acknowledgement was not delivered")
-	}
-	if !enrolled {
-		t.Fatal("key should remain enrolled")
-	}
-}
-
-func TestEnrollment_Rejected(t *testing.T) {
-	srv, _ := testServer(t)
-
-	var auditCalled bool
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			return false, nil // Operator rejects
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
-			auditCalled = true
+		Request: func(ssh.PublicKey, string, string) (bool, error) {
+			return false, fmt.Errorf("enrollment queue is full")
 		},
 	})
 
@@ -683,140 +275,13 @@ func TestEnrollment_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session error: %v", err)
 	}
-
 	if exitCode == 0 {
 		t.Errorf("expected non-zero exit, got 0; output: %s", output)
 	}
-	if !strings.Contains(output, "rejected by operator") {
-		t.Errorf("output = %q, want the operator rejection", output)
-	}
-	if auditCalled {
-		t.Error("audit callback should NOT have been called after rejection")
+	if !strings.Contains(output, "ERROR: ") || !strings.Contains(output, "enrollment queue is full") {
+		t.Errorf("output = %q, want the refusal", output)
 	}
 	if srv.hasAuthorizedKey(clientPub) {
-		t.Error("key should not be enrolled after rejection")
-	}
-}
-
-func TestEnrollment_RegistryFailure(t *testing.T) {
-	srv, _ := testServer(t)
-
-	var auditCalled bool
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			return true, nil // Operator approves
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
-			auditCalled = true
-		},
-	})
-	srv.SetProductHooks(ProductHooks{
-		CheckKey: func(key ssh.PublicKey) bool { return false },
-		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) {
-			return false, fmt.Errorf("registry publish failed")
-		},
-	})
-
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-
-	if exitCode == 0 {
-		t.Errorf("expected non-zero exit on registry failure, got 0; output: %s", output)
-	}
-	if !strings.Contains(output, "failed to enroll SSH key") {
-		t.Errorf("output = %q, want the enrollment failure", output)
-	}
-	if auditCalled {
-		t.Error("audit callback should NOT have been called after registry failure")
-	}
-}
-
-// A registry write that installed the key but is not yet durable is audited
-// as an enrollment, since the key is usable, but the client is answered with
-// an error so it retries and is acknowledged only once the write is durable.
-func TestEnrollment_RegistryAppliedNotDurable(t *testing.T) {
-	srv, _ := testServer(t)
-
-	var auditCalled bool
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			return true, nil
-		},
-		AuditEnrolled: func(sshFingerprint, label, remoteAddr string) {
-			auditCalled = true
-		},
-	})
-	srv.SetProductHooks(ProductHooks{
-		CheckKey:  func(key ssh.PublicKey) bool { return false },
-		EnrollKey: func(key ssh.PublicKey, label string) (bool, error) { return true, fmt.Errorf("directory sync failed") },
-	})
-
-	clientSigner, clientPub := generateClientKey(t)
-	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-	if exitCode == 0 {
-		t.Errorf("exit code = 0, want a failure the client retries; output: %s", output)
-	}
-	if strings.Contains(output, "enrolled "+ssh.FingerprintSHA256(clientPub)) || !strings.Contains(output, "not yet durable") {
-		t.Errorf("output = %q, want the not-yet-durable error and no acknowledgement", output)
-	}
-	if !auditCalled {
-		t.Error("the applied enrollment must be audited even though its write is not durable")
-	}
-}
-
-func TestEnrollment_NoOperator(t *testing.T) {
-	srv, _ := testServer(t)
-
-	var approvalCalled bool
-
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		OperatorConnected: func() bool { return false },
-		ApproveContext: func(_ context.Context, sshFingerprint, label, remoteAddr string) (bool, error) {
-			approvalCalled = true
-			return true, nil
-		},
-	})
-
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-
-	if exitCode == 0 {
-		t.Errorf("expected non-zero exit when no operator, got 0; output: %s", output)
-	}
-	if approvalCalled {
-		t.Error("approval callback should NOT have been called when no operator connected")
-	}
-}
-
-func TestEnrollmentChecksProductOperator(t *testing.T) {
-	srv, _ := testServer(t)
-
-	called := false
-	setEnrollmentHooks(srv, EnrollmentHooks{
-		OperatorConnected: func() bool {
-			called = true
-			return false
-		},
-	})
-
-	clientSigner, _ := generateClientKey(t)
-	output, exitCode, err := runEnrollmentSession(t, srv, clientSigner)
-	if err != nil {
-		t.Fatalf("session error: %v", err)
-	}
-	if exitCode == 0 {
-		t.Errorf("expected non-zero exit when no operator, got 0; output: %s", output)
-	}
-	if !called {
-		t.Fatal("product operator callback was not called")
+		t.Error("key should not be enrolled after a refusal")
 	}
 }

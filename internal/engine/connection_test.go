@@ -80,7 +80,9 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	}
 }
 
-func TestEngineRequestEnrollmentDisconnectsFirst(t *testing.T) {
+// An enrollment request is answered "pending" and nothing reconnects, so it
+// must leave a live tunnel and the signer cache alone.
+func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng, err := NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
@@ -97,14 +99,11 @@ func TestEngineRequestEnrollmentDisconnectsFirst(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected enrollment request error, got nil")
 	}
-	if eng.Connection.IsConnected() {
-		t.Fatal("engine should be disconnected before requesting enrollment")
+	if !eng.Connection.IsConnected() || !eng.IsTunnelConnected() || eng.GetConnectionTarget() != "remote-a" {
+		t.Fatal("an enrollment request must not disconnect the live tunnel")
 	}
-	if eng.IsTunnelConnected() {
-		t.Fatal("tunnel should be disconnected before requesting enrollment")
-	}
-	if eng.SignerCache.Count() != 0 {
-		t.Fatal("signer cache should be reset by disconnect-before-request flow")
+	if eng.SignerCache.Count() != 1 {
+		t.Fatal("an enrollment request must not reset the signer cache")
 	}
 }
 

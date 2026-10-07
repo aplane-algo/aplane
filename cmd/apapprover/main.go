@@ -50,12 +50,39 @@ func (r approvalRequest) id() string {
 type decodedNotification struct {
 	request  *approvalRequest
 	canceled *protocol.SignRequestCanceledMessage
-	// enrollmentCanceled withdraws a delivered client access request.
-	enrollmentCanceled *protocol.ClientEnrollmentRequestCanceledMessage
-	errMsg             *protocol.ErrorMessage
+	errMsg   *protocol.ErrorMessage
+}
+
+// enrollmentOutcome is the signer's answer to an enrollment approval or
+// rejection this client sent.
+type enrollmentOutcome struct {
+	approved    bool
+	fingerprint string
+	label       string
+	success     bool
+	err         string
+}
+
+func (o enrollmentOutcome) String() string {
+	switch {
+	case o.success && o.approved && o.label != "":
+		return fmt.Sprintf("✓ Client key %s enrolled (%s)", o.fingerprint, o.label)
+	case o.success && o.approved:
+		return fmt.Sprintf("✓ Client key %s enrolled", o.fingerprint)
+	case o.success:
+		return fmt.Sprintf("✓ Enrollment request for %s rejected", o.fingerprint)
+	case o.approved:
+		return fmt.Sprintf("⚠ Approval of %s failed: %s", o.fingerprint, o.err)
+	default:
+		return fmt.Sprintf("⚠ Rejection of %s failed: %s", o.fingerprint, o.err)
+	}
 }
 
 const approvalPrompt = "Approve current request? [y/n or n <reason>]: "
+
+// enrollmentAnswerTimeout bounds the wait for the signer's reply to an
+// enrollment answer; the signer answers from its own registry at once.
+const enrollmentAnswerTimeout = 10 * time.Second
 
 func main() {
 	dataDir := flag.String("d", "", "Data directory (required, or set APSIGNER_DATA)")
@@ -74,7 +101,12 @@ func main() {
 	go readStdin(inputChan)
 
 	logInfof("waiting for approval requests (Ctrl+C to quit)")
-	a := &approver{send: ipcClient.WriteJSON}
+	a := &approver{
+		send: ipcClient.WriteJSON,
+		answer: func(msg any) ([]byte, error) {
+			return ipcClient.SendAndReceive(msg, enrollmentAnswerTimeout)
+		},
+	}
 	notifications := ipcClient.Notifications()
 	lifecycle := ipcClient.LifecycleEvents()
 	for {
@@ -162,12 +194,18 @@ func connectionEnded(event transport.LifecycleEvent) bool {
 // approver holds the FIFO queue of approval requests. The operator answers
 // the request at the head; later requests wait their turn.
 type approver struct {
-	send  func(any) error
-	queue []approvalRequest
+	// send delivers a signing answer, which the signer does not reply to.
+	send func(any) error
+	// answer delivers an enrollment answer and returns the signer's reply:
+	// approve_enrollment and reject_enrollment are requests with results,
+	// and the result says whether the key was enrolled or the request
+	// dropped (it may have been answered elsewhere, or lapsed).
+	answer func(any) ([]byte, error)
+	queue  []approvalRequest
 }
 
 // handleInput applies the operator's answer to the request at the head of the
-// queue. A request stays queued if its response cannot be sent.
+// queue. A request stays queued if its response cannot be delivered.
 func (a *approver) handleInput(input string) {
 	if len(a.queue) == 0 {
 		return
@@ -177,11 +215,6 @@ func (a *approver) handleInput(input string) {
 		fmt.Print("Please enter y/yes or n/no or n <reason>: ")
 		return
 	}
-	if approved {
-		fmt.Println("✓ APPROVED")
-	} else {
-		fmt.Println("✗ REJECTED")
-	}
 
 	respMsg, err := buildApprovalResponse(a.queue[0], approved, reason)
 	if err != nil {
@@ -189,14 +222,89 @@ func (a *approver) handleInput(input string) {
 		fmt.Print(approvalPrompt)
 		return
 	}
-	if err := a.send(respMsg); err != nil {
-		logErrorf("error sending response: %v", err)
-		logWarnf("request remains pending; retry your response")
-		fmt.Print(approvalPrompt)
-		return
+	if a.queue[0].kind == approvalKindClientEnrollment {
+		if !a.answerEnrollment(a.queue[0], respMsg, approved) {
+			fmt.Print(approvalPrompt)
+			return
+		}
+	} else {
+		if approved {
+			fmt.Println("✓ APPROVED")
+		} else {
+			fmt.Println("✗ REJECTED")
+		}
+		if err := a.send(respMsg); err != nil {
+			logErrorf("error sending response: %v", err)
+			logWarnf("request remains pending; retry your response")
+			fmt.Print(approvalPrompt)
+			return
+		}
 	}
 	a.queue = a.queue[1:]
 	a.showHeadOrWait()
+}
+
+// answerEnrollment delivers an enrollment answer and prints the signer's
+// verdict. It reports whether the request is settled: a delivery failure
+// keeps it queued for a retry, while a refused answer (the request is no
+// longer waiting, or the registry write failed) is final and is shown.
+func (a *approver) answerEnrollment(req approvalRequest, respMsg any, approved bool) bool {
+	if a.answer == nil {
+		logErrorf("enrollment answers are not configured")
+		return false
+	}
+	raw, err := a.answer(respMsg)
+	if err != nil {
+		logErrorf("error delivering enrollment answer: %v", err)
+		logWarnf("request remains pending; retry your response")
+		return false
+	}
+	outcome, err := decodeEnrollmentOutcome(raw, req.enrollmentRequest.SSHFingerprint, approved)
+	if err != nil {
+		logErrorf("%v", err)
+		logWarnf("request remains pending; retry your response")
+		return false
+	}
+	fmt.Println(outcome)
+	return true
+}
+
+// decodeEnrollmentOutcome reads the signer's reply to an enrollment answer.
+func decodeEnrollmentOutcome(raw []byte, fingerprint string, approved bool) (enrollmentOutcome, error) {
+	base, err := protocol.ParseAdminBaseMessage(raw)
+	if err != nil {
+		return enrollmentOutcome{}, fmt.Errorf("malformed enrollment answer reply: %w", err)
+	}
+	outcome := enrollmentOutcome{approved: approved, fingerprint: fingerprint}
+	switch base.Type {
+	case protocol.MsgTypeApproveEnrollmentResult:
+		var result protocol.ApproveEnrollmentResultMessage
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return enrollmentOutcome{}, fmt.Errorf("malformed approve enrollment result: %w", err)
+		}
+		outcome.success, outcome.err, outcome.label = result.Success, result.Error, result.Label
+		if result.Fingerprint != "" {
+			outcome.fingerprint = result.Fingerprint
+		}
+	case protocol.MsgTypeRejectEnrollmentResult:
+		var result protocol.RejectEnrollmentResultMessage
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return enrollmentOutcome{}, fmt.Errorf("malformed reject enrollment result: %w", err)
+		}
+		outcome.success, outcome.err = result.Success, result.Error
+		if result.Fingerprint != "" {
+			outcome.fingerprint = result.Fingerprint
+		}
+	case protocol.MsgTypeError:
+		var errMsg protocol.ErrorMessage
+		if err := json.Unmarshal(raw, &errMsg); err != nil {
+			return enrollmentOutcome{}, fmt.Errorf("malformed error message: %w", err)
+		}
+		outcome.err = errMsg.Error
+	default:
+		return enrollmentOutcome{}, fmt.Errorf("unexpected reply %q to an enrollment answer", base.Type)
+	}
+	return outcome, nil
 }
 
 // handleNotification routes a server notification: an error, a withdrawn
@@ -212,8 +320,6 @@ func (a *approver) handleNotification(notification transport.Notification) {
 		logErrorf("%s", decoded.errMsg.Error)
 	case decoded.canceled != nil:
 		a.handleCanceled(approvalKindSign, "Signing request", decoded.canceled.ID, decoded.canceled.Reason)
-	case decoded.enrollmentCanceled != nil:
-		a.handleCanceled(approvalKindClientEnrollment, "Client enrollment request", decoded.enrollmentCanceled.ID, decoded.enrollmentCanceled.Reason)
 	case decoded.request != nil:
 		a.enqueue(*decoded.request)
 	}
@@ -236,6 +342,13 @@ func (a *approver) handleCanceled(kind approvalKind, label, id, reason string) {
 }
 
 func (a *approver) enqueue(req approvalRequest) {
+	// A waiting enrollment request is announced again whenever this client
+	// connects; one entry per request is enough.
+	for _, queued := range a.queue {
+		if queued.kind == req.kind && queued.id() == req.id() {
+			return
+		}
+	}
 	a.queue = append(a.queue, req)
 	if len(a.queue) == 1 {
 		displayRequest(a.queue[0], 1)
@@ -272,12 +385,6 @@ func decodeNotification(notification transport.Notification) (decodedNotificatio
 			return decodedNotification{}, true, fmt.Errorf("malformed sign request cancellation: %w", err)
 		}
 		return decodedNotification{canceled: &canceled}, true, nil
-	case protocol.MsgTypeClientEnrollmentRequestCanceled:
-		var canceled protocol.ClientEnrollmentRequestCanceledMessage
-		if err := json.Unmarshal(notification.Raw, &canceled); err != nil {
-			return decodedNotification{}, true, fmt.Errorf("malformed client enrollment cancellation: %w", err)
-		}
-		return decodedNotification{enrollmentCanceled: &canceled}, true, nil
 	case protocol.MsgTypeClientEnrollmentRequest:
 		var req protocol.ClientEnrollmentRequestMessage
 		if err := json.Unmarshal(notification.Raw, &req); err != nil {
@@ -321,8 +428,6 @@ func approvalCancelReason(reason string) string {
 		return "requester canceled"
 	case "timeout":
 		return "timed out"
-	case protocol.ClientEnrollmentCancelReasonPreempted:
-		return "withdrawn for a signing request; the client can retry"
 	default:
 		return reason
 	}
@@ -361,13 +466,22 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 		if req.enrollmentRequest == nil {
 			return nil, fmt.Errorf("missing client enrollment request")
 		}
-		return protocol.ClientEnrollmentResponseMessage{
+		// The request waits in the signer's queue; the answer names the key.
+		if approved {
+			return protocol.ApproveEnrollmentMessage{
+				BaseMessage: protocol.BaseMessage{
+					Type: protocol.MsgTypeApproveEnrollment,
+					ID:   req.enrollmentRequest.ID,
+				},
+				Fingerprint: req.enrollmentRequest.SSHFingerprint,
+			}, nil
+		}
+		return protocol.RejectEnrollmentMessage{
 			BaseMessage: protocol.BaseMessage{
-				Type: protocol.MsgTypeClientEnrollmentResponse,
+				Type: protocol.MsgTypeRejectEnrollment,
 				ID:   req.enrollmentRequest.ID,
 			},
-			Approved: approved,
-			Reason:   reason,
+			Fingerprint: req.enrollmentRequest.SSHFingerprint,
 		}, nil
 	case approvalKindSign:
 		if req.signRequest == nil {
@@ -452,7 +566,8 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 		fmt.Printf("Label:       %s\n", req.Label)
 	}
 	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
-	fmt.Printf("Timestamp:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Print(approvalPrompt)
 }

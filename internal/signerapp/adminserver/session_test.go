@@ -170,6 +170,14 @@ func (s *stubServices) RevokeEnrolledKey(SessionContext, string) (int, error) {
 	return 0, nil
 }
 func (s *stubServices) RevokeAllEnrolledKeys(SessionContext) (int, int, error) { return 0, 0, nil }
+func (s *stubServices) PendingEnrollments() []protocol.PendingEnrollmentInfo   { return nil }
+func (s *stubServices) ApproveEnrollment(SessionContext, string, string) (string, error) {
+	return "", nil
+}
+func (s *stubServices) RejectEnrollment(SessionContext, string) error { return nil }
+func (s *stubServices) ImportClientKey(SessionContext, string, string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }
@@ -476,6 +484,8 @@ func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T)
 		protocol.MsgTypeGetCosignerReference:   true,
 		protocol.MsgTypeExportCosignerPublic:   true,
 		protocol.MsgTypeListGenerations:        true,
+		protocol.MsgTypeListEnrolledKeys:       true,
+		protocol.MsgTypeListPendingEnrollments: true,
 	}
 	if len(authOnlyDispatchTypes) != len(wantAllowed) {
 		t.Fatalf("auth_only allowlist size = %d, want %d", len(authOnlyDispatchTypes), len(wantAllowed))
@@ -976,7 +986,6 @@ func TestHandleSignResponseCarriesApproverPrincipal(t *testing.T) {
 			sent <- struct{}{}
 			return true
 		},
-		nil,
 		nil,
 	))
 	go func() {

@@ -166,10 +166,11 @@ endpoints:
     known_hosts_path: .ssh/known_hosts
 EOF
 
-# Enroll this client's SSH key at the signer (requires operator approval)
+# Ask the signer to enroll this client's SSH key; the operator approves later
 ./apshell
 > request-enrollment
-# After approval, apshell immediately tries to connect.
+# Once the operator has approved it in apadmin:
+> connect
 
 # Or use custom directory
 ./apshell -d /custom/path
@@ -919,8 +920,10 @@ token, no `Authorization` header, and no credential file to copy.
 
 ### How It Works
 
-1. **Enrollment**: the client runs `request-enrollment`; the signer operator
-   approves the client's SSH key fingerprint in `apadmin` (or `apapprover`)
+1. **Enrollment**: the client runs `request-enrollment`, which queues a
+   request and returns; the signer operator approves the client's SSH key
+   fingerprint in `apadmin` (or `apapprover`) whenever convenient, or imports
+   the public key directly
 2. **Registry**: the signer records the key in
    `identities/default/.ssh/authorized_keys`, which the daemon owns; do not
    hand-edit it
@@ -936,7 +939,7 @@ apadmin authenticates over local IPC independently of client keys.
 ### Enrollment
 
 ```bash
-# In apshell - asks the signer to enroll this client's key, operator approves in apadmin
+# In apshell - queues a request; the operator approves it later in apadmin
 > request-enrollment
 
 # For a named endpoint in endpoints.yaml (signer or cosigner)
@@ -946,16 +949,28 @@ apadmin authenticates over local IPC independently of client keys.
 > request-enrollment --label laptop
 ```
 
-The command creates the client SSH key if it is missing and performs first-use
-host trust interactively. The operator sees the client's full SSH fingerprint
-in apadmin and compares it with the fingerprint apshell prints before
-approving. After approval, interactive `apshell` immediately attempts to
-establish the signer SSH tunnel when that endpoint is the default signer.
-Enrolling a key that is already enrolled changes nothing.
+The command creates the client SSH key if it is missing, performs first-use
+host trust interactively, and returns as soon as the signer has queued the
+request: `Enrollment request for client key <fingerprint> is waiting for the
+operator at endpoint <alias>`. The operator sees the client's full SSH
+fingerprint in apadmin, immediately if connected or at the next login and on
+the **Enrolled Clients** screen, and compares it with the fingerprint apshell
+prints before approving. Run `connect` once it is approved; until then the
+signer refuses the key. A request for a key that is already enrolled is
+answered as such and, for the default signer, `apshell` connects at once.
 
-Guided cosigner setup (`endpoints add`) enrolls automatically: when the
-cosigner refuses the client's key, apshell requests enrollment, waits for the
-cosigner operator's approval, and retries.
+The signer keeps at most 16 waiting requests, one per key, and drops a
+request after 7 days without an answer; a refused or lapsed request is simply
+made again.
+
+Guided cosigner setup (`endpoints add`) requests enrollment automatically:
+when the cosigner refuses the client's key, apshell submits the request and
+stops with the connection configured; rerun `endpoints add` once the cosigner
+operator has approved it.
+
+The operator can also pre-enroll a client without a request from it, by
+importing the client's public key file (`i` on the Enrolled Clients screen,
+or `apadmin clients import <file>`).
 
 ### Client Keys
 
@@ -968,12 +983,17 @@ cosigner operator's approval, and retries.
 ### Revocation
 
 The operator opens **Enrolled Clients** from the apadmin Admin panel (press
-`c`). It lists each enrolled key's fingerprint, label, key type, and whether it
-is connected, and offers **revoke key** and **revoke all keys**. Revoking a key:
+`c`). It lists the enrollment requests waiting for approval (`a` approves,
+`x` rejects) and then each enrolled key's fingerprint, label, key type, and
+whether it is connected, with `r` to revoke a key, `A` to revoke all keys, and
+`i` to import a public-key file. The same operations are available
+non-interactively as `apadmin clients list|approve|reject|revoke|import`.
+Revoking a key:
 
 1. Removes it from the registry
 2. Closes that client's live SSH connections immediately
-3. Requires the client to run `request-enrollment` again (operator approval required)
+3. Requires the client to run `request-enrollment` again, for the operator to
+   approve later (or the operator to re-import the key)
 
 Use **revoke all keys** as the emergency lever when a client machine may be
 compromised.
@@ -1032,7 +1052,7 @@ Headless operation allows Signer to run unattended without interactive prompts, 
 
 In normal (interactive) operation:
 1. Signer starts locked and waits for passphrase via apadmin
-2. By default, signing and client enrollment requests require manual approval via apadmin or apapprover
+2. By default, signing requests require manual approval via apadmin or apapprover; client enrollment requests always wait in a queue for the operator
 3. In default prompt mode, apadmin can disconnect after local keyboard inactivity
 4. When apadmin disconnects, the signer locks
 

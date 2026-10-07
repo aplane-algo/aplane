@@ -150,7 +150,7 @@ func catalogPassphrase(
 	prompt *adminBatchPrompt,
 	stderr io.Writer,
 ) ([]byte, io.Closer, error) {
-	stdinReserved := command == "cosigner" && cosignerImportUsesStdin(args)
+	stdinReserved := (command == "cosigner" || command == "clients") && cosignerImportUsesStdin(args)
 	if !stdinReserved {
 		passphrase, err := prompt.passphrase()
 		return passphrase, nil, err
@@ -161,7 +161,7 @@ func catalogPassphrase(
 
 	tty, err := openControllingTerminal()
 	if err != nil {
-		return nil, nil, fmt.Errorf("cosigner import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", err)
+		return nil, nil, fmt.Errorf("%s import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", command, err)
 	}
 	ttyPrompt := newAdminBatchPrompt(tty, stderr)
 	passphrase, err := ttyPrompt.secret("Enter store passphrase: ", false)

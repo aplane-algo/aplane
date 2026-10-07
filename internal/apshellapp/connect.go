@@ -180,27 +180,35 @@ func (a *App) ResolveEnrollmentTarget(alias string) (EnrollmentTarget, error) {
 }
 
 // RequestEnrollmentEndpointAlias asks a configured endpoint to enroll this
-// client's SSH key under an optional display label. progress, when set,
-// receives the client key fingerprint once the request is waiting for
-// operator approval. Nothing is stored on the client: the key is the
+// client's SSH key under an optional display label and returns at once: the
+// request waits for the node's operator, and the client connects once it is
+// approved. progress, when set, receives the client key fingerprint as the
+// request is submitted. Nothing is stored on the client: the key is the
 // credential.
 func (a *App) RequestEnrollmentEndpointAlias(ctx context.Context, alias, label string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, progress func(string)) (*RequestEnrollmentResult, error) {
 	endpoint, err := a.configuredEndpoint(alias)
 	if err != nil {
 		return nil, err
 	}
-	wasConnected := a.eng.IsTunnelConnected()
 	result, err := clientenroll.RequestEndpointEnrollment(ctx, a.eng, alias, endpoint, label, hostKeyApproval, progress)
 	if err != nil {
 		return nil, err
 	}
 
 	requestResult := &RequestEnrollmentResult{
-		Alias:            result.Alias,
-		Fingerprint:      result.Fingerprint,
-		DisconnectedPrev: wasConnected,
-		Summary:          Summary{Message: fmt.Sprintf("Client key %s enrolled at endpoint %s", result.Fingerprint, result.Alias)},
+		Alias:       result.Alias,
+		Fingerprint: result.Fingerprint,
+		Pending:     result.Pending,
 	}
+	if result.Pending {
+		requestResult.Summary = Summary{Message: fmt.Sprintf("Enrollment request for client key %s is waiting for the operator at endpoint %s", result.Fingerprint, result.Alias)}
+		requestResult.RenderLines = []string{
+			fmt.Sprintf("✓ %s", requestResult.Summary.Message),
+			"The operator approves it in apadmin (Enrolled Clients). Run 'connect' once it is approved.",
+		}
+		return requestResult, nil
+	}
+	requestResult.Summary = Summary{Message: fmt.Sprintf("Client key %s is already enrolled at endpoint %s", result.Fingerprint, result.Alias)}
 	requestResult.RenderLines = []string{fmt.Sprintf("✓ %s", requestResult.Summary.Message)}
 	return requestResult, nil
 }

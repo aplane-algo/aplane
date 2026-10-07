@@ -1035,7 +1035,7 @@ Additional signer-state notes:
 - signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
 - signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
 - built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
-- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. An enrolling client is answered with an error rather than `enrolled` in that state, so it retries and is acknowledged only once the registry is durable. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
 - `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ### Client Data Directory Layout
@@ -1096,13 +1096,13 @@ Additional client-state notes:
 - `apshell endpoints create --alias <alias> --endpoint <url> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, enroll the client, or establish SSH host trust.
 - `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
 - `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, requests enrollment, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
-- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it requests enrollment there, waits for the operator's approval, and tries once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
+- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it submits an enrollment request there. A request the node queues for its operator stops setup with the connection configured and the error `ErrCosignerSetupEnrollmentPending` ("enrollment request is waiting for the cosigner's operator"); setup is rerun once the operator approves. Only when the node answers that the key is already enrolled is the connection tried once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, `enrollment_pending`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
 - an endpoint record carries no per-destination credential, so creating, re-pointing, or deleting an alias retires nothing on the client. The enrollment a node recorded for this client's key outlives the client's route to it; revoking it is the node operator's action.
 - endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits occur outside endpoint-write critical sections.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start with a key the signer has not enrolled or without a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands. Whether a key is enrolled is known only to the node; an unenrolled key is discovered as an authentication failure at connect time, with guidance to run `request-enrollment`
 - for interactive `apshell`, SSH host trust is enforced when the shell attempts `connect`, startup auto-connect, or `request-enrollment` flows; it is not a preflight requirement for process startup
-- `request-enrollment [--endpoint <alias>] [--label <text>]` enrolls this client's key at configured endpoints only: without `--endpoint` it uses the default signer endpoint; `--endpoint <alias>` uses that signer or cosigner endpoint. A positional host is not accepted. The optional label is display text the node stores beside the key. Nothing is written on the client; after a successful enrollment at the default signer, `apshell` connects with the enrolled key
+- `request-enrollment [--endpoint <alias>] [--label <text>]` asks configured endpoints only to enroll this client's key: without `--endpoint` it uses the default signer endpoint; `--endpoint <alias>` uses that signer or cosigner endpoint. A positional host is not accepted. The optional label is display text the node stores beside the key. The command returns as soon as the node has answered: `pending` (the request waits for the node's operator; apshell says to run `connect` once it is approved) or `enrolled` (the key was already enrolled). Nothing is written on the client. `apshell` connects at once only when the default signer answered `enrolled`
 - `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured and its host is trusted in `known_hosts`
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected state or with a key the signer refuses, and it cannot perform first-use trust or enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
@@ -2098,7 +2098,9 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
+- `CLIENT_ENROLLMENT_REQUESTED`
 - `CLIENT_ENROLLED`
+- `CLIENT_ENROLLMENT_REJECTED`
 - `CLIENT_KEY_REVOKED`
 
 Signing-audit semantics:
@@ -2150,7 +2152,9 @@ Store-management audit semantics:
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
 - `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
-- `CLIENT_ENROLLED` is emitted as soon as an operator-approved enrollment has been written to the registry, whether or not the acknowledgement reaches the client (the key is usable from that write on); it carries the key fingerprint, the `client_label`, the remote address, and the approver principal
+- `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
+- `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
+- `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution
 - `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count, and admin session attribution
 
 ## Authentication, SSH, and Client Enrollment
@@ -2188,12 +2192,12 @@ excess arrivals; one remote address may hold at most 8 of them. Authentication
 has a 60-second socket deadline, cleared after successful authentication.
 Accepted sockets are tracked before authentication so shutdown also closes
 stalled handshakes. The limit applies to pending authentication, not
-established sessions or subsequent operator approval for enrollment.
+established sessions.
 
 Client TCP dialing and SSH authentication share one setup timeout (60 seconds
 by default). Setup cancellation closes the socket to interrupt blocked I/O.
 Successful connections detach from that setup timeout; their established
-connection lifecycle and enrollment approval waits remain separately owned.
+connection lifecycle remains separately owned.
 The setup timeout also covers interactive first-use host-key approval, giving
 the operator time to compare the displayed fingerprint.
 
@@ -2204,33 +2208,67 @@ Client enrollment flow:
 3. the exec request `enroll` or `enroll <label>` is accepted on that
    connection; the label is at most 64 bytes of printable single-line text,
    and any other command is answered `ERROR: unknown command` with exit 1
-4. server verifies the product admin client is connected
-   (`no operator (apadmin) connected to approve the enrollment request`, exit 1,
-   otherwise)
-5. admin approves via `client_enrollment_request` / `client_enrollment_response`
-   (`ERROR: enrollment rejected by operator`, exit 1, on rejection)
-6. server adds the public key and label to the registry under the publication
-   rule (`ERROR: failed to enroll SSH key`, exit 1, if the write fails)
-7. `CLIENT_ENROLLED` is audited: the registry now holds the key, so the
-   authority change is recorded whether or not the client hears the reply.
-   If the write took effect but is not yet durable, the reply is instead
-   `ERROR: enrollment recorded but not yet durable; retry the request`,
-   exit 1; the retry is acknowledged once the registry is durable and is not
-   audited again
-8. server replies `enrolled <fingerprint>` with exit 0; the client checks the
-   fingerprint against the key it authenticated with. A client that is gone
-   by then stays enrolled; the missed acknowledgement is only logged
+4. a key the registry already holds is answered `enrolled <fingerprint>`
+   with exit 0 and nothing is queued; like every success answer read from
+   the registry, it is given only once the registry is durable (a registry
+   left by an earlier failed write is re-published first, and the request
+   fails with `ERROR: failed to record enrollment request` if that fails)
+5. otherwise the server records the request (public key, label, remote
+   address, time) in `identities/default/.ssh/pending_enrollments.json`,
+   written atomically and durably like the registry, and under the same
+   rule for a write that fails after its rename: a request the file then
+   holds is a queued request for the operator (audited, announced) and the
+   queue is re-published before its next write, but the client is answered
+   `ERROR: enrollment request recorded but not yet durable; retry the
+   request`, exit 1, so it retries and is answered `pending` only once the
+   queue is durable (the retry refreshes the entry and is not audited or
+   announced again); a new request is audited as
+   `CLIENT_ENROLLMENT_REQUESTED` and announced to a connected admin session
+   as `client_enrollment_request`; a repeat for a waiting key refreshes its
+   entry. Refusals are `ERROR: enrollment queue is full; ask the operator to
+   clear it and try again` and `ERROR: failed to record enrollment request`,
+   exit 1
+6. server replies `pending <fingerprint>` with exit 0; the client checks the
+   fingerprint against the key it authenticated with and disconnects. Nothing
+   is stored on the client
+7. later, an admin session approves (`approve_enrollment`: the key and label
+   are added to the registry under the publication rule, the entry is
+   removed, `CLIENT_ENROLLED` is audited) or rejects (`reject_enrollment`:
+   the entry is removed, `CLIENT_ENROLLMENT_REJECTED` is audited). The audit
+   event follows the change that took effect, not the command's outcome: a
+   key that entered the live registry is audited as enrolled even when the
+   approval then reports a durability failure or could not clear the entry
+   (a repeat approval clears it without a second `CLIENT_ENROLLED`; rejecting
+   such a request is refused so the queue and the registry never disagree
+   about the key), and a request dropped by a write that is not yet durable
+   is audited as rejected. Labels written by the admin protocol follow the
+   same rule as client-supplied ones: printable single-line text of at most
+   64 bytes. Every
+   waiting request is announced again when an admin session authenticates
+8. the client learns the outcome by connecting: an enrolled key is accepted,
+   anything else is refused at the handshake
 
-The callbacks are separated as approval, key enrollment, audit, then
-acknowledgement. No credential is issued at any step: the enrolled key is the credential.
-Enrolling a key that is already enrolled asks the operator like any request,
-changes nothing in the registry, and acknowledges normally.
+The server answers without waiting for the operator, so enrollment never
+takes the approval coordinator's delivery turn away from signing. No
+credential is issued at any step: the enrolled key is the credential.
+
+The queue is loaded once at startup, like the registry, and a queue file the
+daemon cannot read completely refuses to serve. It is bounded because its
+writers are unauthenticated: one entry per key, at most 16 waiting keys
+(`enrollqueue.MaxPending`), and entries lapse after 7 days
+(`enrollqueue.TTL`). Waiting requests survive a daemon restart.
+
+An operator may also pre-enroll a key with `import_client_key` (one OpenSSH
+public-key line; its comment is the label unless one is given). The key type
+check is the same as for `request-enrollment`, the write follows the
+publication rule, a waiting request for the same key is cleared, and
+`CLIENT_ENROLLED` is audited with an empty remote address.
 
 Product-facing clients request enrollment with the fixed `request-enrollment`
-username. Limits: one enrollment request per connection, one pending request
-server-wide, at most 8 enrollment connections and 2 session channels per
-connection, a 30-second deadline to start the request, and a 10-second deadline
-for the client to accept the response.
+username. Limits: one enrollment request per connection, at most 8 enrollment
+connections and 2 session channels per connection, a 30-second deadline to
+start the request, and a 10-second deadline for the client to accept the
+response.
 
 Revocation behavior (`revoke_enrolled_key`, `revoke_all_enrolled_keys`):
 

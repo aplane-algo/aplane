@@ -14,9 +14,6 @@ import (
 var (
 	ErrApprovalTimeout  = errors.New("approval timeout")
 	ErrApprovalCanceled = errors.New("approval canceled")
-	// ErrClientEnrollmentPreempted reports that a signing request took the
-	// approval turn from a client access request; the client may retry.
-	ErrClientEnrollmentPreempted = errors.New("the operator is handling a signing request; try again")
 )
 
 const maxRememberedCanceledSignRequests = 1024
@@ -24,8 +21,6 @@ const maxRememberedCanceledSignRequests = 1024
 type HasClientFunc func() bool
 type SendSignRequestFunc func(*SignRequest) bool
 type SendSignRequestCanceledFunc func(*SignRequestCanceled) bool
-type SendClientEnrollmentRequestFunc func(*ClientEnrollmentRequest) bool
-type SendClientEnrollmentCanceledFunc func(*ClientEnrollmentCanceled) bool
 
 type activeSignRequest struct {
 	cancel context.CancelFunc
@@ -38,12 +33,11 @@ type deliveryWaiter struct {
 	signing  bool
 }
 
-// Coordinator owns pending approval queues for signing and token provisioning.
+// Coordinator owns the pending approval queue for signing requests.
 type Coordinator struct {
-	hasClient                   HasClientFunc
-	sendSignRequest             SendSignRequestFunc
-	sendSignRequestCanceled     SendSignRequestCanceledFunc
-	sendClientEnrollmentRequest SendClientEnrollmentRequestFunc
+	hasClient               HasClientFunc
+	sendSignRequest         SendSignRequestFunc
+	sendSignRequestCanceled SendSignRequestCanceledFunc
 
 	pendingRequests      map[string]chan SignResponse
 	activeRequests       map[string]map[*activeSignRequest]struct{}
@@ -51,27 +45,10 @@ type Coordinator struct {
 	canceledRequestOrder []string
 	pendingRequestsLock  sync.Mutex
 
-	pendingEnrollmentRequests     map[string]chan ClientEnrollmentResponse
-	pendingEnrollmentRequestsLock sync.Mutex
-
-	// One request is delivered at a time (AP4). Signing takes priority over
-	// token provisioning: a signing request queues ahead of waiting token
-	// requests and withdraws a delivered one, so an unauthenticated client
-	// access request can never hold up a signing approval.
+	// One request is delivered at a time (AP4).
 	deliveryMu       sync.Mutex
 	deliveryInFlight bool
 	deliveryQueue    []*deliveryWaiter
-	enrollmentHolder chan struct{} // closed to preempt the delivered token request; nil when none holds the turn
-
-	sendClientEnrollmentCanceled SendClientEnrollmentCanceledFunc
-}
-
-// SetClientEnrollmentCanceledSender sets how a preempted token provisioning
-// request is withdrawn from the approval client.
-func (c *Coordinator) SetClientEnrollmentCanceledSender(send SendClientEnrollmentCanceledFunc) {
-	c.deliveryMu.Lock()
-	defer c.deliveryMu.Unlock()
-	c.sendClientEnrollmentCanceled = send
 }
 
 func trySendSignResponse(ch chan SignResponse, msg SignResponse) {
@@ -85,27 +62,14 @@ func trySendSignResponse(ch chan SignResponse, msg SignResponse) {
 	close(ch)
 }
 
-func trySendEnrollmentResponse(ch chan ClientEnrollmentResponse, msg ClientEnrollmentResponse) {
-	if ch == nil {
-		return
-	}
-	select {
-	case ch <- msg:
-	default:
-	}
-	close(ch)
-}
-
-func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc, sendClientEnrollmentRequest SendClientEnrollmentRequestFunc) *Coordinator {
+func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignRequestCanceled SendSignRequestCanceledFunc) *Coordinator {
 	c := &Coordinator{
-		hasClient:                   hasClient,
-		sendSignRequest:             sendSignRequest,
-		sendSignRequestCanceled:     sendSignRequestCanceled,
-		sendClientEnrollmentRequest: sendClientEnrollmentRequest,
-		pendingRequests:             make(map[string]chan SignResponse),
-		activeRequests:              make(map[string]map[*activeSignRequest]struct{}),
-		canceledRequests:            make(map[string]string),
-		pendingEnrollmentRequests:   make(map[string]chan ClientEnrollmentResponse),
+		hasClient:               hasClient,
+		sendSignRequest:         sendSignRequest,
+		sendSignRequestCanceled: sendSignRequestCanceled,
+		pendingRequests:         make(map[string]chan SignResponse),
+		activeRequests:          make(map[string]map[*activeSignRequest]struct{}),
+		canceledRequests:        make(map[string]string),
 	}
 	return c
 }
@@ -275,7 +239,7 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bo
 		return nil
 	}
 	if signing {
-		// Queue ahead of token requests and withdraw a delivered one.
+		// Queue ahead of any non-signing waiter.
 		at := len(c.deliveryQueue)
 		for i, queued := range c.deliveryQueue {
 			if !queued.signing {
@@ -286,10 +250,6 @@ func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context, signing bo
 		c.deliveryQueue = append(c.deliveryQueue, nil)
 		copy(c.deliveryQueue[at+1:], c.deliveryQueue[at:])
 		c.deliveryQueue[at] = waiter
-		if c.enrollmentHolder != nil {
-			close(c.enrollmentHolder)
-			c.enrollmentHolder = nil
-		}
 	} else {
 		c.deliveryQueue = append(c.deliveryQueue, waiter)
 	}
@@ -457,134 +417,4 @@ func (c *Coordinator) FailAllPendingRequests(reason string) {
 	for id, ch := range signRequests {
 		trySendSignResponse(ch, SignResponse{ID: id, Approved: false, Reason: reason})
 	}
-
-	c.pendingEnrollmentRequestsLock.Lock()
-	tokenRequests := c.pendingEnrollmentRequests
-	c.pendingEnrollmentRequests = make(map[string]chan ClientEnrollmentResponse)
-	c.pendingEnrollmentRequestsLock.Unlock()
-
-	for id, ch := range tokenRequests {
-		trySendEnrollmentResponse(ch, ClientEnrollmentResponse{ID: id, Approved: false, Reason: reason})
-	}
-
-}
-
-func (c *Coordinator) HandleClientEnrollmentResponse(msg *ClientEnrollmentResponse) {
-	if msg == nil || msg.ID == "" {
-		return
-	}
-	c.pendingEnrollmentRequestsLock.Lock()
-	ch, exists := c.pendingEnrollmentRequests[msg.ID]
-	if exists {
-		delete(c.pendingEnrollmentRequests, msg.ID)
-	}
-	c.pendingEnrollmentRequestsLock.Unlock()
-
-	if exists {
-		trySendEnrollmentResponse(ch, *msg)
-	}
-}
-
-func (c *Coordinator) RequestClientEnrollment(requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
-	return c.RequestClientEnrollmentContext(context.Background(), requestID, sshFingerprint, label, remoteAddr, timeout)
-}
-
-func (c *Coordinator) RequestClientEnrollmentContext(ctx context.Context, requestID, sshFingerprint, label, remoteAddr string, timeout time.Duration) (bool, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if requestID == "" {
-		return false, fmt.Errorf("request ID is required")
-	}
-	if c.hasClient == nil || !c.hasClient() {
-		return false, fmt.Errorf("no apadmin client connected")
-	}
-
-	if err := c.acquireDeliveryTurnContext(ctx, false); err != nil {
-		return false, fmt.Errorf("client enrollment request canceled: %w", err)
-	}
-	defer c.releaseDeliveryTurn()
-	preempted, holding := c.holdEnrollmentTurn()
-	if !holding {
-		return false, ErrClientEnrollmentPreempted
-	}
-	defer c.dropEnrollmentTurn(preempted)
-
-	if c.hasClient == nil || !c.hasClient() {
-		return false, fmt.Errorf("no apadmin client connected")
-	}
-
-	responseChan := make(chan ClientEnrollmentResponse, 1)
-
-	c.pendingEnrollmentRequestsLock.Lock()
-	c.pendingEnrollmentRequests[requestID] = responseChan
-	c.pendingEnrollmentRequestsLock.Unlock()
-
-	defer func() {
-		c.pendingEnrollmentRequestsLock.Lock()
-		delete(c.pendingEnrollmentRequests, requestID)
-		c.pendingEnrollmentRequestsLock.Unlock()
-	}()
-
-	request := &ClientEnrollmentRequest{
-		ID:             requestID,
-		SSHFingerprint: sshFingerprint,
-		Label:          label,
-		RemoteAddr:     remoteAddr,
-		Timestamp:      time.Now().Unix(),
-	}
-
-	if c.sendClientEnrollmentRequest == nil || !c.sendClientEnrollmentRequest(request) {
-		return false, fmt.Errorf("failed to send client enrollment request via IPC")
-	}
-
-	select {
-	case response := <-responseChan:
-		if !response.Approved {
-			return false, nil
-		}
-		return true, nil
-	case <-preempted:
-		// Withdraw the prompt before releasing the turn, so the operator
-		// never has two requests delivered at once.
-		c.notifyClientEnrollmentCanceled(requestID, ClientEnrollmentCancelReasonPreempted)
-		return false, ErrClientEnrollmentPreempted
-	case <-time.After(timeout):
-		return false, fmt.Errorf("approval timeout - no response from apadmin within %v", timeout)
-	case <-ctx.Done():
-		return false, fmt.Errorf("client enrollment canceled: %w", ctx.Err())
-	}
-}
-
-// holdEnrollmentTurn registers the token request that now holds the delivery
-// turn. It reports false when a signing request is already waiting, which
-// takes the turn before the token request is delivered.
-func (c *Coordinator) holdEnrollmentTurn() (<-chan struct{}, bool) {
-	c.deliveryMu.Lock()
-	defer c.deliveryMu.Unlock()
-	for _, queued := range c.deliveryQueue {
-		if queued.signing && !queued.canceled {
-			return nil, false
-		}
-	}
-	c.enrollmentHolder = make(chan struct{})
-	return c.enrollmentHolder, true
-}
-
-func (c *Coordinator) dropEnrollmentTurn(preempt <-chan struct{}) {
-	c.deliveryMu.Lock()
-	defer c.deliveryMu.Unlock()
-	if c.enrollmentHolder != nil && (<-chan struct{})(c.enrollmentHolder) == preempt {
-		c.enrollmentHolder = nil
-	}
-}
-
-func (c *Coordinator) notifyClientEnrollmentCanceled(requestID, reason string) {
-	c.deliveryMu.Lock()
-	send := c.sendClientEnrollmentCanceled
-	c.deliveryMu.Unlock()
-	if send == nil {
-		return
-	}
-	_ = send(&ClientEnrollmentCanceled{ID: requestID, Reason: reason})
 }

@@ -27,6 +27,18 @@ type ProductServices interface {
 	// RevokeAllEnrolledKeys removes every enrolled client key and closes
 	// every client connection.
 	RevokeAllEnrolledKeys(ctx SessionContext) (revoked, closedConnections int, err error)
+	// PendingEnrollments lists the enrollment requests waiting for the
+	// operator, oldest first.
+	PendingEnrollments() []protocol.PendingEnrollmentInfo
+	// ApproveEnrollment enrolls the key of a waiting request; label, when
+	// set, replaces the requested label. It returns the label recorded.
+	ApproveEnrollment(ctx SessionContext, fingerprint, label string) (string, error)
+	// RejectEnrollment drops a waiting request without enrolling its key.
+	RejectEnrollment(ctx SessionContext, fingerprint string) error
+	// ImportClientKey enrolls an OpenSSH public-key line the operator
+	// supplied, returning the key's fingerprint, the label recorded, and
+	// whether the key was new to the registry.
+	ImportClientKey(ctx SessionContext, publicKey, label string) (fingerprint, recordedLabel string, added bool, err error)
 }
 
 type SettingsServices interface {
