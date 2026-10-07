@@ -180,8 +180,8 @@ The UI layer is split between thin binary adapters and reusable shell/admin UI p
 - `cmd/apshell`: thin binary adapter and composition entry point for flags, provider registration, bootstrap, and mode selection
 - `internal/apshellcli`: REPL/session mechanics, command registry, scripting mode adapters, MCP surface, plugin argument normalization, and shell rendering
 - `cmd/apadmin`: TUI/batch adapter and composition entry point;
-  `internal/apadminapp` owns authenticated noninteractive catalog and store
-  workflows over admin transport
+  `internal/apadminapp` owns authenticated noninteractive catalog, client
+  enrollment, and store workflows over admin transport
 - `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local cosigner nodes using admin plus daemon panes only
 - `internal/signerapp/signertui`: Bubble Tea signer admin UI
 - `cmd/appass`: Bubble Tea passphrase setup UI
@@ -757,7 +757,7 @@ registry.
 | Admin protocol wire types, envelopes, and framing primitives | `internal/protocol` |
 | Admin service request/result vocabulary and framed server connections | `internal/adminproto` |
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
-| Product runtime aggregate, config, enrolled-client registry, lifecycle | `internal/signerapp/productruntime` |
+| Product runtime aggregate, config, enrolled-client registry and pending queue, lifecycle | `internal/signerapp/productruntime` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
@@ -865,7 +865,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 
 | Lock | Protects |
 |------|----------|
-| `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, including theme, SSH listen address, and endpoint advertise URL |
+| `Signer.configMu` | Live `ServerConfig` snapshots and mutable process settings such as theme; SSH listener and advertise values are deployment-owned reads, not writable admin settings |
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
@@ -876,7 +876,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `productruntime.Runtime.clientsMu` | Enrolled-client registry and pending enrollment queue together, so an approval is one step |
-| `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
+| `adminproto.StreamAdminConn.writeMu` | Serializes outbound framed messages for each admin connection |
 | `adminserver.SessionManager.mu` | Process-wide admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
 | SSH server locks | Product hooks, client connections by fingerprint, enrollment claims, listener |
@@ -1677,7 +1677,8 @@ Caches include:
 - auth-address cache (`<network>_auth_cache.json`)
 - set cache
 - address resolver helpers
-- swap session JSON files and tombstones under the client swap state root
+- external standalone swap-client session JSON files and tombstones under the
+  shared client-data layout; their implementation is outside this repository
 
 These caches are not interchangeable:
 
@@ -1689,9 +1690,10 @@ These caches are not interchangeable:
   `signer_status_poll_interval` (default `10s`) and refresh `/keys` when
   `keyset_revision` changes. MCP mode does not run this background
   poller; it relies on startup connection and serialized command execution
-  instead. The signer cache carries the signer-advertised key type, LogicSig
-  size budget, signing argument schema, guarded `signing_flow`, cosigner
-  component key type, and embedded cosigner public key. Guarded key-type checks
+  instead. The signer cache carries the signer-advertised key type, structured
+  LogicSig program/argument/opcode resource profiles, signing argument schema,
+  guarded `signing_flow`, cosigner component key type, and embedded cosigner
+  public key. Guarded key-type checks
   in the cache layer are compatibility freshness heuristics only; client
   signing route selection remains driven by `signing_flow`,
 - auth cache depends on network state and signer/alias information,
@@ -1707,7 +1709,8 @@ Write-ownership model:
 - `internal/clientstate` remains the higher-level mutation owner for alias/set and related client-state workflows
 - `internal/refname` owns canonical validation and lowercasing for persisted alias and set names
 
-The swap subsystem adds a distinct form of local client state:
+The external standalone swap client adds a distinct form of local state to
+the shared client-data layout; APlane does not implement this subsystem:
 
 - it is per-network and per-local-actor rather than process-global,
 - it is authoritative for local history display when reconciliation is unavailable,
@@ -1747,9 +1750,17 @@ The repo uses:
   dependency direction; `cosigner_catalog_test.go` separates signer-owned
   generation references from client routing discovery;
   `template_mutation_boundary_test.go` makes `templatelibrary` the sole
-  feature-level template/key-type mutation owner; and
+  feature-level template/key-type mutation owner;
   `shell_result_boundary_test.go` pins command-only plugin metadata, the shared
-  human/machine result path, and process-local output,
+  human/machine result path, and process-local output;
+  `admin_client_state_boundary_test.go` keeps admin clients independent of
+  transaction-client state and transport;
+  `product_store_locator_test.go` prevents store selectors and runtime IDs
+  from returning to the fixed product-store APIs;
+  `candidate_validation_test.go` confines generation validation opt-outs to
+  test code; `shell_endpoint_state_test.go` keeps shell configuration and
+  endpoint resolution in `internal/apshellapp`; and
+  `formal_traceability_test.go` pins live cosigner-routing traceability anchors,
 - the opt-in store harnesses, invoked through `make store-lifecycle-test`,
   `make store-crash-test`, and `make store-capacity-test`, create genuine
   blank signer roots without algod or the shared integration fixture;
@@ -1868,7 +1879,7 @@ Verification expectations remain:
 - IPC notifications and request/response message shapes remain compatible with `apadmin` and `apapprover`,
 - client enrollment and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
-- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.cos`, `.template`, `config.yaml`, `audit.log`, and the enrolled-client registry.
+- on-disk compatibility is checked for `store-root.enc`, `.keystore`, `.key`, `.cos`, `.template`, `config.yaml`, `audit.log`, the enrolled-client registry, and the pending enrollment queue.
 - client endpoint compatibility is checked for `endpoints.yaml`,
   endpoint handoff envelopes, and public cosigner
   reference records when those surfaces change.
@@ -1909,8 +1920,10 @@ Architecturally:
   reload/unlock,
 - audit logging is a signer-side operational subsystem, not a UI concern,
 - client enrollment is an approval-mediated path, not just SSH auth,
-- enrollment requires the active product admin session, and revoking a key
-  closes every SSH connection that key authenticated.
+- enrollment requests are persisted even without an active admin session;
+  an authenticated admin approves or rejects them later, and pending requests
+  are announced again when the admin authenticates,
+- revoking a key closes every SSH connection that key authenticated.
 
 ## Architectural Invariants
 
@@ -2004,7 +2017,8 @@ Product-level boundaries:
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
 | Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `internal/clientenroll/enrollment_request.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
-| Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/store.go` |
+| Admin Client App | `cmd/apadmin/main.go`, `cmd/apadmin/admin_batch.go`, `internal/apadminapp/catalog.go`, `internal/apadminapp/session.go`, `internal/apadminapp/clients.go`, `internal/apadminapp/store.go` |
+| Server Client Enrollment | `internal/signerapp/enrollment/service.go`, `internal/signerapp/enrollqueue/queue.go`, `internal/signerapp/enrollqueue/store.go`, `internal/signerapp/clientregistry/registry.go`, `internal/signerapp/clientregistry/store.go`, `internal/signerapp/daemon/enrollment_service.go`, `internal/signerapp/productruntime/runtime.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/consensus.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Native Signature Providers | `internal/signing/ed25519`, `internal/signing/falcon1024/address.go`, `internal/signing/falcon1024/register.go`, `internal/signing/falcon1024/signerreg/*.go`, `internal/signing/falcon1024/signerops/*.go`, `internal/falconparams/params.go` |
@@ -2044,13 +2058,17 @@ are quarantined by reconciliation at unlock, never resumed or adopted.
 A commit with unconfirmed durability, or a rollback that fails after mutation
 began, transitions the runtime into recovery mode immediately and blocks
 signing until the store reconciles cleanly.
-Managed archives contain complete credential authority plus archive integrity
-metadata and source node role. They exclude policy, approval defaults,
-genesis-hash mappings, templates, endpoints, and operator settings. Destination
-policy and configuration are always authoritative.
+Managed archives contain complete credential authority, verified per-key
+cosigner policy when present, archive integrity metadata, and source node role.
+They exclude signer policy, approval defaults, genesis-hash mappings, templates,
+endpoints, and operator settings. Restore installs an archived cosigner policy
+with its key; a differing destination policy is a conflict requiring
+`replace_existing`, and a destination policy is kept when the archive carries
+none. Destination signer policy and operational configuration remain authoritative.
 
 `apadmin` is the sole general-purpose CLI owner of this daemon-owned lifecycle
-over local IPC or strict-known-host SSH. `cmd/apstore` retains local
+over local IPC. Remote operators use an ordinary SSH login to run `apadmin`
+on the signer host. `cmd/apstore` retains local
 `initialize`, external-backup validation, `verify`, policy integrity
 check/sign/verify, private-store permission migration, offline generation
 pruning and key inventory, and `rebuild` replacement-keystore rescue. Managed

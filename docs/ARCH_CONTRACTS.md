@@ -721,12 +721,11 @@ Validation:
   to `10s`, `"0"` disables background `/status` polling, and nonzero values
   below `1s` are rejected
 - `networks.<token>.algod` is normalized into the runtime algod map
-- SDK config loaders are intentionally similar but not strict mirrors of the Go
-  client loader: Go, TypeScript, and Python expose SDK-only
-  `ssh.trust_on_first_use`; Go rejects an empty `ssh.host` when an `ssh:` block
-  is present; TypeScript only enables SSH when `ssh.host` is truthy and falls
-  back to defaults on config read/parse errors; Python rejects an SSH block
-  without `host`
+- SDK config loaders are intentionally similar but not strict mirrors of the
+  Go client loader. The companion Go, TypeScript, and Python SDKs reject
+  top-level `endpoint`, `ssh`, and `signer_port` routing in `config.yaml` and
+  resolve SSH-only connection profiles from `endpoints.yaml`. First-use trust
+  is an explicit connection/enrollment option, not a config.yaml routing field.
 
 ### Server Config
 
@@ -925,8 +924,10 @@ execution, output decoding, environment filtering, and validation.
 
 - SSH is always enabled at startup using configured or default SSH settings
 - REST binds `127.0.0.1:<endpoint.signer_port>`
-- SSH binds `<endpoint.ssh.listen_address>:<endpoint.ssh.port>` and forwards to
-  loopback REST. The default `endpoint.ssh.listen_address` is `127.0.0.1`.
+- SSH binds `<endpoint.ssh.listen_address>:<endpoint.ssh.port>` and hands API
+  channels to the REST listener with the authenticated connection identity.
+  Direct loopback REST requests have no identity, so only `/health` succeeds.
+  The default `endpoint.ssh.listen_address` is `127.0.0.1`.
 - `endpoint.signer_port`, `endpoint.ssh.*`, and `endpoint.advertise_url` are
   configured in signer `config.yaml`. Admin settings may report those values,
   but do not mutate listener bind or handoff URL state. Changing
@@ -979,6 +980,7 @@ execution, output decoding, environment filtering, and validation.
     config.yaml
     unlock.yaml
     .ssh/authorized_keys    # enrolled client keys; daemon-written registry
+    .ssh/pending_enrollments.json # persisted requests awaiting admin approval
     passphrase              # plaintext appass-file helper artifact, mode 0600
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     cosigners/<name>.json
@@ -1059,8 +1061,8 @@ Additional signer-state notes:
   plugins.yaml
   plugins.available/
   scripts/*.js
-  swap/<network>/<proposal_id>.<address>.json
-  swap/<network>/<proposal_id>.<address>.tombstone.json
+  swap/<network>/<proposal_id>.<address>.json           # external standalone swap client
+  swap/<network>/<proposal_id>.<address>.tombstone.json # external standalone swap client
 ```
 
 Additional client-state notes:
@@ -1707,10 +1709,9 @@ Key address identity is derived from key material, not from signing metadata:
   material, with `key_type` selecting the address derivation implementation
 - DSA-backed LogicSig keys derive their account address from stored LogicSig
   bytecode
-- generic LogicSig keys persist an `address` field for inventory and lookup,
-  but the cryptographic LogicSig address is still the address of the stored
-  bytecode; key state repair may fill a missing generic LogicSig `address`
-  from bytecode and rejects stored/derived mismatches
+- generic LogicSig keys derive their account address from stored bytecode;
+  the canonical payload has no persisted `address` field. Scanning verifies
+  the derived selector against the canonical credential filename
 
 Fields such as `signing_args`, `signing_metadata_version`, `base_key_type`,
 and `template_fingerprint` are signing/provenance metadata, not address
@@ -1786,12 +1787,10 @@ consulted to reconstruct missing signing metadata.
 
 Templates are used for key creation and LogicSig bytecode derivation, creation
 parameter and runtime argument metadata in generation surfaces, key-type
-catalog/library/install/enable/disable flows, optional backup bundling and
-explicit template restore, backup import provenance validation (a bundled
-template is recompiled with the bundled key's stored creation parameters and
-must reproduce the key's stored LogicSig bytecode), and live provenance
-comparison through `template_fingerprint`. `template_fingerprint` is
-informational provenance only — behavior-only, versioned (`<n>:` prefix), and
+catalog/library/install/enable/disable flows, and live provenance comparison
+through `template_fingerprint`. Credential backups do not bundle templates,
+and import/restore neither recompiles nor installs them. `template_fingerprint`
+is informational provenance only — behavior-only, versioned (`<n>:` prefix), and
 identifier-independent — and the comparison is version-aware (a different-version
 or malformed fingerprint is "not comparable" and benign, never a conflict).
 Inventory surfaces may report a template conflict or unavailable template, but
@@ -2257,11 +2256,18 @@ daemon cannot read completely refuses to serve. It is bounded because its
 writers are unauthenticated: one entry per key, at most 16 waiting keys
 (`enrollqueue.MaxPending`), and entries lapse after 7 days
 (`enrollqueue.TTL`). Waiting requests survive a daemon restart.
+The queue document has `schema_version: 1` and a `requests` array. Each request
+stores `public_key` (an OpenSSH line), optional `label` and `remote_addr`, and
+`requested_at` (a JSON timestamp). The parser and publication owner is
+`internal/signerapp/enrollqueue`; the product runtime serializes queue and
+registry mutations under the same lock.
 
 An operator may also pre-enroll a key with `import_client_key` (one OpenSSH
-public-key line; its comment is the label unless one is given). The key type
-check is the same as for `request-enrollment`, the write follows the
-publication rule, a waiting request for the same key is cleared, and
+public-key line; its comment is the label unless one is given). Imports reject
+authorized_keys options, including reserved `aplane-` options, and trailing key
+lines with `invalid_request`; unsupported restrictions are never silently
+discarded. The key type check is the same as for `request-enrollment`, the
+write follows the publication rule, a waiting request for the same key is cleared, and
 `CLIENT_ENROLLED` is audited with an empty remote address.
 
 Product-facing clients request enrollment with the fixed `request-enrollment`
@@ -2774,13 +2780,14 @@ orchestration is owned by `internal/signerapp/backupadmin`.
 
 The authority boundary is:
 
-> Backup owns credentials. The destination owns policy and configuration.
+> Backup owns credentials and their per-key cosigner policy. The destination
+> owns signer policy and operational configuration.
 
 A backup preserves complete managed credential records, not only raw private
 key bytes. This includes durable LogicSig bytecode, signing-argument contracts,
 bounded authorization, and other versioned signing metadata carried by
-`.key` and `.cos` payloads. Restore never imports operational authority from
-the source.
+`.key` and `.cos` payloads. Cosigner policy documents travel with their keys;
+restore does not import signer policy or operational configuration.
 
 ### Export and archive shape
 
@@ -2915,8 +2922,11 @@ After validation, restore mints exactly one generation. The parent generation
 is copied, selected credentials are applied into staged `keys/`, derived
 witness public metadata is updated, the staged generation is validated and
 synced, the outgoing generation is sealed, and one durable store-root rename
-commits the operation. Restore never writes templates, key-type activation
-records, policy, config, or network mappings.
+commits the operation. Archived cosigner policy documents are applied in that
+same generation. A differing destination document is a conflict requiring
+`replace_existing`; a destination document is kept when the archive carries
+none. Restore never writes templates, key-type activation records, signer
+policy, config, or network mappings.
 
 The generation manifest operation is exactly `credential-restore`; it records
 the archive SHA-256 and whether explicit rollback is eligible. Recovery-mode
@@ -2940,12 +2950,13 @@ Divergence refuses rollback rather than discarding later mutations. Rollback
 reconstructs the sealed parent content into a fresh current-term generation; it
 never repoints the store root at historical ciphertext.
 
-Restored credentials immediately operate under the destination store's
-current policy, approval default, network mappings, endpoints, and installed
-configuration. No source-policy comparison or unattended-signing
-acknowledgement is part of restore. This matches bulk key import: the
-credential operation does not modify destination policy, and the operator is
-responsible for the destination policy under which restored authority runs.
+Restored account credentials immediately operate under the destination
+signer policy, approval default, network mappings, endpoints, and installed
+configuration. No source signer-policy comparison or unattended-signing
+acknowledgement is part of restore. Cosigner credentials instead use their
+archived per-key policy when present, subject to the destination conflict rule
+above. The operator is responsible for the policy under which restored
+authority runs.
 
 ### Offline rebuild
 
@@ -2969,6 +2980,8 @@ Errors are wrapped with contextual `%w`.
 SDK-facing typed errors in Go include:
 
 - `ErrAuthentication`
+- `ErrNotEnrolled`
+- `ErrEnrollment`
 - `ErrSigningRejected`
 - `ErrSignerUnavailable`
 - `ErrKeyNotFound`
@@ -2983,7 +2996,10 @@ SDK-facing typed errors in Go include:
 
 ## SDK Contracts
 
-All SDKs communicate via the same HTTP REST API as `apshell`, through an SSH tunnel authenticated with the client's enrolled SSH key; requests carry no auth header. The SDKs are being updated to this model in a separate change.
+The companion SDK source communicates via the same HTTP REST API as `apshell`,
+through an SSH tunnel authenticated with the client's enrolled SSH key;
+requests carry no auth header. SDK implementation and release publication are
+owned by the separate `aplane-algo/aplanesdk` repository.
 
 Cross-SDK compatibility-bearing behavior:
 
@@ -2993,6 +3009,14 @@ Cross-SDK compatibility-bearing behavior:
   checked against the signed envelope
 - high-level signing helpers return base64 payloads converted from server hex
 - `FromEnv` and connection helper path resolution are part of the product contract
+- Enrollment helpers return the authenticating key's SHA256 fingerprint and
+  pending/already-enrolled state, validating the reply against the local key.
+  Pending means the request was queued for later admin approval; it does not
+  authorize API connections. Go exposes `RequestEnrollment`, TypeScript
+  `requestEnrollment`, and Python `request_enrollment`, with endpoint-selecting
+  from-env variants. Go uses `ErrNotEnrolled` for refused client authentication
+  and `ErrEnrollment` for enrollment failures; TypeScript and Python expose
+  `AuthenticationError` and `EnrollmentError` for those respective failures.
 - SDK-native prepared transaction models carry unsigned transaction bytes plus
   signer metadata such as effective auth address, optional LogicSig args,
   optional selected-path LogicSig resource hints, optional app-call display metadata, and
@@ -3062,7 +3086,7 @@ Cross-SDK compatibility-bearing behavior:
 
 Go SDK specifics:
 
-- `ConnectSSH(host, sshKeyPath, opts)` establishes the SSH tunnel with the client key, then HTTP (signature as updated in the SDK repository)
+- `ConnectSSH(host, sshKeyPath, opts)` establishes the SSH tunnel with the client key, then HTTP
 - `FromEnv(opts)` resolves the client SSH identity and signer endpoint routing from the client data dir
 - `NewSignerClient(baseURL)` supports caller-owned transport and direct client construction
 - `SetHTTPClient(client)` overrides the HTTP transport for advanced callers.
