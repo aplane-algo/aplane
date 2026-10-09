@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ type ApAdminHarness struct {
 	buildDir      string
 	binaryPath    string
 	unlockProcess *exec.Cmd
+	unlockDone    <-chan error
 	createdKeys   []string // Track keys created for cleanup
 }
 
@@ -574,12 +576,13 @@ func (v *ApAdminHarness) StartUnlockBackground() error {
 		"DISABLE_MEMORY_LOCK=1",
 	)
 
-	if err := v.unlockProcess.Start(); err != nil {
-		return fmt.Errorf("failed to start unlock process: %w", err)
+	// Wait for the CLI's post-authentication readiness signal, not a fixed delay.
+	var err error
+	v.unlockDone, err = startUnlockCommand(v.unlockProcess, 30*time.Second)
+	if err != nil {
+		v.unlockProcess = nil
+		return err
 	}
-
-	// Give it a moment to connect and unlock
-	time.Sleep(500 * time.Millisecond)
 
 	v.t.Log("Started background unlock process")
 	return nil
@@ -589,8 +592,9 @@ func (v *ApAdminHarness) StartUnlockBackground() error {
 func (v *ApAdminHarness) StopUnlockBackground() {
 	if v.unlockProcess != nil && v.unlockProcess.Process != nil {
 		_ = v.unlockProcess.Process.Kill()
-		_ = v.unlockProcess.Wait()
+		<-v.unlockDone
 		v.unlockProcess = nil
+		v.unlockDone = nil
 		v.t.Log("Stopped background unlock process")
 	}
 }
@@ -611,4 +615,52 @@ func isAlgorandAddress(s string) bool {
 	}
 
 	return true
+}
+
+// unlockOutput captures diagnostics and recognizes a complete readiness line.
+// exec.Cmd may copy output concurrently with the readiness waiter.
+type unlockOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+	ready  chan struct{}
+	once   sync.Once
+}
+
+func (o *unlockOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	n, err := o.buffer.Write(p)
+	if strings.Contains("\n"+o.buffer.String(), "\nSigner unlocked\n") {
+		o.once.Do(func() { close(o.ready) })
+	}
+	return n, err
+}
+
+func (o *unlockOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buffer.String()
+}
+
+func startUnlockCommand(cmd *exec.Cmd, timeout time.Duration) (<-chan error, error) {
+	output := &unlockOutput{ready: make(chan struct{})}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start unlock process: %w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return nil, fmt.Errorf("unlock process exited before readiness (%v): %s", err, output.String())
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		<-done
+		return nil, fmt.Errorf("timed out waiting for signer unlock after %s: %s", timeout, output.String())
+	case <-output.ready:
+		return done, nil
+	}
 }
