@@ -413,3 +413,27 @@ func TestTableRefusesAccountsWhoseKeyIsGone(t *testing.T) {
 		t.Fatalf("table for re-imported key: len %d, err %v", fresh.Len(), err)
 	}
 }
+
+func TestDiscardRemovesTheTableAndAllowsAFreshOne(t *testing.T) {
+	store := NewStore(storepaths.NewPaths(t.TempDir()))
+	tb, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.Append(stageAddrs(0, 3)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Discard(tb); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("discarded file remains")
+	}
+	if err := tb.Append(stageAddrs(3, 4)); !errors.Is(err, ErrClosed) {
+		t.Fatalf("stale handle append = %v, want ErrClosed", err)
+	}
+	fresh, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil || fresh == tb || fresh.Len() != 0 {
+		t.Fatalf("fresh table after discard: %v, same %v, len %d", err, fresh == tb, fresh.Len())
+	}
+}

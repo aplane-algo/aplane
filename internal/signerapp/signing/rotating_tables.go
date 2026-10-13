@@ -104,10 +104,14 @@ type StageTableReport struct {
 	// Pending reports that this pass stopped at its derivation budget with
 	// work left: the account is unresolved, or its lookahead is short.
 	Pending bool
-	// Authorizer and Round are what the node reported for the account in
-	// this pass; RotatingStatus compares them with the release memory.
-	Authorizer types.Address
-	Round      uint64
+	// Observed reports that the chain read succeeded; Authorizer and Round
+	// are then what the node reported, and ObservedSeq is the release
+	// memory's sequence just before the read. RotatingStatus uses these even
+	// when a later table write failed.
+	Observed    bool
+	Authorizer  types.Address
+	Round       uint64
+	ObservedSeq uint64
 	// Discarded is set when an unusable on-disk table was replaced.
 	Discarded error
 	// Err is set when the account could not be processed (chain read,
@@ -182,6 +186,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 	}
 	report.Scanned = table.Len()
 
+	report.ObservedSeq = deps.Releases.Seq()
 	readCtx, cancelRead := context.WithTimeout(ctx, opts.chainReadTimeout())
 	view, readErr := deps.Chain.ReadAccount(readCtx, genesis, acct)
 	cancelRead()
@@ -189,7 +194,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 		report.Err = readErr
 		return report
 	}
-	report.Authorizer, report.Round = view.Authorizer, view.Round
+	report.Observed, report.Authorizer, report.Round = true, view.Authorizer, view.Round
 
 	derive := s.stageDeriver(account, session, opts)
 	budget := opts.maxDerivations()

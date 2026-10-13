@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -35,6 +36,18 @@ type RotatingDeps struct {
 	// Releases remembers the last release per account for status; nil
 	// disables release memory.
 	Releases *ReleaseMemory
+	// DiscoveryTimeout bounds a request's scan for an unknown live stage.
+	// Zero means DefaultDiscoveryTimeout.
+	DiscoveryTimeout time.Duration
+}
+
+// discardTable drops a table whose contents disagree with the seed, so the
+// background worker rebuilds it from scratch. The key is not touched.
+func (d *RotatingDeps) discardTable(table *stagetable.Table) {
+	if d == nil || d.Tables == nil || table == nil {
+		return
+	}
+	_ = d.Tables.Discard(table)
 }
 
 // RotatingLocks serializes prepare, sign and table maintenance for each

@@ -5,12 +5,19 @@ package signing
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/stagetable"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -338,7 +345,7 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 	acct := f.account.String()
 
 	report := func(auth types.Address, round uint64) []StageTableReport {
-		return []StageTableReport{{Account: acct, Resolved: true, Authorizer: auth, Round: round}}
+		return []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: auth, Round: round}}
 	}
 	// In flight: a note, no warning.
 	warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
@@ -364,7 +371,7 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 		t.Fatal("memory not cleared after the release landed")
 	}
 	// Unresolved account: a note with the count, never "foreign".
-	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Scanned: 42}})
+	_, notes = f.svc.RotatingStatus([]StageTableReport{{Account: acct, Observed: true, Scanned: 42}})
 	if len(notes) != 1 || !strings.Contains(notes[0], "not yet found, 42 stages scanned") || strings.Contains(notes[0], "foreign") {
 		t.Fatalf("unresolved note = %v", notes)
 	}
@@ -393,5 +400,164 @@ func TestRotatingApprovalDescriptionNamesTheRotation(t *testing.T) {
 	desc := item.describe()
 	if !strings.Contains(desc, "stage 4 signs") || !strings.Contains(desc, "stage 5") || !strings.Contains(desc, "held by this signer") {
 		t.Fatalf("description = %q", desc)
+	}
+}
+
+// forgeSuccessor rewrites the account's table so that stage `index` maps to
+// addr, with a valid checksum, as an attacker with write access to the
+// signer's data directory could.
+func (f *rotatingFixture) forgeSuccessor(t *testing.T, index uint64, addr types.Address) {
+	t.Helper()
+	tb := f.table(t)
+	for tb.Len() <= index {
+		if err := tb.AppendFrom(tb.Len(), []types.Address{f.stageAddress(t, tb.Len())}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(tb.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := data[:len(data)-32]
+	off := 8 + 2 + 32 + 32 + 8 + int(index)*32
+	copy(body[off:off+32], addr[:])
+	sum := sha256.Sum256(body)
+	if err := os.WriteFile(tb.Path(), append(body, sum[:]...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Drop the cached handle so the forged file is what gets opened.
+	f.svc.Rotating.Tables = stagetable.NewStore(storepaths.NewPaths(f.root))
+	f.tables = f.svc.Rotating.Tables
+}
+
+func TestForgedSuccessorInTableNeverReachesTheChain(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	foreign := types.Address{0xfe, 0xed, 31: 3}
+	f.forgeSuccessor(t, 1, foreign)
+
+	// Prepare must not hand out the forged successor.
+	_, err := f.prepare(t, f.spend(1000, 1100))
+	if err == nil {
+		t.Fatal("prepare returned a group from a forged table")
+	}
+	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("forged table was not discarded")
+	}
+	// A rebuilt table yields the real successor.
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	if prep.RekeyTo != f.stageAddress(t, 1).String() {
+		t.Fatalf("rekey_to %s, want the derived stage 1", prep.RekeyTo)
+	}
+
+	// Sign must refuse a group whose RekeyTo is the forged address even when
+	// a forged table says it is stage 1.
+	f.forgeSuccessor(t, 1, foreign)
+	spend, _ := txnutil.DecodePrefixedHex(prep.Transactions[0])
+	spend.RekeyTo = foreign
+	plan, svcErr := buildRotatingGroup(nil, spend, mustProfile(t))
+	if svcErr != nil {
+		t.Fatal(svcErr)
+	}
+	group := make([]string, len(plan.AllTxns))
+	for i, x := range plan.AllTxns {
+		group[i] = txnutil.EncodeWithPrefixHex(x)
+	}
+	_, err = f.sign(t, group)
+	if err == nil || (!strings.Contains(err.Message, "does not match the seed") && !strings.Contains(err.Message, "does not derive")) {
+		t.Fatalf("sign with forged successor: %v, want a refusal naming the seed mismatch", err)
+	}
+	if _, ok := f.svc.Rotating.Releases.Get(f.account.String()); ok {
+		t.Fatal("a refused sign recorded a release")
+	}
+	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("forged table was not discarded at sign")
+	}
+}
+
+func mustProfile(t *testing.T) *lsigresource.Profile {
+	t.Helper()
+	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
+	profile, err := lsigresource.Materialize(rotatingkey.RotatingMaxProgramBytes, &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &profile
+}
+
+func TestStatusIgnoresObservationsOlderThanTheRelease(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	acct := f.account.String()
+	// The pass read the chain (stage 0 live) before this release was made
+	// from stage 1.
+	observedSeq := f.svc.Rotating.Releases.Seq()
+	f.svc.Rotating.Releases.Record(ReleaseRecord{Account: acct, Stage: 1, StageAddr: f.stageAddress(t, 1), NextAddr: f.stageAddress(t, 2), TxID: "T1", LastValid: 200})
+	stale := []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: observedSeq, Authorizer: f.account, Round: 150}}
+	if w, n := f.svc.RotatingStatus(stale); len(w) != 0 || len(n) != 0 {
+		t.Fatalf("stale observation produced status: %v %v", w, n)
+	}
+	if _, ok := f.svc.Rotating.Releases.Get(acct); !ok {
+		t.Fatal("a stale observation erased a newer release")
+	}
+	// A fresh read that still shows stage 1 and an expired window warns.
+	fresh := []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: f.stageAddress(t, 1), Round: 201}}
+	if w, _ := f.svc.RotatingStatus(fresh); len(w) != 1 {
+		t.Fatalf("expired release not warned: %v", w)
+	}
+}
+
+func TestStatusSurvivesTableWriteFailures(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	prep := mustPrepare(t, f, f.spend(1000, 1100))
+	resp := mustSign(t, f, prep.Transactions)
+	// The pass read the chain fine but its table write failed.
+	r := StageTableReport{Account: f.account.String(), Resolved: true, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: f.account, Round: 1101, Err: errors.New("write failed")}
+	w, _ := f.svc.RotatingStatus([]StageTableReport{r})
+	if len(w) != 1 || !strings.Contains(w[0], resp.TxID) {
+		t.Fatalf("expired release lost its warning behind a table write error: %v", w)
+	}
+}
+
+func TestDerivedStageAddressToleratesConcurrentTableGrowth(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	tb := f.table(t)
+	derive := f.svc.requestDeriver(f.account.String(), f.session)
+	// A deriver that, like a concurrent fill, publishes the very range being
+	// derived before the caller appends it.
+	racing := func(ctx context.Context, from, to uint64) ([]types.Address, error) {
+		addrs, err := derive(ctx, from, to)
+		if err != nil {
+			return nil, err
+		}
+		if from == tb.Len() {
+			if err := tb.AppendFrom(from, addrs); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return addrs, nil
+	}
+	addr, svcErr := derivedStageAddress(context.Background(), f.svc.Rotating, tb, racing, 3)
+	if svcErr != nil {
+		t.Fatalf("derivedStageAddress under concurrent growth: %v", svcErr)
+	}
+	if addr != f.stageAddress(t, 3) || tb.Len() != 4 {
+		t.Fatalf("addr %s, len %d", addr, tb.Len())
+	}
+}
+
+func TestPrepareDiscoveryIsBoundedServerSide(t *testing.T) {
+	f, _ := newSigningFixture(t)
+	f.chain.authorizer = types.Address{0xab, 31: 1} // never a stage
+	f.svc.Rotating.DiscoveryTimeout = 300 * time.Millisecond
+	started := time.Now()
+	_, err := f.prepare(t, f.spend(1000, 1100))
+	if err == nil || err.Kind != ErrorRotatingStageUnproven {
+		t.Fatalf("err = %v, want rotating_stage_unproven", err)
+	}
+	if took := time.Since(started); took > 3*time.Second {
+		t.Fatalf("discovery ran %v past its bound", took)
+	}
+	if f.table(t).Len() == 0 {
+		t.Fatal("progress was not kept")
 	}
 }

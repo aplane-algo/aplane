@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -48,6 +49,13 @@ const (
 	// rotatingMinRemaining is the fewest rounds that must remain before
 	// LastValid when a signature is released.
 	rotatingMinRemaining = 10
+
+	// DefaultDiscoveryTimeout bounds how long prepare scans for an unknown
+	// live stage before refusing with rotating_stage_unproven. HTTP request
+	// contexts carry no deadline of their own, and the scan uses every
+	// core; progress stays in the table for the retry and the background
+	// worker.
+	DefaultDiscoveryTimeout = 30 * time.Second
 )
 
 // rotatingPlanItem describes a rotating spend for policy and approval.
@@ -170,13 +178,20 @@ func (s *Service) requestDeriver(account string, session *keystore.KeySession) s
 
 // liveStage finds the account's live stage from its authorizer: the account
 // itself is stage 0, otherwise the table answers, otherwise the table is
-// extended under the request's deadline until the authorizer appears. A
-// deadline that passes first refuses with rotating_stage_unproven and the
-// progress stays in the table for the next attempt or the background worker.
-func (s *Service) liveStage(ctx context.Context, table *stagetable.Table, derive stageDeriver, account, authorizer types.Address) (uint64, *ServiceError) {
+// extended, under the request's context and the discovery timeout, until
+// the authorizer appears. A deadline that passes first refuses with
+// rotating_stage_unproven and the progress stays in the table for the next
+// attempt or the background worker.
+func (s *Service) liveStage(ctx context.Context, deps *RotatingDeps, table *stagetable.Table, derive stageDeriver, account, authorizer types.Address) (uint64, *ServiceError) {
 	if stage, ok := resolveStage(table, account, authorizer); ok {
 		return stage, nil
 	}
+	timeout := deps.DiscoveryTimeout
+	if timeout <= 0 {
+		timeout = DefaultDiscoveryTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	opts := StageFillOptions{Parallel: runtime.GOMAXPROCS(0)}
 	for ctx.Err() == nil {
 		found, err := extendUntil(ctx, table, derive, authorizer, opts.batch(), opts)
@@ -194,18 +209,24 @@ func (s *Service) liveStage(ctx context.Context, table *stagetable.Table, derive
 	return stage, nil
 }
 
-// stageAddressFor returns A_stage from the table, deriving and appending it
-// when the table does not reach that far yet.
-func stageAddressFor(ctx context.Context, table *stagetable.Table, derive stageDeriver, stage uint64) (types.Address, *ServiceError) {
-	if addr, ok := table.Address(stage); ok {
-		return addr, nil
-	}
-	if table.Len() < stage {
-		addrs, err := derive(ctx, table.Len(), stage)
+// derivedStageAddress derives A_stage from the seed, never from the table,
+// and reconciles the table with the result: a missing prefix is filled, a
+// missing entry is appended, and an entry that disagrees with the derivation
+// means the table has been altered, so it is refused and will be discarded
+// and rebuilt. The target of a rotation always comes from here, because the
+// table is a hint and a rekey target decides who controls the account.
+func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stagetable.Table, derive stageDeriver, stage uint64) (types.Address, *ServiceError) {
+	// Fill any gap below stage first, from a length captured once so a
+	// concurrent fill cannot shift the starting index under us.
+	if from := table.Len(); from < stage {
+		addrs, err := derive(ctx, from, stage)
 		if err != nil {
 			return types.Address{}, internal(fmt.Sprintf("derive stages: %v", err))
 		}
-		if err := table.AppendFrom(table.Len(), addrs); err != nil {
+		if uint64(len(addrs)) != stage-from {
+			return types.Address{}, unavailable("derivation interrupted")
+		}
+		if err := table.AppendFrom(from, addrs); err != nil {
 			return types.Address{}, internal(fmt.Sprintf("extend stage table: %v", err))
 		}
 	}
@@ -216,12 +237,18 @@ func stageAddressFor(ctx context.Context, table *stagetable.Table, derive stageD
 	if len(addrs) != 1 {
 		return types.Address{}, unavailable("derivation interrupted")
 	}
-	if table.Len() == stage {
-		if err := table.AppendFrom(stage, addrs); err != nil {
-			return types.Address{}, internal(fmt.Sprintf("extend stage table: %v", err))
+	derived := addrs[0]
+	if cached, ok := table.Address(stage); ok {
+		if cached != derived {
+			deps.discardTable(table)
+			return types.Address{}, internal(fmt.Sprintf("stage table entry %d does not match the seed; the table has been discarded and will be rebuilt", stage))
 		}
+		return derived, nil
 	}
-	return addrs[0], nil
+	if err := table.AppendFrom(stage, addrs); err != nil {
+		return types.Address{}, internal(fmt.Sprintf("extend stage table: %v", err))
+	}
+	return derived, nil
 }
 
 // PrepareRotatingWithContext prepares one spend from a rotating account: it
@@ -266,12 +293,12 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 	if readErr != nil {
 		return nil, unavailable(readErr.Error())
 	}
-	stage, err := s.liveStage(ctx, table, derive, account, view.Authorizer)
+	stage, err := s.liveStage(ctx, deps, table, derive, account, view.Authorizer)
 	if err != nil {
 		return nil, err
 	}
 	target := stage + 1
-	targetAddr, err := stageAddressFor(ctx, table, derive, target)
+	targetAddr, err := derivedStageAddress(ctx, deps, table, derive, target)
 	if err != nil {
 		return nil, err
 	}
@@ -338,18 +365,30 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 
 	// Rule 2: the group's RekeyTo is A_{n+1} for some n, which fixes the
-	// signing stage from the bytes alone.
+	// signing stage from the bytes alone. The table only proposes the
+	// number; the derivation that follows is what proves the address,
+	// because a rekey target decides who controls the account and the table
+	// is a plaintext cache.
 	targetStage, ok := table.Lookup(spend.RekeyTo)
 	if !ok || targetStage == 0 {
 		return nil, badRequest("rekey target is not a stage of this account; prepare the spend again")
 	}
 	stage := targetStage - 1
+	derive := s.requestDeriver(req.Account, session)
+	derivedTarget, err := derivedStageAddress(ctx, deps, table, derive, targetStage)
+	if err != nil {
+		return nil, err
+	}
+	if derivedTarget != spend.RekeyTo {
+		deps.discardTable(table)
+		return nil, badRequest("rekey target does not derive from this account's seed; the stage table has been discarded, prepare the spend again")
+	}
 
 	// Rule 5: rebuilding the group from the presented spend must reproduce
 	// the presented bytes exactly.
-	rebuilt, err := buildRotatingGroup(s.Console, spend, profile)
-	if err != nil {
-		return nil, err
+	rebuilt, groupErr := buildRotatingGroup(s.Console, spend, profile)
+	if groupErr != nil {
+		return nil, groupErr
 	}
 	if len(rebuilt.AllTxns) != len(allTxns) {
 		return nil, badRequest(fmt.Sprintf("group has %d transactions; the spend needs %d", len(allTxns), len(rebuilt.AllTxns)))
@@ -415,9 +454,14 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		return nil, svcErr
 	}
 	defer rs.close()
-	// Rule 4.
+	// Rule 4, and rule 2 once more from the seed held under the lock: the
+	// target program must open and must be the address the spend hands the
+	// account to.
 	if err := rs.ops.CheckStageOpens(rs.secret, targetStage); err != nil {
 		return nil, internal(fmt.Sprintf("rotation target stage %d failed its open check: %v", targetStage, err))
+	}
+	if addr, err := rs.stageAddress(targetStage); err != nil || addr != spend.RekeyTo {
+		return nil, internal("rotation target does not derive from the seed")
 	}
 	txID := group.Entries[0].TxID
 	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, txID[:])

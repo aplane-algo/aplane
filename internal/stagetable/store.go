@@ -59,6 +59,23 @@ func (s *Store) Table(selector types.Address, genesisHash []byte, present func()
 	return t, err
 }
 
+// Discard closes and removes a table whose contents were found to disagree
+// with the seed, so the next Table call opens a fresh one that the worker
+// rebuilds from stage 0. Unlike Delete it is not about the key going away.
+func (s *Store) Discard(t *Table) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := t.selector.String()
+	if cur, ok := s.tables[key]; ok && cur == t {
+		delete(s.tables, key)
+	}
+	t.close()
+	if err := fsutil.RemoveDurable(t.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stage table: %w", err)
+	}
+	return nil
+}
+
 // Path is where the table of the account with selector lives, whether or
 // not it exists.
 func (s *Store) Path(selector string) string {
