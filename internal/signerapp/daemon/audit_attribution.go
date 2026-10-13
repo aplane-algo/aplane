@@ -20,6 +20,7 @@ type signingAuditLogger struct {
 
 var _ signingAudit = (*signingAuditLogger)(nil)
 var _ signersigning.AuditCosignerRejectLogger = (*signingAuditLogger)(nil)
+var _ signersigning.AuditRotatingReleaseLogger = (*signingAuditLogger)(nil)
 
 func signingAuditAttributionFromRequest(r *http.Request) auditAttribution {
 	attr := auditAttribution{
@@ -91,6 +92,15 @@ func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string
 		return
 	}
 	l.log.LogSignFailedAttributed(l.attribution, authAddress, txnSender, reason)
+}
+
+// LogRotatingRelease records a rotating release durably before the
+// signature leaves the signer.
+func (l *signingAuditLogger) LogRotatingRelease(account, txid string, stage, lastValid uint64) error {
+	if l == nil || l.log == nil {
+		return nil
+	}
+	return l.log.LogRotatingReleaseAttributed(l.attribution, account, txid, stage, lastValid)
 }
 
 func (l *signingAuditLogger) RecordApprovalResponse(response signerapproval.SignResponse) {

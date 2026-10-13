@@ -104,6 +104,10 @@ type StageTableReport struct {
 	// Pending reports that this pass stopped at its derivation budget with
 	// work left: the account is unresolved, or its lookahead is short.
 	Pending bool
+	// Authorizer and Round are what the node reported for the account in
+	// this pass; RotatingStatus compares them with the release memory.
+	Authorizer types.Address
+	Round      uint64
 	// Discarded is set when an unusable on-disk table was replaced.
 	Discarded error
 	// Err is set when the account could not be processed (chain read,
@@ -185,6 +189,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 		report.Err = readErr
 		return report
 	}
+	report.Authorizer, report.Round = view.Authorizer, view.Round
 
 	derive := s.stageDeriver(account, session, opts)
 	budget := opts.maxDerivations()

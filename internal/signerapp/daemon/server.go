@@ -77,7 +77,8 @@ type Signer struct {
 	keyPaths          storepaths.Paths                   // Explicit keystore path owner
 	dataDir           string                             // Data directory path (for saving config)
 	makeAlgod         func(string, string) (*algod.Client, error)
-	rotatingLocks     signersigning.RotatingLocks // Serializes rotating prepare, sign and table maintenance per account
+	rotatingLocks     signersigning.RotatingLocks // Serializes rotating sign per account
+	rotatingReleases  signersigning.ReleaseMemory // Last release per rotating account, for status; rebuilt from the audit log at unlock
 	stageFillBatch    int                         // Tests shrink the stage table worker's batch; 0 is the default
 	stageFillMaxDeriv int                         // Tests bound derivations per unresolved account per pass; 0 is one batch
 }

@@ -21,6 +21,8 @@ const (
 	ErrorBoundedAdminRequired    = svcerr.KindBoundedAdminRequired
 	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
 	ErrorRotatingSigningRequired = svcerr.KindRotatingSigningRequired
+	ErrorRotatingStageUnproven   = svcerr.KindRotatingStageUnproven
+	ErrorRotatingStageChanged    = svcerr.KindRotatingStageChanged
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }

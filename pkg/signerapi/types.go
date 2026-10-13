@@ -410,6 +410,9 @@ type StatusResponse struct {
 	KeysetRevision      uint64          `json:"keyset_revision"`
 	ApprovalWaitSeconds int64           `json:"approval_wait_seconds,omitempty"`
 	Warnings            []string        `json:"warnings,omitempty"`
+	// Notes are informational status lines that need no action, such as a
+	// rotating account's release that is still in flight.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // SigningFlowCosigner1 names the cosigner co-signed component signing

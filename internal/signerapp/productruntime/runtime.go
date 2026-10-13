@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,6 +88,12 @@ type Runtime struct {
 	keyUseCtx    context.Context
 	keyUseCancel context.CancelFunc
 	keyUsers     sync.WaitGroup
+
+	// Rotating account status from the last background pass: warnings need
+	// action, notes are information. Published to /status and apadmin.
+	rotatingStatusMu sync.Mutex
+	rotatingAlerts   []string
+	rotatingNotes    []string
 
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
@@ -1003,6 +1010,33 @@ func (ir *Runtime) KeyPaths() storepaths.Paths {
 // StageTables returns the owner of rotating accounts' stage address tables.
 func (ir *Runtime) StageTables() *stagetable.Store {
 	return ir.stageTables
+}
+
+// SetRotatingStatus replaces the published rotating account warnings and
+// notes and reports whether either changed.
+func (ir *Runtime) SetRotatingStatus(warnings, notes []string) bool {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	if slices.Equal(ir.rotatingAlerts, warnings) && slices.Equal(ir.rotatingNotes, notes) {
+		return false
+	}
+	ir.rotatingAlerts = slices.Clone(warnings)
+	ir.rotatingNotes = slices.Clone(notes)
+	return true
+}
+
+// RotatingAlerts returns the rotating account warnings from the last pass.
+func (ir *Runtime) RotatingAlerts() []string {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	return slices.Clone(ir.rotatingAlerts)
+}
+
+// RotatingNotes returns the rotating account notes from the last pass.
+func (ir *Runtime) RotatingNotes() []string {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	return slices.Clone(ir.rotatingNotes)
 }
 
 // keyUseDrainWarnAfter is how long Lock waits for key users before it says

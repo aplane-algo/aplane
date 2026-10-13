@@ -260,6 +260,9 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 			b.WriteString("\n  Authorization: " + boundedAuthorizationLabel(item))
 			b.WriteString(fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee))
 		}
+		if i == 0 && plan.Rotating != nil {
+			b.WriteString(plan.Rotating.describe())
+		}
 		b.WriteString("\n")
 	}
 
@@ -495,7 +498,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	displaySender := fmt.Sprintf("GROUP(%d txns)", len(txns))
 	groupAuthAddr := groupApprovalAddress(req)
 
-	violations := approvalpolicy.CheckGroupWarnings(txns, s.KnownAddresses())
+	violations := approvalpolicy.CheckGroupWarnings(txns, s.groupKnownAddresses(plan))
 	approved, err := s.requestSigningApproval(
 		ctx,
 

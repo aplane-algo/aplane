@@ -22,8 +22,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerops"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -380,5 +382,104 @@ func TestLockingCancelsAStalledChainRead(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("stage table pass stayed blocked on a stalled chain read after lock")
+	}
+}
+
+// TestWorkerPublishesRotatingStatus drives a release through the real signer
+// service and checks that the worker's pass turns the release memory into
+// status: a note while in flight, a warning once expired, nothing once landed,
+// each reaching /status and apadmin.
+func TestWorkerPublishesRotatingStatus(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 2
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	account, secret := installRotatingKey(t, server)
+	node.set("", 100)
+
+	// Release a rotation from stage 0 through the audited signing service, as
+	// the HTTP endpoint would. Approval is auto.
+	ir.Config().SetUserAutoApprove(true)
+	svc := server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog})
+	gh, _ := base64.StdEncoding.DecodeString(testnetGenesisB64)
+	var genesis [32]byte
+	copy(genesis[:], gh)
+	txn := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: account, Fee: 1000, FirstValid: 100, LastValid: 200, GenesisHash: genesis},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: account},
+	}
+	prep, svcErr := svc.PrepareRotatingWithContext(context.Background(), signerapi.RotatingPrepareRequest{
+		Account: account.String(), TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+	}, ir.SnapshotKeySession())
+	if svcErr != nil {
+		t.Fatalf("prepare: %v", svcErr)
+	}
+	resp, svcErr := svc.SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+		Account: account.String(), Transactions: prep.Transactions,
+	}, ir.SnapshotKeySession())
+	if svcErr != nil {
+		t.Fatalf("sign: %v", svcErr)
+	}
+
+	// In flight: a note, no warning, apadmin told nothing new.
+	node.set("", 150)
+	server.fillStageTables(context.Background(), ir)
+	if w := ir.RotatingAlerts(); len(w) != 0 {
+		t.Fatalf("warnings while in flight: %v", w)
+	}
+	if n := ir.RotatingNotes(); len(n) != 1 || !strings.Contains(n[0], "in flight") {
+		t.Fatalf("notes while in flight: %v", n)
+	}
+
+	// Expired without landing: a warning, pushed to apadmin and /status.
+	node.set("", 201)
+	hub.statusCalled = false
+	server.fillStageTables(context.Background(), ir)
+	warnings := ir.RotatingAlerts()
+	if len(warnings) != 1 || !strings.Contains(warnings[0], account.String()) || !strings.Contains(warnings[0], resp.TxID) {
+		t.Fatalf("warnings after expiry: %v", warnings)
+	}
+	if !hub.statusCalled || len(hub.statusWarnings) != 1 {
+		t.Fatalf("apadmin not told: called %v, warnings %v", hub.statusCalled, hub.statusWarnings)
+	}
+	status := server.restServiceWithSigningAudit(nil).Status(ir)
+	if len(status.Warnings) == 0 || status.Warnings[len(status.Warnings)-1] != warnings[0] {
+		t.Fatalf("/status warnings = %v", status.Warnings)
+	}
+	// Unchanged on the next pass: not re-notified.
+	hub.statusCalled = false
+	node.set("", 230)
+	server.fillStageTables(context.Background(), ir)
+	if hub.statusCalled {
+		t.Fatal("an unchanged warning was published again")
+	}
+
+	// The rotation lands late: everything clears.
+	stage1, _ := signerops.StageOps{}.StageAddress(secret, 1)
+	node.set(stage1.String(), 260)
+	server.fillStageTables(context.Background(), ir)
+	if w, n := ir.RotatingAlerts(), ir.RotatingNotes(); len(w) != 0 || len(n) != 0 {
+		t.Fatalf("after landing: warnings %v, notes %v", w, n)
+	}
+	if !hub.statusCalled {
+		t.Fatal("apadmin not told the warning cleared")
+	}
+
+	// After a restart the memory is empty; the unlock path rebuilds it from
+	// the audit log with verified addresses.
+	server.rotatingReleases.Reset()
+	server.rebuildReleaseMemory(context.Background(), ir)
+	rec, ok := server.rotatingReleases.Get(account.String())
+	if !ok || rec.Stage != 0 || rec.TxID != resp.TxID || rec.StageAddr != account || rec.NextAddr != stage1 {
+		t.Fatalf("rebuilt release memory = %+v, %v", rec, ok)
 	}
 }

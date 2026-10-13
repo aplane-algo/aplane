@@ -295,6 +295,7 @@ func (s *hubStubConn) SetReadDeadline(time.Time) error  { return nil }
 func (s *hubStubConn) SetWriteDeadline(time.Time) error { return nil }
 
 type recordingAdminHub struct {
+	statusWarnings    []string
 	hasClientCalled   bool
 	signCalled        bool
 	cancelCalled      bool
@@ -337,6 +338,7 @@ func (h *recordingAdminHub) NotifyEnrollmentChanged(n adminproto.EnrollmentChang
 	h.enrollmentChanges = append(h.enrollmentChanges, n)
 }
 
-func (h *recordingAdminHub) NotifyStatus(_ string, _ int) {
+func (h *recordingAdminHub) NotifyStatus(_ string, _ int, warnings []string) {
+	h.statusWarnings = append([]string(nil), warnings...)
 	h.statusCalled = true
 }

@@ -158,6 +158,11 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"keys_response_bounded.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_generic.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_component.json", assertContractRoundTrip[KeysResponse]},
+		{"keys_response_rotating.json", assertContractRoundTrip[KeysResponse]},
+		{"rotating_prepare_request.json", assertContractRoundTrip[RotatingPrepareRequest]},
+		{"rotating_prepare_response.json", assertContractRoundTrip[RotatingPrepareResponse]},
+		{"rotating_sign_request.json", assertContractRoundTrip[RotatingSignRequest]},
+		{"rotating_sign_response.json", assertContractRoundTrip[RotatingSignResponse]},
 		{"keytypes_response_full.json", assertContractRoundTrip[KeyTypesResponse]},
 		{"keytypes_response_bounded.json", assertContractRoundTrip[KeyTypesResponse]},
 		{"admin_generate_request_generic.json", assertContractRoundTrip[AdminGenerateRequest]},
@@ -177,6 +182,30 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.run(t, tt.name)
 		})
+	}
+}
+
+func TestSignerAPIRotatingRequestFixturesValidate(t *testing.T) {
+	var prepare RotatingPrepareRequest
+	readContractMetadata(t, "rotating_prepare_request.json", &prepare)
+	if err := prepare.Validate(); err != nil {
+		t.Fatalf("rotating_prepare_request.json: Validate() = %v", err)
+	}
+	var sign RotatingSignRequest
+	readContractMetadata(t, "rotating_sign_request.json", &sign)
+	if err := sign.Validate(); err != nil {
+		t.Fatalf("rotating_sign_request.json: Validate() = %v", err)
+	}
+	for name, r := range map[string]RotatingPrepareRequest{
+		"no account": {TxnBytesHex: "00"},
+		"no txn":     {Account: "A"},
+	} {
+		if r.Validate() == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if (RotatingSignRequest{Account: "A"}).Validate() == nil {
+		t.Error("sign request without transactions accepted")
 	}
 }
 
@@ -254,6 +283,8 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeBoundedAdminRequired,
 		ErrCodeBoundedCosignerRequired,
 		ErrCodeRotatingSigningRequired,
+		ErrCodeRotatingStageUnproven,
+		ErrCodeRotatingStageChanged,
 	}
 }
 

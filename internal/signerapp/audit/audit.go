@@ -42,6 +42,7 @@ const (
 	AuditSignApproved                     AuditEventType = "SIGN_APPROVED"
 	AuditSignRejected                     AuditEventType = "SIGN_REJECTED"
 	AuditSignFailed                       AuditEventType = "SIGN_FAILED"
+	AuditRotatingRelease                  AuditEventType = "ROTATING_RELEASE"
 	AuditAuthFailed                       AuditEventType = "AUTH_FAILED"
 	AuditAuthFailuresSuppressed           AuditEventType = "AUTH_FAILURES_SUPPRESSED"
 	AuditCosignerRejectionsSuppressed     AuditEventType = "COSIGNER_REJECTIONS_SUPPRESSED"
@@ -125,6 +126,11 @@ type AuditEntry struct {
 	SuppressedCount      int            `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
 	ClientLabel          string         `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
 	ClosedConnections    int            `json:"closed_connections,omitempty"`
+	// ROTATING_RELEASE: the stage whose program the signature revealed and
+	// the last round at which the released transaction can confirm. The
+	// signer rebuilds its release memory from these entries at unlock.
+	RotatingStage     *uint64 `json:"rotating_stage,omitempty"`
+	RotatingLastValid uint64  `json:"rotating_last_valid,omitempty"`
 }
 
 // AuditLogger handles append-only audit logging
@@ -491,6 +497,25 @@ func (a *AuditLogger) LogCosignerComponentRejectedAttributed(attr Attribution, w
 }
 
 // LogSignFailed logs when a signing attempt fails due to technical errors.
+// Path is the audit log's current file; rotated files are Path()+".1" and
+// Path()+".2".
+func (a *AuditLogger) Path() string { return a.path }
+
+// LogRotatingReleaseAttributed records that a rotating account's stage signed
+// a transaction, durably, before the signature leaves the signer. It is the
+// source the release memory is rebuilt from.
+func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, txid string, stage, lastValid uint64) error {
+	entry := attr.entry(true)
+	entry.Event = AuditRotatingRelease
+	entry.Outcome = "released"
+	entry.TxnAuth = account
+	entry.TxnSender = account
+	entry.TxID = txid
+	entry.RotatingStage = &stage
+	entry.RotatingLastValid = lastValid
+	return a.logDurable(entry)
+}
+
 func (a *AuditLogger) LogSignFailed(address, txnSender, reason string) {
 	a.Log(signFailedEntry(Attribution{}, address, txnSender, reason))
 }

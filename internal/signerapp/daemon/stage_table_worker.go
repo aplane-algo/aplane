@@ -5,8 +5,10 @@ package daemon
 
 import (
 	"context"
+	"slices"
 	"time"
 
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -31,10 +33,13 @@ const (
 )
 
 // runStageTableWorker keeps every rotating account's stage address table
-// filled: right after each unlock, then periodically while unlocked. An
-// account whose authorizer is already in its table is extended to the
-// configured horizon; an account whose authorizer is not yet known is
-// scanned on, one batch per pass, without a ceiling.
+// filled and its status current: right after each unlock, then periodically
+// while unlocked. An account whose authorizer is already in its table is
+// extended to the configured horizon; an account whose authorizer is not yet
+// known is scanned on, one batch per pass, without a ceiling. Each pass also
+// compares every account's authorizer with the release memory and publishes
+// the resulting warnings and notes. At unlock the release memory is rebuilt
+// from the audit log; at lock it is forgotten with everything else.
 func (fs *Signer) runStageTableWorker(ctx context.Context) {
 	ticker := time.NewTicker(stageTableTick)
 	defer ticker.Stop()
@@ -49,15 +54,82 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 		}
 		ir := fs.productRuntime()
 		if ir == nil || !ir.IsUnlocked() {
+			if wasUnlocked {
+				fs.rotatingReleases.Reset()
+				if ir != nil && ir.SetRotatingStatus(nil, nil) {
+					fs.notifyRotatingStatus(ir, nil)
+				}
+			}
 			wasUnlocked = false
 			continue
 		}
 		if wasUnlocked && time.Since(lastRun) < wait {
 			continue
 		}
+		if !wasUnlocked {
+			fs.rebuildReleaseMemory(ctx, ir)
+		}
 		wasUnlocked = true
 		lastRun = time.Now()
 		wait = fs.fillStageTables(ctx, ir)
+	}
+}
+
+// rebuildReleaseMemory refills the release memory from the audit log after
+// an unlock, deriving each remembered stage's addresses inside key-use
+// windows. Entries the log no longer holds are simply absent.
+func (fs *Signer) rebuildReleaseMemory(ctx context.Context, ir *productruntime.Runtime) {
+	if fs.auditLog == nil {
+		return
+	}
+	entries, err := signeraudit.ReadRotatingReleases(fs.auditLog.Path())
+	if err != nil {
+		logWarnf("rotating release memory: could not read the audit log: %v", err)
+		return
+	}
+	if len(entries) == 0 {
+		return
+	}
+	audited := make([]signersigning.AuditedRelease, 0, len(entries))
+	for _, e := range entries {
+		audited = append(audited, signersigning.AuditedRelease{Account: e.Account, Stage: e.Stage, TxID: e.TxID, LastValid: e.LastValid})
+	}
+	ctx, cancel := ir.LockCancelContext(ctx)
+	defer cancel()
+	svc := &signersigning.Service{Planner: fs.newPlannerWithAudit(nil), Console: signerConsole{}, Rotating: fs.rotatingDeps(ir)}
+	rebuilt, err := svc.RebuildReleaseMemory(ctx, ir.SnapshotKeySession(), audited, signersigning.StageFillOptions{KeyUse: ir.KeyUseContext})
+	if err != nil {
+		logWarnf("rotating release memory: %v", err)
+	}
+	if rebuilt > 0 {
+		logInfof("rotating release memory: %d release(s) restored from the audit log", rebuilt)
+	}
+}
+
+// publishRotatingStatus records a pass's warnings and notes on the runtime,
+// logs what changed, and tells a connected apadmin.
+func (fs *Signer) publishRotatingStatus(ir *productruntime.Runtime, svc *signersigning.Service, reports []signersigning.StageTableReport) {
+	warnings, notes := svc.RotatingStatus(reports)
+	previous := ir.RotatingAlerts()
+	if !ir.SetRotatingStatus(warnings, notes) {
+		return
+	}
+	for _, w := range warnings {
+		if !slices.Contains(previous, w) {
+			logWarnf("ROTATING ACCOUNT ALERT: %s", w)
+		}
+	}
+	for _, w := range previous {
+		if !slices.Contains(warnings, w) {
+			logInfof("rotating account alert cleared: %s", w)
+		}
+	}
+	fs.notifyRotatingStatus(ir, warnings)
+}
+
+func (fs *Signer) notifyRotatingStatus(ir *productruntime.Runtime, warnings []string) {
+	if hub := fs.adminHub(); hub != nil {
+		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), warnings)
 	}
 }
 
@@ -99,17 +171,15 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 			logWarnf("rotating account %s: stage table: %v", r.Account, r.Err)
 			continue
 		}
-		if !r.Resolved {
-			logInfof("rotating account %s: stage not yet found, %d stages scanned", r.Account, r.Scanned)
-		}
 		if r.Pending {
 			wait = stageTableBusyInterval
 		}
 	}
 	if ctx.Err() != nil {
-		// Locked or shutting down mid-pass: nothing to schedule.
+		// Locked or shutting down mid-pass: nothing to schedule or publish.
 		return stageTableIdleInterval
 	}
+	fs.publishRotatingStatus(ir, svc, reports)
 	return wait
 }
 

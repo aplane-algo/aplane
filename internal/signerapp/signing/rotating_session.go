@@ -27,11 +27,14 @@ type RotatingChain interface {
 
 // RotatingDeps are the long-lived dependencies of the rotating flow. The
 // signer keeps no durable state for rotating accounts: Tables is a derivable
-// cache and Locks is process memory.
+// cache, Releases and Locks are process memory.
 type RotatingDeps struct {
 	Chain  RotatingChain
 	Tables *stagetable.Store
 	Locks  *RotatingLocks
+	// Releases remembers the last release per account for status; nil
+	// disables release memory.
+	Releases *ReleaseMemory
 }
 
 // RotatingLocks serializes prepare, sign and table maintenance for each

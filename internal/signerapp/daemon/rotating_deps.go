@@ -16,9 +16,10 @@ import (
 // set of open tables.
 func (fs *Signer) rotatingDeps(ir *productruntime.Runtime) *signersigning.RotatingDeps {
 	return &signersigning.RotatingDeps{
-		Chain:  fs.rotatingChainReader(),
-		Tables: ir.StageTables(),
-		Locks:  &fs.rotatingLocks,
+		Chain:    fs.rotatingChainReader(),
+		Tables:   ir.StageTables(),
+		Locks:    &fs.rotatingLocks,
+		Releases: &fs.rotatingReleases,
 	}
 }
 
