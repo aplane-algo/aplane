@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -22,10 +23,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
-
-// RotatingMaxValidityWindow is the longest validity window a rotating
-// account's stage program accepts.
-const RotatingMaxValidityWindow = 100
 
 // rotatingRetryAttempts bounds how many times a rotating spend is rebuilt
 // after the signer reports that the account moved or the window aged.
@@ -44,10 +41,16 @@ type RotatingOptions struct {
 // sign step, so a failed check or simulation costs nothing. In simulate mode
 // it stops after the unsigned simulation and never signs.
 //
-// If the signer reports that the account's authorizer moved between prepare
-// and sign (rotating_stage_changed), or that the transaction's validity
-// window aged past its bounds, nothing was signed: the transaction is rebuilt
-// with fresh validity rounds, prepared, simulated and presented for approval
+// The signer releases a signature only while the validity window is current
+// (FirstValid at most RotatingMaxLead rounds ahead, at least
+// RotatingMinRemaining rounds left). A transaction prepared earlier, such as
+// a later member of a non-atomic batch, may have aged past that by the time
+// its turn comes, so each attempt checks the window against the current
+// round first and rebuilds the validity rounds when it has aged. If the
+// signer then reports that the account's authorizer moved between prepare
+// and sign (rotating_stage_changed), or that the window aged while it
+// waited for approval, nothing was signed: the transaction is rebuilt with
+// fresh validity rounds, prepared, simulated and presented for approval
 // again, a bounded number of times.
 func SignAndSubmitRotating(
 	txn types.Transaction,
@@ -60,6 +63,9 @@ func SignAndSubmitRotating(
 	}
 	if algodClient == nil {
 		return nil, nil, fmt.Errorf("algod client not configured")
+	}
+	if opts.Ctx == nil {
+		opts.Ctx = context.Background()
 	}
 	w := opts.Out
 	if w == nil {
@@ -75,6 +81,14 @@ func SignAndSubmitRotating(
 
 	var lastErr error
 	for attempt := 1; attempt <= rotatingRetryAttempts; attempt++ {
+		fresh, aged, err := freshenRotatingValidity(opts.Ctx, txn, algodClient)
+		if err != nil {
+			return nil, nil, err
+		}
+		if aged {
+			_, _ = fmt.Fprintf(w, "  Validity window has aged (rounds %d-%d); rebuilding it from the current round\n", txn.FirstValid, txn.LastValid)
+		}
+		txn = fresh
 		txIDs, prepared, err := signAndSubmitRotatingOnce(txn, signerClient, algodClient, opts, w)
 		if err == nil {
 			return txIDs, prepared, nil
@@ -154,27 +168,44 @@ func signAndSubmitRotatingOnce(
 // capRotatingWindow shortens the validity window to what the stage program
 // accepts.
 func capRotatingWindow(txn *types.Transaction, w io.Writer, verbose bool) {
-	if txn.LastValid > txn.FirstValid+RotatingMaxValidityWindow {
-		txn.LastValid = txn.FirstValid + RotatingMaxValidityWindow
+	if txn.LastValid > txn.FirstValid+rotatingkey.RotatingMaxValidityWindow {
+		txn.LastValid = txn.FirstValid + rotatingkey.RotatingMaxValidityWindow
 		if verbose {
-			_, _ = fmt.Fprintf(w, "  Validity window shortened to %d rounds for the rotating account\n", RotatingMaxValidityWindow)
+			_, _ = fmt.Fprintf(w, "  Validity window shortened to %d rounds for the rotating account\n", rotatingkey.RotatingMaxValidityWindow)
 		}
 	}
+}
+
+// freshenRotatingValidity reads the current round and reports whether the
+// transaction's validity window would fail the signer's timing rule. An
+// aged transaction comes back with validity rounds rebuilt from current
+// suggested parameters; a current one comes back unchanged.
+func freshenRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client) (types.Transaction, bool, error) {
+	status, err := algodClient.Status().Do(ctx)
+	if err != nil {
+		return txn, false, fmt.Errorf("read current round: %w", err)
+	}
+	round := status.LastRound
+	if uint64(txn.FirstValid) <= round+rotatingkey.RotatingMaxLead && uint64(txn.LastValid) >= round+rotatingkey.RotatingMinRemaining {
+		return txn, false, nil
+	}
+	fresh, err := refreshRotatingValidity(ctx, txn, algodClient)
+	if err != nil {
+		return txn, true, err
+	}
+	return fresh, true, nil
 }
 
 // refreshRotatingValidity rebuilds the transaction's validity rounds from
 // current suggested parameters, keeping everything else.
 func refreshRotatingValidity(ctx context.Context, txn types.Transaction, algodClient *algod.Client) (types.Transaction, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	sp, err := algodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return txn, fmt.Errorf("fetch suggested params: %w", err)
 	}
 	window := txn.LastValid - txn.FirstValid
-	if window > RotatingMaxValidityWindow || window == 0 {
-		window = RotatingMaxValidityWindow
+	if window > rotatingkey.RotatingMaxValidityWindow || window == 0 {
+		window = rotatingkey.RotatingMaxValidityWindow
 	}
 	txn.FirstValid = sp.FirstRoundValid
 	txn.LastValid = sp.FirstRoundValid + window
@@ -285,7 +316,10 @@ func ValidatePreparedRotatingGroup(original types.Transaction, prep *signerapi.R
 }
 
 // validateSignedRotatingGroup checks that the signer signed exactly the
-// prepared bytes and returns the encoded signed transactions.
+// prepared bytes and returns the encoded signed transactions. Each element
+// must be one canonically encoded signed transaction: the bytes go to the
+// node as returned, so trailing bytes, which the node would read as a
+// further transaction, are rejected.
 func validateSignedRotatingGroup(prepared []types.Transaction, resp *signerapi.RotatingSignResponse) ([][]byte, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("empty sign response")
@@ -302,6 +336,9 @@ func validateSignedRotatingGroup(prepared []types.Transaction, resp *signerapi.R
 		var stxn types.SignedTxn
 		if err := msgpack.Decode(raw, &stxn); err != nil {
 			return nil, fmt.Errorf("transaction %d: %w", i+1, err)
+		}
+		if !bytes.Equal(msgpack.Encode(stxn), raw) {
+			return nil, fmt.Errorf("transaction %d is not a single canonically encoded signed transaction", i+1)
 		}
 		if !bytes.Equal(txnutil.EncodeWithPrefix(stxn.Txn), txnutil.EncodeWithPrefix(prepared[i])) {
 			return nil, fmt.Errorf("transaction %d differs from the prepared transaction", i+1)

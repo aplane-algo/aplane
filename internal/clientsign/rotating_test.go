@@ -4,17 +4,26 @@
 package clientsign
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -152,6 +161,15 @@ func TestValidateSignedRotatingGroupRequiresPreparedBytes(t *testing.T) {
 	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: signedHex(prepared[:1])}); err == nil {
 		t.Fatal("short signed group accepted")
 	}
+	// A response element carrying a second transaction after the prepared
+	// one would reach the node as two transactions.
+	honest := signedHex(prepared)
+	extra := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: rotatingAccount, Fee: 1000, FirstValid: 1000, LastValid: 1100, GenesisHash: types.Digest{9}}, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{8}, Amount: 1_000_000}}
+	trailing := append([]string(nil), honest...)
+	trailing[0] = honest[0] + hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: extra}))
+	if _, err := validateSignedRotatingGroup(prepared, &signerapi.RotatingSignResponse{Signed: trailing}); err == nil || !strings.Contains(err.Error(), "canonically encoded") {
+		t.Fatalf("trailing transaction accepted: %v", err)
+	}
 	if _, err := validateSignedRotatingGroup(prepared, nil); err == nil {
 		t.Fatal("nil response accepted")
 	}
@@ -190,12 +208,125 @@ func TestCapRotatingWindowShortensLongWindows(t *testing.T) {
 	txn := rotatingOriginal()
 	txn.LastValid = txn.FirstValid + 1000
 	capRotatingWindow(&txn, nil, false)
-	if txn.LastValid != txn.FirstValid+RotatingMaxValidityWindow {
+	if txn.LastValid != txn.FirstValid+rotatingkey.RotatingMaxValidityWindow {
 		t.Fatalf("window = %d", txn.LastValid-txn.FirstValid)
 	}
 	short := rotatingOriginal()
 	capRotatingWindow(&short, nil, false)
 	if short.LastValid != 1100 {
 		t.Fatal("a window within the limit was changed")
+	}
+}
+
+// fakeAlgod serves the status, suggested-params and simulate endpoints the
+// rotating flow reads before signing.
+func fakeAlgod(t *testing.T, round uint64, simulated *[]types.Transaction) *algod.Client {
+	t.Helper()
+	genesis := types.Digest{9}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v2/status":
+			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: round})
+		case "/v2/transactions/params":
+			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
+				LastRound: round, Fee: 0, MinFee: 1000, GenesisId: "testnet-v1.0",
+				GenesisHash: []byte(base64.StdEncoding.EncodeToString(genesis[:])), ConsensusVersion: "test",
+			})
+		case "/v2/transactions/simulate":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read simulate request: %v", err)
+			}
+			var req models.SimulateRequest
+			if err := msgpack.Decode(body, &req); err != nil {
+				t.Errorf("decode simulate request: %v", err)
+			}
+			for _, g := range req.TxnGroups {
+				for _, s := range g.Txns {
+					*simulated = append(*simulated, s.Txn)
+				}
+			}
+			results := make([]models.SimulateTransactionResult, len(*simulated))
+			_ = json.NewEncoder(w).Encode(models.SimulateResponse{
+				LastRound: round, TxnGroups: []models.SimulateTransactionGroupResult{{TxnResults: results}},
+			})
+		default:
+			t.Errorf("unexpected algod path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+// TestSignAndSubmitRotatingRefreshesAgedWindowAndDefaultsContext sends a
+// transaction whose validity window expired, with no context in the options.
+// The window must be rebuilt from the current round before the signer sees
+// it, and the flow must run to the unsigned simulation without a context.
+func TestSignAndSubmitRotatingRefreshesAgedWindowAndDefaultsContext(t *testing.T) {
+	const round = 5000
+	var prepareSeen types.Transaction
+	signerClient := signerclient.NewSignerClient("http://signer.test")
+	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/sign/rotating/prepare" {
+			return jsonResponse(r, http.StatusNotFound, map[string]string{"error": "not found"})
+		}
+		var req signerapi.RotatingPrepareRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode prepare request: %v", err)
+		}
+		group, err := canonical.DecodeGroupHex([]string{req.TxnBytesHex})
+		if err != nil {
+			t.Errorf("decode prepare transaction: %v", err)
+			return jsonResponse(r, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		prepareSeen = group.Entries[0].Txn
+		return jsonResponse(r, http.StatusOK, preparedFor(t, prepareSeen, rotatingTarget, nil))
+	})}
+	var simulated []types.Transaction
+	algodClient := fakeAlgod(t, round, &simulated)
+
+	txn := rotatingOriginal() // valid 1000-1100: long expired at round 5000
+	txIDs, prepared, err := SignAndSubmitRotating(txn, signerClient, algodClient, RotatingOptions{SubmitOptions: SubmitOptions{Simulate: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepareSeen.FirstValid != round || prepareSeen.LastValid != round+100 {
+		t.Fatalf("signer saw validity %d-%d, want %d-%d", prepareSeen.FirstValid, prepareSeen.LastValid, round, round+100)
+	}
+	if prepareSeen.Receiver != txn.Receiver || prepareSeen.Amount != txn.Amount {
+		t.Fatal("refreshing the window changed other fields")
+	}
+	if len(txIDs) != 2 || len(prepared) != 2 || len(simulated) != 2 {
+		t.Fatalf("simulated %d txns, prepared %d, ids %d; want 2 each", len(simulated), len(prepared), len(txIDs))
+	}
+}
+
+func TestFreshenRotatingValidityKeepsCurrentWindows(t *testing.T) {
+	var simulated []types.Transaction
+	algodClient := fakeAlgod(t, 1000, &simulated)
+	txn := rotatingOriginal()
+	fresh, aged, err := freshenRotatingValidity(context.Background(), txn, algodClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aged || fresh.FirstValid != txn.FirstValid || fresh.LastValid != txn.LastValid {
+		t.Fatal("a current window was rebuilt")
+	}
+	nearlyDone := txn
+	nearlyDone.LastValid = 1000 + rotatingkey.RotatingMinRemaining - 1
+	if _, aged, err = freshenRotatingValidity(context.Background(), nearlyDone, algodClient); err != nil || !aged {
+		t.Fatalf("window with too few rounds left: aged=%v err=%v", aged, err)
+	}
+	early := txn
+	early.FirstValid = 1000 + rotatingkey.RotatingMaxLead + 1
+	early.LastValid = early.FirstValid + 50
+	if _, aged, err = freshenRotatingValidity(context.Background(), early, algodClient); err != nil || !aged {
+		t.Fatalf("window too far ahead: aged=%v err=%v", aged, err)
 	}
 }

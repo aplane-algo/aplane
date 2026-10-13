@@ -45,6 +45,16 @@ const (
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
 	RotatingMaxValidityWindow = 100
+
+	// RotatingMaxLead is how far FirstValid may be ahead of the current
+	// round when the signer releases a signature. The client checks the same
+	// bound before asking, so an aged transaction is rebuilt instead of
+	// refused.
+	RotatingMaxLead = 2
+
+	// RotatingMinRemaining is the fewest rounds that must remain before
+	// LastValid when the signer releases a signature.
+	RotatingMinRemaining = 10
 )
 
 // Operator-facing metadata for the rotating hybrid key type. It lives here

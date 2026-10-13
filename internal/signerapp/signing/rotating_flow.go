@@ -33,8 +33,9 @@ import (
 //     immediately before signing, and the program signed with derives to it.
 //  2. Target is the next stage: RekeyTo = A_{n+1}; the group's RekeyTo is
 //     what fixes n, so nothing is carried across approval.
-//  3. Timing: FirstValid <= round + rotatingMaxLead, LastValid >= round +
-//     rotatingMinRemaining, window <= the template's maximum.
+//  3. Timing: FirstValid <= round + rotatingkey.RotatingMaxLead, LastValid
+//     >= round + rotatingkey.RotatingMinRemaining, window <= the template's
+//     maximum.
 //  4. Target can sign later: the open test on stage n + 1.
 //  5. Group exact: rebuilding the group from the presented spend reproduces
 //     the presented bytes (dummies, fees, group ID), and the spend's sender,
@@ -42,14 +43,6 @@ import (
 //
 // There is deliberately no limit on releases per stage.
 const (
-	// rotatingMaxLead is how far FirstValid may be ahead of the round read
-	// from the chain when a signature is released.
-	rotatingMaxLead = 2
-
-	// rotatingMinRemaining is the fewest rounds that must remain before
-	// LastValid when a signature is released.
-	rotatingMinRemaining = 10
-
 	// DefaultDiscoveryTimeout bounds how long prepare scans for an unknown
 	// live stage before refusing with rotating_stage_unproven. HTTP request
 	// contexts carry no deadline of their own, and the scan uses every
@@ -442,11 +435,11 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if !resolved || liveStage != stage {
 		return nil, rotatingStageChanged(view.Authorizer)
 	}
-	if uint64(spend.FirstValid) > view.Round+rotatingMaxLead {
-		return nil, badRequest(fmt.Sprintf("first valid round %d is more than %d rounds ahead of the current round %d", spend.FirstValid, rotatingMaxLead, view.Round))
+	if uint64(spend.FirstValid) > view.Round+rotatingkey.RotatingMaxLead {
+		return nil, badRequest(fmt.Sprintf("first valid round %d is more than %d rounds ahead of the current round %d", spend.FirstValid, rotatingkey.RotatingMaxLead, view.Round))
 	}
-	if uint64(spend.LastValid) < view.Round+rotatingMinRemaining {
-		return nil, badRequest(fmt.Sprintf("fewer than %d rounds remain before last valid round %d (current round %d); prepare the spend again", rotatingMinRemaining, spend.LastValid, view.Round))
+	if uint64(spend.LastValid) < view.Round+rotatingkey.RotatingMinRemaining {
+		return nil, badRequest(fmt.Sprintf("fewer than %d rounds remain before last valid round %d (current round %d); prepare the spend again", rotatingkey.RotatingMinRemaining, spend.LastValid, view.Round))
 	}
 
 	rs, svcErr := s.openRotatingSession(ctx, req.Account, session)
