@@ -437,3 +437,40 @@ func TestDiscardRemovesTheTableAndAllowsAFreshOne(t *testing.T) {
 		t.Fatalf("fresh table after discard: %v, same %v, len %d", err, fresh == tb, fresh.Len())
 	}
 }
+
+func TestDiscardOfAStaleHandleLeavesTheRebuiltTableAlone(t *testing.T) {
+	store := NewStore(storepaths.NewPaths(t.TempDir()))
+	old, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Append(stageAddrs(0, 2)); err != nil {
+		t.Fatal(err)
+	}
+	// First mismatch detection discards; the worker rebuilds.
+	if err := store.Discard(old); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil || rebuilt == old {
+		t.Fatalf("rebuilt table: %v, same %v", err, rebuilt == old)
+	}
+	if err := rebuilt.Append(stageAddrs(0, 3)); err != nil {
+		t.Fatal(err)
+	}
+	// A second detection that still holds the old handle must not delete
+	// the rebuilt cache.
+	if err := store.Discard(old); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(rebuilt.Path()); statErr != nil {
+		t.Fatalf("rebuilt table file removed by a stale discard: %v", statErr)
+	}
+	again, err := store.Table(testSelector, testGenesis, nil)
+	if err != nil || again != rebuilt || again.Len() != 3 {
+		t.Fatalf("store lost the rebuilt table: %v, same %v, len %d", err, again == rebuilt, again.Len())
+	}
+	if err := rebuilt.Append(stageAddrs(3, 4)); err != nil {
+		t.Fatalf("rebuilt table unusable after stale discard: %v", err)
+	}
+}
