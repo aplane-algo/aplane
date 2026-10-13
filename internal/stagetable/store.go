@@ -52,16 +52,27 @@ func (s *Store) Table(selector types.Address, genesisHash []byte) (*Table, error
 	return t, err
 }
 
+// Path is where the table of the account with selector lives, whether or
+// not it exists.
+func (s *Store) Path(selector string) string {
+	return s.paths.StageTablePath(selector)
+}
+
 // Delete forgets and removes the table of the account with selector. It is
 // called when the key is deleted; the table is derivable, so nothing is
-// archived. A missing file is not an error.
+// archived. An open handle to the table is closed first, so a fill that is
+// still running cannot recreate the file afterwards. A missing file is not
+// an error.
 func (s *Store) Delete(selector string) error {
 	if err := storepaths.ValidateStageSelector(selector); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.tables, selector)
+	if t, ok := s.tables[selector]; ok {
+		t.close()
+		delete(s.tables, selector)
+	}
 	if err := fsutil.RemoveDurable(s.paths.StageTablePath(selector)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stage table: %w", err)
 	}

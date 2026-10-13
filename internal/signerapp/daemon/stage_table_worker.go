@@ -62,7 +62,12 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 }
 
 // fillStageTables runs one pass and returns how long to wait before the next.
+// The pass registers as a key user, so locking the signer cancels it within
+// one derivation and waits for it to release the seed before the session is
+// cleared.
 func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtime) time.Duration {
+	ctx, release := ir.KeyUseContext(ctx)
+	defer release()
 	svc := &signersigning.Service{
 		Planner:  fs.newPlannerWithAudit(nil),
 		Console:  signerConsole{},
@@ -92,8 +97,14 @@ func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtim
 		}
 		if !r.Resolved {
 			logInfof("rotating account %s: stage not yet found, %d stages scanned", r.Account, r.Scanned)
+		}
+		if r.Pending {
 			wait = stageTableBusyInterval
 		}
+	}
+	if ctx.Err() != nil {
+		// Locked or shutting down mid-pass: nothing to schedule.
+		return stageTableIdleInterval
 	}
 	return wait
 }

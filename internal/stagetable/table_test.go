@@ -294,3 +294,89 @@ func TestStoreReportsDiscardedTableOnce(t *testing.T) {
 		t.Fatalf("second open reported again: %v", err)
 	}
 }
+
+func TestAppendFromToleratesOverlapAndRejectsMismatch(t *testing.T) {
+	tb := openTest(t, t.TempDir())
+	if err := tb.Append(stageAddrs(0, 4)); err != nil {
+		t.Fatal(err)
+	}
+	// A concurrent fill that derived 2 … 5 again: the overlap matches and
+	// only 4 and 5 are new.
+	if err := tb.AppendFrom(2, stageAddrs(2, 6)); err != nil {
+		t.Fatalf("overlapping append: %v", err)
+	}
+	if tb.Len() != 6 {
+		t.Fatalf("Len = %d, want 6", tb.Len())
+	}
+	// Entirely covered: a no-op.
+	if err := tb.AppendFrom(0, stageAddrs(0, 3)); err != nil || tb.Len() != 6 {
+		t.Fatalf("covered append: %v, len %d", err, tb.Len())
+	}
+	// A gap is never allowed.
+	if err := tb.AppendFrom(7, stageAddrs(7, 8)); err == nil {
+		t.Fatal("append past the end accepted")
+	}
+	// A different address for a covered stage means two derivations disagree.
+	bad := stageAddrs(3, 5)
+	bad[0][5] ^= 1
+	if err := tb.AppendFrom(3, bad); err == nil {
+		t.Fatal("mismatched overlap accepted")
+	}
+	if tb.Len() != 6 {
+		t.Fatalf("failed appends changed Len to %d", tb.Len())
+	}
+}
+
+func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	store := NewStore(paths)
+	tb, err := store.Table(testSelector, testGenesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.Append(stageAddrs(0, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(testSelector.String()); err != nil {
+		t.Fatal(err)
+	}
+	// The stale handle a running fill still holds must refuse to write.
+	if err := tb.Append(stageAddrs(2, 3)); !errors.Is(err, ErrClosed) {
+		t.Fatalf("append on deleted table = %v, want ErrClosed", err)
+	}
+	if err := tb.AppendFrom(0, stageAddrs(0, 1)); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AppendFrom on deleted table = %v, want ErrClosed", err)
+	}
+	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("deleted table file was recreated")
+	}
+	// Reads still work on the stale handle; only writes are refused.
+	if tb.Len() != 2 {
+		t.Fatalf("closed table Len = %d", tb.Len())
+	}
+}
+
+func TestNoLifetimeStageCap(t *testing.T) {
+	// A count larger than the file supports is rejected by length, not by a
+	// fixed ceiling; a consistent large count is fine. The table imposes no
+	// limit on how many stages an account may reach.
+	body := []byte(magic)
+	body = binary.BigEndian.AppendUint16(body, formatVersion)
+	body = append(body, testSelector[:]...)
+	body = append(body, testGenesis...)
+	huge := binary.BigEndian.AppendUint64(append([]byte(nil), body...), 1<<40)
+	if _, err := decode(withChecksum(huge), testSelector, [32]byte(testGenesis)); err == nil {
+		t.Fatal("count without matching data accepted")
+	}
+	const n = (1 << 20) + 5
+	consistent := binary.BigEndian.AppendUint64(append([]byte(nil), body...), n)
+	consistent = append(consistent, make([]byte, n*addressSize)...)
+	// Make the addresses distinct so the duplicate check passes.
+	for i := uint64(0); i < n; i++ {
+		binary.BigEndian.PutUint64(consistent[headerSize+int(i)*addressSize:], i+1)
+	}
+	addrs, err := decode(withChecksum(consistent), testSelector, [32]byte(testGenesis))
+	if err != nil || uint64(len(addrs)) != n {
+		t.Fatalf("large consistent table: %d addrs, %v", len(addrs), err)
+	}
+}

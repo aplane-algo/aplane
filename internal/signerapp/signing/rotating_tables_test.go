@@ -166,8 +166,8 @@ func (f *rotatingFixture) fill(t *testing.T, opts StageFillOptions) StageTableRe
 
 func TestFillStageTablesFreshAccountIsStageZeroAndLooksAhead(t *testing.T) {
 	f := newRotatingFixture(t)
-	r := f.fill(t, StageFillOptions{Horizon: 3, Batch: 2})
-	if r.Err != nil || !r.Resolved || r.Stage != 0 {
+	r := f.fillUntilSettled(t, StageFillOptions{Horizon: 3, Batch: 2})
+	if r.Err != nil || !r.Resolved || r.Stage != 0 || r.Pending {
 		t.Fatalf("report = %+v", r)
 	}
 	// Covers stages 0 … 3: live stage plus the horizon.
@@ -185,7 +185,7 @@ func TestFillStageTablesFreshAccountIsStageZeroAndLooksAhead(t *testing.T) {
 	// A second pass with nothing to do changes nothing and derives nothing.
 	derivations := 0
 	r = f.fill(t, StageFillOptions{Horizon: 3, Pace: func(time.Duration) { derivations++ }})
-	if r.Scanned != 4 || derivations != 0 {
+	if r.Scanned != 4 || r.Pending || derivations != 0 {
 		t.Fatalf("idle pass scanned %d with %d derivations", r.Scanned, derivations)
 	}
 }
@@ -199,17 +199,19 @@ func TestFillStageTablesUnresolvedAccountKeepsScanningPastHorizon(t *testing.T) 
 	// the horizon (2) does not stop them.
 	for pass, wantScanned := range []uint64{2, 4} {
 		r := f.fill(t, opts)
-		if r.Err != nil || r.Resolved || r.Scanned != wantScanned {
-			t.Fatalf("pass %d report = %+v, want unresolved with %d scanned", pass+1, r, wantScanned)
+		if r.Err != nil || r.Resolved || !r.Pending || r.Scanned != wantScanned {
+			t.Fatalf("pass %d report = %+v, want unresolved, pending, %d scanned", pass+1, r, wantScanned)
 		}
 	}
-	// Pass 3 reaches stage 5, resolves, and looks ahead to 5 + 2.
+	// Pass 3 reaches stage 5 with its whole budget and resolves; the
+	// lookahead to 5 + 2 is left pending for the next pass.
 	r := f.fill(t, opts)
-	if r.Err != nil || !r.Resolved || r.Stage != 5 {
+	if r.Err != nil || !r.Resolved || r.Stage != 5 || !r.Pending || r.Scanned != 6 {
 		t.Fatalf("pass 3 report = %+v", r)
 	}
-	if r.Scanned != 8 {
-		t.Fatalf("scanned = %d, want 8 (stages 0 … 7)", r.Scanned)
+	r = f.fill(t, opts)
+	if r.Err != nil || r.Pending || r.Scanned != 8 {
+		t.Fatalf("pass 4 report = %+v, want 8 scanned (stages 0 … 7) and settled", r)
 	}
 	if stage, ok := f.table(t).Lookup(f.chain.authorizer); !ok || stage != 5 {
 		t.Fatalf("lookup of the authorizer = %d, %v", stage, ok)
@@ -223,7 +225,7 @@ func TestFillStageTablesNeverMatchingAuthorizerIsNeverForeign(t *testing.T) {
 	var last StageTableReport
 	for pass := 0; pass < 3; pass++ {
 		last = f.fill(t, opts)
-		if last.Err != nil || last.Resolved {
+		if last.Err != nil || last.Resolved || !last.Pending {
 			t.Fatalf("pass %d: %+v", pass, last)
 		}
 		if last.Scanned != uint64(3*(pass+1)) {
@@ -300,5 +302,77 @@ func TestFillStageTablesWithoutDepsIsNoop(t *testing.T) {
 	svc := &Service{}
 	if reports := svc.FillStageTables(context.Background(), nil, StageFillOptions{}); reports != nil {
 		t.Fatalf("reports = %+v", reports)
+	}
+}
+
+// fillUntilSettled runs passes until none reports pending work.
+func (f *rotatingFixture) fillUntilSettled(t *testing.T, opts StageFillOptions) StageTableReport {
+	t.Helper()
+	for i := 0; i < 64; i++ {
+		r := f.fill(t, opts)
+		if r.Err != nil || !r.Pending {
+			return r
+		}
+	}
+	t.Fatal("fill never settled")
+	return StageTableReport{}
+}
+
+func TestFillStageTablesHoldsNoAccountLock(t *testing.T) {
+	f := newRotatingFixture(t)
+	acquired := 0
+	opts := StageFillOptions{Horizon: 2, MaxDerivations: 3, Pace: func(time.Duration) {
+		// Mid-derivation, a prepare or sign must be able to take the
+		// account lock immediately.
+		got := make(chan func(), 1)
+		go func() { got <- f.svc.Rotating.Locks.Lock(f.account.String()) }()
+		select {
+		case unlock := <-got:
+			unlock()
+			acquired++
+		case <-time.After(500 * time.Millisecond):
+			t.Error("account lock held during table maintenance")
+		}
+	}}
+	r := f.fill(t, opts)
+	if r.Err != nil || acquired == 0 {
+		t.Fatalf("report %+v, lock acquired %d times", r, acquired)
+	}
+}
+
+func TestFillStageTablesBoundsLookaheadPerPass(t *testing.T) {
+	f := newRotatingFixture(t)
+	opts := StageFillOptions{Horizon: 100, MaxDerivations: 5}
+	r := f.fill(t, opts)
+	if r.Err != nil || !r.Resolved || r.Stage != 0 || !r.Pending || r.Scanned != 5 {
+		t.Fatalf("first pass = %+v, want resolved, pending, 5 scanned", r)
+	}
+	r = f.fill(t, opts)
+	if r.Scanned != 10 || !r.Pending {
+		t.Fatalf("second pass = %+v, want 10 scanned and pending", r)
+	}
+}
+
+func TestFillStageTablesStopsWhenTableDeletedMidPass(t *testing.T) {
+	f := newRotatingFixture(t)
+	derived := 0
+	opts := StageFillOptions{Horizon: 20, MaxDerivations: 20, Batch: 4, Pace: func(time.Duration) {
+		derived++
+		if derived == 2 {
+			if err := f.tables.Delete(f.account.String()); err != nil {
+				t.Error(err)
+			}
+		}
+	}}
+	r := f.fill(t, opts)
+	if !errors.Is(r.Err, stagetable.ErrClosed) {
+		t.Fatalf("report after delete = %+v, want ErrClosed", r)
+	}
+	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("deleted table was recreated by the running fill")
+	}
+	fresh, err := f.tables.Table(f.account, rotatingTestGenesis)
+	if err != nil || fresh.Len() != 0 {
+		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
 	}
 }

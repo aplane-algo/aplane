@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -160,13 +161,18 @@ func TestStageTableWorkerFillsResolvedAndUnresolvedAccounts(t *testing.T) {
 	if table.Len() != 7 {
 		t.Fatalf("unresolved pass len = %d, want 7 (stages 3 … 6 derived)", table.Len())
 	}
-	// The next pass reaches stage 9, stops there, and looks ahead to 11.
+	// The next pass reaches stage 9 after three derivations, spends its last
+	// one on lookahead, and asks to continue; the pass after finishes the
+	// lookahead through 11 and goes idle.
 	wait := server.fillStageTables(context.Background(), ir)
 	if stage, ok := table.Lookup(stage9); !ok || stage != 9 {
 		t.Fatalf("stage 9 not resolved after two passes: %d, %v (len %d)", stage, ok, table.Len())
 	}
-	if wait != stageTableIdleInterval || table.Len() < 12 {
-		t.Fatalf("after resolving: wait %v, len %d; want idle and lookahead through 11", wait, table.Len())
+	if wait != stageTableBusyInterval || table.Len() != 11 {
+		t.Fatalf("after resolving: wait %v, len %d; want busy and 11", wait, table.Len())
+	}
+	if wait = server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval || table.Len() != 12 {
+		t.Fatalf("after lookahead: wait %v, len %d; want idle and 12", wait, table.Len())
 	}
 
 	// A locked signer cannot reach the seed: the pass changes nothing and
@@ -178,5 +184,55 @@ func TestStageTableWorkerFillsResolvedAndUnresolvedAccounts(t *testing.T) {
 	}
 	if table.Len() != before {
 		t.Fatalf("locked pass changed the table: %d -> %d", before, table.Len())
+	}
+}
+
+func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	// A long pass: plenty of lookahead and budget, so only the lock can end it.
+	server.config.Rotating.StageHorizon = 200
+	server.stageFillBatch, server.stageFillMaxDeriv = 4, 200
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	account, _ := installRotatingKey(t, server)
+	gh, _ := base64.StdEncoding.DecodeString(testnetGenesisB64)
+	node.set("", 100)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.fillStageTables(context.Background(), ir)
+	}()
+	// Let a few derivations happen, then lock.
+	time.Sleep(400 * time.Millisecond)
+	ir.Lock()
+	// Lock must not return until the pass has released the seed.
+	select {
+	case <-done:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("Lock returned while the stage table pass still held key material")
+	}
+	table, err := ir.StageTables().Table(account, gh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := table.Len()
+	if n == 0 || n > 8 {
+		t.Fatalf("table len after lock = %d; want a few stages, not a whole pass", n)
+	}
+	// Nothing derives after the lock.
+	time.Sleep(300 * time.Millisecond)
+	if table.Len() != n {
+		t.Fatalf("table grew after lock: %d -> %d", n, table.Len())
+	}
+	// A pass while locked does nothing and reports idle.
+	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval || table.Len() != n {
+		t.Fatalf("locked pass: wait %v, len %d", wait, table.Len())
 	}
 }

@@ -28,9 +28,10 @@ type StageFillOptions struct {
 	// Batch is the number of stages derived per durable write. Zero means
 	// DefaultStageBatch.
 	Batch int
-	// MaxDerivations bounds the derivations spent on one unresolved account
-	// in this pass. Zero means one batch. Progress is kept in the table, so
-	// the next pass continues where this one stopped; there is no ceiling.
+	// MaxDerivations bounds the derivations spent on one account in this
+	// pass, whether it is scanning for its live stage or extending its
+	// lookahead. Zero means one batch. Progress is kept in the table, so the
+	// next pass continues where this one stopped; there is no ceiling.
 	MaxDerivations int
 	// Parallel is the number of concurrent derivations. Zero means one.
 	Parallel int
@@ -70,6 +71,9 @@ type StageTableReport struct {
 	// Scanned is the table's length after the pass: the number of stages
 	// whose addresses are known.
 	Scanned uint64
+	// Pending reports that this pass stopped at its derivation budget with
+	// work left: the account is unresolved, or its lookahead is short.
+	Pending bool
 	// Discarded is set when an unusable on-disk table was replaced.
 	Discarded error
 	// Err is set when the account could not be processed (chain read,
@@ -80,10 +84,17 @@ type StageTableReport struct {
 // FillStageTables extends every rotating account's stage address table. For
 // an account whose authorizer is in the table (or is the account itself,
 // stage 0) it derives ahead to Horizon past that stage. For an account whose
-// authorizer is not yet in the table it derives further, up to
-// MaxDerivations in this pass, stopping early when the authorizer appears.
-// It never classifies an unresolved authorizer as foreign: the caller
-// decides what a long run of unresolved passes means.
+// authorizer is not yet in the table it derives further, stopping early when
+// the authorizer appears. Either way a pass spends at most MaxDerivations on
+// one account and reports Pending when work remains, so no account is held
+// for long and the caller schedules the next pass. It never classifies an
+// unresolved authorizer as foreign: the caller decides what a long run of
+// unresolved passes means.
+//
+// No account lock is taken. Derivation is a pure function of the seed, the
+// table serializes its own writes and tolerates two fills deriving the same
+// range, and the chain is only read. A prepare or sign running concurrently
+// is never blocked by table maintenance.
 //
 // The table is a cache. Every address it holds was derived from the seed by
 // this routine, and signing re-derives whatever it uses, so nothing here
@@ -105,9 +116,6 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 
 func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
 	report := StageTableReport{Account: account}
-	unlock := deps.Locks.Lock(account)
-	defer unlock()
-
 	rs, svcErr := s.openRotatingSession(ctx, account, session)
 	if svcErr != nil {
 		report.Err = errors.New(svcErr.Message)
@@ -131,32 +139,39 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 		return report
 	}
 
+	budget := opts.maxDerivations()
 	proven, resolved := resolveStage(table, rs.account, view.Authorizer)
 	if !resolved {
-		found, extendErr := extendUntil(ctx, table, rs, view.Authorizer, opts.maxDerivations(), opts)
+		before := table.Len()
+		found, extendErr := extendUntil(ctx, table, rs, view.Authorizer, budget, opts)
 		report.Scanned = table.Len()
+		budget -= int(table.Len() - before)
 		if extendErr != nil {
 			report.Err = extendErr
 			return report
 		}
 		if !found {
+			report.Pending = ctx.Err() == nil
 			return report
 		}
 		proven, resolved = resolveStage(table, rs.account, view.Authorizer)
 	}
 	report.Resolved, report.Stage = resolved, proven
 
-	// Lookahead: cover stages through proven + Horizon.
+	// Lookahead: cover stages through proven + Horizon, within what is left
+	// of this pass's budget.
 	target := proven + opts.Horizon + 1
-	if target > stagetable.MaxStages {
-		target = stagetable.MaxStages
-	}
 	if table.Len() < target {
-		if err := extendTo(ctx, table, rs, target, opts); err != nil {
+		limit := table.Len() + uint64(max(budget, 0))
+		if limit > target {
+			limit = target
+		}
+		if err := extendTo(ctx, table, rs, limit, opts); err != nil {
 			report.Err = err
 		}
 	}
 	report.Scanned = table.Len()
+	report.Pending = report.Err == nil && ctx.Err() == nil && table.Len() < target
 	return report
 }
 
@@ -205,7 +220,7 @@ func extendUntil(ctx context.Context, table *stagetable.Table, rs *rotatingSessi
 			}
 		}
 		if len(pending) > 0 {
-			if err := table.Append(pending); err != nil {
+			if err := table.AppendFrom(from, pending); err != nil {
 				return false, err
 			}
 		}
@@ -237,7 +252,7 @@ func extendTo(ctx context.Context, table *stagetable.Table, rs *rotatingSession,
 		if len(addrs) == 0 {
 			return nil
 		}
-		if err := table.Append(addrs); err != nil {
+		if err := table.AppendFrom(from, addrs); err != nil {
 			return err
 		}
 	}

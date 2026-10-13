@@ -37,16 +37,14 @@ const (
 	headerSize    = len(magic) + 2 + 32 + 32 + 8
 	addressSize   = 32
 	checksumSize  = sha256.Size
-
-	// MaxStages bounds a table file to about 32 MiB, far above any account
-	// this design expects and small enough that a corrupt count cannot ask
-	// for an unbounded allocation.
-	MaxStages = 1 << 20
 )
 
 // ErrDiscarded reports that an unreadable or mismatched table file was
 // removed and the table started empty.
 var ErrDiscarded = errors.New("stage table discarded")
+
+// ErrClosed reports an append to a table whose key has been deleted.
+var ErrClosed = errors.New("stage table closed")
 
 // Table is one account's stage address table, loaded in memory and mirrored
 // durably on disk. Methods are safe for concurrent use.
@@ -55,9 +53,10 @@ type Table struct {
 	selector types.Address
 	genesis  [32]byte
 
-	mu    sync.RWMutex
-	addrs []types.Address
-	index map[types.Address]uint64
+	mu     sync.RWMutex
+	addrs  []types.Address
+	index  map[types.Address]uint64
+	closed bool
 }
 
 // Open loads the table at path for the account with selector on the network
@@ -127,13 +126,42 @@ func (t *Table) Address(stage uint64) (types.Address, bool) {
 // publishes the whole table durably before returning. A failed write leaves
 // both the file and the in-memory table unchanged.
 func (t *Table) Append(addrs []types.Address) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.appendLocked(uint64(len(t.addrs)), addrs)
+}
+
+// AppendFrom adds the addresses of stages start … start+len(addrs)-1. Stages
+// the table already covers must match and are skipped, so two fills that
+// derived the same range concurrently both succeed; a mismatch is an error,
+// since two derivations of one stage can only differ if something is wrong.
+// start may not exceed Len(), because the table never has gaps.
+func (t *Table) AppendFrom(start uint64, addrs []types.Address) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	have := uint64(len(t.addrs))
+	if start > have {
+		return fmt.Errorf("stage table covers %d stages; cannot append from %d", have, start)
+	}
+	for start < have && len(addrs) > 0 {
+		if t.addrs[start] != addrs[0] {
+			return fmt.Errorf("stage %d derived to %s but the table holds %s", start, addrs[0], t.addrs[start])
+		}
+		start++
+		addrs = addrs[1:]
+	}
+	return t.appendLocked(start, addrs)
+}
+
+func (t *Table) appendLocked(start uint64, addrs []types.Address) error {
+	if t.closed {
+		return ErrClosed
+	}
 	if len(addrs) == 0 {
 		return nil
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if uint64(len(t.addrs))+uint64(len(addrs)) > MaxStages {
-		return fmt.Errorf("stage table would exceed %d stages", MaxStages)
+	if start != uint64(len(t.addrs)) {
+		return fmt.Errorf("stage table covers %d stages; cannot append from %d", len(t.addrs), start)
 	}
 	for _, a := range addrs {
 		if _, dup := t.index[a]; dup {
@@ -155,6 +183,15 @@ func (t *Table) Append(addrs []types.Address) error {
 	}
 	t.addrs = next
 	return nil
+}
+
+// close marks the table deleted: every later append fails with ErrClosed, so
+// a fill still holding this handle cannot recreate the file. It waits for an
+// in-flight append to finish first.
+func (t *Table) close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.closed = true
 }
 
 func encode(selector types.Address, genesis [32]byte, addrs []types.Address) []byte {
@@ -197,10 +234,9 @@ func decode(data []byte, selector types.Address, genesis [32]byte) ([]types.Addr
 	off += 32
 	count := binary.BigEndian.Uint64(body[off:])
 	off += 8
-	if count > MaxStages {
-		return nil, fmt.Errorf("stage count %d exceeds %d", count, MaxStages)
-	}
-	if uint64(len(body)-off) != count*addressSize {
+	// The file's own length bounds the allocation: a corrupt count that does
+	// not match it is rejected before anything is allocated.
+	if uint64(len(body)-off)/addressSize != count || uint64(len(body)-off)%addressSize != 0 {
 		return nil, errors.New("length does not match stage count")
 	}
 	addrs := make([]types.Address, count)

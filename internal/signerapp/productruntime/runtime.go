@@ -79,6 +79,15 @@ type Runtime struct {
 	// address tables (identities/default/stages), a derivable cache.
 	stageTables *stagetable.Store
 
+	// Key users are background holders of loaded key material (the stage
+	// table worker). Lock cancels their context and waits for them to
+	// release before it clears the session, so no copy of a seed outlives
+	// the unlocked state.
+	keyUseMu     sync.Mutex
+	keyUseCtx    context.Context
+	keyUseCancel context.CancelFunc
+	keyUsers     sync.WaitGroup
+
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
 
@@ -996,6 +1005,68 @@ func (ir *Runtime) StageTables() *stagetable.Store {
 	return ir.stageTables
 }
 
+// keyUseDrainTimeout bounds how long Lock waits for key users to release.
+// A user that ignores its cancelled context is a bug; the lock proceeds and
+// the wait is reported rather than left hanging.
+const keyUseDrainTimeout = 10 * time.Second
+
+// KeyUseContext registers a background holder of loaded key material. The
+// returned context is cancelled the moment the signer locks, and release must
+// be called once the caller holds no key material; Lock waits for every
+// registered user to release before it clears the session. While the signer
+// is locked the returned context is already cancelled and release is a no-op.
+func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func()) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ir.keyUseMu.Lock()
+	if !ir.IsUnlocked() {
+		ir.keyUseMu.Unlock()
+		ctx, cancel := context.WithCancel(parent)
+		cancel()
+		return ctx, func() {}
+	}
+	if ir.keyUseCtx == nil || ir.keyUseCtx.Err() != nil {
+		ir.keyUseCtx, ir.keyUseCancel = context.WithCancel(context.Background())
+	}
+	base := ir.keyUseCtx
+	ir.keyUsers.Add(1)
+	ir.keyUseMu.Unlock()
+
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(base, cancel)
+	var once sync.Once
+	return ctx, func() {
+		once.Do(func() {
+			stop()
+			cancel()
+			ir.keyUsers.Done()
+		})
+	}
+}
+
+// drainKeyUsers cancels every key user's context and waits for them to
+// release their key material. It runs inside the lock transition, after the
+// state is already locked, so no new user can register meanwhile.
+func (ir *Runtime) drainKeyUsers() {
+	ir.keyUseMu.Lock()
+	if ir.keyUseCancel != nil {
+		ir.keyUseCancel()
+	}
+	ir.keyUseMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		ir.keyUsers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(keyUseDrainTimeout):
+		fmt.Printf("⚠️  Warning: background key users did not release within %s of locking\n", keyUseDrainTimeout)
+	}
+}
+
 // ActivePaths returns the generation authenticated by the runtime's most
 // recent successful root unlock or reload.
 func (ir *Runtime) ActivePaths() (storepaths.GenPaths, error) {
@@ -1188,6 +1259,10 @@ func (ir *Runtime) Destroy() {
 func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
 	// StopKeyWatcher is only called on shutdown via Destroy().
+
+	// Background holders of key material go first, so clearing the session
+	// below really is the end of every copy of a seed.
+	ir.drainKeyUsers()
 
 	ir.passphraseLock.Lock()
 	if ir.keySession != nil {
