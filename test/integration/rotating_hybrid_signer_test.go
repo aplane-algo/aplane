@@ -26,8 +26,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerops"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -36,16 +36,34 @@ import (
 )
 
 type rotatingSeedStore struct {
+	keyType       string
 	seed, genesis []byte
 }
 
 func (s *rotatingSeedStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
 	return &coresigning.KeyMaterial{
-		Type:     rotatingkey.RotatingHybridV1,
+		Type:     s.keyType,
 		Category: keys.CategoryRotatingLsig,
 		Value:    &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(s.seed), GenesisHash: bytes.Clone(s.genesis)},
 	}, nil
 }
+
+// localnetRotatingType is one rotating key type as the LocalNet tests drive
+// it through the real signer-side registrations.
+type localnetRotatingType struct {
+	keyType       string
+	register      func()
+	newKeyPayload func(*rotatinghybrid.Seed, [rotatinghybrid.GenesisHashSize]byte) (*keys.Payload, string, error)
+}
+
+var (
+	localnetHybrid = localnetRotatingType{
+		keyType: rotatingkey.RotatingHybridV1, register: rotatingsignerreg.Register, newKeyPayload: rotatingsignerreg.NewKeyPayload,
+	}
+	localnetWots = localnetRotatingType{
+		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register, newKeyPayload: rotatingwotssignerreg.NewKeyPayload,
+	}
+)
 
 // TestRotatingHybridSignerFlowOnChain drives the signer's stateless rotating
 // prepare and sign service against a live network: real chain reads through
@@ -54,6 +72,16 @@ func (s *rotatingSeedStore) Get(context.Context, string) (*coresigning.KeyMateri
 // keeps signing (the restore case), and shows that two releases from one
 // stage are both signed but only one can land. Approval is user_auto_approve.
 func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetHybrid)
+}
+
+// TestRotatingWotsSignerFlowOnChain is the same flow over the WOTS hybrid.
+func TestRotatingWotsSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetWots)
+}
+
+func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
+	t.Helper()
 	testnet, err := harness.NewTestnetConfig()
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -66,7 +94,7 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rotatingsignerreg.Register()
+	kind.register()
 
 	sp, err := testnet.GetSuggestedParams()
 	if err != nil {
@@ -79,7 +107,7 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer seed.Zero()
-	payload, address, err := rotatingsignerreg.NewKeyPayload(&seed, genesis)
+	payload, address, err := kind.newKeyPayload(&seed, genesis)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +117,14 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 		t.Fatalf("fund rotating account: %v", err)
 	}
 
-	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost))
+	rk, _ := rotatingkey.Lookup(kind.keyType)
+	argumentBytes := uint64(rk.MaxArgumentBytes)
+	profile, err := lsigresource.Materialize(uint64(rk.MaxProgramBytes), &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(uint64(rk.MaxOpcodeCost)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageOps, err := coresigning.GetRotatingStageOps(kind.keyType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +143,7 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 		},
 		MakeClient: func(server, token string) (*algod.Client, error) { return algod.MakeClient(server, token) },
 	}
-	session := keystore.NewKeySession(&rotatingSeedStore{seed: bytes.Clone(seed[:]), genesis: genesis[:]})
+	session := keystore.NewKeySession(&rotatingSeedStore{keyType: kind.keyType, seed: bytes.Clone(seed[:]), genesis: genesis[:]})
 	session.InitializeSession()
 	approve := true
 	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
@@ -119,7 +152,7 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 		Planner: &signersigning.Planner{Snapshot: func() signersigning.PlannerRuntimeSnapshot {
 			return signersigning.PlannerRuntimeSnapshot{
 				KeyFiles:    map[string]string{address: "keys/" + address + ".key"},
-				KeyTypes:    map[string]string{address: rotatingkey.RotatingHybridV1},
+				KeyTypes:    map[string]string{address: kind.keyType},
 				KeyMetadata: map[string]signersigning.PlannerKeyMetadata{address: {Category: keys.CategoryRotatingLsig, LogicSigResources: &profile}},
 			}
 		}},
@@ -172,7 +205,7 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 	}
 	authorizerIs := func(t *testing.T, stage uint64) {
 		t.Helper()
-		want, err := signerops.StageOps{}.StageAddress(secret, stage)
+		want, err := stageOps.StageAddress(secret, stage)
 		if err != nil {
 			t.Fatal(err)
 		}

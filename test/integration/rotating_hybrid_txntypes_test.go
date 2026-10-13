@@ -25,6 +25,17 @@ import (
 // reference, and online and offline key registration. Each must confirm and
 // move the account's authorizer to a fresh stage address.
 func TestRotatingHybridTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingHybridV1)
+}
+
+// TestRotatingWotsTransactionTypes runs every transaction type over the
+// WOTS hybrid key type.
+func TestRotatingWotsTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingWotsHybridV1)
+}
+
+func runRotatingTransactionTypes(t *testing.T, keyType string) {
+	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set")
 	}
@@ -47,10 +58,10 @@ func TestRotatingHybridTransactionTypes(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("unlock: %v", err)
 	}
-	if err := apadmin.ActivateKeyType(rotatingkey.RotatingHybridV1); err != nil {
-		t.Fatalf("activate %s: %v", rotatingkey.RotatingHybridV1, err)
+	if err := apadmin.ActivateKeyType(keyType); err != nil {
+		t.Fatalf("activate %s: %v", keyType, err)
 	}
-	account, err := apadmin.GenerateKeyWithTypeAndParams(rotatingkey.RotatingHybridV1, map[string]string{
+	account, err := apadmin.GenerateKeyWithTypeAndParams(keyType, map[string]string{
 		"network": testnet.GenesisHash,
 	})
 	if err != nil {

@@ -45,7 +45,12 @@ func (a *recordingReleaseAudit) LogRotatingRelease(account, txid string, stage, 
 // chain.
 func newSigningFixture(t *testing.T) (*rotatingFixture, *recordingReleaseAudit) {
 	t.Helper()
-	f := newRotatingFixture(t)
+	return newSigningFixtureFor(t, hybridTestType)
+}
+
+func newSigningFixtureFor(t *testing.T, kind rotatingTestType) (*rotatingFixture, *recordingReleaseAudit) {
+	t.Helper()
+	f := newRotatingFixtureFor(t, kind)
 	audit := &recordingReleaseAudit{}
 	approve := true
 	f.svc.Approval = &ApprovalService{UserAutoApprove: &approve}
@@ -112,18 +117,32 @@ func (f *rotatingFixture) land(t *testing.T, resp *signerapi.RotatingSignRespons
 	f.chain.round += 3
 }
 
+// TestRotatingHappyPathThreeRotations runs three rotations through prepare
+// and sign for every rotating key type. The WOTS hybrid needs two resource
+// dummies where the Falcon hybrid needs one; everything else is the same
+// protocol.
 func TestRotatingHappyPathThreeRotations(t *testing.T) {
-	f, audit := newSigningFixture(t)
+	for _, kind := range rotatingTestTypes {
+		t.Run(kind.keyType, func(t *testing.T) {
+			f, audit := newSigningFixtureFor(t, kind)
+			runHappyPathThreeRotations(t, f, audit)
+		})
+	}
+}
+
+func runHappyPathThreeRotations(t *testing.T, f *rotatingFixture, audit *recordingReleaseAudit) {
+	t.Helper()
+	groupSize := f.kind.dummies + 1
 	for stage := uint64(0); stage < 3; stage++ {
 		prep := mustPrepare(t, f, f.spend(f.chain.round, f.chain.round+100))
 		if prep.Stage != stage || prep.Target != stage+1 || prep.RekeyTo != f.stageAddress(t, stage+1).String() {
 			t.Fatalf("stage %d prepare = %+v", stage, prep)
 		}
-		if len(prep.Transactions) != 2 || prep.Mutations == nil || prep.Mutations.DummiesAdded != 1 {
+		if len(prep.Transactions) != groupSize || prep.Mutations == nil || prep.Mutations.DummiesAdded != f.kind.dummies {
 			t.Fatalf("stage %d group = %d txns, mutations %+v", stage, len(prep.Transactions), prep.Mutations)
 		}
 		resp := mustSign(t, f, prep.Transactions)
-		if resp.Stage != stage || resp.Target != stage+1 || len(resp.Signed) != 2 {
+		if resp.Stage != stage || resp.Target != stage+1 || len(resp.Signed) != groupSize {
 			t.Fatalf("stage %d sign = %+v", stage, resp)
 		}
 		// The LogicSig attached is the live stage's program, so its address
