@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -35,9 +36,16 @@ type StageFillOptions struct {
 	MaxDerivations int
 	// Parallel is the number of concurrent derivations. Zero means one.
 	Parallel int
-	// Pace, if set, runs after each derivation with the time it took; the
-	// background worker sleeps here to hold its CPU budget.
+	// Pace, if set, runs after each chunk of derivations with the time the
+	// chunk took, after the seed has been released; the background worker
+	// sleeps here to hold its CPU budget.
 	Pace func(derivation time.Duration)
+	// KeyUse, if set, brackets every window in which the seed is held: it
+	// returns a context that is cancelled when the signer locks and a
+	// release to call once the seed is zeroed. The runtime's lock waits for
+	// every release. Nothing that can block on I/O or the network happens
+	// inside a window.
+	KeyUse func(ctx context.Context) (context.Context, func())
 }
 
 func (o StageFillOptions) batch() int {
@@ -59,6 +67,13 @@ func (o StageFillOptions) parallel() int {
 		return 1
 	}
 	return o.Parallel
+}
+
+func (o StageFillOptions) keyUse(ctx context.Context) (context.Context, func()) {
+	if o.KeyUse == nil {
+		return ctx, func() {}
+	}
+	return o.KeyUse(ctx)
 }
 
 // StageTableReport is one account's outcome of a FillStageTables pass.
@@ -91,6 +106,12 @@ type StageTableReport struct {
 // unresolved authorizer as foreign: the caller decides what a long run of
 // unresolved passes means.
 //
+// The seed is loaded only for the duration of one chunk of derivations and
+// zeroed before anything that can block: the chain read, the table write
+// and the pacing sleep all run with no key material in memory. Each chunk
+// is bracketed by KeyUse so the signer's lock can cut a pass short and wait
+// for the seed to be released.
+//
 // No account lock is taken. Derivation is a pure function of the seed, the
 // table serializes its own writes and tolerates two fills deriving the same
 // range, and the chain is only read. A prepare or sign running concurrently
@@ -114,16 +135,25 @@ func (s *Service) FillStageTables(ctx context.Context, session *keystore.KeySess
 	return reports
 }
 
+// stageDeriver derives a contiguous range of stage addresses for one
+// account. Each call opens the seed, derives, and zeroes the seed again.
+type stageDeriver func(ctx context.Context, from, to uint64) ([]types.Address, error)
+
 func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, account string, session *keystore.KeySession, opts StageFillOptions) StageTableReport {
 	report := StageTableReport{Account: account}
-	rs, svcErr := s.openRotatingSession(ctx, account, session)
+
+	// Identity and network come from the key file; the seed is opened and
+	// closed again inside the call.
+	acct, genesis, svcErr := s.rotatingIdentity(ctx, account, session, opts)
 	if svcErr != nil {
 		report.Err = errors.New(svcErr.Message)
 		return report
 	}
-	defer rs.close()
-
-	table, tableErr := rs.table(deps)
+	present := func() bool {
+		_, ok := s.Planner.Snapshot().KeyFiles[account]
+		return ok
+	}
+	table, tableErr := deps.Tables.Table(acct, genesis, present)
 	if table == nil {
 		report.Err = tableErr
 		return report
@@ -133,17 +163,18 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 	}
 	report.Scanned = table.Len()
 
-	view, readErr := deps.Chain.ReadAccount(ctx, rs.secret.GenesisHash, rs.account)
+	view, readErr := deps.Chain.ReadAccount(ctx, genesis, acct)
 	if readErr != nil {
 		report.Err = readErr
 		return report
 	}
 
+	derive := s.stageDeriver(account, session, opts)
 	budget := opts.maxDerivations()
-	proven, resolved := resolveStage(table, rs.account, view.Authorizer)
+	proven, resolved := resolveStage(table, acct, view.Authorizer)
 	if !resolved {
 		before := table.Len()
-		found, extendErr := extendUntil(ctx, table, rs, view.Authorizer, budget, opts)
+		found, extendErr := extendUntil(ctx, table, derive, view.Authorizer, budget, opts)
 		report.Scanned = table.Len()
 		budget -= int(table.Len() - before)
 		if extendErr != nil {
@@ -154,7 +185,7 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 			report.Pending = ctx.Err() == nil
 			return report
 		}
-		proven, resolved = resolveStage(table, rs.account, view.Authorizer)
+		proven, resolved = resolveStage(table, acct, view.Authorizer)
 	}
 	report.Resolved, report.Stage = resolved, proven
 
@@ -166,13 +197,65 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 		if limit > target {
 			limit = target
 		}
-		if err := extendTo(ctx, table, rs, limit, opts); err != nil {
+		if err := extendTo(ctx, table, derive, limit, opts); err != nil {
 			report.Err = err
 		}
 	}
 	report.Scanned = table.Len()
 	report.Pending = report.Err == nil && ctx.Err() == nil && table.Len() < target
 	return report
+}
+
+// rotatingIdentity returns the account address and genesis hash of a
+// rotating key. It opens the key material only long enough to copy the
+// genesis hash out, inside a KeyUse window.
+func (s *Service) rotatingIdentity(ctx context.Context, account string, session *keystore.KeySession, opts StageFillOptions) (types.Address, []byte, *ServiceError) {
+	ctx, release := opts.keyUse(ctx)
+	defer release()
+	if ctx.Err() != nil {
+		return types.Address{}, nil, lockedError()
+	}
+	rs, svcErr := s.openRotatingSession(ctx, account, session)
+	if svcErr != nil {
+		return types.Address{}, nil, svcErr
+	}
+	defer rs.close()
+	return rs.account, bytes.Clone(rs.secret.GenesisHash), nil
+}
+
+// stageDeriver returns the deriver for one account. Every call loads the
+// seed inside a KeyUse window, derives the requested stages with up to
+// opts.Parallel in flight, zeroes the seed, releases the window, and only
+// then paces. A cancelled window (the signer locked) returns the contiguous
+// prefix derived so far with no error, so the caller can write it and stop.
+func (s *Service) stageDeriver(account string, session *keystore.KeySession, opts StageFillOptions) stageDeriver {
+	return func(parent context.Context, from, to uint64) ([]types.Address, error) {
+		count := int(to - from)
+		if count <= 0 {
+			return nil, nil
+		}
+		started := time.Now()
+		addrs, err := func() ([]types.Address, error) {
+			ctx, release := opts.keyUse(parent)
+			defer release()
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			rs, svcErr := s.openRotatingSession(ctx, account, session)
+			if svcErr != nil {
+				if svcErr.Kind == ErrorLocked {
+					return nil, nil
+				}
+				return nil, errors.New(svcErr.Message)
+			}
+			defer rs.close()
+			return deriveRange(ctx, rs, from, to, opts)
+		}()
+		if err == nil && len(addrs) > 0 && opts.Pace != nil {
+			opts.Pace(time.Since(started))
+		}
+		return addrs, err
+	}
 }
 
 // resolveStage maps the authorizer to a stage: the account itself is stage
@@ -187,10 +270,11 @@ func resolveStage(table *stagetable.Table, account, authorizer types.Address) (u
 // extendUntil derives up to max further stages and reports whether target
 // appeared among them. Derivation proceeds in chunks of opts.Parallel so the
 // search stops as soon as the target is derived, while writes happen once
-// per batch. ctx cancellation ends the pass with whatever contiguous prefix
-// was derived written, so the table stays prefix-complete and the next pass
+// per batch. A chunk that comes back short means the signer locked or the
+// pass was cancelled: whatever contiguous prefix was derived is written and
+// the pass ends, so the table stays prefix-complete and the next pass
 // resumes from its length.
-func extendUntil(ctx context.Context, table *stagetable.Table, rs *rotatingSession, target types.Address, max int, opts StageFillOptions) (bool, error) {
+func extendUntil(ctx context.Context, table *stagetable.Table, derive stageDeriver, target types.Address, max int, opts StageFillOptions) (bool, error) {
 	remaining := max
 	for remaining > 0 && ctx.Err() == nil {
 		from := table.Len()
@@ -205,7 +289,7 @@ func extendUntil(ctx context.Context, table *stagetable.Table, rs *rotatingSessi
 				chunk = remaining
 			}
 			start := from + uint64(len(pending))
-			addrs, err := deriveRange(ctx, rs, start, start+uint64(chunk), opts)
+			addrs, err := derive(ctx, start, start+uint64(chunk))
 			if err != nil {
 				return false, err
 			}
@@ -234,26 +318,37 @@ func extendUntil(ctx context.Context, table *stagetable.Table, rs *rotatingSessi
 	return false, nil
 }
 
-// extendTo grows the table to cover stages 0 … target-1.
-func extendTo(ctx context.Context, table *stagetable.Table, rs *rotatingSession, target uint64, opts StageFillOptions) error {
-	for table.Len() < target {
-		if ctx.Err() != nil {
-			return nil
-		}
+// extendTo grows the table to cover stages 0 … target-1, one batch per
+// write, stopping early when a chunk comes back short.
+func extendTo(ctx context.Context, table *stagetable.Table, derive stageDeriver, target uint64, opts StageFillOptions) error {
+	for table.Len() < target && ctx.Err() == nil {
 		from := table.Len()
-		to := from + uint64(opts.batch())
-		if to > target {
-			to = target
+		end := from + uint64(opts.batch())
+		if end > target {
+			end = target
 		}
-		addrs, err := deriveRange(ctx, rs, from, to, opts)
-		if err != nil {
-			return err
+		var pending []types.Address
+		cut := false
+		for from+uint64(len(pending)) < end && !cut && ctx.Err() == nil {
+			start := from + uint64(len(pending))
+			chunk := uint64(opts.parallel())
+			if start+chunk > end {
+				chunk = end - start
+			}
+			addrs, err := derive(ctx, start, start+chunk)
+			if err != nil {
+				return err
+			}
+			cut = uint64(len(addrs)) < chunk
+			pending = append(pending, addrs...)
 		}
-		if len(addrs) == 0 {
+		if len(pending) > 0 {
+			if err := table.AppendFrom(from, pending); err != nil {
+				return err
+			}
+		}
+		if cut {
 			return nil
-		}
-		if err := table.AppendFrom(from, addrs); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -288,11 +383,7 @@ func deriveRange(ctx context.Context, rs *rotatingSession, from, to uint64, opts
 					errs[i] = ctx.Err()
 					continue
 				}
-				started := time.Now()
 				out[i], errs[i] = rs.stageAddress(from + uint64(i))
-				if opts.Pace != nil && errs[i] == nil {
-					opts.Pace(time.Since(started))
-				}
 			}
 		}()
 	}

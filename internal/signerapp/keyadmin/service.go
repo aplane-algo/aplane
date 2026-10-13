@@ -303,17 +303,18 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
 	}
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return nil, reloadErr
+	}
 	// A rotating account's stage address table is a cache derived from the
-	// key that just left; it goes with it. Nothing depends on it, so a
-	// failure here is reported, not fatal.
+	// key that just left; it goes with it. The key is already out of the
+	// published inventory, so a fill racing this deletion is refused when it
+	// asks for the table. Nothing depends on the table, so a failure here is
+	// reported, not fatal.
 	if tables := ir.StageTables(); tables != nil && storepaths.ValidateStageSelector(address) == nil {
 		if tableErr := tables.Delete(address); tableErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: key %s was deleted but its stage table was not: %v\n", address, tableErr)
 		}
-	}
-
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		return nil, reloadErr
 	}
 
 	if s.AuditLog != nil {

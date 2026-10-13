@@ -244,11 +244,11 @@ func TestConcurrentAppendsSerialize(t *testing.T) {
 func TestStoreCachesAndDeletes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis)
+	tb, err := store.Table(testSelector, testGenesis, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := store.Table(testSelector, testGenesis)
+	again, err := store.Table(testSelector, testGenesis, nil)
 	if err != nil || again != tb {
 		t.Fatalf("store returned a different table (%v)", err)
 	}
@@ -264,7 +264,7 @@ func TestStoreCachesAndDeletes(t *testing.T) {
 	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("Delete left the file")
 	}
-	fresh, err := store.Table(testSelector, testGenesis)
+	fresh, err := store.Table(testSelector, testGenesis, nil)
 	if err != nil || fresh == tb || fresh.Len() != 0 {
 		t.Fatalf("table after delete: %v, same=%v, len=%d", err, fresh == tb, fresh.Len())
 	}
@@ -286,11 +286,11 @@ func TestStoreReportsDiscardedTableOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis)
+	tb, err := store.Table(testSelector, testGenesis, nil)
 	if !errors.Is(err, ErrDiscarded) || tb == nil {
 		t.Fatalf("first open: %v, %v", tb, err)
 	}
-	if _, err := store.Table(testSelector, testGenesis); err != nil {
+	if _, err := store.Table(testSelector, testGenesis, nil); err != nil {
 		t.Fatalf("second open reported again: %v", err)
 	}
 }
@@ -330,7 +330,7 @@ func TestAppendFromToleratesOverlapAndRejectsMismatch(t *testing.T) {
 func TestDeleteClosesOpenHandlesSoFillsCannotRecreateTheFile(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	store := NewStore(paths)
-	tb, err := store.Table(testSelector, testGenesis)
+	tb, err := store.Table(testSelector, testGenesis, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,5 +378,38 @@ func TestNoLifetimeStageCap(t *testing.T) {
 	addrs, err := decode(withChecksum(consistent), testSelector, [32]byte(testGenesis))
 	if err != nil || uint64(len(addrs)) != n {
 		t.Fatalf("large consistent table: %d addrs, %v", len(addrs), err)
+	}
+}
+
+func TestTableRefusesAccountsWhoseKeyIsGone(t *testing.T) {
+	store := NewStore(storepaths.NewPaths(t.TempDir()))
+	present := true
+	isPresent := func() bool { return present }
+
+	tb, err := store.Table(testSelector, testGenesis, isPresent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.Append(stageAddrs(0, 2)); err != nil {
+		t.Fatal(err)
+	}
+	// The key is deleted: inventory first, then the table.
+	present = false
+	if err := store.Delete(testSelector.String()); err != nil {
+		t.Fatal(err)
+	}
+	// A fill that paused before asking for its table is refused rather than
+	// handed a fresh writable handle.
+	if _, err := store.Table(testSelector, testGenesis, isPresent); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("Table after delete = %v, want ErrNoKey", err)
+	}
+	if _, statErr := os.Stat(tb.Path()); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("refused Table call recreated the file")
+	}
+	// A re-imported key starts over.
+	present = true
+	fresh, err := store.Table(testSelector, testGenesis, isPresent)
+	if err != nil || fresh.Len() != 0 {
+		t.Fatalf("table for re-imported key: len %d, err %v", fresh.Len(), err)
 	}
 }

@@ -997,7 +997,7 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	genesis := make([]byte, 32)
-	table, err := ir.StageTables().Table(account, genesis)
+	table, err := ir.StageTables().Table(account, genesis, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1014,7 +1014,7 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 	if _, err := os.Stat(table.Path()); !os.IsNotExist(err) {
 		t.Fatalf("stage table still present after key delete: stat err = %v", err)
 	}
-	fresh, err := ir.StageTables().Table(account, genesis)
+	fresh, err := ir.StageTables().Table(account, genesis, nil)
 	if err != nil || fresh.Len() != 0 {
 		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
 	}

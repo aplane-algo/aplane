@@ -10,10 +10,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -56,9 +59,13 @@ func (f *fakeRotatingChain) ReadAccount(_ context.Context, genesisHash []byte, a
 	return chainread.AccountView{Authorizer: authorizer, Round: f.round}, nil
 }
 
-type rotatingKeyStore struct{ seed []byte }
+type rotatingKeyStore struct {
+	seed  []byte
+	loads int
+}
 
 func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
+	s.loads++
 	return &coresigning.KeyMaterial{
 		Type:     rotatingkey.RotatingHybridV1,
 		Category: keys.CategoryRotatingLsig,
@@ -72,6 +79,8 @@ func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMateria
 type rotatingFixture struct {
 	svc     *Service
 	chain   *fakeRotatingChain
+	store   *rotatingKeyStore
+	present bool
 	root    string
 	tables  *stagetable.Store
 	session *keystore.KeySession
@@ -108,15 +117,20 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 	root := t.TempDir()
 	tables := stagetable.NewStore(storepaths.NewPaths(root))
 	chain := &fakeRotatingChain{round: 1000}
-	session := keystore.NewKeySession(&rotatingKeyStore{seed: bytes.Clone(seed[:])})
+	store := &rotatingKeyStore{seed: bytes.Clone(seed[:])}
+	session := keystore.NewKeySession(store)
 	session.InitializeSession()
 	ops, err := coresigning.GetRotatingStageOps(rotatingkey.RotatingHybridV1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	f := &rotatingFixture{chain: chain, store: store, present: true, root: root, tables: tables, session: session, account: account, ops: ops}
 	svc := &Service{
 		Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+			if !f.present {
+				return PlannerRuntimeSnapshot{}
+			}
 			return PlannerRuntimeSnapshot{
 				KeyFiles: map[string]string{address: "keys/" + address + ".key"},
 				KeyTypes: map[string]string{address: rotatingkey.RotatingHybridV1},
@@ -129,10 +143,8 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 		IsUnlocked: func() bool { return true },
 		Rotating:   &RotatingDeps{Chain: chain, Tables: tables, Locks: &RotatingLocks{}},
 	}
-	f := &rotatingFixture{
-		svc: svc, chain: chain, root: root, tables: tables, session: session, account: account, ops: ops,
-		secret: &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(seed[:]), GenesisHash: rotatingTestGenesis},
-	}
+	f.svc = svc
+	f.secret = &coresigning.RotatingKeyMaterial{Seed: bytes.Clone(seed[:]), GenesisHash: rotatingTestGenesis}
 	t.Cleanup(f.secret.Zero)
 	return f
 }
@@ -148,7 +160,7 @@ func (f *rotatingFixture) stageAddress(t *testing.T, stage uint64) types.Address
 
 func (f *rotatingFixture) table(t *testing.T) *stagetable.Table {
 	t.Helper()
-	tb, err := f.tables.Table(f.account, rotatingTestGenesis)
+	tb, err := f.tables.Table(f.account, rotatingTestGenesis, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +247,7 @@ func TestFillStageTablesNeverMatchingAuthorizerIsNeverForeign(t *testing.T) {
 	// Progress is in the table, so a fresh Service over the same directory
 	// resumes rather than restarting.
 	reopened := stagetable.NewStore(storepaths.NewPaths(f.root))
-	tb, err := reopened.Table(f.account, rotatingTestGenesis)
+	tb, err := reopened.Table(f.account, rotatingTestGenesis, nil)
 	if err != nil || tb.Len() != 9 {
 		t.Fatalf("reopened table len %d, err %v", tb.Len(), err)
 	}
@@ -359,20 +371,73 @@ func TestFillStageTablesStopsWhenTableDeletedMidPass(t *testing.T) {
 	opts := StageFillOptions{Horizon: 20, MaxDerivations: 20, Batch: 4, Pace: func(time.Duration) {
 		derived++
 		if derived == 2 {
+			// As keyadmin.DeleteKey does: the key leaves the inventory first,
+			// then its table is deleted.
+			f.present = false
 			if err := f.tables.Delete(f.account.String()); err != nil {
 				t.Error(err)
 			}
 		}
 	}}
-	r := f.fill(t, opts)
-	if !errors.Is(r.Err, stagetable.ErrClosed) {
-		t.Fatalf("report after delete = %+v, want ErrClosed", r)
+	reports := f.svc.FillStageTables(context.Background(), f.session, opts)
+	if len(reports) != 1 || reports[0].Err == nil {
+		t.Fatalf("reports after delete = %+v, want an error", reports)
 	}
 	if _, statErr := os.Stat(f.tables.Path(f.account.String())); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("deleted table was recreated by the running fill")
 	}
-	fresh, err := f.tables.Table(f.account, rotatingTestGenesis)
+	fresh, err := f.tables.Table(f.account, rotatingTestGenesis, nil)
 	if err != nil || fresh.Len() != 0 {
 		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
+	}
+}
+
+// TestFillStageTablesHoldsNoSeedDuringIO pins the lock-drain contract: every
+// window in which the seed is loaded is bracketed by KeyUse, and no such
+// window is open while the table is being written.
+func TestFillStageTablesHoldsNoSeedDuringIO(t *testing.T) {
+	f := newRotatingFixture(t)
+	var mu sync.Mutex
+	active, windows, writesSeen, violations := 0, 0, 0, 0
+	opts := StageFillOptions{Horizon: 7, Batch: 2, MaxDerivations: 8, KeyUse: func(ctx context.Context) (context.Context, func()) {
+		mu.Lock()
+		active++
+		windows++
+		mu.Unlock()
+		var once sync.Once
+		return ctx, func() { once.Do(func() { mu.Lock(); active--; mu.Unlock() }) }
+	}}
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if strings.HasSuffix(path, ".stages") || strings.Contains(path, ".stages.tmp-") {
+			mu.Lock()
+			writesSeen++
+			if active != 0 {
+				violations++
+			}
+			mu.Unlock()
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	r := f.fill(t, opts)
+	if r.Err != nil || !r.Resolved || r.Scanned != 8 {
+		t.Fatalf("report = %+v", r)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if writesSeen == 0 {
+		t.Fatal("hook saw no table writes")
+	}
+	if violations != 0 {
+		t.Fatalf("seed held during %d of %d table write operations", violations, writesSeen)
+	}
+	if active != 0 {
+		t.Fatalf("%d key-use windows left open", active)
+	}
+	// One identity window plus one per derivation chunk (Parallel 1): the
+	// seed is reloaded per chunk and never kept across a write or sleep.
+	if windows < 9 || f.store.loads != windows {
+		t.Fatalf("windows = %d, key loads = %d", windows, f.store.loads)
 	}
 }

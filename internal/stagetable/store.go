@@ -31,16 +31,23 @@ func NewStore(paths storepaths.Paths) *Store {
 }
 
 // Table returns the table of the rotating account with selector on the
-// network with genesisHash, opening it on first use. A discarded on-disk
-// table is reported through an error wrapping ErrDiscarded alongside the
-// now-empty table; callers log it and continue.
-func (s *Store) Table(selector types.Address, genesisHash []byte) (*Table, error) {
+// network with genesisHash, opening it on first use. present reports whether
+// the account's key still exists; it is consulted under the store's lock, so
+// a Table call cannot interleave with Delete: either it runs first and gets
+// a handle that Delete then closes, or it runs after and is refused with
+// ErrNoKey. A nil present skips the check. A discarded on-disk table is
+// reported through an error wrapping ErrDiscarded alongside the now-empty
+// table; callers log it and continue.
+func (s *Store) Table(selector types.Address, genesisHash []byte, present func() bool) (*Table, error) {
 	key := selector.String()
 	if err := storepaths.ValidateStageSelector(key); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if present != nil && !present() {
+		return nil, ErrNoKey
+	}
 	if t, ok := s.tables[key]; ok {
 		return t, nil
 	}

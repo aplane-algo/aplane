@@ -1005,10 +1005,13 @@ func (ir *Runtime) StageTables() *stagetable.Store {
 	return ir.stageTables
 }
 
-// keyUseDrainTimeout bounds how long Lock waits for key users to release.
-// A user that ignores its cancelled context is a bug; the lock proceeds and
-// the wait is reported rather than left hanging.
-const keyUseDrainTimeout = 10 * time.Second
+// keyUseDrainWarnAfter is how long Lock waits for key users before it says
+// so. It keeps waiting: a lock that returned while a seed was still in
+// memory would be a lie, so a user that fails to release stalls the lock
+// visibly rather than letting it complete. Users hold key material only
+// across derivations, never across I/O, so in practice the wait is one
+// derivation.
+const keyUseDrainWarnAfter = 5 * time.Second
 
 // KeyUseContext registers a background holder of loaded key material. The
 // returned context is cancelled the moment the signer locks, and release must
@@ -1060,10 +1063,15 @@ func (ir *Runtime) drainKeyUsers() {
 		ir.keyUsers.Wait()
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(keyUseDrainTimeout):
-		fmt.Printf("⚠️  Warning: background key users did not release within %s of locking\n", keyUseDrainTimeout)
+	warn := time.NewTimer(keyUseDrainWarnAfter)
+	defer warn.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-warn.C:
+			fmt.Printf("⚠️  Warning: lock is waiting for background key users to release key material\n")
+		}
 	}
 }
 

@@ -46,6 +46,11 @@ var ErrDiscarded = errors.New("stage table discarded")
 // ErrClosed reports an append to a table whose key has been deleted.
 var ErrClosed = errors.New("stage table closed")
 
+// ErrNoKey reports a request for the table of an account whose key is not
+// present, which is how a fill that lost a race with key deletion is kept
+// from recreating the table.
+var ErrNoKey = errors.New("stage table: key not present")
+
 // Table is one account's stage address table, loaded in memory and mirrored
 // durably on disk. Methods are safe for concurrent use.
 type Table struct {

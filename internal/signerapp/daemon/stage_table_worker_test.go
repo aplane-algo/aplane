@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerops"
@@ -130,7 +131,7 @@ func TestStageTableWorkerFillsResolvedAndUnresolvedAccounts(t *testing.T) {
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {
 		t.Fatalf("wait after resolved pass = %v, want idle interval", wait)
 	}
-	table, err := ir.StageTables().Table(account, gh)
+	table, err := ir.StageTables().Table(account, gh, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,30 +210,105 @@ func TestLockingTheSignerStopsAndDrainsTheStageTableWorker(t *testing.T) {
 		defer close(done)
 		server.fillStageTables(context.Background(), ir)
 	}()
-	// Let a few derivations happen, then lock.
+	// Let a few derivations happen, then lock. Lock drains every window in
+	// which the seed is held, so when it returns no copy of the seed exists;
+	// the pass may still write the prefix it had already derived and finish
+	// its pacing sleep, holding nothing sensitive.
 	time.Sleep(400 * time.Millisecond)
 	ir.Lock()
-	// Lock must not return until the pass has released the seed.
-	select {
-	case <-done:
-	case <-time.After(50 * time.Millisecond):
-		t.Fatal("Lock returned while the stage table pass still held key material")
-	}
-	table, err := ir.StageTables().Table(account, gh)
+	table, err := ir.StageTables().Table(account, gh, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	atLock := table.Len()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stage table pass did not end after the signer locked")
 	}
 	n := table.Len()
 	if n == 0 || n > 8 {
 		t.Fatalf("table len after lock = %d; want a few stages, not a whole pass", n)
 	}
-	// Nothing derives after the lock.
+	if n > atLock+uint64(server.stageFillBatch) {
+		t.Fatalf("table grew from %d to %d after lock; more than the already-derived batch", atLock, n)
+	}
+	// Nothing derives after the pass ends.
 	time.Sleep(300 * time.Millisecond)
 	if table.Len() != n {
-		t.Fatalf("table grew after lock: %d -> %d", n, table.Len())
+		t.Fatalf("table grew after the pass ended: %d -> %d", n, table.Len())
 	}
 	// A pass while locked does nothing and reports idle.
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval || table.Len() != n {
 		t.Fatalf("locked pass: wait %v, len %d", wait, table.Len())
+	}
+}
+
+// TestLockCompletesWhileATableWriteIsStalled pins that the seed is released
+// before table I/O: a stalled fsync must not keep the lock from completing,
+// because nothing sensitive is in memory during the write.
+func TestLockCompletesWhileATableWriteIsStalled(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	node := &mockAccountNode{}
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.config.Rotating.StageHorizon = 50
+	server.stageFillBatch, server.stageFillMaxDeriv = 2, 50
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		return algod.MakeClientWithTransport(serverURL, token, nil, node.transport())
+	}
+	account, _ := installRotatingKey(t, server)
+	gh, _ := base64.StdEncoding.DecodeString(testnetGenesisB64)
+	node.set("", 100)
+
+	stalled := make(chan struct{})
+	proceed := make(chan struct{})
+	var once sync.Once
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && strings.Contains(path, "stages") {
+			once.Do(func() { close(stalled) })
+			<-proceed
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.fillStageTables(context.Background(), ir)
+	}()
+	select {
+	case <-stalled:
+	case <-time.After(10 * time.Second):
+		t.Fatal("table write never started")
+	}
+
+	// The write is blocked. Lock must still complete promptly, because the
+	// seed was released before the write began.
+	locked := make(chan struct{})
+	go func() {
+		ir.Lock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(2 * time.Second):
+		close(proceed)
+		t.Fatal("Lock waited on a stalled table write")
+	}
+	close(proceed)
+	<-done
+
+	table, err := ir.StageTables().Table(account, gh, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := table.Len()
+	time.Sleep(200 * time.Millisecond)
+	if table.Len() != n || n > 4 {
+		t.Fatalf("table len %d -> %d after lock; want a short, stable prefix", n, table.Len())
 	}
 }

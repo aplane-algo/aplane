@@ -81,13 +81,6 @@ func (rs *rotatingSession) stageAddress(stage uint64) (types.Address, error) {
 	return rs.ops.StageAddress(rs.secret, stage)
 }
 
-// table returns the account's stage address table. A discarded on-disk table
-// is returned as an error wrapping stagetable.ErrDiscarded beside a usable
-// empty table.
-func (rs *rotatingSession) table(deps *RotatingDeps) (*stagetable.Table, error) {
-	return deps.Tables.Table(rs.account, rs.secret.GenesisHash)
-}
-
 func (s *Service) rotatingDeps() (*RotatingDeps, *ServiceError) {
 	if s.Planner == nil || s.Planner.Snapshot == nil || s.Rotating == nil ||
 		s.Rotating.Chain == nil || s.Rotating.Tables == nil || s.Rotating.Locks == nil {
