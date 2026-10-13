@@ -11,6 +11,7 @@
     "cache_refresh": "cache_refresh",
     "internal": "internal",
     "bounded_admin_required": "request_error",
-    "bounded_cosigner_required": "request_error"
+    "bounded_cosigner_required": "request_error",
+    "rotating_signing_required": "request_error"
   }
 }

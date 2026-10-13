@@ -435,6 +435,13 @@ const SigningFlowBounded1 = "bounded1"
 // bounded1 admin endpoint and do not contact the cosigner.
 const SigningFlowBoundedCosigner1 = "bounded-cosigner1"
 
+// SigningFlowRotating1 names the rotating account choreography: the signer
+// prepares an exact unsigned group that rotates the account to its next
+// stage, the client simulates it, and the signer signs only that prepared
+// group after reading the live stage from the chain. Ordinary signing
+// endpoints refuse these accounts with rotating_signing_required.
+const SigningFlowRotating1 = "rotating1"
+
 // BoundedSignatureArgLayout describes the stored maximum spending-signature
 // argument shape.
 type BoundedSignatureArgLayout struct {

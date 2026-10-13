@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -88,6 +89,14 @@ func GetGenerator(keyType string) (Generator, error) {
 
 	if keytypes.IsCosignerKeyType(keyType) {
 		return nil, fmt.Errorf("no exact key generator registered for key type: %s", keyType)
+	}
+
+	// Rotating key types have no LogicSig provider to name their family.
+	if family, ok := rotatingkey.RoutingFamily(keyType); ok {
+		if generator, exists := registry.generators[family]; exists {
+			return generator, nil
+		}
+		return nil, fmt.Errorf("no key generator registered for key type: %s", keyType)
 	}
 
 	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")

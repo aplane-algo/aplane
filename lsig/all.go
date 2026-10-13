@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -59,6 +60,14 @@ func RegisterClient() {
 			Family:       ed25519lsig.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ed25519lsig.RegisterClient)
+		// Rotating accounts have no client-side provider; the entry only
+		// makes the key type opt-in. Signer binaries register its storage,
+		// stage cryptography and generator through lsig/signerreg.
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      rotatingkey.RotatingHybridV1,
+			Family:       rotatingkey.RotatingHybridFamily,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, func() {})
 	})
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -474,6 +475,12 @@ func validateCompiledProviderRecords(records []keytypestate.Record) templatepoli
 		}
 		provider := lsigprovider.Get(rec.KeyType)
 		if provider == nil {
+			// Rotating key types are compiled but have no LogicSig provider
+			// and no template fingerprint.
+			if templatelibrary.RotatingKeyTypeRegistered(rec.KeyType) && rec.Fingerprint == "" {
+				outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
+				continue
+			}
 			outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
 			continue
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	falconsignerops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
@@ -90,6 +91,9 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 			if msg, ok := cosignerSignRejectMessage(plan.AuthKeyTypes[i]); ok {
 				return nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
 			}
+			if err := rejectRotatingKeyType(i, plan.AuthKeyTypes[i]); err != nil {
+				return nil, err
+			}
 		}
 		signedBytes, keyType, signErr := e.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
@@ -149,6 +153,11 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		keyType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
+	}
+	if rotatingkey.IsRotatingKeyType(keyMaterial.Type) {
+		keyType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, rotatingSigningRequired()
 	}
 	if err := verifyBoundedPlanIntegrity(boundedItem, keyMaterial); err != nil {
 		keyType := keyMaterial.Type
@@ -384,6 +393,8 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 			value.PrivateKey = nil
 			value.PublicKey = nil
 		}
+	case *coresigning.RotatingKeyMaterial:
+		value.Zero()
 	case crypto.Account:
 		algocrypto.ZeroBytes(value.PrivateKey[:])
 		algocrypto.ZeroBytes(value.PublicKey[:])

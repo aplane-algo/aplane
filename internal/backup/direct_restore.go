@@ -209,6 +209,10 @@ func validateCredentialRuntimeSupport(entry *CredentialEntry) error {
 		// Native Ed25519 and witness support is compiled into their node-role
 		// runtimes. Generic LogicSig execution uses the bytecode and signing
 		// argument contract stored in the credential itself.
+	case keys.CategoryRotatingLsig:
+		// ParsePayload already required the family's registered codec to
+		// re-derive stage 0 from the seed. The seed is the whole secret; the
+		// signer rebuilds its stage address cache from it after a restore.
 	default:
 		return fmt.Errorf("unsupported managed credential category %q", payload.Category)
 	}

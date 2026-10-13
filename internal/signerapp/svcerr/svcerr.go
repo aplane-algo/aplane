@@ -28,12 +28,13 @@ const (
 	KindInternal                Kind = signerapi.ErrCodeInternal
 	KindBoundedAdminRequired    Kind = signerapi.ErrCodeBoundedAdminRequired
 	KindBoundedCosignerRequired Kind = signerapi.ErrCodeBoundedCosignerRequired
+	KindRotatingSigningRequired Kind = signerapi.ErrCodeRotatingSigningRequired
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
 func (k Kind) HTTPStatus() int {
 	switch k {
-	case KindBadRequest, KindBoundedAdminRequired, KindBoundedCosignerRequired:
+	case KindBadRequest, KindBoundedAdminRequired, KindBoundedCosignerRequired, KindRotatingSigningRequired:
 		return http.StatusBadRequest
 	case KindUnauthorized:
 		return http.StatusUnauthorized

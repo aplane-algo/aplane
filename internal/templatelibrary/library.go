@@ -17,9 +17,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -427,7 +429,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, keyType string) (InstallRe
 	if !keytypecatalog.IsLibraryVisible(result.KeyType) {
 		return result, fmt.Errorf("key type %s is not library-visible", result.KeyType)
 	}
-	if !lsigprovider.Has(result.KeyType) {
+	if !lsigprovider.Has(result.KeyType) && !RotatingKeyTypeRegistered(result.KeyType) {
 		return result, fmt.Errorf("key type %s is not registered", result.KeyType)
 	}
 	rec, ok, err := keytypestate.Get(paths, result.KeyType)
@@ -863,9 +865,12 @@ func compiledProviderLibraryItems(paths storepaths.Paths) ([]LibraryTemplate, er
 			Enabled:      enabledSet[entry.KeyType],
 		}
 		provider := lsigprovider.Get(entry.KeyType)
-		if provider == nil {
+		switch {
+		case provider == nil && RotatingKeyTypeRegistered(entry.KeyType):
+			describeRotatingKeyType(&item)
+		case provider == nil:
 			item.Invalid = fmt.Sprintf("key type %s is cataloged but not registered", entry.KeyType)
-		} else {
+		default:
 			item.DisplayName = provider.DisplayName()
 			item.Description = provider.Description()
 			item.Parameters = provider.CreationParams()
@@ -879,6 +884,35 @@ func compiledProviderLibraryItems(paths storepaths.Paths) ([]LibraryTemplate, er
 func installedRecordEnabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
+}
+
+// describeRotatingKeyType fills the library metadata of a rotating key type,
+// which has no LogicSig provider to describe it.
+func describeRotatingKeyType(item *LibraryTemplate) {
+	if !rotatingkey.IsRotatingKeyType(item.KeyType) {
+		return
+	}
+	item.DisplayName = rotatingkey.RotatingDisplayName
+	item.Description = rotatingkey.RotatingDescription
+	item.Parameters = []lsigprovider.ParameterDef{{
+		Name:        rotatingkey.RotatingNetworkParameter,
+		Label:       rotatingkey.RotatingNetworkParameterLabel,
+		Description: rotatingkey.RotatingNetworkParameterDescription,
+		Type:        "string",
+		Required:    true,
+		Example:     rotatingkey.RotatingNetworkParameterExample,
+	}}
+}
+
+// RotatingKeyTypeRegistered reports whether a rotating key type is executable
+// in this binary. Rotating key types have no LogicSig provider; their
+// generator is their registration.
+func RotatingKeyTypeRegistered(keyType string) bool {
+	if !rotatingkey.IsRotatingKeyType(keyType) {
+		return false
+	}
+	_, err := keygen.GetGenerator(keyType)
+	return err == nil
 }
 
 func compiledProviderFingerprint(keyType string) string {

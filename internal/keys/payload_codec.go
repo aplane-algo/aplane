@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	cosignerwitness "github.com/aplane-algo/aplane/internal/witness"
 
@@ -47,6 +48,7 @@ type Payload struct {
 	SigningArgs            []StoredSigningArg
 	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
+	GenesisHash            []byte
 	CreatedAt              time.Time
 }
 
@@ -70,6 +72,7 @@ type CanonicalPayloadMetadata struct {
 	SigningArgs            []StoredSigningArg
 	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
+	GenesisHashHex         string
 	CreatedAt              string
 }
 
@@ -94,6 +97,7 @@ type payloadWireV1 struct {
 	SigningArgs            []StoredSigningArg          `json:"signing_args,omitempty"`
 	BoundedAuthorization   *boundedmeta.Metadata       `json:"bounded_authorization,omitempty"`
 	TemplateFingerprint    string                      `json:"template_fingerprint,omitempty"`
+	GenesisHashHex         string                      `json:"genesis_hash,omitempty"`
 	CreatedAt              string                      `json:"created_at"`
 }
 
@@ -141,6 +145,21 @@ func NewWitnessPayload(keyType string, publicKey, privateKey []byte) *Payload {
 		KeyType:       keyType,
 		PublicKey:     bytes.Clone(publicKey),
 		PrivateKey:    bytes.Clone(privateKey),
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewRotatingLSigPayload constructs a rotating LogicSig payload. The seed is
+// the only private material; stage 0's public keys fix the account address,
+// and the genesis hash binds derivation to one network.
+func NewRotatingLSigPayload(keyType string, seed, genesisHash, stageZeroPublicKey []byte) *Payload {
+	return &Payload{
+		FormatVersion: CurrentKeyFormatVersion,
+		Category:      CategoryRotatingLsig,
+		KeyType:       keyType,
+		PublicKey:     bytes.Clone(stageZeroPublicKey),
+		PrivateKey:    bytes.Clone(seed),
+		GenesisHash:   bytes.Clone(genesisHash),
 		CreatedAt:     time.Now().UTC().Truncate(time.Second),
 	}
 }
@@ -331,6 +350,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		SigningArgs:            cloneStoredSigningArgs(payload.SigningArgs),
 		BoundedAuthorization:   boundedmeta.Clone(payload.BoundedAuthorization),
 		TemplateFingerprint:    payload.TemplateFingerprint,
+		GenesisHashHex:         hex.EncodeToString(payload.GenesisHash),
 		CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	encoded, err := json.MarshalIndent(wire, "", "  ")
@@ -357,6 +377,9 @@ func (p *Payload) Validate() error {
 	}
 	if err := validateSigningArgs(p.SigningArgs); err != nil {
 		return incompatibleKeyFormat("invalid signing_args: %v", err)
+	}
+	if p.Category != CategoryRotatingLsig && len(p.GenesisHash) != 0 {
+		return incompatibleKeyFormat("category %q forbids genesis_hash", p.Category)
 	}
 
 	switch p.Category {
@@ -403,6 +426,11 @@ func (p *Payload) Validate() error {
 			return err
 		}
 		return validateLogicSigFields(p)
+	case CategoryRotatingLsig:
+		if err := validateRotatingPayload(p); err != nil {
+			return err
+		}
+		return validateNonLogicSigPayload(p)
 	default:
 		return incompatibleKeyFormat("unknown category %q", p.Category)
 	}
@@ -444,6 +472,16 @@ func (p *Payload) Selector() (string, error) {
 			return "", incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
 		}
 		return logicSigAddress(p.LogicSigBytecode)
+	case CategoryRotatingLsig:
+		codec, err := rotatingCodec(p.KeyType)
+		if err != nil {
+			return "", incompatibleKeyFormat("%v", err)
+		}
+		address, err := codec.AccountAddress(p.PublicKey)
+		if err != nil {
+			return "", incompatibleKeyFormat("derive rotating account address: %v", err)
+		}
+		return address, nil
 	default:
 		return "", incompatibleKeyFormat("unknown category %q", p.Category)
 	}
@@ -472,6 +510,7 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
 		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 		TemplateFingerprint:    p.TemplateFingerprint,
+		GenesisHashHex:         hex.EncodeToString(p.GenesisHash),
 		CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -521,6 +560,11 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		crypto.ZeroBytes(privateKey)
 		return nil, fmt.Errorf("%w: %w", ErrInvalidLogicSigBytecode, err)
 	}
+	genesisHash, err := decodeCanonicalHex("genesis_hash", wire.GenesisHashHex)
+	if err != nil {
+		crypto.ZeroBytes(privateKey)
+		return nil, err
+	}
 	createdAt, err := time.Parse(time.RFC3339, wire.CreatedAt)
 	if err != nil || createdAt.Location() != time.UTC || createdAt.Format(time.RFC3339) != wire.CreatedAt {
 		crypto.ZeroBytes(privateKey)
@@ -545,6 +589,7 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		SigningArgs:            cloneStoredSigningArgs(wire.SigningArgs),
 		BoundedAuthorization:   boundedmeta.Clone(wire.BoundedAuthorization),
 		TemplateFingerprint:    wire.TemplateFingerprint,
+		GenesisHash:            genesisHash,
 		CreatedAt:              createdAt,
 	}, nil
 }
@@ -612,6 +657,32 @@ func validateNativePQPayload(p *Payload) error {
 	}
 	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey); err != nil {
 		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
+	}
+	return nil
+}
+
+func validateRotatingPayload(p *Payload) error {
+	if !rotatingkey.IsRotatingKeyType(p.KeyType) {
+		return incompatibleKeyFormat("rotating_lsig category requires a rotating key type, got %q", p.KeyType)
+	}
+	if len(p.PrivateKey) != rotatingkey.RotatingSeedSize {
+		return incompatibleKeyFormat("rotating seed length %d invalid (expected %d bytes)", len(p.PrivateKey), rotatingkey.RotatingSeedSize)
+	}
+	if len(p.GenesisHash) != rotatingkey.RotatingGenesisHashSize {
+		return incompatibleKeyFormat("rotating genesis_hash length %d invalid (expected %d bytes)", len(p.GenesisHash), rotatingkey.RotatingGenesisHashSize)
+	}
+	if len(p.PublicKey) != rotatingkey.RotatingStagePublicKeySize {
+		return incompatibleKeyFormat("rotating stage 0 public key length %d invalid (expected %d bytes)", len(p.PublicKey), rotatingkey.RotatingStagePublicKeySize)
+	}
+	codec, err := rotatingCodec(p.KeyType)
+	if err != nil {
+		return incompatibleKeyFormat("%v", err)
+	}
+	if err := codec.ValidateSeed(p.PrivateKey, p.GenesisHash, p.PublicKey); err != nil {
+		return incompatibleKeyFormat("rotating seed does not derive the stored stage 0 public key: %v", err)
+	}
+	if _, err := codec.AccountAddress(p.PublicKey); err != nil {
+		return incompatibleKeyFormat("derive rotating account address: %v", err)
 	}
 	return nil
 }

@@ -18,6 +18,9 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	if err := s.rejectRotatingComponentRequest(req); err != nil {
+		return nil, err
+	}
 	group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())

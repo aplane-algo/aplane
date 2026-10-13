@@ -36,4 +36,7 @@ const (
 	// ErrCodeBoundedCosignerRequired directs cosigner-gated bounded spends to the
 	// bounded component and assembly flow.
 	ErrCodeBoundedCosignerRequired = "bounded_cosigner_required"
+	// ErrCodeRotatingSigningRequired directs rotating accounts to the rotating
+	// prepare and sign flow.
+	ErrCodeRotatingSigningRequired = "rotating_signing_required"
 )

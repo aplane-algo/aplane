@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -416,6 +417,10 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 		switch category {
 		case CategoryGenericLsig:
 			publicKeyHex = ""
+		case CategoryRotatingLsig:
+			// Stage public keys never leave the signer; inventory exposes
+			// only the account address.
+			publicKeyHex = ""
 		case CategoryDSALsig:
 			if signingMeta.BoundedAuthorization == nil {
 				baseArgumentBytes = dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
@@ -464,6 +469,9 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 }
 
 func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresource.Profile, error) {
+	if payload != nil && payload.Category == CategoryRotatingLsig {
+		return rotatingLogicSigResources()
+	}
 	if payload == nil || (payload.Category != CategoryDSALsig && payload.Category != CategoryGenericLsig) {
 		return nil, nil
 	}
@@ -494,6 +502,23 @@ func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresour
 	}
 	argumentBytesValue := uint64(argumentBytes)
 	profile, err := lsigresource.Materialize(uint64(programBytes), &argumentBytesValue, nil, payload.LogicSigOpcodeProfile)
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+// rotatingLogicSigResources is the constant profile of every stage program:
+// the salted program size bounds both shapes, and every spend carries the
+// same two signatures.
+func rotatingLogicSigResources() (*lsigresource.Profile, error) {
+	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
+	profile, err := lsigresource.Materialize(
+		rotatingkey.RotatingMaxProgramBytes,
+		&argumentBytes,
+		nil,
+		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost),
+	)
 	if err != nil {
 		return nil, err
 	}

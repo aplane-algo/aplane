@@ -302,6 +302,9 @@ func verifySignableKeys(console Console, snapshot PlannerRuntimeSnapshot, reques
 		if witness.IsKeyType(keyType) {
 			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, cosignerComponentSignRejectMessage))
 		}
+		if err := rejectRotatingKeyType(i, keyType); err != nil {
+			return 0, err
+		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))
 		signableCount++
 	}

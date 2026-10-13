@@ -21,6 +21,7 @@ const (
 	CategoryDSALsig         = "dsa_lsig"
 	CategoryGenericLsig     = "generic_lsig"
 	CategoryWitness         = "witness"
+	CategoryRotatingLsig    = "rotating_lsig"
 	CurrentKeyFormatVersion = 1
 )
 
