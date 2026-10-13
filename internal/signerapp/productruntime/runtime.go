@@ -1048,6 +1048,31 @@ func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func(
 	}
 }
 
+// LockCancelContext returns a context that is cancelled when the signer
+// locks, without registering a key user: Lock does not wait for it. It is
+// for work that must stop at lock but holds no key material, such as a
+// background pass's chain reads and pacing sleeps. While the signer is
+// locked the returned context is already cancelled.
+func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	ir.keyUseMu.Lock()
+	if !ir.IsUnlocked() {
+		ir.keyUseMu.Unlock()
+		cancel()
+		return ctx, cancel
+	}
+	if ir.keyUseCtx == nil || ir.keyUseCtx.Err() != nil {
+		ir.keyUseCtx, ir.keyUseCancel = context.WithCancel(context.Background())
+	}
+	base := ir.keyUseCtx
+	ir.keyUseMu.Unlock()
+	stop := context.AfterFunc(base, cancel)
+	return ctx, func() { stop(); cancel() }
+}
+
 // drainKeyUsers cancels every key user's context and waits for them to
 // release their key material. It runs inside the lock transition, after the
 // state is already locked, so no new user can register meanwhile.

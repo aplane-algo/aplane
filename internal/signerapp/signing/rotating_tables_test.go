@@ -441,3 +441,29 @@ func TestFillStageTablesHoldsNoSeedDuringIO(t *testing.T) {
 		t.Fatalf("windows = %d, key loads = %d", windows, f.store.loads)
 	}
 }
+
+// blockingChain never answers until its context ends.
+type blockingChain struct{ entered chan struct{} }
+
+func (c *blockingChain) ReadAccount(ctx context.Context, _ []byte, _ types.Address) (chainread.AccountView, error) {
+	close(c.entered)
+	<-ctx.Done()
+	return chainread.AccountView{}, ctx.Err()
+}
+
+func TestFillStageTablesBoundsEachChainRead(t *testing.T) {
+	f := newRotatingFixture(t)
+	chain := &blockingChain{entered: make(chan struct{})}
+	f.svc.Rotating.Chain = chain
+	started := time.Now()
+	r := f.fill(t, StageFillOptions{Horizon: 1, ChainReadTimeout: 200 * time.Millisecond})
+	if r.Err == nil || !errors.Is(r.Err, context.DeadlineExceeded) {
+		t.Fatalf("report = %+v, want a deadline error", r)
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("chain read deadline not enforced: pass took %v", took)
+	}
+	if f.table(t).Len() != 0 {
+		t.Fatal("table changed although the chain read failed")
+	}
+}

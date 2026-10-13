@@ -312,3 +312,73 @@ func TestLockCompletesWhileATableWriteIsStalled(t *testing.T) {
 		t.Fatalf("table len %d -> %d after lock; want a short, stable prefix", n, table.Len())
 	}
 }
+
+// stallingBody sends no bytes until released, the way a node that returned
+// headers and then hung would. Like the real transport, it gives up when
+// the request's context ends.
+type stallingBody struct {
+	ctx     context.Context
+	release <-chan struct{}
+	entered chan<- struct{}
+	once    sync.Once
+}
+
+func (b *stallingBody) Read([]byte) (int, error) {
+	b.once.Do(func() { close(b.entered) })
+	select {
+	case <-b.ctx.Done():
+		return 0, b.ctx.Err()
+	case <-b.release:
+		return 0, io.EOF
+	}
+}
+
+func (b *stallingBody) Close() error { return nil }
+
+func TestLockingCancelsAStalledChainRead(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	server.config.Algod = config.AlgodConfig{"testnet": &config.AlgodNetworkConfig{Server: "http://mock-algod"}}
+	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
+		rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/versions" {
+				raw, _ := json.Marshal(map[string]any{"genesis_hash_b64": testnetGenesisB64, "genesis_id": "testnet-v1.0", "versions": []string{"v2"}, "build": map[string]any{}})
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
+			}
+			// Headers arrive; the body never does.
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       &stallingBody{ctx: req.Context(), release: release, entered: entered},
+				Request:    req,
+			}, nil
+		})
+		return algod.MakeClientWithTransport(serverURL, token, nil, rt)
+	}
+	installRotatingKey(t, server)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.fillStageTables(context.Background(), ir)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("chain read never started")
+	}
+
+	// The worker is blocked inside the node's response. Locking must free it
+	// without waiting on the node, so the next unlock gets a working worker.
+	ir.Lock()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stage table pass stayed blocked on a stalled chain read after lock")
+	}
+}

@@ -21,6 +21,11 @@ import (
 // DefaultStageBatch is how many stages a table grows per durable write.
 const DefaultStageBatch = 256
 
+// DefaultChainReadTimeout bounds one authorizer read from the node during a
+// fill. A node that sends headers and then stalls its body would otherwise
+// hold the pass, and with it the single background worker, indefinitely.
+const DefaultChainReadTimeout = 20 * time.Second
+
 // StageFillOptions tune one pass of FillStageTables.
 type StageFillOptions struct {
 	// Horizon is how many stages past a resolved account's live stage the
@@ -40,6 +45,9 @@ type StageFillOptions struct {
 	// chunk took, after the seed has been released; the background worker
 	// sleeps here to hold its CPU budget.
 	Pace func(derivation time.Duration)
+	// ChainReadTimeout bounds each authorizer read. Zero means
+	// DefaultChainReadTimeout.
+	ChainReadTimeout time.Duration
 	// KeyUse, if set, brackets every window in which the seed is held: it
 	// returns a context that is cancelled when the signer locks and a
 	// release to call once the seed is zeroed. The runtime's lock waits for
@@ -67,6 +75,13 @@ func (o StageFillOptions) parallel() int {
 		return 1
 	}
 	return o.Parallel
+}
+
+func (o StageFillOptions) chainReadTimeout() time.Duration {
+	if o.ChainReadTimeout <= 0 {
+		return DefaultChainReadTimeout
+	}
+	return o.ChainReadTimeout
 }
 
 func (o StageFillOptions) keyUse(ctx context.Context) (context.Context, func()) {
@@ -163,7 +178,9 @@ func (s *Service) fillStageTable(ctx context.Context, deps *RotatingDeps, accoun
 	}
 	report.Scanned = table.Len()
 
-	view, readErr := deps.Chain.ReadAccount(ctx, genesis, acct)
+	readCtx, cancelRead := context.WithTimeout(ctx, opts.chainReadTimeout())
+	view, readErr := deps.Chain.ReadAccount(readCtx, genesis, acct)
+	cancelRead()
 	if readErr != nil {
 		report.Err = readErr
 		return report

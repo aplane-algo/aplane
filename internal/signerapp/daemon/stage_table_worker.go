@@ -62,11 +62,15 @@ func (fs *Signer) runStageTableWorker(ctx context.Context) {
 }
 
 // fillStageTables runs one pass and returns how long to wait before the next.
-// Every window in which the pass holds a seed is registered as a key use, so
-// locking the signer cancels it within one derivation and waits for the seed
-// to be released before the session is cleared; the chain read, the table
-// write and the pacing sleep happen with no key material in memory.
+// The whole pass runs under a context that locking cancels, so a chain read
+// or a pacing sleep ends at lock and the worker is free for the next unlock.
+// Separately, every window in which the pass holds a seed is registered as a
+// key use, so the lock also waits for the seed to be released before the
+// session is cleared; the chain read, the table write and the pacing sleep
+// happen with no key material in memory.
 func (fs *Signer) fillStageTables(ctx context.Context, ir *productruntime.Runtime) time.Duration {
+	ctx, cancel := ir.LockCancelContext(ctx)
+	defer cancel()
 	svc := &signersigning.Service{
 		Planner:  fs.newPlannerWithAudit(nil),
 		Console:  signerConsole{},
