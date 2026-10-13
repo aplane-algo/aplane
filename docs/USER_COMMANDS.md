@@ -8,7 +8,7 @@ Complete command reference for the APlane shell (`apshell`).
 
 | Category | Commands |
 |----------|----------|
-| **Transactions** | `send`, `sweep`, `close`, `optin`, `optout`, `keyreg`, `sign`, `validate`, `app` |
+| **Transactions** | `send`, `sweep`, `close`, `rotate`, `optin`, `optout`, `keyreg`, `sign`, `validate`, `app` |
 | **Information** | `balance`, `holders`, `participation`, `accounts`, `keys`, `status`, `info` |
 | **Keys** | `keytypes`, `generate`, `delete` |
 | **Aliases & Sets** | `alias`, `sets` |
@@ -115,6 +115,45 @@ close <account> to <destination> [options]
 ```
 close alice to bob
 close temp-account to treasury nowait
+```
+
+---
+
+### rotate
+
+Rotate a rotating account (`aplane.rotating-hybrid.v1`) to its next stage, or
+show rotating accounts.
+
+```
+rotate <account> [nowait]
+rotate status [<account>]
+```
+
+`rotate <account>` sends a 0-ALGO payment from the account to itself. Like
+every spend from a rotating account, it rekeys the account to a fresh stage
+that has never revealed its keys. Use it when the signer reports that a
+revealed stage still controls an account, for example after a signed
+transaction expired without confirming. It needs the usual minimum fee plus
+the LogicSig fees for the stage program.
+
+`rotate status` shows each rotating account's current on-chain authorizer,
+any signer alerts that name it, and notes such as a release still in flight
+or a stage the signer is still scanning for. With no account it lists every
+signable rotating account. The signer refreshes its alerts every 30 seconds
+while unlocked, so an alert can outlive the rotation that resolved it by up
+to that long.
+
+Ordinary single-transaction commands from a rotating account, such as `send`,
+also rotate it. The account must be the only transaction sent, and its
+validity window is capped at 100 rounds. `close` is refused: the stage
+program forbids close-out. There is no exit command: to leave the scheme,
+move the funds out.
+
+**Examples:**
+```
+rotate vault
+rotate status
+rotate status vault
 ```
 
 ---

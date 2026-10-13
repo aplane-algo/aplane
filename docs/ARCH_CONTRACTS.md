@@ -977,6 +977,7 @@ execution, output decoding, environment filtering, and validation.
       policies/<WitnessKeyID>.json       # cosigner nodes: one v1 document per key
       policies/<WitnessKeyID>.json.hmac
     quarantine/generations/<gen-id>/ # non-authoritative abandoned publications
+    stages/<selector>.stages        # rotating accounts' stage address tables: plaintext caches, outside generations
     config.yaml
     unlock.yaml
     .ssh/authorized_keys    # enrolled client keys; daemon-written registry
@@ -1549,8 +1550,9 @@ Operator verbs:
 Both managed classes use the same encrypted envelope and canonical payload
 schema. Their extension is fixed by payload category:
 
-- `.key`: `ed25519`, `native_pq`, `dsa_lsig`, and `generic_lsig` account authority,
-  selected by a 58-character Algorand address;
+- `.key`: `ed25519`, `native_pq`, `dsa_lsig`, `generic_lsig`, and
+  `rotating_lsig` account authority, selected by a 58-character Algorand
+  address;
 - `.cos`: `witness` authority assigned to cosigner custody, selected by a
   52-character Witness Key ID.
 
@@ -1571,6 +1573,8 @@ Categories:
 - protocol-native post-quantum signing keys (`native_pq`),
 - DSA-backed LogicSig keys,
 - generic LogicSig template instances,
+- rotating LogicSig accounts (`rotating_lsig`), whose authorizing program
+  changes on every spend,
 - signer-custodied witness keys serving the cosigner role (durable category
   `witness`; used only through cosigner-role `/sign/component`).
 
@@ -1591,6 +1595,32 @@ noncanonical payload aliases. Creation parameters are stored only in `parameters
 LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, derivation
 record, or runtime-argument metadata under `runtime_args`.
+
+Rotating LogicSig accounts use `category: "rotating_lsig"`. The only key type
+is `aplane.rotating-hybrid.v1`, which fixes the derivation and the stage
+program template; `internal/rotatingkey` classifies it.
+
+- `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
+- `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No
+  other category may carry it.
+- `public_key` is stage 0's Falcon-1024 public key (1793 bytes) followed by
+  its Ed25519 public key (32 bytes).
+- No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
+  `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
+  `parameters` and `signing_args` are all rejected.
+- The selector and account address is stage 0's program address, built from
+  the stored public key. Validation re-derives stage 0 from the seed and
+  genesis hash and rejects a mismatch.
+- The family registers both checks with `keys.RegisterRotatingCodec`. A
+  binary without that registration rejects the file, and scanning skips it
+  with a warning.
+- Scanning and inventory never expose the stage public keys. The resource
+  profile is the same for every stage: 1873 program bytes, 1487 argument
+  bytes and an opcode ceiling of 3628.
+- The key file is the whole credential. The signer keeps no durable state
+  for the account: which stage is live is read from the chain at every
+  request, and the stage address table under `stages/` (below) is a cache
+  rebuilt from the seed. Only accounts created at stage 0 are supported.
 
 Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
 `pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
@@ -1964,6 +1994,59 @@ external and intentionally outside the signer data model.
 an operation with `admin_key`. It accepts exactly a 1,793-byte Falcon-1024
 public key and publishes no Contract Admin Key ID input or signer-local key
 option. Generation derives the ID from the public key.
+
+### Stage Address Tables (`stages/`)
+
+A rotating account's stage address table lists the addresses of its first
+`k` stages, `A_0 … A_{k-1}`, so that matching the on-chain authorizer to a
+stage is a lookup instead of a Falcon-1024 key generation per stage. It
+lives at `identities/default/stages/<selector>.stages`, where the selector
+is the account address. `internal/stagetable` is the only reader and
+writer.
+
+Trust: the table is a cache and nothing more.
+
+- it holds no secrets; stage addresses are program hashes, and only the live
+  stage's program can move the account, so the file is plaintext
+- it is never trusted. Every address it returns is a hint that the signing
+  derivation confirms: the stage the signer signs with must derive, from the
+  seed, to the authorizer the chain reports, and the rotation target is
+  always derived from the seed, never taken from the table. A tampered,
+  stale or corrupt table costs a refusal or a rebuild, never a wrong
+  signature
+- a missing table is not an error: the signer starts an empty one and fills
+  it in the background. Deleting the directory while the signer is stopped
+  is always safe
+
+Format (version 1): the magic `APSTAGES`, a big-endian `uint16` format
+version, the 32-byte selector, the 32-byte genesis hash, a big-endian
+`uint64` count, that many 32-byte addresses in stage order, and a SHA-256 of
+everything before it. A table is prefix-complete: its length is the next
+stage to derive. A file whose checksum, magic, version, selector or genesis
+hash does not match is discarded and rebuilt from the seed, with a warning
+in the daemon log.
+
+Placement and lifecycle:
+
+- the directory sits beside `generations/`, not inside one, so mints,
+  credential restores and restore rollbacks never copy or rewind it, and
+  the key watcher ignores it
+- managed backups and exports never include it; a restored or re-imported
+  key starts with an empty table and keeps signing while the background
+  scan finds its live stage
+- deleting a key removes its table; a background fill that loses the race
+  with deletion cannot recreate it
+- passphrase changes do not touch it: nothing in it is encrypted
+- every write is a whole-file durable publication (temp file, fsync,
+  rename); files are `0600` in a `0700` directory
+
+Fill: while unlocked, the signer extends each account's table in the
+background to `rotating.stage_horizon` stages (default 4,096) past the
+account's live stage, and without limit for an account whose live stage it
+has not yet found. The seed is held only inside the derivation itself, and
+locking the signer cancels the pass. The audit log, not the table, is what
+rebuilds the signer's memory of released transactions at unlock (see the
+`ROTATING_RELEASE` entry in `ARCH_HTTP_API.md`).
 
 ### Template Files (`.template`)
 

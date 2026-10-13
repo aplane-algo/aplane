@@ -200,6 +200,16 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
+Rotating accounts (`aplane.rotating-hybrid.v1`) are the one exception to both
+rules. They store no bytecode: each stage's program is assembled locally from
+a frozen template and the stage's public keys, and when the unsalted address is
+on-curve, the stage package appends `intcblock 1 <salt>` with the lowest salt
+in `[0, 128)` that gives an off-curve address, exactly as the TEAL v13
+assembler does. Stage derivation owns this rule because stages must be
+derived offline, at every request and in bulk in the background, without
+trusting a node for addresses. A test compares the local bytes with algod's
+assembler output for salted and unsalted stages.
+
 ## Unified Registry
 
 `internal/lsigprovider` is the single runtime registry for LogicSig providers.

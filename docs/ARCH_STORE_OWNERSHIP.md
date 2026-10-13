@@ -70,6 +70,7 @@ moved behind an existing owner.
 | `internal/signerapp/backupadmin` and `internal/backup` when invoked by it | Managed backup, restore, rollback, reconciliation |
 | `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
 | `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
+| `internal/stagetable` when invoked by the daemon | Rotating accounts' stage address tables (`identities/default/stages/`): plaintext caches, removed on key delete, rebuilt from the seed when missing or damaged |
 | `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
 | `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
 | `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |

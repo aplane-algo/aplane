@@ -246,13 +246,14 @@ Examples of the composed ontology:
 | `aplane.falcon1024-cosigner1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as cosigner |
 | `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
+| `aplane.rotating-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024 and Ed25519, both required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
 
 ## Resolution, classification, and behavior
 
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |
-| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness` |
+| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/cosigner/keytypes`, `internal/witness`, `internal/rotatingkey` |
 | **Behave** | do the operation (pack signatures, build assembly args, derive, sign) | provider-capability interfaces, queried from the resolved provider | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa` |
 
 **The governing rule:** *do not unify mechanisms across axes that have different

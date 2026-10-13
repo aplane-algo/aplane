@@ -408,6 +408,36 @@ Typical code areas:
 Reference implementation: `lsig/composeddsa/` plus the Falcon base registration
 in `lsig/falcon1024/register.go`.
 
+### E. Rotating Account
+
+Example:
+- `aplane.rotating-hybrid.v1`
+
+Characteristics:
+- the account address is fixed while its authorizing program changes on every
+  spend; no program is stored
+- the key file (category `rotating_lsig`) holds a seed, the genesis hash and
+  stage 0's public keys, and is the whole credential: the live stage is read
+  from the chain at every request, and the only file beside the key is a
+  plaintext stage address cache that is never trusted
+- it has no `lsigprovider`; it signs only through the `rotating1` flow, which
+  reads the signer's own node
+
+Typical code areas:
+- `internal/rotatingkey` (string classifiers, frozen sizes and timing bounds)
+- `internal/keys` (`rotating_lsig` validation through `RegisterRotatingCodec`)
+- `internal/stagetable` and `internal/storepaths` (the stage address cache)
+- `internal/signing` (`RotatingStageOps` registry)
+- `internal/signerapp/chainread` (the signer's own chain read)
+- `internal/signerapp/signing` (prepare, sign, release memory, status)
+- `internal/signerapp/daemon` (stage table worker, status publication)
+- `internal/clientsign` and `internal/engine` (client routing and checks)
+- `lsig/rotatinghybrid/` (derivation, stage program, stage ops, generator)
+
+This is a protocol-level key type, not a template. A new rotating type needs
+its own key file category, signing flow label and client routing; do not
+model it as a provider.
+
 ## Step 2: Choose the Implementation Style
 
 ### Generic LogicSig: Go vs YAML
