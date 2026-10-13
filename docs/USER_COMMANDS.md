@@ -139,9 +139,10 @@ the LogicSig fees for the stage program.
 `rotate status` shows each rotating account's current on-chain authorizer,
 any signer alerts that name it, and notes such as a release still in flight
 or a stage the signer is still scanning for. With no account it lists every
-signable rotating account. The signer refreshes its alerts every 30 seconds
-while unlocked, so an alert can outlive the rotation that resolved it by up
-to that long.
+signable rotating account. The signer refreshes its alerts about every 30
+seconds while unlocked (longer when chain reads or stage derivation for
+other accounts are slow), so an alert can briefly outlive the rotation that
+resolved it.
 
 Ordinary single-transaction commands from a rotating account, such as `send`,
 also rotate it. The account must be the only transaction sent, and its

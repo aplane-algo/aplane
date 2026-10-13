@@ -344,9 +344,10 @@ Related commands:
 - `rotate status [<account>]` shows the on-chain authorizer, signer alerts
   and notes.
 
-Alerts: the signer remembers every transaction it signed until it sees the
-account move past the stage that signed it. While unlocked, it checks each
-rotating account after unlock and every 30 seconds, and raises an alert
+Alerts: the signer remembers the latest transaction it signed from each
+account until it sees the account move past the stage that signed it. While
+unlocked, it checks each rotating account after unlock and then about every
+30 seconds, and raises an alert
 (daemon log, `/status` warnings, the apadmin status bar and `rotate status`)
 when a signed transaction expired while its stage still controls the
 account. Answer the alert with `rotate <account>`. The memory is rebuilt at

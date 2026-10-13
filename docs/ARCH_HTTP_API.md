@@ -354,18 +354,27 @@ The group's `rekey_to` names stage `n + 1`, which fixes `n`; the request
 carries no stage of its own and nothing is carried over from prepare. The
 signer finds `n + 1` in the table, re-derives stage `n + 1` from the seed
 and refuses unless it matches `rekey_to`, and rebuilds the group from the
-presented spend: the result must be byte-identical to what was presented
-(any change beyond the rotation's own `rekey_to`, fee, group ID and
-canonical dummies is refused). It then runs the ordinary policy gates and
-operator approval; the rotation target counts as the signer's own address,
-so `reject_foreign_rekey` does not apply to it. After approval, under the
+presented spend: the result must be byte-identical to what was presented,
+so the group can only be that spend plus the rotation's own `rekey_to`,
+fee, group ID and canonical dummies. The signer keeps nothing from prepare,
+so it does not and cannot check that the presented spend is the one the
+client prepared: a client may change the spend between the two calls, and
+what the signer binds is the presented transaction, which is what policy
+evaluates and the operator sees. Preserving the user's intent across
+prepare and sign is the client's job (first-party clients verify the
+prepared group against the transaction they sent, below). It then runs the
+ordinary policy gates and operator approval; the rotation target counts as
+the signer's own address, so `reject_foreign_rekey` does not apply to it. After approval, under the
 account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
 rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
 the TxID with stage `n`'s Falcon-1024 and Ed25519 keys, verifies both,
-writes a durable `ROTATING_RELEASE` audit entry (account, TxID, stage,
-`last_valid`), and responds.
+writes a `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`)
+with a durable sync, records the release in memory, and responds. An audit
+write failure is logged as a warning and does not withhold the signature:
+the entry only feeds the alerts below, so a release missing from the log is
+one whose alert cannot be restored after a restart, never a safety gap.
 
 There is no limit on releases per stage. Two spends prepared from the same
 stage both rekey to the same `n + 1`; whichever lands second is rejected by
@@ -407,17 +416,22 @@ requests are refused with `rotating_stage_unproven` and `/status` carries a
 note ("stage not yet found, N stages scanned"). No operator recovery step
 exists or is needed.
 
-Alerts: the signer remembers each released transaction (account, stage,
-TxID, `last_valid`) in process memory, rebuilt at unlock from the newest
+Alerts: the signer remembers the newest release per account (stage, TxID,
+`last_valid`) in process memory, rebuilt at unlock from the newest
 `ROTATING_RELEASE` audit entry per account (read from the audit log and its
 two rotated predecessors; entries the log has rotated past are simply
 absent), and checks every rotating account's authorizer on its own node right
-after unlock and then every 30 seconds while unlocked. A release whose
+after unlock and then about every 30 seconds while unlocked (a nominal
+interval: chain reads and paced derivation can stretch it). A release whose
 `last_valid` has passed while its stage is still the authorizer raises a
 warning: that transaction can never confirm and the revealed keys still
 control the account. A release still within its window is a note. A read
 that shows the account past the release clears it; a stale read never
-erases a newer release. Warnings appear in the daemon log once when they
+erases a newer release. Because only the newest release is kept, an earlier
+release from the same stage that expired while a newer one is still within
+its window is reported through the newer one: the stage is the same, and
+the newer transaction either lands and moves the account or expires and
+raises the warning. Warnings appear in the daemon log once when they
 appear and once when they clear, in authenticated `/status` `warnings`, in
 apadmin's status bar, and in apshell's `rotate status`; notes appear in
 `/status` `notes`. The remedy for an expired release is a rotate-only spend
