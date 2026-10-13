@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -19,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -67,6 +69,11 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			keyInfo.CosignerComponentKeyType, _ = keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType)
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
+		if rotatingkey.IsRotatingKeyType(keyType) {
+			// Stage keys never leave the signer; only the account address does.
+			keyInfo.PublicKeyHex = ""
+			keyInfo.SigningFlow = signerapi.SigningFlowRotating1
+		}
 		if summary.BoundedAuthorization != nil {
 			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
 			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
@@ -93,7 +100,7 @@ func authorizationKindForCategory(category string) string {
 		return string(algorithm.AuthorizationEd25519)
 	case keys.CategoryNativePQ:
 		return string(algorithm.AuthorizationNativePQ)
-	case keys.CategoryDSALsig, keys.CategoryGenericLsig:
+	case keys.CategoryDSALsig, keys.CategoryGenericLsig, keys.CategoryRotatingLsig:
 		return string(algorithm.AuthorizationLogicSig)
 	default:
 		// Witness credentials are not transaction authorizers. Unknown durable
@@ -256,6 +263,10 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		if witness.IsKeyType(keyType) {
 			info.Family, info.DisplayName, info.Description = cosignerComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
+			continue
+		}
+		if rotatingkey.IsRotatingKeyType(keyType) {
+			keyTypes = append(keyTypes, rotatingKeyTypeInfo(info, s.networkNames()))
 			continue
 		}
 		if componentType, ok := keytypes.CosignerComponentKeyTypeForGuardedAccount(keyType); ok {
@@ -547,4 +558,71 @@ func (s Service) KeyTypes(ir *productruntime.Runtime) (*signerapi.KeyTypesRespon
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "failed to read key type activations"}
 	}
 	return &signerapi.KeyTypesResponse{KeyTypes: keyTypes}, nil
+}
+
+// rotatingKeyTypeInfo describes the rotating account key type. It has no
+// LogicSig provider: its program changes on every spend, so the signer owns
+// its derivation and signing through the rotating1 flow.
+// networkNames returns the networks the signer knows, sorted, for the
+// rotating key type's network choice.
+func (s Service) networkNames() []string {
+	if s.Deps.NetworkGenesisHashes == nil {
+		return nil
+	}
+	names := make([]string, 0)
+	for name := range s.Deps.NetworkGenesisHashes() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerapi.KeyTypeInfo {
+	info.Family = rotatingkey.RotatingHybridFamily
+	info.DisplayName = rotatingkey.RotatingDisplayName
+	info.Description = rotatingkey.RotatingDescription
+	info.AuthorizationKind = string(algorithm.AuthorizationLogicSig)
+	info.RequiresLogicSig = true
+	info.MnemonicWordCount = 24
+	info.SigningFlow = signerapi.SigningFlowRotating1
+	info.CreationParams = []signerapi.CreationParamInfo{{
+		Name:        rotatingkey.RotatingNetworkParameter,
+		Label:       rotatingkey.RotatingNetworkParameterLabel,
+		Description: rotatingkey.RotatingNetworkParameterDescription,
+		Type:        "string",
+		Required:    true,
+		Options:     networks,
+		Default:     defaultRotatingNetwork(networks),
+		Example:     rotatingkey.RotatingNetworkParameterExample,
+	}}
+	return info
+}
+
+// defaultRotatingNetwork pre-selects the network for a new rotating account:
+// the signer's only configured custom network when there is exactly one,
+// such as localnet, and otherwise testnet. It never defaults to mainnet, so
+// an operator who accepts the default without reading binds at most a test
+// account to the wrong network.
+func defaultRotatingNetwork(networks []string) string {
+	builtin := make(map[string]bool)
+	for _, name := range apconfig.BuiltinGenesisHashNetworks() {
+		builtin[name] = true
+	}
+	var custom []string
+	hasTestnet := false
+	for _, name := range networks {
+		switch {
+		case name == "testnet":
+			hasTestnet = true
+		case !builtin[name]:
+			custom = append(custom, name)
+		}
+	}
+	if len(custom) == 1 {
+		return custom[0]
+	}
+	if hasTestnet {
+		return "testnet"
+	}
+	return ""
 }

@@ -417,6 +417,7 @@ func TestAuthorizationKindForCategory(t *testing.T) {
 		{category: keys.CategoryNativePQ, want: string(algorithm.AuthorizationNativePQ)},
 		{category: keys.CategoryDSALsig, want: string(algorithm.AuthorizationLogicSig)},
 		{category: keys.CategoryGenericLsig, want: string(algorithm.AuthorizationLogicSig)},
+		{category: keys.CategoryRotatingLsig, want: string(algorithm.AuthorizationLogicSig)},
 		{category: keys.CategoryWitness, want: ""},
 		{category: "future-category", want: ""},
 	}

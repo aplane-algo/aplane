@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
@@ -92,6 +93,10 @@ type Service struct {
 	AuditLog     AuditLogger
 	MutationLock func() Locker
 	Runtime      *productruntime.Runtime
+	// NetworkGenesisHashes maps every network the signer knows, built-in or
+	// configured, to its base64 genesis hash. Rotating key generation uses it
+	// to accept a network name such as "localnet".
+	NetworkGenesisHashes func() map[string]string
 }
 
 type GenerateGenericLSigFunc func(context.Context, *productruntime.Runtime, string, map[string]string) (string, error)
@@ -114,6 +119,9 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 	}
 	if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
+	}
+	if rotatingkey.IsRotatingKeyType(keyType) {
+		params = s.resolveRotatingNetwork(params)
 	}
 	if keytypes.IsGuardedAccountKeyType(keyType) {
 		resolved, err := cosignerrefs.ResolveCreationParams(ir.KeyPaths(), keyType, params)
@@ -216,6 +224,26 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
 	}, nil
+}
+
+// resolveRotatingNetwork replaces a configured network name in the network
+// parameter with that network's genesis hash. The generator itself knows only
+// the built-in names, because it cannot see signer configuration.
+func (s Service) resolveRotatingNetwork(params map[string]string) map[string]string {
+	name := strings.TrimSpace(params[rotatingkey.RotatingNetworkParameter])
+	if name == "" || s.NetworkGenesisHashes == nil {
+		return params
+	}
+	hash, ok := s.NetworkGenesisHashes()[name]
+	if !ok {
+		return params
+	}
+	resolved := make(map[string]string, len(params))
+	for k, v := range params {
+		resolved[k] = v
+	}
+	resolved[rotatingkey.RotatingNetworkParameter] = hash
+	return resolved
 }
 
 func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosignerPublicKeyHex string) error {
