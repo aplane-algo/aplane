@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package rotatinghybrid derives the per-stage key seeds of the
-// aplane.rotating-hybrid.v1 key type.
+// Package rotatinghybrid derives the per-stage key seeds of the rotating
+// account key types: aplane.rotating-hybrid.v1 and, through the same
+// deriver under its own label, aplane.rotating-wots-hybrid.v1.
 //
-// One BIP-39 seed controls one account on one network. Every stage's Falcon
-// and Ed25519 seeds are expanded from it with HKDF-SHA-512, bound to the
-// network genesis hash and the stage number, so the only link between stages
-// is a one-way hash. This package owns the derivation; it lives under
-// internal/crypto because key-derivation primitives are confined here.
+// One BIP-39 seed controls one account on one network. Every stage's key
+// seeds are expanded from it with HKDF-SHA-512, bound to the key type's
+// label, the network genesis hash and the stage number, so the only link
+// between stages is a one-way hash. This package owns the derivation; it
+// lives under internal/crypto because key-derivation primitives are confined
+// here.
 //
 // The derivation is a frozen v1 contract: changing any constant changes every
 // account address and requires a new key type.
@@ -53,8 +55,11 @@ const (
 	bip39Iterations = 2048
 	bip39SaltPrefix = "mnemonic"
 
-	falconInfoTag  byte = 0x01
-	ed25519InfoTag byte = 0x02
+	falconInfoTag byte = 0x01
+
+	// Ed25519InfoTag selects a stage's Ed25519 seed. Both rotating key types
+	// use it under their own labels.
+	Ed25519InfoTag byte = 0x02
 )
 
 // ErrInvalidMnemonic reports a mnemonic that is not a valid 24-word BIP-39
@@ -139,14 +144,25 @@ type Deriver struct {
 	genesisHash [GenesisHashSize]byte
 }
 
-// NewDeriver binds a seed to a network. The seed is not retained.
+// NewDeriver binds a seed to a network under the rotating hybrid label. The
+// seed is not retained.
 func NewDeriver(seed *Seed, genesisHash [GenesisHashSize]byte) (*Deriver, error) {
+	return NewDeriverWithLabel(seed, genesisHash, DerivationLabel)
+}
+
+// NewDeriverWithLabel binds a seed to a network under a key type's own HKDF
+// salt, so two rotating key types never share stage material from one seed.
+// The seed is not retained.
+func NewDeriverWithLabel(seed *Seed, genesisHash [GenesisHashSize]byte, label string) (*Deriver, error) {
 	if seed == nil {
-		return nil, errors.New("rotating hybrid seed is nil")
+		return nil, errors.New("rotating seed is nil")
 	}
-	prk, err := hkdf.Extract(sha512.New, seed[:], []byte(DerivationLabel))
+	if label == "" {
+		return nil, errors.New("rotating derivation label is empty")
+	}
+	prk, err := hkdf.Extract(sha512.New, seed[:], []byte(label))
 	if err != nil {
-		return nil, fmt.Errorf("extract rotating hybrid key: %w", err)
+		return nil, fmt.Errorf("extract rotating key: %w", err)
 	}
 	return &Deriver{prk: prk, genesisHash: genesisHash}, nil
 }
@@ -160,14 +176,44 @@ func (d *Deriver) Stage(i uint64) (StageSeeds, error) {
 		return StageSeeds{}, errors.New("rotating hybrid deriver is not initialized")
 	}
 	var out StageSeeds
-	if err := d.expand(falconInfoTag, i, out.Falcon[:]); err != nil {
+	if err := d.ExpandStage(falconInfoTag, i, out.Falcon[:]); err != nil {
 		return StageSeeds{}, err
 	}
-	if err := d.expand(ed25519InfoTag, i, out.Ed25519[:]); err != nil {
+	if err := d.ExpandStage(Ed25519InfoTag, i, out.Ed25519[:]); err != nil {
 		out.Zero()
 		return StageSeeds{}, err
 	}
 	return out, nil
+}
+
+// ExpandAccount fills dst with account-level material that no stage owns:
+// HKDF-Expand(PRK, tag || G, len(dst)).
+func (d *Deriver) ExpandAccount(tag byte, dst []byte) error {
+	if d == nil || d.prk == nil {
+		return errors.New("rotating deriver is not initialized")
+	}
+	info := make([]byte, 0, 1+GenesisHashSize)
+	info = append(info, tag)
+	info = append(info, d.genesisHash[:]...)
+	return d.expandInfo(info, dst)
+}
+
+// ExpandStage fills dst with stage material:
+// HKDF-Expand(PRK, tag || G || u64be(stage), len(dst)).
+func (d *Deriver) ExpandStage(tag byte, stage uint64, dst []byte) error {
+	if d == nil || d.prk == nil {
+		return errors.New("rotating deriver is not initialized")
+	}
+	info := make([]byte, 0, 1+GenesisHashSize+8)
+	info = append(info, tag)
+	info = append(info, d.genesisHash[:]...)
+	info = binary.BigEndian.AppendUint64(info, stage)
+	return d.expandInfo(info, dst)
+}
+
+// GenesisHash returns the network the deriver is bound to.
+func (d *Deriver) GenesisHash() [GenesisHashSize]byte {
+	return d.genesisHash
 }
 
 // Zero overwrites the pseudorandom key. The deriver is unusable afterwards.
@@ -179,15 +225,10 @@ func (d *Deriver) Zero() {
 	d.prk = nil
 }
 
-func (d *Deriver) expand(tag byte, stage uint64, dst []byte) error {
-	info := make([]byte, 0, 1+GenesisHashSize+8)
-	info = append(info, tag)
-	info = append(info, d.genesisHash[:]...)
-	info = binary.BigEndian.AppendUint64(info, stage)
-
+func (d *Deriver) expandInfo(info []byte, dst []byte) error {
 	expanded, err := hkdf.Expand(sha512.New, d.prk, string(info), len(dst))
 	if err != nil {
-		return fmt.Errorf("expand rotating hybrid stage %d: %w", stage, err)
+		return fmt.Errorf("expand rotating material: %w", err)
 	}
 	copy(dst, expanded)
 	crypto.ZeroBytes(expanded)
