@@ -445,6 +445,7 @@ type Model struct {
 
 	// Warning message (shown in status bar)
 	lastWarning           string
+	signerWarnings        []string // signer-raised alerts from the last status message
 	lastWarningGeneration uint64
 
 	// Screen dimensions
@@ -544,6 +545,9 @@ type DisconnectedMsg struct {
 type SignerStatusMsg struct {
 	State    string
 	KeyCount int
+	// Warnings are signer-raised operator alerts. Each status message
+	// replaces the previous set.
+	Warnings []string
 }
 
 // UnlockResultMsg is sent when unlock result is received

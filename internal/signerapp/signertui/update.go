@@ -157,6 +157,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reconnectCmd()
 
 	case SignerStatusMsg:
+		m.signerWarnings = msg.Warnings
 		switch signerRuntimeStateFromWire(msg.State) {
 		case signerRuntimeUnlocked:
 			return m, m.enterUnlocked(msg.KeyCount)

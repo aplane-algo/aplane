@@ -319,6 +319,14 @@ func IsAccountSignable(address string, signerCache *SignerCache, authCache *Auth
 		return false
 	}
 
+	// A rotating account is authorized by its current stage, a program the
+	// signer derives from the account's own key and never lists. The signer
+	// holds the account, so it signs for it at any stage, whatever the chain
+	// shows as the auth address.
+	if signerCache.HasAddress(address) && signerCache.SigningFlowForAddress(address) == signerapi.SigningFlowRotating1 {
+		return true
+	}
+
 	// Get the auth address (who needs to sign for this account)
 	if authCache != nil {
 		authAddr, hasRekey := authCache.GetAuthAddress(address)

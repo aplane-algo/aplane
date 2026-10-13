@@ -35,6 +35,7 @@ var builtInAutomationPolicies = map[string]command.AutomationPolicy{
 	"optout":             command.StructuredAutomation,
 	"keyreg":             command.GuardedStructuredAutomation(guardAutomatedKeyreg),
 	"close":              command.StructuredAutomation,
+	"rotate":             command.StructuredAutomation,
 	"balance":            command.StructuredAutomation,
 	"holders":            command.StructuredAutomation,
 	"participation":      command.StructuredAutomation,
@@ -148,6 +149,14 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 		Description: "Close account and send all ALGO to destination. Fails if account is online or has ASAs",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdClose),
+	})
+
+	mustRegister(registry, &command.Command{
+		Name:        "rotate",
+		Usage:       rotateUsage,
+		Description: "Rotate a rotating account to its next stage with a 0-ALGO payment to itself, or show rotating accounts' authorizers and the signer's alerts and notes",
+		Category:    command.CategoryTransaction,
+		Handler:     command.NewInternalHandler(r.cmdRotate),
 	})
 
 	mustRegister(registry, &command.Command{

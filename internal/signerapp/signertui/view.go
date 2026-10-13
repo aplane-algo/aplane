@@ -601,6 +601,11 @@ func (m Model) renderStatusBar() string {
 		}
 	}
 
+	// Signer-raised alerts stay until the signer clears them.
+	for _, warning := range m.signerWarnings {
+		parts = append(parts, errorStyle.Render("ALERT: "+warning))
+	}
+
 	// Warning if any
 	if m.lastWarning != "" {
 		parts = append(parts, warningStyle.Render("Warning: "+m.lastWarning))

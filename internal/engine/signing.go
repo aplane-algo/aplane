@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // SigningContext encapsulates all information needed to sign transactions.
@@ -79,6 +80,13 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	} else {
 		// Account is rekeyed to authAddr
 		signingAddr = authAddr
+	}
+
+	// A rotating account is authorized by its current stage, which the
+	// signer derives from the account's key and never lists. The signer holds
+	// the account itself, so it signs for the account at any stage.
+	if e.signerCacheSigningFlow(address) == signerapi.SigningFlowRotating1 {
+		signingAddr = address
 	}
 
 	// Check if we can sign (address is in SignerCache).

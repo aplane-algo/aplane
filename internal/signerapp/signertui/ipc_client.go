@@ -373,6 +373,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return SignerStatusMsg{
 			State:    status.State,
 			KeyCount: status.KeyCount,
+			Warnings: status.Warnings,
 		}
 	}),
 	MsgTypeUnlockResult: decodeAs(func(result UnlockResultMessage) tea.Msg {

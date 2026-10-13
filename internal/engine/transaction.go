@@ -91,25 +91,39 @@ func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []
 
 // signAndSubmitGroup validates preconditions and signs+submits a transaction group.
 func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.SubmitOptions) ([]string, []types.Transaction, error) {
-	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
+	if err := e.checkReadyToSign(txns, opts); err != nil {
 		return nil, nil, err
 	}
-	if !e.IsConnected() {
-		return nil, nil, ErrNotConnected
-	}
-	if e.AlgodClient == nil {
-		return nil, nil, ErrNoAlgodClient
-	}
-	if err := e.validateAlgodConsensus(opts.Ctx); err != nil {
-		return nil, nil, fmt.Errorf("validate algod consensus before signing: %w", err)
-	}
-	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
+	// Rotating accounts route on the sender's own signing flow: their
+	// effective signer is a stage address the signer never lists.
+	if rotating, err := e.rotatingSender(txns, opts); err != nil {
 		return nil, nil, err
+	} else if rotating {
+		return e.Connection.SignAndSubmitRotating(txns[0], e.AlgodClient, clientsign.RotatingOptions{SubmitOptions: opts})
 	}
 	if gs := e.guardedSigner(); gs.HasGuardedEffectiveSigner(txns) {
 		return gs.SignAndSubmitGroup(txns, opts)
 	}
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
+}
+
+// checkReadyToSign runs the preconditions every signing path shares:
+// argument validation, a connected signer and algod, a supported consensus
+// version, and fresh signer metadata for the senders.
+func (e *Engine) checkReadyToSign(txns []types.Transaction, opts clientsign.SubmitOptions) error {
+	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
+		return err
+	}
+	if !e.IsConnected() {
+		return ErrNotConnected
+	}
+	if e.AlgodClient == nil {
+		return ErrNoAlgodClient
+	}
+	if err := e.validateAlgodConsensus(opts.Ctx); err != nil {
+		return fmt.Errorf("validate algod consensus before signing: %w", err)
+	}
+	return e.refreshSubmitSigningState(opts.Ctx, txns)
 }
 
 func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {

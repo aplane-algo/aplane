@@ -38,7 +38,7 @@ func TestBuiltInCommandAndAliasInventory(t *testing.T) {
 		"config", "connect", "cosigner", "delete", "disconnect", "endpoints", "generate",
 		"help", "holders", "info", "js", "jslist", "jssave", "keyreg", "keys",
 		"keytypes", "network", "optin", "optout", "participation", "plugins",
-		"quit", "rekey", "request-enrollment", "script", "send", "sets", "sign",
+		"quit", "rekey", "request-enrollment", "rotate", "script", "send", "sets", "sign",
 		"simulate", "status", "sweep", "unrekey", "validate", "verbose", "write",
 	}
 	wantAliases := map[string]string{
