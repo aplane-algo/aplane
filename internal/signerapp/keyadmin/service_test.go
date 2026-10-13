@@ -983,3 +983,39 @@ func (p keyadminFingerprintProvider) BuildArgs([]byte, map[string][]byte) ([][]b
 	return nil, nil
 }
 func (p keyadminFingerprintProvider) CompatibilityFingerprint() string { return p.fingerprint }
+
+func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
+	ir := setupProductRuntime(t)
+	svc := Service{AuditLog: &auditRecorder{}, Runtime: ir}
+
+	genResult, genErr := svc.GenerateKey(context.Background(), "ed25519", nil, nil)
+	if genErr != nil {
+		t.Fatalf("GenerateKey() error = %#v", genErr)
+	}
+	account, err := types.DecodeAddress(genResult.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis := make([]byte, 32)
+	table, err := ir.StageTables().Table(account, genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := table.Append([]types.Address{account}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(table.Path()); err != nil {
+		t.Fatalf("stage table not written: %v", err)
+	}
+
+	if _, delErr := svc.DeleteKey(genResult.Address); delErr != nil {
+		t.Fatalf("DeleteKey() error = %#v", delErr)
+	}
+	if _, err := os.Stat(table.Path()); !os.IsNotExist(err) {
+		t.Fatalf("stage table still present after key delete: stat err = %v", err)
+	}
+	fresh, err := ir.StageTables().Table(account, genesis)
+	if err != nil || fresh.Len() != 0 {
+		t.Fatalf("table after delete: len %d, err %v", fresh.Len(), err)
+	}
+}

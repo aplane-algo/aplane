@@ -43,6 +43,8 @@ type Service struct {
 	// HoldsCosignerKey reports whether the node holds a cosigner key,
 	// without loading it.
 	HoldsCosignerKey func(witnessKeyID string) bool
+	// Rotating holds the rotating flow's dependencies; nil disables it.
+	Rotating *RotatingDeps
 }
 
 type SignGroupResult struct {

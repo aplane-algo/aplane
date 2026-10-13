@@ -731,3 +731,37 @@ func extractInstallHereDoc(t *testing.T, installer, marker string) string {
 	}
 	return body[:end]
 }
+
+func TestServerConfigRotatingStageHorizonDefaultsAndOverrides(t *testing.T) {
+	t.Parallel()
+
+	if got := DefaultServerConfig().Rotating.StageHorizon; got != DefaultStageHorizon {
+		t.Fatalf("default stage_horizon = %d, want %d", got, DefaultStageHorizon)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig: %v", err)
+	}
+	if cfg.Rotating.StageHorizon != DefaultStageHorizon {
+		t.Fatalf("stage_horizon without a rotating block = %d, want default", cfg.Rotating.StageHorizon)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("rotating:\n  stage_horizon: 512\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err = LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig: %v", err)
+	}
+	if cfg.Rotating.StageHorizon != 512 {
+		t.Fatalf("stage_horizon = %d, want 512", cfg.Rotating.StageHorizon)
+	}
+	if cfg.Clone().Rotating.StageHorizon != 512 {
+		t.Fatal("Clone dropped the rotating settings")
+	}
+}

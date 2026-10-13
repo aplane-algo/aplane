@@ -64,6 +64,8 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |
 | `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
+| `rotating` | object | default rotating settings | Rotating account settings |
+| `rotating.stage_horizon` | uint64 | `4096` | How many stages past a rotating account's live stage are derived ahead into its stage address table; an account whose live stage is not yet known is scanned without limit |
 
 Product-local `identities/default/config.yaml` contains settings only.
 Node role is stored separately in root `node.yaml`.

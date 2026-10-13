@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -73,6 +74,10 @@ type Runtime struct {
 	keyStore    *keystore.FileKeyStore
 	keyPaths    storepaths.Paths
 	lockRuntime *signerruntime.Runtime
+
+	// stageTables is the process's single owner of rotating accounts' stage
+	// address tables (identities/default/stages), a derivable cache.
+	stageTables *stagetable.Store
 
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
@@ -172,6 +177,7 @@ func New(cfg Config) *Runtime {
 	ir := &Runtime{
 		keyStore:    cfg.KeyStore,
 		keyPaths:    cfg.KeyPaths,
+		stageTables: stagetable.NewStore(cfg.KeyPaths),
 		lockRuntime: rt,
 		keySession:  session,
 		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
@@ -983,6 +989,11 @@ func (ir *Runtime) KeyStore() *keystore.FileKeyStore {
 // KeyPaths returns the keystore path configuration.
 func (ir *Runtime) KeyPaths() storepaths.Paths {
 	return ir.keyPaths
+}
+
+// StageTables returns the owner of rotating accounts' stage address tables.
+func (ir *Runtime) StageTables() *stagetable.Store {
+	return ir.stageTables
 }
 
 // ActivePaths returns the generation authenticated by the runtime's most

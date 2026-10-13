@@ -38,5 +38,6 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			_, err := ir.FindKeyFile(witnessKeyID)
 			return err == nil
 		},
+		Rotating: fs.rotatingDeps(ir),
 	}
 }

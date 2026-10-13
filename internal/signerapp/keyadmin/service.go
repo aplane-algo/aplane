@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"os"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -301,6 +302,14 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	delResult, err := storemut.New(activeKeyPaths).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
+	}
+	// A rotating account's stage address table is a cache derived from the
+	// key that just left; it goes with it. Nothing depends on it, so a
+	// failure here is reported, not fatal.
+	if tables := ir.StageTables(); tables != nil && storepaths.ValidateStageSelector(address) == nil {
+		if tableErr := tables.Delete(address); tableErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: key %s was deleted but its stage table was not: %v\n", address, tableErr)
+		}
 	}
 
 	if reloadErr := reloadKeys(ir); reloadErr != nil {

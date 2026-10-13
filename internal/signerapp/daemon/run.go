@@ -314,6 +314,7 @@ func Run(dataDir string) int {
 			product.EnsureKeyWatcher(startKeyWatcherForDir)
 		},
 		Services: []signerstartup.LifecycleService{
+			stageTableWorkerService(server),
 			{
 				Name: "IPC server",
 				Start: func(ctx context.Context, errs chan<- error) error {
