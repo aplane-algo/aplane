@@ -578,9 +578,10 @@ func (s Service) networkNames() []string {
 }
 
 func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerapi.KeyTypeInfo {
-	info.Family = rotatingkey.RotatingHybridFamily
-	info.DisplayName = rotatingkey.RotatingDisplayName
-	info.Description = rotatingkey.RotatingDescription
+	profile, _ := rotatingkey.Lookup(info.KeyType)
+	info.Family = profile.Family
+	info.DisplayName = profile.DisplayName
+	info.Description = profile.Description
 	info.AuthorizationKind = string(algorithm.AuthorizationLogicSig)
 	info.RequiresLogicSig = true
 	info.MnemonicWordCount = 24

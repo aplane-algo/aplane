@@ -68,6 +68,11 @@ func RegisterClient() {
 			Family:       rotatingkey.RotatingHybridFamily,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, func() {})
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      rotatingkey.RotatingWotsHybridV1,
+			Family:       rotatingkey.RotatingWotsHybridFamily,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, func() {})
 	})
 }
 

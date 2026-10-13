@@ -407,7 +407,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		LsigIndices:        []int{0},
 		DummiesNeeded:      len(allTxns) - 1,
 		NeedsRegroup:       len(allTxns) > 1,
-		AuthKeyTypes:       []string{rotatingkey.RotatingHybridV1},
+		AuthKeyTypes:       []string{s.Planner.Snapshot().KeyTypes[req.Account]},
 		KnownAddresses:     known,
 		Rotating:           item,
 	}

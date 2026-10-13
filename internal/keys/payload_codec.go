@@ -671,8 +671,9 @@ func validateRotatingPayload(p *Payload) error {
 	if len(p.GenesisHash) != rotatingkey.RotatingGenesisHashSize {
 		return incompatibleKeyFormat("rotating genesis_hash length %d invalid (expected %d bytes)", len(p.GenesisHash), rotatingkey.RotatingGenesisHashSize)
 	}
-	if len(p.PublicKey) != rotatingkey.RotatingStagePublicKeySize {
-		return incompatibleKeyFormat("rotating stage 0 public key length %d invalid (expected %d bytes)", len(p.PublicKey), rotatingkey.RotatingStagePublicKeySize)
+	profile, _ := rotatingkey.Lookup(p.KeyType)
+	if len(p.PublicKey) != profile.StagePublicKeySize {
+		return incompatibleKeyFormat("rotating stage 0 public key length %d invalid (expected %d bytes)", len(p.PublicKey), profile.StagePublicKeySize)
 	}
 	codec, err := rotatingCodec(p.KeyType)
 	if err != nil {

@@ -889,11 +889,12 @@ func installedRecordEnabled(paths storepaths.Paths, keyType string) bool {
 // describeRotatingKeyType fills the library metadata of a rotating key type,
 // which has no LogicSig provider to describe it.
 func describeRotatingKeyType(item *LibraryTemplate) {
-	if !rotatingkey.IsRotatingKeyType(item.KeyType) {
+	profile, ok := rotatingkey.Lookup(item.KeyType)
+	if !ok {
 		return
 	}
-	item.DisplayName = rotatingkey.RotatingDisplayName
-	item.Description = rotatingkey.RotatingDescription
+	item.DisplayName = profile.DisplayName
+	item.Description = profile.Description
 	item.Parameters = []lsigprovider.ParameterDef{{
 		Name:        rotatingkey.RotatingNetworkParameter,
 		Label:       rotatingkey.RotatingNetworkParameterLabel,

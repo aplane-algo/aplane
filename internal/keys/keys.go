@@ -470,7 +470,7 @@ func scanKeysDirectoryInternalReport(active storepaths.ActivePaths, excludedSele
 
 func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresource.Profile, error) {
 	if payload != nil && payload.Category == CategoryRotatingLsig {
-		return rotatingLogicSigResources()
+		return rotatingLogicSigResources(payload.KeyType)
 	}
 	if payload == nil || (payload.Category != CategoryDSALsig && payload.Category != CategoryGenericLsig) {
 		return nil, nil
@@ -508,16 +508,20 @@ func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresour
 	return &profile, nil
 }
 
-// rotatingLogicSigResources is the constant profile of every stage program:
-// the salted program size bounds both shapes, and every spend carries the
-// same two signatures.
-func rotatingLogicSigResources() (*lsigresource.Profile, error) {
-	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
+// rotatingLogicSigResources is the constant profile of every stage program
+// of a rotating key type: the salted program size bounds both shapes, and
+// every spend carries the same two signatures.
+func rotatingLogicSigResources(keyType string) (*lsigresource.Profile, error) {
+	rk, ok := rotatingkey.Lookup(keyType)
+	if !ok {
+		return nil, fmt.Errorf("unknown rotating key type %q", keyType)
+	}
+	argumentBytes := uint64(rk.MaxArgumentBytes)
 	profile, err := lsigresource.Materialize(
-		rotatingkey.RotatingMaxProgramBytes,
+		uint64(rk.MaxProgramBytes),
 		&argumentBytes,
 		nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost),
+		lsigresource.DefaultOpcodeProfile(uint64(rk.MaxOpcodeCost)),
 	)
 	if err != nil {
 		return nil, err

@@ -9,33 +9,41 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 )
 
-func TestLibraryListsRegisteredRotatingKeyType(t *testing.T) {
-	keytypecatalog.Register(keytypecatalog.Entry{
-		KeyType:      rotatingkey.RotatingHybridV1,
-		Family:       rotatingkey.RotatingHybridV1,
-		Availability: keytypecatalog.AvailabilityLibrary,
-	})
+func TestLibraryListsRegisteredRotatingKeyTypes(t *testing.T) {
+	for _, keyType := range rotatingkey.KeyTypes() {
+		profile, _ := rotatingkey.Lookup(keyType)
+		keytypecatalog.Register(keytypecatalog.Entry{
+			KeyType:      keyType,
+			Family:       profile.Family,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		})
+	}
 	rotatingsignerreg.Register()
+	rotatingwotssignerreg.Register()
 
 	paths := newLibraryTestPaths(t)
 	items, err := List(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := findLibraryItem(items, rotatingkey.RotatingHybridV1)
-	if item == nil {
-		t.Fatal("rotating key type missing from the library")
-	}
-	if item.Invalid != "" {
-		t.Fatalf("rotating key type listed as invalid: %s", item.Invalid)
-	}
-	if item.DisplayName != rotatingkey.RotatingDisplayName || len(item.Parameters) != 1 || item.Parameters[0].Name != rotatingkey.RotatingNetworkParameter {
-		t.Fatalf("library item = %+v", *item)
-	}
-	if _, err := ActivateCompiledProvider(paths, rotatingkey.RotatingHybridV1); err != nil {
-		t.Fatalf("enable: %v", err)
+	for _, keyType := range rotatingkey.KeyTypes() {
+		profile, _ := rotatingkey.Lookup(keyType)
+		item := findLibraryItem(items, keyType)
+		if item == nil {
+			t.Fatalf("%s missing from the library", keyType)
+		}
+		if item.Invalid != "" {
+			t.Fatalf("%s listed as invalid: %s", keyType, item.Invalid)
+		}
+		if item.DisplayName != profile.DisplayName || len(item.Parameters) != 1 || item.Parameters[0].Name != rotatingkey.RotatingNetworkParameter {
+			t.Fatalf("library item = %+v", *item)
+		}
+		if _, err := ActivateCompiledProvider(paths, keyType); err != nil {
+			t.Fatalf("enable %s: %v", keyType, err)
+		}
 	}
 }
 
