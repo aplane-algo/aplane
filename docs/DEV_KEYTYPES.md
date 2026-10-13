@@ -410,8 +410,9 @@ in `lsig/falcon1024/register.go`.
 
 ### E. Rotating Account
 
-Example:
-- `aplane.rotating-hybrid.v1`
+Examples:
+- `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages)
+- `aplane.rotating-wots-hybrid.v1` (hash-based WOTS + Ed25519 stages)
 
 Characteristics:
 - the account address is fixed while its authorizing program changes on every
@@ -424,7 +425,8 @@ Characteristics:
   reads the signer's own node
 
 Typical code areas:
-- `internal/rotatingkey` (string classifiers, frozen sizes and timing bounds)
+- `internal/rotatingkey` (string classifiers, per-type profiles of frozen
+  sizes, shared timing bounds)
 - `internal/keys` (`rotating_lsig` validation through `RegisterRotatingCodec`)
 - `internal/stagetable` and `internal/storepaths` (the stage address cache)
 - `internal/signing` (`RotatingStageOps` registry)
@@ -432,11 +434,16 @@ Typical code areas:
 - `internal/signerapp/signing` (prepare, sign, release memory, status)
 - `internal/signerapp/daemon` (stage table worker, status publication)
 - `internal/clientsign` and `internal/engine` (client routing and checks)
-- `lsig/rotatinghybrid/` (derivation, stage program, stage ops, generator)
+- `lsig/rotatinghybrid/` (Falcon hybrid stage program, stage ops, generator)
+- `internal/crypto/rotatinghybrid` (the HKDF stage deriver both types use
+  under their own labels), `internal/crypto/wots` and `lsig/rotatingwots/`
+  (the WOTS hybrid's primitives, stage program, stage ops, generator)
 
-This is a protocol-level key type, not a template. A new rotating type needs
-its own key file category, signing flow label and client routing; do not
-model it as a provider.
+These are protocol-level key types, not templates. A new rotating stage
+scheme is a new key type on the same flow: a `rotatingkey` profile, a stage
+package with a frozen template and an assembler cross-check, stage ops
+registered under the key type, a codec and a generator. Do not model it as
+a provider.
 
 ## Step 2: Choose the Implementation Style
 

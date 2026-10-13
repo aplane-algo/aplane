@@ -200,15 +200,28 @@ and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
 
-Rotating accounts (`aplane.rotating-hybrid.v1`) are the one exception to both
-rules. They store no bytecode: each stage's program is assembled locally from
-a frozen template and the stage's public keys, and when the unsalted address is
-on-curve, the stage package appends `intcblock 1 <salt>` with the lowest salt
-in `[0, 128)` that gives an off-curve address, exactly as the TEAL v13
-assembler does. Stage derivation owns this rule because stages must be
-derived offline, at every request and in bulk in the background, without
-trusting a node for addresses. A test compares the local bytes with algod's
-assembler output for salted and unsalted stages.
+Rotating accounts (`aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1`)
+are the one exception to both rules. They store no bytecode: each stage's
+program is assembled locally from a frozen template and the stage's public
+constants, and when the unsalted address is on-curve, the stage package
+appends `intcblock 1 <salt>` with the lowest salt in `[0, 128)` that gives an
+off-curve address, exactly as the TEAL v13 assembler does. Stage derivation
+owns this rule because stages must be derived offline, at every request and
+in bulk in the background, without trusting a node for addresses. A test per
+key type compares the local bytes with algod's assembler output for salted
+and unsalted stages.
+
+The WOTS hybrid's stage signature is a Winternitz one-time signature
+(`internal/crypto/wots`): n = 32, w = 16, 64 message digits and 3 checksum
+digits over the TxID, 67 SHA-256 chains of 15 steps, with the SPHINCS+
+"simple" tweakable hash `F(T, c, j, x) = SHA-256(T || u64be(c*256 + j) || x)`
+and a per-stage tweak `T = SHA-256("APLANE_WOTS_V1" || G || tag || u64be(i))`,
+where the public account tag is HKDF output of the seed alone. The stage
+program verifies it with `sha256`, `itob` and `concat` only, paired with an
+`ed25519verify_bare`. A WOTS key must sign one message; the rotation makes
+every stage sign once in normal operation, and the Ed25519 half keeps a
+twice-signed stage (after an expired release and its repair) at classical
+strength until the next release lands.
 
 ## Unified Registry
 
