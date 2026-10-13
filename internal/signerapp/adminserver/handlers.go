@@ -15,7 +15,7 @@ import (
 // SendStatus writes the current signer status for the bound identity.
 func (s *Session) SendStatus() error {
 	ir := s.productOrBoundRuntime()
-	return s.WriteJSON(ProtocolStatusMessage(ir.GetState().String(), ir.KeyCount()))
+	return s.WriteJSON(ProtocolStatusMessage(ir.GetState().String(), ir.KeyCount(), ir.RotatingAlerts()))
 }
 
 // SendError writes a protocol error message.

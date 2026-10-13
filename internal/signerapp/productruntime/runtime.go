@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -73,6 +75,25 @@ type Runtime struct {
 	keyStore    *keystore.FileKeyStore
 	keyPaths    storepaths.Paths
 	lockRuntime *signerruntime.Runtime
+
+	// stageTables is the process's single owner of rotating accounts' stage
+	// address tables (identities/default/stages), a derivable cache.
+	stageTables *stagetable.Store
+
+	// Key users are background holders of loaded key material (the stage
+	// table worker). Lock cancels their context and waits for them to
+	// release before it clears the session, so no copy of a seed outlives
+	// the unlocked state.
+	keyUseMu     sync.Mutex
+	keyUseCtx    context.Context
+	keyUseCancel context.CancelFunc
+	keyUsers     sync.WaitGroup
+
+	// Rotating account status from the last background pass: warnings need
+	// action, notes are information. Published to /status and apadmin.
+	rotatingStatusMu sync.Mutex
+	rotatingAlerts   []string
+	rotatingNotes    []string
 
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
@@ -172,6 +193,7 @@ func New(cfg Config) *Runtime {
 	ir := &Runtime{
 		keyStore:    cfg.KeyStore,
 		keyPaths:    cfg.KeyPaths,
+		stageTables: stagetable.NewStore(cfg.KeyPaths),
 		lockRuntime: rt,
 		keySession:  session,
 		runtimeCfg:  NewRuntimeConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
@@ -985,6 +1007,133 @@ func (ir *Runtime) KeyPaths() storepaths.Paths {
 	return ir.keyPaths
 }
 
+// StageTables returns the owner of rotating accounts' stage address tables.
+func (ir *Runtime) StageTables() *stagetable.Store {
+	return ir.stageTables
+}
+
+// SetRotatingStatus replaces the published rotating account warnings and
+// notes and reports whether either changed.
+func (ir *Runtime) SetRotatingStatus(warnings, notes []string) bool {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	if slices.Equal(ir.rotatingAlerts, warnings) && slices.Equal(ir.rotatingNotes, notes) {
+		return false
+	}
+	ir.rotatingAlerts = slices.Clone(warnings)
+	ir.rotatingNotes = slices.Clone(notes)
+	return true
+}
+
+// RotatingAlerts returns the rotating account warnings from the last pass.
+func (ir *Runtime) RotatingAlerts() []string {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	return slices.Clone(ir.rotatingAlerts)
+}
+
+// RotatingNotes returns the rotating account notes from the last pass.
+func (ir *Runtime) RotatingNotes() []string {
+	ir.rotatingStatusMu.Lock()
+	defer ir.rotatingStatusMu.Unlock()
+	return slices.Clone(ir.rotatingNotes)
+}
+
+// keyUseDrainWarnAfter is how long Lock waits for key users before it says
+// so. It keeps waiting: a lock that returned while a seed was still in
+// memory would be a lie, so a user that fails to release stalls the lock
+// visibly rather than letting it complete. Users hold key material only
+// across derivations, never across I/O, so in practice the wait is one
+// derivation.
+const keyUseDrainWarnAfter = 5 * time.Second
+
+// KeyUseContext registers a background holder of loaded key material. The
+// returned context is cancelled the moment the signer locks, and release must
+// be called once the caller holds no key material; Lock waits for every
+// registered user to release before it clears the session. While the signer
+// is locked the returned context is already cancelled and release is a no-op.
+func (ir *Runtime) KeyUseContext(parent context.Context) (context.Context, func()) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ir.keyUseMu.Lock()
+	if !ir.IsUnlocked() {
+		ir.keyUseMu.Unlock()
+		ctx, cancel := context.WithCancel(parent)
+		cancel()
+		return ctx, func() {}
+	}
+	if ir.keyUseCtx == nil || ir.keyUseCtx.Err() != nil {
+		ir.keyUseCtx, ir.keyUseCancel = context.WithCancel(context.Background())
+	}
+	base := ir.keyUseCtx
+	ir.keyUsers.Add(1)
+	ir.keyUseMu.Unlock()
+
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(base, cancel)
+	var once sync.Once
+	return ctx, func() {
+		once.Do(func() {
+			stop()
+			cancel()
+			ir.keyUsers.Done()
+		})
+	}
+}
+
+// LockCancelContext returns a context that is cancelled when the signer
+// locks, without registering a key user: Lock does not wait for it. It is
+// for work that must stop at lock but holds no key material, such as a
+// background pass's chain reads and pacing sleeps. While the signer is
+// locked the returned context is already cancelled.
+func (ir *Runtime) LockCancelContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	ir.keyUseMu.Lock()
+	if !ir.IsUnlocked() {
+		ir.keyUseMu.Unlock()
+		cancel()
+		return ctx, cancel
+	}
+	if ir.keyUseCtx == nil || ir.keyUseCtx.Err() != nil {
+		ir.keyUseCtx, ir.keyUseCancel = context.WithCancel(context.Background())
+	}
+	base := ir.keyUseCtx
+	ir.keyUseMu.Unlock()
+	stop := context.AfterFunc(base, cancel)
+	return ctx, func() { stop(); cancel() }
+}
+
+// drainKeyUsers cancels every key user's context and waits for them to
+// release their key material. It runs inside the lock transition, after the
+// state is already locked, so no new user can register meanwhile.
+func (ir *Runtime) drainKeyUsers() {
+	ir.keyUseMu.Lock()
+	if ir.keyUseCancel != nil {
+		ir.keyUseCancel()
+	}
+	ir.keyUseMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		ir.keyUsers.Wait()
+		close(done)
+	}()
+	warn := time.NewTimer(keyUseDrainWarnAfter)
+	defer warn.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-warn.C:
+			fmt.Printf("⚠️  Warning: lock is waiting for background key users to release key material\n")
+		}
+	}
+}
+
 // ActivePaths returns the generation authenticated by the runtime's most
 // recent successful root unlock or reload.
 func (ir *Runtime) ActivePaths() (storepaths.GenPaths, error) {
@@ -1177,6 +1326,10 @@ func (ir *Runtime) Destroy() {
 func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
 	// StopKeyWatcher is only called on shutdown via Destroy().
+
+	// Background holders of key material go first, so clearing the session
+	// below really is the end of every copy of a seed.
+	ir.drainKeyUsers()
 
 	ir.passphraseLock.Lock()
 	if ir.keySession != nil {

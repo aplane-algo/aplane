@@ -347,12 +347,12 @@ func (s *IPCServer) NotifyLocked(notification adminproto.SignerLockedNotificatio
 // Used when the runtime state changes without a client request that already
 // reports it — e.g. leaving recovery mode after the marker rescan comes back
 // clean.
-func (s *IPCServer) NotifyStatus(state string, keyCount int) {
+func (s *IPCServer) NotifyStatus(state string, keyCount int, warnings []string) {
 	active := s.activeSession()
 	if active == nil {
 		return
 	}
-	_ = active.WriteJSON(adminserver.ProtocolStatusMessage(state, keyCount)) // Best-effort notification
+	_ = active.WriteJSON(adminserver.ProtocolStatusMessage(state, keyCount, warnings)) // Best-effort notification
 }
 
 // NotifyKeysChanged sends a keys_changed notification to the connected IPC client.

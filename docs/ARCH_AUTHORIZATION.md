@@ -139,7 +139,8 @@ Important implications:
   session authorizes as `system:product-admin`.
 - A tunneled HTTP request authorizes as the client principal of its
   connection. `ClientAllowedActions` (`internal/authz`) grants only what the
-  authenticated HTTP routes expose: `identity.view`, `sign.request`,
+  authenticated HTTP routes expose: `identity.view`, `sign.request` (which
+  also covers `/sign/rotating/prepare` and `/sign/rotating/sign`),
   `sign.component`, `sign.assemble`, `keys.view`, `keys.generate`,
   `keys.delete`, and `keytypes.view`. Clients never receive administrative
   actions.

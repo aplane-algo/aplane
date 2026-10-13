@@ -18,5 +18,5 @@ type AdminHub interface {
 	NotifyLocked(notification adminproto.SignerLockedNotification)
 	NotifyKeysChanged(notification adminproto.KeysChangedNotification)
 	NotifyEnrollmentChanged(notification adminproto.EnrollmentChangedNotification)
-	NotifyStatus(state string, keyCount int)
+	NotifyStatus(state string, keyCount int, warnings []string)
 }

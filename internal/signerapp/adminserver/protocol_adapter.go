@@ -12,11 +12,12 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func ProtocolStatusMessage(state string, keyCount int) protocol.StatusMessage {
+func ProtocolStatusMessage(state string, keyCount int, warnings []string) protocol.StatusMessage {
 	return protocol.StatusMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeStatus},
 		State:       state,
 		KeyCount:    keyCount,
+		Warnings:    warnings,
 	}
 }
 

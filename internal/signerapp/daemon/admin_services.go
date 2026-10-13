@@ -383,7 +383,7 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	if s.signer != nil {
 		if hub := s.signer.adminHub(); hub != nil {
-			hub.NotifyStatus(ir.GetState().String(), ir.KeyCount())
+			hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.RotatingAlerts())
 		}
 	}
 	return report, true

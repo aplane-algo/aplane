@@ -302,6 +302,13 @@ present and otherwise defaults to `signer`.
 | Key already exists and is canonically identical | Idempotent no-op. | No template/provider effect. | Existing destination state remains authoritative. |
 | Key already exists but differs or is unreadable | Conflict unless `replace_existing` is explicit. | No template/provider effect. | Replacement occurs only inside the atomic restore generation. |
 
+A restored rotating account (`aplane.rotating-hybrid.v1`) needs nothing
+beyond its key file: the signer reads the live stage from the chain and
+rebuilds the account's stage address table, a cache under
+`identities/default/stages/` that backups never carry, in the background.
+Until the table reaches the live stage, signing refuses with
+`rotating_stage_unproven`.
+
 ## Runtime Reload Behavior
 
 Unlock/reload publishes a new runtime snapshot only after validation succeeds.

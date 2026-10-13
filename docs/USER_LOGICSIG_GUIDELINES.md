@@ -753,6 +753,21 @@ off-curve LogicSig account whose program performs Ed25519 verification.
 Transaction policy is expected to live primarily in signer approval and local
 signer policy.
 
+#### `aplane.rotating-hybrid.v1`
+
+- dedicated compiled stage program, library-visible and signer-gated
+- each stage requires both a Falcon-1024 and an Ed25519 signature over the
+  TxID, a non-zero rekey that is not the sender, no close-out, and a validity
+  window of at most 100 rounds
+- the signer, not TEAL, guarantees that every rekey targets the account's
+  next never-revealed stage; the program accepts any other rekey target
+
+Stage programs are assembled locally rather than through algod, using the
+TEAL v13 assembler's salt rule, and are cross-checked against the stock
+assembler in tests. Transaction policy beyond those checks lives in signer
+approval and local signer policy. See
+[USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hybrid-accounts).
+
 #### Bounded Authorization Allowlist
 
 `aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with

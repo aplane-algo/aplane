@@ -67,8 +67,28 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 		KeyCount:            keyCount,
 		KeysetRevision:      keysetRevision,
 		ApprovalWaitSeconds: approvalWaitSeconds,
-		Warnings:            storeHealthWarnings(ir),
+		Warnings:            statusWarnings(ir),
+		Notes:               statusNotes(ir),
 	}
+}
+
+// statusWarnings are the authenticated status warnings: store health plus
+// any rotating account alerts. Rotating alerts name accounts, so they never
+// appear on the unauthenticated health endpoint.
+func statusWarnings(ir *productruntime.Runtime) []string {
+	warnings := storeHealthWarnings(ir)
+	if ir != nil {
+		warnings = append(warnings, ir.RotatingAlerts()...)
+	}
+	return warnings
+}
+
+// statusNotes are informational lines that need no action.
+func statusNotes(ir *productruntime.Runtime) []string {
+	if ir == nil {
+		return nil
+	}
+	return ir.RotatingNotes()
 }
 
 // storeHealthCacheTTL bounds how often the unauthenticated health endpoint

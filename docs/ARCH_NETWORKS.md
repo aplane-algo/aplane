@@ -171,6 +171,25 @@ remains network-independent: during `/plan` or `/sign` it validates the
 transaction genesis hash for policy context, then applies the compiled v42
 LogicSig and native-PQ rules.
 
+Rotating accounts (`signing_flow: rotating1`) are the one exception. Their
+prepare and sign endpoints, and the background stage table fill, read the
+account's authorizer, and the round of that read, from the signer's own
+node, because the signer must never trust a client's claim about which
+stage is live. The rules for that read (`internal/signerapp/chainread`):
+
+- the node is chosen from the key file's genesis hash through the same
+  genesis-hash resolver, then `networks.<net>.algod`,
+- the node's own `/versions` genesis hash must equal the key's, so a
+  misconfigured network entry cannot supply another network's state,
+- a missing mapping, a missing algod entry, an unreachable node, or a
+  malformed answer refuses the request; the signer never falls back to a
+  client-supplied value,
+- every read is bounded (20 s), so a stalled node cannot hold the signer.
+
+No indexer is involved: the signer needs only the account's current
+authorizer, never its history. Ordinary `/plan` and `/sign` remain
+network-independent.
+
 ## ASA Transfer Guards
 
 Signer safety policy stores transfer guard thresholds in `limits` as raw units:

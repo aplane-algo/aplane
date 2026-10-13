@@ -44,6 +44,7 @@ func TestCommandRegistration(t *testing.T) {
 		{"optout", command.CategoryTransaction},
 		{"keyreg", command.CategoryTransaction},
 		{"close", command.CategoryTransaction},
+		{"rotate", command.CategoryTransaction},
 		{"validate", command.CategoryTransaction},
 		{"sign", command.CategoryTransaction},
 		{"app", command.CategoryTransaction},

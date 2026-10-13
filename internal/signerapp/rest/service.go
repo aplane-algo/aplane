@@ -29,6 +29,9 @@ type Dependencies struct {
 	KeyAdmin            keyadmin.Service
 	GenerateGenericLSig keyadmin.GenerateGenericLSigFunc
 	StoreHealth         *StoreHealthCache // optional; bounds the health endpoint's store inspection
+	// NetworkGenesisHashes lists the networks the signer knows; rotating key
+	// generation offers their names. Optional.
+	NetworkGenesisHashes func() map[string]string
 }
 
 type Service struct {

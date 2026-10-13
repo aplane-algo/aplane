@@ -276,7 +276,10 @@ Server to Client:
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
 - `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, optional `rotation_pending`, `code`, `error`; local IPC only, rejects identical current/new passphrases, appends and completes a durable key-term rotation for live encrypted artifacts and integrity sidecars, reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
-- `status`: `state`, `key_count`
+- `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
+  signer raised on its own, currently rotating account alerts; each `status`
+  message replaces the previous set, and the signer pushes a new `status`
+  whenever the set changes)
 - `error`: optional `code`, `error`
 - `signer_locked`: `reason`
 - `displaced`: `reason`
@@ -312,7 +315,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 
 ### Key Management
 
-- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol
+- `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. `aplane.rotating-hybrid.v1` requires the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery

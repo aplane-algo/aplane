@@ -278,6 +278,22 @@ additional authorization after signer approval; it cannot override policy
 rejection, cancellation, or operator denial. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
+## Rotating Account Interaction
+
+A rotating account (`signing_flow: rotating1`) rekeys on every spend. The
+rotation target is the signer's own next stage, derived from the account's
+seed but never stored as a key file. For that request only, the signer adds
+the target to the held-address set, so `reject_foreign_rekey` and the rekey
+warning treat it as the signer's own address. Every other rule applies
+unchanged, including `always_review_warnings`, which still flags each
+rotation because a rekey is always a warning. The approval description
+names the signing stage, the target stage and the target address.
+
+There is no exit from the scheme: a rotating account leaves it by moving
+its funds out, never by rekeying to an outside address, so no rule needs to
+distinguish one rekey target from another. See
+[ARCH_HTTP_API.md](ARCH_HTTP_API.md#rotating-accounts-rotating1).
+
 ## Runtime Snapshot Semantics
 
 The product runtime publishes policy updates atomically. Readers see either

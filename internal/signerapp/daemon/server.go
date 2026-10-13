@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -76,6 +77,10 @@ type Signer struct {
 	keyPaths          storepaths.Paths                   // Explicit keystore path owner
 	dataDir           string                             // Data directory path (for saving config)
 	makeAlgod         func(string, string) (*algod.Client, error)
+	rotatingLocks     signersigning.RotatingLocks // Serializes rotating sign per account
+	rotatingReleases  signersigning.ReleaseMemory // Last release per rotating account, for status; rebuilt from the audit log at unlock
+	stageFillBatch    int                         // Tests shrink the stage table worker's batch; 0 is the default
+	stageFillMaxDeriv int                         // Tests bound derivations per unresolved account per pass; 0 is one batch
 }
 
 // Theme returns the current theme setting. Safe for concurrent use.

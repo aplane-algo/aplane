@@ -20,6 +20,9 @@ const (
 	ErrorInternal                = svcerr.KindInternal
 	ErrorBoundedAdminRequired    = svcerr.KindBoundedAdminRequired
 	ErrorBoundedCosignerRequired = svcerr.KindBoundedCosignerRequired
+	ErrorRotatingSigningRequired = svcerr.KindRotatingSigningRequired
+	ErrorRotatingStageUnproven   = svcerr.KindRotatingStageUnproven
+	ErrorRotatingStageChanged    = svcerr.KindRotatingStageChanged
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }
@@ -42,6 +45,16 @@ func boundedCosignerRequired() *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorBoundedCosignerRequired,
 		Message: "bounded-cosigner operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
+	}
+}
+
+// rotatingSigningRequired rejects a rotating account submitted to an ordinary
+// signing endpoint. Its stage program changes on every spend, so only the
+// rotating flow can prepare and sign for it.
+func rotatingSigningRequired() *ServiceError {
+	return &ServiceError{
+		Kind:    ErrorRotatingSigningRequired,
+		Message: "rotating account requires POST /sign/rotating/prepare, then POST /sign/rotating/sign",
 	}
 }
 

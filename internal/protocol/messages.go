@@ -696,6 +696,9 @@ type StatusMessage struct {
 	BaseMessage
 	State    string `json:"state"`
 	KeyCount int    `json:"key_count"`
+	// Warnings are operator alerts the signer raised on its own, such as a
+	// rotating account whose revealed keys still control it.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ErrorMessage is sent for error conditions

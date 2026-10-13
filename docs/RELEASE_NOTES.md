@@ -1,5 +1,39 @@
 # Release Notes
 
+## Rotating hybrid accounts
+
+New library-visible key type `aplane.rotating-hybrid.v1`: an account whose
+address never changes while the program that authorizes it changes on every
+spend. Each stage checks a Falcon-1024 and an Ed25519 signature derived from
+one signer-held seed, and every spend rekeys the account to the next stage,
+whose keys have never been revealed. Enable it with `apadmin keytype enable
+aplane.rotating-hybrid.v1` and generate with the `network` parameter.
+
+- Signing uses a new flow, `rotating1`: `POST /sign/rotating/prepare` and
+  `POST /sign/rotating/sign`. `/keys` and `/keytypes` report
+  `signing_flow: rotating1`. `/plan`, `/sign`, `/sign/bounded-admin` and
+  `/sign/component` refuse these accounts with the new error code
+  `rotating_signing_required`; the new flow adds `rotating_stage_unproven`
+  and `rotating_stage_changed` (both `409`). Clients that do not know
+  `rotating1` fail closed.
+- The signer keeps no durable state for these accounts. It reads the live
+  stage from its own node (`networks.<net>.algod`) at every request, and
+  caches stage addresses in plaintext under `identities/default/stages/`,
+  which it rebuilds from the seed whenever missing or damaged. A restored
+  backup signs again without any recovery step. New setting
+  `rotating.stage_horizon` (default 4096) bounds the background lookahead.
+- apshell routes sends from these accounts automatically and adds
+  `rotate <account>` and `rotate status`.
+- A rotation's target counts as the signer's own address for
+  `reject_foreign_rekey`.
+- The signer alerts, in the daemon log, `/status` warnings, a new optional
+  `warnings` list on the admin `status` message shown in apadmin, and
+  apshell's `rotate status`, when a signed transaction expired while its
+  stage still controls the account. Releases still in flight appear in the
+  new `/status` `notes` field. A new durable audit entry,
+  `ROTATING_RELEASE`, records every release and rebuilds this memory at
+  unlock.
+
 ## Enrollment requests wait for the operator
 
 `request-enrollment` no longer waits for the operator. The node queues the

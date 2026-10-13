@@ -58,6 +58,8 @@ type PlanResult struct {
 	// BoundedItems[i] records the signer-classified path for a bounded key after
 	// all group and fee mutations. Other entries are nil.
 	BoundedItems []*boundedPlanItem
+	// Rotating describes a rotating account's spend; nil on every other path.
+	Rotating *rotatingPlanItem
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.

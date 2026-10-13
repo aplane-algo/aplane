@@ -36,4 +36,15 @@ const (
 	// ErrCodeBoundedCosignerRequired directs cosigner-gated bounded spends to the
 	// bounded component and assembly flow.
 	ErrCodeBoundedCosignerRequired = "bounded_cosigner_required"
+	// ErrCodeRotatingSigningRequired directs rotating accounts to the rotating
+	// prepare and sign flow.
+	ErrCodeRotatingSigningRequired = "rotating_signing_required"
+	// ErrCodeRotatingStageUnproven reports that the signer has not yet found
+	// the rotating account's live stage; its background scan continues and a
+	// retry usually succeeds.
+	ErrCodeRotatingStageUnproven = "rotating_stage_unproven"
+	// ErrCodeRotatingStageChanged reports that the account's authorizer moved
+	// between preparing and signing; nothing was signed and the client should
+	// rebuild the transaction and prepare again.
+	ErrCodeRotatingStageChanged = "rotating_stage_changed"
 )

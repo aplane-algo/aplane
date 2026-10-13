@@ -64,3 +64,13 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 		KeyMetadata: keyMetadata,
 	}
 }
+
+// networkGenesisHashes maps every network the signer knows, built-in or
+// configured, to its base64 genesis hash.
+func (fs *Signer) networkGenesisHashes() map[string]string {
+	out := make(map[string]string)
+	for hash, network := range fs.genesisHashResolver().Map() {
+		out[network] = hash
+	}
+	return out
+}

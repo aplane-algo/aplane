@@ -75,7 +75,7 @@ func TestIPCNotificationsUseActiveProductSession(t *testing.T) {
 	recorder := addActiveProductSession(t, ipcServer)
 	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 3})
 	ipcServer.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
-	ipcServer.NotifyStatus("unlocked", 3)
+	ipcServer.NotifyStatus("unlocked", 3, nil)
 	messages := recorder.messages(t)
 	if len(messages) != 3 || messages[0]["type"] != protocol.MsgTypeKeysChanged ||
 		messages[1]["type"] != protocol.MsgTypeSignerLocked || messages[2]["type"] != protocol.MsgTypeStatus {
@@ -120,7 +120,7 @@ func TestIPCOutboundMessagesExcludePendingAndPreAuthSessions(t *testing.T) {
 	}
 	ipcServer.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: 3})
 	ipcServer.NotifyLocked(adminproto.SignerLockedNotification{Reason: "locked"})
-	ipcServer.NotifyStatus("unlocked", 3)
+	ipcServer.NotifyStatus("unlocked", 3, nil)
 
 	if messages := active.messages(t); len(messages) != 6 {
 		t.Fatalf("active message count = %d, want 6: %#v", len(messages), messages)

@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -60,6 +61,17 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 
 	for _, entry := range keytypecatalog.DefaultEnabled() {
 		types = appendKeyType(types, seen, entry.KeyType)
+	}
+
+	// Rotating key types register no algorithm or LogicSig DSA metadata:
+	// they are generatable once enabled and their generator is registered.
+	for _, entry := range keytypecatalog.LibraryVisible() {
+		if !rotatingkey.IsRotatingKeyType(entry.KeyType) || !keyTypeEnabledForGeneration(entry.KeyType, activatedSet) {
+			continue
+		}
+		if _, err := keygen.GetGenerator(entry.KeyType); err == nil {
+			types = appendKeyType(types, seen, entry.KeyType)
+		}
 	}
 
 	// Sort: standard algorithms first, then LogicSig DSAs grouped by family

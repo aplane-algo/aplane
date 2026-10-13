@@ -288,6 +288,91 @@ capacity, while any excess program bytes are paid through the group fee. The
 signer rejects a finalized path whose fee would exceed the compiled 10,000
 microAlgo ceiling.
 
+## Rotating Hybrid Accounts
+
+`aplane.rotating-hybrid.v1` is a library-visible compiled key type for an
+account whose address never changes while the program that authorizes it
+changes on every spend. Each program (a *stage*) checks a Falcon-1024 and an
+Ed25519 signature, both derived from one seed held only by the signer. A
+stage's public keys are revealed only when it signs, and the same spend
+rekeys the account to the next, never-revealed stage. An attacker who can
+break a signature scheme therefore has, at most, the time between a signature
+and the confirmation of that spend.
+
+Enable the key type, then generate an account bound to one network:
+
+```bash
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-hybrid.v1
+```
+
+In apadmin, **Generate account** asks for one parameter, `network`, and offers
+every network the signer knows: the built-in `mainnet`, `testnet` and
+`betanet`, plus any configured under `networks.<name>` with a
+`genesis_hash`, such as `localnet`. A raw base64 genesis hash is also accepted.
+The form pre-selects the signer's only configured custom network when there
+is exactly one, and `testnet` otherwise; it never pre-selects `mainnet`.
+Unlike other key types, a rotating account is bound to one network: its stages
+are derived with that network's genesis hash, so the same seed gives different
+addresses on different networks. The account address is stage 0's program
+address. Fund it like any other account.
+
+Spending works through apshell as usual. `send` and other single-transaction
+commands route through the `rotating1` flow automatically: the signer reads
+which stage currently controls the account from its own node, prepares the
+transaction (setting the rekey to the next stage, adding a resource dummy
+and the fees), apshell checks and simulates the exact group before anything
+is signed, and the signer signs after approval and a fresh read of the
+chain. The signer adds the fees for the extra resource transaction and the
+stage program, so a spend costs more than an ordinary payment's minimum fee.
+
+Restrictions:
+
+- A rotating account's transaction is always sent alone; it cannot be part
+  of a larger group. Any single transaction type works: payments, asset
+  opt-in, transfer and opt-out, application calls, and key registration.
+- Its validity window is at most 100 rounds, and it cannot close out.
+- Ordinary `/plan`, `/sign` and plugin signing paths refuse the account with
+  `rotating_signing_required`.
+- There is no way to hand the account to another key. To leave the scheme,
+  move the funds to another account.
+- Like every APlane key, its mnemonic is never shown. Back it up with a
+  managed backup; mnemonic import is refused.
+
+Related commands:
+
+- `rotate <account>` sends a 0-ALGO payment to itself, which only rotates.
+- `rotate status [<account>]` shows the on-chain authorizer, signer alerts
+  and notes.
+
+Alerts: the signer remembers the latest transaction it signed from each
+account until it sees the account move past the stage that signed it. While
+unlocked, it checks each rotating account after unlock and then about every
+30 seconds, and raises an alert
+(daemon log, `/status` warnings, the apadmin status bar and `rotate status`)
+when a signed transaction expired while its stage still controls the
+account. Answer the alert with `rotate <account>`. The memory is rebuilt at
+unlock from the signer's audit log, so keep the audit log if you want
+alerts to survive a restart; the account's safety does not depend on it.
+
+Two transactions signed from the same stage both rotate to the same next
+stage. The first to confirm wins; the ledger rejects the second because the
+account has already moved. If a send fails to submit and you resend it after
+another spend went through, expect that rejection; prepare it again.
+
+### Backups and restore
+
+The key file is the whole credential. The signer stores nothing else it
+needs to sign: it reads the account's current stage from the chain at every
+request and keeps only a plaintext cache of stage addresses under
+`identities/default/stages/`, which it rebuilds from the seed whenever the
+cache is missing or damaged. A key restored from a managed backup signs
+again as soon as that cache catches up with the account's live stage,
+which the signer does in the background; until then a spend is refused with
+`rotating_stage_unproven`, and `rotate status` shows how far the scan has
+come. Deleting the `stages/` directory while the signer is stopped is
+always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
+4096) sets how many stages past the live one the signer derives ahead.
+
 ## YAML Templates
 
 YAML templates define LogicSig key types. Bundled library sources live under:

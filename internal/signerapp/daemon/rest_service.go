@@ -43,9 +43,11 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 				MutationLock: func() keyadmin.Locker {
 					return &fs.storeMutationLock
 				},
+				NetworkGenesisHashes: fs.networkGenesisHashes,
 			},
-			GenerateGenericLSig: fs.generateGenericLSigForRuntimeContext,
-			StoreHealth:         &fs.storeHealth,
+			GenerateGenericLSig:  fs.generateGenericLSigForRuntimeContext,
+			StoreHealth:          &fs.storeHealth,
+			NetworkGenesisHashes: fs.networkGenesisHashes,
 		},
 	}
 }

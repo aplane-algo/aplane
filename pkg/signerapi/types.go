@@ -410,6 +410,9 @@ type StatusResponse struct {
 	KeysetRevision      uint64          `json:"keyset_revision"`
 	ApprovalWaitSeconds int64           `json:"approval_wait_seconds,omitempty"`
 	Warnings            []string        `json:"warnings,omitempty"`
+	// Notes are informational status lines that need no action, such as a
+	// rotating account's release that is still in flight.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // SigningFlowCosigner1 names the cosigner co-signed component signing
@@ -434,6 +437,13 @@ const SigningFlowBounded1 = "bounded1"
 // and source-aware bounded assembly. Contract-admin rekeys remain on the
 // bounded1 admin endpoint and do not contact the cosigner.
 const SigningFlowBoundedCosigner1 = "bounded-cosigner1"
+
+// SigningFlowRotating1 names the rotating account choreography: the signer
+// prepares an exact unsigned group that rotates the account to its next
+// stage, the client simulates it, and the signer signs only that prepared
+// group after reading the live stage from the chain. Ordinary signing
+// endpoints refuse these accounts with rotating_signing_required.
+const SigningFlowRotating1 = "rotating1"
 
 // BoundedSignatureArgLayout describes the stored maximum spending-signature
 // argument shape.

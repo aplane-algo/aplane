@@ -62,6 +62,25 @@ type ServerConfig struct {
 	UserAutoApprove bool `yaml:"user_auto_approve" description:"User default to sign non-rejected requests without operator approval unless policy forces review" default:"false"`
 	// Display settings
 	Theme string `yaml:"theme" description:"Signer-admin UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
+	// Rotating account settings.
+	Rotating RotatingConfig `yaml:"rotating" description:"Rotating account settings" default:"default rotating settings"`
+}
+
+// RotatingConfig holds settings for rotating accounts (aplane.rotating-hybrid).
+type RotatingConfig struct {
+	// StageHorizon is the lookahead of the stage address table: how many
+	// stages past an account's live stage the signer derives in the
+	// background so upcoming rotations never wait on derivation. An account
+	// whose live stage is not yet in its table is scanned on without limit.
+	StageHorizon uint64 `yaml:"stage_horizon" description:"How many stages past a rotating account's live stage are derived ahead into its stage address table; an account whose live stage is not yet known is scanned without limit" default:"4096"`
+}
+
+// DefaultStageHorizon is the default rotating stage table lookahead.
+const DefaultStageHorizon = 4096
+
+// DefaultRotatingConfig returns default rotating account settings.
+func DefaultRotatingConfig() RotatingConfig {
+	return RotatingConfig{StageHorizon: DefaultStageHorizon}
 }
 
 // Clone returns an independent copy of the server config.
@@ -190,6 +209,7 @@ func DefaultServerConfig() ServerConfig {
 		IPCPath:            "",
 		TEALCompileNetwork: "testnet",
 		UserAutoApprove:    false,
+		Rotating:           DefaultRotatingConfig(),
 	}
 }
 

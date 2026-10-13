@@ -31,6 +31,8 @@ request state and principals without a runtime ID.
 | `POST` | `/sign/bounded-admin` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
+| `POST` | `/sign/rotating/prepare` | yes | yes |
+| `POST` | `/sign/rotating/sign` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
@@ -39,7 +41,7 @@ request state and principals without a runtime ID.
 Method enforcement:
 
 - `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`,
-  `/sign/cancel`, `/plan`,
+  `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
   `/status`, `/admin/generate`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
@@ -73,6 +75,9 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `internal` | unexpected server-side failure | `500` |
 | `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
 | `bounded_cosigner_required` | cosigner-gated bounded spend sent to ordinary `/sign` | `400` |
+| `rotating_signing_required` | rotating account sent to `/plan`, `/sign`, `/sign/bounded-admin` or `/sign/component` | `400` |
+| `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
+| `rotating_stage_changed` | the account's authorizer moved between prepare and sign; nothing was signed, rebuild and prepare again | `409` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -231,6 +236,9 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - Cosigner-enabled bounded spends are rejected with
   `code:"bounded_cosigner_required"`; they must use the `bounded-cosigner1`
   choreography below.
+- Rotating accounts (`signing_flow: rotating1`) are rejected before approval
+  with `code:"rotating_signing_required"` on `/plan`, `/sign`,
+  `/sign/bounded-admin` and `/sign/component`.
 
 `/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
 `request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly
@@ -292,6 +300,144 @@ LogicSig address and authorizer. Contract-admin paths never use this endpoint
 or contact a cosigner. Assembly request IDs are correlation-only and are not
 cancelable through `/sign/cancel`.
 
+### Rotating accounts (`rotating1`)
+
+A rotating account keeps one address while its authorizing stage program
+changes on every spend. Stage `n` is a program over the Falcon-1024 and
+Ed25519 keys derived for `n` from the account's seed; stage 0's program
+address is the account. Both endpoints use the `sign_request` action,
+resolve the key by the account address, refuse any account that is not
+rotating, and read the account's authorizer and the round from the signer's
+own node (see `ARCH_NETWORKS.md`). The signer keeps no durable state for the
+account between requests: the chain says which stage is live, the seed says
+which stage comes next.
+
+The invariant every release upholds: a signature from stage `n` is released
+only while `n` is the authorizer, and its transaction rekeys the account to
+stage `n + 1`. So every landed rotation installs a stage that has never
+signed, and the keys a signature reveals control the account only until that
+transaction, or a later rotation, confirms.
+
+`/sign/rotating/prepare` request (`signerapi.RotatingPrepareRequest`):
+
+- `account`: the rotating account address
+- `txn_bytes_hex`: one unsigned, ungrouped, TX-prefixed transaction from the
+  account, with no `rekey_to`, no close-out, the account's genesis hash, and a
+  validity window of at most 100 rounds
+- optional `request_id`
+
+The signer reads the authorizer, finds its stage `n` (through the stage
+address table, confirmed by derivation), sets `rekey_to` to stage `n + 1`'s
+address derived from the seed, adds the resource dummy, sets fees and the
+group ID, and returns the exact unsigned group. It stores nothing.
+Preparation needs no approval and reveals nothing secret. An account whose
+live stage the signer has not found yet is refused with
+`rotating_stage_unproven` after a bounded foreground search (30 s); the
+background scan continues and a retry succeeds once it has caught up.
+
+`/sign/rotating/prepare` response (`signerapi.RotatingPrepareResponse`):
+
+- `account`, `rekey_to`
+- `stage`: the live stage, which will sign; `target`: always `stage + 1`
+- `transactions`: the final unsigned group, TX-prefixed hex
+- `mutations`: the ordinary mutation report (dummies, fees, group ID)
+
+Clients simulate exactly these bytes and send them back unchanged.
+
+`/sign/rotating/sign` request (`signerapi.RotatingSignRequest`):
+
+- `account`
+- `transactions`: the prepared group
+- optional `request_id`, cancelable through `/sign/cancel` while live
+
+The group's `rekey_to` names stage `n + 1`, which fixes `n`; the request
+carries no stage of its own and nothing is carried over from prepare. The
+signer finds `n + 1` in the table, re-derives stage `n + 1` from the seed
+and refuses unless it matches `rekey_to`, and rebuilds the group from the
+presented spend: the result must be byte-identical to what was presented,
+so the group can only be that spend plus the rotation's own `rekey_to`,
+fee, group ID and canonical dummies. The signer keeps nothing from prepare,
+so it does not and cannot check that the presented spend is the one the
+client prepared: a client may change the spend between the two calls, and
+what the signer binds is the presented transaction, which is what policy
+evaluates and the operator sees. Preserving the user's intent across
+prepare and sign is the client's job (first-party clients verify the
+prepared group against the transaction they sent, below). It then runs the
+ordinary policy gates and operator approval; the rotation target counts as
+the signer's own address, so `reject_foreign_rekey` does not apply to it. After approval, under the
+account's lock, it reads the chain again and refuses unless the authorizer
+is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
+`first_valid` is at most 2 rounds ahead of the round read, and at least 10
+rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
+the TxID with stage `n`'s Falcon-1024 and Ed25519 keys, verifies both,
+writes a `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`)
+with a durable sync, records the release in memory, and responds. An audit
+write failure is logged as a warning and does not withhold the signature:
+the entry only feeds the alerts below, so a release missing from the log is
+one whose alert cannot be restored after a restart, never a safety gap.
+
+There is no limit on releases per stage. Two spends prepared from the same
+stage both rekey to the same `n + 1`; whichever lands second is rejected by
+the ledger ("should have been authorized by"), and nothing the signer could
+store would change that outcome.
+
+`/sign/rotating/sign` response (`signerapi.RotatingSignResponse`):
+
+- `signed`: the signed group, hex msgpack; the spend carries the stage program
+  as its LogicSig and an `auth_address` for stages above 0
+- `stage`: the stage whose keys the signature revealed; `target`: `stage + 1`
+- `txid`, `group_id`: the identifiers clients use to track the outcome
+
+Creating and using rotating accounts:
+
+- `aplane.rotating-hybrid.v1` is a `Library` key type: an operator enables it,
+  then generates with the single creation parameter `network`: any network the
+  signer knows (built-in or configured, which `/keytypes` lists as the
+  parameter's `options`), or a base64 genesis hash. Like every key type, its
+  recovery material never leaves the signer: neither the admin protocol nor
+  HTTP returns the mnemonic, and backups carry the seed. Mnemonic import is
+  refused.
+- First-party clients route on the sender's own `signing_flow: rotating1`,
+  not on its on-chain authorizer, which is a stage address the signer never
+  lists. A rotating spend is sent alone; the client caps its validity window
+  at 100 rounds and rebuilds it when it has aged, prepares, verifies that the
+  prepared group changed only `rekey_to`, the spend's fee, the group ID and
+  canonical dummies and that `target` is `stage + 1`, simulates the unsigned
+  group, and only then signs and submits exactly the returned bytes. A
+  `rotating_stage_changed` or window-timing refusal means nothing was signed,
+  and the client rebuilds and prepares again a bounded number of times.
+  Simulate-only requests stop before signing, so they reveal no keys.
+
+Restore: a rotating key restored from a backup, rebuilt or re-imported has
+everything it needs. The signer reads the live stage from the chain and
+rebuilds the stage address table (`ARCH_CONTRACTS.md`, Stage Address
+Tables) in the background; until the table reaches the live stage,
+requests are refused with `rotating_stage_unproven` and `/status` carries a
+note ("stage not yet found, N stages scanned"). No operator recovery step
+exists or is needed.
+
+Alerts: the signer remembers the newest release per account (stage, TxID,
+`last_valid`) in process memory, rebuilt at unlock from the newest
+`ROTATING_RELEASE` audit entry per account (read from the audit log and its
+two rotated predecessors; entries the log has rotated past are simply
+absent), and checks every rotating account's authorizer on its own node right
+after unlock and then about every 30 seconds while unlocked (a nominal
+interval: chain reads and paced derivation can stretch it). A release whose
+`last_valid` has passed while its stage is still the authorizer raises a
+warning: that transaction can never confirm and the revealed keys still
+control the account. A release still within its window is a note. A read
+that shows the account past the release clears it; a stale read never
+erases a newer release. Because only the newest release is kept, an earlier
+release from the same stage that expired while a newer one is still within
+its window is reported through the newer one: the stage is the same, and
+the newer transaction either lands and moves the account or expires and
+raises the warning. Warnings appear in the daemon log once when they
+appear and once when they clear, in authenticated `/status` `warnings`, in
+apadmin's status bar, and in apshell's `rotate status`; notes appear in
+`/status` `notes`. The remedy for an expired release is a rotate-only spend
+through the endpoints above. Alerts are observational: safety does not
+depend on them, on the table, or on the audit log.
+
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
 
 - `request_id`
@@ -327,8 +473,9 @@ the request context and withdraw any pending manual approval prompt. This
 tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
-Only live synchronous `/sign` requests and approval-bearing user or
-bounded-base `/sign/component` requests are cancelable. Cosigner-only component
+Only live synchronous `/sign` and `/sign/rotating/sign` requests and
+approval-bearing user or bounded-base `/sign/component` requests are
+cancelable. Cosigner-only component
 requests and assembly requests are correlation-only. Once a cancelable request
 is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
@@ -361,7 +508,8 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `signing_flow`: explicit signing choreography label. `cosigner1`
   selects legacy guarded component signing, `bounded1` selects bounded routing
   without an online cosigner, `bounded-cosigner1` selects the user-first bounded
-  component/cosigner/assembly flow, and empty means ordinary `/sign`. Clients
+  component/cosigner/assembly flow, `rotating1` selects the rotating account
+  prepare and sign flow, and empty means ordinary `/sign`. Clients
   dispatch these cases explicitly and fail closed on labels they do not
   implement.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
@@ -437,6 +585,11 @@ stored provenance was available. These fields do not change `/sign` behavior.
   request deadlines. Clients must tolerate this field being omitted.
 - `warnings`: optional persistent operator-facing health warnings. Clients
   should display non-empty warnings and must tolerate this field being omitted.
+  They include rotating account alerts (see Rotating accounts); those name
+  accounts and never appear on `/health`.
+- `notes`: optional informational lines that need no action, such as a
+  rotating account's release still in flight or a live stage the signer is
+  still scanning for. Clients must tolerate this field being omitted.
 
 `/keytypes` response:
 

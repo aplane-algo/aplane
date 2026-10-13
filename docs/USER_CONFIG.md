@@ -353,6 +353,13 @@ or mode field.
 In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 `ON` means `user_auto_approve: true`; `OFF` means `user_auto_approve: false`.
 
+`rotating.stage_horizon` (default 4096) sets how many stages past a rotating
+account's live stage the signer derives ahead into its stage address cache
+(see [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hybrid-accounts)). The
+signer reads a rotating account's live stage from the network's
+`networks.<network>.algod` node, which must therefore be configured for that
+network.
+
 `passphrase_command_argv` and `passphrase_command_env` are accepted in the
 top-level `config.yaml`. `appass` writes its configuration to
 `identities/default/unlock.yaml`, which takes precedence.

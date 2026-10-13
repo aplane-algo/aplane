@@ -43,6 +43,8 @@ type Service struct {
 	// HoldsCosignerKey reports whether the node holds a cosigner key,
 	// without loading it.
 	HoldsCosignerKey func(witnessKeyID string) bool
+	// Rotating holds the rotating flow's dependencies; nil disables it.
+	Rotating *RotatingDeps
 }
 
 type SignGroupResult struct {
@@ -325,7 +327,10 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			s.logPolicyRejections(req, plan, txns, reason)
 		},
 		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
-			if isGroup {
+			// A rotating spend is one request, but its prompt must carry the
+			// rotation description and judge warnings against the plan's own
+			// addresses, which only the group prompt does.
+			if isGroup || plan.Rotating != nil {
 				return s.Approval.requestGroupApprovalWithContext(ctx, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
 			return s.Approval.requestSingleTxnApprovalWithContext(ctx, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID)

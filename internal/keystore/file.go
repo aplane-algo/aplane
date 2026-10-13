@@ -309,6 +309,19 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return loadWitnessKeyMaterial(payload, keyType, signingMeta)
 	}
 
+	// Rotating accounts sign only through stage operations, never through an
+	// ordinary signing provider.
+	if signingMeta.Category == keys.CategoryRotatingLsig {
+		return &signing.KeyMaterial{
+			Type:     keyType,
+			Category: signingMeta.Category,
+			Value: &signing.RotatingKeyMaterial{
+				Seed:        bytes.Clone(payload.PrivateKey),
+				GenesisHash: bytes.Clone(payload.GenesisHash),
+			},
+		}, nil
+	}
+
 	// Get provider and load keys (for ed25519, falcon, etc.)
 	provider := signing.GetProviderForKey(keyType, signingMeta.BaseKeyType)
 	if provider == nil {
