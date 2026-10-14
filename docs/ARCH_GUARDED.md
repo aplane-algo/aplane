@@ -386,10 +386,13 @@ LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
-The daemon returns the document over the admin protocol; the operator process
-validates it, re-serializes it canonically (`witness.MarshalPublicReference`:
-the field order above, two-space indentation, one trailing newline), and
-writes it locally with owner-private permissions. The file carries no
+The daemon returns the document over the admin protocol already in canonical
+form (the field order above, two-space indentation, one trailing newline). The
+apadmin TUI validates it, re-serializes it canonically
+(`witness.MarshalPublicReference`), and writes it locally with owner-private
+permissions. Batch `apadmin cosigner export` writes the daemon's bytes as
+received: to the output path with owner-private permissions, or to stdout when
+the output path is omitted. The file carries no
 endpoint, reference alias, endpoint alias or role, client credential, SSH identity,
 `known_hosts` entry, cached live inventory, private witness material, policy,
 or proof of endpoint ownership. The cosigner's address is not a file contract
@@ -413,7 +416,8 @@ identities/default/cosigners/<name>.json
 ```
 
 Reference names are normalized to lowercase and may contain lowercase letters,
-digits, `.`, `-`, and `_`. The persisted record schema is:
+digits, `.`, `-`, and `_`. A name must start with a letter or digit and must
+not contain `..`. The persisted record schema is:
 
 ```json
 {
@@ -551,15 +555,16 @@ The submit flow is:
 
 1. Resolve effective signers.
 2. Classify guarded and non-guarded target positions.
-3. Build one canonical group: dummy transactions, fees, and group ID are fixed
-   before any signature is requested.
+3. Send the draft group to the user signer's `/plan`, which fixes dummy
+   transactions, fees, and group ID before any signature is requested.
 4. Request user-role component signatures from the primary signer for guarded
    targets. This runs the signer-domain gates and may block on operator
    approval.
-5. Request cosigner-role component signatures from the routed cosigner endpoint for
-   guarded targets.
-6. If the group contains non-guarded signer positions, request ordinary
-   signatures over the same canonical bytes.
+5. If the group contains non-guarded signer positions, request ordinary `/sign`
+   signatures over the same canonical bytes; a rejection stops the flow before
+   the cosigner sees the group.
+6. Request cosigner-role component signatures from the routed cosigner endpoint
+   for guarded targets.
 7. Call `/sign/assemble` on the user signer to verify components, pack LogicSig
    arguments, verify passthrough bytes, and return signed transaction bytes.
 8. Route the exact assembled group to algod submission or client-side
@@ -578,11 +583,13 @@ choreography:
    validates grouping, resources, fees, policy, and operator approval without
    changing the bytes. It returns base signature args, runtime args, and an
    assembly receipt bound to those bytes.
-3. Route those exact frozen transactions to the cosigner endpoint and request a
+3. Sign any non-guarded context positions through ordinary `/sign`; the
+   cosigner is asked only after the user side is complete.
+4. Route those exact frozen transactions to the cosigner endpoint and request a
    cosigner-role `/sign/component` signature.
-4. Return the base component, receipt, cosigner signature, and exact group to the
+5. Return the base component, receipt, cosigner signature, and exact group to the
    user signer through `/sign/assemble` with `kind:"bounded-cosigner"`.
-5. The signer verifies all sources, derives declared Merkle proofs, constructs
+6. The signer verifies all sources, derives declared Merkle proofs, constructs
    the metadata-declared argument layout, and returns the executable group.
 
 The first-party client does not ask the cosigner first. It still rejects a group
@@ -990,7 +997,8 @@ Primary packages and files:
   methods.
 - `internal/engine`: guarded and bounded-cosigner transaction orchestration and
   cosigner endpoint resolution.
-- `internal/config`: endpoint registry parsing and bounded v1 read migration.
+- `internal/config`: endpoint registry parsing (`schema_version` 2 only; retired
+  `signer_port`/`local_port`/`token_file` fields are dropped on load).
 - `internal/apshellapp`: endpoint commands and read-only cosigner discovery.
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
 - `lsig/composeddsa`: optional bounded cosigner composition and framework-owned

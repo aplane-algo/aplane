@@ -307,7 +307,6 @@ aplane/
 │   ├── transport/                 # IPC admin client transport
 │   ├── sshtunnel/                 # SSH server and client tunnel support
 │   ├── signerclient/              # Signer REST client
-│   ├── signerapi/                 # Internal aliases for pkg/signerapi DTOs
 │   ├── keytypecatalog/            # Compiled key type visibility catalog
 │   ├── keytypestate/              # Product-store key type state records
 │   ├── templatelibrary/           # Plaintext KeyType Library parsing/install
@@ -332,17 +331,20 @@ aplane/
 ├── lsig/                          # LogicSig provider implementations
 │   ├── all.go                     # Built-in LogicSig registration aggregator
 │   ├── falcon1024/                # Falcon-1024 DSA provider
-│   │   ├── derivation/, family/, keygen/, keys/, signing/
-│   │   └── v1/                    # v1 standard provider, ops, composer, templates
+│   │   ├── derivation/, family/, keygen/, keys/, signerops/, signerreg/
+│   │   └── v1/                    # v1 standard provider, ops, composer, reference vectors
 │   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + cosigner) LogicSig provider
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
 │   ├── signerreg/                 # Built-in signer-side LogicSig provider registration
+│   ├── rotatinghybrid/            # Rotating Falcon-1024 + Ed25519 hybrid stage (signerops/, signerreg/, stage/)
+│   ├── rotatingwots/              # Rotating WOTS hybrid stage (signerops/, signerreg/, stage/)
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources
 ├── pkg/signerapi/                 # Public signer HTTP DTO source of truth used by external SDKs
+├── pkg/policyschema/              # Public v1 policy JSON schema
 └── examples/
     ├── js/                        # JavaScript examples
     └── external_plugins/          # External plugin examples
@@ -352,7 +354,7 @@ aplane/
 
 | Package Type | Location | Rationale |
 |--------------|----------|-----------|
-| **Binary-local UI** | `cmd/<app>/internal/` when present | Only used by that application |
+| **Binary-local UI** | the `cmd/<app>` package itself | Only used by that application |
 | **Shared UI/adapters** | `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui` | Shared or separately testable shell/TUI surfaces |
 | **Shell workflows** | `internal/apshellapp` | Shell-facing behavior shared by text, script, and MCP adapters |
 | **Shared library** | `internal/` | Used by multiple apps or plugins |
@@ -360,8 +362,8 @@ aplane/
 | **Wire DTOs** | `pkg/signerapi` | Public signer HTTP payload types shared with SDKs |
 
 The `internal/` packages include shared infrastructure and shared UI/adapter
-packages used by product binaries. Binary-local UI code may live under
-`cmd/<app>/internal/` when it is private to that binary. Shell command workflow
+packages used by product binaries. Binary-local UI code lives in the
+`cmd/<app>` package itself when it is private to that binary. Shell command workflow
 behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 
 ## Architecture Layers
@@ -370,10 +372,10 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/guarded`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy` |
-| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wots`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
-| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
+| Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/lsigresource`, `lsig/`, `lsig/rotatinghybrid`, `lsig/rotatingwots`, `internal/cosigner`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/stagetable`, `internal/rotatingkey`, `internal/crypto/wots`, `internal/crypto/rotatinghybrid`, `internal/genstore`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerclient`, `internal/checksum`, `internal/manifest`, `internal/productmode` |
 | Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/storeintegration`, `test/registry`, `test/soak`, `internal/testcheckpoint`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
@@ -571,7 +573,7 @@ This layer includes:
 
 Admin transport model:
 
-- the admin protocol is line-delimited JSON over local IPC only; SSH refuses session channels and does not carry it,
+- the admin protocol is line-delimited JSON over local IPC only; SSH does not carry it (`aplane` connections accept only direct-tcpip forwards, and `request-enrollment` session channels accept only the `enroll` exec),
 - every admin message carries an explicit envelope `kind` (`request`, `response`, `notification`),
 - `internal/transport` owns one dispatcher-backed reader per post-auth connection,
 - request/response correlation is by request `id`,
@@ -658,7 +660,7 @@ minisign-signed.
 - Zero or one `apadmin`/`apapprover` admin workflow for the product runtime, connected over local IPC. For remote administration, log in to the signer host and run `apadmin` there.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not an enrolled key or a trusted signer host. SSH host trust is enforced when interactive `apshell` attempts a signer connection or enrollment flow, not before process startup; whether the key is enrolled is learned from the node at connect time. After successful enrollment at the default signer, `apshell` immediately connects with the enrolled key; cosigner enrollment does not replace the primary connection.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured with a trusted endpoint `known_hosts` entry and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-enrollment` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Enrollment is learned from the node when the embedded shell attempts `request-enrollment`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or enrollment client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine the client/signer data paths for local IPC administration. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-enrollment` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Enrollment is learned from the node when the embedded shell attempts `request-enrollment`, `connect`, or startup auto-connect. The embedded admin pane uses local IPC and does not receive the shell's client data or enrollment client. In local cosigner mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. Remote console mode is rejected; SSH into the signer host and run apconsole there. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+arrow (and Shift+Tab) pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
@@ -745,8 +747,8 @@ Current client config includes:
 
 Signer and cosigner routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
-`internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `cosigner` endpoints. Endpoint records carry URL, identity file, and
+`internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and up
+to 12 `cosigner` endpoints. Endpoint records carry URL, identity file, and
 `known_hosts`; no credential, because the enrolled identity key is the
 credential; and no port beyond the one in the URL, because the
 node's SSH server forwards every channel to its own REST listener and the
@@ -769,8 +771,8 @@ cosigner routing is loaded exclusively from `endpoints.yaml`; top-level
 
 Server config includes process-global settings such as:
 
-- REST port,
-- optional SSH server block,
+- the `endpoint` block (loopback `signer_port`, required `ssh` server
+  settings, optional `advertise_url`),
 - IPC socket path,
 - optional passphrase command,
 - optional passphrase command environment,
@@ -778,6 +780,7 @@ Server config includes process-global settings such as:
 - TEAL compile network context token,
 - optional custom transaction genesis-hash to network-token mappings,
 - memory protection requirement,
+- rotating stage-table lookahead (`rotating.stage_horizon`),
 - theme.
 
 Product runtime settings are owned separately by `internal/signerapp/productruntime.RuntimeConfig`:
@@ -1104,9 +1107,14 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationLock` | Product key/template/config/policy mutation serialization |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-archive restore backoff limiter |
+| `Signer.sshRuntimeMu` | SSH runtime and server swaps |
+| `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
+| `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
+| `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for background key holders (stage-table worker), drained on lock |
+| `productruntime.Runtime.rotatingStatusMu` | Rotating alerts and notes published to `/status` and apadmin |
 | `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
@@ -1387,13 +1395,13 @@ The `apshell` command surface is itself a compatibility-sensitive operator surfa
 
 First-class built-in command families include:
 
-- transaction commands: `send`, `sweep`, `sign`, `optin`, `optout`, `keyreg`, `close`, `validate`
+- transaction commands: `send`, `sweep`, `sign`, `optin`, `optout`, `keyreg`, `close`, `validate`, `rotate`
 - information commands: `balance`/`bal`, `holders`, `participation`, `asa`, `help`/`h`, `status`, `accounts`, `info`, `plugins`
 - app commands: `app`
 - alias/set commands: `alias`, `sets`
 - rekey commands: `rekey`, `unrekey`
 - signer/key-management commands: `keys`, `keytypes`, `generate`, `delete`
-- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `clear`/`cls`, `quit`/`exit`/`q`
+- config/toggle/connectivity/session commands: `network`, `write`, `verbose`, `simulate`, `config`, `connect`, `disconnect`, `request-enrollment`, `endpoints`, `cosigner`, `clear`/`cls`, `quit`/`exit`/`q`
 - scripting/plugin commands: `script`, `js`, `jssave`, `jslist`
 
 Command handling constraints:
@@ -1470,9 +1478,11 @@ component choreography, canonicalization occurs only in the preceding `/plan`
 call. `/sign/component` and `/sign/assemble` consume and validate the frozen
 group without adding or repairing transactions.
 
-Three authorization classes:
+Four authorization classes:
 
 - native Ed25519: signs `TX || msgpack(txn)`
+- native Falcon-1024 (`native_pq`): signs `TX || msgpack(txn)` and carries the
+  signature in top-level `SignedTxn.PQsig`
 - DSA-backed LogicSig: signs a derived message, typically the transaction ID
 - generic LogicSig: assembles bytecode plus runtime args, no cryptographic signature
 
@@ -1526,6 +1536,10 @@ ordinary signing policy, approval, and audit behavior.
   bounded-cosigner signed groups.
 - Bounded administration: `POST /sign/bounded-admin` prepares external
   contract-admin partials outside the ordinary send path.
+- Rotating (`rotating1` flow): `POST /sign/rotating/prepare` builds the exact
+  stage-rotation group and `POST /sign/rotating/sign` signs only that prepared
+  group; ordinary signing endpoints refuse rotating accounts with
+  `rotating_signing_required`.
 
 See [ARCH_SIGNING.md](ARCH_SIGNING.md) for the full REST inventory and wire
 contracts, [ARCH_GUARDED.md](ARCH_GUARDED.md) for guarded choreography, and
@@ -1678,12 +1692,14 @@ Primary implementation ownership:
 - `internal/cosigner/canonical`: canonical group decoding and group hashing.
 - `internal/cosigner/verify`: component signature verification primitives
   (signer-side only; client binaries must not link them).
-- `internal/cosigner/keytypes`: cosigner and guarded key-type identifiers,
-  Witness Key ID validation, and DSA mapping.
+- `internal/cosigner/keytypes`: the guarded-account key type and its mapping
+  to the cosigner witness component key type; Witness Key ID derivation and
+  validation live in `internal/witness`.
 - `internal/signerapp/signing`: signer-side component signing, cosigner policy
   evaluation, and assembly.
-- `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
-  `/sign/assemble`.
+- `internal/signerapp/rest`: REST service methods for component signing and
+  assembly (`Service.SignComponents`, `Service.Assemble`);
+  `internal/signerapp/daemon` owns the HTTP routes and handlers.
 - `internal/engine/guarded`: client guarded-send orchestration, cosigner
   component-signature collection, and cosigner endpoint resolution/discovery,
   isolated from the engine facade (it depends on the engine only through a
@@ -1705,12 +1721,6 @@ Primary implementation ownership:
   endpoint envelope handling.
 - `internal/witness`: the canonical public witness reference, which is the
   whole of the cosigner key file a cosigner exports and a signer imports.
-- `lsig/rotatingwots`: the WOTS hybrid rotating stage (program template,
-  stage ops, codec and generator) over `internal/crypto/wots`.
-- `internal/rotatingkey`: rotating key-type identifiers, frozen sizes and
-  timing bounds; `internal/stagetable`: the stage address cache;
-  `internal/signerapp/chainread`: the signer's own authorizer read for the
-  `rotating1` flow.
 - `internal/apadminapp`: operator-side cosigner key export/import,
   explicit-endpoint ID discovery, and bounded read-only unique-route
   verification. Discovery and verification persist neither fetched inventory
@@ -1726,6 +1736,26 @@ Primary implementation ownership:
 Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK
 contracts live in their subject documents; [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md)
 indexes them.
+
+### Rotating Account Ownership
+
+Rotating accounts are not guarded accounts; they use their own `rotating1`
+signing flow. Ownership:
+
+- `lsig/rotatinghybrid`: the Falcon-1024 + Ed25519 hybrid rotating stage
+  (program, signer-side key operations, registration) over
+  `internal/crypto/rotatinghybrid`, which derives the per-stage key seeds.
+- `lsig/rotatingwots`: the WOTS hybrid rotating stage (program template,
+  stage ops, codec and generator) over `internal/crypto/wots`.
+- `internal/rotatingkey`: rotating key-type identifiers, frozen sizes and
+  timing bounds; `internal/stagetable`: the stage address cache;
+  `internal/signerapp/chainread`: the signer's own authorizer read for the
+  `rotating1` flow.
+- `internal/signerapp/rest/rotating.go`: REST service methods
+  `Service.PrepareRotating` and `Service.SignRotating`;
+  `internal/signerapp/daemon` owns the `/sign/rotating/*` routes.
+- `internal/apshellapp/rotate.go`: the shell `rotate` workflow (rotate-only
+  spend and rotating account status).
 
 ## Provider and Algorithm Model
 

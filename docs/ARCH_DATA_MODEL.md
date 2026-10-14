@@ -98,9 +98,10 @@ Important vocabulary:
 
 - identity keystores and key files,
 - product runtime config, policy documents (`default.json` and
-  `policies/<selector>.json`), the enrolled-client registry,
-  and key type state,
+  `policies/<selector>.json`), the enrolled-client registry, the persisted
+  enrollment queue (`.ssh/pending_enrollments.json`), and key type state,
 - encrypted installed templates,
+- rotating stage tables (`stages/<address>.stages`, a rebuildable cache),
 - public cosigner references and witness public metadata sidecars,
 - signer-wide ASA metadata cache,
 - audit log,
@@ -137,7 +138,7 @@ DTOs and contract fixtures.
 | Entity | Scope | Durable authority | Runtime projection | Wire projection | Owner |
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
-| Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
+| Release metadata | Release archive and install root | `release.json`, required in release bundles (a git checkout generates it) and copied to `<install root>/install/release.json` | installer/version provenance; `install.sh` reads the installed copy to gate in-place upgrades on the minimum supported version; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and cosigner connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Live cosigner discovery | Signing operation | authenticated `/keys` responses from configured cosigner endpoints | operation-scoped map keyed by embedded public key hex | guarded and bounded-cosigner orchestration | `internal/engine/guarded` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
@@ -164,15 +165,15 @@ DTOs and contract fixtures.
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or cosigner component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Guarded assembly request | Request-scoped | user and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
-| App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` |
+| App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `pkg/signerapi`, `internal/engine`, `internal/signerapp/signing` |
 | ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/default/*.tar.gz` containing canonical credential `.apb` files and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
-| Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | none | `internal/backup` |
-| Credential backup manifest | Backup archive | `manifest.sealed` (schema `aplane.credential-backup.manifest.v1`) | exact member inventory and source node role | preview/direct restore | `internal/backup` |
+| Backup archive | Signer identity | `backups/default/*.tar.gz` containing `README.md`, credential `apb/<selector>.apb` files, per-key policy `policies/<selector>.apb` files, and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | preview/direct restore | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
+| Rotating stage table | Signer identity, outside generations | `identities/default/stages/<address>.stages`, a rebuildable cache derived from the rotating key's seed | stage address lookup for rotating accounts | none | `internal/stagetable`, `internal/storepaths`, `internal/signerapp/productruntime`, `internal/signerapp/daemon` |
 
 ## Relationship Map
 
@@ -234,6 +235,8 @@ config.yaml
 node.yaml
 audit.log
 .apstore.lock
+aplane.sock               # same-UID IPC socket default; systemd uses /run/apsigner/aplane.sock
+install/release.json      # systemd installs
 cache/
 library/templates/
 backups/default/
@@ -266,13 +269,15 @@ identities/default/
     policies/<selector>.json           # per-key policy, both roles: address on signer nodes, Witness Key ID on cosigner nodes
     policies/<selector>.json.hmac
     node.yaml.hmac
-    cosigners/*.json
     deleted/{keys,keytypes,policies}/
+  generations/.staging-<id>/   # transient during mint/restore; never selectable
   quarantine/generations/<gen-id>/
   config.yaml
   unlock.yaml
   .ssh/authorized_keys
+  .ssh/pending_enrollments.json  # daemon-written enrollment queue
   cosigners/*.json
+  stages/<address>.stages  # rotating stage tables; rebuildable cache, outside generations
   passphrase | passphrase.cred   # optional helper artifacts
 ```
 
@@ -298,9 +303,11 @@ store. Runtime and storage APIs carry no selectable identity locator.
 
 Active policy, role integrity, deleted archive, `keys/`, and `keytypes/`
 namespaces exist only inside the generation authenticated by
-`store-root.enc`. Normal consumers receive a bound active-generation capability
-from `genstore.ResolveStoreRoot`; there is no public pointer or legacy active
-layout.
+`store-root.enc`. The runtime boundary authenticates the root with
+`genstore.ResolveStoreRoot` (or `ResolveStoreRootWithKeyring`) and binds the
+result into `storepaths.Paths`; normal consumers then receive the bound
+active-generation capability from `genstore.Resolve` or `genstore.ResolveActive`.
+There is no public pointer or legacy active layout.
 
 ### Key Files
 
@@ -311,9 +318,11 @@ payload families are:
 | Category | Meaning |
 |----------|---------|
 | `ed25519` | Native Algorand signing key. |
+| `native_pq` | Protocol-native post-quantum account key (key type `falcon1024`). |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
 | `witness` | Signer-custodied witness key (`.cos`) used only through cosigner-role `/sign/component`. |
+| `rotating_lsig` | Rotating hybrid account key (`signing_flow: rotating1`), served only through `/sign/rotating/prepare` and `/sign/rotating/sign`. |
 
 Category selects the managed credential class and filename extension: account
 categories use `.key`; `witness` uses `.cos`. There is no durable payload
@@ -334,7 +343,12 @@ Durable signing metadata includes:
 - stored signing-argument schema in JSON field `signing_args`,
 - optional `bounded_authorization` for bounded1 DSA keys (metadata version 2),
 - optional `template_fingerprint`,
+- `pq_scheme` and `pq_address_salt` for native PQ keys,
+- `lsig_opcode_profile` and `teal_source` where applicable,
+- `genesis_hash` for rotating keys,
 - creation parameters and timestamps.
+
+The full field set is `payloadWireV1` in `internal/keys/payload_codec.go`.
 
 Dedicated guarded account keys are DSA LogicSig keys whose stored bytecode
 embeds a cosigner public key (currently `aplane.falcon1024-cosigner1024.v1`). They
@@ -415,7 +429,7 @@ inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
 visibility metadata, not the assembled list.
 
 Default-enabled compiled providers include signer account providers
-(`ed25519`, `aplane.falcon1024.v1`) and witness providers
+(`ed25519`, protocol-native `falcon1024`, `aplane.falcon1024.v1`) and witness providers
 (`aplane.witness-falcon1024.v1`). Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
@@ -458,7 +472,10 @@ Each HMAC authenticates exact document bytes with a key derived from the
 identity's current term key. Policy load verifies every sidecar before applying
 policy; a missing or mismatched sidecar, a missing `default.json`, or a
 document that fails to decode or whose `role` or `key` does not match, fails
-the node closed. Every policy change mints a new generation.
+the node closed. Each `apply_policy` or `apadmin policy rescue apply|remove`
+change mints a new generation. Offline `apstore policy sign` instead re-signs
+the sidecars of hand-placed documents inside the selected generation without
+minting one.
 
 Every document carries `role` (`signer` or `cosigner`, matching the node) and
 `key` (`default` or the selector the file governs). A key's own file replaces
@@ -512,7 +529,11 @@ transport, and principal, not by a durable session record.
 The audit log is append-only JSONL at `audit.log`. It records process events,
 product-runtime events, signing outcomes, authorization denials, session
 connect/disconnect, key management, backup/restore, client enrollment and
-revocation, and policy-related signing decisions.
+revocation, policy-related signing decisions, rotating releases, store
+initialization, passphrase changes, cosigner-reference changes, generation
+quarantine, abandoned-generation discard, and deleted-archive prune, and
+suppression summaries for repeated authentication failures and cosigner
+rejections.
 
 Audit is observability and accountability data. It is not consulted as authority
 for signing, authorization, or recovery.
@@ -581,12 +602,12 @@ component signature remain authoritative.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]` only; `http://`, `https://`, and `self` are rejected, because a node is reachable only through its SSH server), `identity_file`, and `known_hosts_path`. There is no remote REST port field: the node's SSH server accepts only loopback channel destinations and forwards every channel to its own REST listener, so the client never chooses that port. There is no local tunnel port field either; the signer-role forward binds a free loopback port at connect time. There is no credential field: the client's enrolled SSH key at `identity_file` is its only credential. The retired `signer_port`, `local_port`, and `token_file` keys are dropped on load and gone after the next write. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
 - SSH cosigner endpoints carry HTTP over restricted direct channels on their authenticated SSH connection and never allocate a transient local port. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
-- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with the schema and the portable endpoint URL only; the retired `signer_port` and `local_port` members are rejected as unknown fields. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, credentials, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
+- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. `--url <url>` is an explicit `ssh://host:port` override, for example a forwarded SSH port. The envelope and `advertise_url` validator still admits `https://` and loopback `http://` URLs, but client endpoint records accept only `ssh://`, so `apshell endpoints import` rejects such an envelope. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with the schema and the portable endpoint URL only; the retired `signer_port` and `local_port` members are rejected as unknown fields. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, credentials, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
 - `apshell endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `cosigner` alias for dev co-location. Import is not an ownership or trust proof and does not discover cosigner keys. Enrollment of this client's key at that node is still requested separately with `request-enrollment --endpoint <alias>` (or by guided setup), and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, enroll the client, or establish SSH host trust.
 - `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
 - `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, requests enrollment, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
-- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it submits an enrollment request there. A request the node queues for its operator stops setup with the connection configured and the error `ErrCosignerSetupEnrollmentPending` ("enrollment request is waiting for the cosigner's operator"); setup is rerun once the operator approves. Only when the node answers that the key is already enrolled is the connection tried once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, `enrollment_pending`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
+- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it submits an enrollment request there. A request the node queues for its operator stops setup with the connection configured and the error `ErrCosignerSetupEnrollmentPending` ("enrollment request is waiting for the cosigner's operator"); setup is rerun once the operator approves. Only when the node answers that the key is already enrolled is the connection tried once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, `enrollment_pending`, and `routes`. It fails only for the connection being added: no access, a locked cosigner, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
 - an endpoint record carries no per-destination credential, so creating, re-pointing, or deleting an alias retires nothing on the client. The enrollment a node recorded for this client's key outlives the client's route to it; revoking it is the node operator's action.
 - endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits occur outside endpoint-write critical sections.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
@@ -662,7 +683,8 @@ are rejected.
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
-  `signing_flows`, `cosigner_component_key_types`, and `cosigner_public_keys`.
+  `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
+  `bounded_max_fees` (the bounded authorization `max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
@@ -715,15 +737,16 @@ Plugin process state is runtime-only and owned by the plugin manager.
 - `scripts/`, `plugins.yaml`, and non-bundled plugin catalog directories are
   user-managed client state, while bundled plugin directories are
   installer-managed reserved paths.
-  `plugins.available/algokit-localnet` is refreshed atomically from the release
-  or repo payload on install or installer re-run. Existing `plugins.yaml`
+  `plugins.available/algokit-localnet` is replaced from a staged copy (the old
+  directory is removed, then the staged copy is renamed into place) from the
+  release or repo payload on install or installer re-run. Existing `plugins.yaml`
   activation choices are preserved.
 - local-mode installers write generated launcher `start.sh` and `apconsole.yaml` alongside `apenv.sh` in the local install root; systemd writes the same operator-side `apenv.sh`/`apconsole.yaml` shape under the selected operator root (default `~<installing-user>/aplane/`) while keeping signer data in `/var/lib/apsigner`; these are installer-managed convenience entrypoints/config for `apconsole`, not client data under `APCLIENT_DATA`; generated `apenv.sh` files export `APLANE_INSTALL_ROOT`, and systemd operator env files also export `APLANE_BINDIR`
 - installer path precedence is explicit CLI argument, then `APLANE_INSTALL_ROOT`, then prompts/defaults; systemd binary directory precedence is `--bindir`, then `APLANE_BINDIR`, then `/usr/local/bin`
 - systemd records the selected operator root in `/var/lib/apsigner/install/operator-root`; systemd uninstall removes the operator-side client workspace only when an operator root is explicitly provided or recorded by the installer, and does not guess `$SUDO_USER_HOME/aplane` for deletion
 - existing local-mode installs are probed with the bundled `approbe` helper before binaries are replaced; reachable signer IPC aborts the install, missing/stale/refused IPC is treated as stopped, and unknown probe errors fail closed
 - systemd installs refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service before running the installer against that data directory
-- interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `No`. `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
+- interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `Yes` (`[Y/n]`). `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 
 ### JavaScript And MCP
@@ -827,6 +850,8 @@ Primary projections:
 - `AssemblyResponse`,
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
+- `RotatingPrepareRequest`, `RotatingPrepareResponse`, `RotatingSignRequest`,
+  `RotatingSignResponse`,
 - `MutationReport`,
 - `KeysResponse` / `KeyInfo` (including `signing_flow`,
   `cosigner_component_key_type`, optional `bounded_authorization`),
@@ -840,8 +865,8 @@ Primary projections:
 HTTP authentication resolves the connection's enrolled client key to a
 `client:<fingerprint>` principal, and handlers use the process-owned product
 runtime. Clients route signing on inventory `signing_flow`
-labels (`cosigner1`, `bounded1`, `bounded-cosigner1`, or empty for plain `/sign`)
-and must fail closed on unknown labels.
+labels (`cosigner1`, `bounded1`, `bounded-cosigner1`, `rotating1`, or empty for
+plain `/sign`) and must fail closed on unknown labels.
 
 ### Admin Protocol
 
@@ -896,10 +921,12 @@ projections of shell application results, not a separate backend model.
 ### Signer Startup
 
 1. Load server config.
-2. Load root node role from `node.yaml`.
+2. Acquire the shared store lock (fails if an offline `apstore` mutation holds
+   it exclusively).
 3. Validate that `identities/` has no entry other than a real `default/` directory.
-4. Build the one product `productruntime.Runtime` for `default`.
-5. Start locked, unlock headlessly, or unlock through admin depending on
+4. Load root node role from `node.yaml`.
+5. Build the one product `productruntime.Runtime` for `default`.
+6. Start locked, unlock headlessly, or unlock through admin depending on
    passphrase startup configuration.
 
 ### Unlock And Reload
@@ -912,12 +939,14 @@ projections of shell application results, not a separate backend model.
 4. Verify and load the policy documents (`default.json` and every
    `policies/*.json`) for the node role; any sidecar or decode failure stops
    the load.
-5. Apply node role gates.
-6. Register installed templates.
-7. Scan key files.
-8. Replace key indexes.
-9. Activate key session.
-10. Publish status/keyset notifications.
+5. Register installed templates.
+6. Scan key files.
+7. Fail closed (`ErrGenerationValidation`) on malformed key files or template
+   defects.
+8. Apply the node-role key-type gate to the scanned inventory.
+9. Publish the snapshot, replacing key indexes.
+10. Initialize the key session.
+11. Audit and publish status/keyset notifications.
 
 Template registration precedes key scan so generation/discovery state is
 current. Existing key signing still depends on key files.
@@ -940,10 +969,14 @@ keys.
 1. Client prepares transaction bytes and metadata.
 2. Client classifies effective signers from inventory (`signing_flow` and key
    type). Guarded targets use the guarded lifecycle below; bounded admin-key
-   rekeys use `/sign/bounded-admin`; ordinary targets use `/plan` or `/sign`.
+   rekeys use `/sign/bounded-admin`; rotating accounts use
+   `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary targets use
+   `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`
-   rejects guarded-account and witness key types and admin-key bounded
-   operations that require the bounded-admin path.
+   rejects guarded-account and witness key types, admin-key bounded
+   operations that require the bounded-admin path, cosigner-gated bounded
+   spends (`bounded_cosigner_required`), and rotating accounts
+   (`rotating_signing_required`).
 4. Signer canonicalizes group and computes mutations (bounded planning
    classifies effects after fee pooling).
 5. Signer evaluates policy for signer-controlled slots.
@@ -1005,7 +1038,9 @@ and audits `CLIENT_KEY_REVOKED`; the client must enroll again.
 ### Backup And Restore Lifecycle
 
 Managed backup archives live under `backups/default/`. Each archive contains
-encrypted canonical credential `.apb` payloads and `manifest.sealed` — the
+encrypted canonical credential `.apb` payloads, a `policies/<selector>.apb`
+for each key that has a policy document of its own (the key's v1 policy
+document, encrypted under the export passphrase), and `manifest.sealed`, the
 archive's authenticated description, carrying the member inventory and source
 node role. Opening an archive
 verifies every member against that inventory. The manifest role is a rebuild
@@ -1023,8 +1058,10 @@ Live restore is generation-transaction oriented:
 - an uncommitted attempt leaves the prior generation active; a commit with
   unconfirmed durability blocks signing in recovery mode until
   reconciliation,
-- policy, templates, network mappings, approval defaults, and other
-  configuration are absent from the backup and remain destination-owned.
+- a restored key's own policy document is installed with a destination-signed
+  sidecar; the node `default.json`, templates, network mappings, approval
+  defaults, and other configuration are absent from the backup and remain
+  destination-owned.
 
 `apstore rebuild` is the separate absent-store rescue path and may write active
 credentials directly because no live signer store is being mutated.
@@ -1100,8 +1137,8 @@ These decisions are part of the current data model and contract surface:
 | `cosigners/<name>.json` records are public generation references. | They help the TUI select a cosigner public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | External `.wit` bundles are not signer-managed credentials. | Contract-admin private material stays in standalone custody (`aprekey`); signer and `apstore` never treat `.wit` as `.key`/`.cos`. |
-| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, and `bounded-cosigner1` and fail closed on unknown labels. |
-| `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |
+| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigner1`, `bounded1`, `bounded-cosigner1`, and `rotating1` and fail closed on unknown labels. |
+| Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
 | Plugin manifest schema 2.0 is command-only. | `functions` and `protocol_version` are rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
@@ -1186,16 +1223,16 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Signer data root | authoritative root | `APSIGNER_DATA` | `storepaths.Paths` and startup path resolution | `internal/serverconfig`, `internal/bootstrap/signer`, `internal/storepaths`, installers | Required for signer startup; systemd-managed roots reject manual startup unless explicitly allowed. |
+| Signer data root | authoritative root | `APSIGNER_DATA` | `storepaths.Paths` and startup path resolution | `internal/serverconfig`, `internal/bootstrap/signer`, `internal/storepaths`, installers | Required for signer startup; systemd-managed roots reject manual startup unless the process runs under systemd (`APLANE_SYSTEMD_MANAGED=1` or parent PID 1). |
 | Process config | authoritative config | `APSIGNER_DATA/config.yaml` | `serverconfig.ServerConfig` snapshot | `internal/serverconfig`, `internal/bootstrap/signer`, `internal/signerapp/admin` | Unknown fields reject; mutable writes use process config lock; tests in `internal/serverconfig` and admin settings tests. |
 | Network config | authoritative config section | `config.yaml` `networks.<token>` and `teal_compile_network` | algod map and genesis resolver | `internal/serverconfig`, `internal/signerapp/daemon` | Token syntax and genesis hash collisions fail closed; see `docs/ARCH_NETWORKS.md`. |
 | SSH host key | secret server credential | `.ssh/ssh_host_key` | `sshtunnel.Server` host key | `internal/sshtunnel`, startup/install | Generated locally; clients pin through known-hosts flow. |
-| IPC socket path | runtime endpoint | systemd default `/run/apsigner/aplane.sock`; same-UID local default `<data_dir>/aplane.sock`; explicit override supported | local admin transport listener | `internal/signerapp/daemon`, `internal/signerapp/ipcbind`, `internal/adminproto`, `internal/transport` | Production runtime parent is service-owned `0750`, socket is `0660`, and local admin protocol still requires passphrase auth. |
-| Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/storemut` | Serializes live signer and local `apstore` mutations. |
+| IPC socket path | runtime endpoint | systemd default `/run/apsigner/aplane.sock`; same-UID local default `<data_dir>/aplane.sock`; explicit override supported | local admin transport listener | `internal/adminipc`, `internal/serverconfig`, `internal/signerapp/daemon`, `internal/signerapp/ipcbind`, `internal/adminproto`, `internal/transport` | Production runtime parent is service-owned `0750`, socket is `0660`, and local admin protocol still requires passphrase auth. |
+| Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/daemon`, `cmd/apstore`, `internal/signerapp/policycmd` | Non-blocking advisory flock. The running daemon holds it shared for its lifetime. Offline `apstore` and policy-rescue mutations take it exclusively, and offline rescue reads take it shared. A conflict fails with `ErrBusy`. It keeps offline mutation out while the daemon runs. Live in-daemon mutations are serialized by in-process locks, not by this file. |
 | Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `internal/signerapp/daemon` | Mode `0600`, rotated by size; not authority for signing or recovery. |
 | Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
 | Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
-| Managed backup locker | authoritative backup inventory | `backups/default/*.tar.gz` | backup list/restore preview/direct restore input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
+| Managed backup locker | authoritative backup inventory | `backups/default/*.tar.gz` (or `.tgz`) | backup list/restore preview/direct restore input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
 | Backup import residue | ephemeral validation state | `backups/default/.import-*.part`, `.import-claimed-*.part`, `.import-validation-*/` | unpublished upload, immutable validation claim, and same-filesystem deep-validation workspace | `internal/signerapp/backupadmin` | Owner-private, excluded from managed inventory, removed on normal completion or daemon startup. |
 | Sealed archive manifest | authenticated archive description | `manifest.sealed` inside managed archives | member inventory and source node role | `internal/backup` | Schema `aplane.credential-backup.manifest.v1` sealed under the export passphrase; every open path verifies exact membership. |
 | Deleted archive root | inactive generation storage | selected `generations/<gen-id>/deleted/` | outside active key/template scans | `internal/genstore`, `internal/keys`, `internal/templatestore` | Hard-limited to 4,096 entries and 256 MiB encoded; mutations reserve capacity before publishing; explicit live prune requires confirmation and durable audit intent. |
@@ -1215,10 +1252,11 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Enrolled client registry | authoritative enrollment | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` installed in the product runtime | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` | Daemon-written only; strict option-free parser, duplicates rejected; validated, atomically written, and installed under one lock. Enrollment writes after admin approval; revocation closes the key's SSH connections. |
 | Node default policy | authoritative safety policy | selected generation `default.json` plus `default.json.hmac`, on both node roles | `policyruntime.NodePolicy.Default` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | `aplane.policy.v1` document with `role` matching the node and `key` equal to `default`; seeded from the embedded default at initialize and rebuild; HMAC over exact bytes; missing document, mismatched sidecar, or decode failure fails the node closed. |
 | Per-key policy | authoritative safety policy | selected generation `policies/<selector>.json` plus `.json.hmac`, at most one pair per key, on both node roles | `policyruntime.NodePolicy.Keys[selector]`, resolved by `PolicyFor(selector)` | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | `aplane.policy.v1` document whose signed `key` matches the file name (signing address on signer nodes, Witness Key ID on cosigner nodes); replaces the default wholesale for that key; cosigner documents carry no review or operator-default outcomes; any mismatched sidecar or decode failure fails the node closed. |
-| Policy sidecar | authoritative integrity metadata | selected generation `default.json.hmac`, `policies/<selector>.json.hmac`, and archived `deleted/policies/*.json.hmac` JSON | HMAC verification result | `internal/policy`, `internal/integritysidecar`, `internal/signerapp/policyapply`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics such as `signed_at` are not trust inputs; passphrase rotation re-signs every policy sidecar. |
+| Policy sidecar | authoritative integrity metadata | selected generation `default.json.hmac`, `policies/<selector>.json.hmac`, and archived `deleted/policies/*.json.hmac` JSON | HMAC verification result | `internal/policy`, `internal/integritysidecar`, `internal/signerapp/policyapply`, `internal/storepass`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `integrity_term`, `hmac` (`integritysidecar.Header`); diagnostics such as `policy_sha256` and `signed_at_unix` are not trust inputs; passphrase rotation re-signs every policy sidecar. |
 | Key type state record | authoritative generation state | selected generation `keytypes/<key_type>.json` | enabled/disabled product-store key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | selected generation `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Sealed under the identity's current term key and bound to its key type; disabled state skips registration. |
 | Public cosigner reference | public product catalog | `identities/default/cosigners/<name>.json` | `/keytypes` `cosigner` select options | `internal/cosigner/cosignerrefs`, `internal/signerapp/rest`, `internal/apadminapp` | Non-generational, explicitly imported public metadata only; not endpoint ownership proof. |
+| Stage address table | derivable cache | `identities/default/stages/<address>.stages` (non-generational) | rotating stage lookup | `internal/storepaths`, `internal/stagetable`, `internal/signerapp/productruntime` | Derived from the key seed; never copied by mint, restore, or rollback; a missing table does not refuse signing. |
 
 ### Key Material And Key Metadata
 
@@ -1226,6 +1264,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Managed credential envelope | authoritative secret storage | selected generation `keys/*.key` or `keys/*.cos` encrypted JSON | decrypted canonical payload | `internal/keys`, `internal/keystore` | Category selects the sole filename class; envelope and payload versions checked before use; the term envelope's AAD binds the account address or Witness Key ID, so a credential filed under another name does not decrypt. |
 | Native Ed25519 key | signing authority | `.key` category `ed25519` | address to private key material | `internal/signing`, `internal/keygen`, `internal/keys` | Address derives from key material; private key never leaves signer boundary. |
+| Native PQ key | signing authority | `.key` category `native_pq`, key type `falcon1024` | address to protocol-native Falcon-1024 key material | `internal/signing/falcon1024`, `internal/keys` | Protocol-native post-quantum account; private key never leaves signer boundary. |
+| Rotating account key | signing authority | `.key` category `rotating_lsig` | address, rotating stage material, stage table | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Inventory uses `signing_flow: rotating1`; served only by `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary signing endpoints refuse with `rotating_signing_required`. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-cosigner1024.v1` | local user-role key plus embedded cosigner public key | `lsig/falcon1024_guarded`, `internal/signerapp/signing` | `/sign` rejects; inventory uses `signing_flow: cosigner1`; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
@@ -1238,7 +1278,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
-| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigner1`, `bounded1`, `bounded-cosigner1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
+| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigner1`, `bounded1`, `bounded-cosigner1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
 | LogicSig derivation record | signing authority metadata | key payload `lsig_derivation` and compatibility-only `salt_counter` | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | Current `algod_v13_auto_salt` keys require final TEAL v13+ bytecode and forbid `salt_counter`; compatible manual-counter keys require it. Unknown or internally inconsistent derivation records reject scan/restore/signing. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
 | Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Behavior-only and versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
@@ -1250,8 +1290,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Compiled provider registry | process authority | Go registrations in `lsig/all.go` and provider packages | provider lookup by `key_type` | `internal/lsigprovider`, `internal/keygen`, `internal/signing` | Canonical `key_type` strings are identifiers; display labels are not. |
 | Key type visibility catalog | process metadata | `internal/keytypecatalog` registrations | default-enabled/library-visible/disabled state | `internal/keytypecatalog` | Library-visible providers require a product-store state record before generation. |
-| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary` | Not active by presence alone; new signer-role stores install the bundled Falcon allowlist v1 default; other entries require product-store import/enablement, and invalid entries are reported but not enabled. |
-| YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` | `internal/tealtemplate`, `internal/templatelibrary` | Unknown/missing required fields reject import/install. |
+| Plaintext template library | install source | repo or signer-data `library/templates/*.yaml` | KeyType Library candidates | `internal/templatelibrary`, `internal/defaultkeytypes` | Not active by presence alone; new signer-role stores install the bundled Falcon allowlist v1 default; other entries require product-store import/enablement, and invalid entries are reported but not enabled. |
+| YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` (`template_type` is optional) | `internal/templatestore` (`BaseTemplateSpec`), `internal/templatelibrary`, `lsig/generictemplate`, `lsig/composeddsa` (per-type specs) | Unknown/missing required fields reject import/install. |
 | Template install result | wire/runtime projection | admin request response | install/rollback report | `internal/signerapp/templateadmin`, `internal/protocol` | Low-level template store owns encrypted bytes; admin path owns state record. |
 | `/keytypes` metadata | wire projection | enabled providers/templates plus references | `signerapi.KeyTypesResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Creation params are future-generation metadata; contract fixtures cover shape. |
 | Admin KeyType Library row | UI/wire projection | library source plus product-store state | `protocol.LibraryTemplateInfo` | `internal/adminproto`, `internal/signerapp/signertui` | `compiled_provider` is a wire/display projection, not a template store type. |
@@ -1273,7 +1313,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Plugin activation | authoritative client config | `plugins.yaml` | enabled plugin names | `internal/plugin`, installer | Empty activation list on fresh install; non-bundled choices preserved. |
 | Plugin catalog entry | client executable catalog | `plugins.available/<name>` plus manifest/checksums | plugin manager candidate | `internal/plugin`, installer | Symlinked directories ignored; checksum/manifest validation gates execution. |
 | JavaScript script | user-managed client artifact | `scripts/*.js` | Goja runtime input | `internal/scripting`, `internal/jsapi` | Script files are not signer authority. |
-| Swap proposal | client-local workflow state | `swap/<network>/<proposal_id>.<address>.json` | swap workflow display/action state | `internal/clientstate`, shell swap code | Tombstones suppress locally deleted proposals. |
+| Swap proposal | client-local workflow state | `swap/<network>/<proposal_id>.<address>.json` | swap workflow display/action state | external standalone swap client (not in this repo) | Externally owned path under `APCLIENT_DATA`; this repo does not read or write it. |
 
 ### Client Caches
 
@@ -1314,10 +1354,10 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Authorization action | source-defined authority | `internal/auth/authorizer.go` constants | authorizer known-action vocabulary | `internal/auth`, `internal/authz` | Unknown actions fail closed before grant matching. |
-| Authorization resource | request-scoped model | `auth.Resource` | target type/id/identity | `internal/auth`, HTTP/admin adapters | Empty identity is resolved at boundary or rejected. |
-| Product action allowlist | source-defined authority | `internal/authz` explicit product action set | in-memory authorization decision | `internal/authz` | Known actions are not granted automatically; non-default resource identities fail closed. |
+| Authorization resource | request-scoped model | `auth.Resource` | target type/id | `internal/auth`, HTTP/admin adapters | No identity scoping; the runtime binding is fixed to `default`. |
+| Product action allowlist | source-defined authority | `internal/authz` explicit product action set | in-memory authorization decision | `internal/authz` | Known actions are not granted automatically; the admin principal and the `client` role each have a fixed action set; resources are not consulted. |
 | Authenticated HTTP principal | runtime-only | connection identity (`auth.ConnIdentity`) resolved against the enrolled registry | `auth.Identity` | `internal/auth`, `internal/signerapp/daemon/product_authenticator.go`, `internal/signerapp/daemon/http_auth.go` | The connection's enrolled key authenticates `client:<fingerprint>` with role `client`; runtime binding is independently fixed to `default`. |
-| Admin session context | runtime-only | admin transport auth result | `adminserver.SessionContext` | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` | Bound to target identity; approvals carry approver principal. |
+| Admin session context | runtime-only | admin transport auth result | `adminserver.SessionContext` | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` | Carries session ID, admin/requester/approver principals, auth method, and transport for attribution; approvals carry the approver principal. |
 | Client enrollment request | persisted queue entry | SSH key-only request | `identities/default/.ssh/pending_enrollments.json` (`internal/signerapp/enrollqueue`), announced as admin `client_enrollment_request` | `internal/sshtunnel`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue` | Daemon-written, one entry per key, capped at 16, lapses after 7 days; the SSH acknowledgement is `pending <fingerprint>` and the registry is written only on admin approval. |
 
 ### HTTP Wire Models
@@ -1333,16 +1373,18 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
 | Bounded admin request/partial | wire request/projection | planned admin-key rekey group plus durable metadata | `signerapi.BoundedAdminRequest`, `BoundedAdminPartialResponse` | `pkg/signerapi`, `internal/signerapp/signing` | `POST /sign/bounded-admin`; not interchangeable with `GroupSignResponse`; external admin completion is out of band. |
 | Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is advisory display data only. |
-| Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
-| Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
+| Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
+| Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
-| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/approval` | `/sign` and approval-bearing user/bounded-base component request IDs are live cancel handles; cosigner-component and assembly IDs are correlation only. |
-| Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/keyadmin` | No mnemonic in REST response. |
+| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/daemon`, `internal/signerapp/approval` | `/sign`, `/sign/rotating/sign`, and approval-bearing user/bounded-base component request IDs are live cancel handles; cosigner-component and assembly IDs are correlation only. |
+| Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/rest`, `internal/signerapp/keyadmin` | No mnemonic in REST response. |
 | Admin delete DTO | wire request/projection | address query parameter | delete response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
 | Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `user`, `cosigner`, or `bounded-base`; every original group position is a target or contextual position, and omitted request IDs are generated. |
 | Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Guarded components carry one signature; bounded-base components carry base signatures, validated runtime args, and an assembly receipt. |
-| Assembly request | wire request | group bytes plus discriminated guarded or bounded-cosigner targets | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Guarded targets carry user/cosigner signatures; bounded targets also carry base authorization and a receipt. Mixed guarded/bounded groups remain rejected. |
-| Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
+| Assembly request | wire request | group bytes plus discriminated guarded or bounded-cosigner targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Guarded targets carry user/cosigner signatures; bounded targets also carry base authorization and a receipt. `/sign/assemble` accepts guarded and bounded-cosigner targets in one request; mixed kinds are rejected per `/sign/component` request and by client guarded orchestration (`internal/engine/guarded`). |
+| Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
+| Rotating prepare request/response | wire request/projection | rotating account transaction intent | `signerapi.RotatingPrepareRequest`, `RotatingPrepareResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/prepare`; contract fixtures `rotating_prepare_{request,response}.json`. |
+| Rotating sign request/response | wire request/projection | prepared rotating group | `signerapi.RotatingSignRequest`, `RotatingSignResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/sign`; live request IDs are cancel handles; contract fixtures `rotating_sign_{request,response}.json`. |
 
 ### Admin IPC Wire Models
 
@@ -1364,7 +1406,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Prepared client group | request-scoped model | shell/script/plugin/app input | `engine.PreparedGroup` and related request plans | `internal/engine`, `internal/apshellapp` | Not authorization proof; submitted to signer for canonicalization. |
-| App call metadata | request-scoped display metadata | caller/appspec input | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` | Approval rendering only; not signing authority. |
+| App call metadata | request-scoped display metadata | caller/appspec input | `app_call_info` | `pkg/signerapi`, `internal/engine`, `internal/signerapp/signing` | Approval rendering only; not signing authority. |
 | Canonical signer group | request-scoped authority for signing | decoded request transaction bytes | planned group, dummies, fees, group ID | `internal/signerapp/signing` | Genesis hash consistency, group size, dummy budget, policy validation. |
 | Sign request live entry | runtime-only | active synchronous request | approval registry entry by request ID | `internal/signerapp/approval` | Not durable; cancelable only while live. |
 | Approval description | display projection | decoded transaction/group facts | admin prompt text and audit context | `internal/signerapp/txdesc` | Presentation-only; must not introduce signing inputs. |
@@ -1389,7 +1431,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Backup archive | authoritative packaged backup | `backups/default/*.tar.gz` | archive metadata and restore source | `internal/backup` | Tarball is packaging; `.apb` is cryptographic unit. |
-| `.apb` file | encrypted backup payload | standalone encryption envelope | complete canonical managed credential | `internal/backup` | Envelope and payload versions checked; internal bundle wrappers and unsupported versions reject. |
+| `.apb` file | encrypted backup payload | standalone encryption envelope | one canonical managed credential (`apb/`) or one per-key policy document (`policies/`) | `internal/backup` | Envelope and payload versions checked; internal bundle wrappers and unsupported versions reject. |
 | Restore preview | request-scoped runtime model | archive plus export passphrase | credential identities, destination presence, and errors | `internal/backup`, `internal/signerapp/backupadmin` | No mutation during preview. |
 | Direct restore set | request-scoped secret model | authenticated archive credentials in memory | one staged generation transaction | `internal/backup`, `internal/signerapp/backupadmin` | Complete validation precedes any write; secrets are zeroed after use. |
 
@@ -1397,7 +1439,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `internal/apadminapp`, `internal/config`, `internal/apshellapp` | No alias, role, credential, known hosts, private key, or cosigner inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
+| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `internal/endpointrefs` (schema/parse/portable URL rules), `internal/apadminapp` (export), `internal/apshellapp` (import), `internal/serverconfig` (`advertise_url` validation), `internal/config` (registry written by import) | No alias, role, credential, known hosts, private key, or cosigner inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
 | Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | cosigner key export; signer cosigner reference import or contract-admin enrollment | `internal/witness`, `internal/apadminapp`, `internal/signerapp/signertui`, `internal/cosigner/cosignerrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. The cosigner's address is handed to clients separately for `endpoints add`. |
 | Public cosigner reference record | public signer catalog | JSON `schema:"aplane.cosigner-public-key-ref.v2"` | generation select option | `internal/cosigner/cosignerrefs` | Stored under `cosigners/`; populated by explicit operator import. Only the v2 record is read. |
 | Bounded admin ceremony request | short-lived handoff | `*.apbounded-admin-request` schema `aplane.bounded-admin-request.v2` | offline `aprekey sign` input | `internal/boundedadmin/protocol`, `internal/apboundedadminapp`, `cmd/aprekey` | Strict JSON; size-bounded; request-hash binds partial, optional cosigner authorization, and network context; mode `0600`, no overwrite. |
@@ -1407,8 +1449,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Release metadata | public provenance | release archive `release.json`, copied to `<install-root>/install/release.json` or systemd `<APSIGNER_DATA>/install/release.json` when present | version, commit, and build timestamp for diagnostics and future upgrade checks | `.github/workflows/release.yml`, `Makefile release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` | Schema `schema_version:1`; public metadata only, not signing, policy, endpoint trust, or upgrade authority by itself. |
-| Signer service principal metadata | root-controlled install state | systemd `<APSIGNER_DATA>/install/service-principal.json` | numeric service uid/gid used by permission audit, migration, and post-root-mutation normalization | `installer/scripts/systemd-setup.sh`, `internal/storeperm` | Schema `schema_version:1`; refreshed before migration and required fail-closed so a damaged store root cannot nominate its own repair owner. |
+| Release metadata | public provenance | release archive `release.json` (required in release archives), copied to `<install-root>/install/release.json` or systemd `<APSIGNER_DATA>/install/release.json` | version, commit, and build timestamp; the installed copy gates in-place upgrades (minimum supported version check, overridable by force) | `.github/workflows/release.yml`, `Makefile release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` | Schema `schema_version:1`; public metadata only, not signing, policy, or endpoint-trust authority. |
+| Signer service principal metadata | root-controlled install state | systemd `<APSIGNER_DATA>/install/service-principal.json` | numeric service uid/gid used by permission audit, migration, and post-root-mutation normalization | `installer/scripts/systemd-setup.sh`, `cmd/apstore`, `internal/storeperm` | Schema `schema_version:1`; written by `apstore permissions convert-managed` (invoked by `systemd-setup.sh`) after migration and before the `.prod` marker; later permission audit/migration requires it and fails closed, so a damaged store root cannot nominate its own repair owner. |
 
 ### Audit And Observability
 
@@ -1417,7 +1459,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Audit event | authoritative audit record | JSONL line in `audit.log` | operational/accountability history | `internal/signerapp/audit` | Event fields are not signing inputs. |
 | Cosigner component audit projection | audit projection | component-signing outcome | `SIGN_APPROVED`/`SIGN_REJECTED` rows | `internal/signerapp/signing`, `internal/signerapp/audit` | Uses sign events; Witness Key ID is `txn_auth`, decoded sender is `txn_sender`. |
 | Policy rule ID | stable identifier | policy constants and dynamic route grammar | audit/prompt/error context | `internal/policy` | Typos should be caught by tests; route IDs are persistent audit identifiers. |
-| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; only live `/sign` IDs are cancelable in MVP. |
+| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; live `/sign`, `/sign/rotating/sign`, and approval-bearing user/bounded-base `/sign/component` IDs are cancelable; cosigner-only component and assembly IDs are correlation only. |
 | Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/productruntime`, `internal/engine` | Process-local; must not be compared across restarts. |
 
 ### Representative Test And Fixture Index

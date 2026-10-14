@@ -137,12 +137,8 @@ Algorand mappings with configured custom mappings. Config load fails closed on:
 - duplicate hashes mapped to different tokens,
 - duplicate custom tokens mapped to different hashes.
 
-Managed backups project only the validated custom genesis-hash-to-network
-bindings into the archive's sealed manifest. Built-in mappings are not
-duplicated, and algod URLs, tokens, endpoints, and the rest of the network
-connection configuration are excluded. Recovery treats this projection as
-operator context only; it never imports the mappings or changes the
-destination resolver.
+Backups carry no network mappings or connection configuration; a restored
+key resolves networks with the destination's resolver.
 
 ## Transaction Planning
 
@@ -248,7 +244,7 @@ Primary files:
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,
 - `internal/policy/lint.go` - policy lookup by transaction genesis hash,
 - `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
-- `internal/signerapp/admin/service.go` - target-aware admin policy service and policy snapshot/validation/replacement,
+- `internal/signerapp/admin/policy.go` - admin policy read/check/apply service,
 - `internal/protocol/messages.go` - whole-policy admin IPC wire fields,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.
 

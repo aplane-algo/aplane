@@ -38,7 +38,7 @@ enforcement, store serialization, and audit emission.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the principal/grant authorization model that gates these messages, see [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
-This contract is consumed by `apadmin` (TUI and test mode), `apapprover`, `appass`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, error codes, and per-client capabilities.
+This contract is consumed by `apadmin` (TUI, batch commands, and test mode), `apapprover`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, error codes, and per-client capabilities.
 
 ### Envelope
 
@@ -59,6 +59,12 @@ can begin, for example while another pre-auth admin client is already pending.
 The `apadmin` TUI may see `client_exists` before auth for displacement
 negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
+
+Before authenticating, a client may answer `auth_required` with
+`initialize_store` instead of `auth`. The server handles that one request
+without a passphrase-authenticated session, only over local IPC, and then ends
+the bootstrap exchange. `initialize_store` is not part of the authenticated
+dispatch table: after auth it is rejected as `unknown_message_type`.
 
 Admin sessions bind directly to the one product runtime. The v5 auth shape has
 no runtime selector. Strict known-field decoding rejects unknown fields before
@@ -95,7 +101,9 @@ Transport notes:
   pre-auth `client_exists`/`displace_confirm` exchange, but a later successful
   `auth_only` handshake remains non-owning and does not replace the owner,
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
-- admin frames are bounded to 4 MiB before JSON decoding on both transports.
+- admin frames are bounded to 4 MiB (`protocol.MaxAdminMessageBytes`) before JSON
+  decoding; both the server and client readers enforce it, and an oversized frame
+  closes the connection.
 
 ### Implementation Boundary
 
@@ -311,7 +319,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, optional `rotation_pending`, `code`, `error`; local IPC only, rejects identical current/new passphrases, appends and completes a durable key-term rotation for live encrypted artifacts and integrity sidecars, reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `node_role_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning
 - `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
   signer raised on its own, currently rotating account alerts; each `status`
   message replaces the previous set, and the signer pushes a new `status`
@@ -357,7 +365,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
-- `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, `display_teal`, `code`, `error`
+- `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, optional `public_key_hex`, `display_teal`, `code`, `error`
 - `key_details.parameters` for guarded account keys projects the embedded cosigner verifier as `Cosigner: <Witness Key ID>` and does not expose the raw `cosigner_public_key` parameter
 - `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational, version-aware comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing. The fingerprint is behavior-only and versioned, so only a same-version, different-hash pair is a `conflict`; a different-version or malformed comparison is `unavailable` (benign), never a `conflict`
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
@@ -376,7 +384,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 #### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted on every admin session because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; available to any authenticated controlling (non-`auth_only`) session with an unlocked runtime and the `templates.view` grant; it needs no stronger grant because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions
@@ -384,7 +392,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC admin sessions
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
-- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `cosigner_component_key_type` so `apadmin` can filter enrolled public cosigner references for guarded-account generation without changing the public HTTP/SDK DTO
+- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`; both surfaces carry optional `cosigner_component_key_type`, which `apadmin` uses to filter enrolled public cosigner references for guarded-account generation
 
 #### Signing Approval and Client Enrollment
 
@@ -443,19 +451,20 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
   authorized bound session while the signer store is locked because it can only
   remove unpublished transfer residue.
 - `read_backup_chunk`: `file_name`, `offset` -> `backup_chunk`: `file_name`,
-  `offset`, at most 256 KiB of `data`, and `eof`. This lets an operator export
+  `offset`, at most 256 KiB of `data`, `eof`, `success`, optional `code`, and
+  `error`. This lets an operator export
   a managed archive without filesystem access to the private signer store.
   It requires the signer store to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, `keys[]`, `errors[]`, optional
   `code`, `error`. Each key reports address, key type, destination
-  presence, and validation error. Preview never mutates the store and, like
+  presence, `has_policy`, and validation error. Preview never mutates the store and, like
   `list_backups`, is available in unlocked or recovery state.
 - `restore_backup`: `archive_path`, optional `addresses[]`, sensitive
   `export_passphrase`, optional `replace_existing` ->
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
   generation ID, `restored[]`, `identical[]`, `conflicts[]`, `key_count`,
-  `code`, `error`. The server validates the whole set, then publishes one
+  optional `policies_restored[]`, `code`, `error`. The server validates the whole set, then publishes one
   `credential-restore` generation.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
   ID, generation ID, key count, `code`, `error`. It applies only to the
@@ -546,7 +555,8 @@ Policy selection semantics:
   unsealed parent, `code`, `error`; this is read-only inspection and never
   reconciles or prunes. Each quarantine record includes the generation and
   parent IDs, manifest and live-inventory digests, at-mint inventory-match
-  classification, entry count, and encoded byte count. If a store mutation is
+  classification, entry count, encoded byte count, and `term_verified`,
+  `term_unavailable`, and `term_failed` counts. If a store mutation is
   active, the request returns retryable `store_busy` rather than waiting for
   the ordinary IPC timeout.
 - `prune_generation_quarantine`: `generation_ids[]`, `confirm` ->
@@ -662,8 +672,11 @@ Consumers should branch on message `type` and `code` first, and use `error` for 
 Specific admin result messages may define additional stable result-local codes,
 including `key_type_in_use` for template disable/removal or compiled-provider disable and
 `restore_rate_limited` for managed restore preview/restore throttling. The Go
-source of truth for these result-local codes is `internal/protocol`; producers
-and CLI consumers must share those constants instead of maintaining parallel
+source of truth for these result-local codes is `internal/protocol`, except the
+policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
+and `identity_locked`), which `internal/signerapp/policyapply` and
+`internal/signerapp/admin` define; producers and CLI consumers must share those
+constants instead of maintaining parallel
 string lists. See the corresponding payload sections and contract tests before
 treating the central protocol list as exhaustive. Consumers should dispatch on
 `code` when present and treat prose `error` as display text or untyped fallback,
@@ -682,22 +695,28 @@ signer; the session cannot resume administrative work in-process.
 
 ### Admin Client Capabilities
 
-| Capability | `apadmin` TUI | `apadmin` test mode | `apapprover` | `appass` |
-|-----------|----------------|------------------|--------------|----------|
-| Auth handshake | yes | yes | yes | no |
-| Displacement negotiation | yes | automatic | automatic | no |
-| Unlock | yes | yes | no | no |
-| Key management | yes | partial | no | no |
-| Managed backup/restore | yes | no | no | no |
-| Signing approval | yes | no | yes | no |
-| Client enrollment approval | yes | no | yes | no |
-| Enrolled-client list and revocation | yes | no | no | no |
-| Admin settings | yes | no | no | no |
-| Async notifications | yes | limited | limited | no |
+| Capability | `apadmin` TUI | `apadmin` batch commands | `apadmin` test mode | `apapprover` | `appass` |
+|-----------|----------------|--------------------------|------------------|--------------|----------|
+| Auth handshake | yes | yes | yes | yes | no |
+| Displacement negotiation | yes | automatic | automatic | automatic | no |
+| Unlock | yes | no | yes | no | no |
+| Key management | yes | no | partial | no | no |
+| Managed backup/restore | yes | yes (`backup`, `restore`, `changepass`) | no | no | no |
+| Signing approval | yes | no | no | yes | no |
+| Client enrollment approval | yes | yes (`clients`) | no | yes | no |
+| Enrolled-client list, revocation, and import | yes | yes (`clients`) | no | no | no |
+| Key-type, template, cosigner-reference, generation, and endpoint administration | yes | yes (`keytype`, `template`, `cosigner`, `generations`, `endpoint`) | no | no | no |
+| Policy view and apply | yes | yes (`policy`) | no | no | no |
+| Admin settings | yes | no | no | no | no |
+| Async notifications | yes | no | limited | limited | no |
 
 `automatic` means the client confirms displacement through the generic
 `internal/transport` handshake, which answers `client_exists` with
 `displace_confirm` without asking the operator; only the TUI asks first.
+`apadmin` batch commands are the production subcommands defined in
+`cmd/apadmin/command_catalog.go` and implemented in `internal/apadminapp`; they
+are distinct from test mode. Key generate/import/delete and unlock are available
+non-interactively only in test mode.
 `appass` edits config offline; it is outside the live IPC surface.
 
 These client capabilities describe the one product surface. Backend admin
@@ -738,7 +757,7 @@ The TUI follows the standard Bubble Tea pattern:
 |-------|-------|
 | Model definition | `model.go` (Model struct, ViewState, initialization) |
 | Async messages | `messages.go` |
-| IPC / transport | `ipc_client.go`, `connector.go`, `client_home.go` |
+| IPC / transport | `ipc_client.go`, `connector.go` |
 | Update dispatch | `update.go` plus per-view `update_*.go` files |
 | View dispatch | `view.go` plus per-view `view_*.go` files |
 | Activity tracking | `activity.go` |
@@ -746,8 +765,8 @@ The TUI follows the standard Bubble Tea pattern:
 
 Per-view `update_*.go` and `view_*.go` files cover authentication, the key list,
 admin panel, KeyType Library, signing approval, client enrollment
-approval, the enrolled-client list with revocation, generate / import / export /
-delete forms, and managed backup restore. The `view.go` dispatcher selects the renderer by current
+approval, the enrolled-client list with revocation, generate / import /
+delete forms, cosigner public-key export, and managed backup restore. The `view.go` dispatcher selects the renderer by current
 `ViewState`; the `update.go` dispatcher selects the handler the same way.
 
 Popup panels use a shared overflow viewport instead of truncating content.
@@ -811,7 +830,11 @@ identifies the current screen. The enum has families for:
   client is waiting on the answer
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
-  details, import, removal confirmation, and removal progress)
+  details, import, removal confirmation, and removal progress), the cosigner
+  picker for guarded generation (`ViewCosignerPicker`), cosigner generate-type
+  selection (`ViewCosignerGenerateType`), and cosigner public export
+  (`ViewCosignerExportPath`, `ViewCosignerExporting`, `ViewCosignerExportResult`,
+  `ViewCosignerExportJSON`)
 - Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
 - Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
 - Store recovery screen (`ViewStoreRecovery`): reconcile, direct credential restore, or rollback of the latest
@@ -821,7 +844,9 @@ identifies the current screen. The enum has families for:
   until the visible store validates cleanly. The client preserves the server's three-way runtime state
   (`locked` / `recovery` / `unlocked`); recovery is never rendered as
   unlocked.
-- Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewDisplaceConfirm`)
+- Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewLockConfirm`, `ViewDisplaceConfirm`)
+- Policies (`ViewPolicies`, `ViewPolicyDocument`, `ViewPolicyApplyForm`,
+  `ViewPolicyApplyReview`, `ViewPolicyEdit`)
 - Settings panel (`ViewAdminPanel`)
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
 - `ViewError`

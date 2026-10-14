@@ -253,7 +253,7 @@ collapsed into one flat key-type hierarchy.
 
 | Type | Account authority | Signer representation |
 |---|---|---|
-| **Native** | A protocol-native account signature, currently Algorand Ed25519. | Encrypted signer `.key` with native private material. |
+| **Native** | A protocol-native account signature: Algorand Ed25519 (`ed25519`) or native Falcon-1024 (`falcon1024`, consensus v42+). | Encrypted signer `.key` with native private material. |
 | **DSA LogicSig** | A LogicSig verifies one or more digital signatures and may enforce additional transaction policy. | Encrypted signer `.key` with DSA private material, compiled bytecode, and signing metadata. |
 | **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing final bytecode, parameters, derivation metadata, and signing metadata but no private signing material. |
 
@@ -327,15 +327,19 @@ Examples of the composed ontology:
 
 | Key Type | Key-type family | Category | Description |
 |----------|--------|----------|-------------|
+| `ed25519` | n/a | `ed25519` | Native Algorand Ed25519 account; not a LogicSig |
+| `falcon1024` | n/a | `native_pq` | Native protocol Falcon-1024 account (scheme `f1`, consensus v42+); not a LogicSig |
 | `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
 | `aplane.falcon1024-cosigner1024.v1` | `aplane.falcon1024-cosigner1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 cosigner component signatures |
-| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
+| `aplane.falcon1024-allowlist-alock.v1` | `falcon1024-allowlist-alock` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, fixed recipient/asset/amount allowlist, external Falcon contract-admin rekey |
 | `aplane.corridor.v1` | `corridor` | `dsa_lsig` | Optional bounded1 composed template: Falcon spending, framework Merkle recipient policy, cosigner-gated spend, and external-admin pure rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled in new signer-role stores; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
+| `aplane.rotating-hybrid.v1` | `aplane.rotating-hybrid` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-wots-hybrid.v1` | `aplane.rotating-wots-hybrid` | `rotating_lsig` | Library-visible rotating account: WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 
 ## The three axes
 
@@ -412,15 +416,15 @@ identity live in `internal/witness`; guarded-account role mapping lives in
 
 **Invariant:** these classifiers import no registry, provider, or
 algorithm-family package. This is load-bearing, not incidental.
-Classification is consumed from ~18 call sites across both the signer and the
-client, many of which run with **no provider registered** — e.g.
-`internal/config/client_endpoints.go` (client-side), `internal/keystore/file.go`,
+Classification is consumed from about 20 call-site files across both the signer and the
+client, many of which run with **no provider registered**, e.g.
+`internal/cosigner/cosignerrefs/cosignerrefs.go`, `internal/keystore/file.go`,
 and `internal/cache/signer.go`. Because the answer comes from the string alone,
 it is identical in every binary and needs no registration step.
 
-(`internal/witness` declares the frozen Falcon-1024 key/signature sizes as
-literals for the same reason, with a consistency test against
-`lsig/falcon1024/family`.)
+(`internal/witness` takes the frozen Falcon-1024 key/signature sizes from the
+leaf `internal/falconparams` (checked against upstream) for the same reason,
+with a consistency test against `lsig/falcon1024/family`.)
 
 ### Behave — do the operation
 
@@ -582,7 +586,8 @@ derivation helpers. `internal/lsigresource` owns consensus resource profiles
 and the pure group-size solver. Shared resource-dummy construction lives in
 `internal/signing/`; final group and fee planning lives in
 `internal/signerapp/signing/`.
-The single registration entry point is `lsig/all.go`.
+Client registration enters through `lsig/all.go` (`lsig.RegisterClient`). Signer
+registration enters through `lsig/signerreg.RegisterSigner`.
 
 ### Package summary
 
@@ -610,7 +615,15 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
 | `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-cosigner1024.v1`) |
-| `internal/boundedadmin` | External Falcon contract-admin identity, transcript, artifact, and ceremony validation |
+| `internal/boundedadmin/{message,program,protocol,authorization,helpersign}` | External Falcon contract-admin transcript, program validation, request/response protocol, and completion |
+| `internal/witness` | Role-neutral witness-key vocabulary and identity (key IDs, sizes, public references) |
+| `internal/witness/artifact` | Standalone witness-key custody artifact format |
+| `internal/falconparams` | Client-safe Falcon-1024 size constants shared by LogicSig, witness, and signer metadata |
+| `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
+| `internal/merkleallowlist` | Merkle recipient allowlist construction and proofs used by bounded templates |
+| `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
+| `lsig/rotatinghybrid` | Rotating Falcon-1024 + Ed25519 key type: stage program, signer-side operations, and signer registration |
+| `lsig/rotatingwots` | Rotating WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
@@ -625,6 +638,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
 | `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
+| `rotating_lsig` | `aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy
 
@@ -651,12 +665,13 @@ LSigProvider (base interface - ALL providers implement this)
           ▼
 SigningProvider (extends LSigProvider)
 ├── CryptoSignatureSize() int
-└── DeriveLsig(publicKey, params) (bytecode, address, error)
+└── DeriveLsig(ctx, publicKey, params) (bytecode, address, error)
           │
           ▼
 MnemonicProvider (extends SigningProvider)
 ├── MnemonicScheme() string         "bip39", "algorand"
-└── MnemonicWordCount() int         24, 25
+├── MnemonicWordCount() int         24, 25
+└── SupportsMnemonicImport() bool
 ```
 
 Private-key key generation, signing, and mnemonic conversion are deliberately
@@ -671,15 +686,17 @@ The `lsigprovider` package is the **single source of truth** for all LogicSig pr
 ```go
 // Registration - called from provider packages
 func Register(p LSigProvider) {
-    keyType := normalize(p.KeyType())
-    providers.Set(keyType, p)
+    registerMu.Lock()
+    defer registerMu.Unlock()
+
+    // Validates key type, family, version, and category; returns the normalized key type
+    keyType := validateProviderContract(p)
+    if !providers.Set(keyType, p) {
+        panic("duplicate LSig provider registration for key type: " + keyType)
+    }
 
     // Apply stored algod client for late-registered providers
-    if storedClient != nil {
-        if configurable, ok := p.(AlgodConfigurable); ok {
-            configurable.SetAlgodClient(storedClient)
-        }
-    }
+    applyStoredClientIfNeeded(p)
 }
 
 // Lookup - returns nil if not found
@@ -730,12 +747,18 @@ lsig.RegisterClient()
     │       └── ... (metadata, address derivation)
     ├── keytypecatalog.Register(aplane.falcon1024-cosigner1024.v1, library)
     │   └── falcon1024guarded.RegisterClient()
-    └── keytypecatalog.Register(aplane.ed25519.v1, library)
-        └── ed25519lsig.RegisterClient()
+    ├── keytypecatalog.Register(aplane.ed25519.v1, library)
+    │   └── ed25519lsig.RegisterClient()
+    ├── keytypecatalog.Register(aplane.rotating-hybrid.v1, library)
+    │   └── (no client provider)
+    └── keytypecatalog.Register(aplane.rotating-wots-hybrid.v1, library)
+        └── (no client provider)
 
 lsig/signerreg.RegisterSigner()
     ├── lsig.RegisterClient()
-    └── family signerreg RegisterSigner() calls add signing, keygen, and mnemonic handlers
+    ├── family signerreg RegisterSigner() calls add signing, keygen, and mnemonic handlers
+    └── rotating signerreg Register() calls add the rotating key file codec,
+        stage cryptography, and generator (outside lsigprovider)
 ```
 
 Runtime templates (from keystore) are loaded after unlock:
@@ -831,7 +854,7 @@ ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
     FamilyName:  "aplane.falcon1024",
     Version:     1,
     DisplayName: "Falcon-1024 Hashlock",
-    Base:        FalconBase,
+    Base:        family.FalconBase, // nil also defaults to family.FalconBase
     Params: []lsigprovider.ParameterDef{{
         Name: "hash", Type: "bytes", Required: true, MaxLength: 64,
         InputModes: []lsigprovider.InputMode{
@@ -965,9 +988,17 @@ or provider registration.
 
 - `strict` mode declares `template_variables` and uses `$name` references that
   render through generated TEAL constant blocks.
-- `generated` mode is reserved for bounded source generation such as
-  `{{range @recipients}} ... {{.}} ... {{end}}`; arbitrary Go-template syntax
-  is rejected.
+- `generated` mode uses the restricted `@variable` scalar substitution plus
+  `{{range @list}} ... {{.}} ... {{end}}` list-expansion grammar; arbitrary
+  Go-template syntax is rejected and `template_variables` must not be declared.
+  It is available to generic (schema v1) and composed (schema v1 or v2)
+  templates, e.g. `aplane.htlc.v1` and the Falcon allowlist templates; it is not
+  limited to bounded templates.
+- `legacy` (schema v1 only) renders through the same `@variable` substitution
+  and list-expansion path as `generated`, but without generated mode's up-front
+  list-syntax validation; it is the effective mode for already-stored schema-v1
+  templates with no `template_mode`. Template import requires an explicit mode,
+  and schema v2 requires `strict` or `generated`.
 
 #### Generic templates (`lsig/generictemplate`)
 
@@ -1063,7 +1094,8 @@ parser/provider builder.
 
 Most DSA providers produce a fixed argument list from one key. Bounded1 starts
 with that base layout, then statically orders signer-derived Layer-3 arguments,
-caller runtime Layer-3 arguments, and an optional final contract-admin slot.
+caller runtime Layer-3 arguments, an optional cosigner signature slot
+(bounded-cosigner1 profiles), and an optional final contract-admin slot.
 Each slot records its source, maximum size, and spend/spending-rekey/admin-rekey
 requirement. Interior slots forbidden on a selected path are explicit empty byte
 strings; unused trailing slots may be omitted. Callers cannot populate derived

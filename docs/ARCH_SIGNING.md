@@ -40,13 +40,14 @@ scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ## Overview
 
-APlane separates group construction from cryptographic authorization. The server first canonicalizes the group shape (group ID, fees, dummy budget), then authorizes each entry according to its key type: native signature, DSA-backed LogicSig, or pure-TEAL LogicSig assembly.
+APlane separates group construction from cryptographic authorization. The server first canonicalizes the group shape (group ID, fees, dummy budget), then authorizes each entry according to its key type: native Ed25519 signature, native Falcon-1024 authorization, DSA-backed LogicSig, or pure-TEAL LogicSig assembly.
 
-APlane supports three fundamentally different authorization mechanisms:
+APlane supports four fundamentally different authorization mechanisms:
 
 | Type | Example | Where Signature Goes | Server Handles |
 |------|---------|---------------------|----------------|
 | **Ed25519** | Native Algorand keys | `SignedTxn.Sig` | Derive standard signing bytes and produce native Ed25519 signature |
+| **Native Falcon-1024** | `falcon1024` (`authorization_kind:"native_pq"`) | `SignedTxn.PQsig` | Authorize the structured transaction with Falcon over the standard signing bytes; no LogicSig |
 | **LogicSig DSA** | Falcon-1024 | `LogicSig.Args[0]` | Derive DSA message (transaction ID), sign it, assemble LogicSig |
 | **Generic LogicSig** | Timelock, Hashlock | No signature | Assemble LogicSig bytecode and canonical runtime args |
 
@@ -91,6 +92,7 @@ Three distinct byte representations appear in the signing flow:
 | Key Type | Message Derivation | Size | On-Chain Verification |
 |----------|-------------------|------|----------------------|
 | **Ed25519** | `"TX"` + msgpack(txn) | Variable | Standard Algorand native signature verification |
+| **Native Falcon-1024** (`falcon1024`) | `"TX"` + msgpack(txn) | Variable | Protocol-native `PQsig` verification |
 | **Falcon-1024 DSA** | SHA512/256(`"TX"` + msgpack(txn)) = transaction ID | 32 bytes | `txn TxID` in TEAL |
 | **Generic LogicSig** | N/A (no signature) | - | TEAL conditions only |
 
@@ -116,7 +118,7 @@ On-chain TEAL verification:
 ```teal
 txn TxID          // Push transaction ID (32 bytes)
 arg 0             // Push signature (variable, at most 1,423 bytes)
-byte 0x<pubkey>   // Push public key (1793 bytes)
+pushbytes 0x<pubkey> // Push public key (1793 bytes)
 falcon_verify     // Verify: returns 1 if valid
 ```
 
@@ -214,6 +216,7 @@ type SignRequest struct {
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
+    PQScheme      string                 `json:"pq_scheme,omitempty"`      // Foreign-only native-PQ scheme hint ("f1"); exclusive with lsig_resources
     AppCallInfo   *AppCallInfo            `json:"app_call_info,omitempty"`  // Optional approval metadata
 
     // Passthrough mode field
@@ -258,7 +261,7 @@ Aligning the grammar across `/plan` and `/sign` lets clients send one canonical 
 type GroupSignResponse struct {
     Signed    []string        `json:"signed,omitempty"`    // Signed transactions (msgpack, hex)
     Mutations *MutationReport `json:"mutations,omitempty"` // Server modifications (nil if none)
-    Error     string          `json:"error,omitempty"`
+    Error     string          `json:"error,omitempty"`     // Legacy; never set (failures use ErrorResponse)
 }
 
 type MutationReport struct {
@@ -306,12 +309,7 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
    - Pre-grouped passthrough groups must already have a stable group shape.
    - Requests that mix incompatible grouping assumptions are rejected.
 
-4. Build the canonical group.
-   - The server determines the finalized transaction order and group ID.
-   - If the input is already pre-grouped and immutable, the server preserves that shape.
-   - If the input is ungrouped, the server computes the canonical grouped form.
-
-5. Resolve the active consensus profile, calculate LogicSig resources, and
+4. Resolve the active consensus profile, calculate LogicSig resources, and
    append dummies if required.
    - This applies to sign-mode entries, foreign entries that provide
      `lsig_resources`, and passthrough LogicSigs whose declaration is required.
@@ -319,9 +317,15 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
      excess program bytes contribute to the group fee instead.
    - If dummy insertion would exceed Algorand's maximum group size, the request is rejected.
 
-6. Pool or adjust fees if required by the finalized group.
+5. Pool or adjust fees if required by the finalized group.
    - Fee edits happen on the canonical unsigned transactions before signing.
    - These changes are reported back in `mutations`.
+
+6. Build the canonical group.
+   - The server determines the finalized transaction order and computes the
+     group ID last, over the dummy-extended, fee-finalized transactions.
+   - If the input is already pre-grouped and immutable, the server preserves that shape.
+   - If the input is ungrouped, the server computes the canonical grouped form.
 
 7. Run approval and policy evaluation on the finalized group.
    - The signer evaluates the whole group, including foreign context and passthrough entries.
@@ -330,7 +334,8 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
    - Server-added dummies affect disclosure, fee impact, and final artifact construction, but they are not rendered as separate approval items.
 
 8. Sign signer-owned entries by key type.
-   - Native keys produce standard signed transactions.
+   - Native Ed25519 keys produce standard signed transactions; native
+     Falcon-1024 keys produce a `SignedTxn` with top-level `PQsig`.
    - DSA-backed LogicSigs derive their signing message and assemble the final authorized transaction.
    - Generic LogicSigs assemble bytecode and runtime args without a cryptographic signature.
 
@@ -356,9 +361,11 @@ The `/plan` endpoint provides group building without signing. It performs all th
 - Build finalized groups for multi-party signing workflows
 
 **Request:** `GroupSignRequest`, using the same sign, passthrough, and foreign
-modes as `/sign`. Passthrough and foreign remain mutually exclusive because
-passthrough short-circuits dummy calculation while foreign participates in
-planner budget math. Foreign requests may be ungrouped, in which case the
+modes as `/sign`. Passthrough and foreign remain mutually exclusive (request
+validation rejects mixing them) because passthrough requires an immutable
+pre-grouped group. Passthrough entries still take part in LogicSig resource and
+fee calculation; an immutable group that would need more dummies is rejected.
+Foreign requests may be ungrouped, in which case the
 server canonicalizes them, or pre-grouped, in which case the server preserves
 the shape if no extra dummies are needed.
 
@@ -368,7 +375,7 @@ the shape if no extra dummies are needed.
 type GroupPlanResponse struct {
     Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns
     Mutations    *MutationReport `json:"mutations,omitempty"`
-    Error        string          `json:"error,omitempty"`
+    Error        string          `json:"error,omitempty"` // Legacy; never set (failures use ErrorResponse)
 }
 ```
 
@@ -546,7 +553,8 @@ submission. APlane never signs with plugin-supplied secret keys.
 `groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
 signers whose key material cannot be exported. The plugin emits an unsigned
 draft plus `pluginSigners`; apshell sends plugin-owned slots to `/plan` as
-foreign entries with `lsig_resources` for LogicSig slots, verifies `/plan` preserved all
+foreign entries with `lsig_resources` for LogicSig slots or `pq_scheme` for
+native-PQ slots, verifies `/plan` preserved all
 original fields except `Group` and `Fee`, calls the plugin's `signTransactions`
 callback over the canonical bytes, then submits a `/sign` request with
 plugin-signed slots as passthrough and managed slots in sign mode. Apshell
@@ -565,9 +573,9 @@ See [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin group-mode wire contract.
 
 ## Server Control Flow Trace
 
-The `/sign` endpoint has a single entry point and a single success path. Method
-enforcement, product authentication, JSON decoding, runtime availability, and
-empty-requests checks gate the request before any planning starts. The
+The `/sign` endpoint has a single entry point and a single success path.
+Product authentication and authorization, method enforcement, runtime
+availability, JSON decoding, and empty-requests checks gate the request before any planning starts. The
 `SignRequest` entries are then validated per mode (sign, passthrough, foreign)
 and decoded — sign and foreign entries from `txn_bytes_hex`, passthrough
 entries from `signed_txn_hex`. Decoded transactions are checked for group
@@ -581,10 +589,12 @@ hard policy linting, forced-review policy, explicit auto-approval, and then
 either group-mode or single-transaction operator approval (or the
 `user_auto_approve:true` operator-default shortcut).
 Signing dispatches by key type — generic LogicSig, DSA LogicSig (signing the
-32-byte transaction ID), or Ed25519 (signing the `TX`-prefixed msgpack) — then
+32-byte transaction ID), native Falcon-1024 (structured authorization into
+`SignedTxn.PQsig`), or Ed25519 (signing the `TX`-prefixed msgpack) — then
 signs any dummies. The successful response is a `GroupSignResponse` carrying
-the aligned `signed` slots plus a `mutations` report; any failure short-circuits
-to a `GroupSignResponse` with a populated `error`.
+the aligned `signed` slots plus a `mutations` report. Any failure short-circuits
+to a non-2xx `signerapi.ErrorResponse` with `error` and a stable `code`;
+`GroupSignResponse` is the success shape only.
 
 See `internal/signerapp/daemon/http_handlers_signing.go`'s `handleSign` for the dispatch
 implementation, and `internal/signerapp/signing/planner.go` and
@@ -598,8 +608,8 @@ signing logic it drives.
 | Input validation | Identity, runtime availability, decode, format, network, consistency, passthrough/foreign checks |
 | Policy and reviewability | Hard constraints, forced review, and explicit auto-approval before operator default; unsupported approval surfaces fail closed |
 | Human approval | Group vs single txn, each using apadmin approval unless policy/`user_auto_approve:true` bypasses it |
-| Signing | Generic LSig, DSA LSig, Ed25519 |
-| Failure shape | `GroupSignResponse{Error: "..."}` for every error path |
+| Signing | Generic LSig, DSA LSig, native Falcon-1024, Ed25519 |
+| Failure shape | non-2xx `ErrorResponse{error, code}` |
 | Success shape | `GroupSignResponse{Signed: [...], Mutations: {...}}` |
 
 ---
@@ -640,6 +650,22 @@ Server receives: { auth_address, txn_bytes_hex }
 | Message signed | Full transaction bytes (`TX` + msgpack) |
 | Signature size | 64 bytes |
 | Signature location | `SignedTxn.Sig` |
+
+#### Native Falcon-1024 Authorization
+
+A `falcon1024` key (`authorization_kind:"native_pq"`) has no LogicSig
+bytecode. The signer calls the provider's structured transaction authorizer,
+which signs the `TX`-prefixed msgpack with Falcon-1024 and returns a
+`SignedTxn` whose top-level `PQsig` carries the scheme (`f1`), address salt,
+public key, and signature. The signer independently validates that envelope
+before returning it.
+
+| Aspect | Value |
+|--------|-------|
+| Message signed | Full transaction bytes (`TX` + msgpack) |
+| Signature size | variable, at most 1,538 bytes |
+| Signature location | `SignedTxn.PQsig` |
+| Dummies | None; contributes native-PQ fee units (see [Native Falcon Authorization And Consensus Resources](#native-falcon-authorization-and-consensus-resources)) |
 
 ### 2. LogicSig DSA Signing (e.g., Falcon-1024)
 
@@ -922,8 +948,9 @@ client, apsigner sends a best-effort `sign_request_canceled` notification with
 reason `client_canceled` so the client can dismiss the prompt. Approval timeout
 also removes the request and sends `sign_request_canceled` with reason
 `timeout`. Both are distinct from operator rejection; the current HTTP mapping
-is service unavailable. A `request_id` never known to the authenticated
-identity is `not_found`, like one no longer live. `/sign/cancel` request and
+is service unavailable. An unknown or no-longer-live `request_id` returns
+`not_found`. Request IDs are not scoped per principal: the lookup is global
+across authenticated clients. `/sign/cancel` request and
 response shapes and the `canceled`/`not_found` states are in
 [Sign Cancellation Semantics](#sign-cancellation-semantics).
 
@@ -983,6 +1010,7 @@ The server looks up the key type for `auth_address` and derives the message to s
 | Key Type | Message to Sign | Rationale |
 |----------|-----------------|-----------|
 | `ed25519` | Full transaction bytes (`TX` + msgpack) | Standard Algorand Ed25519 signing |
+| `falcon1024` | Full transaction bytes (`TX` + msgpack) | Native Falcon-1024 authorization into `SignedTxn.PQsig` |
 | `aplane.falcon1024.v1` (or other DSA) | 32-byte transaction ID | LogicSig DSA schemes sign the transaction ID |
 | `aplane.htlc.v1` (or other generic) | N/A (no signing) | Generic LogicSigs don't need signatures |
 
@@ -1033,13 +1061,13 @@ ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 
 ## Summary Table
 
-| Aspect | Ed25519 | LogicSig DSA | Generic LogicSig |
-|--------|---------|--------------|------------------|
-| **What server signs** | Full txn bytes | 32-byte transaction ID | N/A |
-| **Signature size** | 64 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
-| **Needs dummies** | No | Yes (if sig > 1000 bytes) | No |
-| **Runtime args** | No | Optional for composed DSA | Optional |
-| **Authorization** | Signature verification | TEAL verifies sig | TEAL logic only |
+| Aspect | Ed25519 | Native Falcon-1024 | LogicSig DSA | Generic LogicSig |
+|--------|---------|--------------------|--------------|------------------|
+| **What server signs** | Full txn bytes | Full txn bytes | 32-byte transaction ID | N/A |
+| **Signature size** | 64 bytes | variable, at most 1,538 bytes | variable, at most 1,423 bytes (Falcon) | N/A |
+| **Needs dummies** | No | No (adds native-PQ fee units) | Yes (if sig > 1000 bytes) | No |
+| **Runtime args** | No | No | Optional for composed DSA | Optional |
+| **Authorization** | Signature verification | Protocol verifies `PQsig` | TEAL verifies sig | TEAL logic only |
 
 Bounded LogicSig DSA is the transaction-aware case: pure spends and
 spending-key rekeys use their declared base, derived, and runtime argument
@@ -1157,8 +1185,10 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations 60 seconds, `/plan` 60 seconds,
+  `/sign/rotating/prepare` 60 seconds, `/sign/cancel` 5 seconds,
   `/sign/component` 2 minutes for cosigner targets, `/sign/assemble` 2 minutes,
-  and `/sign` or approval-bearing `/sign/component` based on approval wait.
+  and `/sign`, `/sign/bounded-admin`, `/sign/rotating/sign`, or
+  approval-bearing `/sign/component` based on approval wait.
   User and bounded-base `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
@@ -1268,7 +1298,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `signed`
 - optional `mutations`
-- optional `error`
+- optional `error`: legacy DTO field the current server never populates;
+  errors arrive as a non-2xx `ErrorResponse`
 
 `/sign` response semantics:
 
@@ -1299,7 +1330,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `transactions`
 - optional `mutations`
-- optional `error`
+- optional `error`: legacy DTO field the current server never populates;
+  errors arrive as a non-2xx `ErrorResponse`
 
 `MutationReport` fields:
 
@@ -1600,7 +1632,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
   is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
-- `state`: lock state (`locked`, `unlocked`, or `unknown`)
+- `state`: lock state (`locked`, `unlocked`, `recovery`, or `unknown`)
 - `signer_locked`
 - `ready_for_signing`
 - `key_count`: number of loaded keys
@@ -1625,7 +1657,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), compatibility field `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
-- each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`
+- each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`
 
 The older `requires_logicsig` boolean remains
 present on key-type inventory for compatibility and is true only for
@@ -1690,10 +1722,9 @@ the request context and withdraw any pending manual approval prompt. This
 tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
-Only live synchronous `/sign` and `/sign/rotating/sign` requests and
-approval-bearing user or bounded-base `/sign/component` requests are
-cancelable. Cosigner-only component
-requests and assembly requests are correlation-only. Once a cancelable request
+Cancelable: live `/sign`, `/sign/bounded-admin`, `/sign/rotating/sign`, and
+approval-bearing user or bounded-base `/sign/component`. Cosigner-only
+`/sign/component` and `/sign/assemble` request IDs are correlation-only. Once a cancelable request
 is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
@@ -1706,7 +1737,8 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `state`
 - optional `error`
 
-`/sign/cancel` withdraws a live synchronous `/sign` or approval-bearing
+`/sign/cancel` withdraws a live `/sign`, `/sign/bounded-admin`,
+`/sign/rotating/sign`, or approval-bearing user or bounded-base
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 `success:true`; cancellation miss is represented in `state`, not as an HTTP
@@ -1731,11 +1763,11 @@ Invalid `request_id` syntax returns `400`.
 | Oversized body | 413 |
 | Wrong method | 405 |
 | Missing/invalid credentials | 401 |
-| Product runtime unavailable or locked | 403 |
+| Product runtime unavailable / node failure | 503 |
 | Authorization denied by `auth.Authorizer` | 403 |
-| Locked signer (handler entry) | 403 |
+| Locked signer (handler entry) | 403 (`code:"locked"`) |
 | Operator/policy rejection | 403 |
-| Signer locked after planning | 503 |
+| Signer locked after planning | 403 (`code:"locked"`) |
 | No approval client connected | 503 |
 | Approval timeout | 503 |
 | Approval wait canceled by request context or deadline | 503 |
@@ -1830,13 +1862,10 @@ Cross-SDK compatibility-bearing behavior:
   final group ID assignment, signer-managed dummy insertion, fee pooling,
   policy, approval, or signing. Those remain apsigner-owned behavior behind
   `/plan` and `/sign`.
-- Go, Python, and TypeScript SDKs expose a typed low-level
-  `/sign/bounded-admin` request that returns
-  `aplane.bounded-admin-partial.v1`. This API handles no external contract-admin
-  artifact, does not append the admin argument, and must describe the response
-  as incomplete and not submission-ready. Applications that implement
-  completion must conform to the frozen bounded protocol and independent
-  validation rules; ordinary SDK signing helpers reject admin-key operations.
+- The SDKs do not expose `/sign/bounded-admin` and do not build or complete
+  contract-admin rekeys (the Go SDK contract test forbids it). Ordinary SDK
+  signing surfaces `bounded_admin_required`; contract-admin rekeys go through
+  `aprekey`, which uses the in-tree `internal/signerclient`.
 - Guarded prepared signing requires frozen canonical bytes before component
   signatures are requested. The normative SDK sequence is: classify guarded
   targets; construct intended original transactions; send those originals plus
@@ -1873,8 +1902,9 @@ Go SDK specifics:
 - `SetHTTPClient(client)` overrides the HTTP transport for advanced callers.
   If caller-owned transport sets a global timeout shorter than the effective
   signing approval wait, the SDK cannot extend that deadline.
-- `GetKeysResponseWithContext(ctx)` returns the raw `/keys` DTO. In-tree client
-  code carries locked-signer state in an internal wrapper, not in the HTTP DTO.
+- `GetKeysResponseWithContext(ctx)` returns `*KeysResult`, which embeds the
+  `/keys` DTO (`KeysResponse`) and adds a client-side `Locked` flag; locked
+  state is not part of the HTTP DTO.
 - `GetStatusWithContext(ctx)` returns the raw `/status` DTO for keyset
   revision and approval-wait discovery
 - `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly

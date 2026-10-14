@@ -140,11 +140,11 @@ Compiler-backed maximum-path measurements are frozen by
 
 | Key type | Final bytecode | Spend args / v42 group / fee | Admin args / v42 group / fee |
 |---|---:|---:|---:|
-| Falcon inline allowlist | 3,155 | 1,423 / 2 / 2,117 | n/a |
-| Falcon Merkle allowlist | 2,184 | 1,935 / 2 / 2,019 | n/a |
-| Falcon timelock | 1,943 | 1,423 / 2 / 2,000 | n/a |
-| Falcon rekey-locked allowlist | 5,308 | 1,423 / 2 / 2,332 | 2,846 / 3 / 3,232 |
-| Corridor | 5,936 | 3,358 / 4 / 4,196 | 2,846 / 3 / 3,295 |
+| Falcon inline allowlist | 3,142 | 1,423 / 2 / 2,115 | n/a |
+| Falcon Merkle allowlist | 2,161 | 1,935 / 2 / 2,017 | n/a |
+| Falcon timelock | 1,934 | 1,423 / 2 / 2,000 | n/a |
+| Falcon rekey-locked allowlist | 5,285 | 1,423 / 2 / 2,330 | 2,846 / 3 / 3,230 |
+| Corridor | 5,926 | 3,358 / 4 / 4,195 | 2,846 / 3 / 3,294 |
 
 Fees are microAlgos at a 1,000-microAlgo minimum fee and include v42 program
 pricing. The table uses the conservative 20,000-opcode per-path ceiling; its
@@ -434,7 +434,7 @@ The integrated Corridor vector uses the shipped
 ```text
 full_key_type: aplane.corridor.v1
 base_key_type: aplane.falcon1024.v1
-teal_version: 12
+teal_version: 13
 spending_public_key: 1,793 bytes of 0x11
 cosigner_public_key: 1,793 bytes of 0x22
 falcon_admin_public_key: 1,793 bytes of 0x33

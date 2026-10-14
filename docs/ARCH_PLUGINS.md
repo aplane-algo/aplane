@@ -148,8 +148,9 @@ version exchanged in the `initialize` method.
 Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
 upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
 their command declarations and executable JSON-RPC protocol do not change.
-The retired `functions` metadata field is rejected; commands are the sole
-executable and discoverable manifest surface.
+The retired `functions` and `protocol_version` fields are rejected; other
+unknown manifest fields are ignored. Commands are the sole executable and
+discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -263,10 +264,13 @@ Called once after the plugin starts.
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
     "algodToken": "",
-    "indexerUrl": "https://testnet-idx.4160.nodely.dev"
+    "indexerUrl": ""
   }
 }
 ```
+
+`indexerUrl` is reserved and currently always empty; apshell does not supply
+an indexer URL. A plugin that needs an indexer uses its own.
 
 **Response:**
 ```json
@@ -392,7 +396,8 @@ Called to run a specific command.
 
 #### getInfo
 
-Returns metadata about the plugin.
+Returns metadata about the plugin. This method is reserved: apshell does not
+currently call it, but plugins should still answer it.
 
 **Request:**
 ```json
@@ -516,7 +521,7 @@ The core JSON-RPC surface every plugin handles (host→plugin) is:
 
 - `initialize`
 - `execute`
-- `getInfo`
+- `getInfo` (reserved; not currently called by apshell)
 - `shutdown`
 
 Plugins that use the `presign-plan` group flow also handle one additional host→plugin
@@ -622,7 +627,7 @@ For complex protocols that require multiple transaction submissions with confirm
 | `command` | string | The plugin command to execute next |
 | `args` | []string | Arguments for the next step |
 | `context` | map | State to pass to the next step via `params.context.continuation` |
-| `message` | string | Optional message to display before executing the next step |
+| `message` | string | Reserved; decoded but currently ignored (apshell does not display it) |
 
 **Execution Flow:**
 1. Plugin returns Step 1 transactions + continuation
@@ -848,6 +853,7 @@ import (
     "bufio"
     "encoding/json"
     "os"
+    "strings"
 )
 
 type Request struct {
@@ -935,9 +941,9 @@ Plugins receive these environment variables when started:
 | `APSHELL_NETWORK` | Current network context token |
 | `APSHELL_ALGOD_URL` | Algod node URL from `config.yaml` (empty if not configured) |
 | `APSHELL_ALGOD_TOKEN` | Algod API token from `config.yaml` (empty for public nodes) |
-| `APSHELL_INDEXER_URL` | Indexer URL |
+| `APSHELL_INDEXER_URL` | Reserved; currently always empty |
 | `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
-| `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>` |
+| `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>`, where `<name>` is the manifest `name` |
 
 Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
 
@@ -975,7 +981,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 1. Use `type: "raw"` with base64-encoded msgpack transactions
 2. Set `requiresApproval: true` for transactions requiring user confirmation
 3. Include metadata in `data` field for user information
-4. Ensure transactions use the correct network genesis hash from context
+4. Ensure transactions use the genesis hash of `context.network`, obtained from algod
 
 ### Plugin Directory Layout
 
@@ -993,27 +999,29 @@ plugins.available/my-plugin/
 
 Example plugins are available in `examples/external_plugins/`:
 
-| Plugin | Language | Description | Typed Metadata |
-|--------|----------|-------------|----------------|
-| **echo-plugin** | Go | Development-only protocol illustration; not bundled or installed | `echoMessage()` |
-| **reti** | TypeScript / Node.js, built with Node SEA | Réti staking-protocol example; source-only, not bundled into production release archives | `retiList()`, `retiDeposit()`, `retiWithdraw()`, `retiBalance()`, `retiClaim()` |
+| Plugin | Language | Description |
+|--------|----------|-------------|
+| **echo-plugin** | Go | Development-only protocol illustration; not bundled into release archives |
+| **reti** | TypeScript / Node.js, built with Node SEA | Réti staking-protocol example; source-only, not bundled into production release archives |
 
-These in-repo example plugins include typed metadata for documentation and
-automation surfaces; executable runtime behavior is command-first.
+The examples expose commands only.
 
 For a dev environment, install every example plugin in one step:
 ```bash
 make example-plugins
 ```
-This builds every example, copies each one with a complete payload into
-`$APCLIENT_DATA/plugins.available/`, and writes `plugins.yaml` enabling them.
+This builds the TypeScript examples (those with a `tsconfig.json`), copies every
+example whose payload is complete (`manifest.json`, `checksums.sha256`, and a
+binary named after its directory) into `$APCLIENT_DATA/plugins.available/`, and
+writes `plugins.yaml` enabling them.
 The target is destructive on those two paths and is intended for dev client
 data directories only. To build the examples without modifying `$APCLIENT_DATA`,
 use `make build-example-plugins` instead and copy/enable manually.
 
 Use `echo-plugin` only as a source-level illustration of the plugin protocol.
-It is not bundled into release archives and install helpers do not copy it into
-the plugin catalog.
+It is not bundled into release archives and is not built by
+`make example-plugins`; the install helper copies and enables it only if it was
+built manually (binary and `checksums.sha256` present).
 
 ### Bundled Plugins
 
@@ -1075,13 +1083,25 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 
 **Sandboxing is mandatory.** If the sandbox is unavailable (e.g., bubblewrap not installed on Linux), plugins will not run.
 
-**What plugins CAN access:**
-- `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin` (read-only) - system binaries and libraries
-- `/etc/ssl`, `/etc/ca-certificates` (read-only) - TLS certificates
-- `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf` (read-only) - DNS resolution
+**What plugins CAN access (Linux, bubblewrap):**
+- `/usr`, `/lib`, `/bin` (read-only), plus `/lib64` and `/sbin` when present - system binaries and libraries
+- `/etc/ssl`, `/etc/ca-certificates` (read-only, when present) - TLS certificates
+- `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf` (read-only, when present) - DNS resolution
 - Plugin directory (read-only) - the plugin's own files
 - Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
-- `/tmp` and platform temporary directories (read-write) - temporary files
+- `/tmp` (read-write) - a private tmpfs, not the host `/tmp`
+- `/proc` and `/dev` - fresh mounts for the sandbox
+- Network - enabled for all external plugins for algod, KMD, or indexer API calls
+
+**What plugins CAN access (macOS, Seatbelt):**
+- `/` (the root directory entry itself only), `/usr/lib`, `/usr/share`,
+  `/System/Library`, `/Library/Frameworks`, and the dyld shared cache (read-only)
+- `/etc/ssl` (read-only) - TLS certificates
+- `/etc/resolv.conf`, `/etc/hosts` (read-only) - DNS resolution
+- Plugin directory (read-only) - the plugin's own files
+- Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
+- `/tmp`, `/private/tmp`, and `/var/folders` (read-write) - temporary files
+- File metadata (stat) on any path; file contents stay behind the allowlist
 - Network - enabled for all external plugins for algod, KMD, or indexer API calls
 
 **What plugins CANNOT access:**
@@ -1092,10 +1112,21 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 - User home directory (except plugin dir if located there)
 - Any path not explicitly mounted
 
-**Sensitive environment variables filtered:**
+**Environment filtering:**
+
+Plugins start from the host environment (`os.Environ()`) plus the `APSHELL_*`
+variables above. The sandbox then removes:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
 - `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
+- any variable whose name ends in `_TOKEN`, `_SECRET`, `_API_KEY`, or
+  `_PASSWORD`
+
+Variables whose names start with `APSHELL_` are exempt (so
+`APSHELL_ALGOD_TOKEN` survives), and so are the two LocalNet overrides
+`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD`. `PATH` is
+rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and
+`/sbin/`. All other host environment variables are inherited unchanged.
 
 **Linux Sandbox Details (bubblewrap):**
 
@@ -1143,8 +1174,12 @@ or
   secret keys.
 
 **User Approval:**
-- Transactions with `requiresApproval: true` require user confirmation
-- User sees decoded transaction details before approval
+- In the default flow, apshell lists the proposed intents (count and type) and,
+  for `requiresApproval: true`, asks for confirmation; AutoConfirm skips this
+  client prompt
+- The decoded review of default-flow transactions is the signer's operator
+  approval; `pregrouped-signed` and `presign-plan` get a decoded client-side
+  review in apshell
 
 **Resource Limits:**
 - Timeout enforcement (default 30s)
@@ -1157,6 +1192,10 @@ or
 - Paths listed in `checksums.sha256` must stay inside the plugin directory
 - If `executable` names a system command, the first manifest arg is treated as
   the plugin-owned executable/script for checksum verification
+- `manifest.json` must be listed and is hash-verified before any manifest
+  field is read
+- Every listed file is hashed; blank lines and `#` comment lines are ignored
+- A checksums file with no entries is rejected
 - Checksums verified at discovery time
 
 ---
@@ -1167,15 +1206,15 @@ This section outlines best practices for developing robust external plugins.
 
 ### Handle Network Changes
 
-**Important:** Users can switch network context tokens at any time during a session. Plugins must handle this correctly.
+Users can switch network context tokens at any time during a session.
 
 The network is provided in two places:
 1. **Initialization** (`initialize` method): `params.network` - the network when the plugin started
 2. **Execution** (`execute` method): `context.network` - the current network for this command
 
-**Problem:** If a plugin only uses the initialization network, it will use the wrong network after the user switches. For example, resolving mainnet USDC (31566704) on testnet will fail with a 404 error.
+**Behavior:** A network switch stops every running plugin; the next command re-initializes it with the new network, so `initialize.network` and `context.network` agree. Checking `context.network` in execute is defensive and costs little.
 
-**Solution:** Always check `context.network` in your execute handler and update if changed:
+**Recommended:** Check `context.network` in your execute handler and update if changed:
 
 ```javascript
 // JavaScript example

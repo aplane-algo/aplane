@@ -63,6 +63,7 @@ the verified key fingerprint. A request carries no credential of its own.
 │  └── reads the connection identity from the request context     │
 │  └── looks the fingerprint up in the enrolled-key registry      │
 │  └── Returns Identity client:<fingerprint> or 401 Unauthorized  │
+│  └── node fail-closed: 503 before any enrolled-key lookup       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -108,7 +109,7 @@ the verified key fingerprint. A request carries no credential of its own.
 | Aspect | Behavior |
 |--------|----------|
 | Scope | One enrollment per client key per node; the same key may be enrolled at a signer and at cosigners |
-| Revocation | Operator revokes one key, or every key, from the `apadmin` Enrolled Clients screen; the key's live SSH connections are closed and its next handshake is refused |
+| Revocation | Operator revokes one key, or every key, from the `apadmin` Enrolled Clients screen (one key also with `apadmin clients revoke <fingerprint>`); the key's live SSH connections are closed and its next handshake is refused |
 | Per-client differentiation | Each client is a distinct key, so audit and revocation are per client |
 | Compromise impact | A stolen private key authenticates as that client until it is revoked; it grants no admin capability, because the admin protocol is reachable only over local IPC |
 
@@ -125,6 +126,8 @@ Clients should:
 - `POST /sign/component` - Produce guarded or bounded, kind-tagged components
 - `POST /sign/assemble` - Assemble guarded or bounded-cosigner signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
+- `POST /sign/rotating/prepare` - Prepare a rotating-key signing stage
+- `POST /sign/rotating/sign` - Sign with a prepared rotating-key stage
 - `POST /plan` - Preview group building (dummies, fees, group ID) without signing
 - `GET /status` - Return signer status, keyset revision, and approval timing metadata
 - `GET /keys` - List available signing keys
@@ -134,7 +137,8 @@ Clients should:
 
 **Request Size Limits:**
 - JSON POST endpoints (`/sign`, `/sign/bounded-admin`, `/sign/component`,
-  `/sign/assemble`, `/sign/cancel`, `/plan`, and `/admin/generate`) enforce a
+  `/sign/assemble`, `/sign/cancel`, `/sign/rotating/prepare`,
+  `/sign/rotating/sign`, `/plan`, and `/admin/generate`) enforce a
   5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
@@ -171,7 +175,8 @@ passphrase prompt remotely.
        │  2. MsgTypeAuthRequired                     │
        │<────────────────────────────────────────────│
        │                                             │
-       │  3. AuthMessage { passphrase, version }     │
+       │  3. AuthMessage { passphrase,               │
+       │                   protocol_version }        │
        │────────────────────────────────────────────>│
        │                                             │
        │  4. Bind product runtime (default)          │
@@ -315,7 +320,7 @@ Client                                              Server
   │  2. Server sends host key                            │
   │<─────────────────────────────────────────────────────│
   │                                                      │
-  │  3. Client checks ssh.known_hosts_path               │
+  │  3. Client checks endpoint known_hosts_path          │
   │     - Key found and matches → Continue               │
   │     - Key found but differs → REJECT (MITM warning)  │
   │     - Key not found → Prompt user to accept (TOFU)   │
@@ -323,8 +328,8 @@ Client                                              Server
 ```
 
 **Configuration:**
-- Client: `ssh.known_hosts_path` - where to store/verify server keys (default: `$APCLIENT_DATA/.ssh/known_hosts`)
-- Server: `ssh.host_key_path` - persistent host key (default: `$APSIGNER_DATA/.ssh/ssh_host_key`)
+- Client: the endpoint record's `known_hosts_path` in `$APCLIENT_DATA/endpoints.yaml` - where to store/verify server keys (default: `.ssh/known_hosts`, relative to `$APCLIENT_DATA`)
+- Server: `endpoint.ssh.host_key_path` - persistent host key (default: `.ssh/ssh_host_key`, relative to `$APSIGNER_DATA`)
 
 A wrongly trusted first endpoint learns nothing reusable: SSH public-key
 authentication signs a session-bound challenge, so an impostor cannot replay
@@ -348,14 +353,15 @@ secret of any kind.
 All SSH connections are logged for audit purposes:
 
 ```json
-{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"ssh"}
-{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","remote_addr":"192.168.1.5:54321","reason":"ssh"}
+{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh"}
+{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"disconnected","remote_addr":"192.168.1.5:54321","reason":"ssh"}
 ```
 
 Logged information:
 - Remote IP address and port
-- Key fingerprint (on registration)
-- Connect/disconnect events
+- Connect/disconnect events, including `request-enrollment` connections
+- The key fingerprint appears only in the enrollment and revocation events,
+  not in the session entries
 
 **Note:** The SSH username is the fixed non-secret value `aplane`. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
@@ -482,7 +488,8 @@ with operator import of a public key (below), this is the whole bootstrap.
 2. server rejects every other username before SSH auth succeeds
 3. the exec request `enroll` or `enroll <label>` is accepted on that
    connection; the label is at most 64 bytes of printable single-line text,
-   and any other command is answered `ERROR: unknown command` with exit 1
+   and any other command is refused: the exec request is answered false and
+   `ERROR: unknown command` is written, with no exit status
 4. a key the registry already holds is answered `enrolled <fingerprint>`
    with exit 0 and nothing is queued; like every success answer read from
    the registry, it is given only once the registry is durable (a registry
@@ -641,7 +648,8 @@ revocation of every key.
 3. A handshake that completed against the previous registry is re-checked
    against the installed one and refused
 4. The `CLIENT_KEY_REVOKED` audit entry records the fingerprint, label, and
-   closed-connection count with the admin session's attribution
+   closed-connection count with the admin session's attribution; revoke-all
+   writes one entry per key with no count
 
 `sshtunnel.Server.CloseConnectionsForFingerprint(fingerprint, reason)` and
 `CloseAllClientConnections(reason)` close connections by key.
@@ -914,8 +922,8 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.view` | View identity state | `identity` | No |
 | `identity.unlock` | Unlock signer identity | `identity` | No |
 | `identity.lock` | Lock signer identity | `identity` | No |
-| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the product store | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
-| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
+| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the product store | `identity`, `backup` | Yes for create/delete; export/read is available in unlocked or recovery state |
+| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity`, `backup`, `backup_upload` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
 | `sign.component` | Request user, cosigner, or bounded-base authorization components over a frozen group | `transaction` | Yes |
@@ -990,7 +998,10 @@ Enforced callsites:
   signer-managed backup creation/list, credential restore preview/apply,
   restore rollback/reconciliation,
   passphrase rotation, signing approval response, client enrollment response,
-  enrolled-key listing, and key revocation through `s.authorize`.
+  enrolled-key listing, key revocation, cosigner-reference view/manage,
+  generation inspection, quarantine prune, abandoned-generation discard, and
+  deleted-archive prune through `s.authorize`. `lock_identity` is gated with
+  `authorizeIdentity` for `identity.lock`.
 
 `/health` is intentionally absent from the enforcement list. It is an
 unauthenticated health endpoint in [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract);
@@ -1007,6 +1018,8 @@ Authorization is fail-closed:
 Wire behavior:
 
 - HTTP authentication failure returns `401`
+- When the node is in fail-closed state, authenticated HTTP routes return `503`
+  before any enrolled-key lookup; the attempt is still audited as `AUTH_FAILED`
 - HTTP authorization failure returns `403`
 - IPC/admin authorization failure returns an `error` message with code
   `authorization_denied`
@@ -1122,6 +1135,9 @@ type AuditLogger struct {
     mu      sync.Mutex
     path    string
     written uint64
+
+    authFailures       entryLimiter
+    cosignerRejections entryLimiter
 }
 
 type AuditEntry struct {
@@ -1143,6 +1159,14 @@ type AuditEntry struct {
     PolicyRuleID       string
     WitnessKeyID       string
     KeyCount           int
+    SuppressedCount    int
+    ClientLabel        string
+    ClosedConnections  int
+    RotatingStage      *uint64
+    RotatingLastValid  uint64
+    // abridged: backup, restore, and generation fields such as
+    // ArchiveSHA256, OperationID, GenerationIDs, GenerationID,
+    // ManifestSHA256, and the Term* counters are omitted here
 }
 ```
 
@@ -1156,7 +1180,7 @@ Audit entries carry attribution fields:
 
 - `principal`: principal field
 - `requester_principal`: principal requesting the action; for tunneled
-  HTTP requests this is the connection's `client:<fingerprint>`
+  HTTP signing requests this is the connection's `client:<fingerprint>`
 - `approver_principal`: principal approving or rejecting the action
 - `admin_session_id`: admin protocol session ID when available
 - `transport`: `ipc`, `ssh`, `http`, or empty for process-level events
@@ -1166,6 +1190,12 @@ Audit entries carry attribution fields:
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: policy rule that forced manual signing review, when present
 - `key_count`: key count for startup and reload events
+- `witness_key_id`: public witness authority affected by a cosigner-reference mutation
+- `client_label`: display label of the key in enrollment and revocation events
+- `closed_connections`: live connections closed by a key revocation
+- `suppressed_count`: failures or rejections counted by a suppression summary entry
+- `rotating_stage`, `rotating_last_valid`: stage revealed and last valid round
+  for `ROTATING_RELEASE`
 
 Requester and approver remain distinct principal fields in the log shape.
 
@@ -1180,7 +1210,7 @@ Denial behavior:
 
 - HTTP authentication failures and HTTP authorization denials are recorded as
   `AUTH_FAILED` with a reason such as `missing_credentials`,
-  `invalid_credentials`, or `unauthorized:<action>`.
+  `invalid_credentials`, or `unauthorized: <action>`.
 - Unauthenticated `AUTH_FAILED` entries are rate limited, because audit
   retention is a few rotated 10 MB files and any local process can reach the
   loopback REST API: a burst of 20 is logged individually, then one per 6
@@ -1268,8 +1298,8 @@ Signing-audit semantics:
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
-- session connected/disconnected audit records the admin session ID, transport, principal, and remote address
-- key-management audit events are emitted for both REST and authenticated IPC admin operations
+- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, `reason:"ssh"`, and outcome, attributed to `system:product-admin`
+- key-management audit events are emitted for both REST and authenticated IPC admin operations; REST `KEY_GENERATED`/`KEY_DELETED` entries are currently attributed to `system:product-admin` with no transport, not to the requesting client
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time key-file invariant; for LogicSig salt failures,
   `reason` includes the key filename and rejection reason
@@ -1321,7 +1351,7 @@ Store-management audit semantics:
 - `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
 - `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
 - `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution
-- `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count, and admin session attribution
+- `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count (single-key revocation only; revoke-all entries carry no count), and admin session attribution
 
 ### Auth Pipeline in Server
 
@@ -1535,8 +1565,8 @@ keyStore.WithKeyring(func(kr *crypto.Keyring) error {
 `ClearKeys()` cannot zero the keyring while a caller is using it. If the
 keystore is locked (`keyring == nil`) it returns an error immediately.
 
-The same RLock-through-operation pattern is used in `Get`, `Store`,
-`GetPublicKeyInfo`, and `Scan` — any code path that uses the keyring holds
+The same RLock-through-operation pattern is used in `Get` and `Scan` (and by
+every `WithKeyring` callback) — any code path that uses the keyring holds
 `RLock` through the entire cryptographic operation. Because no copy of a term
 key is ever handed out, there is nothing to outlive the lock.
 
@@ -1558,18 +1588,20 @@ retrieval and is separately zeroed by the signing executor.
 
 #### Lock Path
 
-`Signer.lock()` (in `internal/signerapp/daemon/runtime.go`) delegates to `productruntime.Runtime.Lock()`, which conceptually executes the following steps in order:
+Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
+`productruntime.Runtime.Lock()` directly, which conceptually executes the following steps in order:
 
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
-2. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
-3. Acquire `passphraseLock.WLock`:
+2. Run the identity lock callback (`performLockCleanup`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
+3. Drain background key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
+4. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until in-flight `GetKey` calls release the
      session; request-wide draining is owned by the request server lifecycle.
    - Reinitialize the key session with the same `keyStore`.
    - `keyStore.ClearKeys()` — zeros every term key under `cacheLock.WLock`.
-4. Release `passphraseLock`.
-5. Acquire `keysLock.WLock`, clear all identity key maps, release.
-6. Notify the admin hub that the signer identity is locked.
+5. Release `passphraseLock`.
+6. Acquire `keysLock.WLock`, clear all identity key maps, release.
+7. Notify the admin hub that the signer identity is locked.
 
 The locks are never held simultaneously — each is acquired and released sequentially, avoiding deadlock.
 
@@ -1584,11 +1616,14 @@ On `SIGINT` / `SIGTERM`, `internal/signerapp/startup.RunLifecycle` stops
 started services in reverse start order. It closes audit logging and destroys
 the one product runtime only after every service reports a clean stop:
 
-1. `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests (5 s timeout).
+All service stops share one 5 s shutdown deadline.
+
+1. Close the API listener, then `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests.
 2. Cancel and stop the SSH server.
 3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
-4. Write `SERVER_STOP` and close the audit log.
-5. Call `Destroy()` on the product runtime:
+4. Stop the rotating stage-table worker.
+5. Write `SERVER_STOP` and close the audit log.
+6. Call `Destroy()` on the product runtime:
    - `StopKeyWatcher()` — prevents new reloads.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
@@ -1618,7 +1653,7 @@ This applies to:
 
 - **IPC auth** — passphrase verified by unwrapping the keyring, then zeroed.
 - **Unlock** — passphrase used to unwrap the keyring, zeroed immediately after `passphraseLock` is released.
-- **Export verification** — passphrase re-verified before export, then zeroed.
+- **Export request**: the passphrase field of a key-export request is zeroed on receipt; key export is always refused.
 - **Startup auto-unlock** — `startPassphrase` from `TEST_PASSPHRASE` or `passphrase_command_argv` is zeroed immediately after the initial `ReloadWithPassphrase` call completes.
 
 ### Passphrase Command Helper Protocol
@@ -1628,15 +1663,20 @@ The signer supports an external command protocol for passphrase storage and retr
 **Configuration:**
 
 ```yaml
-passphrase_command_argv: ["./appass-file", "passphrase"]
+# identities/default/unlock.yaml, normally written by appass
+passphrase_command_argv: ["/usr/local/bin/appass-file", "/var/lib/apsigner/identities/default/passphrase"]
 passphrase_command_env:          # optional, process env is never inherited
 ```
 
-Path resolution: all elements of `passphrase_command_argv` are resolved relative to the data directory. Absolute paths are left unchanged.
+Path resolution: the helper is configured in `identities/default/unlock.yaml`,
+and its `passphrase_command_argv` elements are used as written; `argv[0]` must
+be an absolute path. Relative-path resolution against the data directory
+applies only to the legacy `passphrase_command_argv` in the process-global
+`config.yaml`, which is consulted only when `unlock.yaml` has no command.
 
 **Protocol contract:**
 
-The verb is injected as `argv[1]` before the user's arguments. For example, `["./appass-file", "passphrase"]` with verb `read` executes `./appass-file read passphrase`.
+The verb is injected as `argv[1]` before the user's arguments. For example, `["/usr/local/bin/appass-file", "/var/lib/apsigner/identities/default/passphrase"]` with verb `read` executes `/usr/local/bin/appass-file read /var/lib/apsigner/identities/default/passphrase`.
 
 | Verb | stdin | stdout | Required |
 |------|-------|--------|----------|
@@ -1658,9 +1698,13 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 | Caller | Verb | Purpose |
 |--------|------|---------|
 | `apsigner` startup (headless) | `read` | Auto-unlock signer at boot |
-| `appass` setup | `write` | Store the product store's auto-unlock passphrase |
 | `apstore initialize` | `write` | Store the chosen passphrase when a helper is already configured |
 | `apadmin changepass` | `write` | Require manual entry of the old passphrase, then store the new passphrase after atomic key re-encryption |
+
+`appass` setup does not go through `WritePassphrase`: for `appass-file` it
+writes the passphrase file directly, and for `appass-systemd-creds` it invokes
+the helper's `write` verb itself and runs its own round-trip check before
+writing `unlock.yaml`.
 
 **Round-trip verification (`write`):**
 
@@ -1672,7 +1716,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 |----------|----------------|
 | Environment isolation | Process environment is never inherited; only `passphrase_command_env` entries and `CREDENTIALS_DIRECTORY` (systemd credential path) are passed |
 | Binary validation | Must be executable, must not be group/world-writable |
-| Path restriction | Relative paths resolved against data directory; must be absolute after resolution |
+| Path restriction | `argv[0]` must be absolute; `unlock.yaml` argv is used as written (only the legacy `config.yaml` field is resolved against the data directory) |
 | Timeout | 5-second deadline with process-group kill (child processes included) |
 | Output limit | 8 KB max stdout to prevent memory exhaustion |
 | Constant-time comparison | Write round-trip uses `crypto/subtle` |

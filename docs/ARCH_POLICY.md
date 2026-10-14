@@ -146,7 +146,7 @@ order is still used, but review is not a valid cosigner outcome:
 | Phase | Client signing | Cosigner |
 |-------|----------------|-------------|
 | Always Deny | Reject | Reject |
-| Always Review | Require operator approval | Invalid outcome; fail closed as config error |
+| Always Review | Require operator approval | Invalid outcome; treated as a policy rejection |
 | Always Approve | Sign without approval | Sign |
 | Operator Default | Per `user_auto_approve` | Not applicable; unmatched cosigner requests reject |
 
@@ -155,11 +155,12 @@ a cosigner document has no `always_review_warnings`, no `review_above`
 thresholds, no `on_no_route`, `close_on_no_route`, or `clawback_on_no_route`
 fields, no `review` value in `transaction_types`, and unknown fields are
 rejected. If implementation ever encounters a review verdict while
-evaluating a cosigner component request, the request fails closed as a
-policy configuration error rather than waiting for a prompt.
+evaluating a cosigner component request, it is treated as a policy
+rejection (403) rather than waiting for a prompt.
 
-`user_auto_approve` is client-signing-only. It lives in
-`identities/default/config.yaml` and has no cosigner analog.
+`user_auto_approve` is client-signing-only and has no cosigner analog. The
+effective value is `identities/default/config.yaml`'s `user_auto_approve`,
+inheriting the root `config.yaml` value when unset.
 
 ## Policy Selection
 
@@ -218,7 +219,7 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
-| `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and alone, so nothing else is reported for a rejected type |
+| `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and suppresses the other transaction guards; transfer-routing deny verdicts for the same transaction may still be listed alongside it |
 | `reject_foreign_rekey` | signer | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
 | `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
 | `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
@@ -277,7 +278,7 @@ is configured to skip review. The whole tier is client-signing-only: the
 cosigner domain has no operator above the signer, so decode refuses every
 review-producing field and value in a cosigner document. If a
 review verdict is reachable while evaluating a cosigner
-component request, the request fails closed as a policy configuration error.
+component request, it is treated as a policy rejection (403).
 See [Verdict Mapping By Role](#verdict-mapping-by-role).
 
 Policy fields by domain:
@@ -307,6 +308,15 @@ that forces review when a configured transfer-guard review threshold cannot be
 mapped to a network token. This rule is independent of the configured threshold
 values. Cosigner rejects unknown genesis hashes when network-scoped policy
 must be evaluated because it has no review fallback.
+
+Ordinary `/sign` requests with an unknown genesis hash are rejected by the
+planner (400) before policy runs, and bounded-cosigner frozen requests are
+likewise validated before policy (see
+[ARCH_NETWORKS.md](ARCH_NETWORKS.md#transaction-planning)). The policy-level
+`unknown_genesis_hash`, `review_unknown_genesis_hash`, and
+`transfer_policy:unknown_genesis_hash` rules take effect for guarded
+user-component and cosigner component requests and are defense in depth
+otherwise.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
 and before auto-approval. Routing review applies only to signer-controlled
@@ -543,6 +553,20 @@ such as warning analysis, fee checks, rekey/close/clawback guards, and the
 self no-op auto-approval predicate still apply according to their own rules.
 For cosigner, the self no-op predicate never fires because it requires
 signer-owned address context.
+
+Non-routing rule IDs:
+
+- `transaction_type:<type>` for a `transaction_types` `reject` or `review`
+- `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, and
+  `reject_clawback`: each reject flag emits its field name
+- `max_fee_exceeded` for `max_fee_microalgos`
+- `max_algo_payment_exceeded`, `max_asa_amount_exceeded`, and
+  `unknown_genesis_hash` for `limits.*.reject_above`
+- `review_algo_payment_exceeded`, `review_asa_amount_exceeded`, and
+  `review_unknown_genesis_hash` for `limits.*.review_above`
+- `always_review_warnings`
+- `auto_approve_self_noop_transfer`
+- `bounded_admin_operation_requires_review`
 
 Routing rule IDs:
 
@@ -854,8 +878,9 @@ absent is an error, and an optional field that is absent means none.
 | `routes` | routes | required | required | The allow-list; may be empty; order does not grant priority |
 
 A document always routes: there is no switch that turns routing off. A
-signer document that wants routing to decide nothing sets one `*` to `*`
-route for every asset and `operator_default` for the three miss actions; a
+signer document that wants routing to decide nothing has no routes and
+`operator_default` for the three miss actions (a `*` to `*` route would still
+reject close-outs and clawbacks, which need `allow_close`/`allow_clawback`); a
 document with no routes and `on_no_route: reject` rejects every transfer.
 
 Each document is self-contained; sets are not shared between documents, and
@@ -906,7 +931,7 @@ mix of `*` and concrete tokens.
 Address sets accept either a flat list, which applies on every network, or a
 map keyed by network context token. `*` is not a valid network key inside an
 address set; use the flat-list shape for all-network membership. Asset sets
-are maps from network context token to `asa:<id>` terms; they do not accept a
+are maps from network context token to asset terms (`algo` or `asa:<id>`); they do not accept a
 flat-list shape because ASA IDs are network-local.
 
 `blocked_destinations` is a flat list of concrete Algorand addresses. It does
@@ -1046,8 +1071,8 @@ allowance, fee ceiling included.
 Neither default carries a description, which would outlive the starting
 state. The integration test environment (`test/setup-test-env.sh`) replaces
 the signer default with a permissive one (every `reject_*` false,
-`always_review_warnings` false, `*` allowed, one `*` to `*` route, route
-misses `operator_default`) so test keys need no per-key documents.
+`always_review_warnings` false, `*` allowed, no routes, all three route-miss
+actions `operator_default`) so test keys need no per-key documents.
 
 ## Storage
 
@@ -1165,7 +1190,8 @@ decision.
   sidecars.
 
 Acceptance of a candidate change (`policyapply.Candidate`, shared by the
-daemon, rescue, and `apstore`):
+daemon and `apadmin policy rescue`; `apstore policy` reuses only the coverage
+helpers):
 
 1. The request names at least one document or removal. `default` cannot be
    removed; a removed key must have a document of its own; a key may appear
@@ -1278,9 +1304,10 @@ the shared store lock; `apply` and `remove` hold the exclusive store mutation
 lock and therefore require a stopped daemon. On a systemd store, offline use
 requires root. A root-run rescue change of a production store restores the
 owner recorded in root-controlled `install/service-principal.json` before
-returning. Local
-non-interactive rescue may use `APSIGNER_PASSPHRASE`; remote policy commands
-require the controlling terminal.
+returning. Online and
+rescue policy commands read the passphrase from `APSIGNER_PASSPHRASE`, a
+terminal, or one stdin line; when the document is read from stdin the
+passphrase must come from `APSIGNER_PASSPHRASE` or the controlling terminal.
 
 For deliberately hand-placed documents in a stopped store, `apstore policy
 check` validates every stored document (the default and each per-key file)
@@ -1328,28 +1355,37 @@ requires the admin authorization action `identity.restore`.
 
 ## Audit and Observability
 
-Signing outcome audit records carry the matching policy rule in `policy_rule_id`:
+Signing outcome audit records carry a policy rule in `policy_rule_id` only
+for some outcomes:
 
-- Always Deny matches produce `sign_rejected` records with the rejecting rule.
-- Always Review matches produce `sign_approved` or `sign_rejected` records with
+- Client-signing and guarded user-component Always Deny records are
+  `SIGN_REJECTED` with the rule IDs only in the `reason` text; `policy_rule_id`
+  is set on cosigner policy rejections and on records for review-forced
+  prompts.
+- Always Review matches produce `SIGN_APPROVED` or `SIGN_REJECTED` records with
   the forcing rule, depending on the operator's decision.
-- Always Approve matches produce `sign_approved` records with the approving rule.
+- Always Approve outcomes are logged as `SIGN_APPROVED` with no
+  `policy_rule_id`; the rule ID appears only on the console line.
 - Operator Default outcomes produce records with no `policy_rule_id`.
 
 The signer also prints `[POLICY] ...` lines to its console output for each
 policy decision:
 
-- `[POLICY] Group/Txn auto-approved (<rule_id>)` when an Always Approve rule
+- `[POLICY] Txn auto-approved (<rule_id>)` when an Always Approve rule
   matches.
 - `[POLICY] Group/Txn requires manual review (<rule_id>)` when an Always Review
-  rule forces a prompt.
+  rule forces a prompt, or `[POLICY] Guarded component request requires manual
+  review (<rule_id>)` for a guarded user-component request.
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
 
 Cosigner component signing uses the same policy rule identifiers for decoded
 transaction facts. Cosigner component approvals and policy rejections are
 recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit events with the
 Witness Key ID in `txn_auth`, the decoded sender in `txn_sender`, and the
-policy rule in `policy_rule_id` when applicable. The
+policy rule in `policy_rule_id` when applicable. Cosigner policy rejections
+are rate limited; suppressed records are summarized by
+`COSIGNER_REJECTIONS_SUPPRESSED` (see
+[ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger)). The
 architecture overview is in [ARCH_GUARDED.md](ARCH_GUARDED.md);
 compatibility-bearing audit details live in
 [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).

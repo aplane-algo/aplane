@@ -436,6 +436,8 @@ type SendPaymentParams struct {
     Note       string
     Fee        uint64
     UseFlatFee bool
+    Close      bool   // close the account to To
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // SendASAParams for ASA transfers
@@ -447,6 +449,7 @@ type SendASAParams struct {
     Note       string
     Fee        uint64
     UseFlatFee bool
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // OptInParams for ASA opt-in
@@ -455,6 +458,7 @@ type OptInParams struct {
     AssetID    uint64
     Fee        uint64
     UseFlatFee bool
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // KeyRegParams for key registration (online/offline)
@@ -468,6 +472,7 @@ type KeyRegParams struct {
     VoteLast          uint64
     KeyDilution       uint64
     IncentiveEligible bool
+    LsigArgs          map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // RekeyParams for rekeying accounts
@@ -476,6 +481,7 @@ type RekeyParams struct {
     To         string // New auth address
     Fee        uint64
     UseFlatFee bool
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // CloseAccountParams for closing accounts
@@ -484,6 +490,7 @@ type CloseAccountParams struct {
     CloseTo    string // Recipient of remaining ALGO
     Fee        uint64
     UseFlatFee bool
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // OptOutParams for ASA opt-out
@@ -493,6 +500,7 @@ type OptOutParams struct {
     CloseTo    string // Recipient of remaining balance
     Fee        uint64
     UseFlatFee bool
+    LsigArgs   map[string][]byte // optional per-call LogicSig arguments (e.g. HTLC preimage)
 }
 
 // AtomicPaymentParams for atomic group payments
@@ -586,8 +594,8 @@ signingCtx, err := engine.BuildSigningContext(ctx, "ABC123...")
 #### Auth and Signing Helpers
 
 ```go
-// RefreshAuthCacheWithContext refreshes auth addresses from blockchain
-err := engine.RefreshAuthCacheWithContext(ctx)
+// RefreshAuthCache refreshes auth addresses from blockchain
+err := engine.RefreshAuthCache(ctx)
 
 // IsRekeyed checks if address is rekeyed
 isRekeyed, authAddr := engine.IsRekeyed(address)
@@ -757,14 +765,16 @@ func (e *Engine) IsConnected() bool {
 | sign | `SignAndSubmitTransactions` |
 | keyreg | `PrepareKeyReg`, `SignAndSubmit` |
 | app | `PrepareAppDeploy`, `PrepareAppCallRaw`, `PrepareAppCallMethod`, `ExecutePreparedGroup` |
-| alias | ListAliases, GetAlias, AddAlias, RemoveAlias |
+| alias | ListAliases, GetAlias, AddAliasWithContext, RemoveAlias |
 | sets | ListSets, GetSet, AddSet, RemoveSet, AddToSet, RemoveFromSet |
 | balance | `GetBalance`, `GetASAInfoWithContext` |
 | accounts | `ListAccounts` |
 | participation | `GetParticipationStatus` |
 | status | `GetStatus` |
-| connect | `ConnectWithTunnel`, `RequestEnrollmentWithContext`, `Disconnect` |
-| rekey refresh | `RefreshAuthCacheWithContext`, `RefreshAuthAddressWithContext` |
+| connect | `ConnectWithTunnel` |
+| disconnect | `Disconnect` |
+| request-enrollment, endpoints add | `RequestEnrollmentWithContext` |
+| rekey refresh | `RefreshAuthCache`, `RefreshAuthAddressWithContext` |
 
 ### Benefits of the Engine Pattern
 
@@ -786,17 +796,20 @@ This section covers the interactive `apshell` surface in `internal/apshellcli`,
 
 ```go
 type REPLState struct {
-    Out               io.Writer
-    App               *apshellapp.App
-    DataDir           string
-    CommandRegistry   *command.Registry
-    Scripts           ScriptSession
-    LineReader        func() (string, error)
-    SetPrompt         func(string)
-    AutoConfirm       bool
-    HostKeyApproval   func(host, fingerprint string) (bool, error)
-    ProgressLine      func(string)
-    currentCommandCtx context.Context
+    Out                    io.Writer
+    App                    *apshellapp.App
+    DataDir                string
+    CommandRegistry        *command.Registry
+    Scripts                ScriptSession
+    LineReader             func() (string, error)
+    LineReaderContext      func(context.Context) (string, error) // cancellation-aware line reader for embedded hosts
+    SetPrompt              func(string)
+    AutoConfirm            bool
+    HostKeyApproval        func(host, fingerprint string) (bool, error)
+    HostKeyApprovalContext func(context.Context, string, string) (bool, error) // cancellation-aware host-key approval for embedded hosts
+    ProgressLine           func(string)
+    currentCommandCtx      context.Context
+    runtimeMu              sync.Mutex // serializes background signer-cache polling with command execution and readline completion
 }
 ```
 
@@ -862,7 +875,7 @@ Parsing contracts:
 
 `internal/addressbook/resolver.go` converts user-friendly names to addresses.
 The resolver consults the alias and set caches, plus optional providers
-(`SignerProvider`, `AllProvider`, `HoldersProvider`) attached through
+(`SignerProvider`, `AllAddressesProvider`, `HoldersProvider`) attached through
 `WithSignerProvider`/`WithAllProvider`/`WithHoldersProvider` for the reserved
 `@signers`, `@all`, and `@holders(...)` dynamic sets:
 
@@ -929,9 +942,12 @@ Built-in commands are registered at startup via `initCommandRegistry()` with
 mustRegister(registry, &command.Command{
     Name:    "send",
     Handler: command.NewInternalHandler(r.cmdSend),
-    Automation: command.StructuredAutomation,
 })
 ```
+
+Built-in automation policies are not set inline. They live in the central
+`builtInAutomationPolicies` map in `registry.go`, and `mustRegister` applies
+the matching policy, panicking for a built-in command that has none.
 
 External plugins are never added to the registry. They are discovered at
 runtime by the plugin manager and matched by command name from their
@@ -1435,10 +1451,10 @@ The MCP server registers eight tools:
 | `jssave` | `path` (string), `code` (string, optional), `last` (bool, optional), `overwrite` (bool, optional) | Save JavaScript by filename into `scripts/` (or absolute path) |
 | `jslist` | none | List saved scripts as `[{name, size, mtime}, ...]` |
 
-The `js`, `jssave`, and `jslist` handlers share the helpers
-(`captureJSExecution`, `saveJSScript`, `listJSScripts`) used by the REPL
-counterparts but produce structured JSON directly without going through the
-shell parser. The REPL `js` command accepts a `-help` flag that prints the JS
+The `jssave` and `jslist` handlers share `saveJSScript` and `listJSScripts`
+with the REPL counterparts, and the `js` handler uses the MCP-only
+`captureJSExecution`. All three produce structured JSON directly without going
+through the shell parser. The REPL `js` command accepts a `-help` flag that prints the JS
 API reference; MCP clients fetch the same reference via `js_reference`.
 
 LLMs pull command and API references on demand via `mcp_reference` and
@@ -1587,17 +1603,19 @@ JSON results are returned as text containing JSON bytes via `mcp.NewToolResultTe
 | `js` | Use the `js` MCP tool instead |
 | `jssave` | Use the `jssave` MCP tool instead |
 | `jslist` | Use the `jslist` MCP tool instead |
-| `help` | Use `mcp_reference` instead |
+| `help`, `h` | Use `mcp_reference` instead |
 | `config` | Use the safe `status` command instead |
 | `script` | Issue commands individually or use `js` |
 | `request-enrollment` | Client enrollment needs interactive host trust; run it in a real apshell |
-| `cosigner` | Guided cosigner setup requires interactive trust/replacement decisions or a trusted-host script session |
-| `clear` | Terminal clearing has no machine meaning |
+| `cosigner` | `cosigner status` and the forwarding alias `cosigner add` are unavailable through MCP; use apshell directly (guided setup is now `endpoints add`) |
+| `endpoints add` | Guided cosigner endpoint setup needs interactive host trust and an operator approval wait; other `endpoints` subcommands remain structured |
+| `clear`, `cls` | Terminal clearing has no machine meaning |
 | `quit`, `exit`, `q` | Use MCP disconnect instead |
 | `keyreg` (no args) | Paste mode requires interactive input |
 
 Policies are attached to primary registry commands after alias resolution, so
-aliases cannot bypass a block. Explicit `keyreg` arguments remain structured.
+aliases cannot bypass a block. Explicit `keyreg` arguments and non-`add`
+`endpoints` subcommands remain structured.
 
 ### stdout/stderr Separation
 
@@ -1671,7 +1689,8 @@ interaction packages in [Main packages](#main-packages).
 | `internal/apshellcli/mcp.go` | MCP server, policy enforcement, tool description, plugin doc loading |
 | `internal/apshellcli/render.go` | Human presentation helpers |
 | `internal/apshellcli/external_plugins.go` | Plugin execution and `PluginResult` construction |
-| `internal/shellrepl/parser.go` | Top-level tokenization and per-command parsers |
+| `internal/shellrepl/command.go` | Top-level tokenization (`ParseCommand`) |
+| `internal/shellrepl/parser.go` | Per-command parsers |
 | `internal/shellrepl/autocomplete.go` | Tab completion |
 | `internal/cmdspec/` | Shared parsing helpers (`key=value`, bytes, addresses, asset refs) |
 | `internal/apshellapp/` | Shell command semantics and runtime facade |

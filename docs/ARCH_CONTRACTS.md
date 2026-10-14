@@ -107,8 +107,9 @@ Source of truth: `internal/config/config.go`. External SDK config loaders in
 `aplane-algo/aplanesdk` are related client-side loaders with similar defaults
 and path resolution, but they are not strict validation mirrors.
 
-The low-level loader returns defaults for an empty data directory or a missing
-`config.yaml`; callers that need stricter startup behavior must enforce it
+The low-level loader returns defaults when the data directory is empty or
+`config.yaml` is missing or unreadable (a read error other than not-found also
+prints a warning to stderr); callers that need stricter startup behavior must enforce it
 separately. The client data directory is resolved from the first of:
 
 - `-d <path>`
@@ -189,9 +190,13 @@ document failing HMAC verification or decode, or a generation without
 `default.json`, makes the node refuse to load policy instead of falling back
 to defaults. A document carries a `role` that must match the node role and a
 `key` that must match its file name; either mismatch is rejected.
-Every policy change is an authenticated whole-document `apply_policy` (online)
-or `apadmin policy rescue apply|remove` (stopped daemon), and each committed
-change mints a new generation (see [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance)).
+Online policy changes are authenticated whole-document `apply_policy` calls, and
+stopped-daemon changes go through `apadmin policy rescue apply|remove`; each
+committed change of either kind mints a new generation (see
+[ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance)). Offline
+`apstore policy sign` is a separate path: it re-signs the sidecars of
+hand-placed documents inside the selected generation without minting one, and
+the documents take effect at the next reload, unlock, or restart.
 There is no scalar policy-settings IPC.
 
 Validation:
@@ -218,9 +223,23 @@ Validation:
   apsigner. It equals `endpoint.advertise_url` when configured; otherwise it is
   derived from the SSH listener. For a wildcard IPv4 bind (`0.0.0.0`), apsigner
   may use the kernel-selected primary outbound IPv4 address; if no usable
-  address is detected, it falls back to `127.0.0.1`.
-- at startup validation, headless mode rejects `lock_on_disconnect:true`
-- at startup validation, headless mode requires `passphrase_timeout:"0"`
+  address is detected, it falls back to `127.0.0.1`. A wildcard IPv6 bind
+  (`::`) displays `::1`. Without an advertise URL and a live SSH port, no
+  display URL is produced.
+- when `config.yaml` sets `passphrase_command_argv` and the store is
+  initialized, startup validation rejects `lock_on_disconnect:true` and any
+  `passphrase_timeout` other than `"0"`
+- when product `identities/default/unlock.yaml` supplies the helper, it takes
+  precedence over `config.yaml` (`startup.ResolveUnlockConfig`), and the
+  runtime forces lock-on-disconnect off and the session timeout to 0 instead
+  of rejecting the settings
+- `ipc_path` is the admin IPC Unix socket path. It defaults to
+  `<APSIGNER_DATA>/aplane.sock` for same-UID deployments and
+  `/run/apsigner/aplane.sock` under systemd; a custom systemd path must be in a
+  service-owned protected runtime directory outside signer data.
+- `rotating.stage_horizon` is how many stages past a rotating account's live
+  stage the signer derives ahead into its stage address table. It defaults to
+  `4096`.
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
   30 minutes. The default is `60s`. The product runtime configuration may
   override the process default.
@@ -339,12 +358,20 @@ Sources: `internal/signerapp/unlockconfig/unlock.go` owns product-store
 `unlock.yaml` persistence; `internal/serverconfig/passphrasecmd.go` owns helper
 execution, output decoding, environment filtering, and validation.
 
-- each `passphrase_command_argv` element resolves relative to signer data dir
-- `argv[0]` must resolve to absolute path
-- helper timeout is 5 seconds
-- stdout is capped at 8 KiB
+- relative resolution against the signer data dir applies only to
+  `config.yaml` `passphrase_command_argv`; `unlock.yaml` argv is used as
+  written, so its `argv[0]` must already be absolute (`appass` always writes
+  absolute paths)
+- `unlock.yaml` is parsed without known-field checking, so unknown keys are
+  ignored
+- `argv[0]` must resolve to an absolute path that is not a directory, has an
+  execute bit, and is not group- or world-writable
+- the verb `read` or `write` is injected as argv[1], ahead of the configured
+  arguments
+- helper timeout is 5 seconds; a timeout kills the helper's whole process group
+- stdout over 8 KiB is an error
 - stderr is discarded
-- one trailing newline is stripped
+- one trailing `\n` (or `\r\n`) is stripped
 - payload may be raw bytes, `base64:<payload>`, or `hex:<payload>`
 - NUL bytes and empty output are rejected
 - environment is built from `passphrase_command_env` plus `CREDENTIALS_DIRECTORY` allowlist, not inherited wholesale
