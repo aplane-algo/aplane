@@ -1,7 +1,8 @@
 # Policy Architecture
 
-This document describes the policy system. Compatibility-bearing details live
-in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+This document describes the policy system and holds its approval and policy
+compatibility contracts. The document format, storage, and acceptance rules
+are in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
 
 ## Status
 
@@ -175,6 +176,12 @@ Operational flow:
 5. Else use Operator Default:
    - `user_auto_approve:false` requires approval.
    - `user_auto_approve:true` signs without approval.
+
+The engine is ordered and short-circuiting. In `internal/signerapp/signing`,
+`EvaluateAutoRejectionRules` runs the Always Deny rules, then
+`EvaluateAlwaysReviewRules` the Always Review rules, then
+`EvaluateAutoApprovalRules` the Always Approve rules; any Always Deny
+violation rejects the request and no later phase can approve it.
 
 For client signing, Always Review blocks both `user_auto_approve:true` and any
 matching Always Approve rule. Cosigner rejects review-producing policy
@@ -413,6 +420,9 @@ transfer guards. If a matching `review_above` is also configured, `reject_above`
 must be greater than or equal to it. This invariant is checked at acceptance: a
 document that violates it fails `check`, `apply`, and load.
 
+Policy documents store amounts as decimal strings in base units (microAlgos
+for ALGO); review and rejection text use display units.
+
 `transfer_policy` is a route table for direct `pay` and `axfer`
 movements. It can reject blocked destinations, route misses,
 close-out misses according to `close_on_no_route`, clawback misses according to
@@ -520,6 +530,10 @@ Signer-generated LogicSig-budget dummy transactions are allowed only when they
 use APlane's embedded dummy LogicSig address, match the real transaction's
 network and validity window, carry no fee, and the real transaction's fee
 increase exactly covers those dummies.
+
+Priced program bytes and native-PQ fee contributions disable this narrow
+auto-approval. The ASA form may opt into an asset if the account does not
+already hold it.
 
 The exact self no-op shape, including signer-generated budget dummies, is
 exempt from transfer routing regardless of whether
@@ -812,8 +826,8 @@ For client signing, Always Deny, Always Review, and Always Approve rules
 evaluate signer-controlled request slots only. Passthrough and foreign slots
 are not signed by this signer, so they are not evaluated by this signer's
 transaction-level policy (the transaction-type rule included). They still
-participate in request planning, group context, warning display, and approval
-rendering, and a warning on a passthrough or foreign leg always forces
+participate in request planning, group consistency checks, group context,
+warning display, approval rendering, and audit visibility, and a warning on a passthrough or foreign leg always forces
 review, whatever `always_review_warnings` says.
 
 For cosigner, the evaluated slots are the `target_indices` of a
@@ -828,6 +842,8 @@ cosigner policy verdict.
 Groups receive group-level approval. A grouped request does not fan out into
 separate per-transaction human approvals. For cosigner this is trivially
 true because no human approval is involved.
+
+Broader group-level or structural policy constraints are not part of this compatibility surface.
 
 ## Admin Surface
 
@@ -866,7 +882,7 @@ in [ARCH_STORE.md](ARCH_STORE.md#generations).
 | `check FILE...\|-` | Validate documents against the node; print errors and warnings |
 | `diff FILE...\|-` | Describe how the files differ from the policy that governs each key now, without writing |
 | `apply [--yes] FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
-| `remove [--yes] K...` | Print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
+| `remove [--yes] K...` | Run `check`, stop on errors, print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
 | `template [--key K]` | Write the node's current default as the starting document for key `K`, or annotated as the default itself |
 | `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; the only form that needs no node and no passphrase |
 
@@ -894,7 +910,8 @@ restrictive per-key document can loosen (on a signer node it can enable
 silent outbound signing under auto-approve); the preview shows that as
 loosened lines against the default, never as a bare "policy removed".
 `apply` and `remove` ask for confirmation on the controlling terminal, never
-stdin; `--yes` skips it. `apply` skips the commit only when every submitted
+stdin; `--yes` skips it. Output names the committed generation or reports
+`policy unchanged`. `apply` skips the commit only when every submitted
 document decodes identical to the active one; a document that differs only
 in term order is still applied.
 
@@ -906,17 +923,21 @@ customized default is never silently replaced by the shipped one.
 
 `apadmin policy rescue VERB` runs the same verbs directly against the store with
 the same rules as the daemon (the shared `internal/signerapp/policyapply`
-package). It reads root `node.yaml` for the role and verifies the policy
-sidecars with the store passphrase. Read verbs hold the shared store lock;
-`apply` and `remove` hold the exclusive store mutation lock and therefore
-require a stopped daemon. On a systemd store, offline use requires root. Local
+package). It reads root `node.yaml` for the role, verifies the policy
+sidecars with the store passphrase, and rejects `--ipc-path`. Read verbs hold
+the shared store lock; `apply` and `remove` hold the exclusive store mutation
+lock and therefore require a stopped daemon. On a systemd store, offline use
+requires root. A root-run rescue change of a production store restores the
+owner recorded in root-controlled `install/service-principal.json` before
+returning. Local
 non-interactive rescue may use `APSIGNER_PASSPHRASE`; remote policy commands
 require the controlling terminal.
 
 For deliberately hand-placed documents in a stopped store, `apstore policy
 check` validates every stored document (the default and each per-key file)
 without verifying sidecars, warns about missing sidecars, and warns about
-documents for keys not held; `apstore policy sign` re-signs every sidecar;
+documents for keys not held; `apstore policy sign` validates and re-signs every sidecar in the selected
+generation;
 `apstore policy verify` verifies the sidecars with the store passphrase and
 compiles the documents. `apstore policy sign` is an offline store mutation
 and requires the store mutation lock. Hand-placed documents take effect only

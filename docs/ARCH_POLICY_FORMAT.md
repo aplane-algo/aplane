@@ -108,6 +108,29 @@ every document carries a signed `key` field that must equal the file it is
 stored as: `default` for `default.json`, the selector for
 `policies/<selector>.json`. A mismatch is rejected.
 
+The policy integrity key is derived inside `internal/crypto` from the named
+product-store term key with HKDF-SHA256 using info string
+`aplane policy integrity v1`. The derived 32-byte key is neither persisted nor
+returned to policy callers; they use keyring-confined sign/verify operations.
+
+Sidecar JSON fields:
+
+- `version`: integer sidecar version; currently `2`
+- `algorithm`: currently `hmac-sha256`
+- `key_id`: currently `keystore-master-hkdf-v1`
+- `integrity_term`: positive term whose derived policy-integrity key signs the
+  document
+- `hmac`: hex HMAC-SHA256 over the exact policy document bytes
+- `policy_sha256`: optional diagnostic SHA-256 of the policy document
+- `signed_at_unix`: optional diagnostic signing timestamp
+
+Only `version`, `algorithm`, `key_id`, `integrity_term`, and `hmac` are
+security fields. Sidecar JSON is strict: unknown fields, trailing documents,
+and non-canonical MAC encodings are rejected.
+`policy_sha256` and `signed_at_unix` are diagnostic
+metadata; tampering with those fields does not affect the policy integrity
+decision.
+
 Templates: `apadmin policy template [--key K]` prints the node's current
 `default.json` (online, or from the stopped store under `rescue`) with `key`
 set to `K`, or annotated as the default itself when `--key` is omitted. A
@@ -122,8 +145,8 @@ decodes equal to the document it stands for (`policyreview.Template`,
 
 Key lifecycle:
 
-- Deleting a key archives its policy pair under `deleted/policies/` in the
-  same generation, on both roles.
+- Deleting a key (`storemut.DeleteKey`) archives its policy pair under
+  `deleted/policies/` in the same generation, on both roles.
 - A key's document travels with it in backups (`policies/<selector>.apb`) and
   is installed with it on restore; the default is never in a backup (see
   [ARCH_POLICY.md](ARCH_POLICY.md#backup-and-restore)).
@@ -131,8 +154,9 @@ Key lifecycle:
 
 ## Storage and Acceptance
 
-- Every apply or removal, online or rescue, mints a new generation with
-  manifest operation `policy-apply` through `genstore.Mint`. An apply that
+- Every apply or removal, online or rescue, verifies the active policy and
+  mints a new generation with manifest operation `policy-apply` through
+  `genstore.Mint`. An apply that
   leaves the policy set unchanged commits nothing. Each committed apply
   leaves the outgoing generation retained until explicit generation pruning.
 - `default.json` and `default.json.hmac` are generation authority files,
@@ -141,6 +165,12 @@ Key lifecycle:
 - On load, every document must verify against its sidecar and decode for the
   node role and its file name; any failure makes the node refuse to load
   policy.
+- During initial locked startup, a policy integrity failure prevents the
+  admin-auth unlock from completing and is reported as `auth_result` with
+  `code:"unlock_failed"`. A reload failure keeps the previous in-memory
+  policy active.
+- Online changes require an unlocked signer store and reload the runtime
+  from the committed generation.
 - Every digest covers the exact stored bytes; there is no canonical
   re-serialization. `policy_set_sha256` is the lowercase hex SHA-256 over the
   sorted lines `<key> <document sha256>\n`, one per document, where `<key>`
@@ -151,9 +181,9 @@ Key lifecycle:
   anything is written. The default does not count.
 - Passphrase rotation re-signs every policy sidecar: the default, every
   per-key document, and the archived documents under `deleted/policies/`.
-  Restore rollback restores `keys/`, `keytypes/`, and `policies/` and keeps
-  the outgoing default.
-- Store validation loads and verifies the policy and verifies archived policy
+  Restore rollback restores `keys/`, `keytypes/`, and `policies/` (re-signed
+  under the current term) and keeps the outgoing default.
+- Store validation (`storevalidate`) loads and verifies the policy and verifies archived policy
   sidecars.
 
 Acceptance of a candidate change (`policyapply.Candidate`, shared by the
@@ -183,8 +213,7 @@ daemon's store), `apadmin policy template --embedded` (local, no node),
 lists the default and every key and can check, diff, and apply one policy file
 or an in-place edit. Wire messages are `get_policy`, `get_policy_document`,
 `check_policy`, and `apply_policy`; see
-[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages) and
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md#policy-documents).
+[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md#policy-messages).
 
 ## Parsing
 

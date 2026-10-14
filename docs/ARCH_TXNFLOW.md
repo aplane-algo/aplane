@@ -893,6 +893,26 @@ is built, then uses:
 - explicit auto-approval policy never bypasses hard-reject safety policy
 - warning analysis informs approval, but remains separate from the hard-reject layer
 
+### Approval Waits and Cancellation
+
+Signing approval timeout is the product-runtime `approval_wait` value,
+defaulting to 60 seconds.
+
+For HTTP `/sign`, request context cancellation cancels queued or pending manual
+approval waits when the cancellation reaches apsigner. Clients that need
+reliable prompt dismissal across tunnels or other transports should also send
+`POST /sign/cancel` with the same `request_id` from a fresh request context.
+Canceled approval requests are removed from the coordinator and must not be
+delivered later as stale prompts. If the request was already sent to an admin
+client, apsigner sends a best-effort `sign_request_canceled` notification with
+reason `client_canceled` so the client can dismiss the prompt. Approval timeout
+also removes the request and sends `sign_request_canceled` with reason
+`timeout`. Both are distinct from operator rejection; the current HTTP mapping
+is service unavailable. A `request_id` never known to the authenticated
+identity is `not_found`, like one no longer live. `/sign/cancel` request and
+response shapes and the `canceled`/`not_found` states are in
+[ARCH_HTTP_API.md](ARCH_HTTP_API.md#sign-cancellation-semantics).
+
 ---
 
 ## Client Usage
