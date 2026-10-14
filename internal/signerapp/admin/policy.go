@@ -15,7 +15,7 @@ import (
 
 // GetPolicy returns the node's active policy documents.
 func (s Service) GetPolicy() adminproto.PolicyView {
-	return policyapply.View(s.Runtime.NodePolicy(), s.heldCosignerKeys(), "")
+	return policyapply.View(s.Runtime.NodePolicy(), s.heldPolicyKeys(), "")
 }
 
 // GetPolicyDocument returns one active policy document's exact bytes.
@@ -24,7 +24,7 @@ func (s Service) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
 }
 
 // CheckPolicy validates candidate documents against the node's role and
-// reports the cosigner key coverage the change would leave, without writing.
+// reports the key coverage the change would leave, without writing.
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	current := s.Runtime.NodePolicy()
 	if current == nil {
@@ -59,7 +59,7 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 			CommitUncertain: outcome.Uncertain,
 		}
 	}
-	view := policyapply.View(ir.NodePolicy(), s.heldCosignerKeys(), outcome.GenerationID)
+	view := policyapply.View(ir.NodePolicy(), s.heldPolicyKeys(), outcome.GenerationID)
 	return adminproto.ApplyPolicyResult{Success: true, Policy: &view}
 }
 
@@ -91,12 +91,12 @@ func (s Service) policyEnv(kr *crypto.Keyring) policyapply.Env {
 		DataDir:  s.Deps.DataDir(),
 		Config:   s.Deps.Config(),
 		KeyPaths: s.Deps.KeyPaths(),
-		HeldKeys: s.heldCosignerKeys(),
+		HeldKeys: s.heldPolicyKeys(),
 		Keyring:  kr,
 	}
 }
 
-func (s Service) heldCosignerKeys() map[string]bool {
+func (s Service) heldPolicyKeys() map[string]bool {
 	keyFiles, _ := s.Runtime.KeySnapshot()
-	return policyapply.HeldCosignerKeys(keyFiles)
+	return policyapply.HeldPolicyKeys(s.Runtime.NodeRole(), keyFiles)
 }

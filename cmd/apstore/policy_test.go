@@ -14,6 +14,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -29,12 +31,9 @@ func TestCmdPolicyCheckAcceptsInitializedBaseline(t *testing.T) {
 func TestCmdPolicyCheckAcceptsValidTransferRoutingPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		addr := types.Address{1}.String()
-		raw := []byte(`{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
-    {"id": "valid_route", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["` + addr + `"]}
-  ]}
-}`)
+		raw := []byte(policytest.Signer(t, policy.DefaultKey, `{"transfer_policy": {"routes": [
+    {"id": "valid_route", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["`+addr+`"]}
+  ]}}`))
 		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
@@ -47,7 +46,7 @@ func TestCmdPolicyCheckAcceptsValidTransferRoutingPolicy(t *testing.T) {
 func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
 		policyPath := activePolicyPathForTest(t, root, passphrase)
-		policyBytes := []byte("{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"reject_foreign_rekey\": false\n}\n")
+		policyBytes := []byte(policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey": false}`))
 		if err := os.WriteFile(policyPath, policyBytes, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
@@ -93,12 +92,9 @@ func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 
 func TestCmdPolicyCheckRejectsInvalidTransferRoutingPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, passphrase []byte) {
-		raw := []byte(`{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+		raw := []byte(policytest.Signer(t, policy.DefaultKey, `{"transfer_policy": {"routes": [
     {"id": "bad.route", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]}
-  ]}
-}`)
+  ]}}`))
 		if err := os.WriteFile(activePolicyPathForTest(t, root, passphrase), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
@@ -112,14 +108,13 @@ func TestCmdPolicyCheckRejectsInvalidTransferRoutingPolicy(t *testing.T) {
 func TestCmdPolicyCheckRejectsInvalidCosignerReviewPolicy(t *testing.T) {
 	withPolicyCommandStoreWithRole(t, noderole.RoleCosigner, func(root string, passphrase []byte) {
 		const key = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
-		raw := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + key + `",` +
-			`"limits":{"testnet":{"algo":{"review_above":"1"}}},"transfer_policy":{"routes":[]}}`)
+		raw := []byte(policytest.Cosigner(t, key, `{"limits":{"testnet":{"algo":{"review_above":"1"}}}}`))
 		active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), passphrase)
 		if err != nil {
 			t.Fatal(err)
 		}
 		kr.Zero()
-		if err := os.WriteFile(active.CosignerPolicyPath(key), raw, 0o600); err != nil {
+		if err := os.WriteFile(active.PolicyPath(key), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err = cmdPolicy([]string{"check"})
@@ -141,7 +136,7 @@ func activePolicyPathForTest(t *testing.T, root string, passphrase []byte) strin
 		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	kr.Zero()
-	return active.PolicyPath()
+	return active.DefaultPolicyPath()
 }
 
 func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(root string, passphrase []byte)) {

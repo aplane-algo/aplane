@@ -279,7 +279,7 @@ type RestoreBackupResult struct {
 	Restored        []RestoreCredential
 	Identical       []RestoreCredential
 	Conflicts       []RestoreConflict
-	// PoliciesRestored lists the cosigner keys whose archived policy was
+	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string
 	KeyCount         int
@@ -468,8 +468,9 @@ type UpdateAdminSettingRequest struct {
 }
 
 // PolicyDocument is one policy document's exact bytes in a check or apply
-// request. Key is the Witness Key ID of a cosigner document and empty for the
-// signer document.
+// request. Key is "default" for the node default, or the selector of the key
+// the document governs (an address on a signer node, a Witness Key ID on a
+// cosigner node).
 type PolicyDocument struct {
 	Key      string
 	Document string
@@ -494,20 +495,23 @@ type PolicyDocumentResult struct {
 	Error        string
 }
 
-// Cosigner key policy coverage states.
+// Key policy coverage states.
 const (
-	PolicyKeyActive   = "active"
-	PolicyKeyNoPolicy = "no_policy"
-	PolicyKeyNotHeld  = "key_not_held"
+	// PolicyKeyOwn: the node holds the key and it has a policy of its own.
+	PolicyKeyOwn = "own"
+	// PolicyKeyDefault: the node holds the key and it follows the node default.
+	PolicyKeyDefault = "default"
+	// PolicyKeyNotHeld: a document exists for a key the node does not hold.
+	PolicyKeyNotHeld = "key_not_held"
 )
 
-// PolicyKeyStatus reports one cosigner key's policy coverage.
+// PolicyKeyStatus reports one key's policy coverage.
 type PolicyKeyStatus struct {
 	Key    string
 	Status string
 }
 
-// PolicyProblem is one validation problem located by cosigner key and JSON
+// PolicyProblem is one validation problem located by document key and JSON
 // Pointer.
 type PolicyProblem struct {
 	Key     string
@@ -516,8 +520,8 @@ type PolicyProblem struct {
 }
 
 // PolicyView summarizes the node's active policy: each document without its
-// bytes, cosigner key coverage, and the set digest that apply uses as its
-// concurrency base.
+// bytes (the default first), each held key's coverage, and the set digest
+// that apply uses as its concurrency base.
 type PolicyView struct {
 	Success         bool
 	NodeRole        string
@@ -552,7 +556,7 @@ func (v PolicyView) Wire(id string) protocol.PolicyMessage {
 }
 
 // CheckPolicyRequest validates candidate documents without writing. Remove
-// lists cosigner keys the candidate change would delete.
+// lists keys whose own documents the candidate change would delete.
 type CheckPolicyRequest struct {
 	Documents []PolicyDocument
 	Remove    []string

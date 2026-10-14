@@ -289,12 +289,30 @@ func boundedAuthorizationLabel(item *boundedPlanItem) string {
 	}
 }
 
-// EvaluateAutoRejectionRules evaluates hard policy rules against each signable transaction.
-// authKeys[i] holds the concrete signing authority key for request i and is
-// used to pick a key override from policyCfg.KeyOverrides; an empty string or a
-// nil slice selects the product-wide config. knownAddresses is the signer-local
-// address set used to distinguish local rekeys from foreign rekeys.
-func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
+// PolicyResolver returns the policy that governs a key selector, or nil when
+// policy is not loaded.
+type PolicyResolver func(selector string) *policy.Config
+
+// resolvePolicy returns the policy for position i. A nil resolver or a nil
+// result means policy is not loaded; callers fail closed on nil.
+func resolvePolicy(policyFor PolicyResolver, authKeys []string, i int) *policy.Config {
+	if policyFor == nil {
+		return nil
+	}
+	selector := ""
+	if i < len(authKeys) {
+		selector = authKeys[i]
+	}
+	return policyFor(selector)
+}
+
+// EvaluateAutoRejectionRules evaluates hard policy rules against each signable
+// transaction. authKeys[i] holds the key selector whose policy governs request
+// i; an empty string or a short slice resolves to the node default.
+// knownAddresses is the signer-local address set used to distinguish local
+// rekeys from foreign rekeys. A position whose policy cannot be resolved
+// fails closed.
+func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool, console Console) *ServiceError {
 	console = consoleOf(console)
 	var violations []policy.LintViolation
 
@@ -307,9 +325,9 @@ func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, p
 			continue
 		}
 		txn := allTxns[i]
-		cfg := policyCfg
-		if policyCfg != nil && i < len(authKeys) && authKeys[i] != "" {
-			cfg = policyCfg.ForKey(authKeys[i])
+		cfg := resolvePolicy(policyFor, authKeys, i)
+		if cfg == nil {
+			return internal("policy is not loaded")
 		}
 		txnViolations := policy.CheckTxnPolicyLints(txn, cfg, knownAddresses)
 		txnViolations = append(txnViolations, policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, routingExemptIndices[i])...)
@@ -331,8 +349,8 @@ func EvaluateAutoRejectionRules(allTxns []types.Transaction, requestCount int, p
 
 // EvaluateAutoApprovalRules evaluates explicit low-risk approval rules after
 // hard rejection policy has passed and before the default approval path runs.
-func EvaluateAutoApprovalRules(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, policyCfg *policy.Config) (ruleID string, approved bool) {
-	if policyCfg == nil || plan == nil {
+func EvaluateAutoApprovalRules(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []types.Transaction, policyFor PolicyResolver) (ruleID string, approved bool) {
+	if policyFor == nil || plan == nil {
 		return "", false
 	}
 	if len(req.Requests) != 1 || len(allTxns) == 0 {
@@ -348,10 +366,7 @@ func EvaluateAutoApprovalRules(req signerapi.GroupSignRequest, plan *PlanResult,
 		return "", false
 	}
 
-	cfg := policyCfg
-	if req.Requests[0].AuthAddress != "" {
-		cfg = policyCfg.ForKey(req.Requests[0].AuthAddress)
-	}
+	cfg := policyFor(req.Requests[0].AuthAddress)
 	if cfg == nil || !cfg.AutoApproveSelfNoOpTransfer {
 		return "", false
 	}

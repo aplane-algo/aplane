@@ -29,8 +29,8 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if command.Verb == VerbTemplate {
-		return WriteTemplate(command, streams)
+	if command.Verb == VerbTemplate && command.Embedded != "" {
+		return WriteEmbeddedTemplate(command, streams)
 	}
 	if err := RejectRetiredEnvironment(); err != nil {
 		return err
@@ -116,7 +116,7 @@ func (b *offlineBackend) reload() error {
 	if b.current, err = policyruntime.Load(b.env.Role, b.env.DataDir, b.env.Config, active, b.env.Keyring); err != nil {
 		return fmt.Errorf("verify active policy: %w", err)
 	}
-	b.env.HeldKeys, err = policyapply.HeldCosignerKeysInGeneration(active)
+	b.env.HeldKeys, err = policyapply.HeldPolicyKeysInGeneration(b.env.Role, active)
 	return err
 }
 

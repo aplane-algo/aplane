@@ -15,14 +15,12 @@ func TestTransferPolicyV1CompilesRoute(t *testing.T) {
 	blocked := types.Address{3}
 	holder := types.Address{4}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "address_sets": {
     "treasury": {"mainnet": ["`+treasury.String()+`"]},
     "payroll": ["`+payroll.String()+`"]
   },
   "asset_sets": {"stablecoins": {"mainnet": ["asa:31566704"]}},
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "blocked_destinations": ["`+blocked.String()+`"],
     "routes": [
@@ -37,9 +35,6 @@ func TestTransferPolicyV1CompilesRoute(t *testing.T) {
 	tp := cfg.TransferPolicy
 	if tp == nil {
 		t.Fatal("TransferPolicy = nil")
-	}
-	if !tp.Enabled {
-		t.Fatal("TransferPolicy.Enabled = false, want true")
 	}
 	if got := tp.OnNoRoute; got != TransferOnNoRouteReject {
 		t.Fatalf("TransferPolicy.OnNoRoute = %q, want %q", got, TransferOnNoRouteReject)
@@ -114,8 +109,7 @@ func TestTransferPolicyV1CompilesRoute(t *testing.T) {
 func TestTransferPolicyV1CompilesPrefixedASAID(t *testing.T) {
 	addr := types.Address{1}.String()
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "asa_route", "networks": ["mainnet"], "sources": ["*"], "assets": ["asa:123"], "destinations": ["`+addr+`"]}
   ]}
 }`)

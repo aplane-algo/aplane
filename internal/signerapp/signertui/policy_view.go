@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -51,11 +53,20 @@ type PolicyLoadedMsg struct {
 	Policy protocol.PolicyMessage
 }
 
-// policyRow is one line of the policies list.
+// policyRow is one line of the policies list: the node default first, then
+// every held key with its coverage, then documents for keys not held.
 type policyRow struct {
-	label  string
+	// key is the document key the row stands for: "default" or a selector.
+	key    string
 	status string
 	doc    *protocol.PolicyDocumentInfoWire
+}
+
+func (r policyRow) label() string {
+	if r.key == policy.DefaultKey {
+		return "default"
+	}
+	return r.key
 }
 
 func (m Model) openPolicies() (tea.Model, tea.Cmd) {
@@ -96,15 +107,12 @@ func (m Model) policyRows() []policyRow {
 	for i := range p.Documents {
 		byKey[p.Documents[i].Key] = &p.Documents[i]
 	}
-	if p.NodeRole == "signer" {
-		if doc := byKey[""]; doc != nil {
-			return []policyRow{{label: "policy.json", status: "active", doc: doc}}
-		}
-		return nil
+	rows := make([]policyRow, 0, 1+len(p.Keys))
+	if doc := byKey[policy.DefaultKey]; doc != nil {
+		rows = append(rows, policyRow{key: policy.DefaultKey, status: policy.DefaultKey, doc: doc})
 	}
-	rows := make([]policyRow, 0, len(p.Keys))
 	for _, key := range p.Keys {
-		rows = append(rows, policyRow{label: key.Key, status: key.Status, doc: byKey[key.Key]})
+		rows = append(rows, policyRow{key: key.Key, status: key.Status, doc: byKey[key.Key]})
 	}
 	return rows
 }
@@ -224,14 +232,14 @@ func (m Model) renderPolicies() string {
 	sb.WriteString("\n\n")
 	rows := m.policyRows()
 	if len(rows) == 0 {
-		sb.WriteString("No cosigner keys and no policy documents.\n")
+		sb.WriteString("No policy documents.\n")
 	}
 	for i, row := range rows {
 		cursor := "  "
 		if i == m.policies.selected {
 			cursor = "> "
 		}
-		sb.WriteString(cursor + row.label + "  " + policyStatusLabel(row.status))
+		sb.WriteString(cursor + row.label() + "  " + policyStatusLabel(row.key, row.status))
 		if row.doc != nil {
 			sb.WriteString("  " + policyDocumentMeta(*row.doc))
 		}
@@ -248,14 +256,16 @@ func (m Model) renderPolicies() string {
 	return sb.String()
 }
 
-func policyStatusLabel(status string) string {
-	switch status {
-	case "no_policy":
-		return "no policy (rejects every request)"
-	case "key_not_held":
+func policyStatusLabel(key, status string) string {
+	switch {
+	case key == policy.DefaultKey:
+		return "node default (governs every key without its own policy)"
+	case status == adminproto.PolicyKeyOwn:
+		return "own policy"
+	case status == adminproto.PolicyKeyNotHeld:
 		return "policy, key not held"
 	default:
-		return "active"
+		return "default"
 	}
 }
 
@@ -295,11 +305,7 @@ func (m Model) renderPolicyDocument() string {
 		sb.WriteString(subtitleStyle.Render("Document unavailable: " + msg))
 		return sb.String()
 	}
-	label := "policy.json"
-	if doc.Key != "" {
-		label = doc.Key
-	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(label+"  sha256 "+doc.SHA256, width)))
+	sb.WriteString(subtitleStyle.Render(ellipsize(doc.Key+"  sha256 "+doc.SHA256, width)))
 	sb.WriteString("\n\n")
 
 	lines := m.policyDocumentLines()

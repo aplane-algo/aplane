@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -27,7 +28,7 @@ import (
 )
 
 func cosignerPolicyForRestoreTest(key, description string) []byte {
-	return []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + key + `","description":"` + description + `","transfer_policy":{"routes":[]}}`)
+	return []byte(policytest.MustDocument(noderole.RoleCosigner, key, `{"description":"`+description+`"}`))
 }
 
 // unlockedCosignerRuntime initializes a cosigner store and returns its
@@ -90,7 +91,7 @@ func activePolicyForRestoreTest(t *testing.T, paths storepaths.Paths, key string
 		t.Fatal(err)
 	}
 	defer kr.Zero()
-	doc, ok, err := policy.LoadVerifiedCosignerPolicy(active, key, kr)
+	doc, ok, err := policy.LoadVerifiedKeyPolicy(active, noderole.RoleCosigner, key, kr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestRestorePolicyConflictNeedsReplaceExisting(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return policy.WriteCosignerPolicy(active, key, local, kr, time.Now())
+		return policy.WriteKeyPolicy(active, noderole.RoleCosigner, key, local, kr, time.Now())
 	}); err != nil {
 		t.Fatal(err)
 	}

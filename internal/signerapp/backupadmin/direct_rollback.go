@@ -110,7 +110,7 @@ func (s Service) RollbackRestore(
 					})
 				},
 				Apply: func(staged storepaths.GenPaths) error {
-					return populateRollbackGeneration(source, staged, masterKey)
+					return populateRollbackGeneration(source, ir.NodeRole(), staged, masterKey)
 				},
 			})
 			if mintErr != nil {

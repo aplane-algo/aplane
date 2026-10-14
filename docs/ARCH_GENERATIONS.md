@@ -30,10 +30,12 @@ the retired `CURRENT` plus `keyring.enc` layout.
       keytypes/*.json|*.template
       deleted/keys/*.key|*.cos
       deleted/keytypes/*.template
-      deleted/policies/<WitnessKeyID>.json|.json.hmac   (cosigner nodes)
-      policy.json                                       (signer nodes)
-      policy.json.hmac                                  (signer nodes)
-      policies/<WitnessKeyID>.json|.json.hmac           (cosigner nodes)
+      deleted/policies/<selector>.json|.json.hmac
+      default.json                                      (node default policy)
+      default.json.hmac
+      policies/<selector>.json|.json.hmac               (per-key policy; address on
+                                                         signer nodes, Witness Key ID
+                                                         on cosigner nodes)
       node.yaml.hmac
 ```
 
@@ -111,8 +113,8 @@ inventory:
 
 - active credentials and installed templates;
 - deleted credentials and templates;
-- policy documents and integrity sidecars (signer `policy.json` when present,
-  cosigner `policies/` and `deleted/policies/`);
+- policy documents and integrity sidecars (`default.json` when present,
+  `policies/` and `deleted/policies/`), on both node roles;
 - node-role integrity sidecar;
 - term numbers, sizes, and exact digests.
 
@@ -190,11 +192,12 @@ Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
 comparison to fail. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
-Rollback restores `keys/`, `keytypes/`, and the per-key cosigner `policies/`,
-because restore installs a cosigner key's archived policy with the key. Each
+Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
+restore installs a key's archived policy with the key on both node roles. Each
 restored policy document is checked against the source seal and written with a
-sidecar signed under the current term. The signer `policy.json`, the deleted
-archives, and node role authority are kept from the outgoing generation.
+sidecar signed under the current term. The node default `default.json`, the
+deleted archives, and node role authority are kept from the outgoing
+generation.
 
 ## Reconciliation and quarantine
 
@@ -258,9 +261,9 @@ prune restores compliance. The health and status surfaces retain a warning
 whenever the emergency reserve is consumed.
 
 Deletes preflight the exact append and fail before active-state mutation if the
-hard bound would be exceeded. Deleting a cosigner key preflights the credential
-together with its policy document and sidecar, which move into
-`deleted/policies/` with it. Mints check the parent before staging and the
+hard bound would be exceeded. Deleting a key that has a policy of its own
+preflights the credential together with its policy document and sidecar, which
+move into `deleted/policies/` with it, on both node roles. Mints check the parent before staging and the
 successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 

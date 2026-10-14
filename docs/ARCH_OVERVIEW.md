@@ -276,7 +276,7 @@ endpoint-routed client model.
 apsigner also reads product-store configuration:
 - `identities/default/config.yaml` — product runtime settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`) that override process-global defaults; unknown fields are rejected and node role is configured only in root `node.yaml`
 - `identities/default/unlock.yaml` — product passphrase helper configuration
-- selected generation `policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner nodes, one per key) — product node-role policy documents in the v1 JSON format ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md))
+- selected generation `default.json` (the node default) and `policies/<selector>.json` (one per key with a policy of its own; address on signer nodes, Witness Key ID on cosigner nodes): `aplane.policy.v1` documents with `role` and `key` ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md))
 - selected generation `keytypes/<key_type>.json` — product state records for optional key types
 - selected generation `keytypes/<key_type>.template` — encrypted installed YAML templates
 
@@ -369,7 +369,7 @@ The process owns one `productruntime.Runtime` signing-state aggregate containing
 - key maps (`keys`, `keyTypes`, `keyMetadata`) protected by `keysLock`
 - key session and keyring access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
-- effective policy config
+- effective policy (`policyruntime.NodePolicy`: the default plus per-key documents, resolved by `PolicyFor(selector)`)
 - lock state
 - file watcher lifecycle
 - product runtime config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`)
@@ -378,9 +378,9 @@ The on-disk namespace is rooted at `identities/default/`. Runtime
 configuration lives at `config.yaml` there. Everything that changes through a
 generation commit lives under the selected `generations/<gen-id>/`: keys under
 `keys/`, encrypted templates and state records under `keytypes/`, deleted
-key/template/policy archives under `deleted/`, and node-role policy at
-`policy.json` (signer nodes) or `policies/<WitnessKeyID>.json` (cosigner
-nodes). `store-root.enc` selects the generation. HTTP authentication authorizes access
+key/template/policy archives under `deleted/`, the node default policy at
+`default.json`, and per-key policy at `policies/<selector>.json`, on both node
+roles. `store-root.enc` selects the generation. HTTP authentication authorizes access
 to that one aggregate; admin sessions over IPC bind to the same aggregate at
 authentication time. The aggregate has
 no runtime selector or registry.

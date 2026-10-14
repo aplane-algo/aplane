@@ -105,8 +105,8 @@ func BindDefault(paths storepaths.Paths) (storepaths.Paths, error) {
 // authenticated members with policy and noderole APIs instead.
 func ApplyAuthorityPlaceholders(staged storepaths.GenPaths) error {
 	for _, path := range []string{
-		staged.PolicyPath(),
-		staged.PolicyIntegritySidecar(),
+		staged.DefaultPolicyPath(),
+		staged.DefaultPolicyIntegritySidecar(),
 		staged.NodeRoleIntegritySidecar(),
 	} {
 		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {

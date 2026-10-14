@@ -170,7 +170,8 @@ Guarded signing has two independent authorization gates, one per party:
 - the **user signer** gates user-role component signing with the same
   signer-domain machinery as ordinary `/sign`: hard policy rejection,
   always-review rules, and blocking operator approval. The guarded account is
-  the per-target policy key (signer `policy.json` key overrides apply), and every
+  the per-target policy key (its own policy document, or the signer's node
+  default), and every
   non-target position in the canonical group is evaluated as a foreign leg, so
   dangerous fields on co-signed legs (rekey, close, clawback) force operator
   review exactly as they do on `/sign`.
@@ -490,14 +491,23 @@ slot through ordinary LogicSig arguments.
 
 ## Cosigner Policy
 
-On a cosigner node, each cosigner key has its own v1 policy document,
-`policies/<WitnessKeyID>.json` in the selected generation, specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). A `/sign/component` request's
-`component_key` selects the document: a key the node does not hold fails as a
-bad request, and a held key with no document rejects with
-`cosigner_policy:key_has_no_policy`. There is no node-wide cosigner policy, so a
-new key rejects every request until its document is applied. Policy is
-evaluated before the cosigner key is loaded.
+A cosigner node stores policy exactly as a signer node does, in the
+`aplane.policy.v1` format specified in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md): one node default,
+`default.json`, and zero or one document per cosigner key,
+`policies/<WitnessKeyID>.json`, in the selected generation. A `/sign/component`
+request's `component_key` selects the policy: a key the node does not hold
+fails as a bad request, a held key with a document of its own is governed by
+that document alone, and a held key without one is governed by the default.
+The shipped cosigner default is deny-all (`transaction_types` `{"*":
+"reject"}`, no routes, `reject_rekey: true`), so a new key rejects every
+request with `transaction_type:<type>` until it is given a document of its
+own or the operator loosens the default. Policy is evaluated before the
+cosigner key is loaded. Decode refuses review-producing fields and refuses
+to `allow` any transaction type but `pay` and `axfer` on a cosigner node, so
+the only cosigner-specific rule ID is `cosigner_policy:reject_rekey`; every
+other verdict uses the common rule IDs in
+[ARCH_POLICY.md](ARCH_POLICY.md).
 
 A key's document governs a virtual account set: every account whose guarded
 key was composed with that cosigner key, on any signer that holds the key's
@@ -522,8 +532,8 @@ mechanism produced the user component signature.
 Cosigner transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
 shapes that cannot be represented as supported cosigner movements fail closed.
-For dedicated `cosigner1` rekeys, `reject_rekey:true` remains a coarse deny-all
-switch. If it is not set, a non-zero `RekeyTo` is authorized only when the
+For dedicated `cosigner1` rekeys, `reject_rekey:true` is a coarse deny-all
+switch. If it is false, a non-zero `RekeyTo` is authorized only when the
 transaction is a pure 0 ALGO self-payment and `rekey_policy.allowed` contains a
 matching sender-to-target edge. Missing `rekey_policy` still fails closed.
 Bounded cosigner v1 deliberately gates spends only. Cosigner-enabled bounded

@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
@@ -101,7 +102,7 @@ func TestBuildProductRuntimeAppliesStoredConfig(t *testing.T) {
 	if ir.Config().ApprovalWait() != 10*time.Minute {
 		t.Fatalf("approval wait = %s, want %s", ir.Config().ApprovalWait(), 10*time.Minute)
 	}
-	if got := ir.Policy(); got != nil {
+	if got := ir.NodePolicy(); got != nil {
 		t.Fatalf("policy = %+v, want nil before unlock verification", got)
 	}
 }
@@ -287,14 +288,14 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	document := []byte(`{"format":"aplane.signer-policy.v1","reject_foreign_rekey":false,"max_fee_microalgos":"1234",` +
-		`"limits":{"testnet":{"asa:31566704":{"reject_above":"77"}}}}`)
+	document := []byte(policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey":false,"max_fee_microalgos":"1234",`+
+		`"limits":{"testnet":{"asa:31566704":{"reject_above":"77"}}}}`))
 	masterKey := testKeyringForStore(t, server.keyPaths, passphrase)
 	active, err := genstore.ResolveStoreRootWithKeyring(server.keyPaths, masterKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.WriteSignerPolicy(active, document, masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.WriteDefault(active, noderole.RoleSigner, document, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -307,15 +308,15 @@ func TestBuildProductRuntimeLoadsStoredPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pol := ir.Policy(); pol != nil {
-		t.Fatalf("Policy() before unlock = %+v, want nil", pol)
+	if np := ir.NodePolicy(); np != nil {
+		t.Fatalf("NodePolicy() before unlock = %+v, want nil", np)
 	}
 	if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
 		t.Fatalf("ReloadWithPassphrase() error = %v", err)
 	}
-	pol := ir.Policy()
+	pol := ir.NodePolicy().PolicyFor("")
 	if pol == nil {
-		t.Fatal("Policy() = nil")
+		t.Fatal("PolicyFor() = nil")
 		return
 	}
 	if pol.RejectForeignRekey {
@@ -350,7 +351,7 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(active.PolicyIntegritySidecar()); err != nil {
+	if err := os.Remove(active.DefaultPolicyIntegritySidecar()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -367,11 +368,11 @@ func TestBuildProductRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("ReloadWithPassphrase() error = nil, want policy integrity failure")
 	}
-	if !strings.Contains(err.Error(), "policy.json.hmac") {
+	if !strings.Contains(err.Error(), "default.json.hmac") {
 		t.Fatalf("ReloadWithPassphrase() error = %v, want missing policy integrity sidecar", err)
 	}
-	if pol := ir.Policy(); pol != nil {
-		t.Fatalf("Policy() after failed unlock = %+v, want nil", pol)
+	if np := ir.NodePolicy(); np != nil {
+		t.Fatalf("NodePolicy() after failed unlock = %+v, want nil", np)
 	}
 }
 
@@ -436,7 +437,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.WriteSignerPolicy(active, []byte(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"1234"}`), masterKey, time.Unix(1700000000, 0)); err != nil {
+	if err := policy.WriteDefault(active, noderole.RoleSigner, []byte(policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"1234"}`)), masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -452,10 +453,10 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
 		t.Fatalf("ReloadWithPassphrase() error = %v", err)
 	}
-	if got := ir.Policy().MaxFeeMicroAlgos; got != maxFee {
+	if got := ir.NodePolicy().PolicyFor("").MaxFeeMicroAlgos; got != maxFee {
 		t.Fatalf("MaxFeeMicroAlgos after verified load = %d, want %d", got, maxFee)
 	}
-	if err := os.WriteFile(active.PolicyPath(), []byte(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"999999"}`), 0o600); err != nil {
+	if err := os.WriteFile(active.DefaultPolicyPath(), []byte(policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"999999"}`)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -464,7 +465,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "policy verification failed") {
 		t.Fatalf("Reload() error = %v, want policy verification failure", err)
 	}
-	if got := ir.Policy().MaxFeeMicroAlgos; got != maxFee {
+	if got := ir.NodePolicy().PolicyFor("").MaxFeeMicroAlgos; got != maxFee {
 		t.Fatalf("MaxFeeMicroAlgos after rejected reload = %d, want last-known-good %d", got, maxFee)
 	}
 }

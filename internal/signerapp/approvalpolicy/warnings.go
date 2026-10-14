@@ -119,7 +119,51 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 				Severity: signerapproval.ViolationSeverityWarning,
 				Message:  "This transaction will force-clear your local state for the application.",
 			})
+		case types.UpdateApplicationOC:
+			violations = append(violations, signerapproval.Violation{
+				Field:    "OnCompletion",
+				Value:    "UpdateApplication",
+				Severity: signerapproval.ViolationSeverityWarning,
+				Message:  "This transaction will REPLACE the application's approval and clear-state programs.",
+			})
 		}
+	}
+
+	// Asset creation (ConfigAsset 0) is routine; reconfiguring or destroying
+	// an existing asset changes who controls it, permanently where a role is
+	// cleared.
+	if txn.Type == types.AssetConfigTx && txn.ConfigAsset != 0 {
+		if txn.AssetParams == (types.AssetParams{}) {
+			violations = append(violations, signerapproval.Violation{
+				Field:    "ConfigAsset",
+				Value:    fmt.Sprintf("%d", txn.ConfigAsset),
+				Severity: signerapproval.ViolationSeverityCritical,
+				Message:  fmt.Sprintf("This transaction will DESTROY asset #%d. The asset ID is retired permanently.", txn.ConfigAsset),
+			})
+		} else {
+			violations = append(violations, signerapproval.Violation{
+				Field:    "ConfigAsset",
+				Value:    fmt.Sprintf("%d", txn.ConfigAsset),
+				Severity: signerapproval.ViolationSeverityWarning,
+				Message: fmt.Sprintf("This transaction will RECONFIGURE the authority addresses of asset #%d. A cleared role cannot be restored."+
+					"\n   Manager: %s\n   Reserve: %s\n   Freeze: %s\n   Clawback: %s",
+					txn.ConfigAsset, assetRoleAddress(txn.AssetParams.Manager), assetRoleAddress(txn.AssetParams.Reserve),
+					assetRoleAddress(txn.AssetParams.Freeze), assetRoleAddress(txn.AssetParams.Clawback)),
+			})
+		}
+	}
+
+	if txn.Type == types.AssetFreezeTx {
+		action := "UNFREEZE"
+		if txn.AssetFrozen {
+			action = "FREEZE"
+		}
+		violations = append(violations, signerapproval.Violation{
+			Field:    "FreezeAccount",
+			Value:    txn.FreezeAccount.String(),
+			Severity: signerapproval.ViolationSeverityWarning,
+			Message:  fmt.Sprintf("This transaction will %s the account's holding of asset #%d using your freeze authority.", action, txn.FreezeAsset),
+		})
 	}
 
 	if uint64(txn.Fee) > DefaultMaxFeeMicroAlgos {
@@ -133,6 +177,14 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 	}
 
 	return violations
+}
+
+// assetRoleAddress names an asset role address, or its permanent clearing.
+func assetRoleAddress(addr types.Address) string {
+	if addr.IsZero() {
+		return "(cleared)"
+	}
+	return addr.String()
 }
 
 // DecodeTxnFromHex decodes a transaction from hex-encoded bytes. It handles

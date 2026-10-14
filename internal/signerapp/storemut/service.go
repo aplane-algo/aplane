@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -34,28 +33,27 @@ func New(keyPaths storepaths.Paths) *Service {
 }
 
 // DeleteKey moves a key file out of the active key set into the identity
-// archive. Deleting a cosigner key also archives its policy document, so a
-// re-imported key starts with no policy.
+// archive. Deleting a key also archives its own policy document, if it has
+// one, so a re-imported key starts on the node default.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
 	active, err := genstore.ResolveActive(s.keyPaths)
 	if err != nil {
 		return nil, err
 	}
-	_, class, ok := keys.ParseManagedCredentialFilename(filepath.Base(keyFile))
-	cosigner := ok && class == keys.ManagedCredentialCosigner
-	if cosigner {
-		// The key and its policy pair are archived by one deletion, so the
-		// archive must have room for all of them before anything moves.
-		candidates := []string{keyFile}
-		if err := storepaths.ValidateWitnessKeyIDComponent(address); err != nil {
-			return nil, err
-		}
-		policyPath := active.CosignerPolicyPath(address)
+	// The key and its policy pair are archived by one deletion, so the
+	// archive must have room for all of them before anything moves.
+	candidates := []string{keyFile}
+	hasPolicy := false
+	if storepaths.ValidatePolicySelector(address) == nil {
+		policyPath := active.PolicyPath(address)
 		if _, err := os.Lstat(policyPath); err == nil {
+			hasPolicy = true
 			candidates = append(candidates, policyPath, policy.PolicyIntegritySidecarPath(policyPath))
 		} else if !os.IsNotExist(err) {
 			return nil, err
 		}
+	}
+	if hasPolicy {
 		gen, ok := active.(storepaths.GenPaths)
 		if !ok {
 			return nil, fmt.Errorf("credential deletion requires generation-qualified active paths")
@@ -68,8 +66,8 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 	if err != nil {
 		return nil, err
 	}
-	if cosigner {
-		if err := policy.ArchiveCosignerPolicy(active, address); err != nil {
+	if hasPolicy {
+		if err := policy.ArchiveKeyPolicy(active, address); err != nil {
 			return nil, fmt.Errorf("key deleted, but archiving its policy failed: %w", err)
 		}
 	}

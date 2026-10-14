@@ -173,31 +173,30 @@ func (g GenPaths) KeyTypeTemplate(keyType string) string {
 	return filepath.Join(g.KeyTypeRecordsDir(), keyType+".template")
 }
 
-// PolicyPath is the generation-owned signer policy document.
-func (g GenPaths) PolicyPath() string {
-	return filepath.Join(g.root, SignerPolicyFileName)
+// DefaultPolicyPath is the generation-owned node default policy document.
+func (g GenPaths) DefaultPolicyPath() string {
+	return filepath.Join(g.root, DefaultPolicyFileName)
 }
 
-// PolicyIntegritySidecar is the generation-owned signer policy integrity
-// record.
-func (g GenPaths) PolicyIntegritySidecar() string {
-	return filepath.Join(g.root, SignerPolicyFileName+".hmac")
+// DefaultPolicyIntegritySidecar is the generation-owned integrity record of
+// the node default policy document.
+func (g GenPaths) DefaultPolicyIntegritySidecar() string {
+	return filepath.Join(g.root, DefaultPolicyFileName+".hmac")
 }
 
-// CosignerPoliciesDir is the generation's per-cosigner-key policy namespace.
-func (g GenPaths) CosignerPoliciesDir() string {
+// PoliciesDir is the generation's per-key policy namespace.
+func (g GenPaths) PoliciesDir() string {
 	return filepath.Join(g.root, "policies")
 }
 
-// CosignerPolicyPath is the policy document for one cosigner key.
-func (g GenPaths) CosignerPolicyPath(witnessKeyID string) string {
-	validateWitnessKeyIDComponent(witnessKeyID)
-	return filepath.Join(g.CosignerPoliciesDir(), witnessKeyID+".json")
+// PolicyPath is one key's own policy document.
+func (g GenPaths) PolicyPath(selector string) string {
+	validatePolicySelector(selector)
+	return filepath.Join(g.PoliciesDir(), selector+".json")
 }
 
-// DeletedCosignerPoliciesDir archives the policy documents of deleted
-// cosigner keys.
-func (g GenPaths) DeletedCosignerPoliciesDir() string {
+// DeletedPoliciesDir archives the policy documents of deleted keys.
+func (g GenPaths) DeletedPoliciesDir() string {
 	return filepath.Join(g.DeletedDir(), "policies")
 }
 

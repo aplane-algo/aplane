@@ -447,32 +447,34 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 
 ### Policy Messages
 
-Policy documents are the v1 JSON documents specified in
+Policy documents are the v1 JSON documents (`aplane.policy.v1`) specified in
 [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). There is no `target` field;
-the node role selects the document type. Every `document` value carries the
-exact document bytes as a string, and every `sha256` is the SHA-256 of those
-exact bytes; the server never re-serializes a document.
+the node role selects the field set a document may carry, and every document
+is addressed by its `key`: `default` for the node default, or the selector of
+the key it governs (an Algorand address on a signer node, a Witness Key ID on
+a cosigner node). Every `document` value carries the exact document bytes as
+a string, and every `sha256` is the SHA-256 of those exact bytes; the server
+never re-serializes a document.
 
 Shared shapes:
 
-- request document (check and apply): `key` (Witness Key ID; omitted for the signer document), `document`
+- request document (check and apply): `key` (`default` or a selector; must equal the document's signed `key` field), `document`
 - document summary: `key`, `sha256`, `size`, optional `signed_at_unix` (diagnostic sidecar timestamp)
-- key status (cosigner): `key`, `status` — `active` (key held, document present), `no_policy` (key held, no document; the key rejects every request), or `key_not_held` (document for a key the node does not hold)
+- key status: `key`, `status`: `own` (key held, document of its own), `default` (key held, follows the node default), or `key_not_held` (document for a key the node does not hold); constants `adminproto.PolicyKeyOwn`, `PolicyKeyDefault`, `PolicyKeyNotHeld`
 - policy problem: optional `key`, optional `pointer` (JSON Pointer into that document), `message`
 
 Messages:
 
-- `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries, without bytes), `keys[]` (cosigner nodes), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document (empty key for the signer document). Returns `policy_unavailable` when no policy is loaded.
-- `get_policy_document`: optional `key` (omitted for the signer document) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when the key has no document.
-- `check_policy`: `documents[]`, optional `remove[]` (cosigner Witness Key IDs the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report cosigner key coverage gaps in the resulting state (`no_policy`, `key_not_held`) and policy advisories, such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`.
+- `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries without bytes: the default first, then per-key documents sorted by key), `keys[]` (one entry per held key and per stored document for a key not held, sorted by key; the default is not a key and is not listed), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document, where `<key>` is `default` or the selector. Returns `policy_unavailable` when no policy is loaded.
+- `get_policy_document`: `key` (`default` or a selector) -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default).
+- `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap) and documents in the resulting state for keys the node does not hold (`key_not_held`). A key on the default is covered, not a gap.
 - `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
 
-Apply rules:
+Apply rules, the same on both node roles:
 
-- A signer node takes exactly one document with no `key` and no removals.
-- A cosigner node adds or replaces each listed document, deletes each key in `remove`, and keeps unlisted documents. Each document's `key` must equal its signed `key` field. A key may appear only once across `documents` and `remove`; removing a key with no document is rejected.
+- The change adds or replaces each listed document and deletes each key in `remove`; unlisted documents are kept. Each document's `key` must equal its signed `key` field, and its signed `role` must equal the node role. A key may appear only once across `documents` and `remove`; removing a key with no document of its own is rejected; removing `default` is rejected (apply a new one instead). The resulting set must hold a default.
 - `expected_policy_set_sha256` is required and must equal the active `policy_set_sha256`.
-- A cosigner node holds at most 8,192 policy documents (`policyapply.MaxCosignerPolicies`); a change past the cap is rejected with `policy_set_too_large` before anything is written. Key generation, import, and restore refuse an 8,193rd cosigner credential (`keys.MaxCosignerCredentials`).
+- A node holds at most 8,192 per-key policy documents (`policyapply.MaxPolicies`), on either role; a change past the cap is rejected with `policy_set_too_large` before anything is written. The default does not count. Key generation, import, and restore refuse an 8,193rd cosigner credential (`keys.MaxCosignerCredentials`).
 - Response sizes are bounded: `policy` and `apply_policy_result` carry document summaries, never bytes, so with both caps full and every field at its longest they encode to about 3 MB, inside the 4 MiB admin frame. `policy_document` carries one document of at most 1 MiB; admin messages are encoded without HTML escaping, so a document string at most doubles (only quotes, backslashes, JSON whitespace, and U+2028/U+2029 are escaped) and the response stays near 2 MiB.
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
@@ -491,7 +493,7 @@ Result codes include `expected_policy_set_sha256_required`,
 
 Writable admin settings:
 
-- `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch)
+- `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch). It replaces the operator prompt only when no policy rule produced a verdict; Always Review still prompts. With the switch on, a key with no policy document of its own signs whatever the shipped signer default does not reject or force to review.
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `theme`
@@ -572,12 +574,11 @@ explicit confirmation, and a durable audit intent written before any removal.
 Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
 are accepted; arbitrary filesystem paths are not an admin-protocol surface.
 
-Policy key-override semantics:
+Policy selection semantics:
 
-- a signer `policy.json` may include `key_overrides`, a map from signing auth address to sparse blocks of scalar settings and `limits` (see [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#key-override-inheritance))
-- normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
-- cosigner documents have no overrides; each cosigner key has its own self-contained document selected by the request `component_key`
-- admin settings do not expose or mutate policy fields; overrides change only through a whole-document `apply_policy`
+- every key is governed by exactly one document: its own `policies/<selector>.json` when it has one, otherwise the node default `default.json`; a key's own document replaces the default wholesale and inherits nothing (see [ARCH_POLICY.md](ARCH_POLICY.md#policy-selection))
+- normal signing selects the document by signing auth address, not by transaction sender, so rekeyed accounts use the auth address; user-role component signing selects by the guarded account; cosigner component signing selects by the request `component_key`
+- admin settings do not expose or mutate policy fields; documents change only through a whole-document `apply_policy`
 - documents placed by hand in a stopped store apply only after `apstore policy sign` and the next unlock
 
 ## Admin Lock Semantics

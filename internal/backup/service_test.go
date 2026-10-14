@@ -19,6 +19,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -42,8 +43,8 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.WriteInitialSignerPolicy(activePathsForBackupTest(t, paths), cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
-		t.Fatalf("WriteInitialSignerPolicy() error = %v", err)
+	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("WriteEmbeddedDefault() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, "20260428-010203")
@@ -108,8 +109,8 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
-	cosignerPolicy := []byte(`{"format": "aplane.cosigner-policy.v1", "key": "` + selector + `", "transfer_policy": {"routes": []}}`)
-	if err := policy.WriteCosignerPolicy(activePathsForBackupTest(t, paths), selector, cosignerPolicy, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+	cosignerPolicy := []byte(policytest.MustDocument(noderole.RoleCosigner, selector, ""))
+	if err := policy.WriteKeyPolicy(activePathsForBackupTest(t, paths), noderole.RoleCosigner, selector, cosignerPolicy, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,8 +221,8 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
-	if err := policy.WriteInitialSignerPolicy(activePathsForBackupTest(t, paths), cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
-		t.Fatalf("WriteInitialSignerPolicy() error = %v", err)
+	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatalf("WriteEmbeddedDefault() error = %v", err)
 	}
 
 	archivePath := BuildManagedArchivePath(paths, "20260710-010203")

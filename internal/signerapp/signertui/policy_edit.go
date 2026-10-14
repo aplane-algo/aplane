@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -19,15 +21,12 @@ import (
 // The policy editor changes one policy document's JSON in place. It is a
 // second source for the workflow in policy_apply.go: the edited text goes
 // through the same daemon check, diff review, and confirmed apply as a loaded
-// file, and nothing is stored until that apply. A cosigner key that has no
-// document yet opens on the starting document, which allows self-transfers
-// only, so an edit always starts from the least that is useful.
+// file, and nothing is stored until that apply. A key that has no document
+// of its own opens on the node default with its key filled in, so an edit
+// always starts from exactly what the key was already doing.
 //
 // The text may carry // and /* */ comments; policyreview removes them before
-// the document reaches the node. A starting document (the initial signer
-// policy, or a cosigner key's starting document) opens as its annotated
-// template, which carries a comment on the self-transfer route and decodes
-// equal to the document it stands for.
+// the document reaches the node.
 
 // policyEditMaxLines is the text area's fixed capacity for inserted text.
 // Setting its value or pasting drops every line past this count without
@@ -46,14 +45,14 @@ type policyEditState struct {
 	active bool
 	// loading reports that the editor is waiting for the active document.
 	loading bool
-	// key is the cosigner key whose policy is edited; empty on a signer node.
+	// key is the document being edited: "default" or a key selector.
 	key string
-	// isNew reports that the key had no document and the editor opened on the
-	// starting document.
+	// isNew reports that the key had no document of its own and the editor
+	// opened on the node default with the key filled in.
 	isNew bool
-	// annotated reports that the editor opened on the starting document's
-	// annotated template rather than the stored bytes.
-	annotated bool
+	// templateFor, while loading, names the key a template is being built
+	// for from the default document being fetched.
+	templateFor string
 	// original is the text the editor opened with, for the discard check.
 	original string
 	input    textarea.Model
@@ -106,9 +105,6 @@ func policyJSONBytes(text string) []byte {
 
 // policyEditLabel names the edited document in problems, diffs, and status.
 func policyEditLabel(key string) string {
-	if key == "" {
-		return "policy.json"
-	}
 	return key + ".json"
 }
 
@@ -131,36 +127,30 @@ func (m Model) policyEditAvailable() bool {
 	return !m.policies.loading && m.policies.err == "" && m.policies.policy.Success
 }
 
-// openPolicyEditForRow edits the document of the selected list row. A cosigner
-// key without a document opens on the starting document's template.
+// openPolicyEditForRow edits the document of the selected list row. A key
+// without a document of its own opens on the node default with the key
+// filled in, fetched from the daemon so it is the node's current default.
 func (m Model) openPolicyEditForRow(row policyRow) (tea.Model, tea.Cmd) {
 	if !m.policyEditAvailable() {
 		return m, nil
 	}
-	key := ""
-	if m.policies.policy.NodeRole == "cosigner" {
-		key = row.label
-		if !m.policyKeyHeld(key) {
-			m.policies.status = fmt.Sprintf("This node does not hold cosigner key %s; generate the key before editing its policy.", key)
-			return m, nil
-		}
+	key := row.key
+	if key != policy.DefaultKey && !m.policyKeyHeld(key) {
+		m.policies.status = fmt.Sprintf("This node does not hold key %s; generate or import the key before editing its policy.", key)
+		return m, nil
 	}
+	edit := policyEditState{active: true, loading: true, key: key, pendingDocumentID: newRequestID("policy-edit-doc")}
+	fetchKey := key
 	if row.doc == nil {
-		document, err := policyreview.CosignerTemplate(key)
-		if err != nil {
-			m.policies.status = "Cannot start a policy for this key: " + err.Error()
-			return m, nil
-		}
-		return m.startPolicyEditor(key, document, true), nil
+		edit.templateFor = key
+		fetchKey = policy.DefaultKey
 	}
-	m.policies.apply = policyApplyState{edit: policyEditState{
-		active: true, loading: true, key: key, pendingDocumentID: newRequestID("policy-edit-doc"),
-	}}
+	m.policies.apply = policyApplyState{edit: edit}
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
-	id := m.policies.apply.edit.pendingDocumentID
+	id := edit.pendingDocumentID
 	return m, tea.Batch(
-		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
+		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(fetchKey, id) }),
 		m.waitForMessageCmd(),
 	)
 }
@@ -171,8 +161,8 @@ func (m Model) openPolicyEditForDocument() (tea.Model, tea.Cmd) {
 	if !m.policyEditAvailable() || m.policies.docLoading || !doc.Success {
 		return m, nil
 	}
-	if m.policies.policy.NodeRole == "cosigner" && !m.policyKeyHeld(doc.Key) {
-		m.policies.status = fmt.Sprintf("This node does not hold cosigner key %s; generate the key before editing its policy.", doc.Key)
+	if doc.Key != policy.DefaultKey && !m.policyKeyHeld(doc.Key) {
+		m.policies.status = fmt.Sprintf("This node does not hold key %s; generate or import the key before editing its policy.", doc.Key)
 		m.viewState = ViewPolicies
 		return m, nil
 	}
@@ -180,30 +170,33 @@ func (m Model) openPolicyEditForDocument() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePolicyEditDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea.Model, tea.Cmd) {
-	key := m.policies.apply.edit.key
+	edit := m.policies.apply.edit
 	if !msg.Document.Success {
 		detail := policyResultError(msg.Document.Code, msg.Document.Error, "document is unavailable")
 		m = m.closePolicyApply()
 		m.policies.status = "Could not open the policy for editing: " + detail
 		return m, m.waitForMessageCmd()
 	}
-	return m.startPolicyEditor(key, msg.Document.Document, false), m.waitForMessageCmd()
+	if edit.templateFor != "" {
+		role, err := noderole.ParseRole(m.policies.policy.NodeRole)
+		var template string
+		if err == nil {
+			template, err = policyreview.Template(role, edit.templateFor, []byte(msg.Document.Document))
+		}
+		if err != nil {
+			m = m.closePolicyApply()
+			m.policies.status = "Cannot start a policy for this key from the node default: " + err.Error()
+			return m, m.waitForMessageCmd()
+		}
+		return m.startPolicyEditor(edit.templateFor, template, true), m.waitForMessageCmd()
+	}
+	return m.startPolicyEditor(edit.key, msg.Document.Document, false), m.waitForMessageCmd()
 }
 
 // startPolicyEditor opens the editor on text with the cursor at the top. A
-// stored document that is the node's starting document opens as its
-// annotated template instead, which says the same thing with the fields
-// explained. A document the editor cannot hold completely is not opened:
-// editing a silently shortened copy would look unmodified and could be
-// applied.
+// document the editor cannot hold completely is not opened: editing a
+// silently shortened copy would look unmodified and could be applied.
 func (m Model) startPolicyEditor(key, document string, isNew bool) Model {
-	role := m.policies.policy.NodeRole
-	annotated := isNew
-	if !isNew && policyreview.IsStartingDocument(role, key, document) {
-		if template, err := policyreview.StartingTemplate(role, key); err == nil {
-			document, annotated = template, true
-		}
-	}
 	input := newPolicyEditorInput()
 	text := editablePolicyText(document)
 	input.SetValue(text)
@@ -218,7 +211,7 @@ func (m Model) startPolicyEditor(key, document string, isNew bool) Model {
 	_ = input.Focus()
 	input, _ = input.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
 	m.policies.apply = policyApplyState{edit: policyEditState{
-		active: true, key: key, isNew: isNew, annotated: annotated, original: input.Value(), input: input,
+		active: true, key: key, isNew: isNew, original: input.Value(), input: input,
 	}}
 	m.policies.status = ""
 	m.viewState = ViewPolicyEdit
@@ -317,13 +310,13 @@ func (m Model) submitPolicyEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	label := policyEditLabel(edit.key)
-	doc, err := policyreview.DocumentFromText(m.policies.policy.NodeRole, label, text)
+	doc, err := policyreview.DocumentFromText(label, text)
 	if err != nil {
 		apply.err = err.Error()
 		return m, nil
 	}
 	if doc.Key != edit.key {
-		apply.err = fmt.Sprintf("The \"key\" field must stay %s. This editor changes that key's policy; load a file to set another key's.", edit.key)
+		apply.err = fmt.Sprintf("The \"key\" field must stay %s. This editor changes that document; load a file to set another key's.", edit.key)
 		return m, nil
 	}
 	apply.doc = doc
@@ -415,11 +408,8 @@ func (m Model) renderPolicyEdit() string {
 	sb.WriteString(subtitleStyle.Render(ellipsize(m.policyEditTargetLabel(), width)))
 	sb.WriteString("\n")
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
-	switch {
-	case edit.isNew:
-		hint = "No policy yet: this starting document allows self-transfers only. Add routes to allow more; comments are removed on apply."
-	case edit.annotated:
-		hint = "Starting policy: self-transfers only, all else rejected. Add routes to allow more; comments are removed on apply."
+	if edit.isNew {
+		hint = "No policy of its own yet: this is the node default with the key filled in. Applying it gives the key its own policy; comments are removed on apply."
 	}
 	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
 	sb.WriteString("\n\n")
@@ -437,10 +427,15 @@ func (m Model) renderPolicyEdit() string {
 }
 
 func (m Model) policyEditTargetLabel() string {
-	if key := m.policies.apply.edit.key; key != "" {
-		return "cosigner key " + key
+	return policyTargetLabel(m.policies.apply.edit.key)
+}
+
+// policyTargetLabel names the document a workflow acts on.
+func policyTargetLabel(key string) string {
+	if key == policy.DefaultKey {
+		return "node default policy"
 	}
-	return "policy.json"
+	return "key " + key
 }
 
 func (m Model) policyEditFooterText() string {

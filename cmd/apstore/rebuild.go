@@ -159,10 +159,8 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 			); err != nil {
 				return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 			}
-			if nodeRole != noderole.RoleCosigner {
-				if err := policy.WriteInitialSignerPolicy(staged, kr, time.Now()); err != nil {
-					return fmt.Errorf("failed to create policy baseline: %w", err)
-				}
+			if err := policy.WriteEmbeddedDefault(staged, nodeRole, kr, time.Now()); err != nil {
+				return fmt.Errorf("failed to create default policy: %w", err)
 			}
 			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
 		},

@@ -651,9 +651,10 @@ YAML
 
 configure_cosigner_policy() {
     [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
-    # Each cosigner key has its own policy document; a key without one
-    # rejects every request. Apply it online once the key exists, exercising
-    # the apadmin policy verbs an operator uses along the way.
+    # A cosigner key without a document of its own follows the node default,
+    # which rejects every request. Give the key its own document online once
+    # it exists, exercising the apadmin policy verbs an operator uses along
+    # the way.
     local script_file
     script_file="$(mktemp)"
     cat > "$script_file" <<'SCRIPT'
@@ -684,8 +685,15 @@ expect() {
 
 cat > "$policy" <<JSON
 {
-  "format": "aplane.cosigner-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
   "key": "$key",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "0",
+  "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
   "transfer_policy": {
     "routes": [
       {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
@@ -694,31 +702,29 @@ cat > "$policy" <<JSON
 }
 JSON
 
-expect "^  $key +no policy" "status of a new key" admin policy status
+expect "^  $key +default" "status of a new key" admin policy status
 expect '^policy OK$' "check" admin policy check "$policy"
-expect 'new policy' "diff of a first policy" admin policy diff "$policy"
+expect 'the key gets a policy of its own' "diff of a first policy" admin policy diff "$policy"
 
 # Without --yes and without a terminal, apply refuses and writes nothing.
 if admin policy apply "$policy" </dev/null >/dev/null 2>&1; then
     fail "apply without --yes succeeded without a terminal"
 fi
-expect "^  $key +no policy" "status after a refused apply" admin policy status
+expect "^  $key +default" "status after a refused apply" admin policy status
 
 expect '^policy applied as generation ' "apply from a file" admin policy apply --yes "$policy"
-expect "^  $key +active" "status after apply" admin policy status
+expect "^  $key +own policy" "status after apply" admin policy status
 admin policy export --key "$key" | cmp -s - "$policy" || fail "export is not the applied file"
-if admin policy export >/dev/null 2>&1; then
-    fail "export without --key succeeded on a cosigner node"
-fi
+expect '"key": "default"' "export without --key prints the node default" admin policy export
 expect '^policy unchanged$' "re-applying the active policy" admin policy apply --yes "$policy"
 
-# Removing the policy returns the key to rejecting every request; the stdin
+# Removing the document returns the key to the deny-all default; the stdin
 # form of apply restores it for the guarded transactions that follow.
 expect '^policy applied as generation ' "remove" admin policy remove --yes "$key"
-expect "^  $key +no policy" "status after remove" admin policy status
+expect "^  $key +default" "status after remove" admin policy status
 out="$(admin policy apply --yes - < "$policy")" || fail "apply from stdin: command failed"
 grep -q '^policy applied as generation ' <<<"$out" || fail "apply from stdin: $out"
-expect "^  $key +active" "status after stdin apply" admin policy status
+expect "^  $key +own policy" "status after stdin apply" admin policy status
 admin policy export --key "$key" | cmp -s - "$policy" || fail "export after stdin apply is not the applied document"
 SCRIPT
     docker cp "$script_file" "$COSIGNER_CONTAINER:/tmp/cosigner-policy-smoke.sh"
@@ -731,19 +737,30 @@ SCRIPT
 }
 
 configure_signer_policy() {
-    # A new signer store starts with routing enabled and a single
-    # self-transfer route, so the Corridor payments below to other LocalNet
-    # accounts would be rejected at the signer before the cosigner or the
-    # Corridor allowlist ever sees them. Open routing on the signer; the
-    # allowlist checks that follow belong to the Corridor itself.
+    # A new signer store's default routes self-transfers only and leaves
+    # every other route miss to the operator default, which would prompt for
+    # the Corridor payments below to other LocalNet accounts. Replace the
+    # default with one that routes everything; the allowlist checks that
+    # follow belong to the Corridor itself.
     local policy_file out
     policy_file="$(mktemp)"
     cat > "$policy_file" <<'JSON'
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": false,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": {"*": "allow"},
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]}
     ]

@@ -38,7 +38,7 @@ func ListDeletedArchive(gen storepaths.GenPaths) ([]DeletedArchiveEntry, Deleted
 	for _, namespace := range []struct{ relative, dir string }{
 		{"deleted/keys", gen.DeletedKeysDir()},
 		{"deleted/keytypes", gen.DeletedKeyTypeRecordsDir()},
-		{"deleted/policies", gen.DeletedCosignerPoliciesDir()},
+		{"deleted/policies", gen.DeletedPoliciesDir()},
 	} {
 		entries, err := os.ReadDir(namespace.dir)
 		if err != nil {

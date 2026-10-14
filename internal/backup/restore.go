@@ -39,7 +39,7 @@ type RestoreKeyInfo struct {
 	Address       string
 	KeyType       string
 	AlreadyExists bool
-	// HasPolicy reports that the archive carries this cosigner key's policy.
+	// HasPolicy reports that the archive carries this key's own policy.
 	HasPolicy bool
 	Error     string
 }
@@ -265,13 +265,11 @@ func PreviewRestoreWithNodeRole(
 					Address: selector, KeyType: entry.KeyType,
 					AlreadyExists: exists || destinationErr != nil,
 				}
-				if entry.Category == keys.CategoryWitness {
-					document, err := readBackupPolicy(keysDir, selector, exportPassphrase)
-					if err != nil {
-						return err
-					}
-					info.HasPolicy = document != nil
+				document, err := readBackupPolicy(keysDir, selector, exportPassphrase, role)
+				if err != nil {
+					return err
 				}
+				info.HasPolicy = document != nil
 				preview.Keys = append(preview.Keys, info)
 				return nil
 			}()
@@ -301,17 +299,15 @@ func (r Restorer) RestoreKey(keysDir, selector string, kr *crypto.Keyring, expor
 	if err := ApplyCredentialEntry(active, entry, kr, r.Overwrite); err != nil {
 		return "", err
 	}
-	if entry.Category == keys.CategoryWitness {
-		if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase); err != nil {
-			return "", err
+	if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, r.nodeRole()); err != nil {
+		return "", err
+	}
+	if entry.Policy != nil {
+		if err := ApplyPolicyEntry(active, r.nodeRole(), entry, kr); err != nil {
+			return "", fmt.Errorf("restore policy for %s: %w", selector, err)
 		}
-		if entry.Policy != nil {
-			if err := ApplyPolicyEntry(active, entry, kr); err != nil {
-				return "", fmt.Errorf("restore policy for %s: %w", selector, err)
-			}
-			if r.Logf != nil {
-				r.Logf("restored policy: %s", selector)
-			}
+		if r.Logf != nil {
+			r.Logf("restored policy: %s", selector)
 		}
 	}
 	if r.Logf != nil {

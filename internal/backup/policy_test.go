@@ -17,11 +17,12 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func cosignerPolicyDocForBackupTest(selector, description string) []byte {
-	return []byte(`{"format": "aplane.cosigner-policy.v1", "key": "` + selector + `", "description": "` + description + `", "transfer_policy": {"routes": []}}`)
+	return []byte(policytest.MustDocument(noderole.RoleCosigner, selector, `{"description": "`+description+`"}`))
 }
 
 // cosignerStoreWithPolicy returns a cosigner store holding one witness key
@@ -42,7 +43,7 @@ func cosignerStoreWithPolicy(t *testing.T) (storepaths.Paths, string, []byte) {
 		t.Fatal(err)
 	}
 	doc := cosignerPolicyDocForBackupTest(selector, "source")
-	if err := policy.WriteCosignerPolicy(activePathsForBackupTest(t, paths), selector, doc, kr, timeForBackupTest()); err != nil {
+	if err := policy.WriteKeyPolicy(activePathsForBackupTest(t, paths), noderole.RoleCosigner, selector, doc, kr, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 	return paths, selector, doc
@@ -63,7 +64,7 @@ func TestBackupCarriesCosignerPolicyEncryptedAndVerified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archived policy missing: %v", err)
 	}
-	if bytes.Contains(sealed, []byte("aplane.cosigner-policy.v1")) {
+	if bytes.Contains(sealed, []byte("aplane.policy.v1")) {
 		t.Fatal("archived policy is stored in plaintext")
 	}
 	report, err := DeepVerifyBackupBytes(extractDir, []byte("export-passphrase"))
@@ -108,21 +109,21 @@ func TestClassifyRestorePolicyAgainstDestination(t *testing.T) {
 		t.Fatalf("identical key and policy: %+v, %v", same, err)
 	}
 
-	if err := policy.RemoveCosignerPolicy(active, selector); err != nil {
+	if err := policy.RemoveKeyPolicy(active, selector); err != nil {
 		t.Fatal(err)
 	}
 	missing, err := ClassifyRestoreSet(active, set, kr)
 	if err != nil || len(missing.Identical) != 1 || len(missing.Policies) != 1 || len(missing.Conflicts) != 0 {
 		t.Fatalf("destination without a policy: %+v, %v", missing, err)
 	}
-	if err := ApplyPolicyEntry(active, missing.Policies[0], kr); err != nil {
+	if err := ApplyPolicyEntry(active, noderole.RoleCosigner, missing.Policies[0], kr); err != nil {
 		t.Fatal(err)
 	}
-	if stored, ok, err := policy.LoadVerifiedCosignerPolicy(active, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
+	if stored, ok, err := policy.LoadVerifiedKeyPolicy(active, noderole.RoleCosigner, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
 		t.Fatalf("installed policy = %q, %v, %v", stored.Bytes, ok, err)
 	}
 
-	if err := policy.WriteCosignerPolicy(active, selector, cosignerPolicyDocForBackupTest(selector, "destination"), kr, timeForBackupTest()); err != nil {
+	if err := policy.WriteKeyPolicy(active, noderole.RoleCosigner, selector, cosignerPolicyDocForBackupTest(selector, "destination"), kr, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 	differs, err := ClassifyRestoreSet(active, set, kr)
@@ -135,12 +136,12 @@ func TestClassifyRestorePolicyAgainstDestination(t *testing.T) {
 func TestPartialBackupCarriesOnlySelectedPolicies(t *testing.T) {
 	paths, selector, _ := cosignerStoreWithPolicy(t)
 	kr := cryptotest.Keyring(t, testExportMasterKey)
-	exported, err := exportCosignerPolicies(activePathsForBackupTest(t, paths), t.TempDir(), nil, kr, []byte("export-passphrase"))
+	exported, err := exportKeyPolicies(activePathsForBackupTest(t, paths), noderole.RoleCosigner, t.TempDir(), nil, kr, []byte("export-passphrase"))
 	if err != nil || len(exported) != 0 {
 		t.Fatalf("export with no selected keys = %v, %v", exported, err)
 	}
 	stage := t.TempDir()
-	if exported, err = exportCosignerPolicies(activePathsForBackupTest(t, paths), stage, []string{selector}, kr, []byte("export-passphrase")); err != nil || len(exported) != 1 {
+	if exported, err = exportKeyPolicies(activePathsForBackupTest(t, paths), noderole.RoleCosigner, stage, []string{selector}, kr, []byte("export-passphrase")); err != nil || len(exported) != 1 {
 		t.Fatalf("export of the selected key = %v, %v", exported, err)
 	}
 }
@@ -155,8 +156,8 @@ func TestDeepVerifyRejectsPolicyWithoutCredential(t *testing.T) {
 	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
 		t.Fatal(err)
 	}
-	result := verifyPolicyDeep(filepath.Join(extractDir, "apb"), selector, []byte("export-passphrase"), nil)
-	if result.Valid || !strings.Contains(result.Error, "no cosigner credential") {
+	result := verifyPolicyDeep(filepath.Join(extractDir, "apb"), selector, []byte("export-passphrase"), noderole.RoleCosigner, nil)
+	if result.Valid || !strings.Contains(result.Error, "no credential") {
 		t.Fatalf("verifyPolicyDeep(without credential) = %+v", result)
 	}
 }
@@ -179,7 +180,7 @@ func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 	if _, err := restorer.RestoreKey(ResolveBackupKeysDir(extractDir), selector, kr, []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	if stored, ok, err := policy.LoadVerifiedCosignerPolicy(destActive, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
+	if stored, ok, err := policy.LoadVerifiedKeyPolicy(destActive, noderole.RoleCosigner, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
 		t.Fatalf("rebuilt policy = %q, %v, %v", stored.Bytes, ok, err)
 	}
 }
@@ -187,7 +188,7 @@ func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 func TestBackupRefusesCosignerKeyWithOrphanPolicySidecar(t *testing.T) {
 	paths, selector, _ := cosignerStoreWithPolicy(t)
 	active := activePathsForBackupTest(t, paths)
-	if err := os.Remove(active.CosignerPolicyPath(selector)); err != nil {
+	if err := os.Remove(active.PolicyPath(selector)); err != nil {
 		t.Fatal(err)
 	}
 	archivePath := BuildManagedArchivePath(paths, "20260721-010207")

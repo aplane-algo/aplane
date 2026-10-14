@@ -1,10 +1,30 @@
 {
-  "format": "aplane.signer-policy.v1",
-  "asset_sets": {
-    "edge": {
-      "mainnet": [
-        "asa:18446744073709551616"
-      ]
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": false,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
+  "transfer_policy": {
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "routes": []
+  },
+  "limits": {
+    "mainnet": {
+      "asa:18446744073709551616": {
+        "reject_above": "1"
+      }
     }
   }
 }

@@ -87,8 +87,8 @@ Important vocabulary:
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
 - identity keystores and key files,
-- product runtime config, node-role policy documents (`policy.json` or
-  `policies/<WitnessKeyID>.json`), the enrolled-client registry,
+- product runtime config, policy documents (`default.json` and
+  `policies/<selector>.json`), the enrolled-client registry,
   and key type state,
 - encrypted installed templates,
 - public cosigner references and witness public metadata sidecars,
@@ -146,7 +146,7 @@ DTOs and contract fixtures.
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
-| Node-role policy | Signer identity | signer: `policy.json` plus `policy.json.hmac`; cosigner: `policies/<WitnessKeyID>.json` plus `.json.hmac` per key | client-signing `policy.Config` or per-key cosigner component `policy.Config`, selected by node role | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
+| Policy | Signer identity | `default.json` plus `default.json.hmac`, and `policies/<selector>.json` plus `.json.hmac` per key with a policy of its own, on both node roles | `policyruntime.NodePolicy` (`Default` plus `Keys`), resolved per signing key by `PolicyFor(selector)` | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | Enrolled client registry | Product signer | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` published into the product runtime | SSH auth, HTTP principal resolution, enrollment, revocation | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` |
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
@@ -185,7 +185,7 @@ Signer data dir
       -> selected generation key files -> runtime key indexes -> /keys and signing
       -> cosigners public references -> /keytypes generation options
       -> key type state + installed templates -> /keytypes and generation
-      -> policy documents + HMAC -> signer approval verdicts or per-key cosigner component-sign authorization by node role
+      -> policy documents + HMAC -> per-key policy resolution -> signer approval verdicts or cosigner component-sign authorization by node role
       -> enrolled client registry -> SSH authn and client principals
       -> approval coordinator -> sign/enrollment prompts
       -> process-wide admin session -> admin mutations and approvals
@@ -251,10 +251,10 @@ identities/default/
     keys/*.wit.json        # public cosigner metadata sidecar (not private authority)
     keytypes/*.json        # key-type state records
     keytypes/*.template    # encrypted template documents
-    policy.json            # signer nodes only
-    policy.json.hmac
-    policies/<WitnessKeyID>.json       # cosigner nodes only, one per key
-    policies/<WitnessKeyID>.json.hmac
+    default.json           # node default policy, both roles
+    default.json.hmac
+    policies/<selector>.json           # per-key policy, both roles: address on signer nodes, Witness Key ID on cosigner nodes
+    policies/<selector>.json.hmac
     node.yaml.hmac
     cosigners/*.json
     deleted/{keys,keytypes,policies}/
@@ -279,8 +279,8 @@ generation and commits it with one durable `store-root.enc` replacement.
 - approval coordinator,
 - enrolled client registry,
 - effective product runtime config,
-- effective node-role policy: client-signing policy on signer nodes or cosigner
-  component policy on cosigner nodes,
+- effective node policy: the default plus every per-key document for the node
+  role, resolved per signing key,
 - watcher and shutdown lifecycle.
 
 The process owns one product runtime over the fixed `identities/default/`
@@ -434,37 +434,48 @@ installation and enablement.
 
 ### Policy
 
-Policy is product-store durable state selected by node role, stored as v1 JSON
+Policy is product-store durable state stored as `aplane.policy.v1` JSON
 documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)) in the selected
-generation:
+generation, with the same layout on both node roles:
 
 ```text
-policy.json                          # signer nodes
-policy.json.hmac
-policies/<WitnessKeyID>.json         # cosigner nodes, one per cosigner key
-policies/<WitnessKeyID>.json.hmac
+default.json                         # node default, governs every key without its own file
+default.json.hmac
+policies/<selector>.json             # one key's own policy; selector is the signing
+policies/<selector>.json.hmac        # address (signer) or Witness Key ID (cosigner)
 ```
 
 Each HMAC authenticates exact document bytes with a key derived from the
 identity's current term key. Policy load verifies every sidecar before applying
-policy; a missing or mismatched sidecar, or a document that fails to decode,
-fails the node closed. Every policy change mints a new generation.
+policy; a missing or mismatched sidecar, a missing `default.json`, or a
+document that fails to decode or whose `role` or `key` does not match, fails
+the node closed. Every policy change mints a new generation.
 
-On signer nodes, `policy.json` is the client-signing policy. Runtime
-client-signing policy is an effective `policy.Config` compiled from defaults
-and the stored document. It controls:
+Every document carries `role` (`signer` or `cosigner`, matching the node) and
+`key` (`default` or the selector the file governs). A key's own file replaces
+the default wholesale: there is no inheritance and no override layer. A key
+without a file follows the default. The runtime compiles one
+`policyruntime.NodePolicy` snapshot (`Default` plus `Keys`) per generation and
+resolves `PolicyFor(selector)` from the snapshot captured when a request's
+signing service is built, so a reload never changes a request in flight.
 
+`default.json` is seeded at initialize and rebuild from the embedded defaults
+(`internal/policy/defaults/signer.json`, `internal/policy/defaults/cosigner.json`).
+The signer default rejects a foreign rekey, reviews warning-level fields, and
+leaves everything else to the operator default. The cosigner default is
+deny-all: a cosigner key with no file signs nothing until it is given one.
+Cosigner documents never produce a review verdict. A compiled `policy.Config`
+controls:
+
+- the `transaction_types` gate, evaluated first,
 - Always Deny rules,
-- Always Review rules,
+- Always Review rules (signer nodes only),
 - Always Approve rules,
-- network-scoped, per-asset transfer thresholds,
-- per-auth-address `key_overrides`.
+- network-scoped, per-asset transfer routing and thresholds.
 
-On cosigner nodes, each `policies/<WitnessKeyID>.json` is the cosigner component
-policy for that one key. It uses the same transfer routing model as deterministic
-authorization for `/sign/component`; it has no operator default and no review
-verdict. A held cosigner key without a document rejects every request. Deleting
-a cosigner key archives its policy pair under `deleted/policies/`.
+Deleting a key archives its policy pair under `deleted/policies/` on both
+roles. Key backups carry a key's own file as `policies/<selector>.apb`;
+`default.json` is node configuration and never travels in a backup.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 product runtime config.
@@ -777,8 +788,9 @@ projections of shell application results, not a separate backend model.
 2. Bind the authenticated selected generation and hold its unsealed term keys
    for the unlocked session.
 3. Verify root `node.yaml` against the selected generation's role HMAC sidecar.
-4. Verify and load the node-role policy documents (`policy.json` or every
-   `policies/*.json`); any sidecar or decode failure stops the load.
+4. Verify and load the policy documents (`default.json` and every
+   `policies/*.json`) for the node role; any sidecar or decode failure stops
+   the load.
 5. Apply node role gates.
 6. Register installed templates.
 7. Scan key files.
@@ -907,7 +919,7 @@ credentials directly because no live signer store is being mutated.
 | External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
 | Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in the product store |
-| `policy.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; v1 signer or cosigner documents according to node role |
+| `default.json`, `policies/*.json` | safety-critical | authenticated by HMAC sidecars; `aplane.policy.v1` documents whose `role` must match the node |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | Enrolled client registry | authoritative access list | `identities/default/.ssh/authorized_keys`, daemon-written; a key listed here authenticates as `client:<fingerprint>` |
 | SSH private key | client secret | client-side file or agent key; the client's only credential |
@@ -936,9 +948,9 @@ generation availability, provenance, and policy amount rendering.
 - Server config can seed the default `user_auto_approve`; product runtime config owns
   the effective live setting; policy owns rule verdicts.
 - Policy HMAC authenticates exact document bytes and fails closed on mismatch.
-- `policy.json` is client-signing policy on signer nodes; `policies/<WitnessKeyID>.json`
-  is one cosigner key's component policy on cosigner nodes. Neither domain may
-  wrap the other.
+- `default.json` governs every key without a file of its own; `policies/<selector>.json`
+  governs exactly one key and replaces the default for it. A document's `role`
+  must match the node; neither role's documents may be loaded on the other.
 - Client signer and cosigner routing authority is `endpoints.yaml`, not
   `config.yaml`.
 - Witness Key IDs are uppercase 52-character base32-no-padding

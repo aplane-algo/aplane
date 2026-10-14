@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -91,35 +94,32 @@ func TestPolicyIntegrityDirectEditRejectsAndReallowsAlgoPayment(t *testing.T) {
 	}
 }
 
+// permissiveIntegrationFragment is the sparse part of the signer default the
+// integration suite runs under: nothing rejected, every route miss left to
+// the operator default.
+const permissiveIntegrationFragment = `{
+  "reject_foreign_rekey": false,
+  "transfer_policy": {"on_no_route": "operator_default", "close_on_no_route": "operator_default", "clawback_on_no_route": "operator_default"}
+}`
+
 func restrictiveAlgoPaymentPolicy(network string) string {
 	// reject_above "0" keeps the 0-ALGO validation path open while rejecting
 	// every nonzero payment.
-	return fmt.Sprintf(`{
-  "format": "aplane.signer-policy.v1",
+	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, fmt.Sprintf(`{
   "reject_foreign_rekey": false,
-  "reject_close_remainder": false,
-  "reject_asset_close": false,
-  "reject_clawback": false,
+  "transfer_policy": {"on_no_route": "operator_default", "close_on_no_route": "operator_default", "clawback_on_no_route": "operator_default"},
   "limits": {%q: {"algo": {"reject_above": "0"}}}
-}
-`, network)
+}`, network))
 }
 
 func permissiveIntegrationPolicy() string {
-	return `{
-  "format": "aplane.signer-policy.v1",
-  "reject_foreign_rekey": false,
-  "reject_close_remainder": false,
-  "reject_asset_close": false,
-  "reject_clawback": false
-}
-`
+	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, permissiveIntegrationFragment)
 }
 
 func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness, signerDataDir, passphrase, policyJSON string) {
 	t.Helper()
 
-	path := mustActiveStorePaths(t, signerDataDir).PolicyPath()
+	path := mustActiveStorePaths(t, signerDataDir).DefaultPolicyPath()
 	if err := os.WriteFile(path, []byte(policyJSON), 0o600); err != nil {
 		t.Fatalf("failed to write policy file %s: %v", path, err)
 	}

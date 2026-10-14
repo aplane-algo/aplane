@@ -601,16 +601,31 @@ Signer policy participates in the ordered approval engine. The current policy
 verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
 node-role policy is product-store scoped and stored in the selected generation
 as v1 JSON policy documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)),
-each with a sibling HMAC sidecar. Signer nodes hold one client-signing
-document, `policy.json`; cosigner nodes hold one cosigner component document
-per cosigner key, `policies/<WitnessKeyID>.json`. The default approval fallback is
+each with a sibling HMAC sidecar. Both node roles hold one node default,
+`default.json`, seeded at initialize and rebuild from the embedded default for
+the role (`internal/policy/defaults/`), and zero or one per-key document,
+`policies/<selector>.json` (the signing address on signer nodes, the Witness
+Key ID on cosigner nodes). Every document has `format` `aplane.policy.v1`, a
+`role` that must match the node, and a `key` (`default` or the selector it
+governs). A key's own document replaces the default wholesale; there is no
+inheritance and no override layer. The runtime compiles one
+`policyruntime.NodePolicy` (`Default` plus `Keys`) per generation and resolves
+`PolicyFor(selector)` from the snapshot captured when a request's signing
+service is built. The default approval fallback is
 `user_auto_approve`, persisted in
 `identities/default/config.yaml` and shown in `apadmin` as
-`User Auto-Approve`. Policy is verified with a key derived from the product
+`User Auto-Approve`; with it on, a key with no document of its own signs
+whatever the node default does not reject or force to review. Policy is
+verified with a key derived from the product
 store term key and loaded into the product runtime on unlock/reload before
-the key scan; any document that fails its sidecar or decode stops the node
-from loading. Policy files are prepared outside the node, reviewed with
-`apadmin policy check FILE...`, and installed with `apadmin policy apply FILE...`.
+the key scan; a missing `default.json` or any document that fails its sidecar
+or decode stops the node from loading. Policy files are prepared outside the
+node, starting from `apadmin policy template [--key K]` (the node's current
+default, or it with the key filled in) or `template --embedded signer|cosigner`
+(the shipped default, needing no node), reviewed with
+`apadmin policy check FILE...`, and installed with `apadmin policy apply FILE...`;
+`apadmin policy remove K...` deletes keys' own documents on either role, and
+the default cannot be removed.
 `apadmin policy` checks and applies documents
 through authenticated local admin IPC while `apsigner` is running;
 `apadmin policy rescue` checks and applies them directly while holding the
@@ -619,9 +634,10 @@ store mutation lock. `internal/signerapp/policycmd` owns both workflows, and
 the admin service, rescue, and `apstore`. `internal/signerapp/policyreview`
 owns what the operator reviews before an apply (policy file reading, the diff
 against the active document, and problem and diff rendering); `policycmd` and
-the apadmin TUI's load-policy-file flow share it. The node role decides which document
-type is accepted. Hand-placed documents are checked and signed with
-`apstore policy`. The policy admin surface reads, checks, and applies exact
+the apadmin TUI's load-policy-file flow share it. The node role decides which
+`role` and which fields a document may carry. Hand-placed documents are checked
+and signed with `apstore policy check|verify|sign`, which operate on every
+stored document (the default and each key file). The policy admin surface reads, checks, and applies exact
 document bytes through `get_policy` (summary), `get_policy_document`,
 `check_policy`, and `apply_policy`;
 `apply_policy` requires `expected_policy_set_sha256` for optimistic
@@ -631,12 +647,13 @@ success. There is no scalar policy-settings IPC. Separate admin-settings IPC
 reports identity/process configuration and status and mutates only its
 documented writable settings; it does not project policy fields.
 
-The signer document may contain `key_overrides`; during normal
-signing, the effective policy is selected by signing auth address, not by
-transaction sender, so rekeyed accounts use the policy override for the auth
-address. On cosigner nodes, component signing selects the document for the
-request's txid-shaped Witness Key ID; a held key without a document rejects
-every request.
+During normal signing, the effective policy is selected by signing auth
+address, not by transaction sender, so a rekeyed account is governed by the
+auth address's own document or the default. User-role component signing
+selects by the guarded account. On cosigner nodes, component signing selects
+the document for the request's Witness Key ID; the shipped cosigner default is
+deny-all, so a held key without a document of its own rejects every request
+until one is applied.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -675,10 +692,10 @@ Operationally:
   [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
 - active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by authenticated `store-root.enc`; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
 - store initialization stages the first generation with its node-role sidecar,
-  the role's policy baseline (an initial signed `policy.json` on signer nodes;
-  no cosigner documents on cosigner nodes), and default key types before
-  publishing `store-root.enc`; installers do not create or sign policy files
-  outside the generation,
+  the role's policy baseline (a signed `default.json` seeded from the embedded
+  default for the role, on both roles; no per-key documents), and default key
+  types before publishing `store-root.enc`; installers do not create or sign
+  policy files outside the generation,
 - systemd-managed admin IPC defaults to `/run/apsigner/aplane.sock`; explicit custom paths and same-UID local installs remain supported,
 - the effective product layout is fixed; `default` is a literal namespace and
   compatibility value, not a caller-supplied locator.
@@ -1271,7 +1288,8 @@ accounts whose LogicSig bytecode requires both:
 - a user component signature produced by the user signer that owns the
   guarded-account key file, and
 - a cosigner component signature produced by a separate cosigner signer that
-  owns a cosigner key and evaluates that key's cosigner policy document.
+  owns a cosigner key and evaluates the cosigner policy that governs that key
+  (its own document, or the node default).
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1421,8 +1439,8 @@ guarded effective signer and runs the signer-domain approval gates (hard
 policy rejection, always-review rules, blocking operator approval) before any
 key operation, with the guarded account as the per-target policy key. The
 cosigner-role component request evaluates decoded target transaction facts
-against the component key's cosigner policy document and returns cosigner component signatures
-when allowed.
+against the cosigner policy that governs the component key (its own document,
+or the node default) and returns cosigner component signatures when allowed.
 
 If the original group also has non-guarded positions, the client then calls the
 primary signer `/sign` over the full canonical group: non-guarded originals are
@@ -1450,7 +1468,9 @@ and LogicSig change and are not part of this flow. Cosigner-role component signi
 is transfer policy based: target transactions must produce direct transfer
 movements covered by `transfer_policy`. App calls, key registration, asset
 configuration, and other unsupported target shapes are rejected for cosigner
-role because routing cannot authorize them.
+role because routing cannot authorize them: a cosigner document may set
+`allow` in `transaction_types` only for `pay` and `axfer`, so every other
+type rejects with `transaction_type:<type>`.
 
 ### Trust Model
 
@@ -1513,15 +1533,18 @@ the embedded public key and verified component signature remain authoritative.
 
 ### Policy And Audit
 
-Signer nodes use `policy.json` for account signing. Cosigner nodes use one
-`policies/<WitnessKeyID>.json` document per cosigner key for cosigner component
-signing. Both domains use the v1 policy format and HMAC sidecar model, but
-cosigner policy has no manual-review or operator-default verdict. It is
-deterministic authorization: all selected target movements must be positively
-authorized by the effective cosigner policy, and deny guards fail closed.
+Both node roles use the same layout: a node default, `default.json`, and zero
+or one `policies/<selector>.json` per key, all in the `aplane.policy.v1` format
+with the HMAC sidecar model. A cosigner document (`role: cosigner`) has no
+manual-review or operator-default verdict; the decoder refuses a `review`
+verdict and permits `allow` in `transaction_types` only for `pay` and `axfer`.
+Cosigner component signing is deterministic authorization: all selected target
+movements must be positively authorized by the effective cosigner policy, and
+deny guards fail closed.
 
-Cosigner policy is selected per Witness Key ID, one self-contained document
-per key. Client-signing policy overrides are keyed by signing auth address.
+Cosigner policy is selected per Witness Key ID: the key's own self-contained
+document, or the node default, which ships deny-all. Client-signing policy is
+selected the same way by signing auth address.
 
 Cosigner component approvals and rejections are recorded through existing sign
 audit events. Current records put the Witness Key ID in `txn_auth`, the
@@ -2069,13 +2092,15 @@ are quarantined by reconciliation at unlock, never resumed or adopted.
 A commit with unconfirmed durability, or a rollback that fails after mutation
 began, transitions the runtime into recovery mode immediately and blocks
 signing until the store reconciles cleanly.
-Managed archives contain complete credential authority, verified per-key
-cosigner policy when present, archive integrity metadata, and source node role.
-They exclude signer policy, approval defaults, genesis-hash mappings, templates,
-endpoints, and operator settings. Restore installs an archived cosigner policy
-with its key; a differing destination policy is a conflict requiring
-`replace_existing`, and a destination policy is kept when the archive carries
-none. Destination signer policy and operational configuration remain authoritative.
+Managed archives contain complete credential authority, each key's verified
+own policy document when it has one (`policies/<selector>.apb`, on both node
+roles), archive integrity metadata, and source node role. They exclude the node
+default policy, approval defaults, genesis-hash mappings, templates, endpoints,
+and operator settings. Restore installs an archived key policy with its key; a
+differing destination document for the key is a conflict requiring
+`replace_existing`, and a destination document is kept when the archive carries
+none. A restored key with no document follows the destination's default. The
+destination's `default.json` and operational configuration remain authoritative.
 
 `apadmin` is the sole general-purpose CLI owner of this daemon-owned lifecycle
 over local IPC. Remote operators use an ordinary SSH login to run `apadmin`

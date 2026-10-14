@@ -15,7 +15,7 @@ closed product authorizer requires exact membership in its explicit action
 allowlist. See
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped signing policy in `policy.json` on signer nodes and per-key cosigner component policy in `policies/<WitnessKeyID>.json` on cosigner nodes, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped policy stored as a node default (`default.json`) plus optional per-key documents (`policies/<selector>.json`) on both node roles, with guards such as a per-type allow/review/reject gate, rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings (including application update, asset reconfigure/destroy, and asset freeze), and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests. A key with no document of its own follows the default; the shipped cosigner default is deny-all.
 
 **Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
@@ -1212,7 +1212,7 @@ submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
-| Policy tampering | Each policy document in the selected generation (`policy.json` or `policies/<WitnessKeyID>.json`) has a `.hmac` sidecar that authenticates its exact bytes with a key derived from the product store's current term key; missing or mismatched policy integrity on any document fails the whole policy load |
+| Policy tampering | Each policy document in the selected generation (`default.json` and every `policies/<selector>.json`) has a `.hmac` sidecar that authenticates its exact bytes with a key derived from the product store's current term key; missing or mismatched policy integrity on any document fails the whole policy load |
 | Plugin filesystem access | External plugins require OS sandboxing and checksum verification |
 | Manual production startup | `.prod` signer data marker blocks startup unless systemd-managed |
 

@@ -18,12 +18,14 @@ Normative inputs:
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
   `/sign/assemble`, endpoint registry, node role, policy documents,
   and on-disk selector contracts.
-- [ARCH_POLICY.md](ARCH_POLICY.md): per-key cosigner policy documents, cosigner
-  transfer policy, deterministic reject-only route-miss behavior, and
-  Witness Key ID document selection.
+- [ARCH_POLICY.md](ARCH_POLICY.md): the cosigner node default and per-key
+  documents, the transaction-type verdict, cosigner transfer policy,
+  deterministic reject-only route-miss behavior, and Witness Key ID document
+  selection.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
-  precedence. This model imports only the snapshot concept; the
-  cosigner role has no manual-review or operator-default verdict.
+  precedence. This model imports only the snapshot and `PolicyFor`
+  selection concepts; the cosigner role has no manual-review or
+  operator-default verdict.
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   stored key-file authority for existing keys.
 
@@ -108,20 +110,34 @@ signer services; clients do not verify component signatures (A10).
 
 ### Cosigner Policy Snapshot
 
-`CosignerPolicySnapshot` is the verified set of cosigner policy documents for
-the cosigner node's product runtime: a partial map from Witness Key ID to that
-key's compiled policy (`policies/<WitnessKeyID>.json`). A held key with no entry
-has no policy; there is no node-wide default.
+`CosignerPolicySnapshot` is the verified cosigner `NodePolicy` for the
+cosigner node's selected generation: the compiled node default
+(`default.json`) plus a partial map from Witness Key ID to that key's own
+compiled document (`policies/<WitnessKeyID>.json`). The shipped cosigner
+default is deny-all (`transaction_types {"*": "reject"}`, no routes,
+`reject_rekey: true`); an operator may replace it, so a held key with no
+document of its own follows whatever the node default says.
 
 ```text
 CosignerPolicyFor(snapshot, component_key) =
-  snapshot[component_key]   if defined
-  NoPolicy                  otherwise
+  snapshot.own[component_key]   if defined
+  snapshot.default              otherwise
 ```
 
+`NoPolicy` names the state in which no snapshot is loaded at all. It cannot
+arise from a missing per-key document; the cosigner service treats it as an
+internal error and rejects every component request.
+
 Unlike client-signing policy, cosigner policy has no manual-review verdict and
-no operator default. If no positive transfer route authorizes every target
-transaction, the request rejects.
+no operator default. A cosigner document cannot express a review verdict: the
+decoder refuses `review` type verdicts and `review_above` thresholds on a
+cosigner node, and the service rejects any review verdict that would reach it.
+Every verdict is therefore sign or reject. A target whose type the document
+does not `allow` rejects with `transaction_type:<type>`, evaluated before any
+other rule (a cosigner document may `allow` only `pay` and `axfer`); a
+non-zero `RekeyTo` the document does not permit rejects with
+`cosigner_policy:reject_rekey`; an allowed transfer that no positive route
+authorizes rejects with `transfer_policy:route_miss`.
 
 ### Endpoint Registry
 
@@ -187,11 +203,12 @@ POST /sign/component kind=cosigner component_key=<component_selector>
 ```
 
 The cosigner signer first requires `component_key` to name a held cosigner key
-(else bad request) and to have a policy document (else reject with
-`cosigner_policy:key_has_no_policy`). It then evaluates that key's transfer
-policy for every target transaction before loading the component private key.
-The request is accepted only when that key's policy authorizes all target
-transactions.
+(else bad request) and a loaded policy snapshot (else internal error). It then
+evaluates `CosignerPolicyFor(snapshot, component_key)`, the key's own document
+or the cosigner default, against every target transaction before loading the
+component private key: the transaction-type verdict first, then the hard
+reject fields, the rekey rules, and transfer routing. The request is accepted
+only when that policy authorizes all target transactions.
 
 ### Sign Non-Guarded Originals
 
@@ -271,8 +288,10 @@ not LoadGuardedAccount(component_key) =>
 
 ### A4: Cosigner Policy Before Key Load
 
-Cosigner-role component signing evaluates the requested key's own policy
-document before loading the component private key.
+Cosigner-role component signing resolves and evaluates the requested key's
+policy (its own document, else the cosigner default) before loading the
+component private key. `NoPolicy` below arises only when no snapshot is
+loaded.
 
 ```text
 CosignerPolicyFor(snapshot, request.component_key) = NoPolicy or
@@ -456,8 +475,10 @@ High-value test anchors:
 - direct `/sign` rejection for every cosigner and guarded account
   key type,
 - sender binding before user-role key load,
-- deterministic per-key cosigner policy rejection, including a key with no
-  policy document, before cosigner key load,
+- deterministic cosigner policy rejection before cosigner key load: a key with
+  no document of its own rejects under the deny-all default with
+  `transaction_type:<type>`, and an allowed type with no matching route
+  rejects with `transfer_policy:route_miss`,
 - Witness Key ID/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
 - assembly rejection for wrong cosigner signatures,

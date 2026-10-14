@@ -32,10 +32,10 @@ Each file is self-contained: it can be decrypted with only the file and the expo
 Each encrypted payload is the complete canonical managed credential record,
 including durable signing metadata.
 
-A cosigner key's policy travels with it: policies/<WitnessKeyID>.apb holds the
+A key's own policy travels with it: policies/<key>.apb holds the
 key's exact v1 policy document in the same encryption envelope, and restore
-installs it with the key. Backups do not contain the signer's node-wide
-policy, approval settings, network mappings, templates, endpoints, tokens, or
+installs it with the key. Backups do not contain the node's default policy,
+approval settings, network mappings, templates, endpoints, tokens, or
 operator config.
 
 ## Encryption Format (envelope_version 2)

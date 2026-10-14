@@ -99,15 +99,20 @@ func TestGenerationOwnedPathMatrix(t *testing.T) {
 			gen.DeletedKeyTypeTemplate("test.generic-policy.v1"),
 			filepath.Join(generationDir, "deleted", "keytypes", "test.generic-policy.v1.template"),
 		},
-		{"policy", gen.PolicyPath(), filepath.Join(generationDir, "policy.json")},
-		{"policy sidecar", gen.PolicyIntegritySidecar(), filepath.Join(generationDir, "policy.json.hmac")},
-		{"cosigner policies", gen.CosignerPoliciesDir(), filepath.Join(generationDir, "policies")},
+		{"default policy", gen.DefaultPolicyPath(), filepath.Join(generationDir, "default.json")},
+		{"default policy sidecar", gen.DefaultPolicyIntegritySidecar(), filepath.Join(generationDir, "default.json.hmac")},
+		{"key policies", gen.PoliciesDir(), filepath.Join(generationDir, "policies")},
 		{
-			"cosigner policy",
-			gen.CosignerPolicyPath("MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"),
+			"cosigner key policy",
+			gen.PolicyPath("MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"),
 			filepath.Join(generationDir, "policies", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json"),
 		},
-		{"deleted cosigner policies", gen.DeletedCosignerPoliciesDir(), filepath.Join(generationDir, "deleted", "policies")},
+		{
+			"signer key policy",
+			gen.PolicyPath("CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"),
+			filepath.Join(generationDir, "policies", "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM.json"),
+		},
+		{"deleted key policies", gen.DeletedPoliciesDir(), filepath.Join(generationDir, "deleted", "policies")},
 		{"node role sidecar", gen.NodeRoleIntegritySidecar(), filepath.Join(generationDir, "node.yaml.hmac")},
 	}
 	for _, tt := range tests {

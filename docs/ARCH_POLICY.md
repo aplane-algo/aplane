@@ -20,24 +20,33 @@ guarded account as the per-target policy key and non-target group positions
 evaluated as foreign context. Cosigner-role `/sign/component` requests use the
 cosigner domain (see [ARCH_COSIGNER.md](ARCH_COSIGNER.md)).
 
-Both domains are written as v1 JSON policy documents, specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md), and share one decoder, one
-compiler, one fixture corpus, and one verdict-model description. Fields that
-apply to only one domain are tagged inline.
+Both domains are written in one v1 JSON document format, `aplane.policy.v1`,
+specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). The document's
+`role` field says which domain it is for, and the two roles share one
+decoder, one compiler, one differ, one fixture corpus, one storage layout,
+and one verdict-model description. Fields that apply to only one domain are
+tagged inline.
 
 ## Scope
 
-A policy document governs a set of accounts. On a signer node the set is the
-accounts the node holds, and one document (`policy.json`) covers them all,
-including the user side of guarded keys; membership changes with key
-generation, import, and deletion, and per-account rules are routes whose
-`sources` name the account. On a cosigner node the set is every account whose
-guarded key was composed with one cosigner key, and that key's document
-(`policies/<WitnessKeyID>.json`) covers them. The cosigner set is virtual:
-the node does not hold those accounts, cannot enumerate them, and learns of
-one when a `/sign/component` request names it, so the document's `sources`
-are the cosigner operator's only control over membership. A guarded account
-is in both sets, and both documents must allow a movement.
+Policy governs keys. Every node has one **default** document, the complete
+rulebook for every key that has no document of its own, and zero or one
+complete document per key. A key with a document of its own is governed by
+that document alone; a key without one is governed by the default. There is
+no inheritance and no merge between the two.
+
+On a signer node a key is an account the node holds, selected by its Algorand
+address; its document covers all signing by that account, including the user
+side of a guarded key. Membership changes with key generation, import, and
+deletion, and per-account rules live either in the account's own document or
+in routes whose `sources` name the account. On a cosigner node a key is a
+cosigner key, selected by its Witness Key ID; its document covers component
+signing by that key for every account whose guarded key was composed with it.
+That set is virtual: the node does not hold those accounts, cannot enumerate
+them, and learns of one when a `/sign/component` request names it, so the
+document's `sources` are the cosigner operator's only control over
+membership. A guarded account is in both a signer key's scope and a cosigner
+key's scope, and both documents must allow a movement.
 
 Signer policy decides what `apsigner` may produce a signature for after
 request planning has identified the signable units. For client signing, the
@@ -52,29 +61,35 @@ target transaction in `/sign/component`. Policy is separate from:
 ## Storage
 
 Policy is product-scoped and stored in the selected generation under the
-retained product namespace. The root `node.yaml` role decides which documents
-exist:
+retained product namespace. The layout is the same on both node roles; the
+root `node.yaml` role decides which documents are accepted:
 
 ```text
-# signer node
-identities/default/generations/<selected-generation>/policy.json
-identities/default/generations/<selected-generation>/policy.json.hmac
-
-# cosigner node, one pair per cosigner key
-identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json
-identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json.hmac
+identities/default/generations/<selected-generation>/default.json
+identities/default/generations/<selected-generation>/default.json.hmac
+identities/default/generations/<selected-generation>/policies/<selector>.json
+identities/default/generations/<selected-generation>/policies/<selector>.json.hmac
+identities/default/generations/<selected-generation>/deleted/policies/<selector>.json[.hmac]
 ```
 
-A signer generation holds exactly one `policy.json` and no `policies/`
-documents; a new signer store starts with `policy.InitialSignerPolicy`, which
-enables routing with one `self-transfer` route (any account to itself, any
-asset, any network) and `on_no_route: reject`, so a fresh signer allows
-self-sends and opt-ins and rejects every other transfer until a route is
-added. A cosigner generation holds no `policy.json`; a new cosigner store has
-no documents, so every cosigner key rejects every request until its document
-is applied, and the starting document offered for a key holds the same
-`self-transfer` route. Deleting a cosigner key archives its
-document pair under `deleted/policies/` in the same generation.
+`<selector>` is an Algorand address on a signer node and a Witness Key ID on a
+cosigner node. Every generation holds `default.json`; a load without it fails
+closed. A new store's default is seeded from the embedded default for the node
+role (`internal/policy/defaults/signer.json`, `cosigner.json`). The shipped
+signer default rejects a foreign rekey, sends warning-level findings to
+review, routes self-transfers and opt-ins, and leaves every other transfer
+and every non-transfer type to the operator default, so a fresh signer key
+behaves like most signers: it signs under `user_auto_approve: true` and
+prompts under `false`, except that a foreign rekey is always rejected and a
+rekey, close-out, clawback, app update or delete, asset reconfigure, asset
+freeze, or high fee always prompts. The shipped cosigner default is deny-all
+(`transaction_types {"*": "reject"}`, no routes, `reject_rekey: true`), so a
+cosigner key with no document signs nothing until it is given one. Both
+defaults are reproduced in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#embedded-defaults).
+
+Deleting a key archives its document pair under `deleted/policies/` in the
+same generation, on both roles.
 
 Each `.hmac` sidecar covers the exact document bytes and uses a key derived
 from the product store's current term key. Sidecar metadata such as signing time
@@ -86,7 +101,9 @@ in-memory policy remains active.
 
 The sidecar authenticates only the document bytes. Diagnostic metadata fields
 in the sidecar can be edited without invalidating the policy HMAC; they are
-not security inputs to the verification decision.
+not security inputs to the verification decision. The HMAC is not bound to a
+file name, so every document carries a signed `key` field (`default` or the
+selector) that must equal the file it is stored as.
 
 Product runtime settings such as `user_auto_approve`,
 `lock_on_disconnect`, and `passphrase_timeout` live separately in:
@@ -99,27 +116,35 @@ identities/default/config.yaml
 policy rule; it is the user/operator default used only when policy has no
 matching verdict.
 
-On signer nodes, `policy.json` is the client-signing policy
-(`"format": "aplane.signer-policy.v1"`). It is sparse. Absent fields resolve
-through product defaults: `reject_foreign_rekey` defaults to `true`, while
-`reject_close_remainder`, `reject_asset_close`, `reject_clawback`,
-`always_review_warnings`, and `auto_approve_self_noop_transfer` default to
-`false`. An absent `max_fee_microalgos` means no fee ceiling, and absent
-`limits` sets no document-level thresholds. `transfer_policy` may be absent
-entirely; if it is present, it must satisfy the routing schema below.
+Every document, default or per-key, is complete: every verdict-bearing field
+is required and the decoder fills in nothing. A signer document carries the
+client-signing field set; a cosigner document carries the cosigner field set,
+and review-producing fields do not exist in it, so route misses always
+reject. The policy loader validates schema and domain constraints
+independent of the product runtime's current key inventory. Validation runs
+at unlock/reload and at every `check` and `apply`; failures fail closed with
+the previous in-memory policy snapshot left active, exactly like sidecar
+verification failure.
 
-On cosigner nodes, each `policies/<WitnessKeyID>.json` is the cosigner
-component policy for that one key (`"format": "aplane.cosigner-policy.v1"`).
-Its signed `key` field must equal the Witness Key ID in its file name. Each
-document is self-contained: sets, limits, and routes are not shared between
-keys, and there is no node-wide cosigner policy or per-key overlay.
-Review-producing fields do not exist in this document type, and route misses
-always reject.
+## Policy Selection
 
-The policy loader validates schema and domain constraints independent of the
-product runtime's current key inventory. Validation runs at unlock/reload and at
-every `check` and `apply`; failures fail closed with the previous in-memory
-policy snapshot left active, exactly like sidecar verification failure.
+The daemon compiles a `policyruntime.NodePolicy` snapshot per generation:
+`{Role, Documents, Default, Keys}`, where `Default` is the compiled node
+default and `Keys` maps each selector with a document of its own to its
+compiled policy. `PolicyFor(selector)` returns `Keys[selector]` when present
+and `Default` otherwise. Selection is by the key that signs, never by the
+transaction sender:
+
+- ordinary `/sign` requests select by the request's `auth_address`, so a
+  rekeyed account uses the policy of its auth address;
+- user-role `/sign/component` requests select by the guarded account;
+- cosigner-role `/sign/component` requests select by the `component_key`
+  Witness Key ID. A key the node does not hold fails as a bad request
+  (`Witness Key ID "<id>" not found`) before any policy evaluation.
+
+Every slot of a request resolves through the same resolver, so a mixed group
+whose slots sign under different keys evaluates each slot under its own key's
+document. A policy that cannot be resolved (policy not loaded) fails closed.
 
 ## Verdict Model
 
@@ -141,7 +166,9 @@ Always Deny > Always Review > Always Approve > Operator Default
 
 Operational flow:
 
-1. Evaluate policy rules.
+1. Evaluate policy rules. Inside Always Deny and Always Review the
+   transaction-type verdict runs first and alone, so a rejected or reviewed
+   type names the type rather than a later rule.
 2. If any Always Deny rule matches, reject.
 3. Else if any Always Review rule matches, require approval.
 4. Else if any Always Approve rule matches, sign.
@@ -167,48 +194,63 @@ order is still used, but review is not a valid cosigner outcome:
 | Always Approve | Sign without approval | Sign |
 | Operator Default | Per `user_auto_approve` | Not applicable; unmatched cosigner requests reject |
 
-The deterministic cosigner surface is enforced by the cosigner document type:
-it has no `always_review_warnings`, no `review_above` thresholds, and no
-`on_no_route`, `close_on_no_route`, or `clawback_on_no_route` fields, and
-unknown fields are rejected. If implementation ever
-encounters a review verdict while evaluating a cosigner component request,
-the request fails closed as a policy configuration error rather than waiting
-for a prompt.
+The deterministic cosigner surface is enforced at decode on a cosigner node:
+a cosigner document has no `always_review_warnings`, no `review_above`
+thresholds, no `on_no_route`, `close_on_no_route`, or `clawback_on_no_route`
+fields, no `review` value in `transaction_types`, and unknown fields are
+rejected. If implementation ever encounters a review verdict while
+evaluating a cosigner component request, the request fails closed as a
+policy configuration error rather than waiting for a prompt.
 
 `user_auto_approve` is client-signing-only. It lives in
 `identities/default/config.yaml` and has no cosigner analog.
 
 ## Role Domains
 
-Policy has two document types, selected by the `format` field and required to
-match the node role.
+One document format serves both roles. The `role` field selects the field
+set and must match the node role; the `key` field says whether the document
+is the node default or one key's own.
 
-The signer `policy.json` is the client-signing document:
+A signer document:
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
   "reject_foreign_rekey": true,
-  "auto_approve_self_noop_transfer": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
   "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": true,
   "max_fee_microalgos": "1000",
+  "transaction_types": { "*": "allow", "appl": "review" },
   "limits": {
     "mainnet": { "algo": { "review_above": "100000000" } }
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": []
   }
 }
 ```
 
-A cosigner `policies/<WitnessKeyID>.json` is one key's component policy:
+A cosigner document, here for one key:
 
 ```json
 {
-  "format": "aplane.cosigner-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
   "key": "<WitnessKeyID>",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": false,
+  "max_fee_microalgos": "2000",
+  "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow" },
   "transfer_policy": { "routes": [] },
   "rekey_policy": {
     "allowed": [
@@ -218,43 +260,46 @@ A cosigner `policies/<WitnessKeyID>.json` is one key's component policy:
 }
 ```
 
-The signer document accepts the client-signing field set and
-`key_overrides`; it has no `reject_rekey` or `rekey_policy`, which belong to the
-cosigner document. The cosigner document accepts the cosigner field set; it
-has no `key_overrides`. Field tables for both are in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). Unknown fields fail
-validation at every level, and a document whose `format` does not match the
+The signer field set has no `reject_rekey` or `rekey_policy`, which belong to
+the cosigner field set; the cosigner field set has none of the signer's
+review-producing or ownership-referencing fields. Field tables with the
+required/optional/rejected column per role are in
+[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#fields). Unknown fields fail
+validation at every level, and a document whose `role` does not match the
 node role is rejected.
 
 Client-signing semantics:
 
-- Some fields are valid only in the signer document because their semantics
+- Some fields are valid only in a signer document because their semantics
   reference "this signer owns the account" (`reject_foreign_rekey`,
   `auto_approve_self_noop_transfer`) or their verdict only makes sense with an
   operator above the signer (`always_review_warnings`, `review_above`
-  thresholds, `on_no_route: review`).
+  thresholds, `on_no_route: review`, `transaction_types` `review`).
 
 Cosigner semantics:
 
-- `reject_rekey` and `rekey_policy` are valid only in the cosigner document.
+- `reject_rekey` and `rekey_policy` are valid only in a cosigner document.
 - `reject_foreign_rekey`, `always_review_warnings`,
-  `auto_approve_self_noop_transfer`, and `review_above` do not exist there.
+  `auto_approve_self_noop_transfer`, `review_above`, and the three route-miss
+  actions do not exist there.
+- `transaction_types` may `allow` only `pay` and `axfer`; `*` and every
+  non-transfer type must be `reject`.
 - `transfer_policy` is required and is the positive authorization surface.
   Route misses, unallowed close-outs, and unallowed clawbacks always reject.
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
-  transactions when `reject_rekey` is absent or false. It authorizes only pure
+  transactions when `reject_rekey` is false. It authorizes only pure
   0 ALGO self-payment rekeys whose sender and target match an allowed edge.
   Bounded-cosigner v1 does not invoke cosigner policy for rekeys; its cosigner slot
   is spend-only and forbidden on administrative paths.
 
-Both document types are validated by schema and semantic rules, not by the
-product runtime's current key inventory. A cosigner node can hold a document
-for a Witness Key ID before that cosigner key is installed; `check` reports it.
+Both roles' documents are validated by schema and semantic rules, not by the
+product runtime's current key inventory. A node can hold a document for a
+key it does not yet hold; `check` and `status` report it.
 
 A signer document's `transfer_policy` that contains review-producing behavior
 (`on_no_route: review`, `review_above`, and similar fields) is valid for client
 signing, but it is not a cosigner allow-list. Cosigner authorization comes only
-from the requested key's own cosigner document.
+from the document that governs the requested cosigner key.
 
 ## Bounded Authorization Interaction
 
@@ -300,20 +345,24 @@ The product runtime publishes policy updates atomically. Readers see either
 the previous policy snapshot or the replacement snapshot; they must not observe
 a partially applied policy.
 
-Each signing request captures the effective policy snapshot when its signing
-service is constructed. That snapshot governs the request through policy
-evaluation, approval waiting, and final signature execution. A later successful
-policy reload or `apadmin` online policy apply applies only to signing requests
-that start after the new snapshot is published. In-flight requests are not
-re-evaluated or canceled merely because the policy changed while they were
-waiting for approval. This is a deliberate contract, not a gap: deny and
-review verdicts are decided with the policy at the time the request is
-presented, not at the time the operator approves it. A request whose prompt
-is in front of the operator, or queued behind another prompt for up to
-`approval_wait`, signs under the policy it was evaluated against when
-approved. An operator who needs a tighter policy to cover requests already
-waiting rejects those prompts or locks the signer, which fails every pending
-approval (see [USER_POLICY.md](USER_POLICY.md), "Editing Policy").
+Each signing request captures one `NodePolicy` snapshot when its signing
+service is constructed, and the service's `PolicyFor` resolver closes over
+that value. It never reads the runtime's current policy per call, so every
+slot of a group resolves against the same snapshot, and two resolutions on
+one service return the same policy even if a reload lands between them. That
+snapshot governs the request through policy evaluation, approval waiting, and
+final signature execution. A later successful policy reload or `apadmin`
+online policy apply applies only to signing requests that start after the new
+snapshot is published. In-flight requests are not re-evaluated or canceled
+merely because the policy changed while they were waiting for approval. This
+is a deliberate contract, not a gap: deny and review verdicts are decided with
+the policy at the time the request is presented, not at the time the operator
+approves it. A request whose prompt is in front of the operator, or queued
+behind another prompt for up to `approval_wait`, signs under the policy it
+was evaluated against when approved. An operator who needs a tighter policy
+to cover requests already waiting rejects those prompts or locks the signer,
+which fails every pending approval (see [USER_POLICY.md](USER_POLICY.md),
+"Editing Policy").
 
 ## Always Deny
 
@@ -324,22 +373,29 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
+| `transaction_types` `reject` | common | Reject every transaction of that type; evaluated first and alone, so nothing else is reported for a rejected type |
 | `reject_foreign_rekey` | signer | Reject transactions whose non-zero `RekeyTo` target is not held by the product signer runtime |
 | `reject_rekey` | cosigner | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
 | `rekey_policy` | cosigner | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
-| `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling |
+| `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling; `"0"` is no ceiling |
 | `limits` `reject_above` | common | Per-network, per-asset raw ceilings for ALGO payments (microAlgos) and ASA transfers (base units) |
 | `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for cosigner, routing is the positive authorization surface |
+
+The transaction-type rule emits `transaction_type:<type>`, where `<type>` is
+the Algorand type string (`pay`, `axfer`, `acfg`, `afrz`, `keyreg`, `appl`,
+`stpf`, `hb`). The map's `*` entry decides every type it does not name. On a
+cosigner node decode refuses `allow` for anything but `pay` and `axfer`, so
+every non-transfer type a cosigner is asked to attest is rejected here.
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
 sender. `reject_rekey` is the cosigner coarse-deny analog and ignores key
-ownership: when true, any non-zero `RekeyTo` rejects. When it is absent or
-false, the cosigner still fails closed unless `rekey_policy.allowed` authorizes
-the exact sender-to-target edge and the target transaction is a pure 0 ALGO
+ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
+cosigner still fails closed unless `rekey_policy.allowed` authorizes the exact
+sender-to-target edge and the target transaction is a pure 0 ALGO
 self-payment with no close remainder.
 This cosigner-domain rekey surface applies to dedicated `cosigner1` guarded
 accounts. Corridor v1 uses a distinct external contract-admin witness for its
@@ -355,12 +411,10 @@ default.
 Document-level `limits.<network>.<asset>.reject_above` is the deny side of
 transfer guards. If a matching `review_above` is also configured, `reject_above`
 must be greater than or equal to it. This invariant is checked at acceptance: a
-document that violates it fails `check`, `apply`, and load. For signer key
-overrides, the invariant is checked on each key's merged effective `limits`
-(see [Key Overrides](#key-overrides)).
+document that violates it fails `check`, `apply`, and load.
 
 `transfer_policy` is a route table for direct `pay` and `axfer`
-movements. When enabled, it can reject blocked destinations, route misses,
+movements. It can reject blocked destinations, route misses,
 close-out misses according to `close_on_no_route`, clawback misses according to
 `clawback_on_no_route`, matched close-out movements without `allow_close:true`,
 matched clawback movements without `allow_clawback:true`, and matching
@@ -373,8 +427,8 @@ authorization surface. See [Transfer Routing](#transfer-routing).
 
 Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
-cosigner domain has no operator above the signer, so the cosigner document type
-has no review-producing fields. If a
+cosigner domain has no operator above the signer, so decode refuses every
+review-producing field and value in a cosigner document. If a
 review verdict is reachable while evaluating a cosigner
 component request, the request fails closed as a policy configuration error.
 See [Verdict Mapping By Role](#verdict-mapping-by-role).
@@ -383,12 +437,18 @@ Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
+| `transaction_types` `review` | signer | Require operator review for every transaction of that type; evaluated first in this tier, so the prompt names the type |
 | `always_review_warnings` | signer | Require operator review when warning analysis finds risk markers |
 | `limits` `review_above` | signer | Per-network, per-asset raw thresholds that require review for ALGO payments and ASA transfers |
 | `transfer_policy.on_no_route: review` | signer | Forces ordinary route misses to review for client signing |
 | `transfer_policy.close_on_no_route: review` | signer | Forces close-out route misses to review for client signing |
 | `transfer_policy.clawback_on_no_route: review` | signer | Forces clawback route misses to review for client signing |
 | `transfer_policy` `review_above` | signer | Route-level review threshold |
+
+The transaction-type rule emits the same `transaction_type:<type>` ID as its
+deny counterpart; the phase that emits it says which. A type `review` is
+Always Review, so it defeats `auto_approve_self_noop_transfer` and
+`user_auto_approve:true` like every other rule in this tier.
 
 Document-level `review_above` thresholds are the review side of transfer
 guards. They are evaluated after Always Deny. For example, an ASA transfer above
@@ -407,16 +467,25 @@ direct transfer movements; passthrough and foreign request slots are not
 governed by this signer's route table. See
 [Transfer Routing](#transfer-routing).
 
-Warning analysis currently covers:
+Warning analysis (`internal/signerapp/approvalpolicy/warnings.go`) covers:
 
 - rekey fields,
 - ALGO close-out fields,
 - ASA close-out fields,
 - ASA clawback fields,
+- application delete, clear-state, and update (`OnCompletion`
+  `DeleteApplication`, `ClearState`, `UpdateApplication`),
+- asset reconfigure (`acfg` naming an existing asset; the warning names the
+  resulting Manager, Reserve, Freeze, and Clawback addresses, with
+  `(cleared)` for a zeroed role) and asset destroy,
+- asset freeze and unfreeze (`afrz`),
 - unusually high fees above 1 ALGO.
 
-Warnings are still displayed when `always_review_warnings:false`; they simply
-do not force review in that mode.
+`always_review_warnings` governs only the signer's own legs. A warning on a
+passthrough or foreign leg of a group this signer co-signs always forces
+review, even with the setting off and even under `user_auto_approve:true`.
+Warnings on the signer's own legs are still displayed when
+`always_review_warnings:false`; they simply do not force review in that mode.
 
 ## Always Approve
 
@@ -432,7 +501,7 @@ Policy fields by domain:
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
 cosigner: a cosigner is not the owner of the sender it is authorizing.
-The field does not exist in the cosigner document type. If an invalid
+The field does not exist in a cosigner document. If an invalid
 effective cosigner policy is injected in tests, the
 rule simply does not match a cosigner request because no signer-owned address
 is in scope to compare against.
@@ -482,14 +551,19 @@ Behavior:
 - `user_auto_approve:true`: unmatched client-signing requests sign without operator review.
 - cosigner component requests: ignored; the verdict is reject.
 
+Under the shipped signer default, route misses and non-transfer types produce
+no verdict, so with the switch on a key with no document of its own signs
+whatever the default does not reject or force to review, and with it off a
+human approves. Turning the switch on without per-key documents is that
+choice.
+
 ## Transfer Routing
 
 `transfer_policy` is the implemented v1 route table for direct transfer
 movements. The same routing engine applies to both client-signing and
-cosigner evaluation. Client-signing routes live in the signer `policy.json`;
-cosigner component routes live in each cosigner key's own document. Transfer
-routing is not projected through admin IPC as separate settings; it travels only
-inside whole policy documents.
+cosigner evaluation, reading the document that governs the signing key: its
+own, or the node default. Transfer routing is not projected through admin IPC
+as separate settings; it travels only inside whole policy documents.
 
 For client signing, a route match means "allowed to continue through the
 normal policy phases"; it does not approve signing and never produces an
@@ -499,16 +573,16 @@ For cosigner, routing is the positive authorization surface. A cosigner
 component request is eligible to sign only when all evaluated target
 transactions are supported transfer shapes, every extracted target movement is
 covered by a matching route, and no route or transaction guard produces a deny
-verdict. The key's document cannot express review-producing behavior, so a
+verdict. A cosigner document cannot express review-producing behavior, so a
 cosigner route outcome is always sign or reject. In other words: for client signing, routing is a
 guardrail; for cosigner, routing is an allow-list.
 
 Always Deny and deterministic transaction guards run before cosigner
-allow-list success. A route match cannot rescue a target rejected by rekey,
-close-out, clawback, fee, amount, blocked-destination, or unsupported-shape
-rules.
+allow-list success. A route match cannot rescue a target rejected by type,
+rekey, close-out, clawback, fee, amount, blocked-destination, or
+unsupported-shape rules.
 
-In the signer document, `transfer_policy` holds the client-signing routes and
+In a signer document, `transfer_policy` holds the client-signing routes and
 the route-miss choices `on_no_route`, `close_on_no_route`, and
 `clawback_on_no_route`. In a cosigner document, `transfer_policy` is that
 key's allow-list and holds only `blocked_destinations` and `routes`: route-miss
@@ -519,8 +593,8 @@ For client-signing evaluation, an `on_no_route: review` miss produces Always
 Review. Cosigner documents cannot express review or operator-default routing
 outcomes. If a review verdict is nevertheless reached while evaluating a
 cosigner request, the request fails closed as a policy configuration error.
-Operators keep review behavior in the signer `policy.json` and write a
-deterministic allow-list in each cosigner key's document.
+Operators keep review behavior in signer documents and write a deterministic
+allow-list in cosigner documents.
 
 For operator examples and troubleshooting, see
 [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
@@ -534,7 +608,7 @@ Routing's shape is deliberately conservative:
 - For cosigner, it is an allow-list: every target movement must be covered
   by a matching route, and any deny verdict rejects the request.
 - It denies by absence rather than by general explicit deny routes. In v1,
-  operators grant allowed source/asset/destination paths. In the signer
+  operators grant allowed source/asset/destination paths. In a signer
   document, `on_no_route` decides what a miss means; in a cosigner document,
   every miss rejects. The narrow exception is `blocked_destinations`,
   a global concrete-address deny list that runs before route matching. This
@@ -548,32 +622,33 @@ Routing's shape is deliberately conservative:
   `reject_asset_close`, or `reject_clawback`. This overlap is permitted rather
   than rejected: the reject booleans always win, so a route allow flag cannot
   weaken them. `check` and `apply` report the overlap as a warning
-  (`internal/policy/advisory.go`); it never blocks an apply.
+  (`internal/policy/advisory.go`); it never blocks an apply. The same
+  advisory mechanism reports routes that can never match because
+  `transaction_types` rejects `pay` or `axfer`, and a cosigner document with
+  routes but no fee cap.
 - Limits never mix units. Route and document `limits` are keyed by network and
   then by asset, so each threshold applies to exactly one asset in its own base
   units.
 
-In the signer document, routing is disabled unless
-`transfer_policy.enabled:true`; `enabled` is required whenever
-`transfer_policy` is present, and `on_no_route` is required when routing is
-enabled. `close_on_no_route` and `clawback_on_no_route` default to `reject`
-and may be set explicitly. A cosigner document always enforces its routes.
-Unknown fields under `transfer_policy` or route entries fail validation.
+A document always routes; there is no switch that turns routing off. In a
+signer document `on_no_route`, `close_on_no_route`, and `clawback_on_no_route`
+are all required, and `operator_default` is the value that lets a miss fall
+through to the operator default. Unknown fields under `transfer_policy` or
+route entries fail validation.
 
 Signer `transfer_policy` schema:
 
 | Field | Required | Meaning |
 |-------|----------|---------|
-| `enabled` | yes | Enables routing when `true`; disables routing when `false` |
-| `on_no_route` | when enabled | Route-miss verdict: `reject`, `review`, or `operator_default` |
-| `close_on_no_route` | no | Close-out route-miss verdict; defaults to `reject` |
-| `clawback_on_no_route` | no | Clawback route-miss verdict; defaults to `reject` |
+| `on_no_route` | yes | Route-miss verdict: `reject`, `review`, or `operator_default` |
+| `close_on_no_route` | yes | Close-out route-miss verdict |
+| `clawback_on_no_route` | yes | Clawback route-miss verdict |
 | `blocked_destinations` | no | Global concrete-address deny list evaluated before route matching |
-| `routes` | no | Ordered route definitions; order does not grant priority |
+| `routes` | yes | Route definitions, possibly empty; order does not grant priority |
 
 A cosigner `transfer_policy` holds `blocked_destinations` and a required
 `routes` list. Named sets are top-level document fields, `address_sets` and
-`asset_sets`, in both document types.
+`asset_sets`, on both roles.
 
 Route schema:
 
@@ -603,8 +678,7 @@ flat-list shape because ASA IDs are network-local.
 
 `blocked_destinations` is a flat list of concrete Algorand addresses. It does
 not accept `self`, `*`, or `@address_set` terms. The list is global in v1:
-it is not source-scoped, asset-scoped, or network-scoped. Signer key overrides
-cannot change it.
+it is not source-scoped, asset-scoped, or network-scoped.
 
 Routing extracts movements only from direct payment and asset-transfer
 transactions:
@@ -625,11 +699,12 @@ target transaction must extract at least one of these movements to be eligible
 for cosigner-role component signing.
 
 For client signing, other transaction types produce no routing movement and
-continue through the remaining policy phases. For cosigner MVP, target
-transactions that produce no supported transfer movement are rejected because
-there is no route coverage that can authorize them. Passthrough, foreign, and
-non-target group slots are not governed by this signer's route table because
-this signer is not producing signatures for those slots.
+continue through the remaining policy phases once `transaction_types` allows
+them. On a cosigner node they never reach routing: decode refuses to `allow`
+any type but `pay` and `axfer`, so the transaction-type rule rejects them
+first. Passthrough, foreign, and non-target group slots are not governed by
+this signer's route table because this signer is not producing signatures for
+those slots.
 
 For each extracted movement, routing checks `blocked_destinations` before
 network-dependent route matching. The block applies to normal ALGO payment
@@ -640,16 +715,15 @@ when the transaction `GenesisHash` is unknown.
 
 After that check, routing resolves the transaction `GenesisHash` to a network
 token. If the hash cannot be resolved, routing emits
-`transfer_policy:unknown_genesis_hash`. In the signer document its tier follows
+`transfer_policy:unknown_genesis_hash`. In a signer document its tier follows
 `on_no_route`: Always Deny for `reject`, Always Review for `review`, and no
 routing verdict for `operator_default`. In a cosigner document it is always
 Always Deny.
 
 Verdict production for each movement:
 
-1. Routing sits out when the signer document's `transfer_policy` is absent or
-   disabled, or the movement is routing-exempt. A cosigner document always
-   carries an enforced `transfer_policy`.
+1. Routing sits out when the movement is routing-exempt (the self no-op
+   shape below).
 2. If the movement kind is covered by `blocked_destinations` and the movement
    destination is blocked, Always Deny.
 3. Matching routes are collected by network, source, asset, destination, and,
@@ -716,57 +790,31 @@ cosigner component requests.
 Cosigner component policy selection runs before any rule evaluation. The
 request's `component_key` must name a cosigner key the node holds; otherwise
 the request fails as a bad request (`Witness Key ID "<id>" not found`) with no
-policy verdict. The held key must then have a verified policy document;
-otherwise the request is rejected with `cosigner_policy:key_has_no_policy`.
-Only then is that key's document evaluated, and only after it authorizes the
-request is the cosigner key loaded for signing. There is no node-wide cosigner
-policy to fall back to.
+policy verdict. The held key's policy is then resolved (its own document, or
+the node default, which ships deny-all), and only after it authorizes the
+request is the cosigner key loaded for signing.
 
-Cosigner component policy rule IDs:
+Cosigner component policy rule IDs are the common rule IDs above (type,
+reject flags, fee, limits, routing) plus one cosigner-only ID:
 
-- `cosigner_policy:key_has_no_policy`
-- `cosigner_policy:transfer_policy_required`
-- `cosigner_policy:deterministic_routing_required`
-- `cosigner_policy:non_transfer`
 - `cosigner_policy:reject_rekey`
 
-These rule IDs are emitted when the requested cosigner key has no policy
-document, its compiled policy lacks an enabled positive transfer policy or has
-route-miss behavior that is not deterministic `reject` (the cosigner document
-type cannot express either, so these are defense-in-depth checks), the request
-asks it to attest a target with no supported transfer movement, or it rejects a
-non-zero `RekeyTo` because the coarse deny switch is set, the rekey shape is
-unsupported, or `rekey_policy.allowed` has no matching sender-to-target edge.
-
-## Key Overrides
-
-Only the signer document has `key_overrides`: a map from Algorand auth address
-to a sparse block of scalar settings (`reject_*`, `always_review_warnings`,
-`auto_approve_self_noop_transfer`, `max_fee_microalgos`) and `limits`.
-Overrides carry no sets, no `transfer_policy`, and no nesting; per-account
-routing is expressed with route `sources`. Cosigner documents have no
-overrides because each cosigner key already has its own document.
-
-During normal transaction signing, the effective policy is selected by the
-`auth_address` key that will sign, not by transaction sender. This matters for
-rekeyed accounts: the auth address controls the override. During cosigner
-component signing, the policy is selected by the request `component_key`
-Witness Key ID, which picks that key's document.
-
-An override scalar replaces the document value and an omitted scalar inherits
-it. Override `limits` merge per network, per asset, and per threshold; a `null`
-threshold removes the inherited one. Validation runs on each key's merged
-effective `limits`. If no override matches, the document-level policy applies.
-The exact merge rules are in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#key-override-inheritance).
+It is emitted when the cosigner rejects a non-zero `RekeyTo` because
+`reject_rekey` is set, the rekey shape is unsupported (not a pure 0 ALGO
+self-payment without close remainder), or `rekey_policy.allowed` has no
+matching sender-to-target edge. A cosigner key with no document of its own is
+governed by the default like any other key; under the shipped deny-all
+default every request is rejected with `transaction_type:<type>`.
 
 ## Transaction Scope
 
 For client signing, Always Deny, Always Review, and Always Approve rules
 evaluate signer-controlled request slots only. Passthrough and foreign slots
 are not signed by this signer, so they are not evaluated by this signer's
-transaction-level policy. They still participate in request planning, group
-context, warning display, and approval rendering.
+transaction-level policy (the transaction-type rule included). They still
+participate in request planning, group context, warning display, and approval
+rendering, and a warning on a passthrough or foreign leg always forces
+review, whatever `always_review_warnings` says.
 
 For cosigner, the evaluated slots are the `target_indices` of a
 `/sign/component` request. The cosigner node does not own the sender
@@ -792,55 +840,69 @@ There is no policy editor in the node and no scalar policy-settings IPC.
 The admin protocol and `internal/signerapp/admin` expose four policy messages:
 `get_policy`, `get_policy_document`, `check_policy`, and `apply_policy`. The
 node role decides which documents a request may carry; there is no target
-selector. `get_policy` returns a summary: each document's SHA-256, size, and
-applied time, the cosigner key coverage, and `policy_set_sha256`, a digest over
-the whole document set. `get_policy_document` returns one document's exact
-bytes.
-`check_policy` validates candidate documents without writing and returns
-errors and warnings. `apply_policy` requires `expected_policy_set_sha256` for
-optimistic concurrency, validates the resulting document set, and commits it as
-one new generation (operation `policy-apply`); the runtime publishes the new
-policy immediately. On a signer node an apply carries exactly one document; on a
-cosigner node it adds or replaces the listed keys' documents, deletes the keys in
-`remove`, and keeps every other key's document. Every digest covers exact
-document bytes. Message payloads are in
-[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md); generation behavior is in
-[ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
+selector. `get_policy` returns a summary: each document's key, SHA-256, size,
+and applied time (the default first), each held key's coverage (`own`,
+`default`, or `key_not_held` for a stored document whose key is not held),
+and `policy_set_sha256`, a digest over the whole document set.
+`get_policy_document` returns one document's exact bytes by key (`default` or
+a selector). `check_policy` validates candidate documents and removals
+without writing and returns errors and warnings. `apply_policy` requires
+`expected_policy_set_sha256` for optimistic concurrency, validates the
+resulting document set, and commits it as one new generation (operation
+`policy-apply`); the runtime publishes the new policy immediately. An apply
+adds or replaces each listed document (each names its key), deletes the keys
+in `remove`, and keeps every other document; `default` can be replaced but
+not removed. Every digest covers exact document bytes. Message payloads are
+in [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md); generation behavior is
+in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
 
-`apadmin policy` requires a verb:
+`apadmin policy` requires a verb; the same verbs run online and under
+`apadmin policy rescue` against a stopped store:
 
 | Verb | Behavior |
 |------|----------|
-| `status` | List the node's documents (size, SHA-256, applied time) and, on a cosigner node, each key's coverage: `active`, `no_policy`, or `key_not_held` |
-| `export [--key ID]` | Write one stored document exactly as stored; `--key` selects a cosigner key's document |
+| `status` | Print `<role> policy`, the default's digest, size, and applied time, then `keys (<n>)` with each held key as `own policy` (with its document summary) or `default`, each stored document for a key not held as `key not held`, and `policy_set_sha256` |
+| `export [--key K]` | Write one stored document exactly as stored: the default, or key `K`'s own document |
 | `check FILE...\|-` | Validate documents against the node; print errors and warnings |
-| `diff FILE...\|-` | Describe how the files differ from the active documents, without writing |
-| `apply FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
-| `remove ID...` | Print the diff, confirm, then delete cosigner keys' documents (cosigner nodes only) |
+| `diff FILE...\|-` | Describe how the files differ from the policy that governs each key now, without writing |
+| `apply [--yes] FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
+| `remove [--yes] K...` | Print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
+| `template [--key K]` | Write the node's current default as the starting document for key `K`, or annotated as the default itself |
+| `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; the only form that needs no node and no passphrase |
 
-`diff` compares decoded documents (`policy.DiffSignerPolicyV1`,
-`policy.DiffCosignerPolicyV1`), so formatting and key order never appear as
-changes. Each change names a path (routes by id, key overrides by address) and
-is marked `tightened`, `loosened`, or `changed`: raising or removing a threshold,
-clearing a `reject_*` flag, adding a route, route term, or member of a set a
-route uses, relaxing a route-miss action, or removing a blocked destination
-loosens; the reverse tightens. A fee cap of `"0"` is compared as no cap,
-matching enforcement. Address sets are compared on the members they cover on
-each network, so moving between flat and per-network forms is described by
-what changes where. Key overrides are compared on the values that take effect
-for that key, and a field moving between inherited and set explicitly is
-reported as `changed` even when its value is the same, because it decides
-whether later document changes reach the key. A cosigner key gaining its first
-document loosens (it rejected every request); removing one tightens. `apply`
-and `remove` ask for confirmation on the controlling terminal, never stdin;
-`--yes` skips it. `apply` skips the commit only when every submitted document
-decodes identical to the active one; a document that differs only in term order
-is still applied.
+Each file is one document and names its key in its `key` field; several
+files apply in one commit. Diffs are effective: `diff` compares decoded
+documents (`policy.DiffPolicyV1`, through `policyreview.DiffCandidate` and
+`DiffRemoval`), so formatting and key order never appear as changes, and each
+key's candidate is compared with the document that governs the key now. A
+new per-key document is compared with the default the key followed (summary
+"the key gets a policy of its own; compared with the node default it
+followed"); a replacement with the key's own document; a removal with the
+default the key will follow after the change, which is the submitted default
+when the same apply replaces it ("policy of its own removed; the key follows
+the node default"). A change to the default also names the held keys it
+reaches ("governs N held key(s): ..." or "governs no held key; every held
+key has a policy of its own"). Each change names a path (routes by id) and
+is marked `tightened`, `loosened`, or `changed`: raising or removing a
+threshold, clearing a `reject_*` flag, moving a type toward `allow`, adding
+a route, route term, or member of a set a route uses, relaxing a route-miss
+action, or removing a blocked destination loosens; the reverse tightens. A
+fee cap of `"0"` is compared as no cap, matching enforcement. Address sets
+are compared on the members they cover on each network, so moving between
+flat and per-network forms is described by what changes where. Removing a
+restrictive per-key document can loosen (on a signer node it can enable
+silent outbound signing under auto-approve); the preview shows that as
+loosened lines against the default, never as a bare "policy removed".
+`apply` and `remove` ask for confirmation on the controlling terminal, never
+stdin; `--yes` skips it. `apply` skips the commit only when every submitted
+document decodes identical to the active one; a document that differs only
+in term order is still applied.
 
-A signer node takes one file. Each cosigner file is one key's document and names
-that key in its `key` field. Online verbs authenticate through admin IPC and
-unlock a locked identity with the authenticated passphrase before policy access;
-this applies to read-only verbs too.
+Online verbs authenticate through admin IPC and unlock a locked identity with
+the authenticated passphrase before policy access; this applies to read-only
+verbs too. The online and rescue `template` forms print the node's own
+default or fail; only `--embedded` prints the shipped starter, so a
+customized default is never silently replaced by the shipped one.
 
 `apadmin policy rescue VERB` runs the same verbs directly against the store with
 the same rules as the daemon (the shared `internal/signerapp/policyapply`
@@ -852,37 +914,47 @@ non-interactive rescue may use `APSIGNER_PASSPHRASE`; remote policy commands
 require the controlling terminal.
 
 For deliberately hand-placed documents in a stopped store, `apstore policy
-check` validates the stored documents without verifying sidecars and warns about
-cosigner keys without documents and documents for keys not held; `apstore
-policy sign` re-signs the sidecars (signer: `policy.json`; cosigner: every
-`policies/*.json`); `apstore policy verify` verifies the sidecars with the store
-passphrase and compiles the documents. `apstore policy sign` is an offline store
-mutation and requires the store mutation lock. Hand-placed documents take effect
-only after the next successful reload, unlock, or restart.
+check` validates every stored document (the default and each per-key file)
+without verifying sidecars, warns about missing sidecars, and warns about
+documents for keys not held; `apstore policy sign` re-signs every sidecar;
+`apstore policy verify` verifies the sidecars with the store passphrase and
+compiles the documents. `apstore policy sign` is an offline store mutation
+and requires the store mutation lock. Hand-placed documents take effect only
+after the next successful reload, unlock, or restart.
+
+The apadmin TUI Policies view lists the default first (labelled "node
+default (governs every key without its own policy)"), then every held key as
+"own policy" or "default", then stored documents for keys not held. Enter
+opens a document; `e` edits it (a key on the default opens the editor on the
+default with the key filled in, marked "No policy of its own yet"); `a`
+loads a file; review shows the effective diff; `y` applies.
 
 ## Backup and Restore
 
-A cosigner key's policy travels with the key. A backup of a cosigner key that
-has a policy carries `policies/<WitnessKeyID>.apb`: the exact v1 document,
-encrypted under the export passphrase and listed in the sealed manifest. Restore
-validates it against the key and installs it with a sidecar signed by the
-destination store, in the same generation commit as the credential:
+A key's own policy travels with the key, on both roles. A backup of a key
+that has a document of its own carries `policies/<selector>.apb`: the exact v1
+document, encrypted under the export passphrase and listed in the sealed
+manifest. Restore validates it against the key and installs it with a
+sidecar signed by the destination store, in the same generation commit as
+the credential:
 
 | Destination | Archive | Result |
 |---|---|---|
-| no policy for the key | policy | installed |
-| the same policy | same | nothing to do |
-| a different policy | policy | conflict; `replace_existing` replaces it |
-| a policy | none | the destination's policy is kept |
+| no document for the key | document | installed |
+| the same document | same | nothing to do |
+| a different document | document | conflict; `replace_existing` replaces it |
+| a document | none | the destination's document is kept |
 
-A restored cosigner key without an archived or existing policy rejects every
-request until one is applied. Restore rollback restores the source generation's
-cosigner policies along with its keys.
+A restored key without an archived or existing document follows the
+destination's default: on a cosigner node that is deny-all, so the key
+rejects every request until a document is applied; on a signer node it is the
+shipped permissive default unless the operator changed it. Restore rollback
+removes the per-key documents restore installed along with its keys.
 
-Backups carry no signer `policy.json`, approval setting, network mapping, or
-other operational configuration: a signer's restored credentials run under the
-destination's current policy, which the operator owns. Restore requires the
-admin authorization action `identity.restore`.
+Backups carry no `default.json`, approval setting, network mapping, or other
+operational configuration: a restored key with no document of its own runs
+under the destination's current default, which the operator owns. Restore
+requires the admin authorization action `identity.restore`.
 
 ## Audit and Observability
 
@@ -916,26 +988,39 @@ compatibility-bearing audit details live in
 
 Implementation source of truth:
 
-- `internal/policy/config.go`: effective (compiled) policy model.
-- `internal/policy/lint.go`: Always Deny transaction checks.
-- `internal/policy/review.go`: Always Review transfer guard checks.
+- `internal/policy/config.go`: effective (compiled) policy model, including
+  the per-type verdict map.
+- `internal/policy/lint.go`: Always Deny transaction checks, type rule first.
+- `internal/policy/review.go`: Always Review checks, type rule first.
+- `internal/policy/ruleids.go`: stable rule IDs, including
+  `TransactionTypeRuleID`.
 - `internal/policy/transfer_routing.go`: compiled transfer routing model and
   validation.
 - `internal/policy/transfer_routing_eval.go`: direct transfer movement
   extraction and route evaluation.
 - `internal/policy/doc_v1.go`, `internal/policy/doc_v1_compile.go`: v1 document
-  decoding, semantic validation, and compilation.
-- `internal/policy/store_v1.go`: policy document storage, sidecars, and the
-  policy-set digest.
-- `internal/signerapp/policyruntime`: verified per-role policy load.
+  decoding, role gating, semantic validation, and compilation.
+- `internal/policy/defaults.go`, `internal/policy/defaults/*.json`: the
+  embedded defaults that seed `default.json`.
+- `internal/policy/advisory.go`: non-blocking document advisories.
+- `internal/policy/diff_v1.go`: decoded-document differ.
+- `internal/policy/store_v1.go`: policy document storage, sidecars, archive,
+  and the policy-set digest.
+- `internal/signerapp/policyruntime`: `NodePolicy` load, compile, and
+  `PolicyFor`.
 - `internal/signerapp/policyapply`: shared check and generation-commit rules for
   online apply, rescue, and `apstore`.
+- `internal/signerapp/policyreview`: templates, comment stripping, and the
+  effective per-key diff.
+- `internal/signerapp/approvalpolicy/warnings.go`: warning analysis.
 - `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
 - `internal/signerapp/signing/cosigner_policy.go`: cosigner key and policy
   selection and evaluation.
 - `internal/signerapp/signing/always_review.go`: Always Review evaluation.
-- `internal/signerapp/signing/approval.go`: approval prompts and operator default behavior.
-- `internal/signerapp/signing/service.go`: phase ordering.
+- `internal/signerapp/signing/approval.go`: policy resolution per slot,
+  approval prompts, and operator default behavior.
+- `internal/signerapp/signing/service.go`: phase ordering and the per-request
+  `PolicyFor` snapshot.
 - `internal/signerapp/admin/policy.go`: admin policy read, check, and apply
   service.

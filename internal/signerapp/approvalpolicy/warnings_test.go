@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
 
 func TestCheckDecodedTxnWarnings(t *testing.T) {
@@ -47,6 +49,35 @@ func TestCheckDecodedTxnWarnings(t *testing.T) {
 			name:      "app noop is not flagged",
 			txn:       types.Transaction{Type: types.ApplicationCallTx, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{OnCompletion: types.NoOpOC}}},
 			wantCount: 0,
+		},
+		{
+			name:      "app update",
+			txn:       types.Transaction{Type: types.ApplicationCallTx, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{ApplicationID: 7, OnCompletion: types.UpdateApplicationOC}}},
+			wantCount: 1,
+			wantField: "OnCompletion",
+		},
+		{
+			name:      "asset create is not flagged",
+			txn:       types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{AssetParams: types.AssetParams{Total: 1, Manager: nonZeroAddr}}},
+			wantCount: 0,
+		},
+		{
+			name:      "asset reconfigure",
+			txn:       types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 31566704, AssetParams: types.AssetParams{Manager: nonZeroAddr}}},
+			wantCount: 1,
+			wantField: "ConfigAsset",
+		},
+		{
+			name:      "asset destroy",
+			txn:       types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 31566704}},
+			wantCount: 1,
+			wantField: "ConfigAsset",
+		},
+		{
+			name:      "asset freeze",
+			txn:       types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: nonZeroAddr, FreezeAsset: 31566704, AssetFrozen: true}},
+			wantCount: 1,
+			wantField: "FreezeAccount",
 		},
 		{
 			name:      "multiple warnings",
@@ -157,4 +188,31 @@ func TestRekeyToKnownAddress(t *testing.T) {
 			t.Errorf("should not warn about losing control for known address, got %q", violations[0].Message)
 		}
 	})
+}
+
+// The reconfigure warning names every role address so the operator sees which
+// roles the transaction keeps, moves, or clears for good.
+func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
+	manager := types.Address{1}
+	txn := types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{
+		ConfigAsset: 42, AssetParams: types.AssetParams{Manager: manager},
+	}}
+	violations := CheckDecodedTxnWarnings(txn, nil)
+	if len(violations) != 1 || violations[0].Severity != signerapproval.ViolationSeverityWarning {
+		t.Fatalf("violations = %+v, want one warning", violations)
+	}
+	msg := violations[0].Message
+	for _, want := range []string{"asset #42", "Manager: " + manager.String(), "Reserve: (cleared)", "Freeze: (cleared)", "Clawback: (cleared)"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("message missing %q:\n%s", want, msg)
+		}
+	}
+	destroy := CheckDecodedTxnWarnings(types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 42}}, nil)
+	if len(destroy) != 1 || destroy[0].Severity != signerapproval.ViolationSeverityCritical || !strings.Contains(destroy[0].Message, "DESTROY asset #42") {
+		t.Fatalf("destroy violations = %+v, want one critical destroy warning", destroy)
+	}
+	unfreeze := CheckDecodedTxnWarnings(types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: manager, FreezeAsset: 42}}, nil)
+	if len(unfreeze) != 1 || !strings.Contains(unfreeze[0].Message, "UNFREEZE") || unfreeze[0].Value != manager.String() {
+		t.Fatalf("unfreeze violations = %+v", unfreeze)
+	}
 }

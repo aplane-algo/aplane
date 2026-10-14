@@ -6,17 +6,20 @@ assets to which destinations, on which networks, and at what amount thresholds.
 The policy document calls these entries `routes`.
 
 This is the transfer-routing deep dive. For the broader signer policy model,
-editing workflow, top-level fields, and key override overview, start with
-[USER_POLICY.md](USER_POLICY.md). The document format itself is specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
+editing workflow, top-level fields, and when to give a key a policy of its
+own, start with [USER_POLICY.md](USER_POLICY.md). The document format itself
+is specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
 
-Routing is configured in the node's v1 JSON policy document. A signer node has
-one document, governing every account the node holds; a cosigner node has one
-document per cosigner key, governing every account composed with that key:
+Routing is part of every v1 JSON policy document. A node holds one default
+document, which governs every key without a policy of its own, and a file per
+key that has one; a key's file replaces the default for that key wholesale,
+routes included. On a signer node a key is a signing address; on a cosigner
+node it is a cosigner Witness Key ID, and its policy governs every account
+composed with that key:
 
 ```text
-identities/default/generations/<selected-generation>/policy.json
-identities/default/generations/<selected-generation>/policies/<WitnessKeyID>.json
+identities/default/generations/<selected-generation>/default.json
+identities/default/generations/<selected-generation>/policies/<key>.json
 ```
 
 Write or edit routes in a policy file outside the node, run
@@ -27,16 +30,20 @@ commits a new store generation.
 
 ```bash
 apadmin policy status
-apadmin policy export > policy.json
-apadmin policy check policy.json
-apadmin policy apply policy.json
+apadmin policy export > default.json
+apadmin policy export --key <key> > key.json
+apadmin policy check default.json key.json
+apadmin policy apply default.json key.json
 ```
 
-A new signer starts with routing on and one route, `self-transfer`, which lets
-any account send any asset to itself; every other transfer is rejected until
-a route allows it. `apadmin policy template signer` (or
-`template --key ID cosigner`) writes that starting document with a `//`
-comment on the route. Comments are removed before the document reaches the
+Each file names its document in its `key` field: `"default"` for the node
+default, or the key it governs. A new signer's default has one route,
+`self-transfer`, which lets any account send any asset to itself, and leaves
+every other transfer to the operator default (`on_no_route:
+operator_default`); a new cosigner's default has no routes and rejects every
+request. `apadmin policy template --key <key>` writes the node's current
+default with the key filled in as the starting point for a key's file, with a
+`//` header comment. Comments are removed before the document reaches the
 node.
 
 A successful policy apply affects new signing requests after the signer
@@ -48,23 +55,23 @@ Use the `apadmin policy rescue` forms when the signer is stopped:
 
 ```bash
 apadmin -d "$APSIGNER_DATA" policy rescue status
-apadmin -d "$APSIGNER_DATA" policy rescue export > policy.json
-apadmin -d "$APSIGNER_DATA" policy rescue check policy.json
-apadmin -d "$APSIGNER_DATA" policy rescue apply policy.json
-apadmin -d "$APSIGNER_DATA" policy rescue apply - < policy.json
+apadmin -d "$APSIGNER_DATA" policy rescue export > default.json
+apadmin -d "$APSIGNER_DATA" policy rescue check default.json
+apadmin -d "$APSIGNER_DATA" policy rescue apply default.json
+apadmin -d "$APSIGNER_DATA" policy rescue apply - < default.json
 ```
 
 `apadmin policy rescue` reads the store directly, prompts for the store
-passphrase, and follows the node role recorded in the store: a signer node
-takes one `policy.json` document, and on a cosigner node each file names its
-key in its `"key"` field. Local rescue automation may use
+passphrase, and follows the node role recorded in the store; each file names
+its document in its `"key"` field. Local rescue automation may use
 `APSIGNER_PASSPHRASE`; remote policy commands require the controlling
-terminal. `status` lists the stored documents with their SHA-256 digests, and
-`export` writes the trusted bytes of one document to stdout (`--key ID`
-selects a cosigner key's document). `apply` reads a file (or stdin when the
-source is `-`), checks it with the same rules as the running daemon, preserves
-the submitted bytes, and commits the document plus a fresh sidecar as a new
-generation; you do not need to run `apstore policy sign` afterward.
+terminal. `status` lists the default and each held key's coverage with the
+SHA-256 digest of every stored document, and `export` writes the trusted
+bytes of one document to stdout (`--key K` selects a key's own document).
+`apply` reads files (or stdin when the source is `-`), checks them with the
+same rules as the running daemon, preserves the submitted bytes, and commits
+the documents plus fresh sidecars as a new generation; you do not need to run
+`apstore policy sign` afterward.
 
 After hand-placing or editing a document in the selected generation while the
 signer is stopped, check it, sign it, and then start the signer:
@@ -109,17 +116,28 @@ but it never auto-approves signing.
 
 ## Getting Started
 
-Start in review mode when you are not yet sure the route table is complete:
+Start in review mode when you are not yet sure the route table is complete.
+This is a complete signer default; the fields above `address_sets` are the
+shipped default's values, and every one of them is required:
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "address_sets": {
     "treasury": ["TREASURYADDRESS..."],
     "operations": ["OPERATIONSADDRESS..."]
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "review",
     "close_on_no_route": "reject",
     "clawback_on_no_route": "reject",
@@ -148,32 +166,30 @@ not exist:
 "on_no_route": "operator_default"
 ```
 
-That mode still applies matching route thresholds and explicit close/clawback
-fallbacks. Close-out and clawback misses are controlled by
-`close_on_no_route` and `clawback_on_no_route`, both of which default to
-`reject`.
+That mode still applies matching route thresholds and the close-out and
+clawback fallbacks. Close-out and clawback misses are controlled by
+`close_on_no_route` and `clawback_on_no_route`, which are written separately
+and are usually `reject`.
 
 ## Minimal Shape
 
+`transfer_policy` is required in every document, and so are `routes` and, in
+a signer document, the three route-miss actions. The smallest signer
+`transfer_policy` rejects every direct transfer:
+
 ```json
-{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "close_on_no_route": "reject",
     "clawback_on_no_route": "reject",
     "blocked_destinations": [],
     "routes": []
   }
-}
 ```
 
-`enabled` is required whenever `transfer_policy` is present. `"enabled": true`
-turns routing on. With `"enabled": false`, routing sits out and non-routing
-policy behavior is unchanged.
-
-When routing is enabled, `on_no_route` is required.
+Routing cannot be switched off. The nearest equivalent is `operator_default`
+for all three route-miss actions with a single `*` to `*` route, which leaves
+every direct transfer to the other rules and the operator default.
 
 ## Schema Walkthrough
 
@@ -181,12 +197,14 @@ When routing is enabled, `on_no_route` is required.
 
 | Field | Required | Meaning |
 |-------|----------|---------|
-| `enabled` | yes | Enables routing when `true`; disables routing when `false` |
-| `on_no_route` | when enabled | Route-miss behavior: `reject`, `review`, or `operator_default` |
-| `close_on_no_route` | no | Close-out route-miss behavior; defaults to `reject` |
-| `clawback_on_no_route` | no | Clawback route-miss behavior; defaults to `reject` |
+| `on_no_route` | yes | Route-miss behavior: `reject`, `review`, or `operator_default` |
+| `close_on_no_route` | yes | Close-out route-miss behavior; same values |
+| `clawback_on_no_route` | yes | Clawback route-miss behavior; same values |
 | `blocked_destinations` | no | Global concrete-address deny list checked before route matching |
-| `routes` | no | Route definitions; order does not grant priority |
+| `routes` | yes | Route definitions, possibly empty; order does not grant priority |
+
+A cosigner document's `transfer_policy` carries only `blocked_destinations`
+and `routes`; see [Cosigner Documents](#cosigner-documents).
 
 Named sets are top-level document fields, beside `transfer_policy`:
 
@@ -234,7 +252,8 @@ no route.
 
 Think of this as "what should happen when the allowlist does not contain this
 movement?" It is not the default decision for all signing requests, and it does
-not affect transaction types outside routing's scope.
+not affect transaction types outside routing's scope; those are governed by
+the document's `transaction_types` map and the other rules.
 
 Close-out and clawback have their own no-route fallbacks because they are more
 destructive than ordinary transfers:
@@ -244,10 +263,10 @@ destructive than ordinary transfers:
 "clawback_on_no_route": "reject"
 ```
 
-Both fields accept the same values as `on_no_route`. Their default is `reject`.
-They apply only when no route matches. If a route matches but does not set
-`"allow_close": true` or `"allow_clawback": true`, the movement is still
-rejected.
+Both fields accept the same values as `on_no_route` and are required in a
+signer document, so the fallback is always written down. They apply only when
+no route matches. If a route matches but does not set `"allow_close": true`
+or `"allow_clawback": true`, the movement is still rejected.
 
 ## Blocked Destinations
 
@@ -256,10 +275,21 @@ that no covered signer-controlled movement may target.
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "blocked_destinations": ["SANCTIONEDADDRESS...", "COMPROMISEDADDRESS..."],
     "routes": [
       {
@@ -431,8 +461,9 @@ AssetSender == ZeroAddress
 AssetCloseTo == ZeroAddress
 ```
 
-The destination is treated as `self`. If routing is enabled and `on_no_route`
-is `reject`, add an opt-in route for assets the account may need to hold.
+The destination is treated as `self`. If `on_no_route` is `reject`, add an
+opt-in route for assets the account may need to hold; the shipped default's
+`self-transfer` route is one.
 
 ASA close-out movement:
 
@@ -533,9 +564,9 @@ among its matching routes.
 
 ## Close-Out And Clawback
 
-By default, close-out movements are rejected by routing unless a matching route
+Close-out movements are rejected by routing unless a matching route
 explicitly sets `"allow_close": true`. If no route matches,
-`close_on_no_route` controls the fallback and defaults to `reject`.
+`close_on_no_route` controls the fallback.
 
 ```json
 {
@@ -549,14 +580,13 @@ explicitly sets `"allow_close": true`. If no route matches,
 ```
 
 The `reject_close_remainder` and `reject_asset_close` guards still apply
-independently. If either guard is enabled, it can reject even when a route
+independently. If either guard is `true`, it can reject even when a route
 allows the close-out movement. `apadmin policy check` reports that overlap as a
 warning: route permissions cannot weaken top-level reject guards.
 
-By default, clawback movements are rejected unless a matching route explicitly
-sets `"allow_clawback": true` and defines `asset_sources`. If no route
-matches, `clawback_on_no_route` controls the fallback and defaults to
-`reject`:
+Clawback movements are rejected unless a matching route explicitly sets
+`"allow_clawback": true` and defines `asset_sources`. If no route matches,
+`clawback_on_no_route` controls the fallback:
 
 ```json
 {
@@ -570,7 +600,7 @@ matches, `clawback_on_no_route` controls the fallback and defaults to
 }
 ```
 
-The `reject_clawback` guard still applies independently. If it is enabled,
+The `reject_clawback` guard still applies independently. If it is `true`,
 `"allow_clawback": true` documents the route intent but cannot make the
 clawback signable; `check` reports that overlap as a warning too.
 
@@ -613,8 +643,7 @@ per movement and means the movement destination equals the movement source.
 
 Evaluation order for each movement:
 
-1. If routing is absent, disabled, or the movement is routing-exempt, routing
-   produces no verdict.
+1. If the movement is routing-exempt, routing produces no verdict.
 2. If the movement kind is covered by `blocked_destinations` and the movement
    destination is blocked, reject.
 3. Resolve the network token from transaction `GenesisHash`.
@@ -637,9 +666,8 @@ Evaluation order for each movement:
 12. Otherwise routing produces no verdict and the request continues through the
    remaining policy phases.
 
-With the default `"close_on_no_route": "reject"`, a close-out without an explicit
-close route is rejected even if `on_no_route` is `review` or
-`operator_default`.
+With `"close_on_no_route": "reject"`, a close-out without an explicit close
+route is rejected even if `on_no_route` is `review` or `operator_default`.
 
 ## Routing-Exempt Movements
 
@@ -652,7 +680,7 @@ exempt from routing:
   dummy LogicSig address.
 
 The exemption is shape-based and does not depend on whether
-`auto_approve_self_noop_transfer` is enabled. Routing exemption suppresses all
+`auto_approve_self_noop_transfer` is `true`. Routing exemption suppresses all
 routing verdicts for that shape. Non-routing guards such as fee, rekey,
 close-out, clawback, warning analysis, dummy validation, and the self no-op
 auto-approval predicate still apply.
@@ -672,14 +700,29 @@ For a grouped request:
 
 ## Common Patterns
 
+Each pattern below is a complete signer default; the guard fields are the
+shipped default's values. The same `transfer_policy` placed in a key's own
+file governs that key alone.
+
 ### One Source Can Send To One Destination Or Itself
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {
         "id": "source_to_partner_or_self",
@@ -695,24 +738,34 @@ For a grouped request:
 ```
 
 With `"on_no_route": "reject"`, `SOURCEADDRESS...` cannot send to any other
-destination. Other signer-controlled accounts also need routes, or their
-direct transfers will miss and be rejected.
+destination. As a node default, this rejects every other key's direct
+transfers too, since they match no route; either add routes for them or put
+this `transfer_policy` in `SOURCEADDRESS...`'s own file instead.
 
-### Preserve Existing Keys During A Narrow Rollout
+### Restrict One Key, Leave The Rest Alone
 
-v1 has no negative source matching. If you want one source to be tightly
-restricted while existing sources keep broad routing, enumerate the existing
-sources in an address set:
+To restrict one key tightly while every other key keeps the default's
+routing, give that key a file of its own. Start it from the default
+(`apadmin policy template --key SOURCEADDRESS... > restricted.json`) and
+replace its `transfer_policy`:
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
-  "address_sets": {
-    "other_existing_keys": ["AAAAA...", "BBBBB...", "CCCCC..."]
-  },
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "SOURCEADDRESS...",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {
         "id": "restricted_source",
@@ -720,35 +773,39 @@ sources in an address set:
         "sources": ["SOURCEADDRESS..."],
         "assets": ["*"],
         "destinations": ["PARTNERADDRESS...", "self"]
-      },
-      {
-        "id": "other_existing_keys_passthrough",
-        "networks": ["*"],
-        "sources": ["@other_existing_keys"],
-        "assets": ["*"],
-        "destinations": ["*"]
       }
     ]
   }
 }
 ```
 
-New keys added later are not automatically included in
-`other_existing_keys`. Update and apply the policy when adding keys that should
-retain broad routing.
+The default is untouched, so keys added later follow it as before. A key file
+replaces the default wholesale: a later change to the default's routes does
+not reach `SOURCEADDRESS...` until its file is updated or removed.
 
 ### Treasury Pays Payroll In ALGO
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "address_sets": {
     "treasury": ["TREASURY..."],
     "payroll": ["PAYROLL1...", "PAYROLL2..."]
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {
         "id": "treasury_algo_payroll",
@@ -774,14 +831,25 @@ ALGO.
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "address_sets": {
     "treasury": ["TREASURY..."],
     "vendors": ["VENDOR1...", "VENDOR2..."]
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {
         "id": "treasury_usdc_vendors",
@@ -814,8 +882,9 @@ Add an asset set and a route to `self` (shown as a fragment of the document):
   }
 },
 "transfer_policy": {
-  "enabled": true,
   "on_no_route": "reject",
+  "close_on_no_route": "reject",
+  "clawback_on_no_route": "reject",
   "routes": [
     {
       "id": "treasury_stablecoin_optin",
@@ -828,7 +897,8 @@ Add an asset set and a route to `self` (shown as a fragment of the document):
 }
 ```
 
-Without this route, an ASA opt-in can be a route miss when routing is enabled.
+Without this route (or the shipped default's `self-transfer` route), an ASA
+opt-in is a route miss.
 
 ### Global "No One Can Send To X"
 
@@ -837,11 +907,23 @@ always be denied, regardless of source or route.
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "operator_default",
-    "blocked_destinations": ["X...", "Y...", "Z..."]
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "blocked_destinations": ["X...", "Y...", "Z..."],
+    "routes": []
   }
 }
 ```
@@ -853,20 +935,41 @@ Close-out and clawback misses still use `close_on_no_route` and
 
 ## Per-Account Routing
 
-Signer `key_overrides` cannot carry `transfer_policy`; a signer document that
-puts routing inside an override is rejected. Express per-account routing in the
-document's route list with route `sources`, typically through address sets:
+There are two ways to give one account its own routes, and they compose:
+
+- **A file of its own.** `policies/<key>.json` replaces the default for that
+  key, routes and all. Use it when the key's rules differ in kind from the
+  rest: an allowlist key on an operator-default node, or a key that must
+  never be touched by a change to the default. Its routes should name the key
+  (or `*`) in `sources`, since no other key is evaluated against them.
+- **Route `sources` in the default.** Keys on the default are all evaluated
+  against the same route list, and each route matches only the senders its
+  `sources` name. Use this when one rulebook covers the keys and you want one
+  place to review.
+
+The default's route list, typically through address sets:
 
 ```json
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
   "address_sets": {
     "treasury": ["TREASURY..."],
     "ops": ["OPS..."]
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "routes": [
       {
         "id": "treasury_to_ops_algo",
@@ -894,21 +997,36 @@ document's route list with route `sources`, typically through address sets:
 
 Routes match on the transaction sender, so each account is governed by the
 routes whose `sources` include it, and every route is validated against the
-same sets it is evaluated with.
+same sets it is evaluated with. Sets are local to the document: a key file
+that references `@treasury` must define it.
 
 ## Cosigner Documents
 
-A cosigner node holds one self-contained document per cosigner key, in
-`policies/<WitnessKeyID>.json`. Its `transfer_policy` has only
-`blocked_destinations` and `routes`: there is no `enabled` switch and no
-`on_no_route` family, because an unmatched movement, close-out, or clawback is
-always rejected. Cosigner route and document `limits` accept only
-`reject_above`. A cosigner key that has no document rejects every request.
+A cosigner node holds the same layout: `default.json`, which the shipped
+version makes deny-all (`transaction_types` `{"*": "reject"}`, no routes,
+`reject_rekey` true), and `policies/<WitnessKeyID>.json` for each witness key
+that is meant to sign. A cosigner document's `transfer_policy` has only
+`blocked_destinations` and `routes`: there is no `on_no_route` family,
+because an unmatched movement, close-out, or clawback is always rejected.
+Cosigner route and document `limits` accept only `reject_above`, and
+`transaction_types` may allow only `pay` and `axfer`. A cosigner key with no
+file follows the default and so rejects every request.
 
 ```json
 {
-  "format": "aplane.cosigner-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
   "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "5000",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
   "address_sets": {
     "treasury": ["TREASURY..."],
     "exchange": ["EXCHANGE..."]
@@ -933,9 +1051,13 @@ always rejected. Cosigner route and document `limits` accept only
 ```
 
 The `key` field must equal the Witness Key ID the document is stored under.
-On a cosigner node, `apadmin policy apply` takes one file per key and leaves
-documents for other keys unchanged; `apadmin policy remove ID` deletes one
-key's document.
+`apadmin policy template --key <WitnessKeyID>` writes the deny-all default
+with the key filled in; the routes are what you add. `apadmin policy apply`
+takes one file per document and leaves documents for other keys unchanged;
+`apadmin policy remove <WitnessKeyID>` deletes a key's file, after which the
+key follows the default again. A finite `max_fee_microalgos` matters here: a
+cosigner has no warning review, so a permitted self-payment with no cap can
+carry any fee, and `check` warns when routes exist without one.
 
 ## Validation Rules
 
@@ -948,10 +1070,15 @@ Pointer, for example
 Common validation failures:
 
 - unknown fields at any level, duplicate object keys, or trailing data,
-- a missing or wrong `format` for the node role,
-- missing `enabled` under a present signer `transfer_policy`,
-- missing `on_no_route` while routing is enabled,
+- a missing or wrong `format`, a `role` that does not match the node, or a
+  `key` that does not match the file,
+- a missing required field: every guard, `max_fee_microalgos`,
+  `transaction_types` (with its `*` entry), `transfer_policy`, and `routes`,
+  plus `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` in a
+  signer document,
 - invalid `on_no_route`, `close_on_no_route`, or `clawback_on_no_route`,
+- in a cosigner document, any `*_on_no_route` field, `review_above`, a
+  `review` type verdict, or `allow` for a type other than `pay` and `axfer`,
 - duplicate route IDs,
 - route IDs that do not match `^[a-z0-9][a-z0-9_-]*$`,
 - invalid Algorand addresses or checksums,
@@ -970,7 +1097,8 @@ Common validation failures:
 - `self` in clawback routes,
 - `"allow_close": true` with wildcard destinations.
 
-`default` and `on_route_miss` are not valid field names. Use `on_no_route`.
+`default`, `on_route_miss`, and `enabled` are not valid field names. Use
+`on_no_route`; routing has no switch.
 
 ## Audit Rule IDs
 
@@ -1013,14 +1141,28 @@ Use `on_no_route`, not `default`:
 
 ```json
 "transfer_policy": {
-  "enabled": true,
-  "on_no_route": "reject"
+  "on_no_route": "reject",
+  "close_on_no_route": "reject",
+  "clawback_on_no_route": "reject",
+  "routes": []
 }
 ```
 
 ### `unknown field "on_route_miss"`
 
 The field is `on_no_route`.
+
+### `unknown field "enabled"`
+
+Routing has no switch. Remove the field; to leave every direct transfer to
+the other rules, set the three route-miss actions to `operator_default` and
+add a `*` to `*` route.
+
+### A Change To The Default Did Not Reach One Key
+
+The key has a policy of its own, which replaces the default wholesale.
+`apadmin policy status` shows it as `own policy`; edit that file, or
+`apadmin policy remove <key>` so the key follows the default.
 
 ### Policy Check Passes But The Signer Uses Different Behavior
 

@@ -102,22 +102,28 @@ func ValidateKeyTypeComponent(keyType string) error {
 	return nil
 }
 
-// SignerPolicyFileName is the signer policy document at a generation root.
-const SignerPolicyFileName = "policy.json"
+// DefaultPolicyFileName is the node's default policy document at a
+// generation root, on both node roles.
+const DefaultPolicyFileName = "default.json"
 
-var witnessKeyIDPattern = regexp.MustCompile(`^[A-Z2-7]{52}$`)
+var (
+	witnessKeyIDPattern = regexp.MustCompile(`^[A-Z2-7]{52}$`)
+	addressPattern      = regexp.MustCompile(`^[A-Z2-7]{58}$`)
+)
 
-// ValidateWitnessKeyIDComponent reports whether id is a canonical Witness Key
-// ID usable as a file-name component.
-func ValidateWitnessKeyIDComponent(id string) error {
-	if !witnessKeyIDPattern.MatchString(id) {
-		return fmt.Errorf("invalid Witness Key ID path component %q", id)
+// ValidatePolicySelector reports whether selector names a key that may have
+// a policy document of its own: an Algorand address (signer node) or a
+// Witness Key ID (cosigner node), by shape. The policy decoder checks the
+// checksum and the role; this guards the file name.
+func ValidatePolicySelector(selector string) error {
+	if !addressPattern.MatchString(selector) && !witnessKeyIDPattern.MatchString(selector) {
+		return fmt.Errorf("invalid policy key path component %q", selector)
 	}
 	return nil
 }
 
-func validateWitnessKeyIDComponent(id string) {
-	if err := ValidateWitnessKeyIDComponent(id); err != nil {
+func validatePolicySelector(selector string) {
+	if err := ValidatePolicySelector(selector); err != nil {
 		panic(err.Error())
 	}
 }

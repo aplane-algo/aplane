@@ -315,9 +315,14 @@ generations/<selected-generation>/keys/<address>.key
 
 generations/<selected-generation>/keys/<witness_key_id>.cos
   -> generations/<selected-generation>/deleted/keys/<witness_key_id>.cos
+
+generations/<selected-generation>/policies/<key>.json      # the key's own policy, if any
+  -> generations/<selected-generation>/deleted/policies/<key>.json
 ```
 
-Archived keys and templates are outside active key/template scans. A user-requested
+A key's own policy file (and its `.hmac` sidecar) is archived with the key,
+so a re-imported key starts on the node default. Archived keys, policies, and
+templates are outside active key/template scans. A user-requested
 template removal must archive the `.template` file; internal rollback after a
 failed live install may directly remove a newly written template because it is
 undoing an incomplete operation rather than preserving user-deleted history.

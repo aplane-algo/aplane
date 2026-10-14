@@ -159,7 +159,7 @@ func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {
 		Approval:                      &signersigning.ApprovalService{UserAutoApprove: &approve},
 		GenerateTxnDescriptionFromTxn: func(types.Transaction) string { return "rotating spend" },
 		IsUnlocked:                    func() bool { return true },
-		Policy:                        policy.DefaultConfig(),
+		PolicyFor:                     func(string) *policy.Config { return policy.DefaultConfig() },
 		Rotating: &signersigning.RotatingDeps{
 			Chain:    reader,
 			Tables:   tables,

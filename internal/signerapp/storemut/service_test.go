@@ -18,7 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -246,18 +248,18 @@ func TestDeleteCosignerKeyArchivesItsPolicy(t *testing.T) {
 	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	doc := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + witnessKeyID + `","transfer_policy":{"routes":[]}}`)
-	if err := policy.WriteCosignerPolicy(active, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+	doc := []byte(policytest.MustDocument(noderole.RoleCosigner, witnessKeyID, ""))
+	if err := policy.WriteKeyPolicy(active, noderole.RoleCosigner, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	if _, err := os.Stat(active.CosignerPolicyPath(witnessKeyID)); !os.IsNotExist(err) {
+	if _, err := os.Stat(active.PolicyPath(witnessKeyID)); !os.IsNotExist(err) {
 		t.Fatalf("live policy still present after key deletion: %v", err)
 	}
-	archived, err := os.ReadFile(filepath.Join(active.DeletedCosignerPoliciesDir(), witnessKeyID+".json"))
+	archived, err := os.ReadFile(filepath.Join(active.DeletedPoliciesDir(), witnessKeyID+".json"))
 	if err != nil || string(archived) != string(doc) {
 		t.Fatalf("archived policy = %q, %v", archived, err)
 	}
@@ -281,15 +283,15 @@ func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
 	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	doc := []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + witnessKeyID + `","transfer_policy":{"routes":[]}}`)
-	if err := policy.WriteCosignerPolicy(active, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+	doc := []byte(policytest.MustDocument(noderole.RoleCosigner, witnessKeyID, ""))
+	if err := policy.WriteKeyPolicy(active, noderole.RoleCosigner, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err == nil {
 		t.Fatal("DeleteKey() succeeded past the archive limit")
 	}
-	for _, path := range []string{keyPath, active.CosignerPolicyPath(witnessKeyID)} {
+	for _, path := range []string{keyPath, active.PolicyPath(witnessKeyID)} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("refused deletion moved %s: %v", path, err)
 		}

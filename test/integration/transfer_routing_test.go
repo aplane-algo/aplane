@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -284,8 +287,7 @@ func randomTransferRoutingAddress() string {
 }
 
 func transferRoutingIntegrationPolicy(network string, addr transferRoutingTestAddresses) string {
-	return fmt.Sprintf(`{
-  "format": "aplane.signer-policy.v1",
+	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, fmt.Sprintf(`{
   "reject_foreign_rekey": false,
   "reject_close_remainder": false,
   "reject_asset_close": false,
@@ -301,8 +303,9 @@ func transferRoutingIntegrationPolicy(network string, addr transferRoutingTestAd
     "clawback_assets": {%[1]q: ["asa:%[6]d"]}
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
     "blocked_destinations": [%[7]q],
     "routes": [
       {"id": "normal_payee", "networks": [%[1]q], "sources": ["@source_accounts"], "assets": ["algo"], "destinations": ["@normal_receivers", "self"]},
@@ -333,7 +336,7 @@ func transferRoutingIntegrationPolicy(network string, addr transferRoutingTestAd
 		addr.other,                        // 11
 		addr.authority,                    // 12
 		addr.owner,                        // 13
-	)
+	))
 }
 
 func transferRoutingSignRequest(authAddress, txnHex string) signerapi.GroupSignRequest {

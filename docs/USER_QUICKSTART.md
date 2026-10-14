@@ -152,10 +152,12 @@ the resource "dummy" transactions that this Falcon LogicSig flow requires.
 
 This proves the signer can build, sign, and submit a real testnet transaction with your new key.
 
-A self-send is what the signer's starting policy allows: any account may send
-to itself, and a transfer to any other address is rejected until you add a
-route for it. See [USER_POLICY.md](USER_POLICY.md) for adding routes; `apadmin
-policy template signer` writes a starting document with the fields explained.
+A self-send is routed by the node's default policy: any account may send to
+itself without a prompt. A transfer to any other address falls through to the
+operator default, so it prompts unless `user_auto_approve` is on. See
+[USER_POLICY.md](USER_POLICY.md) for routes and per-key policies; `apadmin
+policy template --key <address>` writes a starting document for one key with
+the fields explained.
 
 ## Further Exploration
 

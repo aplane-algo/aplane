@@ -12,18 +12,19 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// A cosigner key's policy travels with the key: a backup carries
-// policies/<WitnessKeyID>.apb beside the key's credential, holding the exact v1
+// A key's own policy travels with the key: a backup carries
+// policies/<selector>.apb beside the key's credential, holding the exact v1
 // policy document encrypted under the export passphrase, and restore installs
-// it with a sidecar signed by the destination store. The signer's node-wide
-// policy.json is not backed up.
+// it with a sidecar signed by the destination store. The node default policy
+// is not backed up; a restored key without a policy of its own follows the
+// destination's default.
 
-// backupPoliciesDir is the archive directory of cosigner policy documents.
+// backupPoliciesDir is the archive directory of per-key policy documents.
 const backupPoliciesDir = "policies"
 
 // maxBackupPolicyEnvelopeBytes bounds one archived policy envelope: a 1 MiB
@@ -36,20 +37,16 @@ func backupPoliciesDirFor(keysDir string) string {
 	return filepath.Join(filepath.Dir(keysDir), backupPoliciesDir)
 }
 
-// exportCosignerPolicies writes the policy document of each selected cosigner
-// credential that has one. It returns the keys whose policy was exported.
-func exportCosignerPolicies(active storepaths.ActivePaths, stageDir string, selectors []string, kr *crypto.Keyring, exportPassphrase []byte) ([]string, error) {
+// exportKeyPolicies writes the policy document of each selected credential
+// that has one of its own. It returns the keys whose policy was exported.
+func exportKeyPolicies(active storepaths.ActivePaths, role noderole.Role, stageDir string, selectors []string, kr *crypto.Keyring, exportPassphrase []byte) ([]string, error) {
 	destDir := filepath.Join(stageDir, backupPoliciesDir)
 	var exported []string
 	for _, selector := range selectors {
-		source, err := resolveManagedCredentialFile(active.KeysDir(), selector)
-		if err != nil {
-			return nil, err
-		}
-		if source.Class != keys.ManagedCredentialCosigner {
+		if storepaths.ValidatePolicySelector(selector) != nil {
 			continue
 		}
-		doc, ok, err := policy.LoadVerifiedCosignerPolicy(active, selector, kr)
+		doc, ok, err := policy.LoadVerifiedKeyPolicy(active, role, selector, kr)
 		if err != nil {
 			return nil, fmt.Errorf("export policy for %s: %w", selector, err)
 		}
@@ -71,9 +68,9 @@ func exportCosignerPolicies(active storepaths.ActivePaths, stageDir string, sele
 	return exported, nil
 }
 
-// readBackupPolicy decrypts and validates the archived policy of one cosigner
-// key. It returns nil when the archive carries none.
-func readBackupPolicy(keysDir, selector string, exportPassphrase []byte) ([]byte, error) {
+// readBackupPolicy decrypts and validates the archived policy of one key for
+// role. It returns nil when the archive carries none.
+func readBackupPolicy(keysDir, selector string, exportPassphrase []byte, role noderole.Role) ([]byte, error) {
 	path := filepath.Join(backupPoliciesDirFor(keysDir), selector+".apb")
 	data, _, err := fsutil.ReadRegularFileLimited(path, maxBackupPolicyEnvelopeBytes)
 	if os.IsNotExist(err) {
@@ -86,7 +83,7 @@ func readBackupPolicy(keysDir, selector string, exportPassphrase []byte) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("decrypt backup policy: %w", err)
 	}
-	if _, err := policy.DecodeCosignerPolicyV1(document, selector); err != nil {
+	if _, err := policy.DecodePolicyV1(document, selector, role); err != nil {
 		return nil, fmt.Errorf("backup policy for %s: %w", selector, err)
 	}
 	return document, nil
@@ -104,7 +101,7 @@ func scanBackupPolicies(keysDir string) ([]string, error) {
 	var keysWithPolicy []string
 	for _, entry := range entries {
 		key, ok := strings.CutSuffix(entry.Name(), ".apb")
-		if !ok || storepaths.ValidateWitnessKeyIDComponent(key) != nil {
+		if !ok || storepaths.ValidatePolicySelector(key) != nil {
 			return nil, fmt.Errorf("backup policies contain unsupported entry %q", entry.Name())
 		}
 		keysWithPolicy = append(keysWithPolicy, key)
@@ -114,17 +111,17 @@ func scanBackupPolicies(keysDir string) ([]string, error) {
 
 // ApplyPolicyEntry installs a restored credential's archived policy document
 // with a sidecar signed by the destination keyring.
-func ApplyPolicyEntry(active storepaths.ActivePaths, entry CredentialEntry, kr *crypto.Keyring) error {
+func ApplyPolicyEntry(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring) error {
 	if entry.Policy == nil {
 		return fmt.Errorf("restore entry %s carries no policy", entry.Selector)
 	}
-	return policy.WriteCosignerPolicy(active, entry.Selector, entry.Policy, kr, time.Now())
+	return policy.WriteKeyPolicy(active, role, entry.Selector, entry.Policy, kr, time.Now())
 }
 
 // destinationPolicy returns the destination's verified policy bytes for key,
-// or nil when it has none.
-func destinationPolicy(active storepaths.ActivePaths, key string, kr *crypto.Keyring) ([]byte, error) {
-	doc, ok, err := policy.LoadVerifiedCosignerPolicy(active, key, kr)
+// or nil when it has none of its own.
+func destinationPolicy(active storepaths.ActivePaths, role noderole.Role, key string, kr *crypto.Keyring) ([]byte, error) {
+	doc, ok, err := policy.LoadVerifiedKeyPolicy(active, role, key, kr)
 	if err != nil || !ok {
 		return nil, err
 	}

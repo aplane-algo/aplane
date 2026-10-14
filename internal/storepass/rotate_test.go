@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -60,15 +61,15 @@ func newRotateFixture(t *testing.T) rotateFixture {
 			if err := noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err
 			}
-			if err := policy.WriteInitialSignerPolicy(staged, kr, time.Unix(1_785_200_000, 0)); err != nil {
+			if err := policy.WriteEmbeddedDefault(staged, noderole.RoleSigner, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err
 			}
-			// An archived cosigner policy: rotation must re-sign archived
+			// An archived key policy: rotation must re-sign archived
 			// sidecars too.
-			if err := policy.WriteCosignerPolicy(staged, rotateArchivedPolicyKey, rotateArchivedPolicy, kr, time.Unix(1_785_200_000, 0)); err != nil {
+			if err := policy.WriteKeyPolicy(staged, noderole.RoleSigner, rotateArchivedPolicyKey, rotateArchivedPolicy, kr, time.Unix(1_785_200_000, 0)); err != nil {
 				return err
 			}
-			if err := policy.ArchiveCosignerPolicy(staged, rotateArchivedPolicyKey); err != nil {
+			if err := policy.ArchiveKeyPolicy(staged, rotateArchivedPolicyKey); err != nil {
 				return err
 			}
 			fixture.accountPath = filepath.Join(staged.KeysDir(), "ACCOUNT.key")
@@ -107,9 +108,9 @@ func newRotateFixture(t *testing.T) rotateFixture {
 	return fixture
 }
 
-const rotateArchivedPolicyKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+const rotateArchivedPolicyKey = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
 
-var rotateArchivedPolicy = []byte(`{"format":"aplane.cosigner-policy.v1","key":"` + rotateArchivedPolicyKey + `","transfer_policy":{"routes":[]}}`)
+var rotateArchivedPolicy = []byte(policytest.MustDocument(noderole.RoleSigner, rotateArchivedPolicyKey, ""))
 
 func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	fixture := newRotateFixture(t)
@@ -169,10 +170,10 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	if err != nil || !bytes.Equal(state, fixture.stateBytes) {
 		t.Fatalf("plaintext state = %q, %v", state, err)
 	}
-	if _, _, err := policy.LoadVerifiedSignerPolicy(active, kr); err != nil {
+	if _, _, err := policy.LoadVerifiedDefault(active, noderole.RoleSigner, kr); err != nil {
 		t.Fatalf("successor policy verification: %v", err)
 	}
-	archivedPath := filepath.Join(active.DeletedCosignerPoliciesDir(), rotateArchivedPolicyKey+".json")
+	archivedPath := filepath.Join(active.DeletedPoliciesDir(), rotateArchivedPolicyKey+".json")
 	archived, err := os.ReadFile(archivedPath)
 	if err != nil || !bytes.Equal(archived, rotateArchivedPolicy) {
 		t.Fatalf("archived policy = %q, %v", archived, err)
@@ -264,7 +265,7 @@ func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) 
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("wrong passphrase changed store root")
 	}
-	if err := os.Remove(fixture.paths.GenerationPaths(rotateFirstGeneration).PolicyIntegritySidecar()); err != nil {
+	if err := os.Remove(fixture.paths.GenerationPaths(rotateFirstGeneration).DefaultPolicyIntegritySidecar()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, []byte("new"), RotateOptions{}); err == nil {

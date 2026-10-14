@@ -46,10 +46,11 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 
-	// template is the producer side's own text: no store, socket, data
-	// directory, or passphrase takes part, so none is resolved.
-	if command.Verb == policycmd.VerbTemplate {
-		if err := policycmd.WriteTemplate(command, ioStreams); err != nil {
+	// template --embedded is the producer side's own text: no store, socket,
+	// data directory, or passphrase takes part, so none is resolved. Every
+	// other template form prints the node's own default and needs the node.
+	if command.Verb == policycmd.VerbTemplate && command.Embedded != "" {
+		if err := policycmd.WriteEmbeddedTemplate(command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
 			return 1
 		}
@@ -121,24 +122,30 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		_, _ = fmt.Fprintf(stderr, `Usage: apadmin [GLOBAL FLAGS] policy%s VERB [ARGS]
 
 Verbs:
-  status            list the node's policy documents and cosigner key coverage
-  export [--key ID] write one policy document exactly as stored
+  status            list the node's default policy and each held key's coverage
+  export [--key K]  write one policy document exactly as stored: the node
+                    default, or key K's own policy
   check FILE...     validate policy files against the node
-  diff FILE...|-    describe how policy files differ from the active policy
+  diff FILE...|-    describe how policy files differ from the policy that
+                    governs each key now
   apply FILE...|-   check, show the diff, confirm, then replace documents in one commit
-  remove ID...      show the diff, confirm, then delete cosigner keys' policies
-  template [--key ID] signer|cosigner
-                    write the starting document for that node role, with a
-                    comment on its self-transfer route; --key names the
-                    cosigner key
+  remove K...       show the diff, confirm, then delete keys' own policies;
+                    the keys follow the node default
+  template [--key K]
+                    write the node's current default policy as the starting
+                    document for key K (or annotated as the default itself)
+  template --embedded signer|cosigner [--key K]
+                    write the shipped default for that role instead; the
+                    only form that needs no node and no passphrase
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
-template needs no node and no passphrase.
 
-A signer node takes one policy.json file. On a cosigner node each file is one
-key's document and names that key in its "key" field; apply leaves documents
-for other keys unchanged. Policy files may carry // and /* */ comments, which
-apadmin removes before the document reaches the node.
+Each file is one document and names it in its "key" field: "default" for the
+node default, or the key it governs (an address on a signer node, a Witness
+Key ID on a cosigner node). apply leaves documents for other keys unchanged.
+A key with no policy of its own follows the node default. Policy files may
+carry // and /* */ comments, which apadmin removes before the document
+reaches the node.
 
 Online commands authenticate and unlock before policy access; local IPC may use
 APSIGNER_PASSPHRASE. IPC commands may read one passphrase line from stdin.
@@ -149,7 +156,8 @@ apply and remove, and reject --ipc-path.
 
 `, mode)
 	}
-	key := fs.String("key", "", "Witness Key ID of the cosigner document to export, or to name in a cosigner template")
+	key := fs.String("key", "", "key whose own document to export, or to name in a template (default: the node default)")
+	embedded := fs.String("embedded", "", "template only: write the shipped default for this node role (signer or cosigner) instead of the node's own")
 	yes := fs.Bool("yes", false, "apply or remove without asking for confirmation")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
@@ -158,6 +166,7 @@ apply and remove, and reject --ipc-path.
 		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, diff, apply, remove, or template")
 	}
 	command.Key = *key
+	command.Embedded = *embedded
 	command.Yes = *yes
 	command.Args = fs.Args()
 	if err := command.Validate(); err != nil {

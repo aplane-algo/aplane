@@ -233,19 +233,10 @@ func (ir *Runtime) NodeRole() noderole.Role {
 	return ir.nodeRole
 }
 
-// Policy returns a copy of the compiled signer policy, or nil on a cosigner
-// node or before policy loads.
-func (ir *Runtime) Policy() *policy.Config {
-	return ir.NodePolicy().SignerConfig()
-}
-
-// CosignerPolicies returns copies of the compiled per-key cosigner policies.
-func (ir *Runtime) CosignerPolicies() map[string]*policy.Config {
-	return ir.NodePolicy().CosignerConfigs()
-}
-
 // NodePolicy returns the node's active verified policy, or nil before policy
-// loads. The returned value is immutable and must not be modified.
+// loads. The returned value is immutable and must not be modified. A signing
+// request captures one NodePolicy when its service is built and resolves
+// every slot against it.
 func (ir *Runtime) NodePolicy() *policyruntime.NodePolicy {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
@@ -260,14 +251,14 @@ func (ir *Runtime) SetNodePolicy(p *policyruntime.NodePolicy) {
 	ir.nodePolicy = p
 }
 
-// SetPolicy installs a compiled signer policy without stored documents. It
-// exists for tests that inject policy directly.
+// SetPolicy installs a compiled policy as the node default without stored
+// documents. It exists for tests that inject policy directly.
 func (ir *Runtime) SetPolicy(cfg *policy.Config) {
 	if cfg == nil {
 		ir.SetNodePolicy(nil)
 		return
 	}
-	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleSigner, Signer: cfg.Clone()})
+	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: ir.nodeRole, Default: cfg.Clone()})
 }
 
 // --- Lock state ---

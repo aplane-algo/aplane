@@ -253,6 +253,8 @@ test/
 │   ├── single_identity_boundary_test.go # Extra identity startup rejection
 │   ├── signer_test.go             # Signer policy, lock, approval, restart tests
 │   ├── policy_cli_test.go         # apadmin policy verbs, online and rescue
+│   ├── policy_integrity_test.go   # Hand-placed default signed with apstore policy sign
+│   ├── policy_per_key_test.go     # Node default vs a key's own document, remove, cosigner deny-all
 │   ├── app_test.go                # Application deploy/read/call flow tests
 │   ├── apstore_initialize_test.go # apstore initialize bootstrap tests
 │   ├── backup_portability_test.go # Backup/restore portability tests
@@ -312,8 +314,9 @@ This creates `/tmp/aplane-test-env/` containing:
 │       ├── store-root.enc         # Cryptographic root and active-generation selection
 │       ├── .keystore              # Store format marker
 │       └── generations/<gen-id>/  # Active generation selected by store-root.enc
-│           ├── policy.json        # Permissive integration-test signer policy
-│           ├── policy.json.hmac   # Integrity sidecar for policy.json
+│           ├── default.json       # Permissive integration-test node default policy
+│           ├── default.json.hmac  # Integrity sidecar for default.json
+│           ├── policies/          # Per-key policies (empty until a test applies one)
 │           └── keys/              # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
@@ -338,7 +341,7 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 6. Writes passphrase file for the signer
 7. Initializes the keystore non-interactively by piping the generated test passphrase to `apstore initialize`
 8. Pre-populates client `known_hosts` with the signer's SSH host key (avoids TOFU prompts)
-9. Writes product-store authorized keys and applies a permissive test policy with `apadmin policy rescue apply --yes -`
+9. Writes product-store authorized keys and replaces the node default with a permissive test policy (`key: default`, every `reject_*` false, `always_review_warnings` false, `transaction_types` `*` allow, one `*` to `*` route, route misses `operator_default`) with `apadmin policy rescue apply --yes -`; tests that verify rejection or per-key behavior apply their own documents
 10. Copies the top-level `library/templates/` YAML files into the signer data library
 11. In localnet mode, creates a disposable native Falcon account, funds it from KMD, exports it as `TEST_FUNDING_MNEMONIC`, writes the current localnet genesis hash into signer config, and seeds the integration burn address
 12. Writes `.env.test` with all required environment variables
@@ -700,6 +703,28 @@ test/contracts/signerapi/
 ```
 
 These files are committed golden fixtures, not generated test state. Update them intentionally in the same change as any compatibility-bearing wire contract change.
+
+Policy documents have their own fixture set under `test/contracts/policy/v1/`,
+exercised by `TestPolicyV1FixturesAgreeWithSchema` in `internal/policy` and by
+`pkg/policyschema`, both part of `make test`:
+
+- the top-level files (`signer_default.json`, `signer_key_full.json`,
+  `signer_key_minimal.json`, `cosigner_default.json`, `cosigner_key_full.json`,
+  `cosigner_key_minimal.json`, `signer_uint64_max.json`) must pass the JSON
+  Schema and decode for the role their name states,
+- `invalid/` holds documents the schema must reject (missing required fields,
+  a review field or verdict on a cosigner document, `allow` for a non-transfer
+  type on a cosigner, a selector of the wrong kind for the role, `key_overrides`,
+  `transfer_policy.enabled`, unknown fields),
+- `semantic_invalid/` holds documents the schema accepts but the decoder
+  rejects (a signer document on a cosigner node and the reverse, a bad address
+  checksum, duplicate route IDs, cross-field rules).
+
+Unit tests that need a complete policy document build it with
+`internal/policy/policytest` (`Signer`, `Cosigner`, `Compile`,
+`EmbeddedDefault`): every verdict-bearing field is required, so a test merges
+a sparse JSON object onto the complete minimal document for the role instead
+of writing the whole thing.
 
 Run the suite with:
 

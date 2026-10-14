@@ -170,8 +170,9 @@ an otherwise successful verification.
 
 `apadmin backup create` writes a single `.tar.gz` archive. The archive includes:
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
-- For each backed-up cosigner key with a policy, `policies/<WitnessKeyID>.apb`:
-  the key's exact policy document, encrypted with the same passphrase
+- For each backed-up key with a policy of its own, `policies/<key>.apb`: the
+  key's exact policy document, encrypted with the same passphrase (a signing
+  address on a signer node, a Witness Key ID on a cosigner node)
 - `README.md` with decryption instructions
 - `manifest.sealed`, the archive's authenticated description: an inventory of
   every other member with its digest, the source node role, and archive
@@ -235,13 +236,16 @@ Opening the root is itself the passphrase check, so there is no separate
 verifier. It also writes the `.keystore` format marker, which records only the
 version and layout.
 
-On a signer node, `apstore initialize` also creates the initial signed policy
-document inside the first selected generation:
-`identities/default/generations/<generation-id>/policy.json`, holding the
-self-transfer-only starting policy, and its `policy.json.hmac` sidecar. A
-cosigner node starts with no policy documents; each cosigner key rejects every
-request until its `policies/<WitnessKeyID>.json` document is applied with
-`apadmin policy apply`.
+`apstore initialize` also creates the node's signed default policy inside the
+first selected generation:
+`identities/default/generations/<generation-id>/default.json` and its
+`default.json.hmac` sidecar, seeded from the shipped default for the node
+role. The signer default rejects foreign rekeys, reviews warning-level
+findings, and leaves the rest to the operator default; the cosigner default
+rejects everything, so each cosigner key rejects every request until its
+`policies/<WitnessKeyID>.json` document is applied with `apadmin policy
+apply`. A signer key likewise gets `policies/<address>.json` only when the
+operator applies one; until then it follows the default.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role cosigner` creates a dedicated
@@ -331,8 +335,8 @@ privileged operation. `appass-systemd-creds` files remain root-owned.
 
 A passphrase change creates a fresh numbered key term, stages a complete
 successor generation, re-encrypts live keys, templates, and deleted managed
-objects, and re-signs every policy sidecar (the signer document, each cosigner
-key's document, and archived cosigner policies) and the node-role integrity
+objects, and re-signs every policy sidecar (the node default, each key's own
+document, and archived key policies) and the node-role integrity
 sidecar from the exact outgoing generation seal. One `store-root.enc` rename commits both the newly
 wrapped keyring and successor selection. Retained generations stay
 byte-for-byte unchanged and remain anchor-gated historical state.
@@ -418,19 +422,20 @@ explicitly intend to replace a different or unreadable destination credential.
 
 The core ownership rule is:
 
-> Backup restores credential authority. A cosigner key brings its own policy;
-> otherwise the destination's current policy and configuration govern it.
+> Backup restores credential authority. A key brings its own policy if it has
+> one; otherwise the destination's default policy and configuration govern it.
 
-A cosigner key's policy is backed up with the key and installed with it on
-restore, so a cold standby enforces the same policy as the original. If the
-destination already has a different policy for that key, the restore reports a
-conflict, and `--replace-existing` replaces it. A destination policy is kept when
-the archive carries none.
+A key's own policy file is backed up with the key, on both node roles, and
+installed with it on restore, so a cold standby enforces the same policy as
+the original. If the destination already has a different policy for that key,
+the restore reports a conflict, and `--replace-existing` replaces it. A
+destination policy is kept when the archive carries none, and a restored key
+with no file of its own follows the destination's default.
 
-A backup does not carry the signer's node-wide policy, approval defaults,
-network mappings, templates, endpoints, tokens, or operator settings. Review the
-destination signer policy before restoring if you do not want the credentials
-to become usable under its current rules.
+A backup does not carry the node default policy, approval defaults, network
+mappings, templates, endpoints, or operator settings. Review the destination's
+default policy before restoring if you do not want the credentials to become
+usable under its current rules.
 
 A canonical-plaintext-identical destination credential is an idempotent no-op.
 A different credential is a conflict. An unreadable destination credential is
@@ -452,8 +457,8 @@ it never guesses or promotes the newest-looking directory.
 `restore rollback` is available only while the current generation is the
 latest clean rollback-eligible credential restore. Any later mutation causes a
 safe refusal, and a rollback generation cannot itself be rolled back. Rollback
-restores credentials, key types, and cosigner key policies; the signer
-`policy.json` stays in effect. A restore
+restores credentials, key types, and the per-key policies the restore
+installed; the node default stays in effect. A restore
 performed from recovery mode is not rollback-eligible because its damaged
 parent must not be promoted back into service.
 
@@ -560,8 +565,8 @@ above still apply.
 Managed backups contain complete encrypted credential records and archive
 integrity metadata. They deliberately exclude:
 
-- policy documents (`policy.json`, `policies/*.json`) and policy integrity
-  sidecars
+- the node default policy (`default.json`) and every policy integrity sidecar;
+  a key's own `policies/<key>.json` travels with the key
 - `user_auto_approve` and other product settings
 - network/genesis mappings and endpoints
 - installed or library templates and key-type enable/disable state
@@ -762,9 +767,10 @@ From the key details view:
 ./apstore policy verify
 ./apstore policy sign
 ./apadmin policy rescue status
-./apadmin policy rescue export > policy.json
-./apadmin policy rescue check policy.json
-./apadmin policy rescue apply - < policy.json
+./apadmin policy rescue export > default.json
+./apadmin policy rescue export --key <key> > key.json
+./apadmin policy rescue check default.json key.json
+./apadmin policy rescue apply - < default.json
 
 # Template management (for custom LogicSigs)
 ./apadmin template list

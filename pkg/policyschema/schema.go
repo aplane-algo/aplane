@@ -8,10 +8,9 @@ package policyschema
 
 import _ "embed"
 
-const (
-	SignerFormatV1   = "aplane.signer-policy.v1"
-	CosignerFormatV1 = "aplane.cosigner-policy.v1"
-)
+// FormatV1 is the one policy document format. A document's "role" field says
+// which node role it is for.
+const FormatV1 = "aplane.policy.v1"
 
 // SchemaV1 is the JSON Schema 2020-12 document for policy format v1.
 //

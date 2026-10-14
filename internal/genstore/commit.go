@@ -472,11 +472,11 @@ func makeGenerationDirectories(gen storepaths.GenPaths) error {
 	for _, dir := range []string{
 		gen.KeysDir(),
 		gen.KeyTypeRecordsDir(),
-		gen.CosignerPoliciesDir(),
+		gen.PoliciesDir(),
 		gen.DeletedDir(),
 		gen.DeletedKeysDir(),
 		gen.DeletedKeyTypeRecordsDir(),
-		gen.DeletedCosignerPoliciesDir(),
+		gen.DeletedPoliciesDir(),
 	} {
 		if err := makeNamespaceDir(dir); err != nil {
 			return err
@@ -558,7 +558,7 @@ func validateStructureAt(dir, generationID string, requireManifest bool) error {
 			}
 		case "keys", "keytypes", "policies", "deleted":
 			// Validated unconditionally above.
-		case "policy.json", "policy.json.hmac", "node.yaml.hmac":
+		case "default.json", "default.json.hmac", "node.yaml.hmac":
 			// Validated unconditionally above.
 		default:
 			return fmt.Errorf("generation %s contains unsupported entry %q", generationID, name)

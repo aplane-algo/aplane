@@ -8,17 +8,20 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/pkg/policyschema"
 )
 
 // TestPolicyV1FixturesAgreeWithSchema runs every contract fixture through the
-// published JSON Schema and the Go decoder. Valid fixtures must pass both and
-// compile; invalid/ fixtures must fail both; semantic_invalid/ fixtures must
-// pass the schema and fail the decoder, which enforces rules the schema cannot.
+// published JSON Schema and the Go decoder. A fixture's file name starts with
+// the node role it is decoded for. Valid fixtures must pass both and compile;
+// invalid/ fixtures must fail both; semantic_invalid/ fixtures must pass the
+// schema and fail the decoder, which enforces rules the schema cannot.
 func TestPolicyV1FixturesAgreeWithSchema(t *testing.T) {
 	schema := compilePolicySchemaV1(t)
 	dir := filepath.Join("..", "..", "test", "contracts", "policy", "v1")
@@ -49,7 +52,7 @@ func TestPolicyV1FixturesAgreeWithSchema(t *testing.T) {
 				if (schemaErr == nil) != group.schemaValid {
 					t.Errorf("schema valid = %v, want %v (%v)", schemaErr == nil, group.schemaValid, schemaErr)
 				}
-				compiled, decodeErr := decodeAndCompileFixtureV1(data)
+				compiled, decodeErr := decodeAndCompileFixtureV1(data, fixtureRole(t, file))
 				if (decodeErr == nil) != group.decoderValid {
 					t.Errorf("decoder valid = %v, want %v (%v)", decodeErr == nil, group.decoderValid, decodeErr)
 				}
@@ -58,6 +61,19 @@ func TestPolicyV1FixturesAgreeWithSchema(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// fixtureRole is the node role a fixture is decoded for, from the prefix of
+// its file name. A fixture with neither prefix is decoded as a signer
+// document.
+func fixtureRole(t *testing.T, file string) noderole.Role {
+	t.Helper()
+	switch base := filepath.Base(file); {
+	case strings.HasPrefix(base, "cosigner_"):
+		return noderole.RoleCosigner
+	default:
+		return noderole.RoleSigner
 	}
 }
 
@@ -78,22 +94,14 @@ func compilePolicySchemaV1(t *testing.T) *jsonschema.Schema {
 	return schema
 }
 
-// decodeAndCompileFixtureV1 picks the decoder by the fixture's format and,
-// for cosigner documents, supplies a file name matching its key.
-func decodeAndCompileFixtureV1(data []byte) (*Config, error) {
+// decodeAndCompileFixtureV1 decodes a fixture for role, taking the file name
+// the decoder checks from the document's own key field.
+func decodeAndCompileFixtureV1(data []byte, role noderole.Role) (*Config, error) {
 	var head struct {
-		Format string `json:"format"`
-		Key    string `json:"key"`
+		Key string `json:"key"`
 	}
 	_ = json.Unmarshal(data, &head)
-	if head.Format == policyschema.CosignerFormatV1 {
-		doc, err := DecodeCosignerPolicyV1(data, head.Key)
-		if err != nil {
-			return nil, err
-		}
-		return doc.Compile(DefaultConfig())
-	}
-	doc, err := DecodeSignerPolicyV1(data)
+	doc, err := DecodePolicyV1(data, head.Key, role)
 	if err != nil {
 		return nil, err
 	}

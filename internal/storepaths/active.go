@@ -18,11 +18,11 @@ type ActivePaths interface {
 	DeletedKeysDir() string
 	DeletedKeyTypeRecordsDir() string
 	DeletedKeyTypeTemplate(keyType string) string
-	PolicyPath() string
-	PolicyIntegritySidecar() string
-	CosignerPoliciesDir() string
-	CosignerPolicyPath(witnessKeyID string) string
-	DeletedCosignerPoliciesDir() string
+	DefaultPolicyPath() string
+	DefaultPolicyIntegritySidecar() string
+	PoliciesDir() string
+	PolicyPath(selector string) string
+	DeletedPoliciesDir() string
 	NodeRoleIntegritySidecar() string
 }
 

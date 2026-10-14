@@ -37,7 +37,7 @@ func cmdPolicy(args []string) error {
 
 // cmdPolicyCheck validates every stored policy document without verifying
 // sidecars, so hand-placed documents can be reviewed before signing, and
-// reports cosigner keys and documents that do not match.
+// reports documents for keys the node does not hold.
 func cmdPolicyCheck() error {
 	active, kr, err := readStore()
 	if err != nil {
@@ -48,11 +48,12 @@ func cmdPolicyCheck() error {
 	if err != nil {
 		return err
 	}
-	docs, err := storedPolicyDocuments(active, role)
+	docs, err := storedPolicyDocuments(active)
 	if err != nil {
 		return err
 	}
-	if _, err := policyruntime.Compile(role, dataDirectory, &config, docs); err != nil {
+	np, err := policyruntime.Compile(role, dataDirectory, &config, docs)
+	if err != nil {
 		return fmt.Errorf("policy invalid: %w", err)
 	}
 	for _, doc := range docs {
@@ -70,15 +71,12 @@ func cmdPolicyCheck() error {
 		}
 		logInfof("policy OK: %s", path)
 	}
-	if role == noderole.RoleCosigner {
-		held, err := policyapply.HeldCosignerKeysInGeneration(active)
-		if err != nil {
-			return err
-		}
-		np := &policyruntime.NodePolicy{Role: role, Documents: docs}
-		for _, warning := range policyapply.CoverageWarnings(policyapply.KeyStatus(held, np)) {
-			logWarnf("%s: %s", warning.Key, warning.Message)
-		}
+	held, err := policyapply.HeldPolicyKeysInGeneration(role, active)
+	if err != nil {
+		return err
+	}
+	for _, warning := range policyapply.CoverageWarnings(policyapply.KeyStatus(held, np)) {
+		logWarnf("%s: %s", warning.Key, warning.Message)
 	}
 	return nil
 }
@@ -116,15 +114,10 @@ func cmdPolicySign() error {
 		return err
 	}
 	now := time.Now()
-	switch role {
-	case noderole.RoleSigner:
-		err = policy.ResignSignerPolicy(active, kr, now)
-	case noderole.RoleCosigner:
-		err = policy.ResignCosignerPolicies(active, kr, now)
-	default:
-		err = fmt.Errorf("unsupported node role %q", role)
+	if err := policy.ResignDefault(active, role, kr, now); err != nil {
+		return fmt.Errorf("sign policy sidecars: %w", err)
 	}
-	if err != nil {
+	if err := policy.ResignKeyPolicies(active, role, kr, now); err != nil {
 		return fmt.Errorf("sign policy sidecars: %w", err)
 	}
 	np, err := policyruntime.Load(role, dataDirectory, &config, active, kr)
@@ -145,47 +138,40 @@ func storeNodeRole() (noderole.Role, error) {
 	return doc.Role, nil
 }
 
-// storedPolicyDocuments reads the role's policy documents without verifying
-// their sidecars.
-func storedPolicyDocuments(active storepaths.GenPaths, role noderole.Role) ([]policy.StoredDocument, error) {
-	switch role {
-	case noderole.RoleSigner:
-		data, err := os.ReadFile(active.PolicyPath())
-		if err != nil {
-			return nil, fmt.Errorf("read signer policy: %w", err)
-		}
-		return []policy.StoredDocument{{Bytes: data}}, nil
-	case noderole.RoleCosigner:
-		entries, err := os.ReadDir(active.CosignerPoliciesDir())
-		if err != nil {
-			return nil, fmt.Errorf("read cosigner policies: %w", err)
-		}
-		var docs []policy.StoredDocument
-		for _, entry := range entries {
-			key, ok := strings.CutSuffix(entry.Name(), ".json")
-			if !ok {
-				continue
-			}
-			if err := storepaths.ValidateWitnessKeyIDComponent(key); err != nil {
-				return nil, fmt.Errorf("cosigner policies contain unsupported entry %q", entry.Name())
-			}
-			data, err := os.ReadFile(active.CosignerPolicyPath(key))
-			if err != nil {
-				return nil, err
-			}
-			docs = append(docs, policy.StoredDocument{Key: key, Bytes: data})
-		}
-		return docs, nil
-	default:
-		return nil, fmt.Errorf("unsupported node role %q", role)
+// storedPolicyDocuments reads the default and every per-key document
+// without verifying their sidecars.
+func storedPolicyDocuments(active storepaths.GenPaths) ([]policy.StoredDocument, error) {
+	data, err := os.ReadFile(active.DefaultPolicyPath())
+	if err != nil {
+		return nil, fmt.Errorf("read default policy: %w", err)
 	}
+	docs := []policy.StoredDocument{{Key: policy.DefaultKey, Bytes: data}}
+	entries, err := os.ReadDir(active.PoliciesDir())
+	if err != nil {
+		return nil, fmt.Errorf("read key policies: %w", err)
+	}
+	for _, entry := range entries {
+		key, ok := strings.CutSuffix(entry.Name(), ".json")
+		if !ok {
+			continue
+		}
+		if err := storepaths.ValidatePolicySelector(key); err != nil {
+			return nil, fmt.Errorf("key policies contain unsupported entry %q", entry.Name())
+		}
+		data, err := os.ReadFile(active.PolicyPath(key))
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, policy.StoredDocument{Key: key, Bytes: data})
+	}
+	return docs, nil
 }
 
 func policyDocumentPath(active storepaths.GenPaths, key string) string {
-	if key == "" {
-		return active.PolicyPath()
+	if key == policy.DefaultKey {
+		return active.DefaultPolicyPath()
 	}
-	return active.CosignerPolicyPath(key)
+	return active.PolicyPath(key)
 }
 
 func readStore() (storepaths.GenPaths, *crypto.Keyring, error) {

@@ -102,14 +102,14 @@ func TestMatchesSelfNoOpTransferAutoApprovalASA(t *testing.T) {
 }
 
 func TestPolicyV1AutoApproveSelfNoOpTransfer(t *testing.T) {
-	got := routingConfig(t, `{"format": "aplane.signer-policy.v1", "auto_approve_self_noop_transfer": true}`)
+	got := routingConfig(t, `{"auto_approve_self_noop_transfer": true}`)
 	if !got.AutoApproveSelfNoOpTransfer {
 		t.Fatal("AutoApproveSelfNoOpTransfer = false, want true")
 	}
 }
 
 func TestPolicyV1AlwaysReviewWarnings(t *testing.T) {
-	got := routingConfig(t, `{"format": "aplane.signer-policy.v1", "always_review_warnings": true}`)
+	got := routingConfig(t, `{"always_review_warnings": true}`)
 	if !got.AlwaysReviewWarnings {
 		t.Fatal("AlwaysReviewWarnings = false, want true")
 	}

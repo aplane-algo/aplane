@@ -1,7 +1,0 @@
-{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {
-    "enabled": true,
-    "routes": []
-  }
-}

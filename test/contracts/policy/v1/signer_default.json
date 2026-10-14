@@ -1,0 +1,38 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
+  "reject_foreign_rekey": true,
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": true,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": {
+    "*": "allow"
+  },
+  "transfer_policy": {
+    "on_no_route": "operator_default",
+    "close_on_no_route": "operator_default",
+    "clawback_on_no_route": "operator_default",
+    "routes": [
+      {
+        "id": "self-transfer",
+        "description": "Any account may send any asset to itself",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "*"
+        ],
+        "assets": [
+          "*"
+        ],
+        "destinations": [
+          "self"
+        ]
+      }
+    ]
+  }
+}

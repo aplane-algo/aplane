@@ -375,12 +375,14 @@ Always Deny  >  Always Review  >  Always Approve  >  Operator Default
 | **Always Approve** | Signed without a prompt. |
 | **Operator Default** | Falls to `user_auto_approve`: `true` signs, `false` requires review. |
 
-The product policy document is a v1 JSON document in the selected generation at
-`identities/default/generations/<selected-generation>/policy.json` on a signer
-node, or one `policies/<WitnessKeyID>.json` per key on a cosigner node (each
-with an HMAC sidecar; a missing/mismatched sidecar **fails closed**). Runtime
-settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`) live
-in `identities/default/config.yaml`.
+Policy is a set of v1 JSON documents in the selected generation: the node
+default `identities/default/generations/<selected-generation>/default.json`,
+which governs every key without a policy of its own, and `policies/<key>.json`
+for a key that has one (a signing address on a signer node, a Witness Key ID
+on a cosigner node; the file replaces the default for that key wholesale).
+Each has an HMAC sidecar; a missing/mismatched sidecar **fails closed**.
+Runtime settings (`user_auto_approve`, `lock_on_disconnect`,
+`passphrase_timeout`) live in `identities/default/config.yaml`.
 
 ### Things that surprise clients
 
@@ -414,9 +416,10 @@ it never holds keys:
   operation, the client queries authenticated `/keys` and routes to the one
   endpoint advertising the required embedded public key.
 - Cosigner policy has only two outcomes — **reject or sign** (no human, no
-  Operator Default). Each cosigner key has its own policy document; a key with
-  no policy rejects every request. A locked, unreachable, stale, or wrong
-  cosigner endpoint fails **closed** before submission.
+  Operator Default). A cosigner key is governed by its own policy file or, if
+  it has none, by the node default, which as shipped rejects every request. A
+  locked, unreachable, stale, or wrong cosigner endpoint fails **closed**
+  before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
 > [ARCH_COSIGNER.md](ARCH_COSIGNER.md).

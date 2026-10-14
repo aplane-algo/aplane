@@ -28,10 +28,6 @@ func TestStablePolicyRuleIDs(t *testing.T) {
 		"TransferRoutingClawbackRouteMissRuleID":    TransferRoutingClawbackRouteMissRuleID,
 		"TransferRoutingCloseRejectedRuleID":        TransferRoutingCloseRejectedRuleID,
 		"TransferRoutingClawbackRejectedRuleID":     TransferRoutingClawbackRejectedRuleID,
-		"CosignerKeyHasNoPolicyRuleID":              CosignerKeyHasNoPolicyRuleID,
-		"CosignerTransferPolicyRequiredRuleID":      CosignerTransferPolicyRequiredRuleID,
-		"CosignerDeterministicRoutingRuleID":        CosignerDeterministicRoutingRuleID,
-		"CosignerNonTransferRuleID":                 CosignerNonTransferRuleID,
 		"CosignerRekeyRuleID":                       CosignerRekeyRuleID,
 	}
 	want := map[string]string{
@@ -56,10 +52,6 @@ func TestStablePolicyRuleIDs(t *testing.T) {
 		"TransferRoutingClawbackRouteMissRuleID":    "transfer_policy:clawback_route_miss",
 		"TransferRoutingCloseRejectedRuleID":        "transfer_policy:close_rejected",
 		"TransferRoutingClawbackRejectedRuleID":     "transfer_policy:clawback_rejected",
-		"CosignerKeyHasNoPolicyRuleID":              "cosigner_policy:key_has_no_policy",
-		"CosignerTransferPolicyRequiredRuleID":      "cosigner_policy:transfer_policy_required",
-		"CosignerDeterministicRoutingRuleID":        "cosigner_policy:deterministic_routing_required",
-		"CosignerNonTransferRuleID":                 "cosigner_policy:non_transfer",
 		"CosignerRekeyRuleID":                       "cosigner_policy:reject_rekey",
 	}
 	for name, wantID := range want {
@@ -93,5 +85,11 @@ func TestTransferRoutingRouteRuleID(t *testing.T) {
 				t.Fatalf("TransferRoutingRouteRuleID = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestTransactionTypeRuleID(t *testing.T) {
+	if got := TransactionTypeRuleID("appl"); got != "transaction_type:appl" {
+		t.Fatalf("TransactionTypeRuleID = %q", got)
 	}
 }
