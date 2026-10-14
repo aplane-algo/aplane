@@ -67,6 +67,7 @@ var exemptFunctions = map[string]string{
 	"ValidateKeyPair":        "validates caller-owned key material without retaining it",
 	"validateExactPayload":   "validates caller-owned payload material without retaining it",
 	"validateRegisteredPair": "delegates validation of caller-owned key material",
+	"PublicKeyOf":            "reads a caller-owned WOTS secret and returns only the public chain-end hash",
 }
 
 type finding struct {
