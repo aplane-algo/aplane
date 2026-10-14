@@ -248,11 +248,28 @@ accounts. Corridor v1 uses a distinct external contract-admin witness for its
 bounded pure-rekey path and never asks cosigner policy to authorize that target.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
-not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule
-must be evaluated. For cosigner, an unknown genesis hash always fails
-closed regardless of which rules are configured, because cosigner is
-authorization rather than a guardrail and cannot fall through to operator
-default.
+not `GenesisID`.
+
+### Known-network gate
+
+Every signing path refuses a transaction whose genesis hash maps to no network
+the node knows, before any policy rule runs. The known networks are the
+built-in mainnet, testnet, and betanet plus any operator mapping
+(`networks.<token>.genesis_hash`, see
+[ARCH_NETWORKS.md](ARCH_NETWORKS.md#transaction-planning)). The gate exists
+because asset references are only meaningful on a known network: `asa:31566704`
+names a different asset, or none, on each network, so no rule that names an
+asset can be applied without one. It is applied to every transaction, including
+transactions that name no asset, such as a cosigner rekey (a 0 ALGO
+self-payment), so that no signing path has to prove it cannot carry an asset
+reference. Rules that do not depend on the network, such as `rekey_policy` and
+the transaction-type verdicts, take no network input. `/sign`,
+`/sign/bounded-admin`, bounded-cosigner, and guarded user-component requests
+are refused with a bad request (400) before policy; a cosigner has no operator,
+so cosigner component requests are refused as an audited policy rejection
+(`unknown_genesis_hash`, 403). Rotating-account spends are not looked up in the
+resolver; they must carry the genesis hash recorded in the account's key, the
+network it was created for.
 
 Document-level `limits.<network>.<asset>.reject_above` is the deny side of
 transfer guards. If a matching `review_above` is also configured, `reject_above`
@@ -306,17 +323,12 @@ already been rejected by the matching `reject_above` threshold.
 For client signing, unknown genesis hashes trigger a distinct fail-closed rule
 that forces review when a configured transfer-guard review threshold cannot be
 mapped to a network token. This rule is independent of the configured threshold
-values. Cosigner rejects unknown genesis hashes when network-scoped policy
-must be evaluated because it has no review fallback.
+values.
 
-Ordinary `/sign` requests with an unknown genesis hash are rejected by the
-planner (400) before policy runs, and bounded-cosigner frozen requests are
-likewise validated before policy (see
-[ARCH_NETWORKS.md](ARCH_NETWORKS.md#transaction-planning)). The policy-level
-`unknown_genesis_hash`, `review_unknown_genesis_hash`, and
-`transfer_policy:unknown_genesis_hash` rules take effect for guarded
-user-component and cosigner component requests and are defense in depth
-otherwise.
+Because the known-network gate runs first on every signing path, the
+policy-level `unknown_genesis_hash`, `review_unknown_genesis_hash`, and
+`transfer_policy:unknown_genesis_hash` rules are defense in depth: they keep
+policy fail-closed if it is ever evaluated for an unknown network.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
 and before auto-approval. Routing review applies only to signer-controlled

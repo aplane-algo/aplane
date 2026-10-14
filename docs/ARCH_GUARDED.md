@@ -664,8 +664,10 @@ that document alone, and a held key without one is governed by the default.
 The shipped cosigner default is deny-all (`transaction_types` `{"*":
 "reject"}`, no routes, `reject_rekey: true`), so a new key rejects every
 request with `transaction_type:<type>` until it is given a document of its
-own or the operator loosens the default. Policy is evaluated before the
-cosigner key is loaded. Decode refuses review-producing fields and refuses
+own or the operator loosens the default. Before any rule, a target whose
+genesis hash maps to no known network is rejected as `unknown_genesis_hash`
+(see [ARCH_POLICY.md](ARCH_POLICY.md#known-network-gate)). Policy is
+evaluated before the cosigner key is loaded. Decode refuses review-producing fields and refuses
 to `allow` any transaction type but `pay` and `axfer` on a cosigner node, so
 the only cosigner-specific rule ID is `cosigner_policy:reject_rekey`; every
 other verdict uses the common rule IDs in
