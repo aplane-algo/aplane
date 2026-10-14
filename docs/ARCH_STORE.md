@@ -20,40 +20,56 @@ routing, client enrollment, or approval prompts.
 - [Ownership and access](#ownership-and-access)
 - [Generations](#generations)
 - [Keys and key types](#keys-and-key-types)
+- [Backup and restore](#backup-and-restore)
 - [Source of truth](#source-of-truth)
 
 ## Layout
 
 ```text
-<data-root>/
+<data_dir>/
   config.yaml
   node.yaml
   audit.log
+  .apstore.lock
+  cache/
+    .cache_key
+    <network>_asa_cache.json
+  library/
+    templates/*.yaml        # plaintext KeyType Library YAML sources
   backups/default/
-  library/templates/
+    *.tar.gz                # restorable managed/imported backup archives
+    .import-*.part          # unpublished bounded upload residue
+    .import-claimed-*.part  # immutable archive undergoing deep validation
+    .import-validation-*/   # private same-filesystem validation residue
+  .ssh/ssh_host_key
   identities/default/
-    .keystore
-    store-root.enc
+    store-root.enc          # sole authenticated key-authority and generation-selection record
+    .keystore               # static version 6 + store-root/v1 layout marker
+    generations/<gen-id>/
+      manifest.json         # immutable at-mint operation record
+      seal.json             # final content record, written before flip-away
+      keys/*.key            # account authority, selected by Algorand address
+      keys/*.cos            # cosigner witness authority, selected by Witness Key ID
+      keys/*.wit.json       # derived public witness reference; not private authority
+      keytypes/<key_type>.json      # key type state record
+      keytypes/<key_type>.template  # encrypted key type template
+      deleted/keys/*.{key,cos}
+      deleted/keytypes/<key_type>.template
+      deleted/policies/<selector>.json[.hmac]  # policy archived with its deleted key
+      node.yaml.hmac
+      default.json          # node default policy (aplane.policy.v1), both roles
+      default.json.hmac
+      policies/<selector>.json       # one key's own policy; address or Witness Key ID
+      policies/<selector>.json.hmac
+    quarantine/generations/<gen-id>/ # non-authoritative abandoned publications
+    stages/<selector>.stages        # rotating accounts' stage address tables: plaintext caches, outside generations
     config.yaml
     unlock.yaml
-    .ssh/authorized_keys
-    passphrase | passphrase.cred
+    .ssh/authorized_keys    # enrolled client keys; daemon-written registry
+    .ssh/pending_enrollments.json # persisted requests awaiting admin approval
+    passphrase              # plaintext appass-file helper artifact, mode 0600
+    passphrase.cred         # systemd-creds helper artifact, mode 0600
     cosigners/<name>.json
-    quarantine/generations/<gen-id>/
-    generations/<gen-id>/
-      manifest.json
-      seal.json
-      keys/*.key|*.cos|*.wit.json
-      keytypes/*.json|*.template
-      deleted/keys/*.key|*.cos
-      deleted/keytypes/*.template
-      deleted/policies/<selector>.json|.json.hmac
-      default.json                                      (node default policy)
-      default.json.hmac
-      policies/<selector>.json|.json.hmac               (per-key policy; address on
-                                                         signer nodes, Witness Key ID
-                                                         on cosigner nodes)
-      node.yaml.hmac
 ```
 
 The generation boundary includes all mutable state whose confidentiality or
@@ -64,6 +80,62 @@ document are not generational.
 
 `quarantine/` is non-authoritative. Normal resolution, signing, historical
 reads, successor construction, and rollback never search it.
+
+Layout notes:
+
+
+- production signer directories are service-owned mode `0700` and ordinary
+  signer files are service-owned mode `0600`; the recognized root-owned
+  exceptions are `identities/default/passphrase.cred` (`root:root`, `0600`)
+  and installer metadata under `install/`. Systemd setup writes
+  `install/service-principal.json` as root-owned `0640` metadata containing
+  schema version 1 and the numeric service `uid`/`gid`; stopped-store repair
+  uses that root-controlled record and never infers its target from the store
+  root being repaired
+- systemd admin IPC defaults to `/run/apsigner/aplane.sock`; the runtime
+  directory is service-owned `0750` and the socket is `0660`. Same-UID local
+  mode defaults to `<data_dir>/aplane.sock`. An explicit systemd `ipc_path`
+  must be outside the signer store in a service-user-owned directory that is
+  not writable by group or other users. Trusted root/current-owned directory
+  aliases are resolved and both the alias and canonical directory chains are
+  validated before the daemon binds the canonical socket path. A reachable
+  existing listener is a hard collision; startup removes only a stable socket
+  inode that rejects a connection as stale. The configured alias, which
+  clients dial, and the canonical target, which the daemon binds, are each
+  rejected before `listen` when they exceed the running platform's pathname
+  socket capacity: 107 bytes on Linux and a conservative 103 bytes on
+  Darwin/BSD targets. An explicit client `--ipc-path` has highest precedence
+  and must be absolute. An explicit client `-d` is resolved next and cannot be
+  retargeted by inherited `APSIGNER_IPC_PATH`; the absolute environment socket
+  override still takes precedence when the data root came from
+  `APSIGNER_DATA`, which supports unreadable custom managed stores, and it may
+  be used without a data root when the socket path alone identifies the signer.
+  Otherwise normal data-root and runtime discovery apply. Once a selected
+  root's `config.yaml` is visible, IPC discovery reads it strictly: read
+  failures are errors and must never silently select a default socket for
+  another store. The systemd installer derives the paired `apenv.sh` value
+  through `approbe signer-ipc-path`, which uses this same resolver rather than
+  parsing `ipc_path` independently in shell. The read-only environment audit
+  uses the same command with `--honor-ipc-env` when its signer root was not
+  explicitly selected, preserving the normal
+  `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
+- `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
+- signer-managed backup archives are written under
+  `<data_dir>/backups/default/`; the archive contains `README.md`,
+  `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
+  encrypted per-key policy documents, and `manifest.sealed` (see
+  [Backup and restore](#backup-and-restore))
+- imported backup archives are validated by the operator client, streamed to
+  the daemon in bounded admin-protocol chunks, and atomically published under
+  `<data_dir>/backups/default/`; exports stream bounded chunks in the other
+  direction, so operators never need filesystem access to the private locker
+- signer `cache/<network>_asa_cache.json` is signer-wide public ASA metadata for policy amount rendering; it is outside the private product store and is not authoritative for policy enforcement
+- signer cache files use the same signed JSON/HMAC envelope as client cache files, with `cache/.cache_key` scoped to the signer cache root
+- signer ASA cache access is serialized inside `apsigner` by `internal/signerapp/asametadata.Store`; external/manual cache edits are unsupported and tampering is rejected by HMAC validation
+- signer ASA metadata is loaded per operation from disk with `internal/asa/registry` built-in metadata as seed data; there is no separate long-lived in-memory signer ASA metadata cache to reconcile
+- built-in ASA metadata and convenience aliases live in `internal/asa/registry`; cache-backed current-network metadata is preferred for symbolic resolution, and registry aliases are the fallback used by shell and JavaScript helpers
+- the enrolled-client registry is always `identities/default/.ssh/authorized_keys`; there is no server config field for it. The daemon is its only writer. The parser is strict: an option-free public-key line is an enrolled client whose trailing comment is its display label, comment and blank lines are allowed, every option-bearing line is rejected (options under the reserved `aplane-` prefix included), and a malformed line or a duplicate key fails the whole file with its line number. The daemon validates a complete candidate registry, writes it atomically and durably (temp file, fsync, rename, directory fsync, every failure reported), and installs it under one lock, so SSH authentication never observes a partial registry. If the write fails after the rename, the daemon re-reads the file and serves whatever it holds (refusing every key if it cannot be read) rather than keep authority the file no longer grants. A change that took effect this way is treated as made (it is audited as an enrollment or revocation and a revoked key's connections are closed) and the command that caused the write reports the durability failure on top of that, so the audit trail records the authority change separately from its durability outcome. The registry is then remembered as not yet durable, and the next registry operation re-publishes it before doing anything else, so a retried command succeeds only once a sync has succeeded; it is never acknowledged on the strength of the unsynced file
+- `passphrase` and `passphrase.cred` are sensitive product-store helper files referenced by `unlock.yaml`
 
 ## Ownership and access
 
@@ -333,6 +405,67 @@ An adversary able to restore an older authentic root can roll authority back.
 Detecting such replay needs a monotonic hardware or remote authority outside
 this store.
 
+The format is defined in `internal/crypto/store_root.go` and
+`internal/crypto/keyring.go`.
+
+The keyring subobject carries plaintext bounded Argon2id parameters and salt
+plus an AES-256-GCM-sealed payload containing the current term, sorted term
+set, and exact historical generation anchors. Keyring unwrap is the passphrase
+check; there is no separate verifier. The derived KEK is zeroed and never
+cached. Ordinary current-state opens authorize only the current term;
+historical terms require the separate exact-anchor path.
+
+Strict parsing rejects unknown or trailing fields, oversized/non-regular
+files, unsupported KDF parameters, invalid term ordering, a selection term
+different from the unwrapped current term, and any selection-MAC mismatch.
+
+The static marker is version 6 with layout `store-root/v1`. No older marker or
+layout is readable, translated, or migrated in place. Initialization refuses
+retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
+from credential backup into a fresh store.
+
+Store initialization stages the first generation with its generation-scoped
+node-role sidecar, the role's default policy, and default key types before the
+sole commit publishes `store-root.enc`. The generation starts with
+`default.json` seeded from the embedded default for the node role
+(`policy.WriteEmbeddedDefault`) plus its sidecar, and no per-key documents.
+The signer default rejects a foreign rekey, reviews warning-level fields,
+routes self-transfers, and leaves everything else to the operator default;
+the cosigner default is deny-all, so every cosigner key rejects every request
+until it is given a document. Installers and smoke-test setup must not create
+or sign a root-level policy file; later policy changes target the
+authenticated active generation through the stopped-store or live-admin
+policy surfaces.
+
+### Term envelope object context
+
+Every object encrypted under a keyring term records the term in the clear and
+binds both the term and the object's logical identity into the AEAD's
+additional authenticated data. The identity is a class plus a canonical
+selector:
+
+| Class | Selector |
+| --- | --- |
+| `account-key` | Algorand address |
+| `cosigner-credential` | Witness Key ID |
+| `keytype-template` | key type |
+
+Behavior:
+
+- the identity is logical, never a path: generations copy ciphertext between
+  namespaces and into `deleted/` without re-encrypting it, so a path-based
+  binding would break on the first commit
+- readers recover the identity from the canonical filename, so a file moved
+  under another name fails to open
+- a wrong key, an edited term header, and a mismatched object identity are
+  indistinguishable failures: all three mean the envelope is not what the
+  caller asked for
+- passphrase rotation re-encrypts under a new term key with the same context,
+  so a rotation cannot relabel a file while it rewrites it
+- `crypto.EnvelopeTerm` exposes only the positive term header. Any caller
+  using that term as inventory authority must open the same byte buffer with
+  its expected logical context; inspecting the header alone is insufficient.
+
 ### Active-path capability
 
 Passphrase unlock authenticates `store-root.enc`, validates the selected
@@ -429,7 +562,9 @@ Changing the passphrase also replaces the current data-encryption term:
 4. preserve historical keys and exact anchors, adding the outgoing anchor;
 5. stage an empty successor;
 6. read every source member once and verify it against the retained seal;
-7. re-encrypt term envelopes and re-sign integrity sidecars under the new term;
+7. re-encrypt term envelopes and re-sign integrity sidecars under the new term:
+   the node-role sidecar and every policy sidecar, including the documents
+   archived under `deleted/policies/`;
 8. validate and publish the complete successor;
 9. replace `store-root.enc` with the new wrapped keyring and selector in one
    durable operation;
@@ -791,6 +926,177 @@ disable/deactivation, and installed-template removal leave their completed
 durable change in place and report the reload failure; removal still reports
 that it occurred. The lifecycle must not be described as fully transactional.
 
+#### Key type records
+
+Key type state records are plaintext because they contain no key material. Record writes use the
+shared atomic write helper (temporary file plus rename). They do not fsync the
+parent directory, so the durability contract is the same as other small signer
+metadata files in this store.
+
+The record fingerprint is the behavior-only compatibility digest, stored as
+`<n>:<sha256hex>` and described under [Key type transitions](#key-type-transitions). It is provenance
+only: never read on the signing path, and not a signing secret or
+authorization token.
+
+#### Template library and installation
+
+There are two plaintext library locations with the same relative layout:
+
+- repository and release artifacts carry template YAML sources under top-level `library/templates/`,
+- signer installations may carry a copy under `<APSIGNER_DATA>/library/templates/`.
+
+The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir()`. Release installers,
+installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
+directory are reference material and are not active key types by themselves.
+New signer-store initialization installs and enables
+`aplane.falcon1024-allowlist.v1` from the bundled library source into the
+product-store encrypted template store; cosigner-role initialization skips this
+signer account key type. Other bundled templates remain install sources until
+explicitly imported/enabled in the product store.
+
+The bundled templates that ship under `library/templates/` are:
+
+| Template | Purpose |
+|----------|---------|
+| `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
+| `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
+| `aplane.htlc.v1` | Hash time-locked contract |
+| `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
+| `aplane.corridor.v1` | Optional bounded Falcon profile with a Merkle recipient allowlist, cosigner-authorized spends, and external-admin pure rekey |
+
+Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
+new signer stores; the rest are available to install from the library.
+
+`apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
+admin protocol and also includes installed product-store templates that no longer have a matching plaintext
+library YAML entry. The list result includes parsed metadata (`key_type`, `template_type`, display text,
+creation parameters, and runtime arguments) when library source is available, plus install and enabled state.
+Invalid files are reported as invalid entries; duplicate or ambiguous library candidates are not activation
+events. Compiled providers that are `library` visible in `internal/keytypecatalog` also appear in this list
+with `template_type:"compiled_provider"`; their enabled state comes from product-store key type state
+records. `compiled_provider` is an admin/library wire projection of
+`keytypestate.SourceCompiled`, not a `templatestore.TemplateType`; the encrypted
+template store accepts only YAML-backed `generic` and `composed` template types.
+YAML template entries use `installed` for encrypted template-file presence and `enabled` for whether
+the installed template is exposed to generation. Installed-only entries are derived from
+encrypted `.template` filenames and therefore may not include parameter metadata until matching library YAML is
+available.
+
+Installing a library template takes `key_type` and `template_type`, re-resolves the candidate from the
+signer-data library, parses the YAML, writes it through the encrypted product template store under
+the selected generation's `keytypes/<key_type>.template`, writes an enabled state record, then
+reloads the product runtime. Installed `.template` files, not the plaintext library files, are the active persisted
+runtime source for key generation and key-type discovery; the installed template is not consulted to sign
+already-created keys. Template enabled state changes discovery and generation only; it is not a
+signing authorization gate for existing key files. The low-level template store
+persists encrypted template bytes only; `templatelibrary` coordinates it with
+the paired key-type state mutation. Store initialization uses the same encrypted template
+store and enabled state-record model for default YAML key types, but runs before
+the runtime has a live reload surface. Activating a
+`compiled_provider` library entry uses `activate_key_type` and writes only the
+product-store state record because the executable provider is already registered in
+the binary. Calling `activate_key_type` for an installed YAML template sets its
+state record to `enabled` and reloads the runtime. Calling `deactivate_key_type`
+for an installed YAML template verifies that no key of that `key_type` exists
+in the product store, then sets the record to `disabled`. Calling
+`deactivate_key_type` for a compiled provider uses the same unused-key guard,
+then deletes the state record.
+
+Install is idempotent for an already-installed matching key type/template
+type. Reload-failure rollback follows
+[Template mutation ownership and publication](#template-mutation-ownership-and-publication).
+Editing or copying files into `<APSIGNER_DATA>/library/templates/` does
+not change available key types until an authenticated admin installs one.
+
+Removal helpers distinguish disabling from removal. Disabling a compiled provider removes only the product-store
+state record and does not unregister process-global provider code. Disabling a YAML template leaves the
+encrypted `.template` installed and sets the product-store state record to disabled. Removing an encrypted YAML template
+moves the `.template` source to the product-store deleted key type archive and deletes the state record; this
+removal is exposed through authenticated admin transport as `apadmin template remove`.
+Disabling or removing an installed YAML template requires that no stored product
+key depends on that `key_type`; compiled-provider disable has the same
+unused-key guard because it removes the product store's compiled-provider opt-in. The
+unused check requires the product store's current term key, scans existing keys, and returns
+`key_type_in_use` on the live admin protocol when the guard blocks installed
+template disable/removal or compiled-provider disable. Live key type
+enable/disable, template install, non-generic key generation, key import, and
+key delete operations are serialized by the product store mutation lock so key creation cannot race a
+lifecycle decision made from a stale state snapshot. The underlying IPC message
+names remain `activate_key_type` and `deactivate_key_type` for compatibility.
+
+#### Template file format
+
+Encrypted YAML in the term envelope, bound to its key type. The parsed template spec
+(`generictemplate.TemplateSpec`, which embeds `templatestore.BaseTemplateSpec`)
+contains:
+
+- `schema_version`
+- `derivation_version` (optional; omitted means no generated salting)
+- `max_opcode_cost` (optional absolute reviewed worst-case LogicSig opcode
+  cost; omission resolves to the numeric 20,000 one-transaction default shared
+  by every currently supported consensus version; explicit zero is rejected)
+- `template_type` (`generic` or `composed`)
+- `base_key_type` (required for `composed`, rejected for `generic`)
+- `publisher`
+- `family`
+- `version`
+- `display_name`
+- `description`
+- `display_color`
+- `template_mode` (`legacy`, `strict`, or `generated`) — carried on
+  `TemplateSpec`, not on the embedded `BaseTemplateSpec`
+
+Template capability notes:
+
+- generic template YAML and custom composed DSA template YAML use their
+  respective `schema_version: 1` contracts; composed schema v1 rejects a
+  top-level `bounded` field
+- bounded composed templates use `schema_version: 2`, require a typed `bounded`
+  block, and reject unknown and duplicate fields at every nested level
+- every APlane-bundled composed template uses schema v2; schema v1 remains a
+  fully functional expert mode for imported custom DSA policies
+- `bounded.layer3.policy: fixed_allowlist` owns complete pay/axfer Layer-3
+  control flow; its typed parameter references are validated against declared
+  parameter types and its template must omit `teal`
+- schema selection occurs from the raw mapping before version-specific typed
+  decoding; merge keys, aliases, multiple documents, and invalid schema
+  selectors are rejected
+- omitted `derivation_version` compiles the template without a generated salt
+  anchor and therefore succeeds only when the unmodified bytecode already
+  derives an off-curve LogicSig address
+- the effective `max_opcode_cost` is compatibility-bearing for the final
+  compiled/autosalted program and must cover the worst permitted runtime
+  argument/value sizes; omission materializes and persists as 20,000, while an
+  explicit positive declaration is preserved as an absolute override and an
+  explicit zero is rejected
+- APlane's closed consensus contract tests require every supported profile to
+  retain `LogicSigMaxCost == 20,000` and `MaxTxGroupSize == 16`; supporting a
+  profile with different values requires revisiting this numeric default
+- `derivation_version: 3` uses compiler-owned TEAL v13 auto-salting and is the
+  only explicit contract accepted; the retired `derivation_version: 1`
+  (generated `pushbytes; pop` marker) and `derivation_version: 2` (trailing
+  dead-code `bytecblock` salt anchor) are rejected at template validation
+- `template_mode` is required for imported, installed, bundled, and library
+  templates; templates without `template_mode` are rejected rather than
+  interpreted
+- `creation_params` may include scalar params, `select` params with `options[]`,
+  plus unordered `address[]` and `uint64[]` list params; public key type
+  surfaces preserve optional `input_modes` UI metadata for alternate parameter
+  entry forms such as hash/preimage toggles
+- strict generic-template YAML and Falcon composed-template YAML use declared `template_variables`
+  and symbolic `$name` references that render through generated `intcblock` and `bytecblock`
+  constants
+- user-authored template TEAL must be relocatable: raw `bytecblock` or
+  `intcblock` declarations, numeric `bytec N` or `intc N` references, and
+  short forms such as `bytec_0` or `intc_0` are rejected during template
+  validation
+- generated-mode YAML supports restricted creation-time list expansion
+- supported generated-mode list expansion form is `{{range @name}} ... {{.}} ... {{end}}`
+- list expansion is creation-time only; it is not a runtime-arg feature
+- Falcon/composed suffixes are predicate fragments, not standalone TEAL programs
+- Falcon/composed suffixes must not contain `return`; verifier-first composition owns the final `int 1 / return`
+
 ### Key file lifecycle
 
 Key file state answers this question:
@@ -841,6 +1147,323 @@ key is rejected during reload rather than published as a signable key.
 | Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
+### Managed credential files
+
+Managed credential files (`.key` and `.cos`) share one encrypted envelope and
+canonical payload schema.
+
+Both managed classes use the same encrypted envelope and canonical payload
+schema. Their extension is fixed by payload category:
+
+- `.key`: `ed25519`, `native_pq`, `dsa_lsig`, `generic_lsig`, and
+  `rotating_lsig` account authority, selected by a 58-character Algorand
+  address;
+- `.cos`: `witness` authority assigned to cosigner custody, selected by a
+  52-character Witness Key ID.
+
+Managed credential files carry:
+
+- envelope versioning: `envelope_version: 3`, carrying
+  `{envelope_version, term, nonce, ciphertext}`,
+- the object's own identity in the AEAD's authenticated data, so a credential
+  filed under another name does not decrypt (see below),
+- payload format versioning,
+- enough metadata to recover address and key type after decryption,
+- for LogicSig keys, enough signing metadata to assemble LogicSig args without
+  trusting the registered template definition.
+
+Categories:
+
+- native signing keys,
+- protocol-native post-quantum signing keys (`native_pq`),
+- DSA-backed LogicSig keys,
+- generic LogicSig template instances,
+- rotating LogicSig accounts (`rotating_lsig`), whose authorizing program
+  changes on every spend,
+- signer-custodied witness keys serving the cosigner role (durable category
+  `witness`; used only through cosigner-role `/sign/component`).
+
+Generic LogicSig entries contain final compiler bytecode, derivation metadata,
+and parameters rather than a private signing key. Current compiler-auto-salted
+entries omit the legacy `salt_counter`.
+
+Bounded account key files retain category `dsa_lsig`, base key type, stored
+bytecode, creation parameters, and signing metadata version 2. The injected
+`bounded_admin_public_key` is immutable program input. The signer derives the
+Contract Admin Key ID and program binding from durable metadata; neither is a
+caller-selected creation parameter.
+
+Decrypted key payloads use one canonical v1 JSON schema owned by
+`internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
+unknown fields, duplicate JSON object members, non-canonical timestamps, and
+noncanonical payload aliases. Creation parameters are stored only in `parameters`;
+LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
+not store a separately trusted address, template name, entropy, derivation
+record, or runtime-argument metadata under `runtime_args`.
+
+Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
+`aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
+`aplane.rotating-wots-hybrid.v1` (WOTS-w16 + Ed25519 stages); each fixes its
+own derivation and stage program template, and `internal/rotatingkey`
+classifies both and carries their frozen sizes in a per-type profile. The
+profile also marks the WOTS hybrid's stage signature as one-time, which
+changes only what the signer reports (`ARCH_HTTP_API.md`, rotating alerts),
+never what it signs.
+
+- `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
+- `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No
+  other category may carry it.
+- `public_key` is stage 0's public record: for the Falcon hybrid the
+  Falcon-1024 public key (1793 bytes) followed by the Ed25519 public key (32
+  bytes); for the WOTS hybrid the stage tweak, the WOTS public key and the
+  Ed25519 public key (32 bytes each, 96 in all).
+- No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
+  `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
+  `parameters` and `signing_args` are all rejected.
+- The selector and account address is stage 0's program address, built from
+  the stored public key. Validation re-derives stage 0 from the seed and
+  genesis hash and rejects a mismatch.
+- The family registers both checks with `keys.RegisterRotatingCodec`. A
+  binary without that registration rejects the file, and scanning skips it
+  with a warning.
+- Scanning and inventory never expose the stage public keys. The resource
+  profile is the same for every stage of a key type: 1873 program bytes,
+  1487 argument bytes and an opcode ceiling of 3628 for the Falcon hybrid
+  (one resource dummy); 295 program bytes, 2208 argument bytes and an opcode
+  ceiling of 58063 for the WOTS hybrid (two resource dummies).
+- The key file is the whole credential. The signer keeps no durable state
+  for the account: which stage is live is read from the chain at every
+  request, and the stage address table under `stages/` (below) is a cache
+  rebuilt from the seed. Only accounts created at stage 0 are supported.
+
+Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
+`pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
+The public key is exactly 1793 bytes and the private key exactly 2305 bytes.
+The salt is the lowest byte whose
+`SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
+recovery entropy; the Falcon working seed is
+`SHA512/256("PQK" || "f1" || entropy)`. Recovery entropy is never persisted.
+
+`aplane.falcon1024.v1` remains a LogicSig DSA with a 24-word BIP-39 mnemonic
+and TEAL authorization, but its pre-release derivation moved in place to TEAL
+v13 compiler auto-salting. Neither mnemonic nor stored key material is
+interchangeable with native `falcon1024`.
+
+This section uses **versioned signing-metadata keys** for key files that carry
+`signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
+bounded keys require version 2. LogicSig key payloads include:
+
+- `signing_metadata_version` — required; key files lacking it are rejected for
+  signing and restore
+- `lsig_derivation` — the derivation contract for final stored bytecode;
+  current bundled keys use `algod_v13_auto_salt`
+- `salt_counter` — present only for legacy APlane-salted derivations; absent
+  for compiler-auto-salted bytecode
+- `signing_args` — optional; the signing-time arg schema in TEAL argument
+  order, represented internally by `internal/signingargs.Info`; absent and
+  empty are equivalent and mean the key takes no runtime args
+- `base_key_type` — required for composed DSA keys, pointing to the signer-side
+  private signing primitive used for key-material signing and signature arg
+  packing; v1 signing-metadata DSA keys also persist it when it equals
+  `key_type`. This field does not say which provider owns account metadata,
+  creation parameters, TEAL, or guarded assembly.
+- `template_fingerprint` — optional; the behavior-only, versioned (`<n>:`
+  prefix) compatibility fingerprint of the template/provider definition that
+  created or was bundled with the key, when known. It depends on no user-facing
+  identifier (base key types are projected to a stable `base_primitive` token)
+  and is provenance only, never signing authority
+
+Bounded signing-metadata version 2 additionally requires the canonical
+`bounded_authorization` object:
+
+- `contract`: `bounded1`
+- `base_signature_arg_layout`: exact base arg count and per-position maximums
+- `spend_effects`, `max_fee`, and typed `admin_operations`; every operation
+  explicitly carries `policy_gate: none|layer3`, and external-admin operations
+  require `none`
+- `runtime_args` and `derived_args`: canonical declarations, possibly empty
+- `argument_layout`: complete ordered slots with source, maximum, and all path masks
+- `layer3_policy`: exactly `custom`, `fixed_allowlist`, or `merkle_allowlist`
+- optional `cosigner`: contract, witness key type, resolved public key and Witness
+  Key ID, maximum signature size, and exact `[spend]` path; its argument slot
+  source is `cosigner`
+- `admin_public_key`, `admin_key_id`, and `program_binding` when an operation
+  uses `authorization: admin_key`; the key ID must derive from that public key,
+  and the public key must equal `parameters.bounded_admin_public_key`
+- the final stored bytecode plus `argument_layout` and the durable opcode
+  profile are the independent sources for program, argument, and opcode budgets
+
+Bounded payloads with metadata version 1, non-bounded payloads with metadata
+version 2, unknown nested fields, duplicate object members, invalid or
+colliding argument declarations, or inconsistent admin metadata are
+rejected. Backup and restore preserve the object unchanged.
+
+Stored LogicSig bytecode and stored signing metadata are authoritative for
+signing:
+
+- generic LogicSig signing reads bytecode and orders caller-supplied runtime
+  args using stored `signing_args`
+- DSA-backed LogicSig signing reads bytecode and stored `signing_args`, signs
+  with the stored key material, and uses `base_key_type` to find the signer-side
+  private signing primitive that packs the cryptographic signature args
+- the generic/composed template registered under `key_type` is not consulted
+  to assemble args at sign time
+
+Key address identity is derived from key material, not from signing metadata:
+
+- native signing keys derive their address from stored public/private key
+  material, with `key_type` selecting the address derivation implementation
+- DSA-backed LogicSig keys derive their account address from stored LogicSig
+  bytecode
+- generic LogicSig keys derive their account address from stored bytecode;
+  the canonical payload has no persisted `address` field. Scanning verifies
+  the derived selector against the canonical credential filename
+
+Fields such as `signing_args`, `signing_metadata_version`, `base_key_type`,
+and `template_fingerprint` are signing/provenance metadata, not address
+derivation inputs. For legacy derivations, `salt_counter` records a value
+already embedded in stored LogicSig bytecode; changing metadata alone never
+rederives or changes the key address. For compiler-auto-salted keys, the final
+stored bytecode itself is the complete address authority.
+
+Signer scanning binds accepted authority to the category-sensitive canonical
+filename:
+
+```text
+CanonicalName(payload) = Selector(payload) || ExtensionForCategory(payload.category)
+```
+
+After decrypting a `.key` or `.cos` candidate, the scanner derives the payload
+selector and category. It accepts the file only when the basename equals the
+canonical name. A witness payload in `<id>.key`, an account payload in
+`<address>.cos`, or any selector mismatch is skipped and reported; `.wit` and
+`.wit.json` are never private-credential candidates. Writers and restore derive
+the same canonical destination. Restore rejects a contradictory managed class
+for the same selector even with `overwrite:true`; an exact canonical destination
+is replaced only when overwrite is explicit.
+
+Every persisted LogicSig key file must derive an off-curve LogicSig address.
+Signer load, key scanning, backup verify, and restore reject an on-curve
+program or a payload whose derivation metadata does not match its bytecode.
+
+LogicSig salting is a generation-time contract:
+
+- Current bundled providers and templates use TEAL v13 compiler auto-salting
+  (`derivation_version: 3` / `lsig_derivation: algod_v13_auto_salt`).
+- Algod returns the final program and address. APlane verifies that the address
+  matches those bytes and is off-curve, but does not reproduce the compiler's
+  deterministic salt search.
+- Program length and resource profiles are derived after auto-salting from the
+  exact final artifact.
+- Source-to-address goldens are pinned to the configured compiler toolchain;
+  runtime reproducibility comes from persisted final bytecode.
+- Manual-counter derivation remains parseable only for stored records that also
+  carry a valid reviewed opcode profile. Pre-profile development records are
+  rejected with regeneration guidance. New template-derived key types use
+  `derivation_version: 3`.
+- The stored bytecode, not a live template or regenerated TEAL, is the signing
+  authority.
+
+Templates are the source for generation, discovery, and new key creation;
+they are not consulted at sign time. `template_fingerprint` is provenance only:
+behavior-only, versioned (`<n>:` prefix), and identifier-independent. Key
+inventory surfaces may compare it with the registered local definition and
+report a template conflict or unavailable template, but those notices do not
+invalidate a key. The comparison is version-aware: only a same-version,
+different-hash pair is a conflict; a different-version or malformed fingerprint
+is "not comparable" and benign.
+
+#### Signing authority
+
+The key file is the signing authority. Templates and live providers are not
+consulted to reconstruct missing signing metadata.
+
+- A v1 signing-metadata LogicSig key file persists the TEAL bytecode and the
+  signing-time argument contract captured at generation.
+- Generic LogicSig keys store final bytecode, derivation metadata, and runtime
+  argument schema. Only legacy derivations carry `salt_counter`.
+- DSA-backed LogicSig keys additionally store `base_key_type`; that private
+  signing primitive must be available because the signer must produce and pack
+  the DSA signature. The field is not a claim that the base provider owns the
+  account's metadata, creation params, or LogicSig assembly. The composed
+  template/provider for that `key_type` is not required to sign an
+  already-created key.
+- A LogicSig key file that contains bytecode but is not a v1 signing-metadata
+  key is rejected for restore and signing.
+
+Templates are used for key creation and LogicSig bytecode derivation, creation
+parameter and runtime argument metadata in generation surfaces, key-type
+catalog/library/install/enable/disable flows, and live provenance comparison
+through `template_fingerprint`. Credential backups do not bundle templates,
+and import/restore neither recompiles nor installs them.
+
+#### Offline key inventory
+
+`apstore keys list` is a local, passphrase-gated inventory surface for the
+product store's encrypted key files. It decrypts key metadata using
+the signer-store passphrase and lists successfully scanned key addresses or
+Witness Key IDs with their key type, durable category, creation timestamp, and
+key-file name.
+
+The default human output must not emit private key material, mnemonic material,
+or raw public-key hex. Cosigner keys are identified by their Witness Key ID, not
+by the raw cosigner public key. Recoverable key-scan warnings may be reported
+while still listing keys that scanned successfully.
+
+### Stage address tables
+
+A rotating account's stage address table lists the addresses of its first
+`k` stages, `A_0 … A_{k-1}`, so that matching the on-chain authorizer to a
+stage is a lookup instead of a Falcon-1024 key generation per stage. It
+lives at `identities/default/stages/<selector>.stages`, where the selector
+is the account address. `internal/stagetable` is the only reader and
+writer.
+
+Trust: the table is a cache and nothing more.
+
+- it holds no secrets; stage addresses are program hashes, and only the live
+  stage's program can move the account, so the file is plaintext
+- it is never trusted. Every address it returns is a hint that the signing
+  derivation confirms: the stage the signer signs with must derive, from the
+  seed, to the authorizer the chain reports, and the rotation target is
+  always derived from the seed, never taken from the table. A tampered,
+  stale or corrupt table costs a refusal or a rebuild, never a wrong
+  signature
+- a missing table is not an error: the signer starts an empty one and fills
+  it in the background. Deleting the directory while the signer is stopped
+  is always safe
+
+Format (version 1): the magic `APSTAGES`, a big-endian `uint16` format
+version, the 32-byte selector, the 32-byte genesis hash, a big-endian
+`uint64` count, that many 32-byte addresses in stage order, and a SHA-256 of
+everything before it. A table is prefix-complete: its length is the next
+stage to derive. A file whose checksum, magic, version, selector or genesis
+hash does not match is discarded and rebuilt from the seed, with a warning
+in the daemon log.
+
+Placement and lifecycle:
+
+- the directory sits beside `generations/`, not inside one, so mints,
+  credential restores and restore rollbacks never copy or rewind it, and
+  the key watcher ignores it
+- managed backups and exports never include it; a restored or re-imported
+  key starts with an empty table and keeps signing while the background
+  scan finds its live stage
+- deleting a key removes its table; a background fill that loses the race
+  with deletion cannot recreate it
+- passphrase changes do not touch it: nothing in it is encrypted
+- every write is a whole-file durable publication (temp file, fsync,
+  rename); files are `0600` in a `0700` directory
+
+Fill: while unlocked, the signer extends each account's table in the
+background to `rotating.stage_horizon` stages (default 4,096) past the
+account's live stage, and without limit for an account whose live stage it
+has not yet found. The seed is held only inside the derivation itself, and
+locking the signer cancels the pass. The audit log, not the table, is what
+rebuilds the signer's memory of released transactions at unlock (see the
+`ROTATING_RELEASE` entry in `ARCH_HTTP_API.md`).
+
 ### Backup and restore matrix
 
 This matrix describes restoring a template-backed or library-visible key.
@@ -886,7 +1509,12 @@ The relevant order is:
 5. register enabled compiled/YAML key type state,
 6. register enabled installed templates,
 7. scan active key files and validate the scanned inventory against node role,
-8. publish runtime key indexes and key type discovery data.
+8. publish runtime key indexes and key type discovery data,
+9. activate the key session,
+10. emit audit and IPC notifications.
+
+`productruntime.Runtime.reloadLocked` runs this through the function wired by
+`startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Ordinary malformed, misnamed, or
@@ -902,6 +1530,107 @@ already-valid key files from active key scans.
 
 Node role is stronger than disabled/enabled state: a role-forbidden active key
 is not published as valid runtime inventory.
+
+#### Template activation and key type filtering
+
+Template installation and product-store key-type state are resolved from key
+type state records before key scan so generation/discovery state is current. The
+key scan classifies generic LogicSig keys and exposes signing args directly from
+the v1 signing-metadata key payload. LogicSig key files whose derivation metadata
+does not match their bytecode, or whose bytecode derives an on-curve address,
+are rejected during scan. LogicSig
+key files missing `signing_metadata_version` are rejected when signing or
+restoring would otherwise depend on missing durable signing metadata.
+
+New enabled template `key_type` values activate on reload/unlock. Disabled
+installed templates remain stored but are skipped. Reload may change what key
+types can be generated or displayed as available; it must not change signing
+behavior for an existing key file.
+
+Key type immutability:
+
+- a `key_type` is a compatibility boundary and must not be redefined in-place,
+- provider registries are process-global within one `apsigner` process,
+- private provider namespaces are not part of the product contract,
+- custom template/provider authors must use globally unique `key_type` values in one signer process,
+- signer-data library templates are authoritative install sources when present,
+- keystore templates may add new non-built-in `key_type` values but must not override built-ins,
+- reload/unlock may activate new key types or ignore idempotent re-loads of the same definition, but must not replace an existing conflicting definition.
+
+Product key-type filtering:
+
+- a process-global provider can exist without being visible to the product store,
+- `/keytypes`, admin `list_key_types`, and key generation filter by the product
+  store's default-enabled key types plus enabled product-store state records,
+- a globally registered generic/composed template that is not installed or
+  enabled for the product store is not generatable by that store,
+- existing keys remain owned by the product keystore; provider
+  lookup only supplies compatible signing/derivation code for keys already
+  owned by the product store.
+
+`internal/signerapp/templates` reports this through a `ReloadReport` with:
+
+- `KeyCount`
+- `TemplateNotices`
+- `TemplateWarnings`
+- `GenericActivatedKeyTypes`
+- `ComposedActivatedKeyTypes`
+- `GenericIdempotentKeyTypes`
+- `ComposedIdempotentKeyTypes`
+- `GenericDisabledKeyTypes`
+- `ComposedDisabledKeyTypes`
+- `GenericConflictingKeyTypes`
+- `ComposedConflictingKeyTypes`
+- `GenericInvalidKeyTypes`
+- `ComposedInvalidKeyTypes`
+- `InvalidStateRecordKeyTypes`
+- `CompiledInvalidKeyTypes`
+- `GenericExternalEditKeyTypes`
+- `ComposedExternalEditKeyTypes`
+- `GenericOrphanedKeyTypes`
+- `ComposedOrphanedKeyTypes`
+- `CompiledIdempotentKeyTypes`
+- `CompiledConflictingKeyTypes`
+
+Admin library template install verifies activation from the product-store
+`ReloadReport`: the installed key type must appear in the activated or
+idempotent bucket for the requested template family. A process-global provider
+registry hit alone is not sufficient proof that the product runtime accepted the
+template during reload.
+
+#### Key watching
+
+Key/template watching is implemented via `fsnotify` and owned by the one product runtime.
+
+Watched paths:
+
+- the product directory, for `store-root.enc` replacement and late directory
+  creation
+- the active generation's `keys/` and `keytypes/` directories, resolved from
+  the authenticated runtime capability; no product-root namespace fallback is
+  active authority
+
+Mechanism:
+
+- reacts to Create, Write, Remove, and Rename on `.key`, `.cos`, and `.template` files
+- a `store-root.enc` replacement is a reload candidate; reload authenticates the new
+  active generation and re-arms the watcher on its directories
+- missing key and key type directories are tracked and added later when created
+- when unlocked, qualifying changes trigger immediate reload
+- when locked, the watcher remains running and marks the product runtime dirty
+- watcher-triggered reload obtains the product store mutation lock before scanning keys/templates
+- admin mutation paths that already hold the product store mutation lock call direct reload paths and must not call watcher-only reload entrypoints
+
+Debounce:
+
+- 500 ms debounce
+- each qualifying event resets the timer
+
+Lifecycle:
+
+- starts when the product runtime is unlocked or initialized
+- remains running across lock/unlock transitions
+- stops on runtime shutdown
 
 ### Transition catalog
 
@@ -960,6 +1689,203 @@ is not published as valid runtime inventory.
     identifier-independent, and only a same-version, different-hash pair is a
     conflict — a cross-version or malformed stored fingerprint is "not
     comparable" and benign.
+
+## Backup and restore
+
+The key-type side of restore is in the
+[Backup and restore matrix](#backup-and-restore-matrix).
+
+Backup and restore are implemented in `internal/backup`; live generation
+orchestration is owned by `internal/signerapp/backupadmin`.
+
+The authority boundary is:
+
+> Backup owns credentials and each key's own policy document. The destination
+> owns its node default policy and operational configuration.
+
+A backup preserves complete managed credential records, not only raw private
+key bytes. This includes durable LogicSig bytecode, signing-argument contracts,
+bounded authorization, and other versioned signing metadata carried by
+`.key` and `.cos` payloads. A key's own policy document travels with it on both
+node roles; restore does not import the node default policy or operational
+configuration.
+
+### Export and archive shape
+
+Export:
+
+1. discovers canonical managed credentials from active `.key` and `.cos`
+   files; external `.wit`, contract-admin, and deleted artifacts are excluded
+2. opens each credential with its object-bound destination term envelope
+3. parses and validates the complete credential payload, then canonicalizes it
+4. re-encrypts the canonical payload with standalone envelope version 2 under
+   the export passphrase
+5. writes `apb/<selector>.apb`
+6. for each exported credential with a verified policy document of its own,
+   encrypts the exact document bytes the same way and writes
+   `policies/<selector>.apb`
+
+Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
+65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
+parameters before decoding the envelope body or invoking Argon2id; changing the
+tuple requires a new envelope version. Encoded credential envelopes are limited
+to 1 MiB, policy envelopes to 2 MiB, and the sealed manifest to 4 MiB; archive
+readers enforce each bound while reading the regular file rather than after an
+unbounded allocation. An archive holds at most 16,400 entries and 1 GiB
+extracted, enough for a credential and a policy per key at the 8,192-key cosigner
+cap; backup creation refuses to package an archive extraction would reject.
+
+An all-credentials backup is fail-hard: if any selected active credential
+cannot be read, decrypted, canonicalized, or exported, no archive is
+published. It never silently reports a partial archive as a complete backup.
+
+A managed archive contains exactly:
+
+- `README.md`
+- one or more `apb/<selector>.apb` files
+- zero or more `policies/<selector>.apb` files, each for a credential in the
+  archive that has a policy document of its own
+- `manifest.sealed`
+
+The sealed manifest plaintext uses schema
+`aplane.credential-backup.manifest.v1`, schema version 1. It records the
+source node role, packaging time, and the complete member inventory
+(`path`, `sha256`, `size`). Backups carry no node default policy, approval defaults,
+genesis-hash mappings, templates, endpoints, client enrollment, or other
+operator configuration. The manifest is encrypted under the export passphrase.
+Knowing that passphrase authenticates the archive as produced or endorsed by a
+passphrase holder; it is not independent origin authentication.
+
+Every archive reader authenticates the manifest and verifies exact membership
+before trusting payload metadata. Missing, added, duplicated, non-canonical, or
+altered members are rejected. Internal pre-release manifests, bundle wrappers,
+and legacy envelope versions are unsupported; this is the first supported
+backup contract and no migration from earlier internal tags is provided.
+
+### Import and inspection
+
+`apadmin backup import` asks the daemon to validate an external tar archive
+deeply before publishing it under `backups/default/`. The commit request
+carries the sensitive export passphrase; the daemon authenticates the archive
+inventory and validates every credential payload, then zeros the passphrase
+without persisting it. Client-side archive inspection is not an authorization
+or integrity boundary. Commit is synchronous and can perform one memory-hard
+credential verification per archive member, so first-party clients allow up to
+30 minutes for that bounded request instead of applying the ordinary 30-second
+admin timeout. Import does not compile or install templates because
+templates are not archive members. The IPC transfer declares its exact source
+size and SHA-256 at commit, is capped at 1 GiB while appending, and permits only
+one writable upload for the product store. Commit claims the completed upload under the
+store mutation lock, releases that lock for hashing and deep verification,
+then reacquires it only for the final publish. A new import supersedes writable
+upload residue without deleting an archive already undergoing validation;
+daemon startup removes both kinds of residue left by a prior process. Deep
+validation extracts into an owner-private reserved directory on the signer
+store filesystem rather than the process-global temporary filesystem; normal
+completion and daemon startup remove that validation residue. The final rename
+is the publication commit point. If the following directory sync fails, the
+daemon returns committed success with an operator-visible durability warning;
+it must not report an ordinary retryable failure after the destination name is
+already live.
+
+`preview_restore` and `apadmin restore preview` authenticate the archive
+before revealing addresses or key types. Preview reports credential identity,
+destination presence, and validation errors; it performs no store mutation.
+Wrong-passphrase and unauthenticated failures share the restore rate limiter.
+Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
+requests are accepted while the identity is either unlocked or
+recovery-blocked, allowing an operator to select, export, and inspect repair
+material without enabling signing. Locked identities remain rejected.
+
+`apstore verify` is fail-closed: an archive verification error or any invalid
+credential returns the stable local `verification_failed` code and a nonzero
+process exit.
+
+### Live direct restore
+
+The current admin protocol exposes a direct credential restore:
+
+- `restore_backup`: archive path, optional selectors, export passphrase, and
+  optional `replace_existing`
+- `restore_backup_result`: operation ID, archive SHA-256, resulting
+  generation, restored/identical/conflicting credentials, key count, stable
+  code, and error
+- `rollback_restore`: rolls back only the latest clean, rollback-eligible
+  credential restore
+- `reconcile_store`: validates/reconciles the visible generation and exits
+  recovery mode only when the store is clean
+
+These operations remain authorized by the stable `identity.restore` action.
+Restore, rollback, and reconciliation are callable while an authenticated
+identity is recovery-blocked so they can repair or resolve store damage.
+
+Restore validates the complete selected set before any write:
+
+- archive/member authentication and format bounds
+- payload/envelope versions and strict canonical decoding
+- filename, selector, category, and key-type agreement
+- public/private-key and address consistency
+- LogicSig bytecode/address consistency and off-curve requirements
+- complete standalone signing metadata for LogicSig credentials
+- bounded-authorization consistency
+- source/destination node-role compatibility
+- required destination runtime/provider support
+- duplicates and contradictory managed credential classes
+
+Destination collision classification compares canonical decrypted plaintext,
+not ciphertext. An identical credential is an idempotent no-op. A different
+credential is a conflict requiring `replace_existing`. An existing
+credential that cannot be decrypted or decoded is also a replaceable conflict,
+which permits an explicitly authorized restore to repair damage in recovery
+mode.
+
+After validation, restore mints exactly one generation. The parent generation
+is copied, selected credentials are applied into staged `keys/`, derived
+witness public metadata is updated, the staged generation is validated and
+synced, the outgoing generation is sealed, and one durable store-root rename
+commits the operation. Archived per-key policy documents are applied in that
+same generation, on both node roles. A differing destination document is a
+conflict requiring `replace_existing`; a destination document is kept when the
+archive carries none. Restore never writes templates, key-type activation
+records, the node default policy, config, or network mappings.
+
+The generation manifest operation is exactly `credential-restore`; it records
+the archive SHA-256 and whether explicit rollback is eligible. Recovery-mode
+repairs are not rollback-eligible because their damaged parent must never be
+promoted back into service. A rollback mint uses
+`credential-restore-rollback`, so a second rollback is refused.
+
+Reload failure after a committed restore reconstructs the authenticated
+parent into a new generation and commits it through the store root. Uncertain
+commit durability, failed rollback after mutation, or failed reconciliation
+enters recovery mode and blocks signing. A crash after a complete root replacement loads the committed
+generation on restart; uncommitted staging is discarded.
+
+Explicit rollback is allowed only when the current generation:
+
+- was produced by exactly `credential-restore`
+- is marked rollback-eligible
+- still matches its authenticated effective inventory authority
+
+Divergence refuses rollback rather than discarding later mutations. Rollback
+reconstructs the sealed parent content into a fresh current-term generation; it
+never repoints the store root at historical ciphertext.
+
+Restored credentials immediately operate under the destination's approval
+default, network mappings, endpoints, and installed configuration, and under
+their archived per-key policy when the archive carries one (subject to the
+destination conflict rule above) or the destination's default policy when it
+does not. No source default-policy comparison or unattended-signing
+acknowledgement is part of restore. The operator is responsible for the
+policy under which restored authority runs.
+
+### Offline rebuild
+
+`apstore rebuild <archive-path> [--role signer|cosigner]` remains the rescue
+path for an absent product store. It applies the same credential validation
+and credential-only semantics into a newly staged first generation. The sealed
+manifest source role supplies the default role; an explicit incompatible role
+or role-conflicting credential is rejected.
 
 ## Source of truth
 

@@ -748,6 +748,46 @@ v42:
 
 The server returns 2 signed transactions: the main transaction + 1 dummy.
 
+### Native Falcon Authorization And Consensus Resources
+
+Native Falcon authorization occupies top-level `SignedTxn.PQsig`, never
+`SignedTxn.Sig` or `SignedTxn.Lsig`, and contributes `2e6` fixed-point fee
+units in addition to the transaction's ordinary `1e6` base factor. This
+APlane release implements the v42 authorization contract; clients reject an
+algod that reports another contract before constructing transactions and
+refresh the check before executable signing or submission workflows.
+The signer derives this authorization budget from local key metadata or a
+passthrough `PQsig`. An unsigned foreign native-PQ slot in `/plan` or `/sign`
+declares `pq_scheme: "f1"`; this hint is mutually exclusive with the structured
+`lsig_resources` hint used by foreign LogicSig slots. A signed passthrough
+LogicSig must also carry `lsig_resources`: apsigner verifies the declared
+program and argument byte counts against the immutable envelope and uses the
+declared reviewed opcode ceiling. It rejects a missing declaration, a size
+mismatch, or `lsig_resources` on a non-LogicSig passthrough rather than guessing
+an opcode cost. The retired combined
+`lsig_size` HTTP field is rejected explicitly rather than silently discarded.
+
+LogicSig program sizing and native-PQ contributions are consensus-defined.
+This release compiles exactly one reviewed contract, v42, into the signer.
+`internal/lsigresource` owns that closed consensus profile and the pure
+fixed-point group/resource solver. `internal/signerapp/signing` selects and
+validates per-slot authorization usages, invokes the solver, and applies its
+resource result to canonical group and fee planning.
+
+`/plan` and `/sign` never query a per-network algod. The client owns ordinary
+transaction fee selection through its algod SuggestedParams response and
+validates that response as v42-compatible.
+First-party planning and executable workflows refresh this check before asking
+apsigner to plan, releasing signatures, or submitting, including JavaScript
+`plan()`, prebuilt transaction signing, plugin pre-sign callbacks, guarded
+signing, bounded-admin partial signing, and verbatim pregrouped
+submission/simulation. The apsigner `/plan` endpoint itself remains independent
+of a client algod.
+The signer rejects an ordinary fee deficit, then adds only authorization-
+induced requirements: resource-dummy base fees, priced LogicSig program bytes,
+and native-PQ contributions. The signer's separately configured compile algod
+remains responsible only for template compilation/simulation workflows.
+
 ### Server Modification Behavior
 
 The server may modify transactions (add dummies, adjust fees, compute group ID) depending on the input format and whether large LogicSigs are involved:
