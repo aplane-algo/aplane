@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -50,16 +52,18 @@ func ParseVerb(raw string) (Verb, error) {
 }
 
 // Command is one parsed apadmin policy invocation. Args holds policy files
-// for check, diff, and apply, Witness Key IDs for remove, or the node role
-// for template. Key selects one cosigner document for export, or fills in
-// the key of a cosigner template. Yes applies without asking for
-// confirmation.
+// for check, diff, and apply, or key selectors for remove. Key selects one
+// document for export ("default" when empty) or the key a template is for.
+// Embedded, for template only, names a node role whose shipped default is
+// printed instead of a node's own; it is the only form that needs no node.
+// Yes applies without asking for confirmation.
 type Command struct {
-	Verb    Verb
-	Args    []string
-	Key     string
-	Yes     bool
-	DataDir string
+	Verb     Verb
+	Args     []string
+	Key      string
+	Embedded string
+	Yes      bool
+	DataDir  string
 }
 
 func (c Command) Validate() error {
@@ -67,7 +71,7 @@ func (c Command) Validate() error {
 		return err
 	}
 	switch c.Verb {
-	case VerbStatus, VerbExport:
+	case VerbStatus, VerbExport, VerbTemplate:
 		if len(c.Args) > 0 {
 			return fmt.Errorf("policy %s takes no arguments", c.Verb)
 		}
@@ -82,14 +86,20 @@ func (c Command) Validate() error {
 		}
 	case VerbRemove:
 		if len(c.Args) == 0 {
-			return fmt.Errorf("policy remove requires at least one Witness Key ID")
+			return fmt.Errorf("policy remove requires at least one key")
 		}
-	case VerbTemplate:
-		if len(c.Args) != 1 || (c.Args[0] != "signer" && c.Args[0] != "cosigner") {
-			return fmt.Errorf("policy template takes one node role: signer or cosigner")
+		for _, arg := range c.Args {
+			if arg == policy.DefaultKey {
+				return fmt.Errorf("the node default cannot be removed; apply a new one instead")
+			}
 		}
-		if c.Key != "" && c.Args[0] != "cosigner" {
-			return fmt.Errorf("--key applies only to a cosigner template")
+	}
+	if c.Embedded != "" {
+		if c.Verb != VerbTemplate {
+			return fmt.Errorf("--embedded applies only to policy template")
+		}
+		if _, err := noderole.ParseRole(c.Embedded); err != nil {
+			return fmt.Errorf("--embedded takes a node role: signer or cosigner")
 		}
 	}
 	if c.Key != "" && c.Verb != VerbExport && c.Verb != VerbTemplate {
@@ -107,6 +117,15 @@ func (c Command) readsStdin() bool {
 
 func (c Command) mutates() bool {
 	return c.Verb == VerbApply || c.Verb == VerbRemove
+}
+
+// documentKey is the document export and template act on: the named key, or
+// the node default.
+func (c Command) documentKey() string {
+	if c.Key == "" {
+		return policy.DefaultKey
+	}
+	return c.Key
 }
 
 type Streams struct {

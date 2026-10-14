@@ -81,8 +81,7 @@ func TestTransferRoutingEvaluation(t *testing.T) {
 	dest := types.Address{2}
 	other := types.Address{3}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "payroll", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"],
      "destinations": ["`+dest.String()+`"], "limits": {"testnet": {"algo": {"review_above": "10", "reject_above": "20"}}}}
   ]}
@@ -134,8 +133,7 @@ func TestTransferRoutingReviewOnNoRoute(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "review", "routes": []}
+  "transfer_policy": {"on_no_route": "review", "routes": []}
 }`)
 	txn := types.Transaction{
 		Type: types.PaymentTx,
@@ -195,8 +193,7 @@ func TestTransferRoutingUnknownGenesisHashOnNoRoute(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "`+tc.onNoRoute+`", "routes": [
+  "transfer_policy": {"on_no_route": "`+tc.onNoRoute+`", "routes": [
     {"id": "any_algo", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]}
   ]}
 }`)
@@ -221,8 +218,7 @@ func TestTransferRoutingCloseOutIsDeniedBeforeOperatorDefault(t *testing.T) {
 	dest := types.Address{2}
 	closeTo := types.Address{3}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "operator_default", "routes": [
+  "transfer_policy": {"on_no_route": "operator_default", "routes": [
     {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]}
   ]}
 }`)
@@ -251,9 +247,8 @@ func TestTransferRoutingCloseAndClawbackOnNoRouteFallbacks(t *testing.T) {
 	owner := types.Address{5}
 	recovery := types.Address{6}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true, "on_no_route": "reject", "close_on_no_route": "review", "clawback_on_no_route": "operator_default",
+    "on_no_route": "reject", "close_on_no_route": "review", "clawback_on_no_route": "operator_default",
     "routes": [
       {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]},
       {"id": "close_without_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeTo.String()+`"]},
@@ -310,13 +305,12 @@ func TestTransferRoutingAddressSetsMatchByNetwork(t *testing.T) {
 	dest := types.Address{4}
 	mainnetOnlyDest := types.Address{5}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "address_sets": {
     "sources": ["`+source.String()+`"],
     "receivers": {"testnet": ["`+dest.String()+`"], "mainnet": ["`+mainnetOnlyDest.String()+`"]},
     "owners": {"testnet": ["`+owner.String()+`"]}
   },
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "set_pay", "networks": ["testnet"], "sources": ["@sources"], "assets": ["algo"], "destinations": ["@receivers"]},
     {"id": "set_clawback", "networks": ["testnet"], "sources": ["`+authority.String()+`"], "asset_sources": ["@owners"],
      "assets": ["asa:123"], "destinations": ["@receivers"], "allow_clawback": true}
@@ -361,9 +355,8 @@ func TestTransferRoutingAssetSetAndOverlappingThresholds(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "asset_sets": {"stablecoins": {"testnet": ["asa:123"]}},
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "broad", "networks": ["testnet"], "sources": ["*"], "assets": ["@stablecoins"], "destinations": ["*"],
      "limits": {"testnet": {"asa:123": {"reject_above": "100"}}}},
     {"id": "narrow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["asa:123"], "destinations": ["`+dest.String()+`"],
@@ -391,8 +384,7 @@ func TestTransferRoutingRouteLimitsArePerNetwork(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "tiered_pay", "networks": ["testnet", "mainnet"], "sources": ["`+source.String()+`"], "assets": ["algo"],
      "destinations": ["`+dest.String()+`"], "limits": {
        "testnet": {"algo": {"review_above": "10", "reject_above": "50"}},
@@ -441,9 +433,8 @@ func TestTransferRoutingBlockedDestinations(t *testing.T) {
 	blocked := types.Address{2}
 	other := types.Address{3}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
+    "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
     "routes": [
       {"id": "allow_all_normal", "networks": ["testnet"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
       {"id": "allow_blocked_pay_close", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": ["`+blocked.String()+`"], "allow_close": true},
@@ -543,8 +534,7 @@ func TestTransferRoutingCloseAndClawbackBranches(t *testing.T) {
 	otherOwner := types.Address{7}
 	recovery := types.Address{8}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "normal_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]},
     {"id": "close_without_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeRejected.String()+`"]},
     {"id": "close_with_allow", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+closeAllowed.String()+`"], "allow_close": true},
@@ -600,8 +590,7 @@ func TestTransferRoutingIgnoresNonTransferTransactions(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "only_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+dest.String()+`"]}
   ]}
 }`)
@@ -622,8 +611,7 @@ func TestTransferRoutingMultipleMovementsCanEmitMultipleVerdicts(t *testing.T) {
 	miss := types.Address{3}
 	closeTo := types.Address{4}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+  "transfer_policy": {"on_no_route": "reject", "routes": [
     {"id": "allowed_pay", "networks": ["testnet"], "sources": ["`+source.String()+`"], "assets": ["algo"], "destinations": ["`+allowed.String()+`"]}
   ]}
 }`)
@@ -650,9 +638,8 @@ func TestTransferRoutingBlockedDestinationPrecedenceAndExemptions(t *testing.T) 
 	blocked := types.Address{2}
 	otherBlocked := types.Address{3}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`", "`+otherBlocked.String()+`"],
+    "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`", "`+otherBlocked.String()+`"],
     "routes": [
       {"id": "allow_blocked", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["*"]},
       {"id": "allow_blocked_close", "networks": ["*"], "sources": ["*"], "assets": ["algo"], "destinations": ["`+otherBlocked.String()+`"], "allow_close": true}
@@ -700,9 +687,8 @@ func TestTransferRoutingBlockedDestinationPrecedenceAndExemptions(t *testing.T) 
 func TestTransferRoutingBlockedDestinationsSkipOptIn(t *testing.T) {
 	blocked := types.Address{1}
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true, "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
+    "on_no_route": "reject", "blocked_destinations": ["`+blocked.String()+`"],
     "routes": [
       {"id": "allow_optin", "networks": ["testnet"], "sources": ["`+blocked.String()+`"], "assets": ["asa:123"], "destinations": ["self"]}
     ]
@@ -725,20 +711,6 @@ func TestTransferRoutingBlockedDestinationsSkipOptIn(t *testing.T) {
 	if got := CheckTxnTransferRoutingReviewPolicyLints(txn, cfg, false); len(got) != 0 {
 		t.Fatalf("opt-in blocked destination review lints = %+v", got)
 	}
-}
-
-// routingConfig decodes and compiles a v1 signer policy document.
-func routingConfig(t *testing.T, doc string) *Config {
-	t.Helper()
-	decoded, err := DecodeSignerPolicyV1([]byte(doc))
-	if err != nil {
-		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
-	}
-	cfg, err := decoded.Compile(DefaultConfig())
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-	return cfg
 }
 
 func assertRoutingRuleIDs(t *testing.T, got []LintViolation, want []string) {

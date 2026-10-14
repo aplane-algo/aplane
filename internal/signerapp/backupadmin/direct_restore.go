@@ -144,7 +144,7 @@ func (s Service) RestoreBackup(
 				Apply: func(staged storepaths.GenPaths) error {
 					for i := range classification.Policies {
 						entry := classification.Policies[i]
-						if applyErr := backup.ApplyPolicyEntry(staged, entry, masterKey); applyErr != nil {
+						if applyErr := backup.ApplyPolicyEntry(staged, ir.NodeRole(), entry, masterKey); applyErr != nil {
 							return fmt.Errorf("apply restored policy %s: %w", entry.Selector, applyErr)
 						}
 					}

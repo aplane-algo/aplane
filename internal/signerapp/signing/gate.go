@@ -23,8 +23,8 @@ type gateInput struct {
 	// foreign-slot always-review warnings instead.
 	PassthroughIndices map[int]bool
 	ForeignIndices     map[int]bool
-	// AuthKeys[i] selects the policy key override for position i ("" or short
-	// slice selects the product-wide config).
+	// AuthKeys[i] is the key selector whose policy governs position i ("" or
+	// a short slice resolves to the node default).
 	AuthKeys             []string
 	KnownAddresses       map[string]bool
 	RoutingExemptIndices map[int]bool
@@ -47,7 +47,7 @@ type gateInput struct {
 // always-review rule ID for approval audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
-	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.Policy, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
+	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
 		if in.LogRejection != nil {
 			in.LogRejection(err.Error())
 		}
@@ -59,7 +59,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		limit = len(in.AllTxns)
 	}
 	txns := in.AllTxns[:limit]
-	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.Policy, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices)
+	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices)
 	if in.ForcedReviewRuleID != "" {
 		alwaysReviewRuleID = in.ForcedReviewRuleID
 		alwaysReview = true

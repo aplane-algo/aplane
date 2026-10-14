@@ -9,6 +9,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
@@ -25,22 +26,22 @@ func TestWarningAndLintConsumersObserveManifestDangerFields(t *testing.T) {
 		{
 			name: "rekey", effect: txeffects.EffectRekey, warningField: "RekeyTo",
 			txn:    types.Transaction{Header: types.Header{RekeyTo: target}},
-			config: &policy.Config{RejectForeignRekey: true},
+			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true},
 		},
 		{
 			name: "close", effect: txeffects.EffectClose, warningField: "CloseRemainderTo",
 			txn:    types.Transaction{PaymentTxnFields: types.PaymentTxnFields{CloseRemainderTo: target}},
-			config: &policy.Config{RejectCloseRemainder: true},
+			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectCloseRemainder: true},
 		},
 		{
 			name: "asset close", effect: txeffects.EffectAssetClose, warningField: "AssetCloseTo",
 			txn:    types.Transaction{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: target}},
-			config: &policy.Config{RejectAssetClose: true},
+			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectAssetClose: true},
 		},
 		{
 			name: "clawback", effect: txeffects.EffectClawback, warningField: "AssetSender",
 			txn:    types.Transaction{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetSender: target}},
-			config: &policy.Config{RejectClawback: true},
+			config: &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectClawback: true},
 		},
 	}
 
@@ -76,7 +77,7 @@ func TestPolicyClawbackExceptionCannotWeakenBoundedClassification(t *testing.T) 
 	if warnings := approvalpolicy.CheckDecodedTxnWarnings(txn, nil); len(warnings) != 0 {
 		t.Fatalf("warnings = %#v, want policy-specific same-sender exception", warnings)
 	}
-	if lints := policy.CheckTxnPolicyLints(txn, &policy.Config{RejectClawback: true}, nil); len(lints) != 0 {
+	if lints := policy.CheckTxnPolicyLints(txn, &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectClawback: true}, nil); len(lints) != 0 {
 		t.Fatalf("lints = %#v, want policy-specific same-sender exception", lints)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/verify"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -187,11 +188,8 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
-	if err == nil || err.Kind != ErrorForbidden {
-		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
-	}
-	if !strings.Contains(err.Message, policy.CosignerKeyHasNoPolicyRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
+	if err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("SignComponentWithContext() error = %#v, want internal (policy not loaded)", err)
 	}
 
 	_, err = (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
@@ -204,7 +202,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	}
 }
 
-func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad(t *testing.T) {
 	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
@@ -216,11 +214,8 @@ func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
-	if err == nil || err.Kind != ErrorForbidden {
-		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
-	}
-	if !strings.Contains(err.Message, policy.CosignerKeyHasNoPolicyRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing cosigner policy", err.Message)
+	if err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("SignComponentWithContext() error = %#v, want internal (policy not loaded)", err)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
@@ -228,13 +223,10 @@ func TestSignComponentCosignerRequiresPolicyBeforeKeyLoad(t *testing.T) {
 }
 
 func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
-	// v1 cosigner documents always carry a transfer policy; build the
-	// degenerate shape directly to exercise the defensive check.
-	cfg := cosignerPolicyConfigForSigningTest(t, `{
-  "format": "aplane.cosigner-policy.v1",
-  "key": "`+testCosignerPolicyKey+`",
-  "transfer_policy": {"routes": []}
-}`)
+	// A compiled document always carries a transfer policy; build the
+	// degenerate shape directly to exercise the defensive check, which must
+	// reject rather than let routing sit out.
+	cfg := cosignerPolicyConfigForSigningTest(t, "")
 	cfg.TransferPolicy = nil
 	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
@@ -250,8 +242,8 @@ func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.CosignerTransferPolicyRequiredRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want transfer policy required", err.Message)
+	if !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want a route miss", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
@@ -283,8 +275,8 @@ func TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.CosignerNonTransferRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want non-transfer rejection", err.Message)
+	if !strings.Contains(err.Message, policy.TransactionTypeRuleID("appl")) {
+		t.Fatalf("SignComponentWithContext() error = %q, want the type gate to reject the application call", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
@@ -324,10 +316,10 @@ func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 	firstKey := testFalconComponentSelector(t, 0xab)
 	secondKey := testFalconComponentSelector(t, 0xcd)
 	svc := &Service{
-		CosignerPolicies: map[string]*policy.Config{
+		PolicyFor: keyedPolicy(map[string]*policy.Config{
 			firstKey:  cosignerRoutePolicy(t, source, firstDest),
 			secondKey: cosignerRoutePolicy(t, source, secondDest),
-		},
+		}, nil),
 		HoldsCosignerKey: holdsAllCosignerKeys,
 	}
 	txn := testnetPaymentTransaction(t, source, secondDest, 1)
@@ -357,7 +349,7 @@ func TestSignComponentCosignerRejectsKeyNotHeldBeforePolicy(t *testing.T) {
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 	svc := &Service{
-		CosignerPolicies: map[string]*policy.Config{componentKey: wildcardCosignerPolicy(t)},
+		PolicyFor:        fixedPolicy(wildcardCosignerPolicy(t)),
 		HoldsCosignerKey: func(string) bool { return false },
 	}
 	_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
@@ -376,11 +368,9 @@ func TestSignComponentCosignerRejectsKeyNotHeldBeforePolicy(t *testing.T) {
 }
 
 func TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
-	cfg := cosignerPolicyConfigForSigningTest(t, `{
-  "format": "aplane.cosigner-policy.v1",
-  "key": "`+testCosignerPolicyKey+`",
-  "transfer_policy": {"routes": []}
-}`)
+	// Decode refuses review on a cosigner node; a hand-built config that
+	// reviews a route miss must still be rejected, never waited on.
+	cfg := cosignerPolicyConfigForSigningTest(t, "")
 	cfg.TransferPolicy.OnNoRoute = policy.TransferOnNoRouteReview
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
@@ -395,8 +385,8 @@ func TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad(t *te
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.CosignerDeterministicRoutingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want deterministic routing rejection", err.Message)
+	if !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want the review route miss rejected", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
@@ -407,9 +397,7 @@ func TestSignComponentCosignerRejectsInheritedReviewAboveBeforeKeyLoad(t *testin
 	source := types.Address{35}.String()
 	dest := types.Address{36}.String()
 	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "routes": [
       {
@@ -453,7 +441,7 @@ func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	_, err := (&Service{
-		CosignerPolicies: testCosignerPolicies(t, cosignerRoutePolicy(t, source, dest)),
+		PolicyFor:        fixedPolicy(cosignerRoutePolicy(t, source, dest)),
 		HoldsCosignerKey: holdsAllCosignerKeys,
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
@@ -490,15 +478,13 @@ func TestSignComponentCosignerAllowsExplicitRekeyPolicy(t *testing.T) {
 	source := types.Address{68}
 	target := types.Address{69}
 	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
-  "format": "aplane.cosigner-policy.v1",
-  "key": %q,
   "transfer_policy": {"routes": []},
   "rekey_policy": {
     "allowed": [
       {"sender": %q, "targets": [%q]}
     ]
   }
-}`, testCosignerPolicyKey, source.String(), target.String()))
+}`, source.String(), target.String()))
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = target
 	keyMaterial := &coresigning.KeyMaterial{
@@ -535,15 +521,13 @@ func TestSignComponentCosignerRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing
 	allowedTarget := types.Address{71}
 	blockedTarget := types.Address{72}
 	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
-  "format": "aplane.cosigner-policy.v1",
-  "key": %q,
   "transfer_policy": {"routes": []},
   "rekey_policy": {
     "allowed": [
       {"sender": %q, "targets": [%q]}
     ]
   }
-}`, testCosignerPolicyKey, source.String(), allowedTarget.String()))
+}`, source.String(), allowedTarget.String()))
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = blockedTarget
 	store := &componentKeyStore{}
@@ -589,7 +573,7 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	result, signErr := (&Service{
-		CosignerPolicies: map[string]*policy.Config{componentKey: cosignerRoutePolicy(t, source, dest)},
+		PolicyFor:        fixedPolicy(cosignerRoutePolicy(t, source, dest)),
 		HoldsCosignerKey: holdsAllCosignerKeys,
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
@@ -1344,26 +1328,18 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 
 func holdsAllCosignerKeys(string) bool { return true }
 
-// testCosignerPolicies maps cfg to the component key most tests sign with.
-func testCosignerPolicies(t *testing.T, cfg *policy.Config) map[string]*policy.Config {
-	t.Helper()
-	return map[string]*policy.Config{testFalconComponentSelector(t, 0xab): cfg}
-}
-
 func cosignerTestService(t *testing.T, cfg *policy.Config) *Service {
 	t.Helper()
 	return cosignerTestServiceFor(testFalconComponentSelector(t, 0xab), cfg)
 }
 
 func cosignerTestServiceFor(componentKey string, cfg *policy.Config) *Service {
-	return &Service{CosignerPolicies: map[string]*policy.Config{componentKey: cfg}, HoldsCosignerKey: holdsAllCosignerKeys}
+	return &Service{PolicyFor: keyedPolicy(map[string]*policy.Config{componentKey: cfg}, nil), HoldsCosignerKey: holdsAllCosignerKeys}
 }
 
 func wildcardCosignerPolicy(t *testing.T) *policy.Config {
 	t.Helper()
 	return cosignerPolicyConfigForSigningTest(t, `{
-  "format": "aplane.cosigner-policy.v1",
-  "key": "`+testCosignerPolicyKey+`",
   "transfer_policy": {
     "routes": [
       {
@@ -1381,8 +1357,6 @@ func wildcardCosignerPolicy(t *testing.T) *policy.Config {
 func cosignerRoutePolicy(t *testing.T, source, destination string) *policy.Config {
 	t.Helper()
 	return cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
-  "format": "aplane.cosigner-policy.v1",
-  "key": %q,
   "transfer_policy": {
     "routes": [
       {
@@ -1394,7 +1368,7 @@ func cosignerRoutePolicy(t *testing.T, source, destination string) *policy.Confi
       }
     ]
   }
-}`, testCosignerPolicyKey, source, destination))
+}`, source, destination))
 }
 
 func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
@@ -1643,7 +1617,7 @@ func TestCosignerPolicyRejectionUsesLimitedAuditPath(t *testing.T) {
 	audit := &limitedCosignerAuditLogger{}
 
 	_, err := (&Service{
-		CosignerPolicies: testCosignerPolicies(t, cosignerRoutePolicy(t, source, dest)),
+		PolicyFor:        fixedPolicy(cosignerRoutePolicy(t, source, dest)),
 		HoldsCosignerKey: holdsAllCosignerKeys,
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
@@ -1661,5 +1635,74 @@ func TestCosignerPolicyRejectionUsesLimitedAuditPath(t *testing.T) {
 	}
 	if len(audit.limited) != 1 || audit.limited[0].policyRule != policy.CosignerRekeyRuleID || audit.limited[0].txnSender != source {
 		t.Fatalf("limited rejection entries = %#v, want one rekey rejection for %s", audit.limited, source)
+	}
+}
+
+// embeddedCosignerDefaultConfig compiles the shipped cosigner default: every
+// type rejected, no routes, rekeys rejected.
+func embeddedCosignerDefaultConfig(t *testing.T) *policy.Config {
+	t.Helper()
+	data, err := policy.EmbeddedDefault(noderole.RoleCosigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := policy.DecodePolicyV1(data, policy.DefaultKey, noderole.RoleCosigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := decoded.Compile(policy.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// A cosigner key with no document of its own follows the deny-all default:
+// a payment and an application call are both rejected by the type gate,
+// which runs before routing, and the key is never loaded.
+func TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything(t *testing.T) {
+	source := types.Address{90}
+	svc := &Service{PolicyFor: keyedPolicy(nil, embeddedCosignerDefaultConfig(t)), HoldsCosignerKey: holdsAllCosignerKeys}
+	header := types.Header{
+		Sender:      source,
+		Fee:         types.MicroAlgos(1000),
+		FirstValid:  10,
+		LastValid:   20,
+		GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
+	}
+	for name, txn := range map[string]types.Transaction{
+		"pay":  {Type: types.PaymentTx, Header: header, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{91}, Amount: 1}},
+		"appl": {Type: types.ApplicationCallTx, Header: header, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{ApplicationID: 5}}},
+	} {
+		store := &componentKeyStore{}
+		_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
+			RequestID:     "cmp-cosigner-default-" + name,
+			Role:          ComponentSignRoleCosigner,
+			ComponentKey:  testFalconComponentSelector(t, 0xab),
+			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+			TargetIndices: []int{0},
+		}, newComponentKeySession(store))
+		if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.TransactionTypeRuleID(name)) {
+			t.Fatalf("%s: error = %#v, want %s rejected by the default", name, err, policy.TransactionTypeRuleID(name))
+		}
+		if store.calls != 0 {
+			t.Fatalf("%s: store calls = %d, want 0 before policy rejection", name, store.calls)
+		}
+	}
+
+	// A document of its own that allows pay but routes nothing rejects the
+	// same payment as a route miss instead.
+	own := cosignerPolicyConfigForSigningTest(t, "")
+	svc = &Service{PolicyFor: keyedPolicy(map[string]*policy.Config{testFalconComponentSelector(t, 0xab): own}, embeddedCosignerDefaultConfig(t)), HoldsCosignerKey: holdsAllCosignerKeys}
+	pay := types.Transaction{Type: types.PaymentTx, Header: header, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{91}, Amount: 1}}
+	_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-own-route-miss",
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(pay)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(&componentKeyStore{}))
+	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("own document without routes: error = %#v, want a route miss", err)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -2599,6 +2600,7 @@ func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, k
 			Type: protocol.MsgTypeGetPolicyDocument,
 			ID:   fmt.Sprintf("policy-document-%d", time.Now().UnixNano()),
 		},
+		Key: policy.DefaultKey,
 	}, 10*time.Second)
 	if err != nil {
 		t.Fatalf("failed to get policy document: %v", err)
@@ -2622,7 +2624,7 @@ func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, k
 			Type: protocol.MsgTypeApplyPolicy,
 			ID:   fmt.Sprintf("policy-apply-%d", time.Now().UnixNano()),
 		},
-		Documents:               []protocol.PolicyDocumentWire{{Document: string(updated)}},
+		Documents:               []protocol.PolicyDocumentWire{{Key: policy.DefaultKey, Document: string(updated)}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
 	}, 10*time.Second)
 	if err != nil {

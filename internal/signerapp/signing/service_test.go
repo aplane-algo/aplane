@@ -16,7 +16,9 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -67,10 +69,10 @@ func TestEvaluateAutoRejectionRulesStampsTxnIndexes(t *testing.T) {
 		{Header: types.Header{Fee: 2}},
 	}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
 		MaxFeeMicroAlgos:   1,
-	}, nil, nil, nil, nil)
+	}), nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection")
 	}
@@ -88,9 +90,9 @@ func TestEvaluateAutoRejectionRulesSkipsForeignAndDummyTransactions(t *testing.T
 		{Header: types.Header{RekeyTo: nonZeroAddr}}, // dummy slot beyond requestCount, should be skipped
 	}
 
-	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, 2, nil, map[int]bool{0: true}, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
-	}, nil, nil, nil, nil)
+	}), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil when only foreign/dummy slots violate policy", err)
 	}
@@ -102,9 +104,9 @@ func TestEvaluateAutoRejectionRulesAllowsRekeyToLocalAddress(t *testing.T) {
 		{Header: types.Header{RekeyTo: localAddr}},
 	}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, &policy.Config{
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 		RejectForeignRekey: true,
-	}, nil, map[string]bool{localAddr.String(): true}, nil, nil)
+	}), nil, map[string]bool{localAddr.String(): true}, nil, nil)
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil for local rekey target", err)
 	}
@@ -120,21 +122,21 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 	}{
 		{
 			name: "fee at threshold allowed",
-			cfg:  &policy.Config{MaxFeeMicroAlgos: 1000},
+			cfg:  &policy.Config{TransactionTypes: policytest.AllowAllTypes(), MaxFeeMicroAlgos: 1000},
 			txn: types.Transaction{
 				Header: types.Header{Fee: 1000},
 			},
 		},
 		{
 			name:    "fee above threshold rejected",
-			cfg:     &policy.Config{MaxFeeMicroAlgos: 1000},
+			cfg:     &policy.Config{TransactionTypes: policytest.AllowAllTypes(), MaxFeeMicroAlgos: 1000},
 			txn:     types.Transaction{Header: types.Header{Fee: 1001}},
 			wantErr: true,
 			wantSub: "max_fee_exceeded",
 		},
 		{
 			name: "payment at threshold allowed",
-			cfg: &policy.Config{
+			cfg: &policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 				MaxAlgoPayments:     map[string]uint64{"testnet": 5_000_000},
 				GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver(),
 			},
@@ -146,7 +148,7 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 		},
 		{
 			name: "payment above threshold rejected",
-			cfg: &policy.Config{
+			cfg: &policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 				MaxAlgoPayments:     map[string]uint64{"testnet": 5_000_000},
 				GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver(),
 			},
@@ -162,7 +164,7 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, tt.cfg, nil, nil, nil, nil)
+			err := EvaluateAutoRejectionRules([]types.Transaction{tt.txn}, 1, nil, nil, fixedPolicy(tt.cfg), nil, nil, nil, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection")
@@ -179,35 +181,40 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 	}
 }
 
-func TestEvaluateAutoRejectionRulesAppliesKeyOverrides(t *testing.T) {
+func TestEvaluateAutoRejectionRulesResolvesPolicyPerKey(t *testing.T) {
 	nonZeroAddr := types.Address{1}
-	overrideKey := types.Address{10}.String()
-	baseKey := types.Address{11}.String()
+	ownKey := types.Address{10}.String()
+	defaultKey := types.Address{11}.String()
 	txns := []types.Transaction{
-		// Signed by the override key: the override allows asset close.
+		// Signed by a key with its own policy, which allows asset close.
 		{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: nonZeroAddr}},
-		// Signed by a different key: inherits identity default (reject).
+		// Signed by a key on the node default, which rejects it.
 		{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: nonZeroAddr}},
 	}
 
-	cfg := &policy.Config{
-		RejectAssetClose: true,
-		KeyOverrides: map[string]*policy.Config{
-			overrideKey: {RejectAssetClose: false},
-		},
-	}
-	authKeys := []string{overrideKey, baseKey}
+	own := &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectAssetClose: false}
+	def := &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectAssetClose: true}
+	resolver := keyedPolicy(map[string]*policy.Config{ownKey: own}, def)
+	authKeys := []string{ownKey, defaultKey}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, cfg, authKeys, nil, nil, nil)
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, resolver, authKeys, nil, nil, nil)
 	if err == nil {
-		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for non-overridden txn")
+		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for the key on the default")
 	}
 	got := err.Error()
 	if strings.Contains(got, "txn 1:") {
-		t.Errorf("key override should allow asset close on txn 1: %q", got)
+		t.Errorf("the key's own policy should allow asset close on txn 1: %q", got)
 	}
 	if !strings.Contains(got, "txn 2: [reject_asset_close]") {
-		t.Errorf("txn 2 should be rejected by identity default: %q", got)
+		t.Errorf("txn 2 should be rejected by the node default: %q", got)
+	}
+
+	// Policy that cannot be resolved fails closed.
+	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, nil, authKeys, nil, nil, nil); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("EvaluateAutoRejectionRules(no resolver) error = %#v, want internal", err)
+	}
+	if err := EvaluateAutoRejectionRules(txns, 1, nil, nil, keyedPolicy(nil, nil), authKeys, nil, nil, nil); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("EvaluateAutoRejectionRules(nil policy) error = %#v, want internal", err)
 	}
 }
 
@@ -216,9 +223,7 @@ func TestEvaluateAutoRejectionRulesAppliesTransferRouting(t *testing.T) {
 	allowed := types.Address{2}
 	blocked := types.Address{3}
 	cfg := routingPolicyConfigForSigningTest(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "routes": [
       {
@@ -243,7 +248,7 @@ func TestEvaluateAutoRejectionRulesAppliesTransferRouting(t *testing.T) {
 		},
 	}
 
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, cfg, nil, nil, nil, nil)
+	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, fixedPolicy(cfg), nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("EvaluateAutoRejectionRules() error = nil, want routing rejection")
 	}
@@ -255,9 +260,7 @@ func TestEvaluateAutoRejectionRulesAppliesTransferRouting(t *testing.T) {
 func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
 	source := types.Address{1}
 	cfg := routingPolicyConfigForSigningTest(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "routes": []
   }
@@ -274,7 +277,7 @@ func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForExemptIndex(t *testing
 		},
 	}
 
-	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, cfg, nil, nil, map[int]bool{0: true}, nil)
+	err := EvaluateAutoRejectionRules([]types.Transaction{txn}, 1, nil, nil, fixedPolicy(cfg), nil, nil, map[int]bool{0: true}, nil)
 	if err != nil {
 		t.Fatalf("EvaluateAutoRejectionRules() error = %v, want nil for routing-exempt index", err)
 	}
@@ -284,9 +287,7 @@ func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForPassthroughForeignAndD
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingPolicyConfigForSigningTest(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "routes": []
   }
@@ -308,7 +309,7 @@ func TestEvaluateAutoRejectionRulesSkipsTransferRoutingForPassthroughForeignAndD
 		3,
 		map[int]bool{0: true},
 		map[int]bool{1: true},
-		cfg,
+		fixedPolicy(cfg),
 		nil,
 		nil,
 		nil,
@@ -337,33 +338,37 @@ func containsAll(s string, wants []string) bool {
 
 // testCosignerPolicyKey is a valid Witness Key ID used as the key of cosigner
 // policy documents compiled by these tests. The compiled Config does not carry
-// the key, so it may be attached to any component key in Service.CosignerPolicies.
+// the key, so it may serve as the policy of any component key.
 const testCosignerPolicyKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 
-func routingPolicyConfigForSigningTest(t *testing.T, doc string) *policy.Config {
+// routingPolicyConfigForSigningTest compiles a signer default with sparse
+// merged in.
+func routingPolicyConfigForSigningTest(t *testing.T, sparse string) *policy.Config {
 	t.Helper()
-	decoded, err := policy.DecodeSignerPolicyV1([]byte(doc))
-	if err != nil {
-		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
-	}
-	cfg, err := decoded.Compile(policy.DefaultConfig())
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-	return cfg
+	return policytest.Compile(t, noderole.RoleSigner, policy.DefaultKey, sparse)
 }
 
-func cosignerPolicyConfigForSigningTest(t *testing.T, doc string) *policy.Config {
+// cosignerPolicyConfigForSigningTest compiles a cosigner key document with
+// sparse merged in.
+func cosignerPolicyConfigForSigningTest(t *testing.T, sparse string) *policy.Config {
 	t.Helper()
-	decoded, err := policy.DecodeCosignerPolicyV1([]byte(doc), testCosignerPolicyKey)
-	if err != nil {
-		t.Fatalf("DecodeCosignerPolicyV1() error = %v", err)
+	return policytest.Compile(t, noderole.RoleCosigner, testCosignerPolicyKey, sparse)
+}
+
+// fixedPolicy resolves every key to cfg.
+func fixedPolicy(cfg *policy.Config) PolicyResolver {
+	return func(string) *policy.Config { return cfg }
+}
+
+// keyedPolicy resolves keys in own to their own policy and every other key
+// to def.
+func keyedPolicy(own map[string]*policy.Config, def *policy.Config) PolicyResolver {
+	return func(selector string) *policy.Config {
+		if cfg, ok := own[selector]; ok {
+			return cfg
+		}
+		return def
 	}
-	cfg, err := decoded.Compile(policy.DefaultConfig())
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-	return cfg
 }
 
 func testDigest(t *testing.T, encoded string) types.Digest {
@@ -446,9 +451,9 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 			return true
 		},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		Policy: &policy.Config{
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			RejectForeignRekey: true,
-		},
+		}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -564,7 +569,7 @@ func TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation(t *testing.
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		IsUnlocked:                    func() bool { return true },
-		Policy:                        &policy.Config{RejectForeignRekey: true},
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -665,10 +670,10 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 					beforeExecuteCalled = true
 					return nil, unavailable("after finalized policy")
 				},
-				Policy: &policy.Config{
+				PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 					MaxFeeMicroAlgos:            policy.SelfNoOpTransferMaxFeeMicroAlgos,
 					AutoApproveSelfNoOpTransfer: true,
-				},
+				}),
 			}
 
 			req := signerapi.GroupSignRequest{
@@ -728,7 +733,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 			beforeExecuteCalled = true
 			return nil, forbidden("after auto approval")
 		},
-		Policy: &policy.Config{AutoApproveSelfNoOpTransfer: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -797,7 +802,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove(t *testin
 			beforeExecuteCalled = true
 			return nil, forbidden("after forced review")
 		},
-		Policy: &policy.Config{AlwaysReviewWarnings: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AlwaysReviewWarnings: true}),
 	}
 
 	txn := types.Transaction{
@@ -852,7 +857,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			},
 			RequestSigningApproval: func(requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 				approvalCalled = true
-				service.Policy = &policy.Config{RejectForeignRekey: true}
+				service.PolicyFor = fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectForeignRekey: true})
 				return true, nil
 			},
 		},
@@ -863,7 +868,7 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 			beforeExecuteCalled = true
 			return nil, unavailable("after approval")
 		},
-		Policy: &policy.Config{AlwaysReviewWarnings: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AlwaysReviewWarnings: true}),
 	}
 
 	txn := types.Transaction{
@@ -909,9 +914,7 @@ func TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove(t *testi
 	source := types.Address{1}
 	dest := types.Address{2}
 	cfg := routingPolicyConfigForSigningTest(t, `{
-  "format": "aplane.signer-policy.v1",
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "routes": [
       {
@@ -947,7 +950,7 @@ func TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove(t *testi
 			beforeExecuteCalled = true
 			return nil, forbidden("after routing review")
 		},
-		Policy: cfg,
+		PolicyFor: fixedPolicy(cfg),
 	}
 
 	txn := types.Transaction{
@@ -1019,7 +1022,7 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 			beforeExecuteCalled = true
 			return nil, forbidden("after auto approval")
 		},
-		Policy: &policy.Config{AutoApproveSelfNoOpTransfer: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	group := types.Digest{9}
@@ -1132,7 +1135,7 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 			beforeExecuteCalled = true
 			return nil, forbidden("after auto approval")
 		},
-		Policy: &policy.Config{AutoApproveSelfNoOpTransfer: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1192,7 +1195,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 			beforeExecuteCalled = true
 			return nil, forbidden("should not execute")
 		},
-		Policy: &policy.Config{AutoApproveSelfNoOpTransfer: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	group := types.Digest{9}
@@ -1258,7 +1261,7 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 			beforeExecuteCalled = true
 			return nil, forbidden("should not execute")
 		},
-		Policy: &policy.Config{AutoApproveSelfNoOpTransfer: true},
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1335,10 +1338,10 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		IsUnlocked:                    func() bool { return true },
-		Policy: &policy.Config{
+		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			MaxAlgoPayments:     map[string]uint64{"testnet": 1_000_000},
 			GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver(),
-		},
+		}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1392,6 +1395,7 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 			return "txn"
 		},
 		IsUnlocked: func() bool { return true },
+		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
 		BeforeExecute: func() (func(), *ServiceError) {
 			beforeExecuteCalled = true
 			return nil, forbidden("final execution refused")
@@ -1586,6 +1590,7 @@ func TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies(t *testing.
 			return "txn"
 		},
 		IsUnlocked: func() bool { return true },
+		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1652,6 +1657,7 @@ func TestSignGroupWithPlanUsesIntersectedValidityWindowForGroups(t *testing.T) {
 			return "txn"
 		},
 		IsUnlocked: func() bool { return true },
+		PolicyFor:  fixedPolicy(policy.DefaultConfig()),
 	}
 
 	req := signerapi.GroupSignRequest{

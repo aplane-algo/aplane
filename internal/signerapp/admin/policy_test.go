@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -73,11 +74,16 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 }
 
 func signerPolicyDoc(maxFee string) string {
-	return fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":%q}`, maxFee)
+	return policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, fmt.Sprintf(`{"max_fee_microalgos":%q}`, maxFee))
 }
 
 func cosignerPolicyDoc(key string) string {
-	return fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, key)
+	return policytest.MustDocument(noderole.RoleCosigner, key, "")
+}
+
+// runtimePolicy returns the policy the runtime enforces for selector.
+func runtimePolicy(ir *productruntime.Runtime, selector string) *policy.Config {
+	return ir.NodePolicy().PolicyFor(selector)
 }
 
 func currentGeneration(t *testing.T, svc Service, ir *productruntime.Runtime) string {
@@ -96,15 +102,16 @@ func currentGeneration(t *testing.T, svc Service, ir *productruntime.Runtime) st
 func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
 	view := svc.GetPolicy()
+	embedded := policytest.EmbeddedDefault(t, noderole.RoleSigner)
 	if !view.Success || view.NodeRole != "signer" || len(view.Documents) != 1 ||
-		view.Documents[0].Size != len(policy.InitialSignerPolicy) ||
-		svc.GetPolicyDocument("").Document != string(policy.InitialSignerPolicy) {
+		view.Documents[0].Key != policy.DefaultKey || view.Documents[0].Size != len(embedded) ||
+		svc.GetPolicyDocument(policy.DefaultKey).Document != embedded {
 		t.Fatalf("GetPolicy() = %+v", view)
 	}
 	before := currentGeneration(t, svc, ir)
 
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: signerPolicyDoc("2000")}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
 	})
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
@@ -113,15 +120,15 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	if after := currentGeneration(t, svc, ir); after == before || after != result.Policy.GenerationID {
 		t.Fatalf("generation %s -> %s, result %s", before, after, result.Policy.GenerationID)
 	}
-	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 2000 {
+	if got := runtimePolicy(ir, ""); got == nil || got.MaxFeeMicroAlgos != 2000 {
 		t.Fatalf("runtime policy after apply = %#v", got)
 	}
-	if again := svc.GetPolicy(); svc.GetPolicyDocument("").Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
+	if again := svc.GetPolicy(); svc.GetPolicyDocument(policy.DefaultKey).Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
 		t.Fatalf("GetPolicy() after apply = %+v", again)
 	}
 
 	unchanged := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: signerPolicyDoc("2000")}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: result.Policy.PolicySetSHA256,
 	})
 	if !unchanged.Success || unchanged.Policy.GenerationID != "" || currentGeneration(t, svc, ir) != result.Policy.GenerationID {
@@ -138,19 +145,21 @@ func TestPolicyApplyRejectsStaleInvalidAndMalformedRequests(t *testing.T) {
 		req  adminproto.ApplyPolicyRequest
 		code string
 	}{
-		{"no concurrency base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}}, "expected_policy_set_sha256_required"},
-		{"stale base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: strings.Repeat("0", 64)}, "policy_snapshot_changed"},
-		{"invalid document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: `{"format":"aplane.signer-policy.v1","max_fee_microalgos":1}`}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "policy_validation_failed"},
-		{"keyed signer document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: adminPolicyKeyA, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
-		{"signer removal", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}, Remove: []string{adminPolicyKeyA}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
+		{"no concurrency base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}}, "expected_policy_set_sha256_required"},
+		{"stale base", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: strings.Repeat("0", 64)}, "policy_snapshot_changed"},
+		{"invalid document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":1}`)}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "policy_validation_failed"},
+		{"witness key on a signer node", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: adminPolicyKeyA, Document: policytest.Signer(t, adminPolicyKeyA, "")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "policy_validation_failed"},
+		{"unkeyed document", adminproto.ApplyPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
+		{"default removal", adminproto.ApplyPolicyRequest{Remove: []string{policy.DefaultKey}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
+		{"removal of a key on the default", adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyA}, ExpectedPolicySetSHA256: view.PolicySetSHA256}, "invalid_policy_request"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result := svc.ApplyPolicy(tc.req)
 			if result.Success || result.Code != tc.code {
 				t.Fatalf("ApplyPolicy() = %+v, want code %s", result, tc.code)
 			}
-			if tc.code == "policy_validation_failed" && (len(result.Errors) != 1 || result.Errors[0].Pointer != "/max_fee_microalgos") {
-				t.Fatalf("problems = %+v, want one at /max_fee_microalgos", result.Errors)
+			if tc.code == "policy_validation_failed" && len(result.Errors) != 1 {
+				t.Fatalf("problems = %+v, want one", result.Errors)
 			}
 		})
 	}
@@ -163,14 +172,17 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleCosigner)
 	ir.PublishSnapshot(map[string]string{adminPolicyKeyA: "keys/" + adminPolicyKeyA + ".cos"}, map[string]string{})
 	view := svc.GetPolicy()
-	if !view.Success || view.NodeRole != "cosigner" || len(view.Documents) != 0 ||
-		len(view.Keys) != 1 || view.Keys[0].Status != adminproto.PolicyKeyNoPolicy {
+	if !view.Success || view.NodeRole != "cosigner" || len(view.Documents) != 1 || view.Documents[0].Key != policy.DefaultKey ||
+		len(view.Keys) != 1 || view.Keys[0].Status != adminproto.PolicyKeyDefault {
 		t.Fatalf("initial GetPolicy() = %+v", view)
+	}
+	if got := runtimePolicy(ir, adminPolicyKeyA); got == nil || got.VerdictForType("pay") != policy.TransactionTypeReject {
+		t.Fatalf("a key without its own policy must follow the deny-all cosigner default: %+v", got)
 	}
 
 	check := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: adminPolicyKeyB, Document: cosignerPolicyDoc(adminPolicyKeyB)}}})
-	if !check.Success || !check.Valid || len(check.Warnings) != 2 {
-		t.Fatalf("CheckPolicy() = %+v, want valid with no-policy and key-not-held warnings", check)
+	if !check.Success || !check.Valid || len(check.Warnings) != 1 || check.Warnings[0].Key != adminPolicyKeyB {
+		t.Fatalf("CheckPolicy() = %+v, want valid with a key-not-held warning", check)
 	}
 
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
@@ -187,18 +199,18 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	for _, st := range result.Policy.Keys {
 		status[st.Key] = st.Status
 	}
-	if status[adminPolicyKeyA] != adminproto.PolicyKeyActive || status[adminPolicyKeyB] != adminproto.PolicyKeyNotHeld {
+	if status[adminPolicyKeyA] != adminproto.PolicyKeyOwn || status[adminPolicyKeyB] != adminproto.PolicyKeyNotHeld {
 		t.Fatalf("key status = %v", status)
 	}
-	if policies := ir.CosignerPolicies(); len(policies) != 2 {
-		t.Fatalf("runtime cosigner policies = %d, want 2", len(policies))
+	if np := ir.NodePolicy(); len(np.Keys) != 2 || np.PolicyFor(adminPolicyKeyA).VerdictForType("pay") != policy.TransactionTypeAllow {
+		t.Fatalf("runtime key policies = %+v, want 2 with A's own document in force", np.Keys)
 	}
 
 	removed := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{Remove: []string{adminPolicyKeyB}, ExpectedPolicySetSHA256: result.Policy.PolicySetSHA256})
-	if !removed.Success || len(removed.Policy.Documents) != 1 || removed.Policy.Documents[0].Key != adminPolicyKeyA {
+	if !removed.Success || len(removed.Policy.Documents) != 2 || removed.Policy.Documents[1].Key != adminPolicyKeyA {
 		t.Fatalf("ApplyPolicy(remove) = %+v", removed)
 	}
-	if _, ok := ir.CosignerPolicies()[adminPolicyKeyB]; ok {
+	if ir.NodePolicy().HasOwn(adminPolicyKeyB) {
 		t.Fatal("removed policy is still enforced")
 	}
 	if doc := svc.GetPolicyDocument(adminPolicyKeyA); !doc.Success || doc.Document != cosignerPolicyDoc(adminPolicyKeyA) {
@@ -239,7 +251,7 @@ func TestPolicyRequestsFailClosedWithoutLoadedPolicy(t *testing.T) {
 	if view := svc.GetPolicy(); view.Success || view.Code != "policy_unavailable" {
 		t.Fatalf("GetPolicy() = %+v", view)
 	}
-	if check := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Document: signerPolicyDoc("1")}}}); check.Success || check.Code != "policy_unavailable" {
+	if check := svc.CheckPolicy(adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("1")}}}); check.Success || check.Code != "policy_unavailable" {
 		t.Fatalf("CheckPolicy() = %+v", check)
 	}
 }
@@ -273,7 +285,7 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	svc.Deps = deps
 
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: signerPolicyDoc("2000")}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
 		ExpectedPolicySetSHA256: view.PolicySetSHA256,
 	})
 	if result.Success || !result.CommitUncertain || result.Code != "policy_reload_failed" {

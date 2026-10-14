@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,7 +21,7 @@ import (
 // diff, confirm, and apply steps as apadmin policy apply. The candidate is a
 // policy file, or text from the editor in policy_edit.go; either way the node
 // stores exactly the bytes that were reviewed. Unlike the batch command, a
-// cosigner document for a key the node does not hold is an error here.
+// document for a key the node does not hold is an error here.
 
 // policyApplyState is the check, review, and apply workflow for one candidate.
 type policyApplyState struct {
@@ -41,11 +43,14 @@ type policyApplyState struct {
 	diffLines []string
 	unchanged bool
 	// reviewedSetSHA256 is the policy set the review was built against: the
-	// summary that decided whether the key has an active document to diff. The
-	// apply names this set, never a later summary, so a policy that changed
-	// after the review was built is rejected by the node instead of replaced
-	// unseen.
+	// summary that decided whether the key has a document of its own to diff.
+	// The apply names this set, never a later summary, so a policy that
+	// changed after the review was built is rejected by the node instead of
+	// replaced unseen.
 	reviewedSetSHA256 string
+	// ownCurrent reports that the document the candidate is diffed against
+	// is the key's own, not the node default it follows.
+	ownCurrent bool
 
 	applying     bool
 	applyErr     string
@@ -128,17 +133,16 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 		}
 		path = filepath.Join(home, strings.TrimPrefix(path, "~/"))
 	}
-	role := m.policies.policy.NodeRole
 	// Regular files only: this runs inside the event loop, where opening a
 	// FIFO or device would block every key, timer, and daemon message.
-	docs, _, err := policyreview.ReadRegularDocuments([]string{path}, role)
+	docs, _, err := policyreview.ReadRegularDocuments([]string{path})
 	if err != nil {
 		apply.err = err.Error()
 		return m, nil
 	}
 	doc := docs[0]
-	if role == "cosigner" && !m.policyKeyHeld(doc.Key) {
-		apply.err = fmt.Sprintf("this node does not hold cosigner key %s; generate the key before loading its policy", doc.Key)
+	if doc.Key != policy.DefaultKey && !m.policyKeyHeld(doc.Key) {
+		apply.err = fmt.Sprintf("this node does not hold key %s; generate or import the key before loading its policy", doc.Key)
 		return m, nil
 	}
 	apply.doc = doc
@@ -149,8 +153,8 @@ func (m Model) submitPolicyApplyFile() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.sendCheckPolicyCmd(doc, apply.pendingCheckID), m.waitForMessageCmd())
 }
 
-// policyKeyHeld reports whether the loaded policy summary lists key as a
-// cosigner key the node holds.
+// policyKeyHeld reports whether the loaded policy summary lists key as a key
+// the node holds.
 func (m Model) policyKeyHeld(key string) bool {
 	for _, st := range m.policies.policy.Keys {
 		if st.Key == key {
@@ -160,8 +164,8 @@ func (m Model) policyKeyHeld(key string) bool {
 	return false
 }
 
-// policyHasActiveDocument reports whether the loaded policy summary lists an
-// active document for key.
+// policyHasActiveDocument reports whether the loaded policy summary lists a
+// document of its own for key.
 func (m Model) policyHasActiveDocument(key string) bool {
 	for _, doc := range m.policies.policy.Documents {
 		if doc.Key == key {
@@ -219,12 +223,16 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	}
 	apply.warnings = warnings
 	apply.reviewedSetSHA256 = m.policies.policy.PolicySetSHA256
-	if !m.policyHasActiveDocument(apply.doc.Key) {
-		return m.reviewPolicyApply(false, "")
+	// The candidate is diffed against the document that governs the key now:
+	// its own, or the node default it follows.
+	key := apply.doc.Key
+	apply.ownCurrent = m.policyHasActiveDocument(key)
+	if !apply.ownCurrent {
+		key = policy.DefaultKey
 	}
 	apply.busy = "Loading active policy..."
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
-	key, id := apply.doc.Key, apply.pendingDocumentID
+	id := apply.pendingDocumentID
 	return m, tea.Batch(
 		policyRequestCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) }),
 		m.waitForMessageCmd(),
@@ -237,18 +245,23 @@ func (m Model) handlePolicyApplyDocumentLoaded(msg PolicyDocumentLoadedMsg) (tea
 	apply := &m.policies.apply
 	apply.pendingDocumentID = ""
 	apply.busy = ""
-	if !msg.Document.Success && msg.Document.Code != "policy_document_not_found" {
+	if !msg.Document.Success {
 		apply.err = policyResultError(msg.Document.Code, msg.Document.Error, "active policy is unavailable")
 		return m, m.waitForMessageCmd()
 	}
-	return m.reviewPolicyApply(msg.Document.Success, msg.Document.Document)
+	return m.reviewPolicyApply(msg.Document.Document)
 }
 
-// reviewPolicyApply diffs the checked candidate against the active document
-// and opens the review.
-func (m Model) reviewPolicyApply(hasCurrent bool, current string) (tea.Model, tea.Cmd) {
+// reviewPolicyApply diffs the checked candidate against the document that
+// governs its key now and opens the review.
+func (m Model) reviewPolicyApply(current string) (tea.Model, tea.Cmd) {
 	apply := &m.policies.apply
-	changes, identical, err := policyreview.DiffDocument(m.policies.policy.NodeRole, apply.doc.Key, hasCurrent, current, apply.doc.Document)
+	role, err := noderole.ParseRole(m.policies.policy.NodeRole)
+	if err != nil {
+		apply.err = err.Error()
+		return m, m.waitForMessageCmd()
+	}
+	changes, identical, err := policyreview.DiffCandidate(role, apply.doc.Key, current, apply.doc.Document, apply.ownCurrent)
 	if err != nil {
 		apply.err = err.Error()
 		return m, m.waitForMessageCmd()
@@ -398,10 +411,7 @@ func (m Model) failPendingPolicyApply(id string, err error) (Model, bool) {
 }
 
 func (m Model) policyApplyTargetLabel() string {
-	if key := m.policies.apply.doc.Key; key != "" {
-		return "cosigner key " + key
-	}
-	return "policy.json"
+	return policyTargetLabel(m.policies.apply.doc.Key)
 }
 
 // policyApplyReviewLine is one wrapped line of the review body.
@@ -480,11 +490,7 @@ func (m Model) renderPolicyApplyForm() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Load Policy File"))
 	body.WriteString("\n\n")
-	if m.policies.policy.NodeRole == "cosigner" {
-		body.WriteString(subtitleStyle.Render("The file's \"key\" field names the cosigner key it governs; the node must hold that key."))
-	} else {
-		body.WriteString(subtitleStyle.Render("The file replaces this node's policy.json."))
-	}
+	body.WriteString(subtitleStyle.Render("The file's \"key\" field names the document: \"default\" for the node default, or a key the node holds."))
 	body.WriteString("\n\n")
 	body.WriteString("Policy file:\n")
 	body.WriteString(inputActiveStyle.Width(m.constrainParameterFieldWidth(60)).Render(apply.path))

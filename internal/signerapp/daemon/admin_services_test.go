@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
@@ -25,7 +27,7 @@ func activeDaemonPolicyPath(t *testing.T, server *Signer) string {
 	if err != nil {
 		t.Fatalf("ActivePaths() error = %v", err)
 	}
-	return active.PolicyPath()
+	return active.DefaultPolicyPath()
 }
 
 func TestBuildAdminSettings_PassphraseMethod(t *testing.T) {
@@ -434,16 +436,15 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	if !current.Success {
 		t.Fatalf("GetPolicy() = %+v", current)
 	}
-	uploaded := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"reject_foreign_rekey\": false,\n" +
-		"  \"max_fee_microalgos\": \"4321\",\n  \"always_review_warnings\": true\n}\n"
+	uploaded := policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey": false, "max_fee_microalgos": "4321", "always_review_warnings": true}`)
 	result := svc.adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: uploaded}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: uploaded}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
 	})
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
 		t.Fatalf("ApplyPolicy() = %+v", result)
 	}
-	if doc := svc.adminApp().GetPolicyDocument(""); !doc.Success || doc.Document != uploaded {
+	if doc := svc.adminApp().GetPolicyDocument(policy.DefaultKey); !doc.Success || doc.Document != uploaded {
 		t.Fatalf("GetPolicyDocument() = %+v, want the exact uploaded bytes", doc)
 	}
 
@@ -455,13 +456,13 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 		t.Fatalf("policy.json = %q, want exact uploaded bytes %q", string(onDisk), uploaded)
 	}
 
-	got := ir.Policy()
+	got := ir.NodePolicy().PolicyFor("")
 	if got == nil {
-		t.Fatal("Policy() = nil")
+		t.Fatal("PolicyFor() = nil")
 		return
 	}
 	if got.RejectForeignRekey || got.MaxFeeMicroAlgos != 4321 || !got.AlwaysReviewWarnings {
-		t.Fatalf("Policy() = %+v, want the uploaded settings", got)
+		t.Fatalf("PolicyFor() = %+v, want the uploaded settings", got)
 	}
 	assertPolicySidecarVerifies(t, ir)
 }
@@ -472,7 +473,7 @@ func applySignerPolicyDoc(t *testing.T, server *Signer, doc string) adminproto.A
 	t.Helper()
 	current := server.adminServices().adminApp().GetPolicy()
 	return server.adminServices().adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: doc}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}},
 		ExpectedPolicySetSHA256: current.PolicySetSHA256,
 	})
 }
@@ -486,12 +487,12 @@ func TestApplyPolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	baseline := `{"format":"aplane.signer-policy.v1","reject_foreign_rekey":false,"max_fee_microalgos":"4321"}`
+	baseline := policytest.Signer(t, policy.DefaultKey, `{"reject_foreign_rekey":false,"max_fee_microalgos":"4321"}`)
 	if result := applySignerPolicyDoc(t, server, baseline); !result.Success {
 		t.Fatalf("ApplyPolicy(baseline) = %+v", result)
 	}
 
-	invalid := `{"format":"aplane.signer-policy.v1","limits":{"testnet":{"usdc":{"reject_above":"1"}}}}`
+	invalid := policytest.Signer(t, policy.DefaultKey, `{"limits":{"testnet":{"usdc":{"reject_above":"1"}}}}`)
 	result := applySignerPolicyDoc(t, server, invalid)
 	if result.Success || result.Code != "policy_validation_failed" || len(result.Errors) != 1 {
 		t.Fatalf("ApplyPolicy(invalid) = %+v, want one policy_validation_failed problem", result)
@@ -503,8 +504,8 @@ func TestApplyPolicy_RejectsInvalidPolicyWithoutOverwrite(t *testing.T) {
 	if string(onDisk) != baseline {
 		t.Fatalf("policy.json changed to %q, want baseline %q", string(onDisk), baseline)
 	}
-	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 4321 || got.RejectForeignRekey {
-		t.Fatalf("Policy() = %+v, want unchanged baseline", got)
+	if got := ir.NodePolicy().PolicyFor(""); got == nil || got.MaxFeeMicroAlgos != 4321 || got.RejectForeignRekey {
+		t.Fatalf("PolicyFor() = %+v, want unchanged baseline", got)
 	}
 	assertPolicySidecarVerifies(t, ir)
 }
@@ -518,13 +519,13 @@ func TestApplyPolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	baseline := `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"4321"}`
+	baseline := policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"4321"}`)
 	if result := applySignerPolicyDoc(t, server, baseline); !result.Success {
 		t.Fatalf("ApplyPolicy(baseline) = %+v", result)
 	}
 
 	result := server.adminServices().adminApp().ApplyPolicy(adminproto.ApplyPolicyRequest{
-		Documents:               []adminproto.PolicyDocument{{Document: `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"9999"}`}},
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"9999"}`)}},
 		ExpectedPolicySetSHA256: "deadbeef",
 	})
 	if result.Success || result.Code != "policy_snapshot_changed" {
@@ -537,8 +538,8 @@ func TestApplyPolicy_RejectsStaleExpectedSnapshot(t *testing.T) {
 	if string(onDisk) != baseline {
 		t.Fatalf("policy.json changed to %q, want baseline %q", string(onDisk), baseline)
 	}
-	if got := ir.Policy(); got == nil || got.MaxFeeMicroAlgos != 4321 {
-		t.Fatalf("Policy() = %+v, want unchanged baseline", got)
+	if got := ir.NodePolicy().PolicyFor(""); got == nil || got.MaxFeeMicroAlgos != 4321 {
+		t.Fatalf("PolicyFor() = %+v, want unchanged baseline", got)
 	}
 }
 
@@ -552,7 +553,7 @@ func TestApplyPolicyFailsWhenLocked(t *testing.T) {
 	}
 	ir.Lock()
 
-	result := applySignerPolicyDoc(t, server, `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"4321"}`)
+	result := applySignerPolicyDoc(t, server, policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"4321"}`))
 	if result.Success || result.Code != "identity_locked" || !strings.Contains(result.Error, "unlock the signer before applying policy") {
 		t.Fatalf("ApplyPolicy() = %+v, want identity_locked", result)
 	}
@@ -565,7 +566,7 @@ func assertPolicySidecarVerifies(t *testing.T, ir *productruntime.Runtime) {
 		if err != nil {
 			return err
 		}
-		_, _, err = policy.LoadVerifiedSignerPolicy(active, masterKey)
+		_, _, err = policy.LoadVerifiedDefault(active, noderole.RoleSigner, masterKey)
 		return err
 	}); err != nil {
 		t.Fatalf("policy sidecar did not verify: %v", err)

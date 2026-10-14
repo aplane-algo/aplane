@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -67,7 +69,7 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	restrictive := describedPolicy(restrictiveAlgoPaymentPolicy(testnet.Network), "policy cli online restrictive")
 	restrictivePath := writeFile("restrictive.json", restrictive)
 	permissive := describedPolicy(permissiveIntegrationPolicy(), "policy cli online permissive")
-	invalidPath := writeFile("invalid.json", `{"format":"aplane.signer-policy.v1","max_fee_microalgos":5}`)
+	invalidPath := writeFile("invalid.json", policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":5}`))
 
 	expectRejectedSend := func(context string) {
 		t.Helper()
@@ -84,8 +86,8 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	// Read-only verbs against the running daemon.
 	baseSHA := policyStatusSHA(t, apadmin)
 	exported := runPolicy(t, apadmin, "", 0, "export")
-	if !strings.Contains(exported.Stdout, `"aplane.signer-policy.v1"`) {
-		t.Fatalf("policy export did not print the signer document:\n%s", exported.Stdout)
+	if !strings.Contains(exported.Stdout, `"aplane.policy.v1"`) || !strings.Contains(exported.Stdout, `"role": "signer"`) {
+		t.Fatalf("policy export did not print the signer default:\n%s", exported.Stdout)
 	}
 
 	invalid := runPolicy(t, apadmin, "", 1, "check", invalidPath)
@@ -97,9 +99,9 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	if !strings.Contains(valid.Stdout, "policy OK") {
 		t.Fatalf("policy check of a valid file: %s", valid.Stdout)
 	}
-	// Key coverage warnings belong to cosigner nodes only.
+	// The default governs every key, so it carries no key coverage warning.
 	if strings.Contains(valid.Stderr, "does not hold") {
-		t.Fatalf("signer-node policy check printed a key coverage warning: %s", valid.Stderr)
+		t.Fatalf("policy check of the default printed a key coverage warning: %s", valid.Stderr)
 	}
 	if out := runPolicy(t, apadmin, restrictive, 0, "check", "-").Stdout; !strings.Contains(out, "policy OK") {
 		t.Fatalf("policy check from stdin: %s", out)
@@ -115,9 +117,13 @@ func TestApadminPolicyCLIOnlineAndRescue(t *testing.T) {
 	if !strings.Contains(unconfirmed.Stderr, "--yes") {
 		t.Fatalf("unconfirmed apply error: %s", unconfirmed.Stderr)
 	}
-	removed := runPolicy(t, apadmin, "", 1, "remove", "--yes", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ")
-	if !strings.Contains(removed.Stderr, "only to cosigner nodes") {
-		t.Fatalf("policy remove on a signer node: %s", removed.Stderr)
+	// A key on the default has no policy of its own to remove.
+	removed := runPolicy(t, apadmin, "", 1, "remove", "--yes", fundingAddr)
+	if !strings.Contains(removed.Stderr, "none of its own") {
+		t.Fatalf("policy remove of a key on the default: %s", removed.Stderr)
+	}
+	if removedDefault := runPolicy(t, apadmin, "", 2, "remove", "--yes", "default"); !strings.Contains(removedDefault.Stderr, "cannot be removed") {
+		t.Fatalf("policy remove of the default: %s", removedDefault.Stderr)
 	}
 	if sha := policyStatusSHA(t, apadmin); sha != baseSHA {
 		t.Fatalf("read-only and refused verbs changed policy_set_sha256: %s -> %s", baseSHA, sha)
@@ -229,7 +235,7 @@ func policySHA(t *testing.T, output string) string {
 func policyStatusSHA(t *testing.T, apadmin *harness.ApAdminHarness) string {
 	t.Helper()
 	status := runPolicy(t, apadmin, "", 0, "status").Stdout
-	if !strings.Contains(status, "signer policy") || !strings.Contains(status, "policy.json") {
+	if !strings.Contains(status, "signer policy") || !strings.Contains(status, "  default       sha256 ") {
 		t.Fatalf("policy status output:\n%s", status)
 	}
 	return policySHA(t, status)

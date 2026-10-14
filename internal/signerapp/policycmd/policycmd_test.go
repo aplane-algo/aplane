@@ -6,9 +6,9 @@ package policycmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,8 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -28,14 +30,24 @@ import (
 )
 
 const (
-	testKeyA = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
-	testKeyB = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	testKeyA    = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	testKeyB    = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	testAddress = "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
 )
 
-const testSignerDoc = `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"2000"}`
+// testSignerDoc is a signer default with a fee cap.
+var testSignerDoc = policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, `{"max_fee_microalgos":"2000"}`)
 
 func testCosignerDoc(key string) string {
-	return fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, key)
+	return policytest.MustDocument(noderole.RoleCosigner, key, "")
+}
+
+func embeddedDefault(role string) string {
+	data, err := policy.EmbeddedDefault(noderole.Role(role))
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 // fakeOnlineSession plays the daemon side of the policy messages.
@@ -54,10 +66,19 @@ type fakeOnlineSession struct {
 	applies          []protocol.ApplyPolicyMessage
 }
 
+// newFakeSession returns a session for a node of role holding docs. A node
+// always has a default; the shipped one stands in when docs carry none.
 func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlineSession {
 	f := &fakeOnlineSession{status: "unlocked", bodies: map[string]string{}, policy: protocol.PolicyMessage{
 		Success: true, NodeRole: role, PolicySetSHA256: "active-set",
 	}}
+	hasDefault := false
+	for _, doc := range docs {
+		hasDefault = hasDefault || doc.Key == policy.DefaultKey
+	}
+	if !hasDefault {
+		docs = append([]protocol.PolicyDocumentWire{{Key: policy.DefaultKey, Document: embeddedDefault(role)}}, docs...)
+	}
 	for _, doc := range docs {
 		f.bodies[doc.Key] = doc.Document
 		f.policy.Documents = append(f.policy.Documents, protocol.PolicyDocumentInfoWire{
@@ -130,16 +151,16 @@ func onlineEnv(t *testing.T) {
 	t.Setenv(passphraseEnv, "secret")
 }
 
-func TestOnlineStatusListsCosignerCoverage(t *testing.T) {
+func TestOnlineStatusListsTheDefaultAndKeyCoverage(t *testing.T) {
 	onlineEnv(t)
 	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
-	session.policy.Keys = []protocol.PolicyKeyStatusWire{{Key: testKeyA, Status: "active"}, {Key: testKeyB, Status: "no_policy"}}
+	session.policy.Keys = []protocol.PolicyKeyStatusWire{{Key: testKeyA, Status: "own"}, {Key: testKeyB, Status: "default"}}
 	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	out := stdout.String()
-	for _, want := range []string{"cosigner policies (2 keys)", testKeyA + "  active", testKeyB + "  no policy", "policy_set_sha256 active-set"} {
+	for _, want := range []string{"cosigner policy", "  default       sha256", "keys (2)", testKeyA + "  own policy", testKeyB + "  default", "policy_set_sha256 active-set"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status output missing %q:\n%s", want, out)
 		}
@@ -151,25 +172,26 @@ func TestOnlineStatusListsCosignerCoverage(t *testing.T) {
 
 func TestOnlineExportWritesExactDocument(t *testing.T) {
 	onlineEnv(t)
-	signer := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc + "\n"})
+	signer := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: signer}).Run(context.Background(), Command{Verb: VerbExport}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.String() != testSignerDoc+"\n" {
+	if stdout.String() != testSignerDoc {
 		t.Fatalf("export = %q", stdout.String())
 	}
 
 	cosigner := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
-	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport}, Streams{}); err == nil || !strings.Contains(err.Error(), "--key") {
-		t.Fatalf("cosigner export without --key error = %v", err)
+	stdout.Reset()
+	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport}, Streams{Stdout: &stdout}); err != nil || stdout.String() != embeddedDefault("cosigner") {
+		t.Fatalf("cosigner export without --key = %q, %v, want the node default", stdout.String(), err)
 	}
 	stdout.Reset()
 	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport, Key: testKeyA}, Streams{Stdout: &stdout}); err != nil || stdout.String() != testCosignerDoc(testKeyA) {
 		t.Fatalf("export --key = %q, %v", stdout.String(), err)
 	}
 	if err := (OnlineRunner{Session: cosigner}).Run(context.Background(), Command{Verb: VerbExport, Key: testKeyB}, Streams{}); err == nil {
-		t.Fatal("export of a key without a policy succeeded")
+		t.Fatal("export of a key without a policy of its own succeeded")
 	}
 }
 
@@ -218,9 +240,9 @@ func TestOnlineCheckReportsProblemsByFileAndStopsApply(t *testing.T) {
 
 func TestOnlineApplyReportsDaemonFailureCode(t *testing.T) {
 	onlineEnv(t)
-	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	session.applyResult = &protocol.ApplyPolicyResultMessage{Code: "policy_snapshot_changed", Error: "active policy changed"}
-	file := writePolicyFile(t, "policy.json", `{"format":"aplane.signer-policy.v1"}`)
+	file := writePolicyFile(t, "default.json", policytest.Signer(t, policy.DefaultKey, ""))
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, Yes: true}, Streams{})
 	if err == nil || !strings.Contains(err.Error(), "policy_snapshot_changed") {
 		t.Fatalf("Run() error = %v", err)
@@ -250,7 +272,7 @@ func TestPolicyStatusAcceptsPipedPassphrase(t *testing.T) {
 		ttyCalls++
 		return nil, errors.New("no tty")
 	}
-	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbStatus},
 		Streams{Stdin: strings.NewReader("explicit-secret\n"), Stderr: io.Discard})
 	if err != nil {
@@ -351,52 +373,53 @@ func TestProductionVerbCatalogIsUnique(t *testing.T) {
 	}
 }
 
-// template writes the producer side's own text: it reaches no node, reads no
-// passphrase, and needs no store.
-func TestTemplateWritesStartingDocumentWithoutANode(t *testing.T) {
+// template --embedded writes the shipped default: it reaches no node, reads
+// no passphrase, and needs no store. Every other template form prints the
+// node's own default and fails without a node rather than falling back.
+func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) {
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, "")
 	var stdout bytes.Buffer
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"signer"}}, Streams{Stdout: &stdout}); err != nil {
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "signer"}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.String() != policyreview.SignerTemplate() {
-		t.Fatalf("signer template = %q", stdout.String())
-	}
-	stripped, err := policyreview.StripComments(stdout.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := policy.DecodeSignerPolicyV1(stripped); err != nil {
-		t.Fatalf("stripped signer template does not decode: %v", err)
-	}
-
-	stdout.Reset()
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"cosigner"}, Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
-		t.Fatal(err)
-	}
-	want, err := policyreview.CosignerTemplate(testKeyA)
+	want, err := policyreview.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
 	if err != nil || stdout.String() != want {
-		t.Fatalf("cosigner template = %q, %v", stdout.String(), err)
+		t.Fatalf("embedded signer template = %q, %v", stdout.String(), err)
 	}
-
 	stdout.Reset()
-	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Args: []string{"cosigner"}}, Streams{Stdout: &stdout}); err != nil {
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Embedded: "cosigner", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), `"key": "<Witness Key ID`) {
-		t.Fatalf("cosigner template without --key = %q, want a placeholder key", stdout.String())
+	if want, err = policyreview.EmbeddedTemplate(noderole.RoleCosigner, testKeyA); err != nil || stdout.String() != want {
+		t.Fatalf("embedded cosigner template = %q, %v", stdout.String(), err)
+	}
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate}, Streams{}); err == nil {
+		t.Fatal("template without a node or --embedded succeeded")
+	}
+
+	onlineEnv(t)
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
+	stdout.Reset()
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbTemplate, Key: testAddress}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if want, err = policyreview.Template(noderole.RoleSigner, testAddress, []byte(testSignerDoc)); err != nil || stdout.String() != want {
+		t.Fatalf("online template = %q, %v, want the node's default under the key", stdout.String(), err)
+	}
+	if !strings.Contains(stdout.String(), `"max_fee_microalgos": "2000"`) || !strings.Contains(stdout.String(), fmt.Sprintf(`"key": %q`, testAddress)) {
+		t.Fatalf("online template does not carry the node default with the key filled in:\n%s", stdout.String())
 	}
 
 	for name, command := range map[string]Command{
-		"no role":            {Verb: VerbTemplate},
-		"unknown role":       {Verb: VerbTemplate, Args: []string{"operator"}},
-		"two roles":          {Verb: VerbTemplate, Args: []string{"signer", "cosigner"}},
-		"key for signer":     {Verb: VerbTemplate, Args: []string{"signer"}, Key: testKeyA},
-		"yes is for changes": {Verb: VerbTemplate, Args: []string{"signer"}, Yes: true},
+		"unknown embedded role": {Verb: VerbTemplate, Embedded: "operator"},
+		"arguments":             {Verb: VerbTemplate, Args: []string{"signer"}},
+		"embedded for status":   {Verb: VerbStatus, Embedded: "signer"},
+		"yes is for changes":    {Verb: VerbTemplate, Embedded: "signer", Yes: true},
+		"remove default":        {Verb: VerbRemove, Args: []string{policy.DefaultKey}},
 	} {
-		if err := (OnlineRunner{}).Run(context.Background(), command, Streams{}); err == nil {
-			t.Fatalf("%s: template accepted", name)
+		if err := (OnlineRunner{Session: session}).Run(context.Background(), command, Streams{}); err == nil {
+			t.Fatalf("%s: command accepted", name)
 		}
 	}
 }
@@ -405,8 +428,8 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
-	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
-	file := writePolicyFile(t, "policy.json", want)
+	want := testSignerDoc
+	file := writePolicyFile(t, "default.json", want)
 	var stdout, stderr bytes.Buffer
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}, DataDir: root, Yes: true},
 		Streams{Stdout: &stdout, Stderr: &stderr}); err != nil {
@@ -415,12 +438,10 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	if !strings.Contains(stdout.String(), "policy applied as generation") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	// Key coverage is a cosigner-node concept; a signer document is not
-	// "for a key this node does not hold".
 	if strings.Contains(stderr.String(), "warning:") {
-		t.Fatalf("signer apply printed warnings: %q", stderr.String())
+		t.Fatalf("default apply printed warnings: %q", stderr.String())
 	}
-	doc := verifiedSignerPolicy(t, root, passphrase)
+	doc := verifiedDefault(t, root, passphrase)
 	if string(doc.Bytes) != want {
 		t.Fatalf("stored policy = %q, want exact bytes %q", doc.Bytes, want)
 	}
@@ -430,9 +451,9 @@ func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || stdout.String() != want {
 		t.Fatalf("rescue export = %q, %v", stdout.String(), err)
 	}
-	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyA}, DataDir: root},
-		Streams{Stderr: io.Discard}); err == nil || !strings.Contains(err.Error(), "cosigner nodes") {
-		t.Fatalf("rescue remove on a signer error = %v", err)
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testAddress}, DataDir: root},
+		Streams{Stderr: io.Discard}); err == nil || !strings.Contains(err.Error(), "none of its own") {
+		t.Fatalf("rescue remove of a key on the default error = %v", err)
 	}
 }
 
@@ -442,9 +463,13 @@ func TestRescueApplyStripsCommentsFromTheStoredDocument(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
-	commented := "{\n  // what the node signs under\n  \"format\": \"aplane.signer-policy.v1\",\n  /* a fee cap */\n  \"max_fee_microalgos\": \"2000\" // microAlgos\n}\n"
-	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
-	file := writePolicyFile(t, "policy.json", commented)
+	want := testSignerDoc
+	commented := strings.Replace(want, "{\n", "{\n  // what the node signs under\n", 1)
+	commented = strings.Replace(commented, `"max_fee_microalgos": "2000",`, `"max_fee_microalgos": "2000", /* microAlgos */`, 1)
+	if commented == want {
+		t.Fatal("test did not add comments")
+	}
+	file := writePolicyFile(t, "default.json", commented)
 	var stdout bytes.Buffer
 	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbCheck, Args: []string{file}, DataDir: root},
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil || !strings.Contains(stdout.String(), "policy OK") {
@@ -455,7 +480,7 @@ func TestRescueApplyStripsCommentsFromTheStoredDocument(t *testing.T) {
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
-	if doc := verifiedSignerPolicy(t, root, passphrase); string(doc.Bytes) != want {
+	if doc := verifiedDefault(t, root, passphrase); string(doc.Bytes) != want {
 		t.Fatalf("stored policy = %q, want the stripped document %q", doc.Bytes, want)
 	}
 	stdout.Reset()
@@ -493,8 +518,18 @@ func TestRescueCosignerApplyAndRemovePerKey(t *testing.T) {
 		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), testKeyA+"  key not held") || strings.Contains(stdout.String(), testKeyB) {
+	if !strings.Contains(stdout.String(), testKeyA+"  key not held") || strings.Contains(stdout.String(), testKeyB) || !strings.Contains(stdout.String(), "  default       sha256") {
 		t.Fatalf("status after remove:\n%s", stdout.String())
+	}
+	// The template for a key is the node's own default under that key.
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Key: testKeyB, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := policyreview.Template(noderole.RoleCosigner, testKeyB, []byte(embeddedDefault("cosigner")))
+	if err != nil || stdout.String() != want {
+		t.Fatalf("rescue template = %q, %v", stdout.String(), err)
 	}
 }
 
@@ -502,7 +537,7 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")
 	t.Setenv(passphraseEnv, passphrase)
-	before := verifiedSignerPolicy(t, root, passphrase)
+	before := verifiedDefault(t, root, passphrase)
 	shared, err := storelock.AcquireShared(root)
 	if err != nil {
 		t.Fatal(err)
@@ -514,7 +549,7 @@ func TestRescueApplyRefusesBusyStoreBeforeReadingReplacement(t *testing.T) {
 		t.Fatalf("Run(rescue apply busy) error = %v, want ErrBusy", err)
 	}
 	_ = shared.Close()
-	if after := verifiedSignerPolicy(t, root, passphrase); !bytes.Equal(before.Bytes, after.Bytes) {
+	if after := verifiedDefault(t, root, passphrase); !bytes.Equal(before.Bytes, after.Bytes) {
 		t.Fatal("busy rescue apply changed production policy")
 	}
 }
@@ -533,14 +568,14 @@ func initializedPolicyStore(t *testing.T, role noderole.Role) (string, string) {
 	return root, passphrase
 }
 
-func verifiedSignerPolicy(t *testing.T, root, passphrase string) policy.StoredDocument {
+func verifiedDefault(t *testing.T, root, passphrase string) policy.StoredDocument {
 	t.Helper()
 	active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), []byte(passphrase))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer kr.Zero()
-	doc, _, err := policy.LoadVerifiedSignerPolicy(active, kr)
+	doc, _, err := policy.LoadVerifiedDefault(active, noderole.RoleSigner, kr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,14 +584,15 @@ func verifiedSignerPolicy(t *testing.T, root, passphrase string) policy.StoredDo
 
 func TestOnlineDiffDescribesChangesWithoutApplying(t *testing.T) {
 	onlineEnv(t)
-	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
-	file := writePolicyFile(t, "next.json", `{"format":"aplane.signer-policy.v1","max_fee_microalgos":"9000","reject_clawback":true}`)
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
+	session.policy.Keys = []protocol.PolicyKeyStatusWire{{Key: testAddress, Status: "default"}}
+	file := writePolicyFile(t, "next.json", policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"9000","reject_clawback":true}`))
 	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{file}}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
 	out := stdout.String()
-	for _, want := range []string{file + ":", "loosened   /max_fee_microalgos: 0.002 ALGO → 0.009 ALGO", "tightened  /reject_clawback: false → true"} {
+	for _, want := range []string{file + " (governs 1 held key(s): " + testAddress + "):", "loosened   /max_fee_microalgos: 0.002 ALGO → 0.009 ALGO", "tightened  /reject_clawback: false → true"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("diff output missing %q:\n%s", want, out)
 		}
@@ -573,11 +609,11 @@ func TestOnlineApplyAsksForConfirmation(t *testing.T) {
 	onlineEnv(t)
 	original := ConfirmApply
 	t.Cleanup(func() { ConfirmApply = original })
-	file := writePolicyFile(t, "next.json", `{"format":"aplane.signer-policy.v1","reject_clawback":true}`)
+	file := writePolicyFile(t, "next.json", policytest.Signer(t, policy.DefaultKey, `{"reject_clawback":true}`))
 
 	asked := 0
 	ConfirmApply = func() (bool, error) { asked++; return false, nil }
-	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	var stdout bytes.Buffer
 	err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{Stdout: &stdout})
 	if !errors.Is(err, ErrApplyNotConfirmed) || asked != 1 || len(session.applies) != 0 {
@@ -588,13 +624,18 @@ func TestOnlineApplyAsksForConfirmation(t *testing.T) {
 	}
 
 	ConfirmApply = func() (bool, error) { asked++; return true, nil }
-	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	session = newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{file}}, Streams{}); err != nil || len(session.applies) != 1 {
 		t.Fatalf("confirmed apply: err %v, applies %d", err, len(session.applies))
 	}
 
-	unchanged := writePolicyFile(t, "same.json", "{\n  \"max_fee_microalgos\": \"2000\",\n  \"format\": \"aplane.signer-policy.v1\"\n}\n")
-	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: testSignerDoc})
+	// A reformatted copy of the active document changes nothing.
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(testSignerDoc)); err != nil {
+		t.Fatal(err)
+	}
+	unchanged := writePolicyFile(t, "same.json", compact.String()+"\n")
+	session = newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: testSignerDoc})
 	asked = 0
 	stdout.Reset()
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{unchanged}}, Streams{Stdout: &stdout}); err != nil {
@@ -605,15 +646,20 @@ func TestOnlineApplyAsksForConfirmation(t *testing.T) {
 	}
 }
 
-func TestOnlineRemoveShowsRemovalAndCosignerAdditions(t *testing.T) {
+func TestOnlineRemoveShowsTheDefaultTheKeyFallsBackTo(t *testing.T) {
 	onlineEnv(t)
 	session := newFakeSession("cosigner", protocol.PolicyDocumentWire{Key: testKeyA, Document: testCosignerDoc(testKeyA)})
 	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbRemove, Args: []string{testKeyA}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), testKeyA+":") || !strings.Contains(stdout.String(), "policy removed; the key will reject every request") {
-		t.Fatalf("remove output:\n%s", stdout.String())
+	out := stdout.String()
+	// The minimal key document allows pay; the deny-all default does not,
+	// so the removal is shown as what the key loses, not a bare removal.
+	for _, want := range []string{testKeyA + ":", "policy of its own removed; the key follows the node default", "tightened  /transaction_types/pay: allow → reject"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("remove output missing %q:\n%s", want, out)
+		}
 	}
 
 	file := writePolicyFile(t, "b.json", testCosignerDoc(testKeyB))
@@ -621,8 +667,8 @@ func TestOnlineRemoveShowsRemovalAndCosignerAdditions(t *testing.T) {
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{file}}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "new policy; the key rejected every request without one") {
-		t.Fatalf("diff for a key without a policy:\n%s", stdout.String())
+	if !strings.Contains(stdout.String(), "the key gets a policy of its own") || !strings.Contains(stdout.String(), "loosened   /transaction_types/pay: reject → allow") {
+		t.Fatalf("diff for a key on the default:\n%s", stdout.String())
 	}
 }
 
@@ -637,26 +683,14 @@ func TestConfirmApplyNeedsATerminal(t *testing.T) {
 
 func TestOnlineApplyKeepsChangesTheDiffCannotSee(t *testing.T) {
 	onlineEnv(t)
-	key := "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
-	current := fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","key_overrides":{%q:{"reject_clawback":true}}}`, key)
-	pinned := fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","key_overrides":{%q:{"reject_clawback":true,"max_fee_microalgos":"5000"}}}`, key)
-	session := newFakeSession("signer", protocol.PolicyDocumentWire{Document: current})
-	var stdout bytes.Buffer
-	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{writePolicyFile(t, "p.json", pinned)}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
-		t.Fatal(err)
-	}
-	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "inherited 0.005 ALGO → set explicitly to 0.005 ALGO") {
-		t.Fatalf("pin: applies %d, output:\n%s", len(session.applies), stdout.String())
-	}
-
 	// Reordering route terms changes what is stored but not what is allowed.
 	route := func(dests string) string {
-		return fmt.Sprintf(`{"format":"aplane.signer-policy.v1","transfer_policy":{"enabled":true,"on_no_route":"reject","routes":[
-			{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":[%s]}]}}`, dests)
+		return policytest.Signer(t, policy.DefaultKey, fmt.Sprintf(`{"transfer_policy":{"routes":[
+			{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":[%s]}]}}`, dests))
 	}
-	a, b := fmt.Sprintf("%q", key), fmt.Sprintf("%q", "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA")
-	session = newFakeSession("signer", protocol.PolicyDocumentWire{Document: route(a + "," + b)})
-	stdout.Reset()
+	a, b := fmt.Sprintf("%q", testAddress), fmt.Sprintf("%q", "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA")
+	session := newFakeSession("signer", protocol.PolicyDocumentWire{Key: policy.DefaultKey, Document: route(a + "," + b)})
+	var stdout bytes.Buffer
 	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbApply, Args: []string{writePolicyFile(t, "r.json", route(b+","+a))}, Yes: true}, Streams{Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}

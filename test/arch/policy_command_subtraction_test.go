@@ -313,7 +313,7 @@ func assertDocumentationExcludesRetiredAppolicy(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	const migrationStart = "### Migration from the retired policy binary"
-	const migrationEnd = "## Top-Level Fields"
+	const migrationEnd = "## Fields"
 	text := string(data)
 	start := strings.Index(text, migrationStart)
 	end := strings.Index(text, migrationEnd)

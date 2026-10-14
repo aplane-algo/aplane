@@ -1,5 +1,51 @@
 # Release Notes
 
+## Per-key signer policy
+
+Policy is now one document per key with a node default behind it, laid out
+the same way on signer and cosigner nodes. Every store holds `default.json`,
+seeded at `apstore initialize` and `rebuild` from the shipped default for the
+role, and zero or one `policies/<key>.json` per key (the address on a signer
+node, the Witness Key ID on a cosigner node). A key with a file of its own is
+governed by that file alone; a key without one follows the default. There is
+no inheritance: `key_overrides` is gone, and so are `transfer_policy.enabled`,
+the `aplane.signer-policy.v1` and `aplane.cosigner-policy.v1` formats, and the
+cosigner-only rule ids `cosigner:non_transfer`,
+`cosigner:deterministic_routing`, `cosigner:transfer_policy_required`, and
+`cosigner_key_has_no_policy`.
+
+- One format, `aplane.policy.v1`, with a required `role` (`signer` or
+  `cosigner`, matching the node) and `key` (`default` or the key the file
+  governs). Every verdict-bearing field is required and unknown fields are
+  rejected. The new required `transaction_types` map gives each transaction
+  type (or `*`) `allow`, `review`, or `reject`, evaluated before every other
+  rule with rule id `transaction_type:<type>`; on a cosigner node only `pay`
+  and `axfer` may be `allow`, and no cosigner document may express `review`.
+- The shipped signer default rejects a foreign rekey, reviews warning-level
+  fields, and leaves everything else to the operator default, so with
+  `user_auto_approve` on, a key with no file signs whatever the default does
+  not reject or force to review. The shipped cosigner default is deny-all: a
+  cosigner key signs nothing until it is given a file.
+- `apadmin policy template [--key K]` writes the node's current default, or
+  it with the key filled in, as the starting point for a key file;
+  `template --embedded signer|cosigner [--key K]` writes the shipped default
+  and is the only form that needs no node. `remove` now deletes a key's own
+  file on either role (the default cannot be removed), `status` lists the
+  default and each held key as `own policy` or `default`, and diffs are
+  effective: a new key file is compared with the default the key followed.
+  `apstore policy check|verify|sign` cover every stored document, backups
+  carry a key's own file as `policies/<key>.apb` on both roles, and the
+  apadmin TUI lists the default first and opens a key without a file on the
+  default with the key filled in.
+- Approval warnings, which force review under `always_review_warnings`, now
+  also cover application update, asset reconfigure (naming the manager,
+  reserve, freeze, and clawback addresses) and destroy, and asset freeze or
+  unfreeze.
+
+Stores from earlier releases are not read: there is no compatibility shim for
+`policy.json`, the old formats, or `key_overrides`. Re-initialize the store, or
+rewrite its policy documents in the new format before starting the node.
+
 ## Rotating hash hybrid accounts
 
 New library-visible key type `aplane.rotating-wots-hybrid.v1`: the rotating

@@ -909,6 +909,12 @@ apadmin
 For auto-unlock, stop the daemon after initialization and run `sudo appass -d /var/lib/apsigner`.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configuration options (`user_auto_approve:true`, network settings, etc.).
+Turning `user_auto_approve` on replaces the operator prompt only where no
+policy rule decides. Without per-key policy files, a key with no file signs
+whatever the shipped default does not reject or force to review: every
+transaction type, and every transfer that carries no warning-level field.
+Tighten the node default or give keys files of their own first; see
+[USER_POLICY.md](USER_POLICY.md).
 
 ---
 
@@ -1024,22 +1030,24 @@ $APSIGNER_DATA/identities/default/
 ├── generations/<gen-id>/
 │   ├── manifest.json
 │   ├── seal.json
-│   ├── policy.json   # Signer nodes only: the signer policy document
-│   ├── policy.json.hmac
-│   ├── policies/     # Cosigner nodes only: <WitnessKeyID>.json(.hmac) per key
+│   ├── default.json  # Node default policy: every key without a policy of its own
+│   ├── default.json.hmac
+│   ├── policies/     # Per-key policies: <key>.json(.hmac), replacing the default for that key
 │   ├── node.yaml.hmac
 │   ├── keytypes/     # State records and encrypted installed templates
 │   ├── keys/         # Encrypted credentials and public witness metadata
-│   └── deleted/      # Bounded deleted credential/template/cosigner-policy archive
+│   └── deleted/      # Bounded deleted credential/template/key-policy archive
 ├── quarantine/generations/<gen-id>/ # Non-authoritative abandoned publications
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
-On a signer node, the selected generation's `policy.json` and
-`policy.json.hmac` are created by `apstore initialize`. A cosigner node starts
-with an empty `policies/` set, so each cosigner key rejects every request until
-its policy is applied with `apadmin policy apply`. Every policy apply commits a
-new generation.
+`apstore initialize` seeds the selected generation's `default.json` and
+`default.json.hmac` from the shipped default for the node role. The signer
+default rejects foreign rekeys and reviews warning-level findings; the
+cosigner default rejects everything, so a cosigner key signs nothing until it
+is given a file of its own under `policies/` with `apadmin policy apply`.
+`<key>` is a signing address on a signer node and a Witness Key ID on a
+cosigner node. Every policy apply commits a new generation.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. `identities/default/.ssh/authorized_keys` is the daemon-owned
 registry of enrolled client SSH keys, and `pending_enrollments.json` beside it

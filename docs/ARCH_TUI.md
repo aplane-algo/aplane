@@ -193,17 +193,22 @@ and `r`.
 ## Policies View
 
 `p` on the key list or Settings, and the Settings `Policies` row, open a
-list of the node's active policy documents, loaded with the
-`get_policy` admin message (`internal/signerapp/signertui/policy_view.go`):
+list of the node's policy documents and key coverage, loaded with the
+`get_policy` admin message (`internal/signerapp/signertui/policy_view.go`).
+The list is the same on both node roles:
 
-- signer nodes show one `policy.json` row,
-- cosigner nodes show one row per Witness Key ID with its status: `active`,
-  `no policy (rejects every request)`, or `policy, key not held`.
+- the `default` row first, labelled `node default (governs every key without
+  its own policy)`,
+- then every held key (address on a signer node, Witness Key ID on a cosigner
+  node) with its status: `own policy` or `default`,
+- then stored documents for keys the node does not hold: `policy, key not
+  held`.
 
 Each row with a document shows its size, SHA-256, and applied time from the
 sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
 Enter fetches that document with `get_policy_document` and opens a read-only
-scrollable view of its exact bytes; Esc returns.
+scrollable view of its exact bytes; Esc returns. A key on `default` has no
+document of its own to open.
 
 A policy document changes only through one check, review, and apply workflow
 (`internal/signerapp/signertui/policy_apply.go`), which follows the same steps
@@ -214,19 +219,21 @@ For a loaded file:
 1. A path prompt reads the file with the shared reader in
    `internal/signerapp/policyreview`. The read happens inside the event loop,
    so the path must be a regular file: a symlink, FIFO, or device is refused
-   rather than opened. On a cosigner node the file's `"key"`
-   field selects the document. The TUI refuses a file for a Witness Key ID the
-   node does not hold, which the batch command only warns about; pre-staging a
-   policy for a key that is not yet held stays a batch operation.
+   rather than opened. The file's `"key"` field selects the document:
+   `default` or one key. The TUI refuses a file for a key the node does not
+   hold, which the batch command only warns about; pre-staging a policy for a
+   key that is not yet held stays a batch operation.
 2. `check_policy` validates the exact bytes. Errors are shown on the prompt
    and stop the load; warnings carry into the review.
-3. If the key has an active document, `get_policy_document` fetches it and
-   `policyreview` produces the same tightened/loosened/changed diff the batch
-   command prints. A file that decodes equal to the active document reports
+3. `get_policy_document` fetches the document that governs the key now: the
+   key's own, or the node default it follows, and `policyreview.DiffCandidate`
+   produces the same effective tightened/loosened/changed diff the batch
+   command prints, so a first document for a key is shown as a change from
+   the default. A file that decodes equal to the governing document reports
    `Policy unchanged` and cannot be applied.
 4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the
    `policy_set_sha256` of the summary the review was built from: the one that
-   decided in step 3 whether the key has an active document. It is captured
+   decided in step 3 whether the key has a document of its own. It is captured
    when the check returns and is never replaced by a later summary, so the
    daemon rejects the apply if the active policy changed after the review was
    built. On success the list reloads and
@@ -250,26 +257,26 @@ one document's JSON. The editor is only another source for the workflow above:
 `ctrl+s` sends the text through steps 2 to 4, and nothing is stored before the
 confirmed apply.
 
-- **What it opens on.** An active document is fetched with
-  `get_policy_document`. A single-line document is indented for editing;
-  whitespace does not change what a policy allows, so an unedited reformat
-  still reports `Policy unchanged`. A cosigner key with no document opens on
-  the annotated template from `policyreview.CosignerTemplate`, which strips
-  to the starting document (`policy.StartingCosignerDocumentV1`): one
-  `self-transfer` route and nothing else, so the key would witness opt-ins
-  and self-sends and reject every other transfer. An edit therefore always
-  starts from the least that is useful, never from a permissive policy. A stored document that decodes equal to the node's starting
-  document (`policyreview.IsStartingDocument`) opens as its template too;
-  every other document opens as its exact bytes.
+- **What it opens on.** The default row and a key with `own policy` open on
+  that document, fetched with `get_policy_document`. A single-line document is
+  indented for editing; whitespace does not change what a policy allows, so an
+  unedited reformat still reports `Policy unchanged`. A key on `default` opens
+  on the node's current default, fetched the same way and rendered by
+  `policyreview.Template` with the key filled in under a header comment; the
+  editor marks it `No policy of its own yet`. Applying it unedited gives the key a
+  document of its own that does what the default did, so a key's policy always
+  starts from exactly what it was already doing; on a cosigner node that is
+  the deny-all default. A key the node does not hold cannot be edited.
 - **Comments.** The text may carry `//` and `/* */` comments outside strings.
   `policyreview.DocumentFromText` removes them before the check, so the
   daemon receives and stores strict JSON; the review's "stores the edited
   text exactly" is the text without its comments.
 - **Local checks before the daemon's.** A JSON syntax error is reported with
   its line and column without a request; comments are blanked in place for
-  that check so the position is the one in the text shown. On a cosigner
-  node the `"key"` field must stay the key being edited; setting another
-  key's policy is a file load. The node must hold the key, as for file loads.
+  that check so the position is the one in the text shown. The `"key"`
+  field must stay the document being edited (`default` or the key); setting
+  another key's policy is a file load. The node must hold the key, as for
+  file loads.
 - **The text is never lost to an error.** A rejected check keeps the editor
   open with the daemon's problems under the text. Leaving the review, declined
   or failed, returns to the editor with the text intact; after a failed apply

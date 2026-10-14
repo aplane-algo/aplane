@@ -479,7 +479,7 @@ type RestoreBackupResultMessage struct {
 	Restored      []RestoreCredential `json:"restored,omitempty"`
 	Identical     []RestoreCredential `json:"identical,omitempty"`
 	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
-	// PoliciesRestored lists the cosigner keys whose archived policy was
+	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string `json:"policies_restored,omitempty"`
 	KeyCount         int      `json:"key_count,omitempty"`
@@ -1128,8 +1128,8 @@ type UpdateAdminSettingResultMessage struct {
 
 // PolicyDocumentWire is one policy document in a check or apply request.
 // Document carries the exact bytes, so the stored bytes are exactly what was
-// sent. Key is the Witness Key ID of a cosigner document and empty for the
-// signer document.
+// sent. Key is "default" for the node default, or the selector of the key the
+// document governs.
 type PolicyDocumentWire struct {
 	Key      string `json:"key,omitempty"`
 	Document string `json:"document"`
@@ -1144,17 +1144,16 @@ type PolicyDocumentInfoWire struct {
 	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
 }
 
-// PolicyKeyStatusWire reports one cosigner key's policy coverage. Status is
-// "active" (key held, document present), "no_policy" (key held, no document:
-// the key rejects every request), or "key_not_held" (document for a key the
-// node does not hold).
+// PolicyKeyStatusWire reports one key's policy coverage. Status is "own"
+// (key held, document of its own), "default" (key held, follows the node
+// default), or "key_not_held" (document for a key the node does not hold).
 type PolicyKeyStatusWire struct {
 	Key    string `json:"key"`
 	Status string `json:"status"`
 }
 
-// PolicyProblemWire is one validation problem. Key names the cosigner
-// document it concerns; Pointer is a JSON Pointer into that document.
+// PolicyProblemWire is one validation problem. Key names the document it
+// concerns; Pointer is a JSON Pointer into that document.
 type PolicyProblemWire struct {
 	Key     string `json:"key,omitempty"`
 	Pointer string `json:"pointer,omitempty"`
@@ -1166,10 +1165,10 @@ type GetPolicyMessage struct {
 	BaseMessage
 }
 
-// PolicyMessage summarizes the node's active policy: one entry per document
-// (without its bytes) and, on cosigner nodes, each key's coverage. Its size is
-// bounded by the cosigner key and document caps. PolicySetSHA256 is the
-// concurrency base for apply_policy.
+// PolicyMessage summarizes the node's active policy: one entry per stored
+// document (the default and each key file, without their bytes) and each held
+// key's status (own, default, key_not_held). Its size is bounded by the key
+// and document caps. PolicySetSHA256 is the concurrency base for apply_policy.
 type PolicyMessage struct {
 	BaseMessage
 	Success         bool                     `json:"success"`
@@ -1182,8 +1181,8 @@ type PolicyMessage struct {
 	Error           string                   `json:"error,omitempty"`
 }
 
-// GetPolicyDocumentMessage requests one active policy document. Key is the
-// Witness Key ID of a cosigner document and empty for the signer document.
+// GetPolicyDocumentMessage requests one active policy document. Key is
+// "default" for the node default, or a key selector.
 type GetPolicyDocumentMessage struct {
 	BaseMessage
 	Key string `json:"key,omitempty"`
@@ -1222,10 +1221,11 @@ type CheckPolicyResultMessage struct {
 	Error    string              `json:"error,omitempty"`
 }
 
-// ApplyPolicyMessage replaces policy documents in one generation commit. A
-// signer node takes exactly one document. A cosigner node adds or replaces
-// each listed document and deletes each key in Remove; unlisted documents are
-// kept. ExpectedPolicySetSHA256 must equal the active policy_set_sha256.
+// ApplyPolicyMessage replaces policy documents in one generation commit on
+// either node role: it adds or replaces each listed document (the default, or
+// a key's own) and deletes each key in Remove; unlisted documents are kept and
+// the default cannot be removed. ExpectedPolicySetSHA256 must equal the
+// active policy_set_sha256.
 type ApplyPolicyMessage struct {
 	BaseMessage
 	Documents               []PolicyDocumentWire `json:"documents,omitempty"`

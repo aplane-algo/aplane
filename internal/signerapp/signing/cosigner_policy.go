@@ -12,6 +12,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// evaluateCosignerComponentPolicy applies the cosigner key's policy (its own
+// document, or the node default) to every target. A cosigner has no operator,
+// so every verdict is sign or reject: a review verdict, which the document
+// format cannot express on a cosigner node, is treated as a rejection.
 func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
@@ -23,25 +27,9 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
 		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
 	}
-	cfg, ok := s.CosignerPolicies[componentKey]
-	if !ok || cfg == nil {
-		return s.rejectCosignerComponentPolicy(plan, []policy.LintViolation{{
-			RuleID:   policy.CosignerKeyHasNoPolicyRuleID,
-			Scope:    "group",
-			TxnIndex: -1,
-			Message:  fmt.Sprintf("cosigner key %s has no policy", componentKey),
-		}})
-	}
-	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
-		return s.rejectCosignerComponentPolicy(plan, []policy.LintViolation{{
-			RuleID:   policy.CosignerTransferPolicyRequiredRuleID,
-			Scope:    "group",
-			TxnIndex: -1,
-			Message:  "cosigner.transfer_policy.enabled:true is required",
-		}})
-	}
-	if violations := cosignerTransferPolicyConfigLints(cfg.TransferPolicy); len(violations) > 0 {
-		return s.rejectCosignerComponentPolicy(plan, violations)
+	cfg := s.policyFor(componentKey)
+	if cfg == nil {
+		return internal("policy is not loaded")
 	}
 
 	var violations []policy.LintViolation
@@ -55,66 +43,36 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 	return nil
 }
 
-func cosignerTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintViolation {
-	if tp == nil {
-		return nil
-	}
-	checks := []struct {
-		field string
-		value policy.TransferOnNoRoute
-	}{
-		{field: "on_no_route", value: tp.OnNoRoute},
-		{field: "close_on_no_route", value: tp.CloseOnNoRoute},
-		{field: "clawback_on_no_route", value: tp.ClawbackOnNoRoute},
-	}
-	var violations []policy.LintViolation
-	for _, check := range checks {
-		if check.value == policy.TransferOnNoRouteReject {
-			continue
-		}
-		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.CosignerDeterministicRoutingRuleID,
-			Scope:    "group",
-			TxnIndex: -1,
-			Message:  fmt.Sprintf("cosigner transfer_policy.%s must be reject, got %q", check.field, check.value),
-		})
-	}
-	return violations
-}
-
 func cosignerTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
-	var violations []policy.LintViolation
-	isRekey := !txn.RekeyTo.IsZero()
-	if !isRekey && len(policy.ExtractTransferMovements(txn)) == 0 {
-		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.CosignerNonTransferRuleID,
+	violations := withTargetIndex(policy.CheckTxnPolicyLints(txn, cfg, nil), targetIndex)
+	if len(violations) > 0 {
+		return violations
+	}
+	if !txn.RekeyTo.IsZero() {
+		if cfg.RejectRekey {
+			return []policy.LintViolation{cosignerRekeyViolation(targetIndex, "rekey transactions are rejected by cosigner policy")}
+		}
+		return cosignerRekeyPolicyLints(txn, targetIndex, cfg)
+	}
+	if cfg.TransferPolicy == nil {
+		// A compiled document always carries a transfer policy. A config
+		// without one has no allow-list, so nothing it covers can be signed.
+		return []policy.LintViolation{{
+			RuleID:   policy.TransferRoutingRouteMissRuleID,
 			Scope:    "txn",
 			TxnIndex: targetIndex,
-			Message:  fmt.Sprintf("cosigner policy only supports direct pay and axfer targets, got %s", txn.Type),
-		})
-	}
-	commonLintCfg := cfg.Clone()
-	commonLintCfg.RejectForeignRekey = false
-	commonLintCfg.RejectRekey = false
-	violations = append(violations, withTargetIndex(
-		policy.CheckTxnPolicyLints(txn, commonLintCfg, nil),
-		targetIndex,
-	)...)
-	if isRekey {
-		if cfg.RejectRekey {
-			violations = append(violations, policy.LintViolation{
-				RuleID:   policy.CosignerRekeyRuleID,
-				Scope:    "txn",
-				TxnIndex: targetIndex,
-				Message:  "rekey transactions are rejected by cosigner policy",
-			})
-			return violations
-		}
-		violations = append(violations, cosignerRekeyPolicyLints(txn, targetIndex, cfg)...)
-		return violations
+			Message:  "cosigner policy has no transfer policy; no route can authorize the target",
+		}}
 	}
 	violations = append(violations, withTargetIndex(
 		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, false),
+		targetIndex,
+	)...)
+	// Defense in depth: decode refuses review-producing fields on a cosigner
+	// node, so these never fire for a stored document, but a review verdict
+	// must never be waited on here.
+	violations = append(violations, withTargetIndex(
+		policy.CheckTxnReviewPolicyLints(txn, cfg),
 		targetIndex,
 	)...)
 	violations = append(violations, withTargetIndex(

@@ -31,8 +31,8 @@ func testKeyring(t *testing.T) *crypto.Keyring {
 
 func writeTestGenerationAuthority(staged storepaths.GenPaths) error {
 	for _, path := range []string{
-		staged.PolicyPath(),
-		staged.PolicyIntegritySidecar(),
+		staged.DefaultPolicyPath(),
+		staged.DefaultPolicyIntegritySidecar(),
 		staged.NodeRoleIntegritySidecar(),
 	} {
 		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
@@ -368,7 +368,7 @@ func TestCanonicalInventoryDigestIsStableAndDomainSeparated(t *testing.T) {
 
 func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
 	inventory := []InventoryEntry{{
-		Path: "policy.json", SHA256: strings.Repeat("a", 64), Size: 12,
+		Path: "default.json", SHA256: strings.Repeat("a", 64), Size: 12,
 	}}
 	digest, err := CanonicalInventoryDigest(inventory)
 	if err != nil {
@@ -608,26 +608,26 @@ func TestSignerPolicyFilesAreOptionalAuthority(t *testing.T) {
 	for _, entry := range inventory {
 		got = append(got, entry.Path)
 	}
-	for _, want := range []string{"policy.json", "policy.json.hmac", "policies/" + witnessKeyID + ".json"} {
+	for _, want := range []string{"default.json", "default.json.hmac", "policies/" + witnessKeyID + ".json"} {
 		if !slices.Contains(got, want) {
 			t.Fatalf("inventory %v missing %s", got, want)
 		}
 	}
 
-	for _, path := range []string{gen.PolicyPath(), gen.PolicyIntegritySidecar()} {
+	for _, path := range []string{gen.DefaultPolicyPath(), gen.DefaultPolicyIntegritySidecar()} {
 		if err := os.Remove(path); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := ValidateCurrent(gen); err != nil {
-		t.Fatalf("ValidateCurrent(without signer policy) error = %v", err)
+		t.Fatalf("ValidateCurrent(without the default policy) error = %v", err)
 	}
 	inventory, err = BuildInventory(gen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range inventory {
-		if strings.HasPrefix(entry.Path, "policy.json") {
+		if strings.HasPrefix(entry.Path, "default.json") {
 			t.Fatalf("inventory carries absent %s", entry.Path)
 		}
 	}

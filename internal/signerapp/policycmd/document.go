@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 )
@@ -18,26 +20,22 @@ import (
 // ErrPolicyInvalid reports that check found errors; they have been printed.
 var ErrPolicyInvalid = errors.New("policy is invalid")
 
-// templateKeyPlaceholder stands in for the Witness Key ID of a cosigner
-// template written without --key. The node rejects it, so the placeholder
-// cannot be applied by mistake.
-const templateKeyPlaceholder = "<Witness Key ID: 52 characters, from apadmin policy status>"
-
-// WriteTemplate writes the annotated starting document for the role named
-// by the command to stdout. It needs no node and no passphrase: the template
-// is the producer side's own text.
-func WriteTemplate(command Command, streams Streams) error {
+// WriteEmbeddedTemplate writes the shipped default for the role named by
+// --embedded, as the starting document for --key (or as the default itself).
+// It needs no node and no passphrase, and is the only template form that
+// does not print a node's own default.
+func WriteEmbeddedTemplate(command Command, streams Streams) error {
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if command.Verb != VerbTemplate {
-		return fmt.Errorf("unsupported policy command %q", command.Verb)
+	if command.Verb != VerbTemplate || command.Embedded == "" {
+		return fmt.Errorf("policy template --embedded signer|cosigner is required without a node")
 	}
-	key := command.Key
-	if command.Args[0] == "cosigner" && key == "" {
-		key = templateKeyPlaceholder
+	role, err := noderole.ParseRole(command.Embedded)
+	if err != nil {
+		return err
 	}
-	text, err := policyreview.StartingTemplate(command.Args[0], key)
+	text, err := policyreview.EmbeddedTemplate(role, command.documentKey())
 	if err != nil {
 		return err
 	}
@@ -56,14 +54,7 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		printStatus(streams.Stdout, view)
 		return nil
 	case VerbExport:
-		view, err := getPolicy(ctx, backend)
-		if err != nil {
-			return err
-		}
-		if view.NodeRole == "cosigner" && command.Key == "" {
-			return fmt.Errorf("a cosigner node has one policy per key; choose one with --key")
-		}
-		doc, err := backend.Document(ctx, command.Key)
+		doc, err := backend.Document(ctx, command.documentKey())
 		if err != nil {
 			return err
 		}
@@ -72,12 +63,30 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		}
 		_, err = io.WriteString(streams.Stdout, doc.Document)
 		return err
-	case VerbCheck:
+	case VerbTemplate:
 		view, err := getPolicy(ctx, backend)
 		if err != nil {
 			return err
 		}
-		docs, names, err := policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin)
+		role, err := noderole.ParseRole(view.NodeRole)
+		if err != nil {
+			return err
+		}
+		def, err := backend.Document(ctx, policy.DefaultKey)
+		if err != nil {
+			return err
+		}
+		if !def.Success {
+			return resultError(def.Code, def.Error)
+		}
+		text, err := policyreview.Template(role, command.documentKey(), []byte(def.Document))
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(streams.Stdout, text)
+		return err
+	case VerbCheck:
+		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
@@ -87,11 +96,11 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		if err != nil {
 			return err
 		}
-		docs, names, err := policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin)
+		docs, names, err := policyreview.ReadDocuments(command.Args, streams.Stdin)
 		if err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view.NodeRole, docs, nil, names)
+		diffs, err := diffChange(ctx, backend, view, docs, nil, names)
 		if err != nil {
 			return err
 		}
@@ -105,19 +114,16 @@ func run(ctx context.Context, command Command, streams Streams, backend Backend)
 		var req adminproto.ApplyPolicyRequest
 		names := map[string]string{}
 		if command.Verb == VerbApply {
-			if req.Documents, names, err = policyreview.ReadDocuments(command.Args, view.NodeRole, streams.Stdin); err != nil {
+			if req.Documents, names, err = policyreview.ReadDocuments(command.Args, streams.Stdin); err != nil {
 				return err
 			}
 		} else {
-			if view.NodeRole != "cosigner" {
-				return fmt.Errorf("policy remove applies only to cosigner nodes")
-			}
 			req.Remove = command.Args
 		}
 		if err := checkDocuments(ctx, backend, streams, adminproto.CheckPolicyRequest{Documents: req.Documents, Remove: req.Remove}, names); err != nil {
 			return err
 		}
-		diffs, err := diffChange(ctx, backend, view.NodeRole, req.Documents, req.Remove, names)
+		diffs, err := diffChange(ctx, backend, view, req.Documents, req.Remove, names)
 		if err != nil {
 			return err
 		}
@@ -189,26 +195,23 @@ func checkDocuments(ctx context.Context, backend Backend, streams Streams, req a
 }
 
 func printStatus(w io.Writer, view adminproto.PolicyView) {
-	if view.NodeRole == "signer" {
-		_, _ = fmt.Fprintln(w, "signer policy")
-		for _, doc := range view.Documents {
-			_, _ = fmt.Fprintf(w, "  policy.json  %s\n", documentSummary(doc))
-		}
-	} else {
-		byKey := make(map[string]adminproto.PolicyDocumentInfo, len(view.Documents))
-		for _, doc := range view.Documents {
-			byKey[doc.Key] = doc
-		}
-		_, _ = fmt.Fprintf(w, "cosigner policies (%d keys)\n", len(view.Keys))
-		for _, st := range view.Keys {
-			switch st.Status {
-			case adminproto.PolicyKeyNoPolicy:
-				_, _ = fmt.Fprintf(w, "  %s  no policy     rejects every request\n", st.Key)
-			case adminproto.PolicyKeyNotHeld:
-				_, _ = fmt.Fprintf(w, "  %s  key not held  %s\n", st.Key, documentSummary(byKey[st.Key]))
-			default:
-				_, _ = fmt.Fprintf(w, "  %s  active        %s\n", st.Key, documentSummary(byKey[st.Key]))
-			}
+	byKey := make(map[string]adminproto.PolicyDocumentInfo, len(view.Documents))
+	for _, doc := range view.Documents {
+		byKey[doc.Key] = doc
+	}
+	_, _ = fmt.Fprintf(w, "%s policy\n", view.NodeRole)
+	if def, ok := byKey[policy.DefaultKey]; ok {
+		_, _ = fmt.Fprintf(w, "  default       %s\n", documentSummary(def))
+	}
+	_, _ = fmt.Fprintf(w, "keys (%d)\n", len(view.Keys))
+	for _, st := range view.Keys {
+		switch st.Status {
+		case adminproto.PolicyKeyOwn:
+			_, _ = fmt.Fprintf(w, "  %s  own policy    %s\n", st.Key, documentSummary(byKey[st.Key]))
+		case adminproto.PolicyKeyNotHeld:
+			_, _ = fmt.Fprintf(w, "  %s  key not held  %s\n", st.Key, documentSummary(byKey[st.Key]))
+		default:
+			_, _ = fmt.Fprintf(w, "  %s  default\n", st.Key)
 		}
 	}
 	_, _ = fmt.Fprintf(w, "policy_set_sha256 %s\n", view.PolicySetSHA256)
@@ -233,37 +236,83 @@ func resultError(code, msg string) error {
 }
 
 // diffChange compares each submitted document, and each removal, with the
-// node's active document for the same key.
-func diffChange(ctx context.Context, backend Backend, role string, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+// document that governs its key now. A key without a document of its own is
+// compared with the node default; a removal is compared with the default in
+// force after the change, which is the submitted one when the same change
+// replaces it. A change to the default also lists the held keys it governs.
+func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView, docs []adminproto.PolicyDocument, remove []string, names map[string]string) ([]policyreview.DocumentDiff, error) {
+	role, err := noderole.ParseRole(view.NodeRole)
+	if err != nil {
+		return nil, err
+	}
+	own := map[string]bool{}
+	for _, doc := range view.Documents {
+		own[doc.Key] = true
+	}
+	fetch := func(key string) (string, error) {
+		current, err := backend.Document(ctx, key)
+		if err != nil {
+			return "", err
+		}
+		if !current.Success {
+			return "", resultError(current.Code, current.Error)
+		}
+		return current.Document, nil
+	}
+	activeDefault, err := fetch(policy.DefaultKey)
+	if err != nil {
+		return nil, err
+	}
+	nextDefault := activeDefault
 	var out []policyreview.DocumentDiff
 	for _, doc := range docs {
-		current, err := backend.Document(ctx, doc.Key)
-		if err != nil {
-			return nil, err
-		}
-		if !current.Success && current.Code != "policy_document_not_found" {
-			return nil, resultError(current.Code, current.Error)
-		}
 		label := names[doc.Key]
-		changes, identical, err := policyreview.DiffDocument(role, doc.Key, current.Success, current.Document, doc.Document)
+		if label == "" {
+			label = doc.Key
+		}
+		current, ownCurrent := activeDefault, false
+		if own[doc.Key] {
+			if current, err = fetch(doc.Key); err != nil {
+				return nil, err
+			}
+			ownCurrent = true
+		}
+		changes, identical, err := policyreview.DiffCandidate(role, doc.Key, current, doc.Document, ownCurrent)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+		if doc.Key == policy.DefaultKey {
+			nextDefault = doc.Document
+			label += governedKeysNote(view, remove)
 		}
 		out = append(out, policyreview.DocumentDiff{Label: label, Changes: changes, Identical: identical})
 	}
 	for _, key := range remove {
-		current, err := backend.Document(ctx, key)
+		current, err := fetch(key)
 		if err != nil {
 			return nil, err
 		}
-		if !current.Success {
-			return nil, resultError(current.Code, current.Error)
-		}
-		previous, err := policy.DecodeCosignerPolicyV1([]byte(current.Document), key)
+		changes, err := policyreview.DiffRemoval(role, key, current, nextDefault)
 		if err != nil {
-			return nil, fmt.Errorf("active policy for %s: %w", key, err)
+			return nil, err
 		}
-		out = append(out, policyreview.DocumentDiff{Label: key, Changes: policy.DiffCosignerPolicyV1(previous, nil)})
+		out = append(out, policyreview.DocumentDiff{Label: key, Changes: changes})
 	}
 	return out, nil
+}
+
+// governedKeysNote names the held keys a changed default reaches: those on
+// the default now, plus those losing their own document in the same change.
+func governedKeysNote(view adminproto.PolicyView, remove []string) string {
+	var governed []string
+	for _, st := range view.Keys {
+		if st.Status == adminproto.PolicyKeyDefault {
+			governed = append(governed, st.Key)
+		}
+	}
+	governed = append(governed, remove...)
+	if len(governed) == 0 {
+		return " (governs no held key; every held key has a policy of its own)"
+	}
+	return fmt.Sprintf(" (governs %d held key(s): %s)", len(governed), strings.Join(governed, ", "))
 }

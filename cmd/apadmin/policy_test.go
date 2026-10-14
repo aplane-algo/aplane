@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 )
@@ -18,18 +20,20 @@ import (
 func TestParsePolicyCommandGrammar(t *testing.T) {
 	const keyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 	tests := []struct {
-		name       string
-		args       []string
-		wantVerb   policycmd.Verb
-		wantArgs   []string
-		wantKey    string
-		wantRescue bool
-		wantErr    string
+		name         string
+		args         []string
+		wantVerb     policycmd.Verb
+		wantArgs     []string
+		wantKey      string
+		wantEmbedded string
+		wantRescue   bool
+		wantErr      string
 	}{
 		{name: "verb required", wantErr: "requires a verb"},
 		{name: "edit retired", args: []string{"edit"}, wantErr: "unknown policy command"},
 		{name: "digest retired", args: []string{"digest"}, wantErr: "unknown policy command"},
 		{name: "status", args: []string{"status"}, wantVerb: policycmd.VerbStatus},
+		{name: "export default", args: []string{"export"}, wantVerb: policycmd.VerbExport},
 		{name: "export key", args: []string{"export", "--key", keyID}, wantVerb: policycmd.VerbExport, wantKey: keyID},
 		{name: "check files", args: []string{"check", "a.json", "b.json"}, wantVerb: policycmd.VerbCheck, wantArgs: []string{"a.json", "b.json"}},
 		{name: "rescue apply", args: []string{"rescue", "apply", "policy.json"}, wantVerb: policycmd.VerbApply, wantArgs: []string{"policy.json"}, wantRescue: true},
@@ -39,16 +43,19 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "yes only for mutations", args: []string{"diff", "--yes", "a.json"}, wantErr: "--yes applies only"},
 		{name: "apply requires a file", args: []string{"apply"}, wantErr: "requires at least one policy file"},
 		{name: "stdin must be alone", args: []string{"check", "-", "a.json"}, wantErr: "sole file"},
-		{name: "remove requires a key", args: []string{"remove"}, wantErr: "requires at least one Witness Key ID"},
-		{name: "key only for export", args: []string{"status", "--key", keyID}, wantErr: "--key applies only"},
+		{name: "remove requires a key", args: []string{"remove"}, wantErr: "requires at least one key"},
+		{name: "remove refuses the default", args: []string{"remove", "default"}, wantErr: "cannot be removed"},
+		{name: "key only for export and template", args: []string{"status", "--key", keyID}, wantErr: "--key applies only"},
 		{name: "status takes no files", args: []string{"status", "a.json"}, wantErr: "takes no arguments"},
 		{name: "retired flag", args: []string{"--check"}, wantErr: "is retired"},
 		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "is retired"},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
-		{name: "template signer", args: []string{"template", "signer"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"signer"}},
-		{name: "template cosigner key", args: []string{"template", "--key", keyID, "cosigner"}, wantVerb: policycmd.VerbTemplate, wantArgs: []string{"cosigner"}, wantKey: keyID},
-		{name: "template needs a role", args: []string{"template"}, wantErr: "one node role"},
-		{name: "template key only for cosigner", args: []string{"template", "--key", keyID, "signer"}, wantErr: "cosigner template"},
+		{name: "template default", args: []string{"template"}, wantVerb: policycmd.VerbTemplate},
+		{name: "template key", args: []string{"template", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID},
+		{name: "template embedded", args: []string{"template", "--embedded", "cosigner", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID, wantEmbedded: "cosigner"},
+		{name: "template takes no role argument", args: []string{"template", "signer"}, wantErr: "takes no arguments"},
+		{name: "embedded needs a node role", args: []string{"template", "--embedded", "operator"}, wantErr: "signer or cosigner"},
+		{name: "embedded only for template", args: []string{"status", "--embedded", "signer"}, wantErr: "--embedded applies only"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -62,7 +69,7 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || rescue != tt.wantRescue ||
+			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || command.Embedded != tt.wantEmbedded || rescue != tt.wantRescue ||
 				strings.Join(command.Args, ",") != strings.Join(tt.wantArgs, ",") {
 				t.Fatalf("command = %#v rescue=%t", command, rescue)
 			}
@@ -128,27 +135,41 @@ func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
 	}
 }
 
-// template needs no store: it prints with a data directory that does not
-// exist, through both the online and the rescue entry points.
-func TestPolicyTemplateNeedsNoStore(t *testing.T) {
+// template --embedded needs no store: it prints with a data directory that
+// does not exist, through both the online and the rescue entry points.
+func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	missing := filepath.Join(t.TempDir(), "no-such-store")
-	for _, args := range [][]string{{"template", "signer"}, {"rescue", "template", "signer"}} {
+	want, err := policyreview.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"template", "--embedded", "signer"}, {"rescue", "template", "--embedded", "signer"}} {
 		var stdout, stderr bytes.Buffer
 		code := runPolicyCommand(context.Background(), args, policyGlobalOptions{dataDir: missing}, policyStreams{
 			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 		})
-		if code != 0 || stdout.String() != policyreview.SignerTemplate() || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("%v: code=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"template", "operator"}, policyGlobalOptions{dataDir: missing}, policyStreams{
+	code := runPolicyCommand(context.Background(), []string{"template", "--embedded", "operator"}, policyGlobalOptions{dataDir: missing}, policyStreams{
 		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 	})
-	if code != 2 || !strings.Contains(stderr.String(), "one node role") {
+	if code != 2 || !strings.Contains(stderr.String(), "signer or cosigner") {
 		t.Fatalf("bad role: code=%d stderr=%q", code, stderr.String())
+	}
+	// Without --embedded, template prints the node's own default and needs
+	// the node: a missing store is a runtime failure, never the shipped text.
+	stdout.Reset()
+	stderr.Reset()
+	code = runPolicyCommand(context.Background(), []string{"rescue", "template"}, policyGlobalOptions{dataDir: missing}, policyStreams{
+		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+	})
+	if code != 1 || stdout.Len() != 0 {
+		t.Fatalf("rescue template without a store: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

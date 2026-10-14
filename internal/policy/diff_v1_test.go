@@ -9,24 +9,6 @@ import (
 	"testing"
 )
 
-func mustSignerDoc(t *testing.T, doc string) *SignerPolicyV1 {
-	t.Helper()
-	d, err := DecodeSignerPolicyV1([]byte(doc))
-	if err != nil {
-		t.Fatalf("DecodeSignerPolicyV1() error = %v\n%s", err, doc)
-	}
-	return d
-}
-
-func mustCosignerDoc(t *testing.T, doc string) *CosignerPolicyV1 {
-	t.Helper()
-	d, err := DecodeCosignerPolicyV1([]byte(doc), testWitnessKeyIDV1)
-	if err != nil {
-		t.Fatalf("DecodeCosignerPolicyV1() error = %v\n%s", err, doc)
-	}
-	return d
-}
-
 func renderChanges(changes []PolicyChange) string {
 	var lines []string
 	for _, c := range changes {
@@ -42,18 +24,26 @@ func assertChanges(t *testing.T, got []PolicyChange, want ...string) {
 	}
 }
 
-func TestDiffSignerPolicyIgnoresFormatting(t *testing.T) {
-	a := mustSignerDoc(t, `{"format":"aplane.signer-policy.v1","reject_clawback":true,"max_fee_microalgos":"2000"}`)
-	b := mustSignerDoc(t, "{\n  \"max_fee_microalgos\": \"2000\",\n  \"reject_clawback\": true,\n  \"format\": \"aplane.signer-policy.v1\"\n}\n")
-	assertChanges(t, DiffSignerPolicyV1(a, b))
+func TestDiffPolicyIgnoresFormattingAndKeyOrder(t *testing.T) {
+	a := mustSignerDoc(t, DefaultKey, `{"reject_clawback":true,"max_fee_microalgos":"2000"}`)
+	b := mustSignerDoc(t, DefaultKey, "{\n  \"max_fee_microalgos\": \"2000\",\n  \"reject_clawback\": true\n}\n")
+	assertChanges(t, DiffPolicyV1(a, b))
 }
 
-func TestDiffSignerPolicySettingsAndLimits(t *testing.T) {
-	current := mustSignerDoc(t, `{"format":"aplane.signer-policy.v1","reject_clawback":true,"max_fee_microalgos":"2000",
+func TestDiffPolicyComparesAcrossKeys(t *testing.T) {
+	// A key's new document is compared with the default it followed; the
+	// differing key is not a change.
+	def := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"2000"}`)
+	own := mustSignerDoc(t, v1Ops.String(), `{"max_fee_microalgos":"2000"}`)
+	assertChanges(t, DiffPolicyV1(def, own))
+}
+
+func TestDiffPolicySettingsAndLimits(t *testing.T) {
+	current := mustSignerDoc(t, DefaultKey, `{"reject_clawback":true,"max_fee_microalgos":"2000",
 		"limits":{"testnet":{"algo":{"reject_above":"50000000"},"asa:7":{"review_above":"10"}}}}`)
-	next := mustSignerDoc(t, `{"format":"aplane.signer-policy.v1","reject_foreign_rekey":false,"auto_approve_self_noop_transfer":true,
+	next := mustSignerDoc(t, DefaultKey, `{"reject_foreign_rekey":false,"auto_approve_self_noop_transfer":true,
 		"limits":{"testnet":{"algo":{"reject_above":"100000000","review_above":"1000000"}}}}`)
-	assertChanges(t, DiffSignerPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next),
 		"loosened /auto_approve_self_noop_transfer: false → true",
 		"loosened /limits/testnet/algo/reject_above: 50 ALGO → 100 ALGO",
 		"tightened /limits/testnet/algo/review_above: none → 1 ALGO",
@@ -64,11 +54,32 @@ func TestDiffSignerPolicySettingsAndLimits(t *testing.T) {
 	)
 }
 
-func TestDiffSignerPolicyRoutesSetsAndRouteMiss(t *testing.T) {
-	doc := func(onNoRoute, blocked, opsMembers, routes string) *SignerPolicyV1 {
-		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1",
+func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
+	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow"}}`)
+	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow","keyreg":"review"}}`)
+	assertChanges(t, DiffPolicyV1(current, next),
+		"tightened /transaction_types/acfg: allow → reject",
+		"tightened /transaction_types/afrz: allow → reject",
+		"tightened /transaction_types/appl: allow → reject",
+		"tightened /transaction_types/hb: allow → reject",
+		"tightened /transaction_types/keyreg: allow → review",
+		"tightened /transaction_types/stpf: allow → reject",
+	)
+	assertChanges(t, DiffPolicyV1(next, current),
+		"loosened /transaction_types/acfg: reject → allow",
+		"loosened /transaction_types/afrz: reject → allow",
+		"loosened /transaction_types/appl: reject → allow",
+		"loosened /transaction_types/hb: reject → allow",
+		"loosened /transaction_types/keyreg: review → allow",
+		"loosened /transaction_types/stpf: reject → allow",
+	)
+}
+
+func TestDiffPolicyRoutesSetsAndRouteMiss(t *testing.T) {
+	doc := func(onNoRoute, blocked, opsMembers, routes string) *PolicyV1 {
+		return mustSignerDoc(t, DefaultKey, fmt.Sprintf(`{
 			"address_sets":{"ops":[%s],"unused":[%q]},
-			"transfer_policy":{"enabled":true,"on_no_route":%q,"blocked_destinations":[%s],"routes":[%s]}}`,
+			"transfer_policy":{"on_no_route":%q,"blocked_destinations":[%s],"routes":[%s]}}`,
 			opsMembers, v1Holder.String(), onNoRoute, blocked, routes))
 	}
 	route := func(id, dests, extra string) string {
@@ -77,7 +88,7 @@ func TestDiffSignerPolicyRoutesSetsAndRouteMiss(t *testing.T) {
 	q := func(a fmt.Stringer) string { return fmt.Sprintf("%q", a.String()) }
 	current := doc("reject", q(v1Bad), q(v1Ops), route("pay", q(v1Vendor), `,"limits":{"testnet":{"algo":{"reject_above":"5"}}}`)+","+route("old", q(v1Vendor), ""))
 	next := doc("review", "", q(v1Ops)+","+q(v1Other), route("pay", q(v1Vendor)+","+q(v1Other), `,"allow_close":true,"limits":{"testnet":{"algo":{"reject_above":"9"}}}`)+","+route("new", `"*"`, ""))
-	assertChanges(t, DiffSignerPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next),
 		"loosened /address_sets/ops: added "+v1Other.String(),
 		"loosened /transfer_policy/blocked_destinations: removed "+v1Bad.String(),
 		"loosened /transfer_policy/on_no_route: reject → review",
@@ -89,77 +100,32 @@ func TestDiffSignerPolicyRoutesSetsAndRouteMiss(t *testing.T) {
 	)
 }
 
-func TestDiffSignerPolicyKeyOverridesUseEffectiveValues(t *testing.T) {
-	key := v1Ops.String()
-	current := mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000",
-		"limits":{"testnet":{"algo":{"reject_above":"100"}}},
-		"key_overrides":{%q:{"max_fee_microalgos":"2000"}}}`, key))
-	next := mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000",
-		"limits":{"testnet":{"algo":{"reject_above":"100"}}},
-		"key_overrides":{%q:{"reject_clawback":true,"limits":{"testnet":{"algo":{"reject_above":null}}}}}}`, key))
-	assertChanges(t, DiffSignerPolicyV1(current, next),
-		"loosened /key_overrides/"+key+"/limits/testnet/algo/reject_above: 0.0001 ALGO → none",
-		"loosened /key_overrides/"+key+"/max_fee_microalgos: 0.002 ALGO → 0.005 ALGO",
-		"tightened /key_overrides/"+key+"/reject_clawback: false → true",
-	)
-}
-
-func TestDiffCosignerPolicyLifecycleAndRekey(t *testing.T) {
-	doc := func(extra string) *CosignerPolicyV1 {
-		return mustCosignerDoc(t, fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,
-			"transfer_policy":{"routes":[]}%s}`, testWitnessKeyIDV1, extra))
-	}
-	base := doc("")
-	assertChanges(t, DiffCosignerPolicyV1(nil, base), "loosened /: new policy; the key rejected every request without one")
-	assertChanges(t, DiffCosignerPolicyV1(base, nil), "tightened /: policy removed; the key will reject every request")
-	assertChanges(t, DiffCosignerPolicyV1(nil, nil))
-
-	withRekey := doc(fmt.Sprintf(`,"reject_close_remainder":true,"rekey_policy":{"allowed":[{"sender":%q,"targets":[%q]}]}`, v1Ops.String(), v1Vendor.String()))
-	assertChanges(t, DiffCosignerPolicyV1(base, withRekey),
+func TestDiffCosignerPolicyRekey(t *testing.T) {
+	base := mustCosignerDoc(t, testWitnessKeyIDV1, "")
+	withRekey := mustCosignerDoc(t, testWitnessKeyIDV1, fmt.Sprintf(`{"reject_close_remainder":true,"rekey_policy":{"allowed":[{"sender":%q,"targets":[%q]}]}}`, v1Ops.String(), v1Vendor.String()))
+	assertChanges(t, DiffPolicyV1(base, withRekey),
 		"tightened /reject_close_remainder: false → true",
 		"loosened /rekey_policy/allowed: added "+v1Ops.String()+" → "+v1Vendor.String(),
 	)
+	rejectAll := mustCosignerDoc(t, testWitnessKeyIDV1, `{"reject_rekey":true}`)
+	assertChanges(t, DiffPolicyV1(base, rejectAll), "tightened /reject_rekey: false → true")
 }
 
 func TestDiffAddressSetComparesCoverageAcrossForms(t *testing.T) {
-	doc := func(set string) *SignerPolicyV1 {
-		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","address_sets":{"ops":%s},
-			"transfer_policy":{"enabled":true,"on_no_route":"reject","routes":[
+	doc := func(set string) *PolicyV1 {
+		return mustSignerDoc(t, DefaultKey, fmt.Sprintf(`{"address_sets":{"ops":%s},
+			"transfer_policy":{"routes":[
 			{"id":"r","networks":["*"],"sources":["@ops"],"assets":["algo"],"destinations":["*"]}]}}`, set))
 	}
 	a := v1Ops.String()
 	perNetwork, flat := doc(fmt.Sprintf(`{"testnet":[%q]}`, a)), doc(fmt.Sprintf(`[%q]`, a))
-	assertChanges(t, DiffSignerPolicyV1(perNetwork, flat), "loosened /address_sets/ops/(other networks): added "+a)
-	assertChanges(t, DiffSignerPolicyV1(flat, perNetwork), "tightened /address_sets/ops/(other networks): removed "+a)
+	assertChanges(t, DiffPolicyV1(perNetwork, flat), "loosened /address_sets/ops/(other networks): added "+a)
+	assertChanges(t, DiffPolicyV1(flat, perNetwork), "tightened /address_sets/ops/(other networks): removed "+a)
 }
 
 func TestDiffFeeCapTreatsZeroAsNoCap(t *testing.T) {
-	doc := func(fee string) *SignerPolicyV1 {
-		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1"%s}`, fee))
-	}
-	capped, zero, none := doc(`,"max_fee_microalgos":"2000"`), doc(`,"max_fee_microalgos":"0"`), doc("")
-	assertChanges(t, DiffSignerPolicyV1(capped, zero), "loosened /max_fee_microalgos: 0.002 ALGO → no cap")
-	assertChanges(t, DiffSignerPolicyV1(zero, capped), "tightened /max_fee_microalgos: no cap → 0.002 ALGO")
-	assertChanges(t, DiffSignerPolicyV1(zero, none))
-}
-
-func TestDiffKeyOverrideReportsPinsWithUnchangedValues(t *testing.T) {
-	key := v1Ops.String()
-	doc := func(override string) *SignerPolicyV1 {
-		return mustSignerDoc(t, fmt.Sprintf(`{"format":"aplane.signer-policy.v1","max_fee_microalgos":"5000","reject_clawback":true,
-			"limits":{"testnet":{"algo":{"reject_above":"100"}}},"key_overrides":{%q:{%s}}}`, key, override))
-	}
-	inherits := doc(`"description":"ops"`)
-	pinned := doc(`"description":"ops","max_fee_microalgos":"5000","reject_clawback":true,"limits":{"testnet":{"algo":{"reject_above":"100"}}}`)
-	prefix := "changed /key_overrides/" + key
-	assertChanges(t, DiffSignerPolicyV1(inherits, pinned),
-		prefix+"/limits/testnet/algo/reject_above: inherited → set explicitly to 0.0001 ALGO",
-		prefix+"/max_fee_microalgos: inherited 0.005 ALGO → set explicitly to 0.005 ALGO",
-		prefix+"/reject_clawback: inherited true → set explicitly to true",
-	)
-	assertChanges(t, DiffSignerPolicyV1(pinned, inherits),
-		prefix+"/limits/testnet/algo/reject_above: set explicitly to 0.0001 ALGO → inherited",
-		prefix+"/max_fee_microalgos: set explicitly to 0.005 ALGO → inherited 0.005 ALGO",
-		prefix+"/reject_clawback: set explicitly to true → inherited true",
-	)
+	capped := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"2000"}`)
+	zero := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"0"}`)
+	assertChanges(t, DiffPolicyV1(capped, zero), "loosened /max_fee_microalgos: 0.002 ALGO → no cap")
+	assertChanges(t, DiffPolicyV1(zero, capped), "tightened /max_fee_microalgos: no cap → 0.002 ALGO")
 }

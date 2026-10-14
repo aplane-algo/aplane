@@ -8,9 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// defaultDocInfo is the node default's summary row.
+var defaultDocInfo = protocol.PolicyDocumentInfoWire{Key: policy.DefaultKey, SHA256: "def0123456789abcdef0", Size: 10}
 
 const (
 	policyViewKeyA = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
@@ -68,31 +73,36 @@ func openLoadedDocument(t *testing.T, m Model, doc protocol.PolicyDocumentMessag
 	return next.(Model)
 }
 
-func TestPoliciesViewListsCosignerKeysAndOpensDocuments(t *testing.T) {
-	doc := fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, policyViewKeyA)
+func TestPoliciesViewListsTheDefaultAndKeysAndOpensDocuments(t *testing.T) {
+	doc := policytest.Cosigner(t, policyViewKeyA, "")
 	m := loadedPoliciesModel(protocol.PolicyMessage{
 		Success:         true,
 		NodeRole:        "cosigner",
-		Documents:       []protocol.PolicyDocumentInfoWire{{Key: policyViewKeyA, SHA256: "0123456789abcdef0123", Size: len(doc), SignedAtUnix: 1700000000}},
-		Keys:            []protocol.PolicyKeyStatusWire{{Key: policyViewKeyB, Status: "no_policy"}, {Key: policyViewKeyA, Status: "active"}},
+		Documents:       []protocol.PolicyDocumentInfoWire{defaultDocInfo, {Key: policyViewKeyA, SHA256: "0123456789abcdef0123", Size: len(doc), SignedAtUnix: 1700000000}},
+		Keys:            []protocol.PolicyKeyStatusWire{{Key: policyViewKeyB, Status: "default"}, {Key: policyViewKeyA, Status: "own"}},
 		PolicySetSHA256: "set-digest",
 	})
 	rendered := stripANSI(m.renderPolicies())
-	for _, want := range []string{policyViewKeyB + "  no policy (rejects every request)", policyViewKeyA + "  active",
+	for _, want := range []string{"default  node default", policyViewKeyB + "  default", policyViewKeyA + "  own policy",
 		fmt.Sprintf("%d bytes", len(doc)), "applied 2023-11-14", "set-digest", "a loads a policy file"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("policies view missing %q:\n%s", want, rendered)
 		}
 	}
-
-	// The first row has no document, so enter stays on the list.
-	next, cmd := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	if next.(Model).viewState != ViewPolicies || cmd != nil {
-		t.Fatal("enter on a key without a policy left the list")
+	if rows := m.policyRows(); len(rows) != 3 || rows[0].key != policy.DefaultKey || rows[1].key != policyViewKeyB || rows[1].doc != nil {
+		t.Fatalf("rows = %+v, want the default first", rows)
 	}
-	next, _ = m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyDown})
+
+	// The key on the default has no document of its own, so enter stays on
+	// the list.
+	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyDown})
+	next, cmd := next.(Model).handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if next.(Model).viewState != ViewPolicies || cmd != nil {
+		t.Fatal("enter on a key without a policy of its own left the list")
+	}
+	next, _ = next.(Model).handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyDown})
 	m = openLoadedDocument(t, next.(Model), protocol.PolicyDocumentMessage{Success: true, Key: policyViewKeyA, Document: doc, SHA256: "abc"})
-	if !strings.Contains(stripANSI(m.renderPolicyDocument()), `"format":"aplane.cosigner-policy.v1"`) {
+	if !strings.Contains(stripANSI(m.renderPolicyDocument()), `"role": "cosigner"`) {
 		t.Fatalf("document view:\n%s", m.renderPolicyDocument())
 	}
 
@@ -103,16 +113,16 @@ func TestPoliciesViewListsCosignerKeysAndOpensDocuments(t *testing.T) {
 	}
 }
 
-func TestPoliciesViewShowsSignerDocumentAndErrors(t *testing.T) {
+func TestPoliciesViewShowsSignerDefaultAndErrors(t *testing.T) {
 	m := loadedPoliciesModel(protocol.PolicyMessage{
 		Success:   true,
 		NodeRole:  "signer",
-		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc", Size: 34}},
+		Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo},
 	})
-	if rows := m.policyRows(); len(rows) != 1 || rows[0].label != "policy.json" {
+	if rows := m.policyRows(); len(rows) != 1 || rows[0].label() != "default" {
 		t.Fatalf("signer rows = %+v", rows)
 	}
-	opened := openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: "{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n"})
+	opened := openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Key: policy.DefaultKey, Document: "{\n  \"key\": \"default\"\n}\n"})
 	if lines := opened.policyDocumentLines(); len(lines) != 3 {
 		t.Fatalf("document lines = %q", lines)
 	}
@@ -133,7 +143,7 @@ func TestPolicyDocumentScrollIsBounded(t *testing.T) {
 		lines[i] = fmt.Sprintf("line %d", i)
 	}
 	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
-		Documents: []protocol.PolicyDocumentInfoWire{{SHA256: "abc"}}})
+		Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo}})
 	m.height = 20
 	m = openLoadedDocument(t, m, protocol.PolicyDocumentMessage{Success: true, Document: strings.Join(lines, "\n")})
 	for range 100 {
@@ -158,8 +168,8 @@ func TestPoliciesViewIgnoresStaleResponses(t *testing.T) {
 	m := loadedPoliciesModel(protocol.PolicyMessage{
 		Success:   true,
 		NodeRole:  "cosigner",
-		Documents: []protocol.PolicyDocumentInfoWire{{Key: policyViewKeyA, SHA256: "a"}, {Key: policyViewKeyB, SHA256: "b"}},
-		Keys:      []protocol.PolicyKeyStatusWire{{Key: policyViewKeyA, Status: "active"}, {Key: policyViewKeyB, Status: "active"}},
+		Documents: []protocol.PolicyDocumentInfoWire{defaultDocInfo, {Key: policyViewKeyA, SHA256: "a"}, {Key: policyViewKeyB, SHA256: "b"}},
+		Keys:      []protocol.PolicyKeyStatusWire{{Key: policyViewKeyA, Status: "own"}, {Key: policyViewKeyB, Status: "own"}},
 	})
 	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	staleID := next.(Model).policies.pendingDocumentID

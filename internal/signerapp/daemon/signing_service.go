@@ -16,6 +16,9 @@ type signingAudit interface {
 }
 
 func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLog signingAudit) *signersigning.Service {
+	// One request, one policy snapshot: every slot of this request resolves
+	// against the NodePolicy captured here, whatever reloads land later.
+	nodePolicy := ir.NodePolicy()
 	return &signersigning.Service{
 		Planner:                       fs.newPlannerWithAudit(auditLog),
 		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
@@ -32,8 +35,7 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			}
 			return func() {}, nil
 		},
-		Policy:           ir.Policy(),
-		CosignerPolicies: ir.CosignerPolicies(),
+		PolicyFor: nodePolicy.PolicyFor,
 		HoldsCosignerKey: func(witnessKeyID string) bool {
 			_, err := ir.FindKeyFile(witnessKeyID)
 			return err == nil

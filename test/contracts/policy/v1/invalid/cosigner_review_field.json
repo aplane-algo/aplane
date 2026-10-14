@@ -1,8 +1,36 @@
 {
-  "format": "aplane.cosigner-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
   "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "5000",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
   "transfer_policy": {
-    "routes": []
+    "routes": [
+      {
+        "id": "self-transfer",
+        "description": "Any account may send any asset to itself",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "*"
+        ],
+        "assets": [
+          "*"
+        ],
+        "destinations": [
+          "self"
+        ]
+      }
+    ]
   },
   "always_review_warnings": true
 }

@@ -31,7 +31,6 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestPolicyV1LimitsCompileToConfig(t *testing.T) {
 	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
   "limits": {"testnet": {
     "algo": {"review_above": "5000000", "reject_above": "10000000"},
     "asa:123": {"review_above": "12", "reject_above": "45"}
@@ -51,48 +50,29 @@ func TestPolicyV1LimitsCompileToConfig(t *testing.T) {
 	}
 }
 
-// TestPolicyV1KeyOverridesInheritBase pins that a key override changes only
-// the settings it names and inherits the rest from the compiled document.
-// v1 overrides carry scalar settings and limits only.
-func TestPolicyV1KeyOverridesInheritBase(t *testing.T) {
-	allowlistKey := types.Address{1}.String()
-	strictKey := types.Address{2}.String()
-	cfg := routingConfig(t, `{
-  "format": "aplane.signer-policy.v1",
-  "reject_close_remainder": false,
-  "key_overrides": {
-    "`+allowlistKey+`": {"reject_foreign_rekey": false},
-    "`+strictKey+`": {"reject_close_remainder": true}
-  }
-}`)
-
-	allowlist := cfg.ForKey(allowlistKey)
-	if allowlist == cfg {
-		t.Fatal("ForKey did not return the override config")
+// TestTransactionTypeGateRunsFirst pins that a rejected type is the only
+// violation reported, a reviewed type is the first review violation, and an
+// allowed type falls through to the other rules.
+func TestTransactionTypeGateRunsFirst(t *testing.T) {
+	cfg := &Config{
+		TransactionTypes: TransactionTypesV1{"*": TransactionTypeReject, "pay": TransactionTypeAllow, "keyreg": TransactionTypeReview},
+		MaxFeeMicroAlgos: 1_000,
 	}
-	if allowlist.RejectForeignRekey {
-		t.Error("allowlist override RejectForeignRekey = true, want false (override applied)")
+	highFee := types.Header{Fee: 2_000}
+	if got := CheckTxnPolicyLints(types.Transaction{Type: types.ApplicationCallTx, Header: highFee}, cfg, nil); len(got) != 1 || got[0].RuleID != "transaction_type:appl" {
+		t.Fatalf("rejected type lints = %+v, want only transaction_type:appl", got)
 	}
-	if allowlist.RejectCloseRemainder {
-		t.Error("allowlist override RejectCloseRemainder = true, want false (inherited from document)")
+	if got := CheckTxnPolicyLints(types.Transaction{Type: types.PaymentTx, Header: highFee}, cfg, nil); len(got) != 1 || got[0].RuleID != MaxFeeExceededRuleID {
+		t.Fatalf("allowed type lints = %+v, want the fee rule", got)
 	}
-
-	strict := cfg.ForKey(strictKey)
-	if !strict.RejectForeignRekey {
-		t.Error("strict override RejectForeignRekey = false, want true (inherited default)")
+	if got := CheckTxnPolicyLints(types.Transaction{Type: types.KeyRegistrationTx, Header: highFee}, cfg, nil); len(got) != 1 || got[0].RuleID != MaxFeeExceededRuleID {
+		t.Fatalf("reviewed type deny lints = %+v, want the fee rule only", got)
 	}
-	if !strict.RejectCloseRemainder {
-		t.Error("strict override RejectCloseRemainder = false, want true (override applied)")
+	if got := CheckTxnReviewPolicyLints(types.Transaction{Type: types.KeyRegistrationTx}, cfg); len(got) != 1 || got[0].RuleID != "transaction_type:keyreg" {
+		t.Fatalf("reviewed type review lints = %+v", got)
 	}
-
-	if got := cfg.ForKey(types.Address{3}.String()); got != cfg {
-		t.Error("ForKey for unknown key should return the base config")
-	}
-
-	// A differently formatted auth address still selects its override, so
-	// formatting cannot bypass a tightening override.
-	if got := cfg.ForKey("  " + strings.ToLower(strictKey) + " "); got != strict {
-		t.Error("ForKey did not canonicalize a lowercase, padded auth address")
+	if got := CheckTxnPolicyLints(types.Transaction{Type: types.PaymentTx}, &Config{}, nil); len(got) != 1 || got[0].RuleID != "transaction_type:pay" {
+		t.Fatalf("a Config without a type map must reject: %+v", got)
 	}
 }
 
@@ -107,49 +87,49 @@ func TestCheckTxnPolicyLints(t *testing.T) {
 	}{
 		{
 			name:       "reject rekey",
-			cfg:        &Config{RejectForeignRekey: true},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
 			txn:        types.Transaction{Header: types.Header{RekeyTo: nonZeroAddr}},
 			wantRuleID: "reject_foreign_rekey",
 		},
 		{
 			name:       "reject close remainder",
-			cfg:        &Config{RejectCloseRemainder: true},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), RejectCloseRemainder: true},
 			txn:        types.Transaction{PaymentTxnFields: types.PaymentTxnFields{CloseRemainderTo: nonZeroAddr}},
 			wantRuleID: "reject_close_remainder",
 		},
 		{
 			name:       "reject asset close",
-			cfg:        &Config{RejectAssetClose: true},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), RejectAssetClose: true},
 			txn:        types.Transaction{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: nonZeroAddr}},
 			wantRuleID: "reject_asset_close",
 		},
 		{
 			name:       "reject clawback",
-			cfg:        &Config{RejectClawback: true},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), RejectClawback: true},
 			txn:        types.Transaction{Header: types.Header{Sender: types.Address{}}, AssetTransferTxnFields: types.AssetTransferTxnFields{AssetSender: nonZeroAddr}},
 			wantRuleID: "reject_clawback",
 		},
 		{
 			name:       "max fee",
-			cfg:        &Config{MaxFeeMicroAlgos: 1_000},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), MaxFeeMicroAlgos: 1_000},
 			txn:        types.Transaction{Header: types.Header{Fee: types.MicroAlgos(2_000)}},
 			wantRuleID: "max_fee_exceeded",
 		},
 		{
 			name:       "max algo payment by network",
-			cfg:        &Config{MaxAlgoPayments: map[string]uint64{"testnet": 10_000_000}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), MaxAlgoPayments: map[string]uint64{"testnet": 10_000_000}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)}, Type: types.PaymentTx, PaymentTxnFields: types.PaymentTxnFields{Amount: 11_000_000}},
 			wantRuleID: "max_algo_payment_exceeded",
 		},
 		{
 			name:       "max asa amount",
-			cfg:        &Config{MaxASAAmounts: map[string]map[uint64]uint64{"testnet": {123: 5}}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), MaxASAAmounts: map[string]map[uint64]uint64{"testnet": {123: 5}}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)}, Type: types.AssetTransferTx, AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 123, AssetAmount: 6}},
 			wantRuleID: "max_asa_amount_exceeded",
 		},
 		{
 			name:       "unknown genesis hash blocks asa policy bypass",
-			cfg:        &Config{MaxASAAmounts: map[string]map[uint64]uint64{"testnet": {123: 5}}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), MaxASAAmounts: map[string]map[uint64]uint64{"testnet": {123: 5}}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: types.Digest{}}, Type: types.AssetTransferTx, AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 123, AssetAmount: 6}},
 			wantRuleID: "unknown_genesis_hash",
 		},
@@ -174,7 +154,7 @@ func TestCheckTxnPolicyLintsAllowsLocalRekeyTarget(t *testing.T) {
 
 	got := CheckTxnPolicyLints(
 		txn,
-		&Config{RejectForeignRekey: true},
+		&Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
 		map[string]bool{localAddr.String(): true},
 	)
 	if len(got) != 0 {
@@ -188,7 +168,7 @@ func TestCheckTxnPolicyLintsRejectsForeignRekeyTarget(t *testing.T) {
 
 	got := CheckTxnPolicyLints(
 		txn,
-		&Config{RejectForeignRekey: true},
+		&Config{TransactionTypes: allowAllTypes(), RejectForeignRekey: true},
 		map[string]bool{},
 	)
 	if len(got) != 1 {
@@ -203,7 +183,7 @@ func TestCheckTxnPolicyLintsRejectsForeignRekeyTarget(t *testing.T) {
 }
 
 func TestCheckTxnPolicyLintsFormatsMaxAlgoPaymentInAlgo(t *testing.T) {
-	cfg := &Config{MaxAlgoPayments: map[string]uint64{"testnet": 10_000_000}}
+	cfg := &Config{TransactionTypes: allowAllTypes(), MaxAlgoPayments: map[string]uint64{"testnet": 10_000_000}}
 	txn := types.Transaction{
 		Header: types.Header{GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)},
 		Type:   types.PaymentTx,
@@ -223,6 +203,7 @@ func TestCheckTxnPolicyLintsFormatsMaxAlgoPaymentInAlgo(t *testing.T) {
 
 func TestCheckTxnPolicyLintsUsesASAAmountFormatter(t *testing.T) {
 	cfg := &Config{
+		TransactionTypes: allowAllTypes(),
 		MaxASAAmounts: map[string]map[uint64]uint64{
 			"testnet": {10458941: 1_000_000},
 		},
@@ -276,19 +257,19 @@ func TestCheckTxnReviewPolicyLints(t *testing.T) {
 	}{
 		{
 			name:       "review algo payment by network",
-			cfg:        &Config{ReviewAlgoPayments: map[string]uint64{"testnet": 5_000_000}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), ReviewAlgoPayments: map[string]uint64{"testnet": 5_000_000}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)}, Type: types.PaymentTx, PaymentTxnFields: types.PaymentTxnFields{Amount: 6_000_000}},
 			wantRuleID: ReviewAlgoPaymentExceededRuleID,
 		},
 		{
 			name:       "review asa amount by network",
-			cfg:        &Config{ReviewASAAmounts: map[string]map[uint64]uint64{"testnet": {10458941: 500_000_000}}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), ReviewASAAmounts: map[string]map[uint64]uint64{"testnet": {10458941: 500_000_000}}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: testGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash)}, Type: types.AssetTransferTx, AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 10458941, AssetAmount: 500_000_001}},
 			wantRuleID: ReviewASAAmountExceededRuleID,
 		},
 		{
 			name:       "unknown genesis hash forces review when asa threshold exists",
-			cfg:        &Config{ReviewASAAmounts: map[string]map[uint64]uint64{"testnet": {10458941: 500_000_000}}},
+			cfg:        &Config{TransactionTypes: allowAllTypes(), ReviewASAAmounts: map[string]map[uint64]uint64{"testnet": {10458941: 500_000_000}}},
 			txn:        types.Transaction{Header: types.Header{GenesisHash: types.Digest{}}, Type: types.AssetTransferTx, AssetTransferTxnFields: types.AssetTransferTxnFields{XferAsset: 10458941, AssetAmount: 1}},
 			wantRuleID: ReviewUnknownGenesisHashRuleID,
 		},

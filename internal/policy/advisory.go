@@ -3,12 +3,26 @@
 
 package policy
 
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/noderole"
+)
+
 const (
 	ConfigAdvisorySeverityWarning = "warning"
 
 	ConfigAdvisoryRejectCloseRemainderRouteOverlap = "policy_overlap:reject_close_remainder:route_close_allow"
 	ConfigAdvisoryRejectAssetCloseRouteOverlap     = "policy_overlap:reject_asset_close:route_close_allow"
 	ConfigAdvisoryRejectClawbackRouteOverlap       = "policy_overlap:reject_clawback:route_clawback_allow"
+	// ConfigAdvisoryRejectedTypeRouted reports a route for a transfer type
+	// the document's transaction_types rejects; the route can never match.
+	ConfigAdvisoryRejectedTypeRouted = "policy_overlap:transaction_types:route_unreachable"
+	// ConfigAdvisoryCosignerNoFeeCap reports a cosigner document that allows
+	// movements but caps no fee: a cosigner has no warning review, so a
+	// permitted self-payment can carry any fee.
+	ConfigAdvisoryCosignerNoFeeCap = "policy_fee:cosigner_routes_without_fee_cap"
 )
 
 // ConfigAdvisory is a non-fatal policy-model warning. It reports confusing or
@@ -20,82 +34,45 @@ type ConfigAdvisory struct {
 	Message  string
 }
 
-// Advisories reports signer policy shapes that are valid but can surprise
-// users because one policy layer cannot weaken another: a route that allows
-// close-out or clawback does not override a reject_* setting. Key overrides
-// are checked with their inherited settings.
-func (d *SignerPolicyV1) Advisories() []ConfigAdvisory {
-	if d == nil || d.TransferPolicy == nil {
-		return nil
-	}
-	out := routeOverlapAdvisories("policy", d.SignerSettingsV1, d.TransferPolicy.Routes)
-	for _, key := range sortedKeys(d.KeyOverrides) {
-		effective := d.SignerSettingsV1
-		ov := d.KeyOverrides[key].SignerSettingsV1
-		for _, f := range []struct{ dst, src **bool }{
-			{&effective.RejectCloseRemainder, &ov.RejectCloseRemainder},
-			{&effective.RejectAssetClose, &ov.RejectAssetClose},
-			{&effective.RejectClawback, &ov.RejectClawback},
-		} {
-			if *f.src != nil {
-				*f.dst = *f.src
-			}
-		}
-		out = append(out, routeOverlapAdvisories("key_overrides/"+key, effective, d.TransferPolicy.Routes)...)
-	}
-	return dedupeAdvisories(out)
-}
-
-// Advisories reports cosigner policy shapes that are valid but can surprise
-// users; see SignerPolicyV1.Advisories.
-func (d *CosignerPolicyV1) Advisories() []ConfigAdvisory {
+// Advisories reports policy shapes that are valid but can surprise users
+// because one policy layer cannot weaken another: a route that allows
+// close-out or clawback does not override a reject_* setting, and a route
+// for a transaction type the document rejects never matches.
+func (d *PolicyV1) Advisories() []ConfigAdvisory {
 	if d == nil {
 		return nil
 	}
-	return routeOverlapAdvisories("policy", SignerSettingsV1{
-		RejectCloseRemainder: d.RejectCloseRemainder,
-		RejectAssetClose:     d.RejectAssetClose,
-		RejectClawback:       d.RejectClawback,
-	}, d.Routes)
-}
-
-func routeOverlapAdvisories(scope string, settings SignerSettingsV1, routes []RouteV1) []ConfigAdvisory {
+	var out []ConfigAdvisory
+	add := func(ruleID, message string) {
+		out = append(out, ConfigAdvisory{RuleID: ruleID, Scope: "policy", Severity: ConfigAdvisorySeverityWarning, Message: message})
+	}
 	allowsClose, allowsClawback := false, false
-	for _, route := range routes {
+	for _, route := range d.Routes {
 		allowsClose = allowsClose || route.AllowClose
 		allowsClawback = allowsClawback || route.AllowClawback
 	}
-	var out []ConfigAdvisory
-	add := func(ruleID, message string) {
-		out = append(out, ConfigAdvisory{RuleID: ruleID, Scope: scope, Severity: ConfigAdvisorySeverityWarning, Message: message})
-	}
-	if boolPtrValue(settings.RejectCloseRemainder) && allowsClose {
+	if d.RejectCloseRemainder && allowsClose {
 		add(ConfigAdvisoryRejectCloseRemainderRouteOverlap, "reject_close_remainder still rejects ALGO close-out even when a route sets allow_close")
 	}
-	if boolPtrValue(settings.RejectAssetClose) && allowsClose {
+	if d.RejectAssetClose && allowsClose {
 		add(ConfigAdvisoryRejectAssetCloseRouteOverlap, "reject_asset_close still rejects ASA close-out even when a route sets allow_close")
 	}
-	if boolPtrValue(settings.RejectClawback) && allowsClawback {
+	if d.RejectClawback && allowsClawback {
 		add(ConfigAdvisoryRejectClawbackRouteOverlap, "reject_clawback still rejects clawback even when a route sets allow_clawback")
 	}
-	return out
-}
-
-// dedupeAdvisories drops override advisories identical to the document's.
-func dedupeAdvisories(in []ConfigAdvisory) []ConfigAdvisory {
-	base := map[string]bool{}
-	var out []ConfigAdvisory
-	for _, a := range in {
-		if a.Scope == "policy" {
-			base[a.RuleID] = true
-		} else if base[a.RuleID] {
-			continue
+	if len(d.Routes) > 0 {
+		var rejected []string
+		for _, txType := range []string{"pay", "axfer"} {
+			if d.TransactionTypes.Verdict(txType) == TransactionTypeReject {
+				rejected = append(rejected, txType)
+			}
 		}
-		out = append(out, a)
+		if len(rejected) > 0 {
+			add(ConfigAdvisoryRejectedTypeRouted, fmt.Sprintf("transaction_types rejects %s, so no route can match that type", strings.Join(rejected, " and ")))
+		}
+		if d.Role == noderole.RoleCosigner && d.MaxFeeMicroAlgos == 0 {
+			add(ConfigAdvisoryCosignerNoFeeCap, "routes permit movements but max_fee_microalgos is 0 (no cap); a cosigner has no warning review, so a permitted self-payment can carry any fee")
+		}
 	}
 	return out
-}
-
-func boolPtrValue(v *bool) bool {
-	return v != nil && *v
 }

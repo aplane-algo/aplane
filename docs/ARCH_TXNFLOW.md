@@ -788,21 +788,26 @@ When modifications occur, the approval UI displays an explicit banner:
 ### Relevant Policy Parameters
 
 The following runtime and policy settings affect server behavior. Policy
-settings live in the selected generation's `policy.json` on signer nodes, in
-the v1 format specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
+settings live in the selected generation's policy documents, in the v1 format
+specified in [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md): the node default
+(`default.json`) or the signing key's own document
+(`policies/<selector>.json`), whichever governs the key. Every policy field
+below is required in each document; the "Shipped default" column is the value
+in the embedded signer default a fresh store starts from.
 
-| Setting | Location | Default | Description |
-|---------|----------|---------|-------------|
+| Setting | Source | Shipped default | Description |
+|---------|--------|-----------------|-------------|
 | `user_auto_approve` | `identities/default/config.yaml` | `false` | Sign requests that are not auto-rejected, forced to review, or explicitly auto-approved without TUI confirmation. |
-| `reject_foreign_rekey` | signer `policy.json` | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
-| `reject_close_remainder` | signer `policy.json` | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
-| `reject_asset_close` | signer `policy.json` | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
-| `reject_clawback` | signer `policy.json` | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
-| `always_review_warnings` | signer `policy.json` | `false` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
-| `auto_approve_self_noop_transfer` | signer `policy.json` | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
-| `max_fee_microalgos` | signer `policy.json` | unset | Reject txns whose fee exceeds the raw microAlgo ceiling. |
-| `limits` | signer `policy.json` | unset | Per-network, per-asset `review_above` (force review) and `reject_above` (reject) thresholds for ALGO payments (microAlgos) and ASA transfers (base units), as decimal strings keyed by `algo` or `asa:<id>`. |
-| `key_overrides` | signer `policy.json` | unset | Sparse per-key overrides keyed by signing auth address, carrying only the scalar settings above and `limits`. Unset scalars inherit the document value; `limits` merge per threshold, and `null` removes an inherited threshold. Nested overrides are rejected. |
+| `transaction_types` | policy document (default or the key's own file) | `{"*": "allow"}` | Per-type verdict evaluated before every other rule: `reject` is a hard rejection, `review` forces operator review, `allow` continues to the rules below; `*` covers every type not named. |
+| `reject_foreign_rekey` | policy document (default or the key's own file) | `true` | Reject txns whose non-zero `RekeyTo` target is not held by the current signer before approval. |
+| `reject_close_remainder` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `CloseRemainderTo` before approval. |
+| `reject_asset_close` | policy document (default or the key's own file) | `false` | Reject txns with non-zero `AssetCloseTo` before approval. |
+| `reject_clawback` | policy document (default or the key's own file) | `false` | Reject ASA clawback txns using `AssetSender` before approval. |
+| `always_review_warnings` | policy document (default or the key's own file) | `true` | Force operator review for warning-level findings before auto-approval or `user_auto_approve:true` can sign. |
+| `auto_approve_self_noop_transfer` | policy document (default or the key's own file) | `false` | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self only when it has no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee is at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed only when they exactly match APlane's dummy transaction shape and fee adjustment. |
+| `max_fee_microalgos` | policy document (default or the key's own file) | `"0"` (no cap) | Reject txns whose fee exceeds the raw microAlgo ceiling. |
+| `limits` | policy document (default or the key's own file) | none | Optional per-network, per-asset `review_above` (force review) and `reject_above` (reject) thresholds for ALGO payments (microAlgos) and ASA transfers (base units), as decimal strings keyed by `algo` or `asa:<id>`. |
+| `transfer_policy` | policy document (default or the key's own file) | one `self-transfer` route; `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` all `operator_default` | Route table for direct `pay` and `axfer` movements and the verdict for a movement no route covers. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If
 they require additional resource dummies or fees, the request is rejected.
@@ -819,12 +824,20 @@ For the canonical current policy verdict model, see
 [ARCH_POLICY.md](ARCH_POLICY.md). This section focuses on transaction-flow
 consequences.
 
-Signing uses:
+Signing resolves the policy per signing key (the key's own document, or the
+node default) from one snapshot captured when the request's signing service
+is built, then uses:
 
+- the transaction-type verdict (`transaction_types`) first: `reject` is a
+  hard rejection and `review` forces review, both as `transaction_type:<type>`,
 - hard-reject signer safety policy before approval,
 - forced-review policy before auto-approval,
 - explicit auto-approval policy for narrow low-risk requests,
-- warning analysis for operator-visible risk surfacing,
+- warning analysis for operator-visible risk surfacing: rekey, close-out,
+  asset close, clawback, application delete, clear-state, or update, asset
+  reconfigure or destroy, asset freeze or unfreeze, and unusually high fees;
+  under `always_review_warnings` these force review on the signer's own legs,
+  and a warning on a passthrough or foreign leg forces review regardless,
 - human approval or `user_auto_approve:true` for requests that are not auto-rejected, forced to review, or explicitly auto-approved.
 
 | Request Type | Warning / Review Surface | Human Approval |

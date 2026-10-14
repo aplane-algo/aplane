@@ -1,18 +1,101 @@
 {
-  "format": "aplane.cosigner-policy.v1",
-  "description": "rekey_policy references a per-network address set; rekey edges are not network-scoped.",
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
   "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "description": "Treasury cosigner",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": false,
+  "max_fee_microalgos": "5000",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
+  "limits": {
+    "mainnet": {
+      "asa:31566704": {
+        "reject_above": "10000000000"
+      },
+      "algo": {
+        "reject_above": "2000000000"
+      }
+    }
+  },
   "address_sets": {
-    "ops": {
-      "testnet": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"]
+    "treasury": [
+      "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+    ],
+    "exchange": {
+      "mainnet": [
+        "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"
+      ]
+    },
+    "new_auth": [
+      "GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA"
+    ]
+  },
+  "asset_sets": {
+    "usd": {
+      "mainnet": [
+        "asa:31566704"
+      ]
     }
   },
   "transfer_policy": {
-    "routes": []
+    "blocked_destinations": [
+      "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"
+    ],
+    "routes": [
+      {
+        "id": "treasury-to-exchange",
+        "networks": [
+          "mainnet"
+        ],
+        "sources": [
+          "@treasury"
+        ],
+        "assets": [
+          "@usd",
+          "algo"
+        ],
+        "destinations": [
+          "@exchange"
+        ],
+        "limits": {
+          "mainnet": {
+            "asa:31566704": {
+              "reject_above": "1000000000"
+            }
+          }
+        }
+      },
+      {
+        "id": "treasury-self",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "@treasury"
+        ],
+        "assets": [
+          "*"
+        ],
+        "destinations": [
+          "self"
+        ]
+      }
+    ]
   },
   "rekey_policy": {
     "allowed": [
-      {"sender": "@ops", "targets": ["EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"]}
+      {
+        "sender": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+        "targets": [
+          "@exchange"
+        ]
+      }
     ]
   }
 }

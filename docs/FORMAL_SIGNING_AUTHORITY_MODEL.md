@@ -378,12 +378,12 @@ a key by recomputing addresses from `signing_metadata_version`,
 `base_key_type`, `template_fingerprint`, `lsig_derivation`, or
 `salt_counter` alone.
 
-### S12: Auth Address Determines Policy Override
+### S12: Auth Address Selects The Policy Document
 
-The key used for client-signing `key_overrides` selection is the request
-`auth_address`. It is not derived from transaction sender. This preserves
-rekey semantics: a rekeyed account uses the policy override for the signing
-authority address.
+The selector for client-signing policy selection (the key's own document if
+one exists, else the node default) is the request `auth_address`. It is not
+derived from transaction sender. This preserves rekey semantics: a rekeyed
+account is judged by the policy of the signing authority address.
 
 ```text
 SignMode(entry) and Accepted(entry) =>
@@ -481,7 +481,7 @@ High-value test anchors:
   behavior,
 - sign-mode `auth_address` resolves through the runtime index; unresolved
   addresses reject in planning,
-- `key_overrides` selection uses `auth_address`, not transaction sender,
+- policy document selection uses `auth_address`, not transaction sender,
 - misnamed key files are skipped instead of being loaded under their
   payload-derived address.
 

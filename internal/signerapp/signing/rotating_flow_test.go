@@ -55,7 +55,7 @@ func newSigningFixtureFor(t *testing.T, kind rotatingTestType) (*rotatingFixture
 	approve := true
 	f.svc.Approval = &ApprovalService{UserAutoApprove: &approve}
 	f.svc.GenerateTxnDescriptionFromTxn = func(types.Transaction) string { return "txn" }
-	f.svc.Policy = policy.DefaultConfig()
+	f.svc.PolicyFor = fixedPolicy(policy.DefaultConfig())
 	f.svc.AuditLog = audit
 	f.svc.Rotating.Releases = &ReleaseMemory{}
 	f.chain.round = 1000

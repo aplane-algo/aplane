@@ -76,7 +76,7 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 	testsByFile := map[string][]string{
 		"../../internal/signerapp/signing/component_test.go": {
 			"TestPrepareComponentSigningCanonicalizesTargetsAndMessages",
-			"TestSignComponentCosignerRequiresPolicyBeforeKeyLoad",
+			"TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad",
 			"TestSignComponentCosignerPolicyAllowsSigning",
 			"TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup",
 			"TestAssembleDecodedGuardedRejectsMismatchedPassthrough",

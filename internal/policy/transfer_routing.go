@@ -25,7 +25,6 @@ type TransferOnNoRoute string
 // TransferPolicy is the compiled effective routing policy attached to a policy
 // Config.
 type TransferPolicy struct {
-	Enabled             bool
 	OnNoRoute           TransferOnNoRoute
 	CloseOnNoRoute      TransferOnNoRoute
 	ClawbackOnNoRoute   TransferOnNoRoute

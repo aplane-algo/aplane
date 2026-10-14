@@ -11,7 +11,7 @@
 Normative inputs:
 
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy storage, verdict precedence, snapshot
-  semantics, rule inventory, transfer routing, key overrides, and
+  semantics, rule inventory, transfer routing, per-key policy selection, and
   transaction scope.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing approval and
   policy contract.
@@ -34,6 +34,13 @@ Pseudo-formal snippets in this document are relational pseudocode. `Reject(...)`
 means no successful approval/signing path exists for that input. `Decide(...) =
 Verdict` means the decision procedure returns that verdict.
 
+The machine-checked companion `policy_precedence.tla`
+([FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md))
+abstracts the rule inventory as deny, review, and approve families. Policy
+selection and the transaction-type rule below add members to those families
+and change neither the families nor their precedence, so the spec needs no
+change for them.
+
 ## Scope
 
 Client-signing policy decides whether a planned signing request is:
@@ -43,11 +50,11 @@ Client-signing policy decides whether a planned signing request is:
 - explicitly approved without manual review,
 - handled by the operator default.
 
-Cosigner component policy is a separate deterministic surface stored as one
-document per cosigner key (`policies/<WitnessKeyID>.json`): no manual-review
-verdict and no operator default. This
-document defines the shared snapshot and sparse-override vocabulary; the
-cosigner-specific decision rules are modeled in
+Cosigner policy is a separate deterministic surface with the same document
+set (a node default plus per-key documents selected by Witness Key ID): no
+manual-review verdict and no operator default. This document defines the
+shared snapshot and policy-selection vocabulary; the cosigner-specific
+decision rules are modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 Client simulation obtains signatures through ordinary signing, so every policy
@@ -67,18 +74,26 @@ Policy is separate from:
 ### Policy Snapshot
 
 `PolicySnapshot` is the immutable effective policy observed by one signing
-request. For client-signing requests it includes:
+request. It is one compiled `NodePolicy` for the node's selected generation.
+For client-signing requests it includes:
 
-- product policy fields from the signer `policy.json`,
-- signer `key_overrides` (scalar settings and `limits`),
-- transfer routing configuration,
-- policy defaults for absent fields,
+- `role`: the node role every document was decoded for,
+- `default`: the compiled node default document (`default.json`),
+- `own`: a partial map from key selector to that key's own compiled document
+  (`policies/<selector>.json`; the selector is the signing address on a
+  signer node and the Witness Key ID on a cosigner node),
+- transfer routing configuration carried inside each compiled document,
 - the product runtime's operator default input `user_auto_approve`, even though that
-  setting is stored outside `policy.json`.
+  setting is stored outside the policy documents.
 
-The policy document is trusted only after sidecar verification. A missing or
-mismatched `policy.json.hmac` fails closed. A reload failure keeps the previous
-in-memory snapshot active.
+Every verdict-bearing field is present in each stored document; the decoder
+fills in no defaults. A key's own document replaces the node default wholesale.
+There is no overlay, inheritance, or merge between the two.
+
+Each document is trusted only after its own sidecar verification. A missing
+or mismatched `.hmac` sidecar on any document, default or per-key, fails the
+whole load closed; no partial document set is ever installed. A reload failure
+keeps the previous in-memory snapshot active.
 
 ### Planned Request
 
@@ -190,12 +205,19 @@ Among policy verdicts, the most restrictive matching verdict wins. Therefore an
 Always Review match blocks both Always Approve and `user_auto_approve:true`, and
 an Always Deny match blocks every later phase.
 
+Inside Always Deny and Always Review, the transaction-type rule is evaluated
+first and alone (see Transaction Type Rule below). The order of the remaining
+rules within a phase affects only which `rule_id` is projected, not the
+verdict.
+
 ## Policy Phases
 
 ### Always Deny
 
 Always Deny rules are hard safety guards. Current deny sources include:
 
+- `transaction_types` entries with verdict `reject` (rule id
+  `transaction_type:<type>`), evaluated first,
 - `reject_foreign_rekey`,
 - `reject_close_remainder`,
 - `reject_asset_close`,
@@ -210,6 +232,8 @@ Always Deny rules are hard safety guards. Current deny sources include:
 Always Review rules force operator approval even when the operator default would
 otherwise auto-approve. Current review sources include:
 
+- `transaction_types` entries with verdict `review` (rule id
+  `transaction_type:<type>`), evaluated first,
 - `always_review_warnings`,
 - network- and asset-scoped `limits` `review_above` thresholds,
 - transfer routing `on_no_route: review` and `review_above` thresholds.
@@ -233,26 +257,63 @@ The operator default is not policy. It is reached only when no policy verdict
 matched. It is controlled by `user_auto_approve` in
 `identities/default/config.yaml`.
 
+### Transaction Type Rule
+
+Every document carries `transaction_types`, a total map from transaction type
+(`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`, with `*` as
+the required fallback) to one of `allow`, `review`, `reject`. For a
+signer-controlled slot the verdict for its transaction type is read before any
+other rule of the phase:
+
+```text
+TypeVerdict(policy, txn) = policy.transaction_types[txn.type]
+                           if defined, else policy.transaction_types["*"]
+
+TypeVerdict = reject => Reject(transaction_type:<type>)
+                        (Always Deny, before every other deny rule;
+                         no other deny rule is evaluated for the slot)
+TypeVerdict = review => Review(transaction_type:<type>)
+                        (Always Review, before every other review rule;
+                         no other review rule is evaluated for the slot)
+TypeVerdict = allow  => the slot continues to the remaining rules
+```
+
+`allow` grants nothing by itself: the remaining deny, review, approve, and
+operator-default phases still apply. The same `rule_id` is emitted at the deny
+and review tiers; the phase that emits it says which.
+
 ## Effective Policy Selection
 
-For signer-controlled slots, the effective policy may be modified by
-`key_overrides`.
+Every signer-controlled slot is judged against exactly one document: the
+signing key's own document when the snapshot holds one, otherwise the node
+default.
+
+```text
+PolicyFor(snapshot, selector) =
+  snapshot.own[selector]   if defined
+  snapshot.default         otherwise
+```
 
 Client-signing rules:
 
-1. Client-signing overrides are keyed by the signing auth address.
+1. The selector is the signing auth address.
 2. The auth address is selected from the key that will sign, not from the
    transaction sender.
-3. This matters for rekeyed accounts: the auth address controls the override.
+3. This matters for rekeyed accounts: the auth address selects the document.
 4. Missing key-type metadata for a signer-controlled slot still fails closed before a
-   policy decision can silently fall back to the wrong override.
-5. Override fields are sparse overlays over the product policy: scalars replace
-   inherited values and `limits` merge per network, asset, and threshold;
-   nested overrides are rejected.
+   policy decision can silently fall back to the wrong document.
+5. Selection is total within a loaded snapshot: a key with no document of its
+   own follows the default, with no field inherited from one document into
+   the other. `PolicyFor` is undefined only when no snapshot is loaded, and
+   then every request fails closed.
+6. The resolver is bound to one snapshot for the life of the request's signing
+   service (P2), so every slot of one request is judged against the same
+   document set.
 
-Cosigner policy has no overrides. Each cosigner key has its own document,
-selected by Witness Key ID in the cosigner-role component-signing flow modeled
-in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
+Cosigner policy uses the same selection with the Witness Key ID as the
+selector and the cosigner node default as the fallback; the cosigner-role
+component-signing flow is modeled in
+[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection
 
@@ -287,7 +348,7 @@ Policy updates are atomic from the perspective of signing requests:
 
 `user_auto_approve` is captured at the same point even though it is sourced
 from product config (`identities/default/config.yaml`) rather
-than from `policy.json`. Admin RPCs that toggle `user_auto_approve` are
+than from the policy documents. Admin RPCs that toggle `user_auto_approve` are
 visible to subsequent signing requests but do not propagate into a request
 that has already captured its snapshot.
 
@@ -296,8 +357,9 @@ that has already captured its snapshot.
 ### P1: Trusted Snapshot Only
 
 An active policy snapshot is either the previous trusted snapshot or a newly
-verified replacement. A failed verification or reload cannot install an
-untrusted policy.
+verified replacement in which every document, default and per-key, passed
+sidecar verification. A failed verification of any one document, or a failed
+reload, cannot install an untrusted or partial policy.
 
 ```text
 ActivePolicyAfterReload in {PreviousTrustedPolicy, VerifiedReplacementPolicy}
@@ -397,14 +459,13 @@ If no later phase matches and `user_auto_approve:true`, the request can still
 be auto-approved via Operator Default. Routing does not *grant* auto-approval,
 but it does not *block* it either.
 
-### P10: Auth Key Selects Overrides
+### P10: Auth Key Selects The Document
 
-For signer-controlled slots, key overrides are selected by the signing auth
-address.
+For signer-controlled slots, the governing document is selected by the signing
+auth address: the key's own document if present, else the node default.
 
 ```text
-EffectivePolicyForSlot(slot) =
-  Overlay(product_policy, key_overrides[AuthAddress(slot)])
+EffectivePolicyForSlot(slot) = PolicyFor(snapshot, AuthAddress(slot))
 ```
 
 ## Assumptions
@@ -425,7 +486,7 @@ This model assumes:
 This model does not prove:
 
 - HTTP authentication or principal authorization,
-- policy YAML parser correctness,
+- policy JSON document decoding and schema validation in full detail,
 - HMAC algorithm correctness,
 - algod transaction validity,
 - transfer-route schema validation in full detail,
@@ -441,6 +502,8 @@ model and should be refreshed when code is renamed or ownership moves.
 Implementation areas that should remain aligned with this model:
 
 - `internal/policy/config.go`
+- `internal/policy/doc_v1.go`
+- `internal/policy/doc_v1_compile.go`
 - `internal/policy/lint.go`
 - `internal/policy/review.go`
 - `internal/policy/transfer_routing.go`
@@ -453,7 +516,8 @@ Implementation areas that should remain aligned with this model:
 
 High-value test anchors:
 
-- malformed or unsigned policy files fail closed,
+- a malformed or unsigned document, default or per-key, fails the whole load
+  closed,
 - reload failure keeps the previous policy snapshot,
 - one request uses one captured snapshot through approval and signing,
 - Always Deny wins over manual approval and auto-approval,
@@ -462,7 +526,11 @@ High-value test anchors:
 - Operator Default is reached only when no policy verdict matched,
 - passthrough and foreign slots are skipped by signer-owned policy but warning-bearing danger fields force review,
 - routing matches do not auto-approve,
-- key overrides use auth address rather than transaction sender,
+- the signing auth address, not the transaction sender, selects the key's own
+  document or the default,
+- a key's own document replaces the default wholesale; no field is inherited,
+- a `transaction_types` reject names the type and precedes every other deny
+  rule; a `review` entry precedes every other review rule,
 - network-scoped thresholds use `GenesisHash`, not `GenesisID`.
 
 ## Open Questions

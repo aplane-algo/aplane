@@ -177,7 +177,7 @@ func TestClassifyAndApplyCrossClassCollisionRequiresReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	kr := cryptotest.Keyring(t, testExportMasterKey)
-	classification, err := ClassifyRestoreSet(active, &RestoreSet{Entries: []CredentialEntry{entry}}, kr)
+	classification, err := ClassifyRestoreSet(active, &RestoreSet{SourceNodeRole: "signer", Entries: []CredentialEntry{entry}}, kr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestClassifyRestoreSetReportsReadableDifferentCredential(t *testing.T) {
 		t.Fatalf("install readable destination credential: %v", err)
 	}
 
-	classification, err := ClassifyRestoreSet(active, &RestoreSet{Entries: []CredentialEntry{entry}}, kr)
+	classification, err := ClassifyRestoreSet(active, &RestoreSet{SourceNodeRole: "signer", Entries: []CredentialEntry{entry}}, kr)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ func TestRecoveryDestinationRefusesDamageOutsideSelectedCredential(t *testing.T)
 	lsig.RegisterClient()
 	tests := map[string]func(t *testing.T, active storepaths.GenPaths){
 		"policy sidecar": func(t *testing.T, active storepaths.GenPaths) {
-			writeDamage(t, active.PolicyIntegritySidecar())
+			writeDamage(t, active.DefaultPolicyIntegritySidecar())
 		},
 		"node-role sidecar": func(t *testing.T, active storepaths.GenPaths) {
 			writeDamage(t, active.NodeRoleIntegritySidecar())

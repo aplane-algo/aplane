@@ -157,7 +157,7 @@ counterexample trace.
 - Properties involving specific rule families. The abstract matches
   cover precedence, not rule semantics.
 - Snapshot stability (P1, P2), passthrough/foreign scope (P8), routing
-  verdict exclusion (P9), or auth-key-type selection (P10). These would
+  verdict exclusion (P9), or per-key policy selection (P10). These would
   require additional state or composition with other modules.
 - That the sign-boundary output rules hold under a real (non-oracle)
   verdict. That is the composition with `sign_boundary.tla` discussed

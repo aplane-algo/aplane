@@ -12,25 +12,20 @@ import (
 
 // EvaluateAlwaysReviewRules evaluates policy rules that force operator review
 // after hard rejection passes and before auto-approval or the operator default.
-func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool) (ruleID string, review bool) {
-	if policyCfg == nil {
-		return "", false
-	}
-
+// A signer-controlled position whose policy cannot be resolved forces review,
+// which is the closed outcome this phase can produce.
+func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyFor PolicyResolver, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool) (ruleID string, review bool) {
 	limit := requestCount
 	if limit > len(txns) {
 		limit = len(txns)
 	}
 	for i := 0; i < limit; i++ {
-		cfg := policyCfg
 		signerControlled := !passthroughIndices[i] && !foreignIndices[i]
-		if signerControlled && i < len(authKeys) && authKeys[i] != "" {
-			cfg = policyCfg.ForKey(authKeys[i])
-		}
-		if cfg == nil {
-			continue
-		}
 		if signerControlled {
+			cfg := resolvePolicy(policyFor, authKeys, i)
+			if cfg == nil {
+				return "", true
+			}
 			if violations := policy.CheckTxnReviewPolicyLints(txns[i], cfg); len(violations) > 0 {
 				return violations[0].RuleID, true
 			}

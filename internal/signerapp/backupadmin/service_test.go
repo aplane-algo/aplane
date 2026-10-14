@@ -205,7 +205,7 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 			); err != nil {
 				return err
 			}
-			return policy.WriteInitialSignerPolicy(staged, kr, time.Unix(1_700_000_000, 0))
+			return policy.WriteEmbeddedDefault(staged, noderole.RoleSigner, kr, time.Unix(1_700_000_000, 0))
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -220,12 +220,16 @@ func installBackupAdminPolicy(t *testing.T, ir *productruntime.Runtime, paths st
 		if err != nil {
 			return err
 		}
-		return policy.WriteInitialSignerPolicy(active, kr, time.Unix(1_700_000_000, 0))
+		return policy.WriteEmbeddedDefault(active, noderole.RoleSigner, kr, time.Unix(1_700_000_000, 0))
 	}); err != nil {
 		t.Fatal(err)
 	}
+	embedded, err := policy.EmbeddedDefault(noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
 	nodePolicy, err := policyruntime.Compile(noderole.RoleSigner, "", nil,
-		[]policy.StoredDocument{{Bytes: policy.InitialSignerPolicy}})
+		[]policy.StoredDocument{{Key: policy.DefaultKey, Bytes: embedded}})
 	if err != nil {
 		t.Fatal(err)
 	}

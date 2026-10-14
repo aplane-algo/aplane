@@ -1,6 +1,8 @@
 {
-  "format": "aplane.signer-policy.v1",
-  "description": "Operations signer",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+  "description": "Operations key",
   "reject_foreign_rekey": true,
   "reject_close_remainder": false,
   "reject_asset_close": false,
@@ -8,6 +10,13 @@
   "always_review_warnings": true,
   "auto_approve_self_noop_transfer": false,
   "max_fee_microalgos": "10000",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow",
+    "appl": "review",
+    "keyreg": "review"
+  },
   "limits": {
     "mainnet": {
       "algo": {
@@ -43,7 +52,6 @@
     }
   },
   "transfer_policy": {
-    "enabled": true,
     "on_no_route": "reject",
     "close_on_no_route": "review",
     "clawback_on_no_route": "reject",
@@ -51,6 +59,22 @@
       "KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"
     ],
     "routes": [
+      {
+        "id": "self-transfer",
+        "description": "Any account may send any asset to itself",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "*"
+        ],
+        "assets": [
+          "*"
+        ],
+        "destinations": [
+          "self"
+        ]
+      },
       {
         "id": "treasury-to-ops",
         "description": "Treasury tops up ops in ALGO",
@@ -138,19 +162,5 @@
         "allow_clawback": true
       }
     ]
-  },
-  "key_overrides": {
-    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
-      "description": "Treasury key: tighter fees",
-      "max_fee_microalgos": "2000",
-      "reject_asset_close": true,
-      "limits": {
-        "mainnet": {
-          "algo": {
-            "review_above": "50000000"
-          }
-        }
-      }
-    }
   }
 }

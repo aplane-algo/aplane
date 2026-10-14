@@ -176,7 +176,7 @@ func extractAssetTransferMovements(txn types.Transaction) []TransferMovement {
 }
 
 func evaluateTransferRouting(txn types.Transaction, cfg *Config, routingExempt bool) []transferRoutingVerdict {
-	if cfg == nil || cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled || routingExempt {
+	if cfg == nil || cfg.TransferPolicy == nil || routingExempt {
 		return nil
 	}
 	movements := ExtractTransferMovements(txn)

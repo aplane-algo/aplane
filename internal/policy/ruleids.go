@@ -48,11 +48,10 @@ const (
 	TransferRoutingCloseRejectedRuleID      = "transfer_policy:close_rejected"
 	TransferRoutingClawbackRejectedRuleID   = "transfer_policy:clawback_rejected"
 
-	CosignerKeyHasNoPolicyRuleID         = "cosigner_policy:key_has_no_policy"
-	CosignerTransferPolicyRequiredRuleID = "cosigner_policy:transfer_policy_required"
-	CosignerDeterministicRoutingRuleID   = "cosigner_policy:deterministic_routing_required"
-	CosignerNonTransferRuleID            = "cosigner_policy:non_transfer"
-	CosignerRekeyRuleID                  = "cosigner_policy:reject_rekey"
+	// CosignerRekeyRuleID identifies a cosigner rejection of a non-zero
+	// RekeyTo: the coarse switch, an unsupported rekey shape, or an edge
+	// rekey_policy does not allow.
+	CosignerRekeyRuleID = "cosigner_policy:reject_rekey"
 )
 
 const (
@@ -66,4 +65,11 @@ const (
 // documented grammar transfer_policy:<route_id>:<outcome>.
 func TransferRoutingRouteRuleID(routeID, outcome string) string {
 	return fmt.Sprintf("transfer_policy:%s:%s", routeID, outcome)
+}
+
+// TransactionTypeRuleID builds the rule ID for a transaction_types verdict
+// using the grammar transaction_type:<type>. The same ID is emitted at the
+// deny and review tiers; the phase that emits it says which.
+func TransactionTypeRuleID(txType string) string {
+	return "transaction_type:" + txType
 }

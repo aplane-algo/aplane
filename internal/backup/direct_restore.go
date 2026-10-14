@@ -28,8 +28,8 @@ import (
 
 // CredentialEntry is one complete canonical managed credential prepared for
 // destination installation. KeyJSON contains private authority and must be
-// cleared with ZeroSecrets. Policy is a cosigner credential's archived policy
-// document, nil when the archive carries none.
+// cleared with ZeroSecrets. Policy is the credential's archived policy
+// document of its own, nil when the archive carries none.
 type CredentialEntry struct {
 	Selector string
 	Category string
@@ -175,11 +175,9 @@ func LoadManagedRestoreSet(
 			inspected.ZeroSecrets()
 			return nil, authenticatedArchiveError(fmt.Errorf("validate backup credential %s: %w", selector, err))
 		}
-		if inspected.Category == keys.CategoryWitness {
-			if inspected.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase); err != nil {
-				inspected.ZeroSecrets()
-				return nil, authenticatedArchiveError(err)
-			}
+		if inspected.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
+			inspected.ZeroSecrets()
+			return nil, authenticatedArchiveError(err)
 		}
 		set.Entries = append(set.Entries, inspected)
 	}
@@ -362,10 +360,14 @@ func ClassifyRestoreSet(
 	if kr == nil {
 		return RestoreClassification{}, fmt.Errorf("destination keyring is required")
 	}
+	role, err := noderole.ParseRole(set.SourceNodeRole)
+	if err != nil {
+		return RestoreClassification{}, fmt.Errorf("restore set node role: %w", err)
+	}
 	var result RestoreClassification
 	for i := range set.Entries {
 		entry := set.Entries[i]
-		if err := classifyRestorePolicy(active, entry, kr, &result); err != nil {
+		if err := classifyRestorePolicy(active, role, entry, kr, &result); err != nil {
 			return RestoreClassification{}, err
 		}
 		destPath, exists, err := keys.ManagedCredentialDestinationActive(
@@ -425,11 +427,11 @@ func ClassifyRestoreSet(
 // installed. A destination without a policy takes the archived one; a
 // different destination policy is a conflict that replace_existing resolves;
 // a destination policy is kept when the archive carries none.
-func classifyRestorePolicy(active storepaths.ActivePaths, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) error {
+func classifyRestorePolicy(active storepaths.ActivePaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring, result *RestoreClassification) error {
 	if entry.Policy == nil {
 		return nil
 	}
-	current, err := destinationPolicy(active, entry.Selector, kr)
+	current, err := destinationPolicy(active, role, entry.Selector, kr)
 	switch {
 	case err != nil:
 		result.Conflicts = append(result.Conflicts, RestoreConflict{

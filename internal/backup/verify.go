@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // VerifyResult contains the result of verifying one complete credential.
@@ -74,7 +73,7 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, 
 		return nil, err
 	}
 	for _, key := range policyKeys {
-		result := verifyPolicyDeep(keysDir, key, passphrase, report.Results)
+		result := verifyPolicyDeep(keysDir, key, passphrase, role, report.Results)
 		report.Results = append(report.Results, result)
 		if result.Valid {
 			report.ValidFiles++
@@ -86,21 +85,21 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, 
 	return report, nil
 }
 
-// verifyPolicyDeep checks one archived policy: it must belong to a cosigner
-// credential in the archive and decode as that key's v1 document.
-func verifyPolicyDeep(keysDir, key string, passphrase []byte, credentials []VerifyResult) VerifyResult {
+// verifyPolicyDeep checks one archived policy: it must belong to a
+// credential in the archive and decode as that key's v1 document for role.
+func verifyPolicyDeep(keysDir, key string, passphrase []byte, role noderole.Role, credentials []VerifyResult) VerifyResult {
 	result := VerifyResult{Address: key, FileName: backupPoliciesDir + "/" + key + ".apb", KeyType: "policy"}
 	hasCredential := false
 	for _, c := range credentials {
-		if c.Address == key && c.Valid && witness.IsKeyType(c.KeyType) {
+		if c.Address == key && c.Valid {
 			hasCredential = true
 		}
 	}
 	if !hasCredential {
-		result.Error = "policy has no cosigner credential in the archive"
+		result.Error = "policy has no credential in the archive"
 		return result
 	}
-	if _, err := readBackupPolicy(keysDir, key, passphrase); err != nil {
+	if _, err := readBackupPolicy(keysDir, key, passphrase, role); err != nil {
 		result.Error = err.Error()
 		return result
 	}

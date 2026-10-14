@@ -267,21 +267,34 @@ mkdir -p "$SIGNER_DATA/identities/default/.ssh"
 cp "$CLIENT_DATA/.ssh/id_ed25519.pub" "$SIGNER_DATA/identities/default/.ssh/authorized_keys"
 echo "  Authorized client key for default identity"
 
-# Apply a permissive test policy to the authenticated active generation.
-# Production defaults reject rekey/close/clawback, but integration tests need
-# these operations to succeed for cleanup and workflow verification.
-# Tests that specifically verify policy rejection create their own fixtures.
+# Replace the node default with a permissive test policy. The shipped default
+# rejects foreign rekeys and reviews warnings; integration tests need rekey,
+# close, and clawback to succeed for cleanup and workflow verification, and
+# every route miss to fall through to the operator default. Tests that verify
+# policy rejection apply their own documents.
 APSIGNER_PASSPHRASE="$TEST_PASSPHRASE" \
     go run "$PROJECT_ROOT/cmd/apadmin" -d "$SIGNER_DATA" policy rescue apply --yes - << JSON
 {
-  "format": "aplane.signer-policy.v1",
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "default",
   "reject_foreign_rekey": false,
   "reject_close_remainder": false,
   "reject_asset_close": false,
-  "reject_clawback": false
+  "reject_clawback": false,
+  "always_review_warnings": false,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": { "*": "allow" },
+  "transfer_policy": {
+    "on_no_route": "operator_default",
+    "close_on_no_route": "operator_default",
+    "clawback_on_no_route": "operator_default",
+    "routes": []
+  }
 }
 JSON
-echo "  Applied permissive test policy for default identity"
+echo "  Applied permissive test default policy for default identity"
 
 # Populate the plaintext template library used by apadmin's template browser.
 mkdir -p "$SIGNER_DATA/library/templates"

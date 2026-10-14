@@ -9,83 +9,33 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// Compile builds the effective signer policy. defaults supplies runtime
-// context such as the genesis-hash resolver; nil uses DefaultConfig. Key
-// overrides resolve against the compiled document, never against each other.
-func (d *SignerPolicyV1) Compile(defaults *Config) (*Config, error) {
+// Compile builds the effective policy for the document's key. defaults
+// supplies runtime context such as the genesis-hash resolver and the amount
+// formatter; nil uses DefaultConfig. Every verdict field comes from the
+// document: nothing is inherited from defaults or from any other document.
+func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 	cfg := DefaultConfig()
 	if defaults != nil {
 		cfg = defaults.Clone()
 	}
-	cfg.KeyOverrides = nil
-	applySignerSettingsV1(cfg, d.SignerSettingsV1)
+	cfg.Role = d.Role
+	cfg.RejectForeignRekey = d.RejectForeignRekey
+	cfg.RejectRekey = d.RejectRekey
+	cfg.RejectCloseRemainder = d.RejectCloseRemainder
+	cfg.RejectAssetClose = d.RejectAssetClose
+	cfg.RejectClawback = d.RejectClawback
+	cfg.AlwaysReviewWarnings = d.AlwaysReviewWarnings
+	cfg.AutoApproveSelfNoOpTransfer = d.AutoApproveSelfNoOpTransfer
+	cfg.MaxFeeMicroAlgos = d.MaxFeeMicroAlgos
+	cfg.TransactionTypes = d.TransactionTypes.Clone()
+	cfg.RekeyPolicy = nil
 	setConfigLimitsV1(cfg, d.Limits)
 	addressSets, assetSets, err := compileSetsV1(d.AddressSets, d.AssetSets)
 	if err != nil {
 		return nil, err
 	}
-	if tp := d.TransferPolicy; tp != nil {
-		closeMiss, clawbackMiss := tp.CloseOnNoRoute, tp.ClawbackOnNoRoute
-		if closeMiss == "" {
-			closeMiss = TransferOnNoRouteReject
-		}
-		if clawbackMiss == "" {
-			clawbackMiss = TransferOnNoRouteReject
-		}
-		if cfg.TransferPolicy, err = compileTransferPolicyV1(tp.Enabled, tp.OnNoRoute, closeMiss, clawbackMiss,
-			tp.BlockedDestinations, tp.Routes, addressSets, assetSets); err != nil {
-			return nil, err
-		}
-	}
-	if err := ValidateTransferGuards(cfg); err != nil {
-		return nil, err
-	}
-
-	if len(d.KeyOverrides) > 0 {
-		cfg.KeyOverrides = make(map[string]*Config, len(d.KeyOverrides))
-		for _, key := range sortedKeys(d.KeyOverrides) {
-			ov := d.KeyOverrides[key]
-			overrideCfg := cfg.Clone()
-			overrideCfg.KeyOverrides = nil
-			applySignerSettingsV1(overrideCfg, ov.SignerSettingsV1)
-			setConfigLimitsV1(overrideCfg, mergeOverrideLimits(d.Limits, ov.Limits))
-			if err := ValidateTransferGuards(overrideCfg); err != nil {
-				return nil, fmt.Errorf("key_overrides for %q: %w", key, err)
-			}
-			cfg.KeyOverrides[key] = overrideCfg
-		}
-	}
-	return cfg, nil
-}
-
-// Compile builds the effective policy for the document's cosigner key. Route
-// misses, close-outs, and clawbacks without a route are always rejected.
-func (d *CosignerPolicyV1) Compile(defaults *Config) (*Config, error) {
-	cfg := defaultCosignerConfig(defaults)
-	cfg.KeyOverrides = nil
-	for _, f := range []struct {
-		src *bool
-		dst *bool
-	}{
-		{d.RejectCloseRemainder, &cfg.RejectCloseRemainder},
-		{d.RejectAssetClose, &cfg.RejectAssetClose},
-		{d.RejectClawback, &cfg.RejectClawback},
-		{d.RejectRekey, &cfg.RejectRekey},
-	} {
-		if f.src != nil {
-			*f.dst = *f.src
-		}
-	}
-	if d.MaxFeeMicroAlgos != nil {
-		cfg.MaxFeeMicroAlgos = *d.MaxFeeMicroAlgos
-	}
-	setConfigLimitsV1(cfg, d.Limits)
-	addressSets, assetSets, err := compileSetsV1(d.AddressSets, d.AssetSets)
-	if err != nil {
-		return nil, err
-	}
-	if cfg.TransferPolicy, err = compileTransferPolicyV1(true, TransferOnNoRouteReject, TransferOnNoRouteReject,
-		TransferOnNoRouteReject, d.BlockedDestinations, d.Routes, addressSets, assetSets); err != nil {
+	if cfg.TransferPolicy, err = compileTransferPolicyV1(d.OnNoRoute, d.CloseOnNoRoute, d.ClawbackOnNoRoute,
+		d.BlockedDestinations, d.Routes, addressSets, assetSets); err != nil {
 		return nil, err
 	}
 	if len(d.RekeyPolicy) > 0 {
@@ -97,27 +47,6 @@ func (d *CosignerPolicyV1) Compile(defaults *Config) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-func applySignerSettingsV1(cfg *Config, s SignerSettingsV1) {
-	for _, f := range []struct {
-		src *bool
-		dst *bool
-	}{
-		{s.RejectForeignRekey, &cfg.RejectForeignRekey},
-		{s.RejectCloseRemainder, &cfg.RejectCloseRemainder},
-		{s.RejectAssetClose, &cfg.RejectAssetClose},
-		{s.RejectClawback, &cfg.RejectClawback},
-		{s.AlwaysReviewWarnings, &cfg.AlwaysReviewWarnings},
-		{s.AutoApproveSelfNoOpTransfer, &cfg.AutoApproveSelfNoOpTransfer},
-	} {
-		if f.src != nil {
-			*f.dst = *f.src
-		}
-	}
-	if s.MaxFeeMicroAlgos != nil {
-		cfg.MaxFeeMicroAlgos = *s.MaxFeeMicroAlgos
-	}
 }
 
 // setConfigLimitsV1 replaces the config's amount guards with limits.
@@ -182,11 +111,10 @@ func compileSetsV1(addressSets map[string]AddressSetV1, assetSets map[string]Ass
 	return compiledAddresses, compiledAssets, nil
 }
 
-// compileTransferPolicyV1 compiles routes through the same term and rule
-// compiler as policy.yaml, then attaches per-asset limits. Decoding has
-// already enforced every rule, so compile errors indicate an internal bug.
+// compileTransferPolicyV1 compiles routes and attaches per-asset limits.
+// Decoding has already enforced every rule, so compile errors indicate an
+// internal bug.
 func compileTransferPolicyV1(
-	enabled bool,
 	onNoRoute, closeOnNoRoute, clawbackOnNoRoute TransferOnNoRoute,
 	blocked []types.Address,
 	routes []RouteV1,
@@ -194,7 +122,6 @@ func compileTransferPolicyV1(
 	assetSets map[string]compiledAssetSet,
 ) (*TransferPolicy, error) {
 	tp := &TransferPolicy{
-		Enabled:           enabled,
 		OnNoRoute:         onNoRoute,
 		CloseOnNoRoute:    closeOnNoRoute,
 		ClawbackOnNoRoute: clawbackOnNoRoute,

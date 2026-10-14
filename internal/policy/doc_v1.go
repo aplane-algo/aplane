@@ -6,7 +6,6 @@ package policy
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -14,20 +13,91 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/policyschema"
 )
 
 // This file decodes and validates policy documents in format v1
-// (docs/ARCH_POLICY_FORMAT.md). Decoding enforces every syntax and semantic
-// rule, so a document that decodes is one the node may sign and enforce.
+// (docs/ARCH_POLICY_FORMAT.md). One format serves both node roles: the
+// document's "role" field says which, and fields the role does not support
+// are rejected. Decoding enforces every syntax and semantic rule, so a
+// document that decodes is one the node may sign and enforce.
 
 const maxPolicyDescriptionLength = 1024
+
+// DefaultKey is the reserved document key of a node's default policy, the
+// rulebook for every key without a policy of its own.
+const DefaultKey = "default"
 
 var (
 	policyTokenPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 	policySetPattern   = regexp.MustCompile(`^[a-z0-9_-]+$`)
 )
+
+// TransactionTypeVerdict is a transaction type's verdict in a document's
+// transaction_types map.
+type TransactionTypeVerdict string
+
+const (
+	// TransactionTypeAllow lets the type continue through every other phase.
+	TransactionTypeAllow TransactionTypeVerdict = "allow"
+	// TransactionTypeReview is Always Review for the type.
+	TransactionTypeReview TransactionTypeVerdict = "review"
+	// TransactionTypeReject is Always Deny for the type.
+	TransactionTypeReject TransactionTypeVerdict = "reject"
+)
+
+// TransactionTypeWildcard is the transaction_types entry for every type the
+// map does not name. It is required whenever the map is present.
+const TransactionTypeWildcard = "*"
+
+// TransactionTypeNames lists every Algorand transaction type a policy can
+// name, in a fixed order.
+var TransactionTypeNames = []string{
+	string(types.PaymentTx),
+	string(types.AssetTransferTx),
+	string(types.AssetConfigTx),
+	string(types.AssetFreezeTx),
+	string(types.KeyRegistrationTx),
+	string(types.ApplicationCallTx),
+	string(types.StateProofTx),
+	string(types.HeartbeatTx),
+}
+
+// transferTransactionTypes are the types transfer routing governs, and the
+// only types a cosigner document may allow.
+var transferTransactionTypes = map[string]bool{
+	string(types.PaymentTx):       true,
+	string(types.AssetTransferTx): true,
+}
+
+// TransactionTypesV1 maps a transaction type, or "*", to its verdict.
+type TransactionTypesV1 map[string]TransactionTypeVerdict
+
+// Verdict resolves txType: the type's own entry, then "*", then reject, so an
+// empty or nil map fails closed.
+func (t TransactionTypesV1) Verdict(txType string) TransactionTypeVerdict {
+	if v, ok := t[txType]; ok {
+		return v
+	}
+	if v, ok := t[TransactionTypeWildcard]; ok {
+		return v
+	}
+	return TransactionTypeReject
+}
+
+// Clone returns a copy of the map.
+func (t TransactionTypesV1) Clone() TransactionTypesV1 {
+	if t == nil {
+		return nil
+	}
+	out := make(TransactionTypesV1, len(t))
+	for k, v := range t {
+		out[k] = v
+	}
+	return out
+}
 
 // ThresholdsV1 is one asset's review and reject thresholds in base units.
 type ThresholdsV1 struct {
@@ -37,22 +107,6 @@ type ThresholdsV1 struct {
 
 // LimitsV1 maps network, then asset, to thresholds.
 type LimitsV1 map[string]map[TransferAssetRef]ThresholdsV1
-
-// OverrideAmountV1 is a key override threshold: absent (inherit), Null
-// (remove the inherited threshold), or Value.
-type OverrideAmountV1 struct {
-	Set   bool
-	Null  bool
-	Value uint64
-}
-
-// OverrideLimitsV1 maps network, then asset, to override thresholds.
-type OverrideLimitsV1 map[string]map[TransferAssetRef]OverrideThresholdsV1
-
-type OverrideThresholdsV1 struct {
-	ReviewAbove OverrideAmountV1
-	RejectAbove OverrideAmountV1
-}
 
 // AddressSetV1 is a flat address list or a per-network address map.
 type AddressSetV1 struct {
@@ -79,189 +133,78 @@ type RouteV1 struct {
 	AllowClawback   bool
 }
 
-// SignerSettingsV1 holds the signer fields a key override may also set.
-type SignerSettingsV1 struct {
-	RejectForeignRekey          *bool
-	RejectCloseRemainder        *bool
-	RejectAssetClose            *bool
-	RejectClawback              *bool
-	AlwaysReviewWarnings        *bool
-	AutoApproveSelfNoOpTransfer *bool
-	MaxFeeMicroAlgos            *uint64
-}
-
-type SignerTransferPolicyV1 struct {
-	Enabled             bool
-	OnNoRoute           TransferOnNoRoute
-	CloseOnNoRoute      TransferOnNoRoute
-	ClawbackOnNoRoute   TransferOnNoRoute
-	BlockedDestinations []types.Address
-	Routes              []RouteV1
-}
-
-type SignerKeyOverrideV1 struct {
-	Description string
-	SignerSettingsV1
-	Limits OverrideLimitsV1
-}
-
-// SignerPolicyV1 is a decoded and validated signer policy.json.
-type SignerPolicyV1 struct {
-	Description string
-	SignerSettingsV1
-	Limits         LimitsV1
-	AddressSets    map[string]AddressSetV1
-	AssetSets      map[string]AssetSetV1
-	TransferPolicy *SignerTransferPolicyV1
-	KeyOverrides   map[string]SignerKeyOverrideV1
-}
-
+// RekeyRuleV1 is one allowed sender-to-targets rekey edge (cosigner only).
 type RekeyRuleV1 struct {
 	Sender  string
 	Targets []string
 }
 
-// CosignerPolicyV1 is a decoded and validated policies/<WitnessKeyID>.json.
-type CosignerPolicyV1 struct {
-	Key                  string
-	Description          string
-	RejectCloseRemainder *bool
-	RejectAssetClose     *bool
-	RejectClawback       *bool
-	RejectRekey          *bool
-	MaxFeeMicroAlgos     *uint64
+// PolicyV1 is a decoded and validated policy document: a node's default
+// (Key == DefaultKey) or one key's own policy. Every verdict-bearing field is
+// required in the document, so none of these fields is a pointer; fields a
+// role does not support are left at their zero value.
+type PolicyV1 struct {
+	Role        noderole.Role
+	Key         string
+	Description string
+
+	// Common to both roles.
+	RejectCloseRemainder bool
+	RejectAssetClose     bool
+	RejectClawback       bool
+	MaxFeeMicroAlgos     uint64
+	TransactionTypes     TransactionTypesV1
 	Limits               LimitsV1
 	AddressSets          map[string]AddressSetV1
 	AssetSets            map[string]AssetSetV1
 	BlockedDestinations  []types.Address
 	Routes               []RouteV1
-	RekeyPolicy          []RekeyRuleV1
+
+	// Signer only. A cosigner document rejects every route miss.
+	RejectForeignRekey          bool
+	AlwaysReviewWarnings        bool
+	AutoApproveSelfNoOpTransfer bool
+	OnNoRoute                   TransferOnNoRoute
+	CloseOnNoRoute              TransferOnNoRoute
+	ClawbackOnNoRoute           TransferOnNoRoute
+
+	// Cosigner only.
+	RejectRekey bool
+	RekeyPolicy []RekeyRuleV1
 }
 
-// DecodeSignerPolicyV1 decodes and validates a signer policy.json.
-func DecodeSignerPolicyV1(data []byte) (*SignerPolicyV1, error) {
-	r, err := openPolicyDocument(data, policyschema.SignerFormatV1)
-	if err != nil {
-		return nil, err
+// IsDefault reports whether the document is a node default.
+func (d *PolicyV1) IsDefault() bool { return d.Key == DefaultKey }
+
+// ValidateDocumentKey checks that key is DefaultKey or the canonical selector
+// of a key the role holds: an Algorand address on a signer node, a Witness
+// Key ID on a cosigner node.
+func ValidateDocumentKey(role noderole.Role, key string) error {
+	if key == DefaultKey {
+		return nil
 	}
-	doc := &SignerPolicyV1{}
-	if doc.Description, err = optionalDescription(r); err != nil {
-		return nil, err
-	}
-	if err := decodeSignerSettings(r, &doc.SignerSettingsV1); err != nil {
-		return nil, err
-	}
-	if n := r.field("limits"); n != nil {
-		if doc.Limits, err = decodeLimits(n, false); err != nil {
-			return nil, err
+	switch role {
+	case noderole.RoleSigner:
+		if addr, err := types.DecodeAddress(key); err != nil || addr.String() != key {
+			return fmt.Errorf("a signer policy key must be %q or an Algorand address, not %q", DefaultKey, key)
 		}
-	}
-	if doc.AddressSets, doc.AssetSets, err = decodeSets(r); err != nil {
-		return nil, err
-	}
-	if n := r.field("transfer_policy"); n != nil {
-		if doc.TransferPolicy, err = decodeSignerTransferPolicy(n); err != nil {
-			return nil, err
+	case noderole.RoleCosigner:
+		if id, err := witness.NormalizeID(key); err != nil || id != key {
+			return fmt.Errorf("a cosigner policy key must be %q or a Witness Key ID, not %q", DefaultKey, key)
 		}
+	default:
+		return fmt.Errorf("unsupported node role %q", role)
 	}
-	if n := r.field("key_overrides"); n != nil {
-		if doc.KeyOverrides, err = decodeSignerKeyOverrides(n); err != nil {
-			return nil, err
-		}
-	}
-	if err := r.finish(); err != nil {
-		return nil, err
-	}
-	if err := doc.validate(); err != nil {
-		return nil, err
-	}
-	return doc, nil
+	return nil
 }
 
-// DecodeCosignerPolicyV1 decodes and validates one cosigner key's policy.
-// fileKey is the Witness Key ID from the document's file name; the signed
-// key field must match it.
-func DecodeCosignerPolicyV1(data []byte, fileKey string) (*CosignerPolicyV1, error) {
-	r, err := openPolicyDocument(data, policyschema.CosignerFormatV1)
-	if err != nil {
-		return nil, err
+// DecodePolicyV1 decodes and validates one policy document for role. key is
+// the document's file name (DefaultKey or a key selector); the signed "key"
+// field must equal it, and the signed "role" field must equal role.
+func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, error) {
+	if role != noderole.RoleSigner && role != noderole.RoleCosigner {
+		return nil, fmt.Errorf("unsupported node role %q", role)
 	}
-	doc := &CosignerPolicyV1{}
-	keyNode, err := r.required("key")
-	if err != nil {
-		return nil, err
-	}
-	if doc.Key, err = decodeWitnessKeyID(keyNode); err != nil {
-		return nil, err
-	}
-	if doc.Key != fileKey {
-		return nil, docErrorf(keyNode.pointer, "key %q does not match its file name %q", doc.Key, fileKey)
-	}
-	if doc.Description, err = optionalDescription(r); err != nil {
-		return nil, err
-	}
-	for _, f := range []struct {
-		name string
-		dst  **bool
-	}{
-		{"reject_close_remainder", &doc.RejectCloseRemainder},
-		{"reject_asset_close", &doc.RejectAssetClose},
-		{"reject_clawback", &doc.RejectClawback},
-		{"reject_rekey", &doc.RejectRekey},
-	} {
-		if *f.dst, err = optionalBool(r, f.name); err != nil {
-			return nil, err
-		}
-	}
-	if doc.MaxFeeMicroAlgos, err = optionalAmount(r, "max_fee_microalgos"); err != nil {
-		return nil, err
-	}
-	if n := r.field("limits"); n != nil {
-		if doc.Limits, err = decodeLimits(n, true); err != nil {
-			return nil, err
-		}
-	}
-	if doc.AddressSets, doc.AssetSets, err = decodeSets(r); err != nil {
-		return nil, err
-	}
-	tpNode, err := r.required("transfer_policy")
-	if err != nil {
-		return nil, err
-	}
-	tp, err := readJSONObject(tpNode, "transfer_policy")
-	if err != nil {
-		return nil, err
-	}
-	if n := tp.field("blocked_destinations"); n != nil {
-		if doc.BlockedDestinations, err = decodeAddressList(n, 0); err != nil {
-			return nil, err
-		}
-	}
-	routesNode, err := tp.required("routes")
-	if err != nil {
-		return nil, err
-	}
-	if doc.Routes, err = decodeRoutes(routesNode, true); err != nil {
-		return nil, err
-	}
-	if err := tp.finish(); err != nil {
-		return nil, err
-	}
-	if n := r.field("rekey_policy"); n != nil {
-		if doc.RekeyPolicy, err = decodeRekeyPolicy(n); err != nil {
-			return nil, err
-		}
-	}
-	if err := r.finish(); err != nil {
-		return nil, err
-	}
-	if err := doc.validate(); err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
-func openPolicyDocument(data []byte, wantFormat string) (*jsonObjectReader, error) {
 	root, err := parseJSONTree(data)
 	if err != nil {
 		return nil, err
@@ -278,131 +221,228 @@ func openPolicyDocument(data []byte, wantFormat string) (*jsonObjectReader, erro
 	if err != nil {
 		return nil, err
 	}
-	if format != wantFormat {
-		switch format {
-		case policyschema.SignerFormatV1, policyschema.CosignerFormatV1:
-			return nil, docErrorf(formatNode.pointer, "%q documents are not accepted here; expected %q", format, wantFormat)
-		default:
-			return nil, docErrorf(formatNode.pointer, "unsupported format %q; expected %q", format, wantFormat)
-		}
+	if format != policyschema.FormatV1 {
+		return nil, docErrorf(formatNode.pointer, "unsupported format %q; expected %q", format, policyschema.FormatV1)
 	}
-	return r, nil
-}
+	doc := &PolicyV1{}
+	roleNode, err := r.required("role")
+	if err != nil {
+		return nil, err
+	}
+	rawRole, err := jsonString(roleNode)
+	if err != nil {
+		return nil, err
+	}
+	switch noderole.Role(rawRole) {
+	case noderole.RoleSigner, noderole.RoleCosigner:
+		doc.Role = noderole.Role(rawRole)
+	default:
+		return nil, docErrorf(roleNode.pointer, "role must be %q or %q", noderole.RoleSigner, noderole.RoleCosigner)
+	}
+	if doc.Role != role {
+		return nil, docErrorf(roleNode.pointer, "a %s document is not accepted on a %s node", doc.Role, role)
+	}
+	signer := role == noderole.RoleSigner
 
-func decodeSignerSettings(r *jsonObjectReader, s *SignerSettingsV1) error {
-	var err error
+	keyNode, err := r.required("key")
+	if err != nil {
+		return nil, err
+	}
+	if doc.Key, err = jsonString(keyNode); err != nil {
+		return nil, err
+	}
+	if err := ValidateDocumentKey(role, doc.Key); err != nil {
+		return nil, docErrorf(keyNode.pointer, "%v", err)
+	}
+	if doc.Key != key {
+		return nil, docErrorf(keyNode.pointer, "key %q does not match its file name %q", doc.Key, key)
+	}
+	if doc.Description, err = optionalDescription(r); err != nil {
+		return nil, err
+	}
+
+	// Scalars: required on both roles, required on one role and rejected on
+	// the other.
 	for _, f := range []struct {
 		name string
-		dst  **bool
+		dst  *bool
+		on   bool // accepted (and required) on this node role
 	}{
-		{"reject_foreign_rekey", &s.RejectForeignRekey},
-		{"reject_close_remainder", &s.RejectCloseRemainder},
-		{"reject_asset_close", &s.RejectAssetClose},
-		{"reject_clawback", &s.RejectClawback},
-		{"always_review_warnings", &s.AlwaysReviewWarnings},
-		{"auto_approve_self_noop_transfer", &s.AutoApproveSelfNoOpTransfer},
+		{"reject_foreign_rekey", &doc.RejectForeignRekey, signer},
+		{"reject_close_remainder", &doc.RejectCloseRemainder, true},
+		{"reject_asset_close", &doc.RejectAssetClose, true},
+		{"reject_clawback", &doc.RejectClawback, true},
+		{"reject_rekey", &doc.RejectRekey, !signer},
+		{"always_review_warnings", &doc.AlwaysReviewWarnings, signer},
+		{"auto_approve_self_noop_transfer", &doc.AutoApproveSelfNoOpTransfer, signer},
 	} {
-		if *f.dst, err = optionalBool(r, f.name); err != nil {
-			return err
+		if !f.on {
+			if err := rejectRoleField(r, f.name, role); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		n, err := r.required(f.name)
+		if err != nil {
+			return nil, err
+		}
+		if *f.dst, err = jsonBool(n); err != nil {
+			return nil, err
 		}
 	}
-	s.MaxFeeMicroAlgos, err = optionalAmount(r, "max_fee_microalgos")
-	return err
-}
+	feeNode, err := r.required("max_fee_microalgos")
+	if err != nil {
+		return nil, err
+	}
+	if doc.MaxFeeMicroAlgos, err = decodeAmount(feeNode); err != nil {
+		return nil, err
+	}
 
-func decodeSignerTransferPolicy(node *jsonNode) (*SignerTransferPolicyV1, error) {
-	r, err := readJSONObject(node, "transfer_policy")
+	typesNode, err := r.required("transaction_types")
 	if err != nil {
 		return nil, err
 	}
-	tp := &SignerTransferPolicyV1{}
-	enabledNode, err := r.required("enabled")
+	if doc.TransactionTypes, err = decodeTransactionTypes(typesNode, role); err != nil {
+		return nil, err
+	}
+	if n := r.field("limits"); n != nil {
+		if doc.Limits, err = decodeLimits(n, !signer); err != nil {
+			return nil, err
+		}
+	}
+	if doc.AddressSets, doc.AssetSets, err = decodeSets(r); err != nil {
+		return nil, err
+	}
+
+	tpNode, err := r.required("transfer_policy")
 	if err != nil {
 		return nil, err
 	}
-	if tp.Enabled, err = jsonBool(enabledNode); err != nil {
+	tp, err := readJSONObject(tpNode, "transfer_policy")
+	if err != nil {
 		return nil, err
 	}
 	for _, f := range []struct {
 		name string
 		dst  *TransferOnNoRoute
 	}{
-		{"on_no_route", &tp.OnNoRoute},
-		{"close_on_no_route", &tp.CloseOnNoRoute},
-		{"clawback_on_no_route", &tp.ClawbackOnNoRoute},
+		{"on_no_route", &doc.OnNoRoute},
+		{"close_on_no_route", &doc.CloseOnNoRoute},
+		{"clawback_on_no_route", &doc.ClawbackOnNoRoute},
 	} {
-		n := r.field(f.name)
-		if n == nil {
+		if !signer {
+			if err := rejectRoleField(tp, f.name, role); err != nil {
+				return nil, err
+			}
+			*f.dst = TransferOnNoRouteReject
 			continue
+		}
+		n, err := tp.required(f.name)
+		if err != nil {
+			return nil, err
+		}
+		if *f.dst, err = decodeRouteMissAction(n); err != nil {
+			return nil, err
+		}
+	}
+	if n := tp.field("blocked_destinations"); n != nil {
+		if doc.BlockedDestinations, err = decodeAddressList(n, 0); err != nil {
+			return nil, err
+		}
+	}
+	routesNode, err := tp.required("routes")
+	if err != nil {
+		return nil, err
+	}
+	if doc.Routes, err = decodeRoutes(routesNode, !signer); err != nil {
+		return nil, err
+	}
+	if err := tp.finish(); err != nil {
+		return nil, err
+	}
+
+	if signer {
+		if err := rejectRoleField(r, "rekey_policy", role); err != nil {
+			return nil, err
+		}
+	} else if n := r.field("rekey_policy"); n != nil {
+		if doc.RekeyPolicy, err = decodeRekeyPolicy(n); err != nil {
+			return nil, err
+		}
+	}
+	if err := r.finish(); err != nil {
+		return nil, err
+	}
+	if err := doc.validate(); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// rejectRoleField fails when a field the role does not support is present.
+func rejectRoleField(r *jsonObjectReader, name string, role noderole.Role) error {
+	if n := r.field(name); n != nil {
+		return docErrorf(n.pointer, "%s is not accepted in a %s document", name, role)
+	}
+	return nil
+}
+
+func decodeRouteMissAction(n *jsonNode) (TransferOnNoRoute, error) {
+	raw, err := jsonString(n)
+	if err != nil {
+		return "", err
+	}
+	action := TransferOnNoRoute(raw)
+	switch action {
+	case TransferOnNoRouteReject, TransferOnNoRouteReview, TransferOnNoRouteOperatorDefault:
+		return action, nil
+	default:
+		return "", docErrorf(n.pointer, "must be one of reject, review, operator_default")
+	}
+}
+
+// decodeTransactionTypes decodes the verdict map. "*" is required. A cosigner
+// document may allow only pay and axfer, the types routing governs, and
+// never reviews.
+func decodeTransactionTypes(node *jsonNode, role noderole.Role) (TransactionTypesV1, error) {
+	r, err := readJSONObject(node, "transaction_types")
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]bool, len(TransactionTypeNames))
+	for _, name := range TransactionTypeNames {
+		known[name] = true
+	}
+	out := make(TransactionTypesV1, len(node.keys))
+	for _, name := range node.keys {
+		n := r.field(name)
+		if name != TransactionTypeWildcard && !known[name] {
+			return nil, docErrorf(n.pointer, "unknown transaction type %q; expected %s or \"*\"", name, strings.Join(TransactionTypeNames, ", "))
 		}
 		raw, err := jsonString(n)
 		if err != nil {
 			return nil, err
 		}
-		action := TransferOnNoRoute(raw)
-		switch action {
-		case TransferOnNoRouteReject, TransferOnNoRouteReview, TransferOnNoRouteOperatorDefault:
+		verdict := TransactionTypeVerdict(raw)
+		switch verdict {
+		case TransactionTypeAllow, TransactionTypeReview, TransactionTypeReject:
 		default:
-			return nil, docErrorf(n.pointer, "must be one of reject, review, operator_default")
+			return nil, docErrorf(n.pointer, "must be one of allow, review, reject")
 		}
-		*f.dst = action
-	}
-	if tp.Enabled && tp.OnNoRoute == "" {
-		return nil, docErrorf(node.pointer, "on_no_route is required when enabled is true")
-	}
-	if n := r.field("blocked_destinations"); n != nil {
-		if tp.BlockedDestinations, err = decodeAddressList(n, 0); err != nil {
-			return nil, err
-		}
-	}
-	if n := r.field("routes"); n != nil {
-		if tp.Routes, err = decodeRoutes(n, false); err != nil {
-			return nil, err
-		}
-	}
-	return tp, r.finish()
-}
-
-func decodeSignerKeyOverrides(node *jsonNode) (map[string]SignerKeyOverrideV1, error) {
-	r, err := readJSONObject(node, "key_overrides")
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]SignerKeyOverrideV1, len(node.keys))
-	for _, key := range node.keys {
-		child := r.field(key)
-		addr, err := types.DecodeAddress(key)
-		if err != nil || addr.String() != key {
-			return nil, docErrorf(child.pointer, "key override selector must be an Algorand auth address")
-		}
-		or, err := readJSONObject(child, "key override")
-		if err != nil {
-			return nil, err
-		}
-		if len(child.keys) == 0 {
-			return nil, docErrorf(child.pointer, "key override must set at least one field")
-		}
-		ov := SignerKeyOverrideV1{}
-		if ov.Description, err = optionalDescription(or); err != nil {
-			return nil, err
-		}
-		if err := decodeSignerSettings(or, &ov.SignerSettingsV1); err != nil {
-			return nil, err
-		}
-		if n := or.field("limits"); n != nil {
-			if ov.Limits, err = decodeOverrideLimits(n); err != nil {
-				return nil, err
+		if role == noderole.RoleCosigner {
+			switch {
+			case verdict == TransactionTypeReview:
+				return nil, docErrorf(n.pointer, "cosigner policy cannot produce review verdicts")
+			case verdict == TransactionTypeAllow && !transferTransactionTypes[name]:
+				return nil, docErrorf(n.pointer, "a cosigner document may allow only pay and axfer; routing is its only authorization surface")
 			}
 		}
-		if n := or.field("transfer_policy"); n != nil {
-			return nil, docErrorf(n.pointer, "key overrides cannot carry transfer_policy; route per account with route sources")
-		}
-		if err := or.finish(); err != nil {
-			return nil, err
-		}
-		out[key] = ov
+		out[name] = verdict
 	}
-	return out, nil
+	if _, ok := out[TransactionTypeWildcard]; !ok {
+		return nil, docErrorf(node.pointer, "missing required field %q", TransactionTypeWildcard)
+	}
+	return out, r.finish()
 }
 
 func decodeRoutes(node *jsonNode, cosigner bool) ([]RouteV1, error) {
@@ -554,46 +594,6 @@ func decodeLimits(node *jsonNode, cosigner bool) (LimitsV1, error) {
 		}
 		if out[network] == nil {
 			out[network] = map[TransferAssetRef]ThresholdsV1{}
-		}
-		out[network][asset] = t
-		return nil
-	})
-	return out, err
-}
-
-func decodeOverrideLimits(node *jsonNode) (OverrideLimitsV1, error) {
-	out := OverrideLimitsV1{}
-	err := forEachLimit(node, func(network string, asset TransferAssetRef, tn *jsonNode) error {
-		r, err := readJSONObject(tn, "thresholds")
-		if err != nil {
-			return err
-		}
-		var t OverrideThresholdsV1
-		for _, f := range []struct {
-			name string
-			dst  *OverrideAmountV1
-		}{{"review_above", &t.ReviewAbove}, {"reject_above", &t.RejectAbove}} {
-			n := r.field(f.name)
-			if n == nil {
-				continue
-			}
-			f.dst.Set = true
-			if n.kind == nodeNull {
-				f.dst.Null = true
-				continue
-			}
-			if f.dst.Value, err = decodeAmount(n); err != nil {
-				return err
-			}
-		}
-		if err := r.finish(); err != nil {
-			return err
-		}
-		if !t.ReviewAbove.Set && !t.RejectAbove.Set {
-			return docErrorf(tn.pointer, "thresholds must set review_above or reject_above")
-		}
-		if out[network] == nil {
-			out[network] = map[TransferAssetRef]OverrideThresholdsV1{}
 		}
 		out[network][asset] = t
 		return nil
@@ -820,18 +820,6 @@ func decodeAddress(node *jsonNode) (types.Address, error) {
 	return addr, nil
 }
 
-func decodeWitnessKeyID(node *jsonNode) (string, error) {
-	raw, err := jsonString(node)
-	if err != nil {
-		return "", err
-	}
-	id, err := witness.NormalizeID(raw)
-	if err != nil || id != raw {
-		return "", docErrorf(node.pointer, "invalid Witness Key ID %q", raw)
-	}
-	return id, nil
-}
-
 func decodeAddressTerm(node *jsonNode) (string, error) {
 	raw, err := jsonString(node)
 	if err != nil {
@@ -947,18 +935,6 @@ func optionalAmount(r *jsonObjectReader, name string) (*uint64, error) {
 	return &v, nil
 }
 
-func optionalBool(r *jsonObjectReader, name string) (*bool, error) {
-	n := r.field(name)
-	if n == nil {
-		return nil, nil
-	}
-	v, err := jsonBool(n)
-	if err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
 func optionalDescription(r *jsonObjectReader) (string, error) {
 	n := r.field("description")
 	if n == nil {
@@ -990,28 +966,7 @@ func validateSetNameV1(pointer, name string) error {
 
 // --- semantic rules -------------------------------------------------------
 
-func (d *SignerPolicyV1) validate() error {
-	if d.TransferPolicy != nil {
-		if err := validateRoutesV1("/transfer_policy/routes", d.TransferPolicy.Routes, d.AddressSets, d.AssetSets); err != nil {
-			return err
-		}
-	}
-	for _, key := range sortedKeys(d.KeyOverrides) {
-		merged := mergeOverrideLimits(d.Limits, d.KeyOverrides[key].Limits)
-		for network, assets := range merged {
-			for asset, t := range assets {
-				if t.ReviewAbove != nil && t.RejectAbove != nil && *t.ReviewAbove > *t.RejectAbove {
-					return docErrorf("/key_overrides/"+key+"/limits",
-						"after merging with the document limits, %s %s review_above %d exceeds reject_above %d",
-						network, assetRefString(asset), *t.ReviewAbove, *t.RejectAbove)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (d *CosignerPolicyV1) validate() error {
+func (d *PolicyV1) validate() error {
 	if err := validateRoutesV1("/transfer_policy/routes", d.Routes, d.AddressSets, d.AssetSets); err != nil {
 		return err
 	}
@@ -1130,50 +1085,6 @@ func requireAddressSet(pointer, term string, addressSets map[string]AddressSetV1
 	return nil
 }
 
-// mergeOverrideLimits applies a key override's thresholds to the document
-// limits per network, asset, and threshold: a value replaces, null removes,
-// and anything unmentioned is inherited.
-func mergeOverrideLimits(base LimitsV1, override OverrideLimitsV1) LimitsV1 {
-	merged := LimitsV1{}
-	for network, assets := range base {
-		merged[network] = make(map[TransferAssetRef]ThresholdsV1, len(assets))
-		for asset, t := range assets {
-			merged[network][asset] = t
-		}
-	}
-	for network, assets := range override {
-		for asset, ot := range assets {
-			if merged[network] == nil {
-				merged[network] = map[TransferAssetRef]ThresholdsV1{}
-			}
-			t := merged[network][asset]
-			t.ReviewAbove = applyOverrideAmount(t.ReviewAbove, ot.ReviewAbove)
-			t.RejectAbove = applyOverrideAmount(t.RejectAbove, ot.RejectAbove)
-			if t.ReviewAbove == nil && t.RejectAbove == nil {
-				delete(merged[network], asset)
-			} else {
-				merged[network][asset] = t
-			}
-			if len(merged[network]) == 0 {
-				delete(merged, network)
-			}
-		}
-	}
-	return merged
-}
-
-func applyOverrideAmount(inherited *uint64, o OverrideAmountV1) *uint64 {
-	switch {
-	case !o.Set:
-		return inherited
-	case o.Null:
-		return nil
-	default:
-		v := o.Value
-		return &v
-	}
-}
-
 func assetRefString(asset TransferAssetRef) string {
 	if asset.Algo {
 		return "algo"
@@ -1188,13 +1099,4 @@ func containsString(list []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

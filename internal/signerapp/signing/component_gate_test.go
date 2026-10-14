@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -79,7 +80,7 @@ func TestGateUserComponentSigningExcludesFrozenDummySuffix(t *testing.T) {
 	prompt := &componentGatePrompt{approve: true}
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
-	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
+	svc := newComponentGateService(audit, approval, &policy.Config{TransactionTypes: policytest.AllowAllTypes()}, sender)
 	if _, gateErr := svc.gateUserComponentSigning(t.Context(), plan); gateErr != nil {
 		t.Fatalf("gateUserComponentSigning() error = %v", gateErr)
 	}
@@ -137,7 +138,12 @@ func (p *componentGatePrompt) approvalService(audit *testAuditLogger) *ApprovalS
 	}
 }
 
+// newComponentGateService builds a user-role component service under cfg,
+// or under the compiled defaults when cfg is nil.
 func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, cfg *policy.Config, guardedAccount string) *Service {
+	if cfg == nil {
+		cfg = policy.DefaultConfig()
+	}
 	return &Service{
 		Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
 			return PlannerRuntimeSnapshot{
@@ -149,7 +155,7 @@ func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, 
 		AuditLog:                      audit,
 		IsUnlocked:                    func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
-		Policy:                        cfg,
+		PolicyFor:                     fixedPolicy(cfg),
 	}
 }
 
@@ -189,7 +195,7 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1}, sender)
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{TransactionTypes: policytest.AllowAllTypes(), MaxFeeMicroAlgos: 1}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	_, err := svc.signComponentWithContext(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
@@ -354,7 +360,7 @@ func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
 	prompt := &componentGatePrompt{approve: true}
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
-	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
+	svc := newComponentGateService(audit, approval, &policy.Config{TransactionTypes: policytest.AllowAllTypes()}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	result, svcErr := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0}), session)
@@ -423,4 +429,44 @@ func TestSignComponentUserRolePreflightRejectsUnknownKeyBeforePrompt(t *testing.
 
 func componentGateContext() context.Context {
 	return context.Background()
+}
+
+// The user-role component gate applies the signing key's transaction_types
+// verdict: a rejected type never reaches the prompt or the key, and a
+// reviewed type prompts.
+func TestSignComponentUserRoleHonoursTransactionTypeVerdicts(t *testing.T) {
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-type-verdict.v1")}
+	coresigning.Register(provider)
+
+	sender := types.Address{41}.String()
+	receiver := types.Address{42}.String()
+	txns := groupedPaymentTransactions(t, sender, receiver)
+
+	audit := &testAuditLogger{}
+	prompt := &componentGatePrompt{approve: true}
+	// The grouped payments carry no genesis hash, so the configs keep the
+	// compiled defaults' routing posture and change only the type verdicts.
+	rejecting := policy.DefaultConfig()
+	rejecting.TransactionTypes = policy.TransactionTypesV1{policy.TransactionTypeWildcard: policy.TransactionTypeAllow, "pay": policy.TransactionTypeReject}
+	svc := newComponentGateService(audit, prompt.approvalService(audit), rejecting, sender)
+	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
+	_, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.TransactionTypeRuleID("pay")) {
+		t.Fatalf("SignComponent(pay rejected) error = %#v, want the type rejection", err)
+	}
+	if prompt.calls != 0 || session.calls != 0 {
+		t.Fatalf("prompt calls = %d session calls = %d, want none for a rejected type", prompt.calls, session.calls)
+	}
+
+	reviewing := policy.DefaultConfig()
+	reviewing.TransactionTypes = policy.TransactionTypesV1{policy.TransactionTypeWildcard: policy.TransactionTypeAllow, "pay": policy.TransactionTypeReview}
+	svc = newComponentGateService(audit, prompt.approvalService(audit), reviewing, sender)
+	session = &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
+	result, err := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	if err != nil || len(result.Signatures) != 2 {
+		t.Fatalf("SignComponent(pay reviewed) = %+v, %v; want signatures after the prompt", result, err)
+	}
+	if prompt.calls != 1 {
+		t.Fatalf("prompt calls = %d, want 1 for a reviewed type", prompt.calls)
+	}
 }

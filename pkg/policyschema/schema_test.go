@@ -20,19 +20,23 @@ func TestSchemaV1IsWellFormed(t *testing.T) {
 		t.Fatalf("$schema = %v, want draft 2020-12", schema["$schema"])
 	}
 	defs, _ := schema["$defs"].(map[string]any)
-	for name, format := range map[string]string{"signerPolicy": SignerFormatV1, "cosignerPolicy": CosignerFormatV1} {
+	for name, role := range map[string]string{"signerPolicy": "signer", "cosignerPolicy": "cosigner"} {
 		def, _ := defs[name].(map[string]any)
 		props, _ := def["properties"].(map[string]any)
 		formatProp, _ := props["format"].(map[string]any)
-		if formatProp["const"] != format {
-			t.Errorf("$defs.%s.format const = %v, want %q", name, formatProp["const"], format)
+		if formatProp["const"] != FormatV1 {
+			t.Errorf("$defs.%s.format const = %v, want %q", name, formatProp["const"], FormatV1)
+		}
+		roleProp, _ := props["role"].(map[string]any)
+		if roleProp["const"] != role {
+			t.Errorf("$defs.%s.role const = %v, want %q", name, roleProp["const"], role)
 		}
 	}
 }
 
 // TestContractFixturesV1AreWellFormed keeps the published examples parseable
-// and typed. Schema conformance of the fixtures is checked against the Go
-// validator once it exists.
+// and typed: one format, and a role that matches the fixture's file name.
+// Schema conformance is checked against the Go validator in internal/policy.
 func TestContractFixturesV1AreWellFormed(t *testing.T) {
 	dir := filepath.Join("..", "..", "test", "contracts", "policy", "v1")
 	for _, pattern := range []string{"*.json", filepath.Join("invalid", "*.json"), filepath.Join("semantic_invalid", "*.json")} {
@@ -47,6 +51,7 @@ func TestContractFixturesV1AreWellFormed(t *testing.T) {
 			}
 			var doc struct {
 				Format string `json:"format"`
+				Role   string `json:"role"`
 			}
 			if err := json.Unmarshal(data, &doc); err != nil {
 				t.Errorf("%s: not valid JSON: %v", file, err)
@@ -55,13 +60,15 @@ func TestContractFixturesV1AreWellFormed(t *testing.T) {
 			if base := filepath.Base(filepath.Dir(file)); base == "invalid" || base == "semantic_invalid" {
 				continue
 			}
-			base := filepath.Base(file)
-			want := SignerFormatV1
-			if strings.HasPrefix(base, "cosigner_") {
-				want = CosignerFormatV1
+			if doc.Format != FormatV1 {
+				t.Errorf("%s: format = %q, want %q", file, doc.Format, FormatV1)
 			}
-			if doc.Format != want {
-				t.Errorf("%s: format = %q, want %q", file, doc.Format, want)
+			want := "signer"
+			if strings.HasPrefix(filepath.Base(file), "cosigner_") {
+				want = "cosigner"
+			}
+			if doc.Role != want {
+				t.Errorf("%s: role = %q, want %q", file, doc.Role, want)
 			}
 		}
 	}

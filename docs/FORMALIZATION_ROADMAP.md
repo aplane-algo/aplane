@@ -215,3 +215,37 @@ guard is load-bearing for a different invariant (recorded in the prose
 companion `FORMAL_TLA_RECOVERY_BINDING_MODEL.md`). The per-witness-key
 cosigner policy selection stays a test-level contract by decision, recorded
 on the A4 traceability row. No flagged items remain from this review.
+
+Drift review (2026-10-14, branch `feat/per-key-policy` on HEAD `cdfa8055`,
+scoped to the per-key policy redesign): both node roles now store a node
+default (`default.json`) plus optional per-key documents
+(`policies/<selector>.json`), each with its own `.hmac` sidecar; a key's own
+document replaces the default wholesale (`PolicyFor(key) = own[key] if
+present else default`); `key_overrides`, the signer `policy.json`, and the
+cosigner-only rule ids (`cosigner:non_transfer`,
+`cosigner:deterministic_routing`, `cosigner:transfer_policy_required`,
+`cosigner_key_has_no_policy`) are gone; every document carries a
+`transaction_types` verdict map whose `reject` and `review` entries are
+evaluated first inside Always Deny and Always Review (`transaction_type:
+<type>`). `policy_precedence.tla` abstracts the rule inventory as deny,
+review, and approve families and models neither document selection nor
+individual rules, so selection and the type rule add members to existing
+families without touching the spec; no module, configuration, or metrics
+change. Prose updated: `FORMAL_POLICY_MODEL.md` (snapshot as one
+`NodePolicy`, per-file sidecars failing the whole load closed, selection
+section and P10 restated over `PolicyFor`, Transaction Type Rule section,
+anchors), `FORMAL_GUARDED_SIGNING_MODEL.md` (`CosignerPolicyFor` resolves to
+the key's own document or the deny-all cosigner default; `NoPolicy` only when
+no snapshot is loaded, an internal error; rejections expressed as
+`transaction_type:<type>`, `cosigner_policy:reject_rekey`, and
+`transfer_policy:route_miss`), `FORMAL_SIGNING_AUTHORITY_MODEL.md` (S12
+restated over document selection). The 2026-10-07 closing note that a missing
+per-witness-key entry rejects every request is superseded: a cosigner key
+with no document of its own follows the node default, which is deny-all as
+shipped but operator-replaceable. Not refreshed here: the P10 and S12 rows in
+`FORMAL_TRACEABILITY.md` still cite `policy.Config.ForKey`,
+`TestEvaluateAlwaysReviewRulesUsesKeyOverride`, and
+`TestEvaluateAutoRejectionRulesAppliesKeyOverrides`, none of which exist
+after the redesign; the rows should point at
+`policyruntime.NodePolicy.PolicyFor`, `signing.Service.PolicyFor`, and the
+per-key tests in `test/integration/policy_per_key_test.go`.

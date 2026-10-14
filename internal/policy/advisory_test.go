@@ -8,22 +8,15 @@ import (
 	"testing"
 )
 
-func advisorySignerDoc(t *testing.T, settings, route, overrides string) *SignerPolicyV1 {
+func advisorySignerDoc(t *testing.T, settings, route string) *PolicyV1 {
 	t.Helper()
-	doc, err := DecodeSignerPolicyV1([]byte(fmt.Sprintf(`{
-  "format": "aplane.signer-policy.v1"%s,
-  "transfer_policy": {"enabled": true, "on_no_route": "reject", "routes": [
+	return mustSignerDoc(t, DefaultKey, fmt.Sprintf(`{%s "transfer_policy": {"routes": [
     {"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["*"], "destinations": [%q]%s}
-  ]}%s
-}`, settings, v1Vendor.String(), route, overrides)))
-	if err != nil {
-		t.Fatalf("DecodeSignerPolicyV1() error = %v", err)
-	}
-	return doc
+  ]}}`, settings, v1Vendor.String(), route))
 }
 
 func TestSignerAdvisoriesReportCloseOverlap(t *testing.T) {
-	doc := advisorySignerDoc(t, `, "reject_close_remainder": true, "reject_asset_close": true`, `, "allow_close": true`, "")
+	doc := advisorySignerDoc(t, `"reject_close_remainder": true, "reject_asset_close": true,`, `, "allow_close": true`)
 	assertAdvisoryRuleIDs(t, doc.Advisories(), []string{
 		ConfigAdvisoryRejectCloseRemainderRouteOverlap,
 		ConfigAdvisoryRejectAssetCloseRouteOverlap,
@@ -31,8 +24,8 @@ func TestSignerAdvisoriesReportCloseOverlap(t *testing.T) {
 }
 
 func TestSignerAdvisoriesReportClawbackOverlap(t *testing.T) {
-	doc := advisorySignerDoc(t, `, "reject_clawback": true`,
-		fmt.Sprintf(`, "allow_clawback": true, "asset_sources": [%q]`, v1Holder.String()), "")
+	doc := advisorySignerDoc(t, `"reject_clawback": true,`,
+		fmt.Sprintf(`, "allow_clawback": true, "asset_sources": [%q]`, v1Holder.String()))
 	got := doc.Advisories()
 	assertAdvisoryRuleIDs(t, got, []string{ConfigAdvisoryRejectClawbackRouteOverlap})
 	if got[0].Severity != ConfigAdvisorySeverityWarning || got[0].Scope != "policy" {
@@ -41,37 +34,57 @@ func TestSignerAdvisoriesReportClawbackOverlap(t *testing.T) {
 }
 
 func TestSignerAdvisoriesIgnoreUnsetRejects(t *testing.T) {
-	doc := advisorySignerDoc(t, "", `, "allow_close": true`, "")
+	doc := advisorySignerDoc(t, "", `, "allow_close": true`)
 	if got := doc.Advisories(); len(got) != 0 {
 		t.Fatalf("advisories = %+v, want none", got)
 	}
 }
 
-func TestSignerAdvisoriesCheckKeyOverridesWithInheritedSettings(t *testing.T) {
-	doc := advisorySignerDoc(t, "", `, "allow_close": true`,
-		fmt.Sprintf(`, "key_overrides": {%q: {"reject_close_remainder": true}}`, v1Ops.String()))
+func TestAdvisoriesReportRoutesForRejectedTypes(t *testing.T) {
+	doc := advisorySignerDoc(t, `"transaction_types": {"*": "allow", "pay": "reject"},`, "")
 	got := doc.Advisories()
-	assertAdvisoryRuleIDs(t, got, []string{ConfigAdvisoryRejectCloseRemainderRouteOverlap})
-	if got[0].Scope != "key_overrides/"+v1Ops.String() {
-		t.Fatalf("scope = %q", got[0].Scope)
+	assertAdvisoryRuleIDs(t, got, []string{ConfigAdvisoryRejectedTypeRouted})
+	if want := "rejects pay, so"; !contains(got[0].Message, want) {
+		t.Fatalf("message = %q, want %q", got[0].Message, want)
 	}
-
-	inherited := advisorySignerDoc(t, `, "reject_close_remainder": true`, `, "allow_close": true`,
-		fmt.Sprintf(`, "key_overrides": {%q: {"max_fee_microalgos": "2000"}}`, v1Ops.String()))
-	assertAdvisoryRuleIDs(t, inherited.Advisories(), []string{ConfigAdvisoryRejectCloseRemainderRouteOverlap})
+	// Without routes there is nothing a rejected type makes unreachable.
+	none := mustSignerDoc(t, DefaultKey, `{"transaction_types": {"*": "reject"}}`)
+	if got := none.Advisories(); len(got) != 0 {
+		t.Fatalf("advisories = %+v, want none", got)
+	}
 }
 
-func TestCosignerAdvisoriesReportCloseOverlap(t *testing.T) {
-	doc, err := DecodeCosignerPolicyV1([]byte(fmt.Sprintf(`{
-  "format": "aplane.cosigner-policy.v1", "key": %q, "reject_close_remainder": true,
+func TestCosignerAdvisoriesReportCloseOverlapAndMissingFeeCap(t *testing.T) {
+	doc := mustCosignerDoc(t, testWitnessKeyIDV1, fmt.Sprintf(`{"reject_close_remainder": true,
   "transfer_policy": {"routes": [
     {"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": [%q], "allow_close": true}
-  ]}
-}`, testWitnessKeyIDV1, v1Vendor.String())), testWitnessKeyIDV1)
-	if err != nil {
-		t.Fatal(err)
+  ]}}`, v1Vendor.String()))
+	assertAdvisoryRuleIDs(t, doc.Advisories(), []string{ConfigAdvisoryRejectCloseRemainderRouteOverlap, ConfigAdvisoryCosignerNoFeeCap})
+
+	capped := mustCosignerDoc(t, testWitnessKeyIDV1, fmt.Sprintf(`{"max_fee_microalgos": "5000",
+  "transfer_policy": {"routes": [
+    {"id": "r", "networks": ["testnet"], "sources": ["*"], "assets": ["algo"], "destinations": [%q]}
+  ]}}`, v1Vendor.String()))
+	if got := capped.Advisories(); len(got) != 0 {
+		t.Fatalf("advisories = %+v, want none", got)
 	}
-	assertAdvisoryRuleIDs(t, doc.Advisories(), []string{ConfigAdvisoryRejectCloseRemainderRouteOverlap})
+	// The deny-all default permits nothing, so a missing cap is not a gap.
+	if got := mustCosignerDoc(t, DefaultKey, `{"transaction_types": {"*": "reject"}}`).Advisories(); len(got) != 0 {
+		t.Fatalf("advisories = %+v, want none", got)
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 func assertAdvisoryRuleIDs(t *testing.T, got []ConfigAdvisory, want []string) {

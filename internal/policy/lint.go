@@ -49,6 +49,17 @@ func CheckTxnPolicyLints(txn types.Transaction, cfg *Config, knownAddresses map[
 		return nil
 	}
 
+	// The transaction type verdict runs first and alone: a rejected type
+	// never reaches the other rules, so the rejection names the type.
+	if cfg.VerdictForType(txn.Type) == TransactionTypeReject {
+		return []LintViolation{{
+			RuleID:   TransactionTypeRuleID(string(txn.Type)),
+			Scope:    "txn",
+			TxnIndex: -1,
+			Message:  fmt.Sprintf("%s transactions are rejected by policy", txn.Type),
+		}}
+	}
+
 	var violations []LintViolation
 	facts := txeffects.Inspect(txn)
 

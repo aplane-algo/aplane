@@ -131,7 +131,11 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	autoApproveCalls := 0
 	promptCalls := 0
 	forcedRule := ""
-	svc := &Service{}
+	// The bounded rekey is a foreign rekey; the test is about gate order, so
+	// the policy leaves it to the operator default.
+	cfg := policy.DefaultConfig()
+	cfg.RejectForeignRekey = false
+	svc := &Service{PolicyFor: fixedPolicy(cfg)}
 
 	ruleID, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:            []types.Transaction{testBoundedRekey()},

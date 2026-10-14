@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -87,7 +88,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		RollbackSourceGenerationID: first.GenerationID(),
 		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
-			return populateRollbackGeneration(source, staged, kr)
+			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
 		},
 	})
 	if err != nil {

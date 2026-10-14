@@ -36,10 +36,12 @@ type Service struct {
 	GenerateTxnDescriptionFromTxn GenerateTxnDescriptionFromTxnFunc
 	IsUnlocked                    IsUnlockedFunc
 	BeforeExecute                 BeforeExecuteFunc
-	Policy                        *policy.Config
-	// CosignerPolicies maps each Witness Key ID with a policy document to
-	// its compiled policy. A key without an entry rejects every request.
-	CosignerPolicies map[string]*policy.Config
+	// PolicyFor resolves the policy that governs a key selector: the key's
+	// own document, or the node default. It is bound to one policy snapshot
+	// for the life of this service, so every slot of a request is judged
+	// against the same policy. A nil resolver, or one that returns nil,
+	// means policy is not loaded and every request fails closed.
+	PolicyFor func(selector string) *policy.Config
 	// HoldsCosignerKey reports whether the node holds a cosigner key,
 	// without loading it.
 	HoldsCosignerKey func(witnessKeyID string) bool
@@ -321,7 +323,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 			return ""
 		}(),
 		AutoApprove: func() (string, bool) {
-			return EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy)
+			return EvaluateAutoApprovalRules(req, plan, allTxns, s.policyFor)
 		},
 		LogRejection: func(reason string) {
 			s.logPolicyRejections(req, plan, txns, reason)
@@ -348,6 +350,15 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		return "", nil, err
 	}
 	return alwaysReviewRuleID, release, nil
+}
+
+// policyFor resolves a selector's policy through the request's snapshot. It
+// returns nil when policy is not loaded.
+func (s *Service) policyFor(selector string) *policy.Config {
+	if s == nil || s.PolicyFor == nil {
+		return nil
+	}
+	return s.PolicyFor(selector)
 }
 
 func (s *Service) knownAddresses(plan *PlanResult) map[string]bool {

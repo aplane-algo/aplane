@@ -104,15 +104,15 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 			return nil, fmt.Errorf("no addresses selected for backup")
 		}
 	}
-	if _, err := exportCosignerPolicies(activeStore, stageDir, exported, req.Keyring, req.ExportPassphrase); err != nil {
+	nodeRole, _, err := noderole.Load(req.Paths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load source node role: %w", err)
+	}
+	if _, err := exportKeyPolicies(activeStore, nodeRole.Role, stageDir, exported, req.Keyring, req.ExportPassphrase); err != nil {
 		return nil, err
 	}
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
-	}
-	nodeRole, _, err := noderole.Load(req.Paths)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load source node role: %w", err)
 	}
 	// Last: the manifest inventories every member written above, so it can
 	// only be sealed once they are final.

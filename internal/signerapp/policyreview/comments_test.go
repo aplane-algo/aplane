@@ -4,6 +4,8 @@
 package policyreview
 
 import (
+	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,119 +63,115 @@ func TestBlankCommentsKeepsPositions(t *testing.T) {
 }
 
 func TestReadDocumentsStripsCommentsBeforeTheNode(t *testing.T) {
-	commented := "{\n  // the document type\n  \"format\": \"aplane.signer-policy.v1\", /* fee */\n  \"max_fee_microalgos\": \"2000\" // cap\n}\n"
-	file := writePolicyFile(t, "policy.json", commented)
-	docs, _, err := ReadDocuments([]string{file}, "signer", nil)
+	// A complete document with comments added: a whole line, and one inside a
+	// line. Stripped, it is the document without them.
+	clean := policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"2000"}`)
+	commented := strings.Replace(clean, "{\n", "{\n  // the document type\n", 1)
+	commented = strings.Replace(commented, "\"max_fee_microalgos\": \"2000\",", "\"max_fee_microalgos\": \"2000\", /* fee */", 1)
+	if commented == clean {
+		t.Fatal("test did not add comments")
+	}
+	file := writePolicyFile(t, "default.json", commented)
+	docs, _, err := ReadDocuments([]string{file}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"format\": \"aplane.signer-policy.v1\",\n  \"max_fee_microalgos\": \"2000\"\n}\n"
-	if docs[0].Document != want {
-		t.Fatalf("document sent = %q, want %q", docs[0].Document, want)
+	if docs[0].Document != clean {
+		t.Fatalf("document sent = %q, want %q", docs[0].Document, clean)
 	}
-	if _, err := policy.DecodeSignerPolicyV1([]byte(docs[0].Document)); err != nil {
+	if _, err := policy.DecodePolicyV1([]byte(docs[0].Document), policy.DefaultKey, noderole.RoleSigner); err != nil {
 		t.Fatalf("stripped document does not decode: %v", err)
 	}
-	docs, _, err = ReadRegularDocuments([]string{file}, "signer")
-	if err != nil || docs[0].Document != want {
+	docs, _, err = ReadRegularDocuments([]string{file})
+	if err != nil || docs[0].Document != clean {
 		t.Fatalf("ReadRegularDocuments = %q, %v", docs[0].Document, err)
 	}
-	doc, err := DocumentFromText("signer", "policy.json", commented)
-	if err != nil || doc.Document != want {
+	doc, err := DocumentFromText("default.json", commented)
+	if err != nil || doc.Document != clean {
 		t.Fatalf("DocumentFromText = %q, %v", doc.Document, err)
 	}
-	// A cosigner key is read from the stripped text.
-	cosigner := "{\n  \"format\": \"aplane.cosigner-policy.v1\",\n  // which key\n  \"key\": \"" + testKeyA + "\",\n  \"transfer_policy\": {\"routes\": []}\n}\n"
-	doc, err = DocumentFromText("cosigner", "k.json", cosigner)
+	// The key is read from the stripped text.
+	cosigner := strings.Replace(testCosignerDoc(testKeyA), "\"key\":", "// which key\n  \"key\":", 1)
+	doc, err = DocumentFromText("k.json", cosigner)
 	if err != nil || doc.Key != testKeyA || strings.Contains(doc.Document, "//") {
 		t.Fatalf("cosigner commented text: doc %+v err %v", doc, err)
 	}
 
 	for name, text := range map[string]string{
 		"only comments": "// nothing here\n/* at all */\n",
-		"unterminated":  "{\"format\": \"aplane.signer-policy.v1\"} /* open",
+		"unterminated":  "{\"key\": \"default\"} /* open",
 	} {
-		if _, err := DocumentFromText("signer", "policy.json", text); err == nil {
+		if _, err := DocumentFromText("default.json", text); err == nil {
 			t.Fatalf("%s: text accepted", name)
 		}
 	}
 	// A comment inside a token does not assemble one: the stripped text is
-	// what the node decodes, and it fails there exactly as the blanked text
-	// the TUI checks would.
-	split := "{\"format\": \"aplane.signer-policy.v1\", \"reject_foreign_rekey\": fa/* note */lse}"
-	doc, err = DocumentFromText("signer", "policy.json", split)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := policy.DecodeSignerPolicyV1([]byte(doc.Document)); err == nil {
-		t.Fatalf("a token split by a comment decoded: %q", doc.Document)
+	// not a JSON object, so no key can be read from it and it is refused
+	// exactly as the blanked text the TUI checks would be.
+	split := "{\"key\": \"default\", \"reject_foreign_rekey\": fa/* note */lse}"
+	if doc, err := DocumentFromText("default.json", split); err == nil || !strings.Contains(err.Error(), `"key" field`) {
+		t.Fatalf("a token split by a comment was accepted: doc %+v err %v", doc, err)
 	}
 }
 
-// The templates are the starting documents with a comment: stripped, they
-// decode equal to what the node starts with.
-func TestStartingTemplatesMatchTheStartingDocuments(t *testing.T) {
-	signer := SignerTemplate()
-	stripped, err := StripComments([]byte(signer))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := policy.DecodeSignerPolicyV1(stripped)
-	if err != nil {
-		t.Fatalf("stripped signer template does not decode: %v\n%s", err, stripped)
-	}
-	want, err := policy.DecodeSignerPolicyV1(policy.InitialSignerPolicy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("stripped signer template = %+v, want the initial policy %+v", got, want)
-	}
-	// The node holds strict JSON, so IsStartingDocument sees stripped text.
-	if !IsStartingDocument("signer", "", string(policy.InitialSignerPolicy)) || !IsStartingDocument("signer", "", string(stripped)) {
-		t.Fatal("IsStartingDocument rejects the signer starting document")
-	}
-	if IsStartingDocument("signer", "", signer) {
-		t.Fatal("IsStartingDocument accepted text with comments")
-	}
-	if IsStartingDocument("signer", "", testSignerDoc) {
-		t.Fatal("IsStartingDocument accepts a signer document with a fee cap")
-	}
+// A template is the default with the key filled in and a comment on top:
+// stripped, it decodes equal to the default under the key's name.
+func TestTemplatesAreTheDefaultUnderTheKeysName(t *testing.T) {
+	for _, role := range []noderole.Role{noderole.RoleSigner, noderole.RoleCosigner} {
+		def := policytest.EmbeddedDefault(t, role)
+		key := "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"
+		if role == noderole.RoleCosigner {
+			key = testKeyA
+		}
+		text, err := Template(role, key, []byte(def))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(text, "// Policy for key "+key) {
+			t.Fatalf("%s template does not start with its comment:\n%s", role, text)
+		}
+		stripped, err := StripComments([]byte(text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := policy.DecodePolicyV1(stripped, key, role)
+		if err != nil {
+			t.Fatalf("stripped %s template does not decode: %v\n%s", role, err, stripped)
+		}
+		want, err := policy.DecodePolicyV1([]byte(def), policy.DefaultKey, role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want.Key = key
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("stripped %s template = %+v, want the default under the key %+v", role, got, want)
+		}
 
-	cosigner, err := CosignerTemplate(testKeyA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stripped, err = StripComments([]byte(cosigner))
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotCosigner, err := policy.DecodeCosignerPolicyV1(stripped, testKeyA)
-	if err != nil {
-		t.Fatalf("stripped cosigner template does not decode: %v\n%s", err, stripped)
-	}
-	locked, err := policy.StartingCosignerDocumentV1(testKeyA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantCosigner, err := policy.DecodeCosignerPolicyV1([]byte(locked), testKeyA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(gotCosigner, wantCosigner) {
-		t.Fatalf("stripped cosigner template = %+v, want the starting document %+v", gotCosigner, wantCosigner)
-	}
-	if !IsStartingDocument("cosigner", testKeyA, locked) || !IsStartingDocument("cosigner", testKeyA, string(stripped)) {
-		t.Fatal("IsStartingDocument rejects the cosigner starting document")
-	}
-	if IsStartingDocument("cosigner", testKeyA, testCosignerDoc(testKeyB)) || IsStartingDocument("operator", "", signer) {
-		t.Fatal("IsStartingDocument accepts a document for another key or role")
-	}
+		// The default itself is annotated under its own name.
+		own, err := Template(role, policy.DefaultKey, []byte(def))
+		if err != nil {
+			t.Fatal(err)
+		}
+		stripped, err = StripComments([]byte(own))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(stripped) != def || !strings.Contains(own, "default policy") {
+			t.Fatalf("%s default template = %q", role, own)
+		}
 
-	if _, err := StartingTemplate("operator", ""); err == nil {
-		t.Fatal("StartingTemplate accepted an unknown role")
+		embedded, err := EmbeddedTemplate(role, key)
+		if err != nil || embedded != text {
+			t.Fatalf("EmbeddedTemplate(%s) = %q, %v", role, embedded, err)
+		}
 	}
-	if text, err := StartingTemplate("cosigner", testKeyA); err != nil || text != cosigner {
-		t.Fatalf("StartingTemplate(cosigner) = %q, %v", text, err)
+	if _, err := Template(noderole.RoleSigner, testKeyA, []byte(policytest.EmbeddedDefault(t, noderole.RoleCosigner))); err == nil {
+		t.Fatal("Template accepted a cosigner default on a signer node")
+	}
+	if _, err := Template(noderole.RoleSigner, policy.DefaultKey, []byte("{}")); err == nil {
+		t.Fatal("Template accepted an invalid default")
+	}
+	if _, err := EmbeddedTemplate("operator", ""); err == nil {
+		t.Fatal("EmbeddedTemplate accepted an unknown role")
 	}
 }

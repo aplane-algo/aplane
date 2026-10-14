@@ -1,0 +1,16 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "default",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "0",
+  "transaction_types": {
+    "*": "reject"
+  },
+  "transfer_policy": {
+    "routes": []
+  }
+}

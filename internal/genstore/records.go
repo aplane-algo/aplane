@@ -66,13 +66,13 @@ var generationAuthorityFiles = []string{
 	"node.yaml.hmac",
 }
 
-// generationOptionalAuthorityFiles are authority files present only for some
-// node roles: signer generations carry the signer policy document, cosigner
-// generations do not. Role-aware candidate validation decides which are
-// required; when present they are pinned exactly like required members.
+// generationOptionalAuthorityFiles are authority files that genstore itself
+// does not require: the node default policy document and its sidecar.
+// Role-aware candidate validation (policyruntime.Load) requires them on both
+// roles; when present they are pinned exactly like required members.
 var generationOptionalAuthorityFiles = []string{
-	"policy.json",
-	"policy.json.hmac",
+	"default.json",
+	"default.json.hmac",
 }
 
 // presentAuthorityFiles returns the required authority files plus each

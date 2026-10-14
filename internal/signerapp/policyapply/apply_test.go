@@ -4,7 +4,6 @@
 package policyapply
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 )
@@ -28,17 +28,21 @@ func manyWitnessKeyIDs(n int) []string {
 }
 
 func cosignerDoc(key string) string {
-	return fmt.Sprintf(`{"format":"aplane.cosigner-policy.v1","key":%q,"transfer_policy":{"routes":[]}}`, key)
+	return policytest.MustDocument(noderole.RoleCosigner, key, "")
 }
 
-func TestCandidateCapsCosignerPolicyDocuments(t *testing.T) {
-	ids := manyWitnessKeyIDs(MaxCosignerPolicies + 1)
+func cosignerDefaultDoc() policy.StoredDocument {
+	return policy.StoredDocument{Key: policy.DefaultKey, Bytes: []byte(policytest.MustDocument(noderole.RoleCosigner, policy.DefaultKey, ""))}
+}
+
+func TestCandidateCapsKeyPolicyDocuments(t *testing.T) {
+	ids := manyWitnessKeyIDs(MaxPolicies + 1)
 	env := Env{Role: noderole.RoleCosigner}
-	current := &policyruntime.NodePolicy{Role: noderole.RoleCosigner}
-	for _, key := range ids[:MaxCosignerPolicies] {
+	current := &policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{cosignerDefaultDoc()}}
+	for _, key := range ids[:MaxPolicies] {
 		current.Documents = append(current.Documents, policy.StoredDocument{Key: key, Bytes: []byte(cosignerDoc(key))})
 	}
-	last := ids[MaxCosignerPolicies]
+	last := ids[MaxPolicies]
 	_, _, err := Candidate(env, current, []adminproto.PolicyDocument{{Key: last, Document: cosignerDoc(last)}}, nil)
 	if Code(err, "") != "policy_set_too_large" {
 		t.Fatalf("Candidate(one past the cap) error = %v, want policy_set_too_large", err)
@@ -50,18 +54,50 @@ func TestCandidateCapsCosignerPolicyDocuments(t *testing.T) {
 	}
 }
 
+func TestCandidateKeepsTheDefaultAndRefusesItsRemoval(t *testing.T) {
+	env := Env{Role: noderole.RoleCosigner}
+	current := &policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{cosignerDefaultDoc()}}
+	key := manyWitnessKeyIDs(1)[0]
+	if _, _, err := Candidate(env, current, nil, []string{policy.DefaultKey}); Code(err, "") != "invalid_policy_request" {
+		t.Fatalf("Candidate(remove default) error = %v, want invalid_policy_request", err)
+	}
+	if _, _, err := Candidate(env, current, nil, []string{key}); Code(err, "") != "invalid_policy_request" {
+		t.Fatalf("Candidate(remove a key without its own policy) error = %v, want invalid_policy_request", err)
+	}
+	if _, _, err := Candidate(env, current, []adminproto.PolicyDocument{{Key: "", Document: cosignerDoc(key)}}, nil); Code(err, "") != "invalid_policy_request" {
+		t.Fatalf("Candidate(unkeyed document) error = %v, want invalid_policy_request", err)
+	}
+	candidate, problems, err := Candidate(env, current, []adminproto.PolicyDocument{{Key: key, Document: cosignerDoc(key)}}, nil)
+	if err != nil || len(problems) != 0 || candidate == nil || candidate.Default == nil || candidate.Keys[key] == nil {
+		t.Fatalf("Candidate(add a key) = %+v, %v, %v", candidate, problems, err)
+	}
+	if candidate.PolicyFor(key) != candidate.Keys[key] || candidate.PolicyFor("other") != candidate.Default {
+		t.Fatal("PolicyFor did not select the key's own document and the default")
+	}
+	// A store with no default cannot be changed into one without a default.
+	if _, _, err := Candidate(env, &policyruntime.NodePolicy{Role: noderole.RoleCosigner}, []adminproto.PolicyDocument{{Key: key, Document: cosignerDoc(key)}}, nil); Code(err, "") != "invalid_policy_request" {
+		t.Fatalf("Candidate(no default) error = %v, want invalid_policy_request", err)
+	}
+	// A document for the wrong role is a problem, not an error.
+	wrongRole := policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey, "")
+	_, problems, err = Candidate(env, current, []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: wrongRole}}, nil)
+	if err != nil || len(problems) != 1 || problems[0].Pointer != "/role" {
+		t.Fatalf("Candidate(wrong role) = %+v, %v", problems, err)
+	}
+}
+
 // TestPolicySummaryFitsOneAdminMessageAtTheCaps encodes the largest possible
 // get_policy summary, carried inside an apply_policy result: the cap of
-// documents for keys the node does not hold, the cap of held keys without
-// documents, and every field at its longest.
+// documents for keys the node does not hold, the cap of held keys on the
+// default, and every field at its longest.
 func TestPolicySummaryFitsOneAdminMessageAtTheCaps(t *testing.T) {
-	ids := manyWitnessKeyIDs(MaxCosignerPolicies + keys.MaxCosignerCredentials)
+	ids := manyWitnessKeyIDs(MaxPolicies + keys.MaxCosignerCredentials)
 	held := map[string]bool{}
-	for _, key := range ids[MaxCosignerPolicies:] {
+	for _, key := range ids[MaxPolicies:] {
 		held[key] = true
 	}
-	view := View(&policyruntime.NodePolicy{Role: noderole.RoleCosigner}, held, "")
-	for _, key := range ids[:MaxCosignerPolicies] {
+	view := View(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{cosignerDefaultDoc()}}, held, "")
+	for _, key := range ids[:MaxPolicies] {
 		view.Documents = append(view.Documents, adminproto.PolicyDocumentInfo{
 			Key: key, SHA256: strings.Repeat("f", 64), Size: 1 << 20, SignedAtUnix: math.MaxInt64,
 		})
@@ -69,7 +105,7 @@ func TestPolicySummaryFitsOneAdminMessageAtTheCaps(t *testing.T) {
 	}
 	view.PolicySetSHA256 = strings.Repeat("f", 64)
 	view.GenerationID = "gen-9999999999-ffffffff"
-	if len(view.Keys) != MaxCosignerPolicies+keys.MaxCosignerCredentials {
+	if len(view.Keys) != MaxPolicies+keys.MaxCosignerCredentials {
 		t.Fatalf("key statuses = %d", len(view.Keys))
 	}
 	id := strings.Repeat("i", 4096)
@@ -88,11 +124,39 @@ func TestPolicySummaryFitsOneAdminMessageAtTheCaps(t *testing.T) {
 	}
 }
 
+func TestKeyStatusAndCoverageWarnings(t *testing.T) {
+	ids := manyWitnessKeyIDs(3)
+	np := &policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{
+		cosignerDefaultDoc(),
+		{Key: ids[0], Bytes: []byte(cosignerDoc(ids[0]))},
+		{Key: ids[2], Bytes: []byte(cosignerDoc(ids[2]))},
+	}}
+	statuses := KeyStatus(map[string]bool{ids[0]: true, ids[1]: true}, np)
+	want := map[string]string{ids[0]: adminproto.PolicyKeyOwn, ids[1]: adminproto.PolicyKeyDefault, ids[2]: adminproto.PolicyKeyNotHeld}
+	if len(statuses) != 3 {
+		t.Fatalf("statuses = %+v", statuses)
+	}
+	for _, st := range statuses {
+		if st.Key == policy.DefaultKey || want[st.Key] != st.Status {
+			t.Fatalf("statuses = %+v, want %v", statuses, want)
+		}
+	}
+	warnings := CoverageWarnings(statuses)
+	if len(warnings) != 1 || warnings[0].Key != ids[2] {
+		t.Fatalf("coverage warnings = %+v, want one for the document whose key is not held", warnings)
+	}
+}
+
 func TestDocumentReturnsExactBytesOrNotFound(t *testing.T) {
 	ids := manyWitnessKeyIDs(2)
-	np := &policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{{Key: ids[0], Bytes: []byte(cosignerDoc(ids[0]))}}}
+	np := &policyruntime.NodePolicy{Role: noderole.RoleCosigner, Documents: []policy.StoredDocument{
+		cosignerDefaultDoc(), {Key: ids[0], Bytes: []byte(cosignerDoc(ids[0]))},
+	}}
 	if got := Document(np, ids[0]); !got.Success || got.Document != cosignerDoc(ids[0]) || got.SHA256 == "" {
 		t.Fatalf("Document(held) = %+v", got)
+	}
+	if got := Document(np, policy.DefaultKey); !got.Success || got.Key != policy.DefaultKey {
+		t.Fatalf("Document(default) = %+v", got)
 	}
 	for _, key := range []string{ids[1], ""} {
 		if got := Document(np, key); got.Success || got.Code != "policy_document_not_found" {

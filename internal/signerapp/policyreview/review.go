@@ -2,10 +2,11 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package policyreview owns what an operator reviews before a policy change
-// is applied: reading candidate policy files, diffing them against the active
-// documents, and rendering problems and diffs. The apadmin policy commands and
-// the apadmin TUI share it so both surfaces show the same review. The rules
-// for checking and committing policy live in policyapply.
+// is applied: reading candidate policy files, diffing them against the
+// documents that govern the keys now, and rendering problems and diffs. The
+// apadmin policy commands and the apadmin TUI share it so both surfaces show
+// the same review. The rules for checking and committing policy live in
+// policyapply.
 package policyreview
 
 import (
@@ -19,6 +20,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
@@ -30,20 +32,19 @@ const maxPolicyFileBytes = 1 << 20
 // that collect a document some other way than reading a file.
 const MaxPolicyBytes = maxPolicyFileBytes
 
-// ReadDocuments reads policy files for the node's role. A signer node takes
-// one file; each cosigner file names its key in its "key" field. names maps a
-// document's key to the file it came from, for messages. The file "-" reads
-// from stdin.
-func ReadDocuments(files []string, role string, stdin io.Reader) ([]adminproto.PolicyDocument, map[string]string, error) {
-	return readDocuments(files, role, func(file string) ([]byte, error) { return readPolicyFile(file, stdin) })
+// ReadDocuments reads policy files. Each file names the document it is in
+// its "key" field: "default" or a key selector. names maps a document's key
+// to the file it came from, for messages. The file "-" reads from stdin.
+func ReadDocuments(files []string, stdin io.Reader) ([]adminproto.PolicyDocument, map[string]string, error) {
+	return readDocuments(files, func(file string) ([]byte, error) { return readPolicyFile(file, stdin) })
 }
 
 // ReadRegularDocuments is ReadDocuments for callers that must not block on
 // what a path names, such as an interactive UI reading inside its event loop:
 // every path must be a regular file, not a symlink, FIFO, or device, and
 // there is no stdin form.
-func ReadRegularDocuments(files []string, role string) ([]adminproto.PolicyDocument, map[string]string, error) {
-	return readDocuments(files, role, func(file string) ([]byte, error) {
+func ReadRegularDocuments(files []string) ([]adminproto.PolicyDocument, map[string]string, error) {
+	return readDocuments(files, func(file string) ([]byte, error) {
 		data, _, err := fsutil.ReadRegularFileLimited(file, maxPolicyFileBytes)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", file, err)
@@ -52,10 +53,7 @@ func ReadRegularDocuments(files []string, role string) ([]adminproto.PolicyDocum
 	})
 }
 
-func readDocuments(files []string, role string, read func(file string) ([]byte, error)) ([]adminproto.PolicyDocument, map[string]string, error) {
-	if role == "signer" && len(files) != 1 {
-		return nil, nil, fmt.Errorf("a signer node takes exactly one policy file")
-	}
+func readDocuments(files []string, read func(file string) ([]byte, error)) ([]adminproto.PolicyDocument, map[string]string, error) {
 	docs := make([]adminproto.PolicyDocument, 0, len(files))
 	names := make(map[string]string, len(files))
 	for _, file := range files {
@@ -63,7 +61,7 @@ func readDocuments(files []string, role string, read func(file string) ([]byte, 
 		if err != nil {
 			return nil, nil, err
 		}
-		doc, err := documentFromBytes(file, role, data)
+		doc, err := documentFromBytes(file, data)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -77,25 +75,21 @@ func readDocuments(files []string, role string, read func(file string) ([]byte, 
 }
 
 // documentFromBytes turns one candidate's bytes into the document sent to the
-// node. A cosigner document names its key in its "key" field.
-func documentFromBytes(label, role string, data []byte) (adminproto.PolicyDocument, error) {
-	doc := adminproto.PolicyDocument{Document: string(data)}
-	if role == "cosigner" {
-		var head struct {
-			Key string `json:"key"`
-		}
-		if err := json.Unmarshal(data, &head); err != nil || head.Key == "" {
-			return adminproto.PolicyDocument{}, fmt.Errorf("%s: a cosigner policy file must be a JSON object with a \"key\" field", label)
-		}
-		doc.Key = head.Key
+// node. The document names its key in its "key" field.
+func documentFromBytes(label string, data []byte) (adminproto.PolicyDocument, error) {
+	var head struct {
+		Key string `json:"key"`
 	}
-	return doc, nil
+	if err := json.Unmarshal(data, &head); err != nil || head.Key == "" {
+		return adminproto.PolicyDocument{}, fmt.Errorf("%s: a policy file must be a JSON object with a \"key\" field (\"default\" or the key it governs)", label)
+	}
+	return adminproto.PolicyDocument{Key: head.Key, Document: string(data)}, nil
 }
 
 // DocumentFromText builds the candidate document for text that did not come
 // from a file, such as an edit made in the apadmin TUI. label names it in
 // messages. The same emptiness, UTF-8, size, and key rules apply as for files.
-func DocumentFromText(role, label, text string) (adminproto.PolicyDocument, error) {
+func DocumentFromText(label, text string) (adminproto.PolicyDocument, error) {
 	if len(text) > MaxPolicyBytes {
 		return adminproto.PolicyDocument{}, fmt.Errorf("%s is larger than %d bytes", label, MaxPolicyBytes)
 	}
@@ -103,7 +97,7 @@ func DocumentFromText(role, label, text string) (adminproto.PolicyDocument, erro
 	if err != nil {
 		return adminproto.PolicyDocument{}, err
 	}
-	return documentFromBytes(label, role, data)
+	return documentFromBytes(label, data)
 }
 
 func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
@@ -165,42 +159,54 @@ func PrintProblems(w io.Writer, label string, problems []adminproto.PolicyProble
 }
 
 // DocumentDiff is the reviewed change to one policy document. Identical
-// means the decoded documents are equal, so applying changes nothing.
+// means the key already has a document of its own and the candidate decodes
+// equal to it, so applying changes nothing.
 type DocumentDiff struct {
 	Label     string
 	Changes   []policy.PolicyChange
 	Identical bool
 }
 
-// DiffDocument compares a candidate document with the node's active document
-// for the same key. hasCurrent is false when the key has no active document.
-func DiffDocument(role, key string, hasCurrent bool, current, next string) ([]policy.PolicyChange, bool, error) {
-	if role == "cosigner" {
-		nextDoc, err := policy.DecodeCosignerPolicyV1([]byte(next), key)
-		if err != nil {
-			return nil, false, err
-		}
-		if !hasCurrent {
-			return policy.DiffCosignerPolicyV1(nil, nextDoc), false, nil
-		}
-		currentDoc, err := policy.DecodeCosignerPolicyV1([]byte(current), key)
-		if err != nil {
-			return nil, false, fmt.Errorf("active policy: %w", err)
-		}
-		return policy.DiffCosignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
-	}
-	nextDoc, err := policy.DecodeSignerPolicyV1([]byte(next))
+// DiffCandidate compares the candidate document for key with the document
+// that governs the key now: its own when ownCurrent is true, otherwise the
+// node default. A key gaining its first document of its own is a change even
+// when the text equals the default, since the key stops following the default.
+func DiffCandidate(role noderole.Role, key string, current, next string, ownCurrent bool) ([]policy.PolicyChange, bool, error) {
+	nextDoc, err := policy.DecodePolicyV1([]byte(next), key, role)
 	if err != nil {
 		return nil, false, err
 	}
-	if !hasCurrent {
-		return nil, false, fmt.Errorf("the node has no active signer policy")
+	currentKey := key
+	if !ownCurrent {
+		currentKey = policy.DefaultKey
 	}
-	currentDoc, err := policy.DecodeSignerPolicyV1([]byte(current))
+	currentDoc, err := policy.DecodePolicyV1([]byte(current), currentKey, role)
 	if err != nil {
 		return nil, false, fmt.Errorf("active policy: %w", err)
 	}
-	return policy.DiffSignerPolicyV1(currentDoc, nextDoc), reflect.DeepEqual(currentDoc, nextDoc), nil
+	changes := policy.DiffPolicyV1(currentDoc, nextDoc)
+	if !ownCurrent && key != policy.DefaultKey {
+		changes = append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
+			Summary: "the key gets a policy of its own; compared with the node default it followed"}}, changes...)
+		return changes, false, nil
+	}
+	return changes, reflect.DeepEqual(currentDoc, nextDoc), nil
+}
+
+// DiffRemoval describes a key losing its own document: it will follow
+// nextDefault, the default in force after the change.
+func DiffRemoval(role noderole.Role, key string, own, nextDefault string) ([]policy.PolicyChange, error) {
+	ownDoc, err := policy.DecodePolicyV1([]byte(own), key, role)
+	if err != nil {
+		return nil, fmt.Errorf("active policy for %s: %w", key, err)
+	}
+	defaultDoc, err := policy.DecodePolicyV1([]byte(nextDefault), policy.DefaultKey, role)
+	if err != nil {
+		return nil, fmt.Errorf("default policy: %w", err)
+	}
+	changes := policy.DiffPolicyV1(ownDoc, defaultDoc)
+	return append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
+		Summary: "policy of its own removed; the key follows the node default"}}, changes...), nil
 }
 
 // Unchanged reports whether applying would change no document: every

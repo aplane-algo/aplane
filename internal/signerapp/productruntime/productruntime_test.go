@@ -98,38 +98,30 @@ func TestValidateProductStoreLayout(t *testing.T) {
 	})
 }
 
-func TestRuntimePolicyReturnsDefensiveCopies(t *testing.T) {
+func TestRuntimeNodePolicyResolvesPerKey(t *testing.T) {
 	ir := New(Config{})
-	signer := policy.DefaultConfig()
-	signer.MaxFeeMicroAlgos = 7000
-	ir.SetPolicy(signer)
-	got := ir.Policy()
-	if got == nil || got.MaxFeeMicroAlgos != 7000 {
-		t.Fatalf("Policy() = %#v, want max fee 7000", got)
+	def := policy.DefaultConfig()
+	def.MaxFeeMicroAlgos = 7000
+	ir.SetPolicy(def)
+	if got := ir.NodePolicy().PolicyFor("ANY"); got == nil || got.MaxFeeMicroAlgos != 7000 {
+		t.Fatalf("PolicyFor() = %#v, want the default with max fee 7000", got)
 	}
-	got.MaxFeeMicroAlgos = 1
-	if ir.Policy().MaxFeeMicroAlgos != 7000 {
-		t.Fatal("signer policy was mutated through a returned copy")
-	}
-	if ir.CosignerPolicies() != nil {
-		t.Fatal("CosignerPolicies() on a signer policy != nil")
+	// SetPolicy installs a copy: the caller's config is not shared.
+	def.MaxFeeMicroAlgos = 1
+	if ir.NodePolicy().PolicyFor("ANY").MaxFeeMicroAlgos != 7000 {
+		t.Fatal("the installed default shares the caller's config")
 	}
 
-	cosigner := policy.DefaultConfig()
-	cosigner.MaxFeeMicroAlgos = 5000
-	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Cosigner: map[string]*policy.Config{"K": cosigner}})
-	policies := ir.CosignerPolicies()
-	policies["K"].MaxFeeMicroAlgos = 1
-	delete(policies, "K")
-	if again := ir.CosignerPolicies(); again["K"] == nil || again["K"].MaxFeeMicroAlgos != 5000 {
-		t.Fatalf("cosigner policies were mutated through a returned copy: %#v", again)
-	}
-	if ir.Policy() != nil {
-		t.Fatal("Policy() on a cosigner policy != nil")
+	own := policy.DefaultConfig()
+	own.MaxFeeMicroAlgos = 5000
+	ir.SetNodePolicy(&policyruntime.NodePolicy{Role: noderole.RoleCosigner, Default: def, Keys: map[string]*policy.Config{"K": own}})
+	np := ir.NodePolicy()
+	if np.PolicyFor("K") != own || np.PolicyFor("OTHER") != def || !np.HasOwn("K") || np.HasOwn("OTHER") {
+		t.Fatal("PolicyFor did not select the key's own document and the default")
 	}
 
 	ir.SetNodePolicy(nil)
-	if ir.NodePolicy() != nil || ir.Policy() != nil {
+	if ir.NodePolicy() != nil || ir.NodePolicy().PolicyFor("K") != nil {
 		t.Fatal("cleared policy is still visible")
 	}
 }

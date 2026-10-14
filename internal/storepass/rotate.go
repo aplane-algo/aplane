@@ -308,11 +308,15 @@ func reencryptSealedGeneration(
 	if err != nil {
 		return counts, err
 	}
+	nodeDoc, err := noderole.ParseDocument(nodeBytes)
+	if err != nil {
+		return counts, err
+	}
 	for relative, data := range members {
 		if !isPolicyDocumentMember(relative) {
 			continue
 		}
-		if err := resignPolicyMember(staged, relative, data, members, oldKeyring, successorKeyring, now); err != nil {
+		if err := resignPolicyMember(staged, nodeDoc.Role, relative, data, members, oldKeyring, successorKeyring, now); err != nil {
 			return counts, err
 		}
 	}
@@ -372,15 +376,15 @@ func generationMemberContext(relative string) (crypto.ObjectContext, bool, strin
 }
 
 // isPolicyDocumentMember reports whether relative is a policy document: the
-// signer policy, a cosigner key's policy, or an archived cosigner policy.
+// node default, a key's own policy, or an archived key policy.
 func isPolicyDocumentMember(relative string) bool {
-	if relative == storepaths.SignerPolicyFileName {
+	if relative == storepaths.DefaultPolicyFileName {
 		return true
 	}
 	for _, dir := range []string{"policies/", "deleted/policies/"} {
 		if key, ok := strings.CutPrefix(relative, dir); ok {
 			key, ok = strings.CutSuffix(key, ".json")
-			return ok && storepaths.ValidateWitnessKeyIDComponent(key) == nil
+			return ok && storepaths.ValidatePolicySelector(key) == nil
 		}
 	}
 	return false
@@ -394,16 +398,16 @@ func isPolicySidecarMember(relative string) bool {
 // resignPolicyMember verifies one policy document's outgoing sidecar under the
 // old keyring and writes a sidecar signed by the successor. Live documents are
 // also decoded, so rotation never re-signs a document the node would reject.
-func resignPolicyMember(staged storepaths.GenPaths, relative string, data []byte, members map[string][]byte, oldKeyring, successorKeyring *crypto.Keyring, now time.Time) error {
+func resignPolicyMember(staged storepaths.GenPaths, role noderole.Role, relative string, data []byte, members map[string][]byte, oldKeyring, successorKeyring *crypto.Keyring, now time.Time) error {
 	switch {
-	case relative == storepaths.SignerPolicyFileName:
-		if _, err := policy.DecodeSignerPolicyV1(data); err != nil {
-			return fmt.Errorf("decode outgoing signer policy: %w", err)
+	case relative == storepaths.DefaultPolicyFileName:
+		if _, err := policy.DecodePolicyV1(data, policy.DefaultKey, role); err != nil {
+			return fmt.Errorf("decode outgoing default policy: %w", err)
 		}
 	case strings.HasPrefix(relative, "policies/"):
 		key := strings.TrimSuffix(strings.TrimPrefix(relative, "policies/"), ".json")
-		if _, err := policy.DecodeCosignerPolicyV1(data, key); err != nil {
-			return fmt.Errorf("decode outgoing cosigner policy %s: %w", key, err)
+		if _, err := policy.DecodePolicyV1(data, key, role); err != nil {
+			return fmt.Errorf("decode outgoing policy for %s: %w", key, err)
 		}
 	}
 	sidecarBytes, ok := members[relative+".hmac"]

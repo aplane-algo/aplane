@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -55,11 +56,12 @@ func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 // setupTestSigner creates a Signer with a working keystore and unlocked runtime,
 // and identity context ready for handler testing.
 // Returns the signer and a cleanup function. The caller should defer cleanup().
-// testSignerPolicy is the store's policy in setupTestSigner: routing off, so
-// the tests built on it can sign payments to any address and exercise the
-// signing mechanics. The production starting document allows self-transfers
-// only; tests of policy verdicts write their own documents.
-const testSignerPolicy = "{\n  \"format\": \"aplane.signer-policy.v1\"\n}\n"
+// testSignerPolicy is the store's default policy in setupTestSigner: every
+// route miss falls to the operator default, so the tests built on it can
+// sign payments to any address and exercise the signing mechanics. Tests of
+// policy verdicts write their own documents.
+var testSignerPolicy = policytest.MustDocument(noderole.RoleSigner, policy.DefaultKey,
+	`{"transfer_policy":{"on_no_route":"operator_default","close_on_no_route":"operator_default","clawback_on_no_route":"operator_default"}}`)
 
 func setupTestSigner(t *testing.T) (*Signer, func()) {
 	t.Helper()
@@ -86,7 +88,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		Operation: "test-init", OperationID: "init-" + generationID,
 		CreatedAt: time.Unix(1_753_800_000, 0),
 		Apply: func(staged utilkeys.GenPaths) error {
-			if err := policy.WriteSignerPolicy(staged, []byte(testSignerPolicy), masterKeyRing, time.Now()); err != nil {
+			if err := policy.WriteDefault(staged, noderole.RoleSigner, []byte(testSignerPolicy), masterKeyRing, time.Now()); err != nil {
 				return err
 			}
 			return noderole.SaveGenerationSidecarWithKeyring(staged, roleBytes, masterKeyRing, time.Now())
