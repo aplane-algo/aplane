@@ -305,8 +305,16 @@ func filterEnv(env []string) []string {
 	return filtered
 }
 
+// pluginConfigEnvKeys are secret-shaped names that a bundled plugin reads as
+// its own configuration, so the suffix rule below must not strip them. The
+// operator sets them for that plugin; they carry no credential of apshell's.
+var pluginConfigEnvKeys = map[string]bool{
+	"APLANE_LOCALNET_TOKEN":           true, // algokit-localnet algod/KMD token
+	"APLANE_LOCALNET_WALLET_PASSWORD": true, // algokit-localnet KMD wallet password
+}
+
 func sensitiveEnvKey(key string) bool {
-	if strings.HasPrefix(key, "APSHELL_") {
+	if strings.HasPrefix(key, "APSHELL_") || pluginConfigEnvKeys[key] {
 		return false
 	}
 	exact := map[string]bool{

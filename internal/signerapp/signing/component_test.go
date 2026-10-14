@@ -1706,3 +1706,42 @@ func TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything(t *testing.T)
 		t.Fatalf("own document without routes: error = %#v, want a route miss", err)
 	}
 }
+
+// A rekey that rekey_policy allows is still refused when its genesis hash names
+// no network this node recognizes: the cosigner fails closed on an unknown
+// network before any rekey or routing rule runs, and never loads the key.
+func TestSignComponentCosignerRejectsAllowedRekeyOnUnknownNetwork(t *testing.T) {
+	publicKey, _ := testFalconComponentKeypair(t, 0x63)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatalf("witness.ID() error = %v", err)
+	}
+	source := types.Address{78}
+	target := types.Address{79}
+	cfg := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "transfer_policy": {"routes": []},
+  "rekey_policy": {
+    "allowed": [
+      {"sender": %q, "targets": [%q]}
+    ]
+  }
+}`, source.String(), target.String()))
+	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
+	txn.RekeyTo = target
+	txn.GenesisHash = types.Digest{0xde, 0xad, 0xbe, 0xef}
+	store := &componentKeyStore{}
+
+	_, signErr := cosignerTestServiceFor(componentKey, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-rekey-unknown-network",
+		Role:          ComponentSignRoleCosigner,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if signErr == nil || signErr.Kind != ErrorForbidden || !strings.Contains(signErr.Message, policy.UnknownGenesisHashRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden %s", signErr, policy.UnknownGenesisHashRuleID)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}

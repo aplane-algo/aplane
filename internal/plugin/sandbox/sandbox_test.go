@@ -340,3 +340,28 @@ func TestGetSandboxInfo(t *testing.T) {
 		}
 	}
 }
+
+// The suffix rule strips secret-shaped names, but the bundled LocalNet
+// plugin reads its token and wallet password from APLANE_LOCALNET_*, so those
+// two names pass through while other *_TOKEN and *_PASSWORD names do not.
+func TestFilterEnvPassesLocalNetPluginConfig(t *testing.T) {
+	got := map[string]bool{}
+	for _, e := range filterEnv([]string{
+		"APLANE_LOCALNET_TOKEN=tok",
+		"APLANE_LOCALNET_WALLET_PASSWORD=pw",
+		"OTHER_TOKEN=x",
+		"DB_PASSWORD=y",
+	}) {
+		got[e] = true
+	}
+	for _, want := range []string{"APLANE_LOCALNET_TOKEN=tok", "APLANE_LOCALNET_WALLET_PASSWORD=pw"} {
+		if !got[want] {
+			t.Errorf("filterEnv dropped %s", want)
+		}
+	}
+	for _, drop := range []string{"OTHER_TOKEN=x", "DB_PASSWORD=y"} {
+		if got[drop] {
+			t.Errorf("filterEnv kept %s", drop)
+		}
+	}
+}

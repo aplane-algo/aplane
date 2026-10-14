@@ -6,6 +6,7 @@ package signing
 import (
 	"fmt"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -32,9 +33,25 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return internal("policy is not loaded")
 	}
 
+	// Every target must name a network this node recognizes before any other
+	// rule runs. Without this, a pure rekey allowed by rekey_policy would be
+	// signed for any genesis hash, since the rekey checks never resolve it.
+	var resolver apconfig.GenesisHashNetworkResolver
+	if s.Planner != nil {
+		resolver = s.Planner.GenesisHashResolver
+	}
 	var violations []policy.LintViolation
 	for _, target := range plan.Targets {
 		txn := plan.Group.Entries[target.TargetIndex].Txn
+		if _, ok := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:]); !ok {
+			violations = append(violations, policy.LintViolation{
+				RuleID:   policy.UnknownGenesisHashRuleID,
+				Scope:    "txn",
+				TxnIndex: target.TargetIndex,
+				Message:  fmt.Sprintf("cannot evaluate cosigner policy for unknown genesis hash %x", txn.GenesisHash[:]),
+			})
+			continue
+		}
 		violations = append(violations, cosignerTargetPolicyLints(txn, target.TargetIndex, cfg)...)
 	}
 	if len(violations) > 0 {
