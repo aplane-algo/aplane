@@ -17,16 +17,16 @@ but produces structured JSON instead of terminal text.
 
 The MCP server registers eight tools:
 
-| Tool | Purpose |
-|------|---------|
-| `execute` | Run a shell command (built-in or plugin) |
-| `mcp_reference` | Live command reference generated from the registry |
-| `js` | Execute JavaScript in the Goja runtime, returns `{value, output}` |
-| `js_reference` | Embedded `USER_JSAPI.md` reference text (stateless) |
-| `mcp_manual` | Embedded `USER_MCP_MANUAL.md` operating manual (stateless) |
-| `doc` | List or return a bundled curated reference doc (embedded, with `<dataDir>/docs` overlay) |
-| `jssave` | Save JavaScript by filename into `scripts/` (or absolute path) |
-| `jslist` | List saved scripts as `[{name, size, mtime}, ...]` |
+| Tool | Parameters | Purpose |
+|------|-----------|---------|
+| `execute` | `command` (string) | Run a shell command (built-in or plugin) |
+| `mcp_reference` | none | Live command reference generated from the registry, including plugin commands |
+| `js` | `code` (string) | Execute JavaScript in the Goja runtime, returns `{value, output}` |
+| `js_reference` | none | Embedded `USER_JSAPI.md` reference text (stateless) |
+| `mcp_manual` | none | Embedded `USER_MCP_MANUAL.md` operating manual (stateless) |
+| `doc` | `name` (string, optional) | List or return a bundled curated reference doc (embedded, with `<dataDir>/docs` overlay) |
+| `jssave` | `path` (string), `code` (string, optional), `last` (bool, optional), `overwrite` (bool, optional) | Save JavaScript by filename into `scripts/` (or absolute path) |
+| `jslist` | none | List saved scripts as `[{name, size, mtime}, ...]` |
 
 The `js`, `jssave`, and `jslist` handlers share the helpers
 (`captureJSExecution`, `saveJSScript`, `listJSScripts`) used by the REPL
@@ -37,6 +37,54 @@ API reference; MCP clients fetch the same reference via `js_reference`.
 LLMs pull command and API references on demand via `mcp_reference` and
 `js_reference`, the operating manual via `mcp_manual`, and the deep reference
 docs via `doc`, rather than having them injected periodically.
+
+### `js` tool
+
+Executes JavaScript in the Goja runtime.
+
+Response shape:
+
+```json
+{"value": <return-value>, "output": "<print-output>"}
+```
+
+- `value`: the JSON-serialized return value of the last expression (omitted if `undefined`/`null`)
+- `output`: captured `print()` output (omitted if empty)
+
+Errors are returned as MCP error results. If `print()` output was produced before the error, it is prepended to the error message.
+
+The `code` argument is required.
+
+### `doc` tool
+
+Lists or fetches bundled curated reference docs. With no `name`, it returns the
+curated bundled doc index. With `name`, it returns the matching bundled
+Markdown doc; names may be supplied with or without `.md`.
+
+### `jssave` tool
+
+Saves JavaScript code to a file for later execution via `js <file.js>`.
+
+- `path` is required
+- `code` is required unless `last=true`
+- if `path` contains no `/`, it is saved under the data directory's `scripts/` folder
+- otherwise, `path` must be absolute, so `/` must be the first character
+- `.js` is appended if missing
+- existing files are rejected unless `overwrite=true`
+
+Returns `{"path": "<absolute path>"}` on success.
+
+### `jslist` tool
+
+Returns saved JavaScript scripts in the data directory's `scripts/` folder.
+
+No parameters. Response shape:
+
+```json
+[{"name": "<filename>", "size": <bytes>, "mtime": <unix seconds>}, ...]
+```
+
+Entries are sorted by name. Returns an empty array if the directory does not exist or contains no `.js` files.
 
 ## Configuration
 
@@ -117,6 +165,13 @@ Every automation-enabled built-in and external plugin command returns a
 Machine projections are explicit allowlists and never reconstruct results by
 capturing terminal output. A structured success with nil, empty, or invalid
 JSON is rejected.
+
+Machine projections are allowlists. They omit secrets, authorization headers,
+credential paths, raw config, signed transaction bytes not deliberately in the
+contract, terminal-only render lines, and the plugin-reserved `localSigners`
+data field.
+
+JSON results are returned as text containing JSON bytes via `mcp.NewToolResultText(string(data))`, not as typed JSON content objects.
 
 ### Blocked Commands
 
@@ -209,4 +264,3 @@ defer mu.Unlock()
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — Plugin manifests, `mcp.md`, and lifecycle
 - [USER_JSAPI.md](USER_JSAPI.md) — JavaScript API reference exposed via `js_reference`
 - [USER_MCP_MANUAL.md](USER_MCP_MANUAL.md) — condensed operating manual exposed via `mcp_manual`
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) — MCP tool contract under compatibility surfaces

@@ -154,7 +154,7 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Commands: `connect`, `network`, `balance`, `send`, `keyreg`, `sign`, `run`, `help`
 - JavaScript scripting via `js script.js`
 - Tab completion for addresses, commands, assets
-- For the broader command and MCP surface, prefer `docs/ARCH_SPEC.md` and `docs/ARCH_CONTRACTS.md`
+- For the broader command and MCP surface, prefer `docs/ARCH_SPEC.md` and `docs/ARCH_MCP.md`
 
 ### apsigner
 - Starts signing server with HTTP REST API and IPC interface

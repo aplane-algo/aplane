@@ -162,11 +162,77 @@ Version the dimension whose compatibility contract changes:
 | Cryptographic message shape | New message-domain version and every program/flow that verifies it |
 | Template syntax without changing an existing key's durable behavior | Template schema version |
 | Durable key signing metadata shape | `signing_metadata_version` |
-| HTTP or SDK payload shape | Versioned endpoint/DTO contract according to `ARCH_CONTRACTS.md` |
+| HTTP or SDK payload shape | Versioned endpoint/DTO contract according to `ARCH_HTTP_API.md` |
 
 These versions may advance independently. A key type version must still pin the
 complete behavior it relies on, and compatibility-bearing changes commonly
 require advancing more than one dimension together.
+
+## Key type identifier contract
+
+Every protocol, config, key file, template, and key type state field named
+`key_type` carries the canonical identifier, not a presentation label.
+
+Canonical forms:
+
+- native Ed25519 is the single-segment built-in `ed25519`
+- native Falcon-1024 is the single-segment built-in `falcon1024`. It is a
+  protocol-native post-quantum account and is distinct from every
+  `aplane.falcon1024.*` LogicSig key type
+- APlane-defined LogicSig, template, and compiled-provider key types use
+  `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
+  decimal version, for example `aplane.falcon1024.v1`,
+  `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
+  `aplane.falcon1024-allowlist-alock.v1`
+- witness keys use the same canonical key-type identifier contract,
+  currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
+  as cosigner component-signing keys selected by 52-character txid-shaped
+  Witness Key IDs, not spending accounts. The
+  compatibility wire/storage field name for that selector remains
+  `component_key`.
+- external bounded contract-admin authorities use the same witness key type
+  and Witness Key ID, but private material remains in a structurally distinct
+  standalone `.wit` container owned by `aprekey`. It is never a signer-managed
+  `.key`/`.cos` credential or spending account.
+- `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
+  framework-owned bounded1 allowlist. Its spending key and contract admin key
+  are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
+  admin-key algorithm selector.
+- the dedicated guarded account key type
+  `aplane.falcon1024-cosigner1024.v1` names both its account DSA and cosigner DSA.
+  `aplane.corridor.v1` is instead an optional schema-v2 composed template: its
+  durable `bounded_authorization` metadata declares `bounded1`, a `cosigner1`
+  spend gate, and the framework Merkle allowlist policy. Clients must not infer
+  those dimensions from the key-type string.
+
+YAML templates declare `publisher`, `family`, and integer `version`; the
+computed key type is `publisher.family.v<version>`. Clients and tools must send
+and persist the full canonical identifier in `key_type` fields. Human-facing
+CLI/TUI input and display use the same canonical identifier; publisher
+namespaces are not inferred or elided.
+
+Terminology:
+
+- `family` is the middle segment of `publisher.family.vN`. It groups versions
+  of one key type or template policy, for example
+  `aplane.falcon1024-allowlist.v1` and `aplane.falcon1024-allowlist.v2`.
+- `base_key_type` is the field composed DSA templates use to point at their
+  private signing primitive. For example,
+  `base_key_type: aplane.falcon1024.v1` means the template's DSA signature is
+  produced and packed with Falcon-1024, while the account/template identity is
+  still named by its own `key_type` and `family` segment (e.g.
+  `family: falcon1024-allowlist`).
+- `base_key_type` is not a universal owner or routing key. Account semantics,
+  creation parameters, TEAL bytecode, metadata, and guarded assembly remain
+  owned by the full `key_type` unless a specific contract says otherwise.
+  Guarded account key types are the important example: their signing primitive
+  is Falcon-1024, but their account semantics and cosigner assembly are guarded
+  account semantics.
+- `RoutingFamily()` on Go provider types is the registry routing key (see
+  [Resolve](#resolve--key-type--implementation)), and `Family` / `FamilyName`
+  registration fields are registry/display metadata. The family-keyed registry
+  fallback is an implementation detail, not a replacement for canonical
+  `key_type` identity.
 
 ## Authorization object ontology
 
@@ -417,8 +483,9 @@ axis, not a separate resolution mechanism.
 
 ## See also
 
-- `docs/ARCH_CONTRACTS.md` — compatibility-bearing identifiers, DTOs, storage,
-  and message contracts.
+- `docs/ARCH_HTTP_API.md` — HTTP DTOs, error codes, and SDK contracts.
+- `docs/ARCH_CONTRACTS.md` — compatibility-bearing contracts and pointers to
+  their owning documents.
 - `docs/ARCH_BOUNDED_DSA.md` — the `bounded1` authorization contract and its
   profile, metadata, and path semantics.
 - `docs/ARCH_AUTHORIZATION.md` — product-principal and closed-action

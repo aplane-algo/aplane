@@ -951,12 +951,20 @@ to `internal/lsigprovider.registerMu`. The one product activation set directly
 registers or unregisters its process-global provider; there are no identity
 owner counts.
 
-The runtime has no live decommission transition or operation lease. Server
-shutdown stops accepting and drains HTTP work before destroying runtime key
-state; key-session locks continue to protect signing authority access. If a
-service cannot drain before its shutdown deadline, lifecycle teardown retains
-the audit logger and runtime state until process exit rather than destroying
-them underneath a live handler.
+The signer owns one product `*productruntime.Runtime` directly. There is no live
+identity-decommission state or operation lease. Graceful shutdown stops and
+drains request servers before destroying runtime key state; key-session locks
+continue to protect signing authority access. Lock, disconnect,
+displacement, and shutdown continue to fail pending approvals through the
+reason-independent coordinator fail-all contract.
+If a request server fails to stop, lifecycle records
+`SERVER_STOP_INCOMPLETE` with `outcome:"failed"` and the service error. A
+deadline error means a handler may still be running, so lifecycle leaves the
+audit logger and runtime key state intact for process exit. A non-deadline stop
+error occurs only after handlers have drained; lifecycle closes the audit log
+and destroys runtime state normally. SSH stop uses the same lifecycle deadline
+and reports a deadline error until its accept loop and all connection handlers
+have exited.
 
 ### Server-Side Application Boundary
 
@@ -1179,6 +1187,56 @@ Command handling constraints:
 
 The standalone atomic-swap client is outside this repository. This repository does not own standalone
 swap source under `cmd/` or `internal/`.
+This section describes the cross-repository compatibility contract for the
+client-state layout and on-chain note protocol that APlane clients coordinate
+around.
+
+Proposer and acceptor communicate via on-chain zero-ALGO payment notes:
+
+- `swap_propose`
+- `swap_accept`
+- `swap_submit`
+
+Proposal notes include:
+
+- `proposal_id`
+- `terms_hash`
+- `app_id`
+- proposer and acceptor legs
+- proposer selected-path LogicSig resource profile
+- expiry round
+- creation timestamp
+
+Acceptance binds to proposal by `proposal_id` and `terms_hash`.
+
+Session state persists under `swap/<network>/`.
+
+Statuses:
+
+- `waiting_acceptance`
+- `acceptance_seen`
+- `handoff_ready`
+- `submitted`
+- `cleanup_pending`
+- `complete`
+- `expired`
+- `abandoned`
+- `cleanup_failed`
+
+Reconciliation behavior:
+
+- terminal sessions are skipped
+- submitted sessions with pending cleanup always reconcile
+- pre-submit sessions expired more than 100 blocks ago are skipped
+- diagnostics track observed round, protocol compatibility, payload size, planned transaction count, dummy count, and cleanup metadata
+- terminal sessions and tombstones are garbage-collected after 30 days
+
+Indexer URL resolution:
+
+- `APSWAP_INDEXER_URL`
+- `APSHELL_INDEXER_URL`
+- `APLANE_INDEXER_URL`
+- built-in Algonode default
 
 ## Transaction Processing
 
@@ -1225,7 +1283,7 @@ The client is responsible for:
 - optionally merging foreign or passthrough outputs,
 - submitting the final signed bytes to algod.
 
-Canonicalization rules live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). HTTP request/response contracts live in [ARCH_HTTP_API.md](ARCH_HTTP_API.md).
+Group canonicalization is described in [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md#sign-processing-pipeline); the component-flow canonicalization and byte-binding rules live in [ARCH_COSIGNER.md](ARCH_COSIGNER.md#component-flow-unification-invariants). HTTP request/response contracts live in [ARCH_HTTP_API.md](ARCH_HTTP_API.md).
 
 ### Signing Authority And Template Authority
 
@@ -1259,8 +1317,7 @@ profile. `aplane.corridor.v1` composes the framework Merkle policy with a
 cosigner spend gate and external-admin rekey. External key generation and ceremonies are owned by
 `aprekey`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,
-schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 Package ownership: `internal/boundedmeta` owns the durable non-secret bounded
 metadata vocabulary and canonical encodings; `lsig/composeddsa` owns profile
@@ -1613,7 +1670,7 @@ contracts remain in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
 
 See [ARCH_CRYPTO.md](ARCH_CRYPTO.md) for the provider and algorithm model.
 
-Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-ins `ed25519` and `falcon1024` for native signing keys. Native Falcon uses the `native_pq` authorization kind and top-level `SignedTxn.PQsig`; it is not part of the `aplane.falcon1024.*` LogicSig family. The full contract lives in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Type Identifier Contract).
+Key type identifiers use the canonical form `publisher.family.vN` for APlane-defined LogicSig, template, and compiled-provider key types, and the single-segment built-ins `ed25519` and `falcon1024` for native signing keys. Native Falcon uses the `native_pq` authorization kind and top-level `SignedTxn.PQsig`; it is not part of the `aplane.falcon1024.*` LogicSig family. The full contract lives in [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md#key-type-identifier-contract).
 
 ## Keystore and Key Lifecycle
 
@@ -1692,7 +1749,7 @@ The scripting subsystem gives programmatic access to:
 
 MCP mode exposes `apshell` over stdio for LLM tooling. It is an alternate UI surface over the same business logic, not a separate backend.
 
-Important MCP transport and structured-output contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+Important MCP transport and structured-output contracts are documented in [ARCH_MCP.md](ARCH_MCP.md).
 
 ## Caching and Local State
 

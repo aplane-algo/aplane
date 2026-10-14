@@ -4,9 +4,10 @@ This document describes APlane's cosigner subsystem: node roles, cosigner keys,
 guarded accounts, endpoint discovery, guarded transaction orchestration, and
 the trust boundaries between a user signer and a cosigner signer.
 
-For exact wire shapes, on-disk schemas, endpoint file contracts, and SDK
-fixtures, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
-[ARCH_HTTP_API.md](ARCH_HTTP_API.md). For cosigner policy verdict semantics, see
+The component message, the cosigner key file, and the public cosigner
+reference library are specified in this document. For exact HTTP wire shapes,
+endpoint file contracts, and SDK fixtures, see
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and [ARCH_HTTP_API.md](ARCH_HTTP_API.md). For cosigner policy verdict semantics, see
 [ARCH_POLICY.md](ARCH_POLICY.md).
 
 ## Status
@@ -140,17 +141,19 @@ component/assembly surface handles partial, multi-party authorization.
 The component-flow migration unifies transport and orchestration, not the
 underlying authorization models. `/plan` is the only endpoint that
 canonicalizes a group. Component and assembly endpoints accept frozen group
-bytes and validate them without mutation; they never add resource dummies,
-pool fees, regroup, or otherwise repair the request.
+bytes and validate or reject them without mutation; they never plan, add
+resource dummies, pool fees, regroup, or otherwise repair the request.
 
 The signer intentionally does not prove that frozen bytes came from `/plan`.
 It independently reconstructs signer-owned facts and may accept any canonical,
-envelope-valid group. For a component call, the bytes evaluated by policy, the
+envelope-valid group that satisfies the same policy, resource, fee, and
+signer-owned authorization checks. For a component call, the bytes evaluated by policy, the
 bytes rendered for operator approval, and the bytes used to derive component
 messages are one and the same. Bounded-cosigner component signing therefore
 moves from approving a plan constructed inside the signing call to approving
-the supplied frozen group after the signer re-derives and validates its bounded
-authorization envelope.
+the supplied frozen group after the signer re-derives its bounded authorization
+envelope from durable metadata and validates client-supplied runtime arguments;
+the client cannot supply or weaken that envelope.
 
 For every component kind, the declared dummy suffix is checked against the
 canonical signer-added dummy form before policy evaluation or key access. The
@@ -220,16 +223,19 @@ SHA512_256("APLANE_COSIGNER_V1" || role_byte || txid)
 ```
 
 `role_byte` is `0x01` for the user role and `0x02` for the cosigner role.
-`txid` is the canonical transaction ID for the frozen group entry.
+`txid` is the canonical 32-byte transaction ID for the frozen group entry.
 
 The message deliberately does not contain a separate sender or authorizer
 field. Sender and `AuthAddr` consistency are verified from the canonical
-transaction bytes during assembly. The cosigner policy decision is scoped to the
+transaction bytes during assembly, which requires the guarded LogicSig address,
+and `AuthAddr` when needed, to equal the requested guarded account. The cosigner policy decision is scoped to the
 transaction facts, not to which guarded key acted as authorizer.
 
 Owned primitives:
 
-- `internal/cosigner/message`: message construction.
+- `internal/cosigner/message`: message construction. Clients and signers must
+  use that shared primitive, or an SDK equivalent with matching vectors, rather
+  than reconstructing the message independently.
 - `internal/cosigner/verify`: component signature verification (signer-side
   only; clients treat component signatures as opaque).
 - SDKs must match the same vectors rather than reconstructing a variant.
@@ -317,6 +323,127 @@ They contain public metadata only: Witness Key ID, key type, cosigner public key
 hex, and import time. They are not endpoint ownership proofs and do not
 authorize a future transaction. The guarded account's embedded public key is
 the trust input that matters after generation.
+
+### Cosigner Key File
+
+`apadmin cosigner export <witness-key-id> [output-json]` and the apadmin TUI's
+**Export Cosigner Key** emit the canonical `aplane.witness-key-public.v1`
+document and nothing else. The command reads the
+`keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
+equals the canonical Witness Key ID derived from the public key, and never reads
+or decrypts private key material. If the sidecar is missing or malformed,
+export fails closed; the operator must regenerate the cosigner key, or restore
+it from a backup, which rewrites the sidecar, before exporting.
+
+The envelope schema is shown below. The Falcon public key hex is abbreviated in
+this prose example; persisted envelopes contain all 3,586 hex characters.
+
+```json
+{
+  "schema": "aplane.witness-key-public.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "public_key_hex": "0000...0000"
+}
+```
+
+`witness_key_id` is the 52-character uppercase base32 selector derived as
+`base32_no_padding(SHA512_256(field("APLANE_WITNESS_KEY_ID_V1") ||
+field(key_type) || field(canonical_public_key_bytes)))`. It resembles an
+Algorand transaction ID and is not a valid Algorand address. Role-specific
+wire and cosigner-reference records retain the field name `component_key`.
+`public_key_hex` is the raw component
+public key encoded in hex; it is the value embedded into guarded-account
+LogicSig bytecode and supplied as `cosigner_public_key` during guarded account
+generation. The envelope makes no endpoint, policy, ownership, freshness, or
+trust claim.
+
+The daemon returns the document over the admin protocol; the operator process
+validates it, re-serializes it canonically (`witness.MarshalPublicReference`:
+the field order above, two-space indentation, one trailing newline), and
+writes it locally with owner-private permissions. The file carries no
+endpoint, reference alias, endpoint alias or role, client credential, SSH identity,
+`known_hosts` entry, cached live inventory, private witness material, policy,
+or proof of endpoint ownership. The cosigner's address is not a file contract
+at all: the operator reads it from the export result screen (the configured
+`endpoint.advertise_url`, or a placeholder) or from the deployment, and gives
+it to each client for `endpoints add <url>`. The earlier
+`aplane.cosigner-enrollment.v1` composition envelope, which could carry an
+endpoint block, and the `apadmin cosigner enrollment export|import` commands
+are gone; the system is unreleased, so no reader for them remains.
+
+### Cosigner Public Key Reference Library
+
+`apadmin cosigner import <public-json|-> <name>` imports an
+`aplane.witness-key-public.v1` document into the product store's public
+cosigner reference library. The operator-side adapter validates the document,
+refusing any field beyond the public reference, and sends its canonical form
+through IPC:
+
+```text
+identities/default/cosigners/<name>.json
+```
+
+Reference names are normalized to lowercase and may contain lowercase letters,
+digits, `.`, `-`, and `_`. The persisted record schema is:
+
+```json
+{
+  "schema": "aplane.cosigner-public-key-ref.v2",
+  "name": "lab-cosigner",
+  "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "public_key_encoding": "hex",
+  "public_key_hex": "0000...0000",
+  "public_key_size": 1793,
+  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a",
+  "imported_at": "2026-06-04T00:00:00Z"
+}
+```
+
+The catalog is populated only by explicit operator import. Only the version 2
+record schema is read; records in any other schema, or carrying fields outside
+it, are rejected.
+When the source is `-`, stdin is reserved for the bounded public JSON document.
+Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
+controlling terminal. Unsupported
+headless combinations fail before authentication instead of sharing stdin
+between the envelope and passphrase.
+
+Human list output leads with the operator-assigned reference name and a compact
+10-leading/10-trailing Witness Key ID. Detailed JSON (`apadmin cosigner show`)
+retains the complete ID.
+
+The library is a generation convenience and trust-input inventory for the user
+signer. When generating a dedicated guarded account or a cosigner-enabled bounded
+template, callers may provide
+`cosigner=<witness-key-id>` instead of `cosigner_public_key=<hex>`.
+`cosigner=<name>` is also accepted as a compatibility input. The signer resolves the
+Witness Key ID or name to `public_key_hex`, verifies that the reference key type
+matches the definition's required cosigner key type,
+rejects requests that provide both forms, and persists the resolved
+`cosigner_public_key` plus the template's other creation parameters in the key
+file. `aplane.corridor.v1`, for example, persists its public recipient list and
+complete bounded metadata; later signing does not require the YAML source to
+remain installed.
+
+Product `/keytypes` metadata may expose imported references as a
+creation parameter named `cosigner` with `type:"select"` and `options[]`
+containing Witness Key IDs whose cosigner key type matches the guarded
+account key type. This is UI metadata for generation clients such as `apadmin`;
+the durable key file still stores the resolved `cosigner_public_key`; other
+provider-specific creation parameters remain exposed normally.
+
+The `apadmin` TUI also receives the optional `cosigner_component_key_type` in
+its internal admin key-type projection and joins it with
+`list_cosigner_references`. Guarded generation displays aliases but submits the
+canonical Witness Key ID. A sole compatible authority may be preselected;
+multiple authorities require an explicit picker choice. When none exists, the
+TUI opens an in-flow public-envelope enrollment review instead of exposing a
+raw `cosigner_public_key` editor. The review locally validates the envelope and
+shows the complete grouped Witness Key ID before the authorized import RPC.
+The public `/keytypes` DTO and external SDK contract are unchanged by this TUI
+projection.
 
 ## Endpoint Routing
 

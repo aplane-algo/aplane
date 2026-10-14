@@ -379,8 +379,7 @@ and `/keytypes` generation metadata uses `runtime_args`.
 
 Bounded1 is an authorization contract used by both `bounded1` and
 `bounded-cosigner1` signing choreographies. Normative field inventory, encodings, and custody
-rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). From a data-model perspective:
+rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
   `bounded_authorization` (signing metadata version 2), owned by

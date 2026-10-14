@@ -33,10 +33,12 @@ but an individual keypair should never be enrolled in both roles.
    `policy_gate: layer3`.
 
 Cosigner-enabled bounded1 profiles are spend-gated profiles and may not declare
-a spending-key-authorized rekey. V1 rejects that combination during template,
-profile, and durable-metadata validation. Escaping a failed or compromised
-cosigner therefore uses an external contract-admin rekey, which still requires
-the base spending signature. Loss of the spending key is not recoverable
+a spending-key-authorized rekey. The combination would bypass the spend-only
+cosigner gate and is not routable through `bounded-cosigner1`; V1 rejects it
+during template, profile, and durable-metadata validation. Escaping a failed or
+compromised cosigner, or replacing the current program, therefore uses an
+external contract-admin rekey, which still requires the base spending
+signature. Loss of the spending key is not recoverable
 through the contract-admin path.
 
 For profile `P`:
@@ -83,7 +85,8 @@ It is intentionally packaged through the separate `aprekey` binary and the
 typed `/sign/bounded-admin` partial-signing endpoint. Apshell's ordinary send
 path does not select or complete contract-admin operations.
 
-`bounded1` has no admin-key algorithm selector. `authorization: admin_key`
+`bounded1` is the only bounded-authorization contract and has no protocol
+aliases. `bounded1` has no admin-key algorithm selector. `authorization: admin_key`
 always means the profile's single Falcon-1024 contract admin key. Supporting
 another admin primitive requires a new bounded-authorization contract.
 
@@ -153,7 +156,8 @@ finalized fee would exceed the profile ceiling.
 
 The independent machine-readable inventory is
 [`BOUNDED1_PROTOCOL_INVENTORY.json`](BOUNDED1_PROTOCOL_INVENTORY.json). It is
-maintained independently of renderer/classifier code and pinned to
+maintained independently of renderer/classifier code, must not be generated
+from the implementation manifest, and is pinned to
 go-algorand-sdk v2.11.2 pseudo-version `967fcacfacdf`, go-algorand reference
 `68e036affd9e`, and AVM v13.
 It separately freezes the flattened SDK transaction-field surface and parses
@@ -248,7 +252,13 @@ use frozen order `rekey`. Duplicates are invalid. Empty spend sets are invalid.
 authorized independently from `axfer`. `max_fee` must be present and no greater
 than 10,000. The Layer 3 identity, argument declarations, maximum sizes, frozen
 indexes, sources, and path masks are security-bearing and therefore part of
-the canonical profile. `cosigner_present` is exactly zero or one. The initial
+the canonical profile. Each derived argument record is `field(name) ||
+field(kind) || field(parameter) || u32(max_size)`; each runtime argument record
+is `field(name) || field(type) || u32(required) || u32(byte_length) ||
+u32(max_size)`; each argument slot record is `u32(index) || field(name) ||
+field(source) || u32(max_size)` followed by `field` of its spend,
+spending-rekey, and admin-rekey path rules. `cosigner_present` is exactly zero
+or one. The initial
 optional cosigner contract has the single ordered path list `[spend]`.
 
 ### Canonical behavior parameters
@@ -332,6 +342,26 @@ operands, and normalized control-flow targets are identical. Divergent dual
 parses are rejected before bounded-contract validation. The fixed-width
 compatibility decode is retained because deployed programs may still use that
 encoding.
+
+### Bounded-cosigner assembly receipt
+
+For `bounded-cosigner1`, the user signer also returns a Falcon-signed assembly
+receipt. With `field` as above, `metadata_json` equal to JSON encoding of the
+normalized durable `bounded_authorization` structure, and runtime arguments
+sorted by name, its message is:
+
+```text
+SHA512_256(
+  field("APLANE_BOUNDED_COSIGNER_ASSEMBLY_V1") ||
+  field(bounded_account) ||
+  field(transaction_id) ||
+  field(SHA512_256(metadata_json)) ||
+  u32(runtime_arg_count) || field(name) || field(value) || ...
+)
+```
+
+Assembly verifies this receipt with the bounded spending public key before it
+accepts the base component or cosigner signature.
 
 ### Golden vector 1
 
@@ -570,8 +600,11 @@ masks, binding, and transcript.
 ## YAML Contract
 
 Schema v1 describes the existing non-bounded composed layout and rejects a
-top-level `bounded` field. Schema v2 requires `bounded` and uses strict
-known-field and duplicate-key rejection at every nested level.
+top-level `bounded` field. Schema v2 requires `bounded`. Every schema version
+uses strict known-field and duplicate-key rejection at every nested level.
+`bounded.runtime_args` and `bounded.derived_args` declare the only permitted
+Layer 3 slots. V1 supports caller runtime values with explicit maximum/exact
+length contracts and the signer-derived `merkle_allowlist_proof` primitive.
 
 ```yaml
 schema_version: 2
@@ -636,7 +669,8 @@ framework policy's payment branch.
 512-byte `merkle_allowlist_proof` derived argument bound to that parameter,
 computes the fixed-depth root during program generation, and verifies the
 proof for every non-self payment or asset receiver. It accepts no asset-ID or
-amount options and rejects author TEAL.
+amount options and rejects author TEAL. Omitting `bounded.layer3` selects
+contained custom author TEAL.
 
 ### Merkle Allowlist Compatibility Contract
 
@@ -691,7 +725,10 @@ Interior unused Layer 3 slots are explicit empty byte strings. Only unused
 trailing slots may be omitted. Callers may populate only declared runtime
 slots; they cannot populate derived or admin slots. The signer generates only
 declared derived slots. The external helper fills only the frozen final admin
-slot after independently validating the partial.
+slot after independently validating the partial. An admin-key partial omits the
+admin slot, and external completion pads to and fills the metadata-declared
+admin index. Ordinary `/sign` rejects caller-supplied contract-admin, cosigner,
+or signer-derived values.
 
 The planner classifies before group sizing, finalizes fee pooling, then
 revalidates the finalized transactions at the single classification boundary.
@@ -743,6 +780,146 @@ Every bounded admin operation triggers the stable unconditional
 autoapproval, regardless of warning configuration. A client intent to simulate
 does not alter this requirement; apsigner sees an ordinary executable signing
 request.
+
+## External Contract Admin Inventory
+
+Contract-admin private keys never appear in signer inventory. Bounded account
+rows expose the immutable derived `admin_key_id`, program binding, Layer-3
+policy, and other non-secret bounded-authorization metadata. Apsigner does
+not report artifact availability because `.wit` custody is
+external and intentionally outside the signer data model.
+
+`/keytypes` exposes the framework-injected scalar
+`bounded_admin_public_key` (`type:"bytes"`) parameter for profiles that authorize
+an operation with `admin_key`. It accepts exactly a 1,793-byte Falcon-1024
+public key and publishes no Contract Admin Key ID input or signer-local key
+option. Generation derives the ID from the public key.
+
+## External Contract Admin Artifact Contract
+
+`aprekey` owns external contract-admin witness custody. Its encrypted
+artifacts use the `.wit` extension and filenames of the form
+`<WITNESS_KEY_ID>.wit`. They are not signer-managed `.key` or `.cos` files
+or `apstore` `.apb` backup bundles. The helper rejects every other extension
+before parsing or passphrase work. The signer and `apstore` must not import,
+decrypt, back up, or restore these artifacts.
+
+The top-level JSON contract is:
+
+```json
+{
+  "schema": "aplane.witness-key-bundle.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "<52-character ID>",
+  "public_key_hex": "<canonical lowercase hex>",
+  "encryption": {
+    "envelope_version": 2,
+    "salt": "<base64>",
+    "nonce": "<base64>",
+    "ciphertext": "<base64>",
+    "kdf_time": 2,
+    "kdf_memory": 65536,
+    "kdf_threads": 4
+  }
+}
+```
+
+The complete file is bounded to 65,536 bytes. The decoder rejects unknown
+fields and trailing JSON values. Before prompting or invoking Argon2id, it
+requires the exact schema and key type, a matching Witness Key ID, an exact
+1,793-byte Falcon-1024 public key, envelope version 2, the exact KDF parameters
+above, a 32-byte decoded salt, a 12-byte decoded nonce, and an AES-GCM
+ciphertext of at least 16 bytes. Unknown top-level or private-payload schemas
+return stable code `unsupported_artifact_schema`. A reader must not honor
+attacker-selected alternatives.
+
+The nested envelope is the reviewed standalone encryption contract:
+Argon2id derives a 32-byte key using time 2, memory 64 MiB, and parallelism 4;
+AES-256-GCM encrypts the private payload with a random 12-byte nonce. The GCM
+operation uses no external additional authenticated data. Instead, the
+encrypted payload duplicates `key_type`, `witness_key_id`, and
+`public_key_hex`; all three must exactly equal the validated public header
+after authenticated decryption.
+
+The decrypted payload schema is `aplane.witness-key-private.v1`. It
+contains the duplicated public identity, base64 JSON byte field
+`private_material`, and an RFC3339Nano UTC `created_at`. Private material is
+the canonical 2,305-byte Falcon-1024 private key. The reader derives and
+verifies the public key and performs a sign/verify self-test before use.
+Private plaintext, private key bytes, passphrases, and temporary signatures
+must be cleared on success and failure.
+
+Generation also writes
+`<WITNESS_KEY_ID>.wit.json` with schema
+`aplane.witness-key-public.v1`, `key_type`, `witness_key_id`, and
+`public_key_hex`. This sidecar is public convenience data only. The encrypted
+artifact's public header is authoritative and remains sufficient for inspect, verify,
+matching, and recovery when the sidecar is missing or stale. Both outputs are
+created atomically without overwrite as regular mode `0600` files in an
+existing non-symlink directory. Each output is committed atomically; the pair
+is not a transactional filesystem unit, and the public sidecar can always be
+reconstructed from the committed artifact.
+
+Successful `aprekey generate` output is:
+
+```json
+{
+  "schema": "aplane.bounded-admin-generate-result.v1",
+  "reference": {
+    "schema": "aplane.witness-key-public.v1",
+    "key_type": "aplane.witness-falcon1024.v1",
+    "witness_key_id": "<52-character ID>",
+    "public_key_hex": "<canonical lowercase hex>"
+  }
+}
+```
+
+The result does not contain filesystem paths. Callers derive the two generated
+filenames from `--out` and `reference.witness_key_id` using the canonical
+`.wit` and `.wit.json` suffixes. Moving the generated files does not invalidate
+the result or either file.
+
+## Contract Admin Ceremony Contract
+
+`aprekey rekey` and `unrekey` are the interactive online clients for
+admin-key-authorized bounded rekeys. They resolve `--client-data` before
+`APCLIENT_DATA`, use the configured signer endpoint and selected client
+network, obtain `aplane.bounded-admin-partial.v1` from `/sign/bounded-admin`, and
+submit through that network's Algod endpoint. Unknown SSH host keys fail
+closed. Apshell and apconsole have no contract-admin artifact workflow.
+
+`prepare-rekey` and `prepare-unrekey` perform signer planning, policy, approval,
+group finalization, and spending-partial creation, then write a strict
+`aplane.bounded-admin-request.v2` to `.apbounded-admin-request`. V2 adds the
+optional cosigner authorization record to the request-hash transcript; V1
+requests are rejected with `unsupported_request_schema` so version-skewed
+offline helpers fail explicitly rather than reporting a generic hash mismatch. Offline `sign`
+validates the request and writes `aplane.bounded-admin-signature.v1` to
+`.apbounded-admin-signature`. Networked `complete` consumes the pair and submits
+without contacting apsigner or replanning.
+
+The request has `schema`, `payload`, and `request_hash_hex`. Its payload carries
+the complete bounded-admin partial, selected network, genesis hash, and current
+authorization address. The response has `schema`, `request_hash_hex`,
+`contract_admin_key_id`, and `signature_hex`. The SHA-512/256 request hash uses
+the frozen length-prefixed transcript in `internal/boundedadmin/protocol` and
+binds every signer-partial and network-context field.
+
+Offline `sign` validates the network token syntax and the exact genesis hash on
+every transaction. For `mainnet`, `testnet`, and `betanet`, it also requires the
+token to match APlane's canonical built-in genesis-hash mapping. An air-gapped
+helper has no trusted copy of requester-local custom mappings, so a custom token
+such as `localnet` is displayed as not independently verified offline; the exact
+genesis hash remains transaction-checked and request-hash-bound. Networked
+`complete` rechecks custom mappings against the selected client configuration.
+
+Requests are bounded to 512 KiB and responses to 16 KiB. Readers reject unknown
+fields, trailing JSON, wrong extensions, non-regular files, oversized input,
+unknown schemas, and mismatched request hashes. Writers create regular mode
+`0600` files atomically and refuse overwrite. Ceremony files are non-secret but
+carry short-lived signing authority. Before submission, `complete` rechecks
+network/genesis, current authorization, validity rounds, program binding, and
+both signatures. It performs no automatic retry or approval refresh.
 
 ## Versioning
 

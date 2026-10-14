@@ -4,7 +4,9 @@
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the explanatory transaction signing flow, see [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md).
 
-This contract is consumed by `apshell`, the in-tree `internal/signerclient`, and external SDK clients in the `aplane-algo/aplanesdk` repo (Go, TypeScript, Python). It documents the request/response wire format, status codes, fixed runtime binding, and the `/sign/cancel` lifecycle.
+This contract is consumed by `apshell`, the in-tree `internal/signerclient`, and external SDK clients in the `aplane-algo/aplanesdk` repo (Go, TypeScript, Python). It documents the request/response wire format, status codes, fixed runtime binding, the `/sign/cancel` lifecycle, the error model, and the SDK contracts.
+The DTO and error-code source of truth is `pkg/signerapi`, which in-repo
+callers import directly.
 
 The current signer HTTP protocol is `2.0`. Version 2 removes the signer-owned
 ordinary and guarded simulation endpoints and their DTOs. Simulation-capable
@@ -50,7 +52,8 @@ Transport behavior:
 - all responses are `Content-Type: application/json`,
 - non-2xx responses use `signerapi.ErrorResponse` with top-level `error` plus
   a stable machine-readable `code` (see `pkg/signerapi/error_codes.go`);
-  clients branch on `code`, never on `error` message text,
+  clients branch on `code`, never on `error` message text; endpoint-specific
+  success DTOs are not the error envelope,
 - request `Content-Type` is not enforced,
 - malformed JSON returns `400`,
 - oversized bodies return `413`,
@@ -190,8 +193,8 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - Apsigner has no simulation endpoint or simulation request mode. Full
   simulation obtains an executable group through ordinary `/sign`; guarded
   and bounded-cosigner groups both use `/plan`, `/sign/component`, and
-  `/sign/assemble`. The client
-  then sends the exact returned group to its configured algod simulate
+  `/sign/assemble`, and the client verifies the assembled group against the
+  frozen canonical bytes. The client then sends the exact returned group to its configured algod simulate
   endpoint. Apsigner cannot distinguish this from a request whose result will
   be submitted, so policy, review, approval, signing, and audit semantics are
   identical.
@@ -705,3 +708,175 @@ Additional compatibility-sensitive request failures:
 - missing TEAL compile algod configuration for generic LogicSig generation: `500`
 - missing `address` query parameter on delete: `400`
 - all-foreign `/sign` or `/plan` requests: `400` because apsigner has no signer-managed work to perform
+
+## Error Model
+
+Internal sentinel errors include, for example, in `internal/keystore`:
+
+- `ErrKeyNotFound`
+- `ErrInvalidPassphrase`
+- `ErrStoreLocked`
+
+Errors are wrapped with contextual `%w`. Signer services classify them with
+`errors.Is` into typed `ServiceError` kinds (`internal/signerapp/svcerr`), and
+only the resulting `code` and HTTP status reach clients; sentinel identity and
+message text are not part of the wire contract.
+
+SDK-facing typed errors in Go include:
+
+- `ErrAuthentication`
+- `ErrNotEnrolled`
+- `ErrEnrollment`
+- `ErrSigningRejected`
+- `ErrSignerUnavailable`
+- `ErrKeyNotFound`
+- `ErrSignerLocked`
+- `ErrKeyDeletion`
+- `ErrLogicSigRejected`
+- `ErrInsufficientFunds`
+- `ErrInvalidTransaction`
+- `ErrTransactionRejected`
+- `ErrConfigNotFound`
+
+`TransactionError` wraps rejection details with optional TxID.
+
+## SDK Contracts
+
+The companion SDK source communicates via the same HTTP REST API as `apshell`,
+through an SSH tunnel authenticated with the client's enrolled SSH key;
+requests carry no auth header. SDK implementation and release publication are
+owned by the separate `aplane-algo/aplanesdk` repository.
+
+Cross-SDK compatibility-bearing behavior:
+
+- concatenated-group and list-per-slot signing APIs are distinct supported shapes
+- passthrough semantics are first-class for final signing; passthrough
+  LogicSigs require selected-path `lsig_resources`, with observable sizes
+  checked against the signed envelope
+- high-level signing helpers return base64 payloads converted from server hex
+- `FromEnv` and connection helper path resolution are part of the product contract
+- Enrollment helpers return the authenticating key's SHA256 fingerprint and
+  pending/already-enrolled state, validating the reply against the local key.
+  Pending means the request was queued for later admin approval; it does not
+  authorize API connections. Go exposes `RequestEnrollment`, TypeScript
+  `requestEnrollment`, and Python `request_enrollment`, with endpoint-selecting
+  from-env variants. Go uses `ErrNotEnrolled` for refused client authentication
+  and `ErrEnrollment` for enrollment failures; TypeScript and Python expose
+  `AuthenticationError` and `EnrollmentError` for those respective failures.
+- SDK-native prepared transaction models carry unsigned transaction bytes plus
+  signer metadata such as effective auth address, optional LogicSig args,
+  optional selected-path LogicSig resource hints, optional app-call display metadata, and
+  SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
+  transaction ordering before handoff to `/plan`, `/sign`, or the
+  guarded component flow.
+- For equivalent normalized typed transaction intents, SDK prep should converge
+  with apshell's core prep behavior for transaction fields, suggested params,
+  flat-fee handling, auth-address semantics, LogicSig runtime args, app-call
+  metadata, and group ordering. SDKs do not need to copy shell grammar,
+  aliases, prompts, or rendering.
+- For ordinary APlane-managed signing, SDK prep must not take ownership of
+  final group ID assignment, signer-managed dummy insertion, fee pooling,
+  policy, approval, or signing. Those remain apsigner-owned behavior behind
+  `/plan` and `/sign`.
+- Go, Python, and TypeScript SDKs expose a typed low-level
+  `/sign/bounded-admin` request that returns
+  `aplane.bounded-admin-partial.v1`. This API handles no external contract-admin
+  artifact, does not append the admin argument, and must describe the response
+  as incomplete and not submission-ready. Applications that implement
+  completion must conform to the frozen bounded protocol and independent
+  validation rules; ordinary SDK signing helpers reject admin-key operations.
+- Guarded prepared signing requires frozen canonical bytes before component
+  signatures are requested. The normative SDK sequence is: classify guarded
+  targets; construct intended original transactions; send those originals plus
+  signer-advertised structured LogicSig resource hints to `/plan`; validate the
+  returned canonical group and mutation report; derive the
+  target/context/dummy position partition; locally sign only the canonical
+  dummy suffix returned by `/plan`; obtain the required user, cosigner, or
+  bounded-base components; call ordinary `/sign` for any non-guarded original
+  positions; and call `/sign/assemble` with the frozen group and signed
+  passthrough positions. Resource hints are planning inputs, not locally
+  inserted transactions. Final guarded assembly remains signer-owned, and
+  submission or simulation uses the exact assembled group. User-role
+  `/sign/component` requests run the signer-domain approval gates and can block
+  on operator approval, so SDK deadlines for them follow the same
+  approval-aware rule as `/sign`, not the short cosigner-role component deadline.
+- SDKs expose the authenticated `/status` DTO, including
+  `protocol_version`, `build_version`, `keyset_revision`, and
+  `approval_wait_seconds`, plus optional persistent operator-facing `warnings`,
+  and include the matching signer API fixture in their contract suites.
+- SDK `/sign` calls should include an opaque `request_id` when the client may
+  need cancellation. SDKs should expose `/sign/cancel` and use it for
+  best-effort cleanup when a local timeout, caller cancellation, or transport
+  disconnect ends a live synchronous signing request. Go supports
+  caller-initiated cancellation through `context.Context`; Python high-level
+  signing accepts a caller-owned `request_id` so applications can cancel from
+  another thread; TypeScript high-level signing accepts a caller-owned
+  `requestId` and `AbortSignal`.
+
+Go SDK specifics:
+
+- `ConnectSSH(host, sshKeyPath, opts)` establishes the SSH tunnel with the client key, then HTTP
+- `FromEnv(opts)` resolves the client SSH identity and signer endpoint routing from the client data dir
+- `NewSignerClient(baseURL)` supports caller-owned transport and direct client construction
+- `SetHTTPClient(client)` overrides the HTTP transport for advanced callers.
+  If caller-owned transport sets a global timeout shorter than the effective
+  signing approval wait, the SDK cannot extend that deadline.
+- `GetKeysResponseWithContext(ctx)` returns the raw `/keys` DTO. In-tree client
+  code carries locked-signer state in an internal wrapper, not in the HTTP DTO.
+- `GetStatusWithContext(ctx)` returns the raw `/status` DTO for keyset
+  revision and approval-wait discovery
+- `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly
+- raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
+  `PlanGroupResponse`, `GroupSignResponse`) rather
+  than the base64-returning convenience layer. The `/sign` response is
+  `GroupSignResponse`.
+- `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
+- `SigningArg` is the `/keys` name for `RuntimeArg`
+- input uses `go-algorand-sdk` `types.Transaction`
+
+TypeScript and Python SDKs preserve the same broad behaviors:
+
+- high-level convenience signing APIs return base64 payloads and may reject
+  unresolved foreign placeholders when they cannot project empty foreign slots
+  into single-payload returns
+- list-returning and raw request APIs preserve per-slot outputs, including
+  native `/sign` foreign slots returned as empty strings
+- signer status helpers expose `/status` and are used to size signing
+  request deadlines when callers do not provide an earlier explicit timeout
+- raw `signRequests` / `sign_requests` APIs accept one or more `/sign` request
+  entries and expose the native `/sign` response for adapters that already own
+  transaction encoding
+- simulation helpers use ordinary raw signing APIs and then call the SDK's
+  client-configured algod simulation endpoint with the returned executable group
+- AlgoKit Utils adapters are optional client-side projections over the native
+  SDK client. They provide the AlgoKit `addr` plus transaction-signer shape and
+  call raw `/sign` for the indexes AlgoKit asks them to sign. They do not
+  mutate or re-plan groups or run the SDK-native typed prep layer.
+
+Primary SDK sources live in the separate MIT-licensed
+`aplane-algo/aplanesdk` repository. When `APLANE_SDKS_REPO` points at a local
+SDK checkout, this repo's `make integration-test` and `make integration-test-reuse`
+targets also run the SDK live signer integration suites through
+`test/run-sdk-integration.sh`; when unset, that bridge is skipped, and when set
+to a non-directory path, the make target fails before running SDK tests.
+
+Committed JSON golden fixtures for signer API contract tests live under
+`test/contracts/signerapi/` and round-trip through the public DTO structs in
+`pkg/signerapi`. These fixtures are compatibility source material for this
+repository and the external SDK repository: update them intentionally with any
+wire-contract change, not as generated test runtime state.
+With an SDK checkout available,
+`make contract-sync-check APLANESDK_DIR=/path/to/aplanesdk` verifies that the
+copied fixture trees match. The normal in-repo `contract-test` target does not
+perform that cross-repository comparison.
+Cross-language SDK prep parity fixtures are owned in the external SDK
+repository because they exercise SDK transaction builders rather than signer
+HTTP DTOs; update them when SDK prep request-shape behavior intentionally
+changes.
+
+Known-answer key derivation fixtures live in
+`test/integration/key_derivation_regression_test.go`. They pin deterministic
+addresses for supported DSA and template-backed LogicSig derivation paths.
+Update those expected addresses intentionally, in the same change as the
+behavior change, when a versioned derivation path, salt style, TEAL template
+body, seed derivation, or generator changes.

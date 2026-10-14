@@ -73,6 +73,20 @@ Each plugin must reside in its own subdirectory containing:
 Symlinked plugin directories are ignored. If multiple enabled catalog
 directories declare the same manifest `name`, the first enabled entry wins.
 
+Missing or integrity-failing enabled plugin directories are skipped with a
+warning. Invalid `plugins.yaml` syntax or unsafe plugin names fail discovery.
+If `plugins.yaml` is missing, no plugins are loaded.
+
+Activation file format:
+
+```yaml
+enabled_plugins: []
+```
+
+On first install, installers create an empty activation list. `algokit-localnet`
+is staged under `plugins.available/` but never enabled by default; `aplocalnet`
+is the supported utility that explicitly activates it for LocalNet setups.
+
 ### The Manifest (`manifest.json`)
 
 This file is the entry point for any external plugin.
@@ -121,10 +135,10 @@ This file is the entry point for any external plugin.
 | `homepage` | No | - | Plugin homepage URL |
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
-| `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion) |
+| `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
 | `networks` | No | all | Networks the plugin supports (empty = all networks) |
 | `timeout` | No | 30 | Execution timeout in seconds |
-| `manifest_format` | No | "2.0" | Plugin manifest schema format |
+| `manifest_format` | No | "2.0" | Plugin manifest schema format; only `2.0` is accepted |
 
 `manifest_format` describes the manifest file schema. It is separate from the
 JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
@@ -134,6 +148,8 @@ version exchanged in the `initialize` method.
 Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
 upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
 their command declarations and executable JSON-RPC protocol do not change.
+The retired `functions` metadata field is rejected; commands are the sole
+executable and discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -350,12 +366,29 @@ Called to run a specific command.
 }
 ```
 
+**Execute result fields:**
+
+- `success`
+- optional `message`
+- optional `transactions`: transaction intents, unsigned `raw` msgpack by
+  default and `signed` only under `groupMode: "pregrouped-signed"` (see
+  [Transaction Intents](#transaction-intents))
+- optional `data`
+- optional `presentation`
+- optional `requiresApproval`
+- optional `continuation`
+- optional `groupMode` with `pregrouped-signed` or `presign-plan` for
+  plugin-owned signing material
+- optional `pluginSigners`, required for every plugin-owned slot under
+  `presign-plan`
+
 **Presentation Notes:**
 
 - `data` is the canonical machine-readable result payload.
 - `presentation` is optional human-oriented display metadata for apshell text mode.
 - `message` should be a concise summary or fallback, not a second full copy of `data`.
 - If `presentation` is absent, apshell falls back to `message` and transaction status output.
+- Raw `data` is not part of the default human CLI rendering contract.
 
 #### getInfo
 
@@ -500,6 +533,11 @@ method above; plugins that need fully self-signed groups use
 future plugin→host signing mechanism must be designed around mandatory decoded
 review and fail-closed non-interactive behavior before it is added to the wire
 protocol.
+
+Plugin-initiated requests back into apshell are reserved but not installed in
+production. The JSON-RPC client keeps typed request plumbing for future
+reviewed callbacks such as account/balance/app metadata lookup, but absent a
+production handler inbound plugin requests fail closed with `method not found`.
 
 ### Execution Context
 
@@ -986,11 +1024,22 @@ Use `algokit-localnet` when you want the supported LocalNet operations plugin
 that talks to a running AlgoKit LocalNet through localhost algod/KMD APIs. It
 does not shell out to `algokit`, `ak`, or `goal`. Release/install payloads stage
 it under `plugins.available/algokit-localnet`; it becomes active when
-`algokit-localnet` is listed in `$APCLIENT_DATA/plugins.yaml`. It reads LocalNet
-endpoint and wallet overrides from `APLANE_LOCALNET_ALGOD_URL`,
-`APLANE_LOCALNET_KMD_URL`, `APLANE_LOCALNET_TOKEN`,
-`APLANE_LOCALNET_WALLET`, and `APLANE_LOCALNET_WALLET_PASSWORD`; `aplocalnet`
+`algokit-localnet` is listed in `$APCLIENT_DATA/plugins.yaml`; `aplocalnet`
 can activate the plugin and persist a KMD URL override into `apenv.sh`.
+
+The bundled `algokit-localnet` plugin is scoped to the `localnet` execution
+network and implements `localnet status`, `localnet genesis`, `localnet
+accounts`, and `localnet fund`. It uses algod and the Algorand Key Management
+Daemon (KMD), not indexer. During initialization it accepts the generic
+`network`, `algodUrl`, and `algodToken` fields, but the following environment
+variables take precedence for LocalNet operation:
+
+- `APLANE_LOCALNET_ALGOD_URL` (default `http://localhost:4001`)
+- `APLANE_LOCALNET_KMD_URL` (default `http://localhost:4002`)
+- `APLANE_LOCALNET_TOKEN` (default AlgoKit LocalNet token)
+- `APLANE_LOCALNET_WALLET` (default `unencrypted-default-wallet`)
+- `APLANE_LOCALNET_WALLET_PASSWORD` (default empty)
+
 Use `reti` when you want a concrete example that:
 
 - tracks network changes at execute time
@@ -1104,7 +1153,7 @@ or
 **Integrity Verification:**
 - All plugins must include `checksums.sha256` with SHA256 hashes
 - Executable must be listed in checksums
-- Entries use sha256sum-style `<64-hex-sha256><spaces><relative-file>` lines
+- Entries use sha256sum-style `<64-hex-sha256><one-or-two-spaces><relative-file>` lines
 - Paths listed in `checksums.sha256` must stay inside the plugin directory
 - If `executable` names a system command, the first manifest arg is treated as
   the plugin-owned executable/script for checksum verification
