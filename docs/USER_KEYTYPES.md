@@ -396,11 +396,18 @@ What it changes:
   as Ed25519 is, and against a quantum attacker as long as SHA-256 is and the
   stage signed exactly one message. A WOTS key must never sign two different
   messages, and the rotation makes every stage sign once in normal
-  operation. The one exception is a stage that released twice: a signed
-  transaction expired without confirming and a repair spend (`rotate`) was
-  signed from the same stage. Until that repair lands, the stage is
-  Ed25519-only against a quantum attacker. The expired-release alert marks
-  exactly this case, so answer it promptly.
+  operation. A stage signs twice only when a release did not move the
+  account and another was signed from the same stage: a signed transaction
+  expired without confirming and a repair spend (`rotate`) followed, or a
+  client whose submission failed rebuilt the transaction with a fresh
+  validity window and asked again. Until one of those transactions lands,
+  the stage is Ed25519-only against a quantum attacker. The signer reports
+  this as a warning ("stage N has signed more than one transaction") for as
+  long as the stage still controls the account, alongside the
+  expired-release alert; both clear once a chain read shows the account has
+  moved. The warning rests on the signer's release memory, which the audit
+  log rebuilds at unlock: a release the log has rotated past is unknown, so
+  a reuse older than the retained log is not reported.
 - **Cost per spend.** The signature is larger (2,144 bytes plus 64 for
   Ed25519) and verification costs more opcode budget, so every spend carries
   two resource dummies instead of one and pays three minimum fees instead of

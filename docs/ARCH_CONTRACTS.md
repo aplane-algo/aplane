@@ -1600,7 +1600,10 @@ Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
 `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
 `aplane.rotating-wots-hybrid.v1` (WOTS-w16 + Ed25519 stages); each fixes its
 own derivation and stage program template, and `internal/rotatingkey`
-classifies both and carries their frozen sizes in a per-type profile.
+classifies both and carries their frozen sizes in a per-type profile. The
+profile also marks the WOTS hybrid's stage signature as one-time, which
+changes only what the signer reports (`ARCH_HTTP_API.md`, rotating alerts),
+never what it signs.
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
 - `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No

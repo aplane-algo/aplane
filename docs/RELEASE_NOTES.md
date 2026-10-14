@@ -11,8 +11,11 @@ alerts and restore behavior as the Falcon hybrid and differs only in its
 stage program: about 300 bytes, a 2,144-byte signature, a worst-case opcode
 cost of 58,063 (two resource dummies per spend) and stage derivation in
 microseconds. A stage that released twice (an expired release and its
-repair) is Ed25519-only until the repair lands; the expired-release alert
-marks that case. `/keys` and `/keytypes` report the type with
+repair, or a client re-signing a rebuilt transaction) is Ed25519-only until
+one of its transactions lands; the signer's release memory now marks the
+reuse and reports it as a warning for this type until a chain read shows the
+account moved. The same mark appears in the Falcon hybrid's in-flight note,
+where it is harmless. `/keys` and `/keytypes` report the type with
 `signing_flow: rotating1`; no new error codes.
 
 ## Rotating hybrid accounts

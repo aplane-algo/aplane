@@ -28,20 +28,36 @@ func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
 	if err := a.LogRotatingReleaseAttributed(attr, "ACCT2", "TX3", 7, 300); err != nil {
 		t.Fatal(err)
 	}
+	// ACCT3 released twice from stage 2 (a retry of TX4, then a different
+	// TX5): reuse. ACCT4 only retried the same transaction: not reuse.
+	for _, e := range []struct {
+		acct, txid string
+		stage      uint64
+	}{{"ACCT3", "TX4", 2}, {"ACCT3", "TX4", 2}, {"ACCT3", "TX5", 2}, {"ACCT4", "TX6", 9}, {"ACCT4", "TX6", 9}} {
+		if err := a.LogRotatingReleaseAttributed(attr, e.acct, e.txid, e.stage, 400); err != nil {
+			t.Fatal(err)
+		}
+	}
 	a.LogSignApproved("ACCT1", "ACCT1", "unrelated")
 
 	got, err := ReadRotatingReleases(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("releases = %+v, want two accounts", got)
+	if len(got) != 4 {
+		t.Fatalf("releases = %+v, want four accounts", got)
 	}
-	if r := got["ACCT1"]; r.Stage != 1 || r.TxID != "TX2" || r.LastValid != 220 {
+	if r := got["ACCT1"]; r.Stage != 1 || r.TxID != "TX2" || r.LastValid != 220 || r.Reused {
 		t.Fatalf("ACCT1 newest = %+v", r)
 	}
-	if r := got["ACCT2"]; r.Stage != 7 || r.TxID != "TX3" || r.LastValid != 300 {
+	if r := got["ACCT2"]; r.Stage != 7 || r.TxID != "TX3" || r.LastValid != 300 || r.Reused {
 		t.Fatalf("ACCT2 = %+v", r)
+	}
+	if r := got["ACCT3"]; r.TxID != "TX5" || !r.Reused {
+		t.Fatalf("ACCT3 reuse not detected: %+v", r)
+	}
+	if r := got["ACCT4"]; r.TxID != "TX6" || r.Reused {
+		t.Fatalf("ACCT4 retry marked as reuse: %+v", r)
 	}
 	// Stage 0 survives: the field is a pointer, so omitempty cannot drop it.
 	data, _ := os.ReadFile(path)
@@ -69,8 +85,19 @@ func TestReadRotatingReleasesSpansRotatedFilesOldestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["A"].TxID != "new" || got["A"].Stage != 3 || got["B"].TxID != "b" {
+	if got["A"].TxID != "new" || got["A"].Stage != 3 || got["A"].Reused || got["B"].TxID != "b" {
 		t.Fatalf("releases = %+v", got)
+	}
+	// Reuse is seen across rotated files too.
+	if err := os.WriteFile(path, []byte(line("A", "new", 3)+line("B", "b2", 5)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ReadRotatingReleases(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got["B"].Reused || got["B"].TxID != "b2" || got["A"].Reused {
+		t.Fatalf("reuse across rotated files: %+v", got)
 	}
 	// No log at all is not an error.
 	empty, err := ReadRotatingReleases(filepath.Join(dir, "missing.log"))

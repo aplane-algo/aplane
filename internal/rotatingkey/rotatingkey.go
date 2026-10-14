@@ -113,6 +113,12 @@ type Profile struct {
 	MaxProgramBytes  int
 	MaxArgumentBytes int
 	MaxOpcodeCost    int
+
+	// OneTimeStage reports that a stage's post-quantum signature scheme is
+	// one-time: a stage that signs two different messages is only as strong
+	// as Ed25519 until the account moves past it. The signer still signs
+	// (the flow is stateless by design) but reports the reuse.
+	OneTimeStage bool
 }
 
 var profiles = map[string]Profile{
@@ -135,6 +141,7 @@ var profiles = map[string]Profile{
 		MaxProgramBytes:    RotatingWotsMaxProgramBytes,
 		MaxArgumentBytes:   RotatingWotsMaxArgumentBytes,
 		MaxOpcodeCost:      RotatingWotsMaxOpcodeCost,
+		OneTimeStage:       true,
 	},
 }
 

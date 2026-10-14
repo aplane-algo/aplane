@@ -396,17 +396,115 @@ func TestRotatingStatusFromReportsAndMemory(t *testing.T) {
 	}
 }
 
+func TestReleaseMemoryMarksStageReuse(t *testing.T) {
+	m := &ReleaseMemory{}
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "T1"})
+	// Re-recording the same transaction (a retry) is not reuse.
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "T1"})
+	if rec, _ := m.Get("A"); rec.Reused {
+		t.Fatal("a retry of the same transaction was marked as reuse")
+	}
+	// A different transaction from the same stage is.
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "T2"})
+	if rec, _ := m.Get("A"); !rec.Reused {
+		t.Fatal("a second transaction from the same stage was not marked as reuse")
+	}
+	// The mark carries through later records from that stage...
+	m.Record(ReleaseRecord{Account: "A", Stage: 3, TxID: "T2"})
+	if rec, _ := m.Get("A"); !rec.Reused {
+		t.Fatal("reuse mark lost on a retry")
+	}
+	// ...and is dropped once the account moves to a new stage.
+	m.Record(ReleaseRecord{Account: "A", Stage: 4, TxID: "T3"})
+	if rec, _ := m.Get("A"); rec.Reused {
+		t.Fatal("reuse mark survived a stage change")
+	}
+	// Another account is unaffected.
+	m.Record(ReleaseRecord{Account: "B", Stage: 4, TxID: "T4"})
+	if rec, _ := m.Get("B"); rec.Reused {
+		t.Fatal("reuse mark leaked across accounts")
+	}
+}
+
+// TestRotatingStatusReportsStageReuse signs two different transactions from
+// one stage without either landing. The one-time WOTS stage is then
+// Ed25519-only until the account moves, which is a warning; the Falcon
+// stage can sign again safely, so the reuse is only mentioned in the note.
+// Either way the mark survives until a chain read shows the account moved.
+func TestRotatingStatusReportsStageReuse(t *testing.T) {
+	for _, kind := range rotatingTestTypes {
+		t.Run(kind.keyType, func(t *testing.T) {
+			f, _ := newSigningFixtureFor(t, kind)
+			acct := f.account.String()
+			report := func(auth types.Address, round uint64) []StageTableReport {
+				return []StageTableReport{{Account: acct, Resolved: true, Observed: true, ObservedSeq: f.svc.Rotating.Releases.Seq(), Authorizer: auth, Round: round}}
+			}
+			first := mustSign(t, f, mustPrepare(t, f, f.spend(1000, 1100)).Transactions)
+			second := mustSign(t, f, mustPrepare(t, f, f.spend(1001, 1101)).Transactions)
+			if first.TxID == second.TxID || first.Stage != second.Stage {
+				t.Fatalf("fixture did not sign two transactions from one stage: %+v %+v", first, second)
+			}
+			rec, _ := f.svc.Rotating.Releases.Get(acct)
+			if !rec.Reused || rec.TxID != second.TxID {
+				t.Fatalf("release memory after two releases = %+v", rec)
+			}
+
+			profile, _ := rotatingkey.Lookup(kind.keyType)
+			warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
+			switch {
+			case profile.OneTimeStage:
+				if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], "Ed25519-only") || !strings.Contains(warnings[0], second.TxID) {
+					t.Fatalf("one-time stage reuse in flight: warnings %v, notes %v", warnings, notes)
+				}
+				again, _ := f.svc.RotatingStatus(report(f.account, 1060))
+				if len(again) != 1 || again[0] != warnings[0] {
+					t.Fatalf("reuse warning text changed between passes: %q vs %q", again, warnings)
+				}
+			default:
+				if len(warnings) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "in flight") || !strings.Contains(notes[0], "more than one transaction") {
+					t.Fatalf("reusable stage reuse in flight: warnings %v, notes %v", warnings, notes)
+				}
+			}
+			// Expired as well: the expired warning carries the reuse.
+			warnings, _ = f.svc.RotatingStatus(report(f.account, 1102))
+			if len(warnings) != 1 || !strings.Contains(warnings[0], "rotate-only spend") || !strings.Contains(warnings[0], "more than one transaction") {
+				t.Fatalf("expired reused stage: warnings %v", warnings)
+			}
+			// A repair signed from the same stage keeps the account marked
+			// rather than resetting to a clean in-flight note.
+			f.chain.round = 1102
+			repair := mustSign(t, f, mustPrepare(t, f, f.spend(1102, 1202)).Transactions)
+			warnings, notes = f.svc.RotatingStatus(report(f.account, 1110))
+			if profile.OneTimeStage {
+				if len(warnings) != 1 || !strings.Contains(warnings[0], repair.TxID) {
+					t.Fatalf("repair from a one-time stage silenced the reuse warning: warnings %v, notes %v", warnings, notes)
+				}
+			} else if len(warnings) != 0 || len(notes) != 1 || !strings.Contains(notes[0], "more than one transaction") {
+				t.Fatalf("repair note: warnings %v, notes %v", warnings, notes)
+			}
+			// Landed: the stage is retired and the mark goes with it.
+			warnings, notes = f.svc.RotatingStatus(report(f.stageAddress(t, 1), 1120))
+			if len(warnings) != 0 || len(notes) != 0 {
+				t.Fatalf("landed: warnings %v, notes %v", warnings, notes)
+			}
+			if _, ok := f.svc.Rotating.Releases.Get(acct); ok {
+				t.Fatal("memory not cleared after the account moved")
+			}
+		})
+	}
+}
+
 func TestRebuildReleaseMemoryDerivesVerifiedAddresses(t *testing.T) {
 	f, _ := newSigningFixture(t)
 	n, err := f.svc.RebuildReleaseMemory(context.Background(), f.session, []AuditedRelease{
-		{Account: f.account.String(), Stage: 3, TxID: "TX", LastValid: 500},
+		{Account: f.account.String(), Stage: 3, TxID: "TX", LastValid: 500, Reused: true},
 		{Account: types.Address{5}.String(), Stage: 1, TxID: "GONE", LastValid: 9},
 	}, StageFillOptions{})
 	if err != nil || n != 1 {
 		t.Fatalf("rebuilt %d, err %v", n, err)
 	}
 	rec, ok := f.svc.Rotating.Releases.Get(f.account.String())
-	if !ok || rec.Stage != 3 || rec.StageAddr != f.stageAddress(t, 3) || rec.NextAddr != f.stageAddress(t, 4) || rec.TxID != "TX" {
+	if !ok || rec.Stage != 3 || rec.StageAddr != f.stageAddress(t, 3) || rec.NextAddr != f.stageAddress(t, 4) || rec.TxID != "TX" || !rec.Reused {
 		t.Fatalf("rebuilt record = %+v", rec)
 	}
 	if _, ok := f.svc.Rotating.Releases.Get(types.Address{5}.String()); ok {

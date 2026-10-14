@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/rotatingwots/stage"
@@ -41,9 +42,13 @@ func (StageOps) StageAddress(key *signing.RotatingKeyMaterial, i uint64) (types.
 }
 
 // CheckStageOpens proves stage i's derived keys match the constants embedded
-// in its program.
+// in its program. The test signature is wiped before returning: a WOTS
+// signature carries chain secrets (an element whose digit is 0 is the chain's
+// private seed itself), and this one is never released, so it must not
+// outlive the keys it came from.
 func (StageOps) CheckStageOpens(key *signing.RotatingKeyMaterial, i uint64) error {
-	_, err := signAndVerify(key, i, openTestMessage)
+	sig, err := signAndVerify(key, i, openTestMessage)
+	zeroArgs(sig.Args)
 	return err
 }
 
@@ -63,17 +68,28 @@ func signAndVerify(key *signing.RotatingKeyMaterial, i uint64, message []byte) (
 	if err != nil {
 		return signing.RotatingStageSignature{}, fmt.Errorf("sign with stage %d: %w", i, err)
 	}
+	// On every error path the signature is never handed to the caller, so
+	// it is wiped here; it carries WOTS chain secrets.
 	embedded, _, err := stage.Parse(program.Bytecode)
 	if err != nil {
+		zeroArgs([][]byte{wotsSig, ed25519Sig})
 		return signing.RotatingStageSignature{}, fmt.Errorf("parse stage %d program: %w", i, err)
 	}
 	if err := Verify(embedded, message, wotsSig, ed25519Sig); err != nil {
+		zeroArgs([][]byte{wotsSig, ed25519Sig})
 		return signing.RotatingStageSignature{}, fmt.Errorf("stage %d signature does not verify: %w", i, err)
 	}
 	return signing.RotatingStageSignature{
 		Program: program.Bytecode,
 		Args:    [][]byte{wotsSig, ed25519Sig},
 	}, nil
+}
+
+// zeroArgs overwrites every argument buffer.
+func zeroArgs(args [][]byte) {
+	for _, a := range args {
+		crypto.ZeroBytes(a)
+	}
 }
 
 func deriveFromMaterial(key *signing.RotatingKeyMaterial, i uint64) (*StageKeys, stage.Program, error) {

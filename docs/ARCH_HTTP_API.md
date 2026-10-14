@@ -432,11 +432,21 @@ interval: chain reads and paced derivation can stretch it). A release whose
 warning: that transaction can never confirm and the revealed keys still
 control the account. A release still within its window is a note. A read
 that shows the account past the release clears it; a stale read never
-erases a newer release. Because only the newest release is kept, an earlier
-release from the same stage that expired while a newer one is still within
-its window is reported through the newer one: the stage is the same, and
-the newer transaction either lands and moves the account or expires and
-raises the warning. Warnings appear in the daemon log once when they
+erases a newer release. Only the newest release is kept, but a release
+that replaces one from the same stage over a different TxID marks the
+record as reused (a retry that re-records the same TxID does not), and the
+mark survives until the account moves past the stage; the audit reader
+applies the same rule across the entries it can see, so a reuse older than
+the retained log goes unreported. An earlier release from the same stage
+that expired while a newer one is still within its window is reported
+through the newer one: the stage is the same, and the newer transaction
+either lands and moves the account or expires and raises the warning, which
+then also says the stage has signed more than one transaction. For a key
+type whose stage signature is one-time (`aplane.rotating-wots-hybrid.v1`),
+a reused stage that is still live raises a warning even while the newest
+release is within its window: the stage is Ed25519-only until the account
+moves. For other types the reuse is harmless and only appears in the
+in-flight note. Warnings appear in the daemon log once when they
 appear and once when they clear, in authenticated `/status` `warnings`, in
 apadmin's status bar, and in apshell's `rotate status`; notes appear in
 `/status` `notes`. The remedy for an expired release is a rotate-only spend

@@ -16,6 +16,10 @@ type RotatingRelease struct {
 	Stage     uint64
 	TxID      string
 	LastValid uint64
+	// Reused reports that an earlier entry in the logs read names the same
+	// account and stage with a different TxID. Entries the log has rotated
+	// past cannot be seen, so false means none was seen, not none was made.
+	Reused bool
 }
 
 // ReadRotatingReleases returns the newest ROTATING_RELEASE entry per account
@@ -53,12 +57,16 @@ func readRotatingReleasesFrom(file string, out map[string]RotatingRelease) error
 		if entry.Event != AuditRotatingRelease || entry.TxnAuth == "" || entry.RotatingStage == nil {
 			continue
 		}
-		out[entry.TxnAuth] = RotatingRelease{
+		r := RotatingRelease{
 			Account:   entry.TxnAuth,
 			Stage:     *entry.RotatingStage,
 			TxID:      entry.TxID,
 			LastValid: entry.RotatingLastValid,
 		}
+		if prev, ok := out[r.Account]; ok && prev.Stage == r.Stage {
+			r.Reused = prev.Reused || prev.TxID != r.TxID
+		}
+		out[r.Account] = r
 	}
 	return scanner.Err()
 }
