@@ -71,7 +71,8 @@ the verified key fingerprint. A request carries no credential of its own.
 - **Connection-scoped identity**: Every request on a tunneled connection is
   attributed to the key that authenticated that connection; nothing in a
   request can supply or override it
-- **No login step and no shared secret**: There is no API token. The client's
+- **No login step and no shared secret**: There is no API token, no
+  `Authorization` header, and no credential file on either side. The client's
   SSH private key is its only credential
 - **Loopback carries no identity**: The loopback TCP listener on
   `endpoint.signer_port` answers only `/health`; every other path on it gets
@@ -282,8 +283,9 @@ Keys are enrolled only by the operator: by approving a queued
   `request-enrollment`
 - Enrollment is re-checked against the installed registry after the handshake,
   so a key revoked while its handshake was in flight is refused
-- The server never carries session channels for `aplane`: port forwarding is
-  the only service, so the key grants API access and nothing else
+- The server never carries session channels for `aplane`: port forwarding
+  (`direct-tcpip` channels to loopback destinations) is the only service, so
+  the key grants API access and nothing else
 - The accepted key algorithms are Ed25519, ECDSA (P-256/384/521), and
   hardware-backed `sk-` variants; the server's algorithm list refuses other
   keys before any signature is verified
@@ -379,6 +381,27 @@ endpoint:
 - Authorization is still evaluated per request, against the client role's
   explicit action allowlist
 
+### SSH Server Limits and Lifecycle
+
+The SSH server allows at most 64 concurrent pending handshakes and closes
+excess arrivals; one remote address may hold at most 8 of them. Authentication
+has a 60-second socket deadline, cleared after successful authentication.
+Accepted sockets are tracked before authentication so shutdown also closes
+stalled handshakes. The limit applies to pending authentication, not
+established sessions.
+
+Client TCP dialing and SSH authentication share one setup timeout (60 seconds
+by default). Setup cancellation closes the socket to interrupt blocked I/O.
+Successful connections detach from that setup timeout; their established
+connection lifecycle remains separately owned.
+The setup timeout also covers interactive first-use host-key approval, giving
+the operator time to compare the displayed fingerprint.
+
+SSH server callbacks are startup-only. Key checking, key enrollment,
+operator checks, enrollment approval and audit, session notifications, and the
+API channel handoff must be configured before `Start`; setters fail fast after
+the server has started.
+
 ### Client Enrollment via SSH
 
 A client whose key is not yet enrolled asks the node to enroll it with the
@@ -441,6 +464,53 @@ with operator import of a public key (below), this is the whole bootstrap.
   is simply gone; the client's next `connect` is refused and it may request
   again
 
+**Protocol steps:**
+
+1. client connects as `request-enrollment` with any supported key
+2. server rejects every other username before SSH auth succeeds
+3. the exec request `enroll` or `enroll <label>` is accepted on that
+   connection; the label is at most 64 bytes of printable single-line text,
+   and any other command is answered `ERROR: unknown command` with exit 1
+4. a key the registry already holds is answered `enrolled <fingerprint>`
+   with exit 0 and nothing is queued; like every success answer read from
+   the registry, it is given only once the registry is durable (a registry
+   left by an earlier failed write is re-published first, and the request
+   fails with `ERROR: failed to record enrollment request` if that fails)
+5. otherwise the server records the request (public key, label, remote
+   address, time) in `identities/default/.ssh/pending_enrollments.json`,
+   written atomically and durably like the registry, and under the same
+   rule for a write that fails after its rename: a request the file then
+   holds is a queued request for the operator (audited, announced) and the
+   queue is re-published before its next write, but the client is answered
+   `ERROR: enrollment request recorded but not yet durable; retry the
+   request`, exit 1, so it retries and is answered `pending` only once the
+   queue is durable (the retry refreshes the entry and is not audited or
+   announced again); a new request is audited as
+   `CLIENT_ENROLLMENT_REQUESTED` and announced to a connected admin session
+   as `client_enrollment_request`; a repeat for a waiting key refreshes its
+   entry. Refusals are `ERROR: enrollment queue is full; ask the operator to
+   clear it and try again` and `ERROR: failed to record enrollment request`,
+   exit 1
+6. server replies `pending <fingerprint>` with exit 0; the client checks the
+   fingerprint against the key it authenticated with and disconnects. Nothing
+   is stored on the client
+7. later, an admin session approves (`approve_enrollment`: the key and label
+   are added to the registry under the publication rule, the entry is
+   removed, `CLIENT_ENROLLED` is audited) or rejects (`reject_enrollment`:
+   the entry is removed, `CLIENT_ENROLLMENT_REJECTED` is audited). The audit
+   event follows the change that took effect, not the command's outcome: a
+   key that entered the live registry is audited as enrolled even when the
+   approval then reports a durability failure or could not clear the entry
+   (a repeat approval clears it without a second `CLIENT_ENROLLED`; rejecting
+   such a request is refused so the queue and the registry never disagree
+   about the key), and a request dropped by a write that is not yet durable
+   is audited as rejected. Labels written by the admin protocol follow the
+   same rule as client-supplied ones: printable single-line text of at most
+   64 bytes. Every
+   waiting request is announced again when an admin session authenticates
+8. the client learns the outcome by connecting: an enrolled key is accepted,
+   anything else is refused at the handshake
+
 **Pre-enrollment.** The operator can also enroll a key without a request
 from the client: the Enrolled Clients screen's import form and
 `apadmin clients import <public-key-file|-> [--label <text>]` take one
@@ -449,11 +519,28 @@ operator must verify the key's fingerprint with the client's owner through a
 channel they trust; the public key itself is not secret. A waiting request
 for the same key is cleared by the import.
 
+The admin protocol message is `import_client_key` (one OpenSSH
+public-key line; its comment is the label unless one is given). Imports reject
+authorized_keys options, including reserved `aplane-` options, and trailing key
+lines with `invalid_request`; unsupported restrictions are never silently
+discarded. The key type check is the same as for `request-enrollment`, the
+write follows the publication rule, a waiting request for the same key is cleared, and
+`CLIENT_ENROLLED` is audited with an empty remote address.
+
 The publication rule both files follow (a write that fails after its rename
 is applied and audited but not acknowledged to the client until a sync
 succeeds, and a crash can only take back what was never acknowledged) is
 modeled in [`formal/enrollment_queue.tla`](formal/enrollment_queue.tla); see
 [FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md](FORMAL_TLA_ENROLLMENT_QUEUE_MODEL.md).
+
+**Queue file.** The queue is loaded once at startup, like the registry, and a
+queue file the daemon cannot read completely refuses to serve. Waiting requests
+survive a daemon restart.
+The queue document has `schema_version: 1` and a `requests` array. Each request
+stores `public_key` (an OpenSSH line), optional `label` and `remote_addr`, and
+`requested_at` (a JSON timestamp). The parser and publication owner is
+`internal/signerapp/enrollqueue`; the product runtime serializes queue and
+registry mutations under the same lock.
 
 **Limits.** `request-enrollment` accepts any supported client key, so the
 flow is reachable without credentials, and the queue it writes to is bounded:
@@ -527,7 +614,7 @@ revocation of every key.
      │                  │                                 │
 ```
 
-**What happens on revocation:**
+**What happens on revocation** (`revoke_enrolled_key`, `revoke_all_enrolled_keys`):
 1. The registry is rewritten without the key, under the publication rule
    (validate the full candidate, write atomically, install under one lock)
 2. Every SSH connection authenticated with that key receives the
@@ -537,6 +624,9 @@ revocation of every key.
    against the installed one and refused
 4. The `CLIENT_KEY_REVOKED` audit entry records the fingerprint, label, and
    closed-connection count with the admin session's attribution
+
+`sshtunnel.Server.CloseConnectionsForFingerprint(fingerprint, reason)` and
+`CloseAllClientConnections(reason)` close connections by key.
 
 **Client re-authorization:**
 - The client must run `request-enrollment` again (same flow as initial enrollment), or the operator re-imports its public key
@@ -686,8 +776,8 @@ type AuditEntry struct {
 The current implementation is a concrete append-only JSONL logger in
 `internal/signerapp/audit/audit.go`, not a generic cross-application
 `internal/audit` sink package.
-`NewAuditLogger(path)` opens the audit log with mode `0600`, appends one JSON
-object per line, syncs each write, and rotates around the current 10 MB limit.
+`NewAuditLogger(path)` opens the audit log (`audit.log`) with mode `0600`,
+appends one JSON object per line with a UTC timestamp, and syncs each write.
 
 Audit entries carry attribution fields:
 
@@ -701,6 +791,15 @@ Audit entries carry attribution fields:
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `key_count`: key count for startup and reload events
+
+Requester and approver remain distinct principal fields in the log shape.
+
+Rotation:
+
+- size-based at 10 MB
+- rotate to `audit.log.1`
+- previous `audit.log.1` rotates to `audit.log.2`
+- two rotated generations retained
 
 Denial behavior:
 
@@ -725,6 +824,129 @@ Denial behavior:
 - Admin protocol authorization denials are recorded as
   `AUTHORIZATION_DENIED` with the admin session context, action/resource details,
   principal attribution, transport, and denial reason.
+
+Events:
+
+- `SERVER_START`
+- `SERVER_STOP`
+- `SERVER_STOP_INCOMPLETE`
+- `SIGN_REQUEST`
+- `SIGN_APPROVED`
+- `SIGN_REJECTED`
+- `SIGN_FAILED`
+- `ROTATING_RELEASE`
+- `AUTH_FAILED`
+- `AUTH_FAILURES_SUPPRESSED`
+- `COSIGNER_REJECTIONS_SUPPRESSED`
+- `AUTHORIZATION_DENIED`
+- `KEY_RELOAD`
+- `KEY_GENERATED`
+- `KEY_DELETED`
+- `KEY_IMPORTED`
+- `KEY_REJECTED`
+- `BACKUP_CREATED`
+- `BACKUP_IMPORTED`
+- `BACKUP_EXPORT_STARTED`
+- `BACKUP_FAILED`
+- `BACKUP_RESTORE_PREVIEWED`
+- `BACKUP_RESTORE_PREVIEW_FAILED`
+- `CREDENTIAL_RESTORE_INTENT`
+- `CREDENTIAL_RESTORE_SUCCEEDED`
+- `CREDENTIAL_RESTORE_FAILED`
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN`
+- `CREDENTIAL_RESTORE_ROLLBACK`
+- `STORE_INITIALIZED`
+- `STORE_INITIALIZE_FAILED`
+- `PASSPHRASE_CHANGED`
+- `PASSPHRASE_CHANGE_FAILED`
+- `COSIGNER_REFERENCE_CHANGED`
+- `GENERATION_QUARANTINE_INTENT`
+- `GENERATION_QUARANTINED`
+- `GENERATION_QUARANTINE_PRUNE_INTENT`
+- `GENERATION_QUARANTINE_PRUNED`
+- `GENERATION_ABANDONED_DISCARD_INTENT`
+- `GENERATION_ABANDONED_DISCARDED`
+- `DELETED_ARCHIVE_PRUNE_INTENT`
+- `DELETED_ARCHIVE_PRUNED`
+- `SESSION_CONNECTED`
+- `SESSION_DISCONNECTED`
+- `IDENTITY_LOCKED`
+- `CLIENT_ENROLLMENT_REQUESTED`
+- `CLIENT_ENROLLED`
+- `CLIENT_ENROLLMENT_REJECTED`
+- `CLIENT_KEY_REVOKED`
+
+Signing-audit semantics:
+
+- `SIGN_APPROVED` is emitted only for transactions the signer actually signs
+- foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
+- signing audit over HTTP records `transport:"http"` and the connection's `client:<fingerprint>` principal as requester
+- cosigner-role component signing currently records approvals and policy
+  rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
+  Witness Key ID, `txn_sender` is the decoded target sender, and
+  `policy_rule_id` carries the rule ID of the first policy violation when present
+- `ROTATING_RELEASE` is written durably before a rotating account's stage
+  signature leaves the signer; it records the account, `txid`,
+  `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
+  release memory from these entries at unlock (see
+  [ARCH_HTTP_API.md](ARCH_HTTP_API.md#rotating-accounts-rotating1))
+- approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
+- approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
+- admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
+- session connected/disconnected audit records the admin session ID, transport, principal, and remote address
+- key-management audit events are emitted for both REST and authenticated IPC admin operations
+- `KEY_REJECTED` is emitted when signer key scanning skips a key file that
+  violates a load-time key-file invariant; for LogicSig salt failures,
+  `reason` includes the key filename and rejection reason
+
+Backup-audit semantics:
+
+- `BACKUP_CREATED` is emitted when an authenticated admin backup operation
+  writes a managed archive; `reason` contains the archive path
+- `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
+  verification and is published into the managed backup set
+- `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
+  managed archive transfer, including when a client starts at a non-zero
+  offset; reaching EOF closes the inferred transfer for subsequent auditing
+- `BACKUP_FAILED` is emitted when backup creation, import commit, or export
+  streaming fails; `reason` contains the failure reason
+- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys
+- `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
+- `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
+  first generation-store write. It records the operation ID and
+  `replace_existing`; durable-write failure aborts with no store mutation.
+- `CREDENTIAL_RESTORE_SUCCEEDED` and `CREDENTIAL_RESTORE_FAILED` carry the
+  available archive SHA-256, operation ID, replacement option, and key count.
+- `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a visible store-root
+  replacement whose directory-sync durability could not be confirmed; signing stays
+  recovery-blocked until reconciliation confirms the root and reloads the
+  visible generation.
+- `CREDENTIAL_RESTORE_ROLLBACK` records explicit rollback success or failure.
+  Failed attempts use `outcome:"failed"` and `reason`.
+
+Store-management audit semantics:
+
+- `STORE_INITIALIZED` is emitted when authenticated local IPC store initialization succeeds
+- `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
+- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
+- `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
+- `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports,
+  promotes, or removes a cosigner-reference record; `outcome` is the action
+  (or `failed`) and `witness_key_id` identifies the authority, with no
+  public-key material in the entry
+- generation maintenance is audited in intent/result pairs: each `*_INTENT`
+  entry is written durably before the store changes, and a durable-write
+  failure refuses the operation. `GENERATION_QUARANTINE_INTENT` and
+  `GENERATION_QUARANTINED` come from reconciliation and carry the generation
+  and manifest identifiers; the quarantine prune, abandoned-generation
+  discard, and deleted-archive prune pairs come from admin sessions and carry
+  the operation ID, the affected generation IDs or archive entries, and
+  `byte_count` (see [Reconciliation and quarantine](ARCH_STORE.md#reconciliation-and-quarantine)
+  and [Deleted archive capacity](ARCH_STORE.md#deleted-archive-capacity))
+- `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `request-enrollment` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
+- `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
+- `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution
+- `CLIENT_KEY_REVOKED` is emitted when an admin session revokes one enrolled key or every key; it carries the fingerprint, `client_label`, closed-connection count, and admin session attribution
 
 ### Auth Pipeline in Server
 

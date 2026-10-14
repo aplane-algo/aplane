@@ -680,7 +680,7 @@ Configuration behavior and validation rules are compatibility-bearing and are do
 
 ## On-Disk Data Model
 
-The concrete on-disk layouts, key-file compatibility, keystore metadata versioning, template files, audit log, and backup format are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+The concrete on-disk layouts, key-file compatibility, keystore metadata versioning, template files, and backup format are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). The audit log format and events are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
 
 Operationally:
 
@@ -1938,7 +1938,7 @@ The SSH tunnel is implemented in `internal/sshtunnel`. It provides:
 - SSH clients in `apshell` and the external Go, Python, and
   TypeScript SDKs that establish the tunnel.
 
-Watcher, template reload, audit logging, client enrollment, key revocation, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+Watcher, template reload, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). Audit logging, client enrollment, and key revocation contracts are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md).
 
 Architecturally:
 

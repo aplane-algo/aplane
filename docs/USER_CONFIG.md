@@ -1241,7 +1241,7 @@ Use `appass`, not manual line editing, if you want to switch between prompt mode
 
 `appass-systemd-creds` encrypts the passphrase via `systemd-creds`, binding it to the machine's TPM2 chip and/or host key. Recommended for Systemd deployments. Requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+). Stop `apsigner`, then run `sudo appass -d <data-dir>` and select `Systemd` to set it up.
 
-See [ARCH_SECURITY.md — Usage Guide: appass-systemd-creds](ARCH_SECURITY.md#usage-guide-appass-systemd-creds) for full setup instructions.
+See [USER_INSTALL.md: Auto-unlock setup after install](USER_INSTALL.md#auto-unlock-setup-after-install-requires-systemd-250) for full setup instructions, and [ARCH_SECURITY.md: Passphrase Command Helper Protocol](ARCH_SECURITY.md#passphrase-command-helper-protocol) for how the helper reads and writes the credential.
 
 **Writing a custom helper:**
 
