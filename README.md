@@ -211,7 +211,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_COSIGNER.md](docs/ARCH_COSIGNER.md) - Guarded signing and cosigner node architecture
 - [ARCH_BOUNDED_DSA.md](docs/ARCH_BOUNDED_DSA.md) - Bounded DSA contracts, effect model, and external contract-admin ceremonies
 - [ARCH_CORRIDOR.md](docs/ARCH_CORRIDOR.md) - Corridor v1 composition, custody, and choreography
-- [ARCH_STORE_OWNERSHIP.md](docs/ARCH_STORE_OWNERSHIP.md) - Private signer-store ownership and offline maintenance boundary
+- [ARCH_STORE.md](docs/ARCH_STORE.md) - Signer store layout, ownership, generational commits and recovery, and key and key type lifecycle
 - [ARCH_TXNFLOW.md](docs/ARCH_TXNFLOW.md) - Transaction signing flow details
 
 ### Specification

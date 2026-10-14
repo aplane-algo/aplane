@@ -73,11 +73,11 @@ Read [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md) as the system-wide data map:
 - caches and display/provenance data,
 - entity ownership and compatibility invariants.
 
-Read [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md) before changing key file
+Read [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types) before changing key file
 schemas, key type state, template install/enable/disable/remove behavior,
 LogicSig signing metadata, or backup/restore rules for keys and key types.
 
-Read [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md) before changing signer
+Read [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access) before changing signer
 data permissions, IPC placement, direct local-client store access, durable
 writes, or offline maintenance execution modes.
 
@@ -308,7 +308,7 @@ deciding where a change belongs:
 | Cluster | Package | Role |
 |---------|---------|------|
 | `store*` | `internal/storepaths` | Canonical signer/client path construction for data directories, identities, keys, templates, config, and library locations. |
-| `store*` | `internal/genstore` | Atomic store-root selection, generation mint/seal, reconciliation/quarantine, sealed-prior validation, deleted-archive bounds/prune, garbage collection, and complete generation inventory (see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md)). |
+| `store*` | `internal/genstore` | Atomic store-root selection, generation mint/seal, reconciliation/quarantine, sealed-prior validation, deleted-archive bounds/prune, garbage collection, and complete generation inventory (see [ARCH_STORE.md](ARCH_STORE.md#generations)). |
 | `store*` | `internal/storelock` | Cooperative filesystem lock acquisition for signer-store mutation safety. |
 | `store*` | `internal/signerapp/storemut` | Higher-level store mutation coordination around operations that rewrite identity/store files. |
 | `store*` | `internal/storeinit` | Store initialization and bootstrap creation logic. |
@@ -689,8 +689,8 @@ Operationally:
 - systemd signer state is service-user-only (`0700` directories and `0600`
   ordinary files); the operator Unix group has no traversal rights and reaches
   signer operations only through authenticated transports. See
-  [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md),
-- active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by authenticated `store-root.enc`; see [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
+  [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access),
+- active credentials and key-type state live under `identities/default/generations/<gen-id>/`, selected by authenticated `store-root.enc`; see [ARCH_STORE.md](ARCH_STORE.md#generations) and [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md),
 - store initialization stages the first generation with its node-role sidecar,
   the role's policy baseline (a signed `default.json` seeded from the embedded
   default for the role, on both roles; no per-key documents), and default key
@@ -843,7 +843,7 @@ Template scan precedes key scan so generation/discovery state is current.
 LogicSig key files carry their own bytecode and signing arg contract, so
 signing an existing key does not depend on the installed template definition.
 The complete key file and key type state machines are documented in
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
 rejected during key scan. Legacy empty/`manual_counter` derivations require
 `salt_counter`; `algod_v13_auto_salt` derivations forbid it and require final
@@ -1766,7 +1766,7 @@ The repo uses:
   boundaries; `generation_storage_test.go` pins the no-hardlink rule,
   store-owning package inventory, removal of retired root store paths and commit
   artifacts, confinement of direct generation writers, and the prohibition on
-  installer-owned root-level policy setup from ARCH_GENERATIONS;
+  installer-owned root-level policy setup from ARCH_STORE;
   `store_permissions_test.go` pins the audited shared-mode allowlist and keeps
   legacy group-bearing modes out of signer-store writers;
   `kdf_confinement_test.go` pins key-derivation, raw-term-key, test-fixture,
@@ -2059,7 +2059,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/*.go`, `internal/backup/*.go` |
-| Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE_OWNERSHIP.md` |
+| Store Ownership / Permissions | `internal/storeperm/*.go`, `internal/fsutil/perms.go`, `internal/fsutil/durable.go`, `internal/adminipc/path.go`, `cmd/apstore/permissions.go`, `docs/ARCH_STORE.md` |
 | Store Integration Harness | `test/storeintegration/*.go`, `internal/storepass/capacity_test.go`, `internal/testcheckpoint/*.go`, `Makefile` (`store-lifecycle-test`, `store-capacity-test`, `store-crash-test`, `store-release-drill`) |
 | LSig Providers / Resource Planning | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsigresource/consensus.go`, `internal/lsigresource/solver.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/native_pq_fee.go`, `internal/signing/dummy_transactions.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/composeddsa/layer3.go`, `library/templates/aplane.corridor.v1.yaml`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
@@ -2070,7 +2070,7 @@ Product-level boundaries:
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/integritysidecar/sidecar.go`, `internal/keyclass/keyclass.go`, `internal/cosigner/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/defaultkeytypes/defaults.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `internal/signerapp/daemon/admin_services.go` |
-| Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_GENERATIONS.md` |
+| Generation Storage | `internal/genstore/*.go`, `internal/storepaths/generations.go`, `internal/storepaths/active.go`, `cmd/apstore/generations.go`, `docs/ARCH_STORE.md` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Product Runtime | `internal/signerapp/productruntime/runtime.go`, `internal/signerapp/productruntime/config.go` |
 | Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `docs/RELEASE_NOTES.md`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
@@ -2119,4 +2119,4 @@ credentials as the first generation through `genstore.Mint`; it bypasses the
 live daemon, admin authorization, and durable audit path. The wire and on-disk
 compatibility rules remain in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the key/keytype lifecycle state model
-is in [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).

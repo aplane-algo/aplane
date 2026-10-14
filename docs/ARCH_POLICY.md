@@ -854,7 +854,7 @@ adds or replaces each listed document (each names its key), deletes the keys
 in `remove`, and keeps every other document; `default` can be replaced but
 not removed. Every digest covers exact document bytes. Message payloads are
 in [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md); generation behavior is
-in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
+in [ARCH_STORE.md](ARCH_STORE.md#generations).
 
 `apadmin policy` requires a verb; the same verbs run online and under
 `apadmin policy rescue` against a stopped store:

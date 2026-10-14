@@ -271,7 +271,7 @@ LogicSig templates have no key to import).
 > Full detail: [USER_KEYTYPES.md](USER_KEYTYPES.md),
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md),
 > [ARCH_CRYPTO.md](ARCH_CRYPTO.md),
-> [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md),
+> [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types),
 > [ARCH_LSIG_PROVIDER.md](ARCH_LSIG_PROVIDER.md).
 
 ---

@@ -173,7 +173,7 @@ Source: [ARCH_SECURITY.md](ARCH_SECURITY.md) ("Client Enrollment via SSH"); mach
 
 ## Recovery Binding
 
-Source: [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) (reload binding and recovery maintenance); machine-checked in [formal/recovery_binding.tla](formal/recovery_binding.tla).
+Source: [ARCH_STORE.md](ARCH_STORE.md#generations) (reload binding and recovery maintenance); machine-checked in [formal/recovery_binding.tla](formal/recovery_binding.tla).
 
 | ID | Status | Property | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
@@ -190,7 +190,7 @@ status of deferred items.
 
 ## Store Cryptography
 
-Source: [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md)
+Source: [ARCH_STORE.md](ARCH_STORE.md#generations)
 
 | ID | Status | Property | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|

@@ -2,7 +2,7 @@
 
 > Compatibility-bearing wire formats, on-disk formats, and behavioral contracts.
 > For system orientation, ownership, and architecture, see [ARCH_SPEC.md](ARCH_SPEC.md).
-> For key and key type lifecycle state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+> For key and key type lifecycle state machines, see [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 > For the explanatory network context model, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > For guarded signing and cosigner node architecture, see [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
@@ -1391,7 +1391,7 @@ ciphertext directly.
 
 ### Generation Store (`store-root.enc` + `generations/`)
 
-The complete contract is in [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md).
+The complete contract is in [ARCH_STORE.md](ARCH_STORE.md#generations).
 `identities/default/store-root.enc` is the only active-generation selector.
 Lower-level APIs require an authenticated `GenPaths` or bound `Paths`
 capability and never infer selection from directory names.

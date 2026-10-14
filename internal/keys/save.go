@@ -67,7 +67,7 @@ func SavePayloadActive(active storepaths.ActivePaths, payload *Payload, kr *cryp
 	}
 	// Durable, never in-place: a credential write must survive a crash and
 	// must not be able to reach an inode a sealed generation shares
-	// (docs/ARCH_GENERATIONS.md §4).
+	// (docs/ARCH_STORE.md, "Filesystem primitives").
 	if err := fsutil.WriteFileDurable(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}

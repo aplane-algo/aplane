@@ -15,7 +15,7 @@ safety checklist for user-loaded YAML templates.
 
 For the complete key file and key type state machines, including backup/restore
 and disabled/fingerprint-conflict behavior, see
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 
 ## Signing Authority
 

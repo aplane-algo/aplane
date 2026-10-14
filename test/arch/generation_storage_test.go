@@ -36,7 +36,7 @@ var storeOwningPackages = []string{
 	"cmd/apstore",
 }
 
-// TestNoHardlinksInStoreCode enforces docs/ARCH_GENERATIONS.md §1:
+// TestNoHardlinksInStoreCode enforces docs/ARCH_STORE.md, "Generation manifest and seal":
 // generations are built from independent copies, never hardlinks. A shared
 // inode would let a later in-place write mutate a prior (sealed) generation.
 func TestNoHardlinksInStoreCode(t *testing.T) {

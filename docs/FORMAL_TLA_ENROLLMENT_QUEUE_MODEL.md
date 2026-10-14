@@ -126,7 +126,7 @@ counterexample; the make harness asserts that expectation.
 ## Linking back
 
 - Architecture: [ARCH_SECURITY.md](ARCH_SECURITY.md) ("Client Enrollment
-  via SSH") and [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md).
+  via SSH") and [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access).
 - Traceability: the Client Enrollment section and the Enrollment queue
   module section in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 - Concrete tests: `internal/signerapp/productruntime/client_registry_test.go`,

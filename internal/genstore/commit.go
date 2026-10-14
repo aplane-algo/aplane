@@ -39,7 +39,7 @@ type MintRequest struct {
 	// FirstGeneration explicitly authorizes a parentless mint on a store
 	// with no store root. Root absence alone proves nothing — an established
 	// store can lose its root, and that condition requires recovery, never a
-	// new lineage (docs/ARCH_GENERATIONS.md §recovery).
+	// new lineage (docs/ARCH_STORE.md, "Recovery and restoration").
 	// Mint still verifies the store shows no evidence of generational
 	// history before honoring this.
 	FirstGeneration bool
@@ -110,7 +110,7 @@ type MintRequest struct {
 // crash at any point leaves either the complete old state or the complete new
 // state selected — never a mixture.
 //
-// Commit order (docs/ARCH_GENERATIONS.md §2):
+// Commit order (docs/ARCH_STORE.md, "Ordinary generation commit"):
 // stage → copy parent → apply → validate → manifest → fsync all →
 // publish rename → fsync generations/ → seal outgoing → replace store root.
 func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) {
@@ -380,7 +380,7 @@ func bindRollbackCapability(seed *RollbackCapability, inventory []InventoryEntry
 
 // verifyFirstMintPreconditions rejects an authorized first mint on any store
 // showing evidence of generational history: pointer absence proves nothing
-// (docs/ARCH_GENERATIONS.md §recovery), so the generations directory must
+// (docs/ARCH_STORE.md, "Recovery and restoration"), so the generations directory must
 // hold no generation at all. The only tolerated residue is staging
 // directories from a crashed earlier mint — atomic-rename leftovers that
 // reconciliation treats as unconditional garbage.

@@ -9,7 +9,7 @@ import (
 	"regexp"
 )
 
-// Generation-based active storage (docs/ARCH_GENERATIONS.md): the active
+// Generation-based active storage (docs/ARCH_STORE.md): the active
 // keys/ and keytypes/ namespaces live inside generation directories selected
 // by the authenticated store root. Everything here is pure path construction.
 const (

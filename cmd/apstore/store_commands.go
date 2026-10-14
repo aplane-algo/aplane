@@ -125,7 +125,7 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 		Logf:              logInfof,
 		ValidateCandidate: storevalidate.FirstGeneration,
 		// New stores use generation-based active storage
-		// (docs/ARCH_GENERATIONS.md); older binaries reject them via the
+		// (docs/ARCH_STORE.md); older binaries reject them via the
 		// keystore metadata version gate.
 	})
 	if err != nil {

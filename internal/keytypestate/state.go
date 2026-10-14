@@ -144,7 +144,7 @@ func PutActive(active storepaths.ActivePaths, rec Record) error {
 		return fmt.Errorf("failed to encode key type state: %w", err)
 	}
 	data = append(data, '\n')
-	// Durable, never in-place (docs/ARCH_GENERATIONS.md §4).
+	// Durable, never in-place (docs/ARCH_STORE.md, "Filesystem primitives").
 	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return fmt.Errorf("failed to write key type state: %w", err)
 	}
