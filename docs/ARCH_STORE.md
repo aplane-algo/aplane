@@ -642,6 +642,12 @@ newer overwritten root must also be recovered from a coherent snapshot.
 
 ### Deleted archive capacity
 
+Product-store deletion archives live inside the selected generation under
+`deleted/`. Key deletion moves the encrypted key file from `keys/` to
+`deleted/keys/`. Template removal deletes the state record and moves the
+encrypted `.template` file from `keytypes/` to `deleted/keytypes/`. Archived
+files are outside active signing scans but remain part of the generation seal.
+
 The selected generation's deleted archive is bounded by release-contract
 constants:
 
@@ -927,6 +933,16 @@ durable change in place and report the reload failure; removal still reports
 that it occurred. The lifecycle must not be described as fully transactional.
 
 #### Key type records
+
+Product-store key type records under `keytypes/` are plaintext metadata. One
+`<key_type>.json` record stores `key_type`, `source`, `state`, optional compatibility
+`fingerprint`, and activation time (`activated_at`) for an opt-in key type. A
+`source:"compiled", state:"enabled"` record makes a compiled library-visible
+provider available to the product runtime for discovery and generation. YAML template
+records use `source:"yaml_generic"` or `source:"yaml_composed"` and pair with an
+encrypted adjacent `<key_type>.template` file. A disabled YAML record keeps the
+encrypted template installed but hides that key type from discovery, reload, and
+generation. These records do not gate signing for keys that already exist.
 
 Key type state records are plaintext because they contain no key material. Record writes use the
 shared atomic write helper (temporary file plus rename). They do not fsync the

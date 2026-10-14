@@ -533,11 +533,21 @@ endpoints.yaml
 .ssh/id_ed25519
 .ssh/known_hosts
 cache/
+  .cache_key
+  alias_cache.json
+  set_cache.json
+  signer_cache.json
+  <network>_asa_cache.json
+  <network>_auth_cache.json
 plugins.yaml
 plugins.available/
 scripts/*.js
-swap/<network>/
+swap/<network>/<proposal_id>.<address>.json           # external standalone swap client
+swap/<network>/<proposal_id>.<address>.tombstone.json # external standalone swap client
 ```
+
+- `.apclient.lock` is the cooperative local mutation lock for shared `APCLIENT_DATA`
+- tombstones suppress locally deleted proposals for that local actor
 
 ### Client Config And Network Context
 
@@ -565,6 +575,57 @@ generation trust-input inventory, while live endpoint discovery is routing
 only. Neither proves endpoint ownership; the embedded public key and verified
 component signature remain authoritative.
 
+### Endpoint Registry
+
+- `endpoints.yaml` is the client-local endpoint registry. It requires `schema_version: 2`; any other or missing version is rejected. It has a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
+- if client `config.yaml` contains top-level `ssh:` or `signer_port:` routing, client startup fails closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
+- endpoint records carry connection profile fields together: required `role` (`signer` or `cosigner`), `url` (`ssh://host[:port]` only; `http://`, `https://`, and `self` are rejected, because a node is reachable only through its SSH server), `identity_file`, and `known_hosts_path`. There is no remote REST port field: the node's SSH server accepts only loopback channel destinations and forwards every channel to its own REST listener, so the client never chooses that port. There is no local tunnel port field either; the signer-role forward binds a free loopback port at connect time. There is no credential field: the client's enrolled SSH key at `identity_file` is its only credential. The retired `signer_port`, `local_port`, and `token_file` keys are dropped on load and gone after the next write. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. A registry may contain at most 12 cosigner endpoints.
+- SSH cosigner endpoints carry HTTP over restricted direct channels on their authenticated SSH connection and never allocate a transient local port. Discovery has a 30-second total deadline, a 10-second per-endpoint deadline, and at most four workers. It completes the bounded sweep before selecting routes because uniqueness cannot be established from an alias prefix: every required witness must be advertised by exactly one live endpoint, and duplicate live advertisers fail closed. Failed endpoints that do not otherwise invalidate the sweep are reported as warnings.
+- signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apadmin endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`. The daemon projects it and the configured endpoint ports through authenticated admin settings; the client does not traverse the private store.
+- `apadmin endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff after reading endpoint defaults through authenticated admin transport. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then the daemon-reported `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with the schema and the portable endpoint URL only; the retired `signer_port` and `local_port` members are rejected as unknown fields. It must not contain client-local aliases, endpoint-role metadata, cosigner public-key metadata, credentials, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject the unsupported URL `self`. File output is published by the operator process with owner-private permissions and refuses symlink destinations.
+- `apshell endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `cosigner` alias for dev co-location. Import is not an ownership or trust proof and does not discover cosigner keys. Enrollment of this client's key at that node is still requested separately with `request-enrollment --endpoint <alias>` (or by guided setup), and SSH host trust is still established by the existing known-hosts flow.
+- `apshell endpoints create --alias <alias> --endpoint <url> [--dry-run]` manually creates or replaces a `role: cosigner` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover cosigner keys, enroll the client, or establish SSH host trust.
+- `apshell endpoints discover-cosigners` is a read-only diagnostic. It scans configured `cosigner` endpoints with authenticated `/keys`, validates each advertised Witness Key ID, and prints the live results without mutating `endpoints.yaml` or the signer reference catalog. Temporarily unavailable or locked endpoints are reported and skipped; authentication failures, endpoint configuration errors, malformed responses, duplicate public keys, and SSH host-key mismatches fail closed.
+- `apshell cosigner status` is a read-only route diagnostic with structured `connections`, `accounts`, `account_inventory`, optional `inventory_error`, `discovery_error`, and `duplicate_routes` fields. It uses the runtime discovery cap, concurrency, deadlines, host-key mismatch handling, and witness uniqueness rules. Per-endpoint failures retain partial observations; unavailable signer inventory is distinct from an empty inventory. It never approves host trust, requests enrollment, updates caches, or changes the primary connection. Its positive result means only point-in-time route availability; it does not authorize a transaction. The `cosigner` command remains blocked through MCP.
+- `apshell endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]` is the guided cosigner connection setup; `apshell cosigner add` forwards to it with a one-line notice. It takes the cosigner's URL (`--endpoint <url>` is an accepted spelling) and no document: a file argument is refused with guidance that the cosigner's key file is imported on the signer. Interactively, a missing URL is prompted for; script use requires it. `--alias` is optional interactively: a `role: cosigner` profile already configured for the resolved URL is reused without a name prompt or confirmation, and otherwise a name derived from the endpoint host is suggested; script use requires `--alias` for a new profile. Naming an already configured cosigner URL differently is refused with the existing alias. It plans and revalidates a `role: cosigner` endpoint under the shared client-data mutation lock, and performs SSH trust and enrollment only after releasing that lock. It first tries the connection with the client's key; if the node refuses the key as unenrolled (`sshtunnel.ErrKeyNotEnrolled`, surfaced as `engine.ErrCosignerDiscoveryAuth`), it submits an enrollment request there. A request the node queues for its operator stops setup with the connection configured and the error `ErrCosignerSetupEnrollmentPending` ("enrollment request is waiting for the cosigner's operator"); setup is rerun once the operator approves. Only when the node answers that the key is already enrolled is the connection tried once more. On its own connection it then reads `node_role` from authenticated `/status` and continues only for `cosigner` (a `signer`, an absent or unrecognized role, or a failed read stops setup), and it reports the number of keys the node advertises and the resolver's route sweep. The client never handles a cosigner key; key trust is decided on the signer. Its structured result carries `connected`, `node_role`, `advertised_keys`, `enrolled`, `enrollment_pending`, and `routes`. It fails only for the connection being added: no access, a non-cosigner node, or a witness that this endpoint and another both advertise. Unavailable signer inventory, accounts needing other cosigners, failures on other endpoints, and a sweep that stopped early are reported without failing it. The setup connection and enrollment request are isolated from the primary signer tunnel. Dry-run performs no writes, trust changes, enrollment requests, or network probes. Conflicting replacements require interactive review. The `add` subcommand is blocked through MCP at the subcommand boundary; the other `endpoints` subcommands remain available.
+- an endpoint record carries no per-destination credential, so creating, re-pointing, or deleting an alias retires nothing on the client. The enrollment a node recorded for this client's key outlives the client's route to it; revoking it is the node operator's action.
+- endpoint create, import, delete, default selection, and `endpoints add` serialize their `endpoints.yaml` read-modify-write sections with `$APCLIENT_DATA/.apclient.lock`. Network waits occur outside endpoint-write critical sections.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client routing configuration. `show` is local-only and does not call `/keys`; deletion has no cosigner-inventory dependency.
+
+### Client Startup And Enrollment
+
+- interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start with a key the signer has not enrolled or without a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands. Whether a key is enrolled is known only to the node; an unenrolled key is discovered as an authentication failure at connect time, with guidance to run `request-enrollment`
+- for interactive `apshell`, SSH host trust is enforced when the shell attempts `connect`, startup auto-connect, or `request-enrollment` flows; it is not a preflight requirement for process startup
+- `request-enrollment [--endpoint <alias>] [--label <text>]` asks configured endpoints only to enroll this client's key: without `--endpoint` it uses the default signer endpoint; `--endpoint <alias>` uses that signer or cosigner endpoint. A positional host is not accepted. The optional label is display text the node stores beside the key. The command returns as soon as the node has answered: `pending` (the request waits for the node's operator; apshell says to run `connect` once it is approved) or `enrolled` (the key was already enrolled). Nothing is written on the client. `apshell` connects at once only when the default signer answered `enrolled`
+- `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless a default signer endpoint is configured and its host is trusted in `known_hosts`
+- `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected state or with a key the signer refuses, and it cannot perform first-use trust or enrollment itself
+- shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp`
+- `apadmin` uses local IPC only and has no client enrollment prerequisite. For remote administration, SSH into the signer host and run apadmin there.
+
+### apconsole Startup
+
+- `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
+- `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
+- an explicit `-d` or explicitly selected profile `signer_data` is also an
+  explicit signer-store selection for IPC discovery and cannot be retargeted
+  by an inherited `APSIGNER_IPC_PATH`. A signer root selected through
+  `APSIGNER_DATA` may pair with `APSIGNER_IPC_PATH`; auto-discovered profile
+  values remain lower precedence than environment values
+- local `apconsole` lifecycle management requires its client IPC path to equal
+  the path the selected store's daemon will bind. An intentional client-only
+  override must use `--no-start-daemon`; otherwise `apconsole` refuses before
+  attaching to the override or starting a daemon whose readiness it cannot
+  observe. Attach-only mode uses the selected client socket without deriving or
+  validating the store's daemon bind path because it will not manage that
+  daemon's lifecycle
+- conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
+- auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
+- local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-enrollment` while the local signer/admin panes are available for approval
+- local-mode cosigner `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; cosigner policy changes use the `apadmin policy` verbs
+- the embedded `apadmin` pane uses local IPC independently of the shell pane's client data, enrollment, and endpoint configuration
+- for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup; enrollment is discovered at connect time, when the embedded shell attempts startup auto-connect, `connect`, or `request-enrollment`
+- remote-mode `apconsole` is rejected; run apconsole on the signer machine, using an ordinary SSH login when needed
+
 ### Client Caches
 
 Client caches are signed JSON files with a per-client cache key. They are
@@ -578,8 +639,13 @@ local, rebuildable state:
 - swap session files and tombstones.
 
 JSON cache files use an HMAC envelope version plus a payload-level
-`schema_version`, which every write records. A missing or unsupported payload
-version is rejected and the cache is rebuilt from empty or seed data. Cache
+`schema_version`, which every write records. The signed envelope has
+`version: 1`; alias, set, ASA, and auth-address payloads carry
+`schema_version: 1`, while `signer_cache.json` carries `schema_version: 2` for
+structured LogicSig resources. A missing or unsupported payload
+version is rejected and the cache is rebuilt from empty or seed data; the
+signer cache then rebuilds from authenticated signer inventory without
+invalidating unrelated client caches. Cache
 files remain non-authoritative. Caches persist only under a client data
 directory; without one they live in memory and nothing is written to the
 working directory.
@@ -593,6 +659,29 @@ helpers, engine resolution, and cache seeding all project from that registry
 instead of carrying separate built-in asset maps. Current-network cache entries
 have precedence over convenience aliases, while ambiguous symbolic references
 are rejected.
+
+- `signer_cache.json` is a local projection of authenticated signer `/keys`
+  inventory. It may persist address key types, generic-LogicSig flags,
+  structured `logic_sig_resources`, key-file signing argument schemas,
+  `signing_flows`, `cosigner_component_key_types`, and `cosigner_public_keys`.
+  Each LogicSig resource profile keeps final compiled program bytes separate
+  from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
+  Bounded profiles expose spend, spending-rekey, and admin-rekey paths from the
+  durable argument layout; no combined program-plus-arguments scalar is stored.
+  Covered APlane-owned declarations are exercised by the integration
+  opcode-ceiling gate: production-generated final bytecode and maximum-input
+  accepted paths are simulated by the same algod selected by the signer fixture's
+  `teal_compile_network`, and its nonzero `logic-sig-budget-consumed` result
+  must not exceed the persisted declaration. This validates the selected path
+  ceiling, not the feasibility of every assembled group.
+  For guarded signing, clients route on `signing_flows`; a cached
+  built-in guarded key type with missing flow or cosigner metadata is only a
+  stale-cache signal that triggers `/keys` refresh before route selection.
+- persisted alias and set names are canonicalized to lowercase by
+  `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
+  aliases reserve `list`, `delete`, and `remove`; sets reserve `list`, `add`,
+  `remove`, `delete`, and dynamic runtime set names `all` and `signers`
+- apshell passively watches the shared `cache/` directory when possible and reloads changed in-memory cache snapshots at command boundaries; this is best-effort freshness, not an authority or synchronization contract
 
 ### Plugins
 
@@ -614,6 +703,29 @@ A plugin is executable only when it appears in `plugins.yaml`, exists under
 and can run in the platform sandbox.
 
 Plugin process state is runtime-only and owned by the plugin manager.
+
+### Installer And Launcher State
+
+- installers write `.mcp.json` and `.codex/config.toml` for the installed
+  `apshell --mcp` command and data directory; existing files are preserved and
+  `.mcp.json.aplane-installer.new` or
+  `.codex/config.toml.aplane-installer.new` templates are written instead
+- installers create the client `plugins.available/` catalog directory,
+  `plugins.yaml` activation file, and `scripts/` directory; `apshell` loads only
+  catalog plugin directories named in `plugins.yaml`
+- `scripts/`, `plugins.yaml`, and non-bundled plugin catalog directories are
+  user-managed client state, while bundled plugin directories are
+  installer-managed reserved paths.
+  `plugins.available/algokit-localnet` is refreshed atomically from the release
+  or repo payload on install or installer re-run. Existing `plugins.yaml`
+  activation choices are preserved.
+- local-mode installers write generated launcher `start.sh` and `apconsole.yaml` alongside `apenv.sh` in the local install root; systemd writes the same operator-side `apenv.sh`/`apconsole.yaml` shape under the selected operator root (default `~<installing-user>/aplane/`) while keeping signer data in `/var/lib/apsigner`; these are installer-managed convenience entrypoints/config for `apconsole`, not client data under `APCLIENT_DATA`; generated `apenv.sh` files export `APLANE_INSTALL_ROOT`, and systemd operator env files also export `APLANE_BINDIR`
+- installer path precedence is explicit CLI argument, then `APLANE_INSTALL_ROOT`, then prompts/defaults; systemd binary directory precedence is `--bindir`, then `APLANE_BINDIR`, then `/usr/local/bin`
+- systemd records the selected operator root in `/var/lib/apsigner/install/operator-root`; systemd uninstall removes the operator-side client workspace only when an operator root is explicitly provided or recorded by the installer, and does not guess `$SUDO_USER_HOME/aplane` for deletion
+- existing local-mode installs are probed with the bundled `approbe` helper before binaries are replaced; reachable signer IPC aborts the install, missing/stale/refused IPC is treated as stopped, and unknown probe errors fail closed
+- systemd installs refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service before running the installer against that data directory
+- interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `No`. `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
+- local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 
 ### JavaScript And MCP
 
@@ -1151,7 +1263,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Client data root | authoritative root | `APCLIENT_DATA` | shell/bootstrap path context | `internal/clientdata`, `internal/bootstrap/shell` | Required for apshell; mutation lock protects shared local state. |
 | Client config | authoritative config | `APCLIENT_DATA/config.yaml` | `config.Config` network/theme/polling state | `internal/config`, `internal/bootstrap/shell` | Does not own signer routing; top-level `ssh:` and `signer_port:` routing is rejected. |
-| Endpoint registry | authoritative routing config | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry` | `internal/config`, `internal/apshellapp` | `schema_version:1`; role is `signer` or `cosigner`; at most one signer endpoint. |
+| Endpoint registry | authoritative routing config | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry` | `internal/config`, `internal/apshellapp` | `schema_version:2`; role is `signer` or `cosigner`; at most one signer endpoint and at most 12 cosigner endpoints. |
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | `ssh://` URL; identity file and known hosts resolve relative to `APCLIENT_DATA`; retired `signer_port`, `local_port`, and `token_file` keys are dropped on load. |
 | Live cosigner inventory | routing metadata | authenticated `/keys` responses | operation-scoped route snapshot | `internal/engine/guarded` | Keyed by embedded public key hex; never persisted and not ownership proof. |
