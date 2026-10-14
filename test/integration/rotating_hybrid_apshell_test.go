@@ -21,6 +21,17 @@ import (
 // a new stage address. The rotate-only command and rotate status complete
 // the client surface; there is no exit.
 func TestRotatingHybridApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingHybridV1)
+}
+
+// TestRotatingWotsApshellEndToEnd is the same client surface over the WOTS
+// hybrid key type.
+func TestRotatingWotsApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingWotsHybridV1)
+}
+
+func runRotatingApshellEndToEnd(t *testing.T, keyType string) {
+	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set")
 	}
@@ -43,8 +54,8 @@ func TestRotatingHybridApshellEndToEnd(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("unlock: %v", err)
 	}
-	if err := apadmin.ActivateKeyType(rotatingkey.RotatingHybridV1); err != nil {
-		t.Fatalf("activate %s: %v", rotatingkey.RotatingHybridV1, err)
+	if err := apadmin.ActivateKeyType(keyType); err != nil {
+		t.Fatalf("activate %s: %v", keyType, err)
 	}
 	// Generate by network name, as an operator would; the signer resolves
 	// it through its configured networks.
@@ -52,7 +63,7 @@ func TestRotatingHybridApshellEndToEnd(t *testing.T) {
 	if network == "" {
 		network = testnet.GenesisHash
 	}
-	account, err := apadmin.GenerateKeyWithTypeAndParams(rotatingkey.RotatingHybridV1, map[string]string{
+	account, err := apadmin.GenerateKeyWithTypeAndParams(keyType, map[string]string{
 		"network": network,
 	})
 	if err != nil {

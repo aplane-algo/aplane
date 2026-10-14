@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -59,15 +60,37 @@ func (f *fakeRotatingChain) ReadAccount(_ context.Context, genesisHash []byte, a
 	return chainread.AccountView{Authorizer: authorizer, Round: f.round}, nil
 }
 
+// rotatingTestType selects which rotating key type a fixture exercises.
+type rotatingTestType struct {
+	keyType       string
+	register      func()
+	newKeyPayload func(*rotatinghybrid.Seed, [32]byte) (*keys.Payload, string, error)
+	// dummies is the number of resource dummies one spend needs.
+	dummies int
+}
+
+var (
+	hybridTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingHybridV1, register: rotatingsignerreg.Register,
+		newKeyPayload: rotatingsignerreg.NewKeyPayload, dummies: 1,
+	}
+	wotsTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register,
+		newKeyPayload: rotatingwotssignerreg.NewKeyPayload, dummies: 2,
+	}
+	rotatingTestTypes = []rotatingTestType{hybridTestType, wotsTestType}
+)
+
 type rotatingKeyStore struct {
-	seed  []byte
-	loads int
+	keyType string
+	seed    []byte
+	loads   int
 }
 
 func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
 	s.loads++
 	return &coresigning.KeyMaterial{
-		Type:     rotatingkey.RotatingHybridV1,
+		Type:     s.keyType,
 		Category: keys.CategoryRotatingLsig,
 		Value: &coresigning.RotatingKeyMaterial{
 			Seed:        bytes.Clone(s.seed),
@@ -77,6 +100,7 @@ func (s *rotatingKeyStore) Get(context.Context, string) (*coresigning.KeyMateria
 }
 
 type rotatingFixture struct {
+	kind    rotatingTestType
 	svc     *Service
 	chain   *fakeRotatingChain
 	store   *rotatingKeyStore
@@ -91,7 +115,12 @@ type rotatingFixture struct {
 
 func newRotatingFixture(t *testing.T) *rotatingFixture {
 	t.Helper()
-	rotatingsignerreg.Register()
+	return newRotatingFixtureFor(t, hybridTestType)
+}
+
+func newRotatingFixtureFor(t *testing.T, kind rotatingTestType) *rotatingFixture {
+	t.Helper()
+	kind.register()
 	// A fresh random seed per fixture: the tests compare the table against
 	// derivations from the same seed, so no known vector is needed.
 	var seed rotatinghybrid.Seed
@@ -101,31 +130,32 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 	t.Cleanup(seed.Zero)
 	var gh [32]byte
 	copy(gh[:], rotatingTestGenesis)
-	payload, address, err := rotatingsignerreg.NewKeyPayload(&seed, gh)
+	payload, address, err := kind.newKeyPayload(&seed, gh)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload.ZeroSecrets()
 	account, _ := types.DecodeAddress(address)
 
-	argumentBytes := uint64(rotatingkey.RotatingMaxArgumentBytes)
-	profile, err := lsigresource.Materialize(rotatingkey.RotatingMaxProgramBytes, &argumentBytes, nil,
-		lsigresource.DefaultOpcodeProfile(rotatingkey.RotatingMaxOpcodeCost))
+	rk, _ := rotatingkey.Lookup(kind.keyType)
+	argumentBytes := uint64(rk.MaxArgumentBytes)
+	profile, err := lsigresource.Materialize(uint64(rk.MaxProgramBytes), &argumentBytes, nil,
+		lsigresource.DefaultOpcodeProfile(uint64(rk.MaxOpcodeCost)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
 	tables := stagetable.NewStore(storepaths.NewPaths(root))
 	chain := &fakeRotatingChain{round: 1000}
-	store := &rotatingKeyStore{seed: bytes.Clone(seed[:])}
+	store := &rotatingKeyStore{keyType: kind.keyType, seed: bytes.Clone(seed[:])}
 	session := keystore.NewKeySession(store)
 	session.InitializeSession()
-	ops, err := coresigning.GetRotatingStageOps(rotatingkey.RotatingHybridV1)
+	ops, err := coresigning.GetRotatingStageOps(kind.keyType)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	f := &rotatingFixture{chain: chain, store: store, present: true, root: root, tables: tables, session: session, account: account, ops: ops}
+	f := &rotatingFixture{kind: kind, chain: chain, store: store, present: true, root: root, tables: tables, session: session, account: account, ops: ops}
 	svc := &Service{
 		Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
 			if !f.present {
@@ -133,7 +163,7 @@ func newRotatingFixture(t *testing.T) *rotatingFixture {
 			}
 			return PlannerRuntimeSnapshot{
 				KeyFiles: map[string]string{address: "keys/" + address + ".key"},
-				KeyTypes: map[string]string{address: rotatingkey.RotatingHybridV1},
+				KeyTypes: map[string]string{address: kind.keyType},
 				KeyMetadata: map[string]PlannerKeyMetadata{address: {
 					Category:          keys.CategoryRotatingLsig,
 					LogicSigResources: &profile,

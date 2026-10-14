@@ -768,6 +768,26 @@ assembler in tests. Transaction policy beyond those checks lives in signer
 approval and local signer policy. See
 [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hybrid-accounts).
 
+#### `aplane.rotating-wots-hybrid.v1`
+
+- dedicated compiled stage program, library-visible and signer-gated; the
+  same rotation as above with a hash-based stage
+- each stage requires an Ed25519 signature over the TxID and a WOTS-w16
+  signature over the TxID (67 SHA-256 chains, verified with `sha256`,
+  `itob` and `concat`), a non-zero rekey that is not the sender, no
+  close-out, and a validity window of at most 100 rounds
+- worst-case opcode cost 58,063 and 2,208 argument bytes, so a spend needs
+  two resource dummies; the cost for a given TxID is 5,592 plus 53 per chain
+  step, pinned against the node's budget report in the LocalNet test
+- the signer, not TEAL, guarantees that every rekey targets the account's
+  next never-revealed stage. Nothing enforces that a stage signs once: the
+  stateless flow signs again from the live stage when a release expired or a
+  client re-signs a rebuilt transaction, and the signer reports the reuse as
+  a warning until the account moves. While a stage has signed one message
+  its quantum resistance rests on SHA-256; after two it is Ed25519-only
+  until a spend lands; see
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hash-hybrid-accounts)
+
 #### Bounded Authorization Allowlist
 
 `aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with

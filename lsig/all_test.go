@@ -36,6 +36,7 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 		"aplane.ed25519.v1",
 		"aplane.falcon1024-cosigner1024.v1",
 		"aplane.rotating-hybrid.v1",
+		"aplane.rotating-wots-hybrid.v1",
 	}
 	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
 		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)

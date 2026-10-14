@@ -6,8 +6,9 @@
 // registry, provider, or algorithm family, so storage, scanning, and inventory
 // can apply the same rules in any binary.
 //
-// The rotating hybrid sizes below are frozen by the key type. A test checks
-// them against lsig/rotatinghybrid, the implementation that owns them.
+// The sizes below are frozen by each key type. Tests check them against
+// lsig/rotatinghybrid and lsig/rotatingwots, the implementations that own
+// them.
 package rotatingkey
 
 const (
@@ -19,6 +20,13 @@ const (
 	// RotatingHybridFamily is the versionless family of the rotating hybrid
 	// key types, matching the naming of every other family.
 	RotatingHybridFamily = "aplane.rotating-hybrid"
+
+	// RotatingWotsHybridV1 is the hash-based rotating account key type: the
+	// same rotation with a WOTS-w16 (SHA-256) plus Ed25519 stage program.
+	RotatingWotsHybridV1 = "aplane.rotating-wots-hybrid.v1"
+
+	// RotatingWotsHybridFamily is its versionless family.
+	RotatingWotsHybridFamily = "aplane.rotating-wots-hybrid"
 
 	// RotatingSeedSize is the stored BIP-39 seed, the only private material.
 	RotatingSeedSize = 64
@@ -42,6 +50,21 @@ const (
 	// RotatingMaxOpcodeCost is the measured cost of a salted stage program.
 	RotatingMaxOpcodeCost = 3628
 
+	// RotatingWotsStagePublicKeySize is the WOTS hybrid's stage 0 record: the
+	// public account tag, the WOTS public key and the Ed25519 public key.
+	RotatingWotsStagePublicKeySize = 32 + 32 + 32
+
+	// RotatingWotsMaxProgramBytes is the salted WOTS stage program.
+	RotatingWotsMaxProgramBytes = 295
+
+	// RotatingWotsMaxArgumentBytes is a 2,144-byte WOTS signature and a
+	// 64-byte Ed25519 signature.
+	RotatingWotsMaxArgumentBytes = 2144 + 64
+
+	// RotatingWotsMaxOpcodeCost is the worst accepting run of a salted WOTS
+	// stage program: 5,592 plus 53 per chain step over at most 990 steps.
+	RotatingWotsMaxOpcodeCost = 5592 + 53*990 + 1
+
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
 	RotatingMaxValidityWindow = 100
@@ -57,12 +80,15 @@ const (
 	RotatingMinRemaining = 10
 )
 
-// Operator-facing metadata for the rotating hybrid key type. It lives here
-// because the key type has no LogicSig provider to describe it, and every
-// listing (key types, the key type library, generation) must agree.
+// Operator-facing metadata for the rotating key types. It lives here
+// because the key types have no LogicSig provider to describe them, and
+// every listing (key types, the key type library, generation) must agree.
 const (
 	RotatingDisplayName = "Rotating hybrid (Falcon-1024 + Ed25519)"
 	RotatingDescription = "Fixed account address whose authorizing Falcon-1024 and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
+
+	RotatingWotsDisplayName = "Rotating hash hybrid (WOTS + Ed25519)"
+	RotatingWotsDescription = "Fixed account address whose authorizing hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
 
 	// RotatingNetworkParameter is the single creation parameter.
 	RotatingNetworkParameter            = "network"
@@ -71,22 +97,78 @@ const (
 	RotatingNetworkParameterExample     = "testnet"
 )
 
-// IsRotatingKeyType reports whether keyType is a rotating hybrid account.
+// Profile is what storage, inventory and the signing flow need to know
+// about a rotating key type without linking its implementation.
+type Profile struct {
+	KeyType     string
+	Family      string
+	DisplayName string
+	Description string
+
+	// StagePublicKeySize is the size of the key file's stage 0 public record.
+	StagePublicKeySize int
+
+	// MaxProgramBytes, MaxArgumentBytes and MaxOpcodeCost bound every stage
+	// program and every spend's LogicSig arguments.
+	MaxProgramBytes  int
+	MaxArgumentBytes int
+	MaxOpcodeCost    int
+
+	// OneTimeStage reports that a stage's post-quantum signature scheme is
+	// one-time: a stage that signs two different messages is only as strong
+	// as Ed25519 until the account moves past it. The signer still signs
+	// (the flow is stateless by design) but reports the reuse.
+	OneTimeStage bool
+}
+
+var profiles = map[string]Profile{
+	RotatingHybridV1: {
+		KeyType:            RotatingHybridV1,
+		Family:             RotatingHybridFamily,
+		DisplayName:        RotatingDisplayName,
+		Description:        RotatingDescription,
+		StagePublicKeySize: RotatingStagePublicKeySize,
+		MaxProgramBytes:    RotatingMaxProgramBytes,
+		MaxArgumentBytes:   RotatingMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingMaxOpcodeCost,
+	},
+	RotatingWotsHybridV1: {
+		KeyType:            RotatingWotsHybridV1,
+		Family:             RotatingWotsHybridFamily,
+		DisplayName:        RotatingWotsDisplayName,
+		Description:        RotatingWotsDescription,
+		StagePublicKeySize: RotatingWotsStagePublicKeySize,
+		MaxProgramBytes:    RotatingWotsMaxProgramBytes,
+		MaxArgumentBytes:   RotatingWotsMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingWotsMaxOpcodeCost,
+		OneTimeStage:       true,
+	},
+}
+
+// IsRotatingKeyType reports whether keyType is a rotating account.
 func IsRotatingKeyType(keyType string) bool {
-	switch keyType {
-	case RotatingHybridV1:
-		return true
-	default:
-		return false
-	}
+	_, ok := profiles[keyType]
+	return ok
+}
+
+// Lookup returns a rotating key type's profile.
+func Lookup(keyType string) (Profile, bool) {
+	p, ok := profiles[keyType]
+	return p, ok
+}
+
+// KeyTypes lists the rotating key types in a fixed order.
+func KeyTypes() []string {
+	return []string{RotatingHybridV1, RotatingWotsHybridV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key
 // types have no LogicSig provider, so family-keyed registries cannot resolve
 // them through the provider registry.
 func RoutingFamily(keyType string) (string, bool) {
-	if IsRotatingKeyType(keyType) {
-		return RotatingHybridFamily, true
+	p, ok := profiles[keyType]
+	if !ok {
+		return "", false
 	}
-	return "", false
+	return p.Family, true
 }

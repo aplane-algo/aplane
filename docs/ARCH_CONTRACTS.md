@@ -1596,15 +1596,22 @@ LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, derivation
 record, or runtime-argument metadata under `runtime_args`.
 
-Rotating LogicSig accounts use `category: "rotating_lsig"`. The only key type
-is `aplane.rotating-hybrid.v1`, which fixes the derivation and the stage
-program template; `internal/rotatingkey` classifies it.
+Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
+`aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
+`aplane.rotating-wots-hybrid.v1` (WOTS-w16 + Ed25519 stages); each fixes its
+own derivation and stage program template, and `internal/rotatingkey`
+classifies both and carries their frozen sizes in a per-type profile. The
+profile also marks the WOTS hybrid's stage signature as one-time, which
+changes only what the signer reports (`ARCH_HTTP_API.md`, rotating alerts),
+never what it signs.
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
 - `genesis_hash` (32 bytes, hex) binds stage derivation to one network. No
   other category may carry it.
-- `public_key` is stage 0's Falcon-1024 public key (1793 bytes) followed by
-  its Ed25519 public key (32 bytes).
+- `public_key` is stage 0's public record: for the Falcon hybrid the
+  Falcon-1024 public key (1793 bytes) followed by the Ed25519 public key (32
+  bytes); for the WOTS hybrid the stage tweak, the WOTS public key and the
+  Ed25519 public key (32 bytes each, 96 in all).
 - No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
   `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
   `parameters` and `signing_args` are all rejected.
@@ -1615,8 +1622,10 @@ program template; `internal/rotatingkey` classifies it.
   binary without that registration rejects the file, and scanning skips it
   with a warning.
 - Scanning and inventory never expose the stage public keys. The resource
-  profile is the same for every stage: 1873 program bytes, 1487 argument
-  bytes and an opcode ceiling of 3628.
+  profile is the same for every stage of a key type: 1873 program bytes,
+  1487 argument bytes and an opcode ceiling of 3628 for the Falcon hybrid
+  (one resource dummy); 295 program bytes, 2208 argument bytes and an opcode
+  ceiling of 58063 for the WOTS hybrid (two resource dummies).
 - The key file is the whole credential. The signer keeps no durable state
   for the account: which stage is live is read from the chain at every
   request, and the stage address table under `stages/` (below) is a cache

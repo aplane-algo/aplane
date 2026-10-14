@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -26,6 +27,13 @@ type ReleaseRecord struct {
 	NextAddr  types.Address
 	TxID      string
 	LastValid uint64
+	// Reused reports that the stage has released signatures over more than
+	// one distinct transaction while it stayed live: an expired release and
+	// its repair, or a client that re-signed a rebuilt transaction. It is
+	// carried forward by Record until the account moves past the stage. For a
+	// one-time stage scheme (rotatingkey.Profile.OneTimeStage) this is the
+	// condition the status reports; for the others it is informational.
+	Reused bool
 	// Seq orders records against chain observations: a record with a Seq
 	// above the Seq captured before a chain read was made after that read,
 	// so the read says nothing about it.
@@ -41,7 +49,9 @@ type ReleaseMemory struct {
 }
 
 // Record replaces the account's entry with r and stamps it with the next
-// sequence number.
+// sequence number. When the entry it replaces is from the same stage and
+// names a different transaction, r is marked Reused; a retry that re-records
+// the same transaction is not reuse.
 func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	if m == nil {
 		return
@@ -50,6 +60,9 @@ func (m *ReleaseMemory) Record(r ReleaseRecord) {
 	defer m.mu.Unlock()
 	if m.byAccount == nil {
 		m.byAccount = make(map[string]ReleaseRecord)
+	}
+	if prev, ok := m.byAccount[r.Account]; ok && prev.Stage == r.Stage {
+		r.Reused = r.Reused || prev.Reused || prev.TxID != r.TxID
 	}
 	m.seq++
 	r.Seq = m.seq
@@ -125,6 +138,10 @@ type AuditedRelease struct {
 	Stage     uint64
 	TxID      string
 	LastValid uint64
+	// Reused reports that the log holds an earlier release from the same
+	// stage over a different transaction. Entries the log rotated past are
+	// unknown, so false means "none seen", not "none made".
+	Reused bool
 }
 
 // RebuildReleaseMemory fills the release memory from audit entries, deriving
@@ -156,7 +173,7 @@ func (s *Service) RebuildReleaseMemory(ctx context.Context, session *keystore.Ke
 		}
 		deps.Releases.Record(ReleaseRecord{
 			Account: e.Account, Stage: e.Stage, StageAddr: stageAddr, NextAddr: nextAddr,
-			TxID: e.TxID, LastValid: e.LastValid,
+			TxID: e.TxID, LastValid: e.LastValid, Reused: e.Reused,
 		})
 		rebuilt++
 	}
@@ -188,6 +205,10 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 //   - the same, past the validity: expired, still live (warning), because the
 //     revealed stage still controls the account and that transaction can
 //     never confirm;
+//   - the same, within the validity, but the stage has released over more
+//     than one transaction and its scheme is one-time: reused (warning),
+//     because the stage is Ed25519-only until the account moves; for other
+//     schemes the reuse is harmless and stays a note;
 //   - authorizer anywhere else: the release landed or the account moved on;
 //     the memory is cleared and nothing is said. A record made after the
 //     pass's chain read is newer than the observation and is left alone;
@@ -198,6 +219,7 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 	if depErr != nil {
 		return nil, nil
 	}
+	snapshot := s.Planner.Snapshot()
 	for _, r := range reports {
 		if !r.Observed {
 			continue
@@ -218,13 +240,22 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 			deps.Releases.clearIfUnchanged(r.Account, rec.Seq)
 			continue
 		}
+		// The messages omit the current round so they stay identical across
+		// passes and are logged once, not on every pass.
+		reuse := ""
+		if rec.Reused {
+			reuse = " (the stage has signed more than one transaction)"
+		}
 		if r.Round > rec.LastValid {
-			// The message omits the current round so it stays identical
-			// across passes and is logged once, not on every pass.
-			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d revealed its keys in transaction %s, which expired at round %d without confirming; the revealed keys still control the account; send a rotate-only spend now", r.Account, rec.Stage, rec.TxID, rec.LastValid))
+			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d revealed its keys in transaction %s, which expired at round %d without confirming; the revealed keys still control the account%s; send a rotate-only spend now", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
 			continue
 		}
-		notes = append(notes, fmt.Sprintf("rotating account %s: release from stage %d in flight (transaction %s, valid through round %d)", r.Account, rec.Stage, rec.TxID, rec.LastValid))
+		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[r.Account])
+		if rec.Reused && profile.OneTimeStage {
+			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage is Ed25519-only until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, rec.TxID, rec.LastValid))
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("rotating account %s: release from stage %d in flight (transaction %s, valid through round %d)%s", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))
 	}
 	return warnings, notes
 }

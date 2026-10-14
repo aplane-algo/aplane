@@ -247,6 +247,7 @@ Examples of the composed ontology:
 | `aplane.corridor.v1` | DSA LogicSig | Bounded DSA (`bounded1`) with framework Merkle policy | signer-custodied Falcon cosigner on spend plus external Falcon contract admin on rekey |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024 and Ed25519, both required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
+| `aplane.rotating-wots-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (hash-based WOTS-w16 and Ed25519, both required), a new program per spend | none; same `rotating1` flow |
 
 ## Resolution, classification, and behavior
 

@@ -299,6 +299,12 @@ rekeys the account to the next, never-revealed stage. An attacker who can
 break a signature scheme therefore has, at most, the time between a signature
 and the confirmation of that spend.
 
+`aplane.rotating-wots-hybrid.v1` is the same account with a hash-based
+stage: each stage checks a Winternitz one-time signature built from SHA-256
+alone and an Ed25519 signature. Everything below applies to both types;
+see [Rotating hash hybrid accounts](#rotating-hash-hybrid-accounts) for
+what the hash-based stage changes.
+
 Enable the key type, then generate an account bound to one network:
 
 ```bash
@@ -372,6 +378,49 @@ which the signer does in the background; until then a spend is refused with
 come. Deleting the `stages/` directory while the signer is stopped is
 always safe. `rotating.stage_horizon` in the signer's `config.yaml` (default
 4096) sets how many stages past the live one the signer derives ahead.
+
+### Rotating hash hybrid accounts
+
+`aplane.rotating-wots-hybrid.v1` replaces the Falcon-1024 half of each stage
+with a Winternitz one-time signature (WOTS, w = 16) verified by the stage
+program with SHA-256 alone, and keeps the Ed25519 half. Enable and generate
+it exactly like the Falcon hybrid:
+
+```bash
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-wots-hybrid.v1
+```
+
+What it changes:
+
+- **Security claim.** A stage is secure against a classical attacker as long
+  as Ed25519 is, and against a quantum attacker as long as SHA-256 is and the
+  stage signed exactly one message. A WOTS key must never sign two different
+  messages, and the rotation makes every stage sign once in normal
+  operation. A stage signs twice only when a release did not move the
+  account and another was signed from the same stage: a signed transaction
+  expired without confirming and a repair spend (`rotate`) followed, or a
+  client whose submission failed rebuilt the transaction with a fresh
+  validity window and asked again. Until one of those transactions lands,
+  the stage is Ed25519-only against a quantum attacker. The signer reports
+  this as a warning ("stage N has signed more than one transaction") for as
+  long as the stage still controls the account, alongside the
+  expired-release alert; both clear once a chain read shows the account has
+  moved. The warning rests on the signer's release memory, which the audit
+  log rebuilds at unlock: a release the log has rotated past is unknown, so
+  a reuse older than the retained log is not reported.
+- **Cost per spend.** The signature is larger (2,144 bytes plus 64 for
+  Ed25519) and verification costs more opcode budget, so every spend carries
+  two resource dummies instead of one and pays three minimum fees instead of
+  two.
+- **Speed.** Deriving a stage takes microseconds rather than tens of
+  milliseconds, so the signer's background stage scan and a restore from
+  backup finish almost at once.
+- **Smaller program.** A stage program is about 300 bytes instead of about
+  1,900.
+
+Everything else is identical: the same `rotating1` flow, `rotate` and
+`rotate status`, the stage address cache, alerts, backups and restore, and
+no exit.
 
 ## YAML Templates
 
