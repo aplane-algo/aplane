@@ -96,6 +96,19 @@ params, err := ParseTakeCommand(args)                  // KeyRegParams
 re-implementing: bracket-aware `key=value` parsing, byte-value decoding,
 address and address-list handling, and semantic ASA input helpers.
 
+### Parsing Contracts
+
+The `apshell` command surface remains compatibility-sensitive even when internal parsing is refactored.
+
+Parsing contracts:
+
+- bracketed address lists such as `[ A1 A2 ]` and `[A1 A2]` are accepted where a command already accepts address-list input,
+- `generate` parameter parsing is bracket-aware for `key=value` arguments,
+- LogicSig `arg:name=value` parsing keeps the `arg:name=` split local to `internal/cmdspec/lsigarg.go` and uses the shared byte parser for the value side,
+- byte-oriented shell inputs support `hex:`, `b64:`, `text:`, and `0x...`; bare text is accepted only where command behavior allows it,
+- ASA-facing commands may parse shell input into semantic values (`AssetRef`, `AmountText`) before command execution, but this does not change user syntax,
+- `send` and `sweep` parse their required `from`/`to`/`leaving` structure first and only treat later tokens as trailing options, so positional address/account inputs may legitimately equal keywords such as `atomic`, `nowait`, or `leaving` without being reinterpreted as flags.
+
 ## Address Resolution
 
 `internal/addressbook/resolver.go` converts user-friendly names to addresses.

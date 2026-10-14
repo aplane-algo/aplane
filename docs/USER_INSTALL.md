@@ -46,8 +46,8 @@ aliases.
 
 - [Local Install (Default)](#local-install-default)
 - [Install via curl Bootstrap](#install-via-curl-bootstrap)
-- [Upgrading](#upgrading)
-- [Client-Only Install (apshell)](#client-only-install-apshell)
+- [Upgrade Compatibility](#upgrade-compatibility)
+- [Client-Only Install (apshell and aprekey)](#client-only-install-apshell-and-aprekey)
 - [Install from Release Tarball](#install-from-release-tarball)
 - [Systemd Install](#systemd-install)
 - [Quick Start](#quick-start)

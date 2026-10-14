@@ -248,6 +248,10 @@ names that step; an error for another request, such as a background key-list
 refresh, leaves the step waiting for its own response. A request that cannot
 be sent fails its own step the same way. `diff` without applying, `remove`, multi-file applies, and stdin
 remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
+The `apadmin policy` verbs (`status`, `export`, `check`, `diff`, `apply`,
+`remove`, `template`) cover the full surface. The editor adds no RPC: the TUI
+uses the same `get_policy`, `get_policy_document`, `check_policy`, and
+`apply_policy` messages as the verbs.
 
 ### Policy Editor
 

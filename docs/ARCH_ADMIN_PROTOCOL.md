@@ -4,7 +4,7 @@
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the principal/grant authorization model that gates these messages, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 
-This contract is consumed by `apadmin` (TUI and test mode), `apapprover`, `appass`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, and error codes.
+This contract is consumed by `apadmin` (TUI and test mode), `apapprover`, `appass`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, error codes, and per-client capabilities.
 
 ## Envelope
 
@@ -299,7 +299,8 @@ but generation reconciliation or validation of the selected generation fails,
 the result reports `success:true` with a zero key count and
 `code:"recovery_blocked"`. The signer store is unlocked for administration only;
 signing stays blocked until the operator resolves the store from recovery
-mode.
+mode. Clients must treat `recovery_blocked` as a store-integrity state
+distinct from both `unlock_failed` and credential rejection.
 
 The pre-auth `auth_only` request performs the same passphrase verification and
 runtime binding but never authorizes or invokes `identity.unlock`. It is a
@@ -307,7 +308,7 @@ distinct message type so an older server rejects it before processing instead
 of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
 occupy or replace the active admin-owner slot and cannot receive approval
-notifications or trigger disconnect cleanup. The server permits only
+notifications, fail pending approvals, or trigger disconnect cleanup. The server permits only
 `get_admin_settings`, cosigner-reference list/get/public-export, generation
 inventory, and enrolled-client inventory (`list_enrolled_keys`,
 `list_pending_enrollments`) requests; those requests still pass through their
@@ -598,11 +599,75 @@ Policy selection semantics:
 
 ## Error Codes and Semantics
 
-Central protocol error-message codes are defined in
-`internal/protocol/error_codes.go`. Result payloads may also define
-message-specific stable codes.
+Failure messages carry optional `code` alongside `error`. Central protocol
+error-message codes are defined in `internal/protocol/error_codes.go`:
+
+- `invalid_message_format`
+- `expected_auth_message`
+- `invalid_auth_message`
+- `authentication_failed`
+- `invalid_passphrase`
+- `unlock_failed`
+- `signer_locked`
+- `no_runtime_bound`
+- `authorization_denied`
+- `invalid_request`
+- `unknown_message_type`
+- `key_not_found`
+- `node_fail_closed`
+- `internal_error`
+
+Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
+
+Specific admin result messages may define additional stable result-local codes,
+including `key_type_in_use` for template disable/removal or compiled-provider disable and
+`restore_rate_limited` for managed restore preview/restore throttling. The Go
+source of truth for these result-local codes is `internal/protocol`; producers
+and CLI consumers must share those constants instead of maintaining parallel
+string lists. See the corresponding payload sections and contract tests before
+treating the central protocol list as exhaustive. Consumers should dispatch on
+`code` when present and treat prose `error` as display text or untyped fallback,
+not as an authoritative result-code source.
+
+IPC failure semantics:
+
+- protocol-level failures are reported through `error` messages or result messages with `success:false`,
+- `code` is additive and optional on the wire,
+- the transport does not provide a complete typed error taxonomy end-to-end.
 
 `node_fail_closed` rejects both new authentication and every request from an
 already-authenticated admin session after a process-wide invariant failure.
 The operator must repair the underlying store/role conflict and restart the
 signer; the session cannot resume administrative work in-process.
+
+## Admin Client Capabilities
+
+| Capability | `apadmin` TUI | `apadmin` test mode | `apapprover` | `appass` |
+|-----------|----------------|------------------|--------------|----------|
+| Auth handshake | yes | yes | yes | no |
+| Displacement negotiation | yes | automatic | automatic | no |
+| Unlock | yes | yes | no | no |
+| Key management | yes | partial | no | no |
+| Managed backup/restore | yes | no | no | no |
+| Signing approval | yes | no | yes | no |
+| Client enrollment approval | yes | no | yes | no |
+| Enrolled-client list and revocation | yes | no | no | no |
+| Admin settings | yes | no | no | no |
+| Async notifications | yes | limited | limited | no |
+
+`automatic` means the client confirms displacement through the generic
+`internal/transport` handshake, which answers `client_exists` with
+`displace_confirm` without asking the operator; only the TUI asks first.
+`appass` edits config offline; it is outside the live IPC surface.
+
+These client capabilities describe the one product surface. Backend admin
+operations use the one process-owned runtime; `apadmin`, `apapprover`, and
+`appass` expose no runtime-selection UI.
+
+`apadmin` test mode details:
+
+- test mode is only present in builds compiled with `-tags testmode`,
+- default builds keep the `-test` flag surface but reject it with a stub error instead of exposing the non-interactive path.
+
+The `apadmin` TUI's policy workflow is described in
+[ARCH_TUI.md](ARCH_TUI.md#policies-view).
