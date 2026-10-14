@@ -1285,8 +1285,8 @@ func TestSignPreparedCosignerComponentsRejectsWrongKeyType(t *testing.T) {
 func groupedPaymentTransactions(t *testing.T, sender, receiver string) []types.Transaction {
 	t.Helper()
 	txns := []types.Transaction{
-		paymentTransaction(t, sender, receiver, 1),
-		paymentTransaction(t, sender, receiver, 2),
+		testnetPaymentTransaction(t, sender, receiver, 1),
+		testnetPaymentTransaction(t, sender, receiver, 2),
 	}
 	groupID, err := algocrypto.ComputeGroupID(txns)
 	if err != nil {

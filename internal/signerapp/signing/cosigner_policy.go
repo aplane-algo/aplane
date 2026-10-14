@@ -33,13 +33,14 @@ func (s *Service) evaluateCosignerComponentPolicy(plan *ComponentSignPlan) *Serv
 		return internal("policy is not loaded")
 	}
 
-	// Every target must name a network this node recognizes before any other
-	// rule runs. Without this, a pure rekey allowed by rekey_policy would be
-	// signed for any genesis hash, since the rekey checks never resolve it.
-	var resolver apconfig.GenesisHashNetworkResolver
-	if s.Planner != nil {
-		resolver = s.Planner.GenesisHashResolver
-	}
+	// Known-network gate: every signing path refuses a transaction whose
+	// genesis hash names no network this node knows, before any policy rule.
+	// Asset references are only meaningful on a known network; the gate
+	// applies to every transaction, including ones that name no asset (a
+	// cosigner rekey is a 0 ALGO self-payment), so no path has to prove it
+	// cannot carry one. A cosigner has no operator, so the refusal is an
+	// audited policy rejection rather than a bare bad request.
+	resolver := s.genesisHashResolver()
 	var violations []policy.LintViolation
 	for _, target := range plan.Targets {
 		txn := plan.Group.Entries[target.TargetIndex].Txn
@@ -191,4 +192,25 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 			fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
 		)
 	}
+}
+
+// genesisHashResolver is the node's network map, shared with /sign planning.
+// A zero resolver resolves the built-in networks only.
+func (s *Service) genesisHashResolver() apconfig.GenesisHashNetworkResolver {
+	if s == nil || s.Planner == nil {
+		return apconfig.GenesisHashNetworkResolver{}
+	}
+	return s.Planner.GenesisHashResolver
+}
+
+// componentPlanTxns returns every transaction in a component plan's group.
+func componentPlanTxns(plan *ComponentSignPlan) []types.Transaction {
+	if plan == nil || plan.Group == nil {
+		return nil
+	}
+	txns := make([]types.Transaction, len(plan.Group.Entries))
+	for i, entry := range plan.Group.Entries {
+		txns[i] = entry.Txn
+	}
+	return txns
 }

@@ -345,8 +345,8 @@ func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
 	sender := types.Address{29}.String()
 	receiver := types.Address{30}.String()
 	txns := []types.Transaction{
-		paymentTransaction(t, sender, receiver, 1),
-		paymentTransaction(t, receiver, receiver, 0),
+		testnetPaymentTransaction(t, sender, receiver, 1),
+		testnetPaymentTransaction(t, receiver, receiver, 0),
 	}
 	txns[1].RekeyTo = types.Address{31}
 	groupID, err := algocrypto.ComputeGroupID(txns)
@@ -468,5 +468,37 @@ func TestSignComponentUserRoleHonoursTransactionTypeVerdicts(t *testing.T) {
 	}
 	if prompt.calls != 1 {
 		t.Fatalf("prompt calls = %d, want 1 for a reviewed type", prompt.calls)
+	}
+}
+
+// Guarded user-component signing applies the same known-network gate as /sign
+// planning: an unknown genesis hash is refused before policy, so it can never
+// fall through to the operator default or user_auto_approve.
+func TestSignComponentUserRoleRejectsUnknownNetworkBeforePolicy(t *testing.T) {
+	provider := &componentUserTestProvider{family: uniqueSigningTestFamily("test.component-gate-unknown-network.v1")}
+	coresigning.Register(provider)
+
+	sender := types.Address{51}.String()
+	receiver := types.Address{52}.String()
+	txns := []types.Transaction{
+		paymentTransaction(t, sender, receiver, 1),
+		paymentTransaction(t, sender, receiver, 2),
+	}
+	groupID, err := algocrypto.ComputeGroupID(txns)
+	if err != nil {
+		t.Fatalf("ComputeGroupID() error = %v", err)
+	}
+	txns[0].Group, txns[1].Group = groupID, groupID
+
+	audit := &testAuditLogger{}
+	prompt := &componentGatePrompt{approve: true}
+	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, sender)
+	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
+	_, signErr := svc.signComponentWithSession(componentGateContext(), userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
+	if signErr == nil || signErr.Kind != ErrorBadRequest || !strings.Contains(signErr.Message, "unrecognized genesis hash") {
+		t.Fatalf("SignComponent error = %#v, want a bad request for the unknown network", signErr)
+	}
+	if prompt.calls != 0 || session.calls != 0 {
+		t.Fatalf("prompt calls = %d session calls = %d, want none for an unknown network", prompt.calls, session.calls)
 	}
 }
