@@ -3,7 +3,7 @@
 > Status: This whitepaper is design framing, not the shipped product contract.
 > In particular, its generic reconfiguration model and pseudocode must not be
 > used as a description of any one bundled key type.
-> See [ARCH_COSIGNER.md](ARCH_COSIGNER.md),
+> See [ARCH_GUARDED.md](ARCH_GUARDED.md),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.

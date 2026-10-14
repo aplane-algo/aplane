@@ -717,7 +717,7 @@ type ListKeysMessage struct {
 // It is intentionally NOT pkg/signerapi.KeyInfo (the richer HTTP inventory shape
 // carrying signing_flow, logic_sig_resources, signing_args, and flags): the admin TUI only
 // needs address, key type, name, and template provenance. Do not add HTTP-only
-// fields here; extend the HTTP KeyInfo instead. See docs/ARCH_ADMIN_PROTOCOL.md.
+// fields here; extend the HTTP KeyInfo instead. See docs/ARCH_ADMIN.md.
 type AdminKeyInfo struct {
 	Address                  string `json:"address"`
 	KeyType                  string `json:"key_type"` // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.

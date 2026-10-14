@@ -19,7 +19,7 @@ import (
 )
 
 // This file decodes and validates policy documents in format v1
-// (docs/ARCH_POLICY_FORMAT.md). One format serves both node roles: the
+// (docs/ARCH_POLICY.md). One format serves both node roles: the
 // document's "role" field says which, and fields the role does not support
 // are rejected. Decoding enforces every syntax and semantic rule, so a
 // document that decodes is one the node may sign and enforce.

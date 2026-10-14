@@ -3,7 +3,7 @@
 > Index of APlane's compatibility-bearing contracts. Each contract lives in the
 > document that owns its subject; this index says where. The compatibility scope
 > and the configuration contracts, which have no other owner, are kept here.
-> For system orientation, ownership, and architecture, see [ARCH_SPEC.md](ARCH_SPEC.md).
+> For system orientation, ownership, and architecture, see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md).
 
 ## Contents
 
@@ -15,28 +15,28 @@
 
 | Contract | Owner |
 |---|---|
-| HTTP API wire shapes, status codes, `/sign/cancel` | [ARCH_HTTP_API.md](ARCH_HTTP_API.md) |
-| Error model | [ARCH_HTTP_API.md](ARCH_HTTP_API.md#error-model) |
-| SDK contracts | [ARCH_HTTP_API.md](ARCH_HTTP_API.md#sdk-contracts) |
-| Admin protocol, admin error codes, admin client capabilities | [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md) |
-| apshell parsing | [ARCH_REPL.md](ARCH_REPL.md#parsing-contracts) |
+| HTTP API wire shapes, status codes, `/sign/cancel` | [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract) |
+| Error model | [ARCH_SIGNING.md](ARCH_SIGNING.md#error-model) |
+| SDK contracts | [ARCH_SIGNING.md](ARCH_SIGNING.md#sdk-contracts) |
+| Admin protocol, admin error codes, admin client capabilities | [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract) |
+| apshell parsing | [ARCH_SHELL.md](ARCH_SHELL.md#parsing-contracts) |
 | Signer data directory layout and store formats (store root, term envelopes, managed credential files, key type records, template files, stage address tables) | [ARCH_STORE.md](ARCH_STORE.md) |
 | Generations, reload, key watching, backup and restore | [ARCH_STORE.md](ARCH_STORE.md) |
 | Client data directory layout, endpoint registry, client caches | [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model) |
-| Policy document format and storage | [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md) |
+| Policy document format and storage | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary) |
 | Approval and policy verdicts | [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) |
-| Approval waits and cancellation | [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md#approval-waits-and-cancellation) |
-| Native Falcon authorization and consensus resources | [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |
+| Approval waits and cancellation | [ARCH_SIGNING.md](ARCH_SIGNING.md#approval-waits-and-cancellation) |
+| Native Falcon authorization and consensus resources | [ARCH_SIGNING.md](ARCH_SIGNING.md) |
 | Authentication, SSH, client enrollment, revocation | [ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer) |
 | Audit log | [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger) |
-| Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_COSIGNER.md](ARCH_COSIGNER.md) |
+| Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_GUARDED.md](ARCH_GUARDED.md) |
 | `bounded1` authorization, external contract-admin artifact, ceremony, and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
-| Key type identifiers | [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md#key-type-identifier-contract) |
+| Key type identifiers | [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#key-type-identifier-contract) |
 | Network context tokens and genesis hashes | [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
 | Plugin contract | [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |
-| MCP tool contract | [ARCH_MCP.md](ARCH_MCP.md#tool-surface) |
-| Runtime ownership and shutdown | [ARCH_SPEC.md](ARCH_SPEC.md#lockunlock-lifecycle) |
-| Standalone swap client | [ARCH_SPEC.md](ARCH_SPEC.md#standalone-swap-client) |
+| MCP tool contract | [ARCH_SHELL.md](ARCH_SHELL.md#tool-surface) |
+| Runtime ownership and shutdown | [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#lockunlock-lifecycle) |
+| Standalone swap client | [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#standalone-swap-client) |
 
 ## Current Release Compatibility Scope
 
@@ -175,7 +175,7 @@ Unknown fields, including `decommissioned`, fail parsing.
 Signer policy participates in the ordered approval engine.
 The active node-role policy is product-store scoped and stored in the selected
 generation as v1 JSON documents in one format, `aplane.policy.v1`
-([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)), with the same layout on both
+([ARCH_POLICY.md](ARCH_POLICY.md#the-boundary)), with the same layout on both
 node roles: `default.json`, the node default that governs every key without a
 document of its own, and one `policies/<selector>.json` per key that has one
 (selector: the account address on a signer node, the Witness Key ID on a
@@ -191,7 +191,7 @@ to defaults. A document carries a `role` that must match the node role and a
 `key` that must match its file name; either mismatch is rejected.
 Every policy change is an authenticated whole-document `apply_policy` (online)
 or `apadmin policy rescue apply|remove` (stopped daemon), and each committed
-change mints a new generation (see [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#storage-and-acceptance)).
+change mints a new generation (see [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance)).
 There is no scalar policy-settings IPC.
 
 Validation:

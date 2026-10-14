@@ -6,7 +6,7 @@ by calling the `js_reference` tool. This document is the user-facing API
 reference for scripts.
 
 For architecture and implementation boundaries, see
-[ARCH_REPL.md](ARCH_REPL.md) and [ARCH_MCP.md](ARCH_MCP.md).
+[ARCH_SHELL.md](ARCH_SHELL.md#repl-surface) (REPL and MCP surfaces).
 
 ## Running JavaScript
 

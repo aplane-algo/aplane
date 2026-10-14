@@ -15,11 +15,11 @@ Normative inputs:
   transaction scope.
 - [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model): compatibility-bearing approval and
   policy contract.
-- [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md): finalized transaction data and policy
+- [ARCH_SIGNING.md](ARCH_SIGNING.md): finalized transaction data and policy
   placement in the signing flow.
 - [ARCH_NETWORKS.md](ARCH_NETWORKS.md): network context selection from
   `GenesisHash`.
-- [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): authentication and
+- [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization): authentication and
   authorization separation from signing policy.
 - [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md):
   cancellation, timeout, fail-all, and operator-delivery behavior.

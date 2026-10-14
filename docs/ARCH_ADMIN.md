@@ -1,12 +1,46 @@
-# Admin Protocol Contract
+# Signer Administration
+
+> The apsigner admin RPC carried over local IPC and the `apadmin` TUI that drives it.
+> The [Admin Protocol Contract](#admin-protocol-contract) is compatibility-bearing;
+> the [Signer Admin TUI](#signer-admin-tui) section describes one client of it and is not.
+
+Every live administrative action reaches the signer through the admin protocol:
+the TUI, `apadmin` test mode, and `apapprover` are clients of the same
+message catalog, and the signer remains responsible for authorization, lock-state
+enforcement, store serialization, and audit emission.
+
+## Contents
+
+- [Admin Protocol Contract](#admin-protocol-contract)
+  - [Envelope](#envelope)
+  - [Transport and Handshake](#transport-and-handshake)
+  - [Implementation Boundary](#implementation-boundary)
+  - [Message Catalog](#message-catalog)
+  - [Key Payload Shapes](#key-payload-shapes)
+  - [Writable Settings](#writable-settings)
+  - [Admin Lock Semantics](#admin-lock-semantics)
+  - [Error Codes and Semantics](#error-codes-and-semantics)
+  - [Admin Client Capabilities](#admin-client-capabilities)
+- [Signer Admin TUI](#signer-admin-tui)
+  - [Model / View / Update](#model--view--update)
+  - [View States](#view-states)
+  - [Cosigner Reference Manager](#cosigner-reference-manager)
+  - [Admin Panel](#admin-panel)
+  - [Policies View](#policies-view)
+  - [Local Activity And Idle Locking](#local-activity-and-idle-locking)
+  - [Error Handling](#error-handling)
+  - [Key Files](#key-files)
+- [Related Documentation](#related-documentation)
+
+## Admin Protocol Contract
 
 > Compatibility-bearing wire shapes for the apsigner admin RPC carried over local IPC.
 > For overall compatibility scope, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
-> For the principal/grant authorization model that gates these messages, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+> For the principal/grant authorization model that gates these messages, see [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 This contract is consumed by `apadmin` (TUI and test mode), `apapprover`, `appass`, and any other process that drives signer administration over the admin transport. It documents the envelope, transport handshake, message catalog, payload shapes, writable settings, lock semantics, error codes, and per-client capabilities.
 
-## Envelope
+### Envelope
 
 Line-delimited JSON over the admin transport stream. Messages carry:
 
@@ -17,7 +51,7 @@ Line-delimited JSON over the admin transport stream. Messages carry:
 This envelope applies to the IPC admin protocol only, not the HTTP API.
 `kind` is mandatory on admin-protocol messages; missing `kind` is a protocol error.
 
-## Transport and Handshake
+### Transport and Handshake
 
 Generic clients normally see `auth_required` first. The server may instead send
 a protocol `error` before auth when it rejects the session before the handshake
@@ -63,7 +97,7 @@ Transport notes:
 - generic clients observe some auth/displacement failures as formatted protocol errors rather than stable typed transport errors.
 - admin frames are bounded to 4 MiB before JSON decoding on both transports.
 
-## Implementation Boundary
+### Implementation Boundary
 
 `internal/protocol` is the compatibility-bearing IPC wire contract. It
 owns protocol versions, message types and IDs, JSON field names, envelopes,
@@ -77,11 +111,11 @@ Domain services must not construct `protocol.BaseMessage` values or serialize
 their results directly: projections intentionally omit internal state, signer
 paths, and recovery material while emitting only the documented wire fields.
 
-## Message Catalog
+### Message Catalog
 
 Source: `internal/protocol/messages.go`. Unsupported client messages yield a generic `error` response.
 
-### Session and Store Lifecycle
+#### Session and Store Lifecycle
 
 Client to Server:
 
@@ -111,7 +145,7 @@ Server to Client:
 - `client_exists`
 - `displaced`
 
-### Key Management
+#### Key Management
 
 Client to Server:
 
@@ -132,7 +166,7 @@ Server to Client:
 - `key_details`
 - `keys_changed`
 
-### Key Type Templates
+#### Key Type Templates
 
 Client to Server:
 
@@ -160,7 +194,7 @@ Server to Client:
 - `deactivate_key_type_result`
 - `key_types`
 
-### Signing Approval and Client Enrollment
+#### Signing Approval and Client Enrollment
 
 Client to Server:
 
@@ -187,7 +221,7 @@ Server to Client:
 - `revoke_enrolled_key_result`
 - `revoke_all_enrolled_keys_result`
 
-### Backup and Restore
+#### Backup and Restore
 
 Client to Server:
 
@@ -219,7 +253,7 @@ Server to Client:
 - `rollback_restore_result`
 - `reconcile_store_result`
 
-### Admin and Policy Settings
+#### Admin and Policy Settings
 
 Client to Server:
 
@@ -239,7 +273,7 @@ Server to Client:
 - `check_policy_result`
 - `apply_policy_result`
 
-### Cosigner References And Store Inventory
+#### Cosigner References And Store Inventory
 
 Client to Server:
 
@@ -250,6 +284,7 @@ Client to Server:
 - `export_cosigner_public`
 - `list_generations`
 - `prune_generation_quarantine`
+- `discard_abandoned_generations`
 - `list_deleted_archive`
 - `prune_deleted_archive`
 
@@ -262,12 +297,13 @@ Server to Client:
 - `export_cosigner_public_result`
 - `generations_list`
 - `prune_generation_quarantine_result`
+- `discard_abandoned_generations_result`
 - `deleted_archive_list`
 - `prune_deleted_archive_result`
 
-## Key Payload Shapes
+### Key Payload Shapes
 
-### Session and Store Lifecycle
+#### Session and Store Lifecycle
 
 - `auth` / `auth_only`: `passphrase`, required `protocol_version`; unknown
   fields are rejected after the protocol major is validated
@@ -314,7 +350,7 @@ inventory, and enrolled-client inventory (`list_enrolled_keys`,
 `list_pending_enrollments`) requests; those requests still pass through their
 ordinary grant checks and locked/unlocked/recovery-state interlocks.
 
-### Key Management
+#### Key Management
 
 - `generate_key`: `key_type`, optional `name`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (`aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `code`, `error`; `mnemonic` and `word_count` fields remain in the schema but are omitted by signer responses
@@ -337,7 +373,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 > client-facing field exists on the admin list. Extend the HTTP `KeyInfo` for
 > client needs and the admin `AdminKeyInfo`/`adminproto.KeyInfo` pair for TUI needs.
 
-### Key Type Templates
+#### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
 - `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; accepted on every admin session because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
@@ -350,7 +386,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
 - `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema, omit `signing_flow`, and include optional `cosigner_component_key_type` so `apadmin` can filter enrolled public cosigner references for guarded-account generation without changing the public HTTP/SDK DTO
 
-### Signing Approval and Client Enrollment
+#### Signing Approval and Client Enrollment
 
 - `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations`
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled` and `timeout`. Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
@@ -365,7 +401,7 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
 - `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
 - `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
 
-### Backup and Restore
+#### Backup and Restore
 
 - `backup`: `export_passphrase`, optional `addresses[]` ->
   `backup_result`: `success`, optional `archive_path`,
@@ -440,16 +476,17 @@ ordinary grant checks and locked/unlocked/recovery-state interlocks.
   `recover_backup/list_recovered/review_recovered/activate_recovered/`
   `rollback_recovered/purge_recovered` lifecycle and its review token and
   acknowledgement fields.
-### Admin and Policy Settings
+
+#### Admin and Policy Settings
 
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 
-### Policy Messages
+#### Policy Messages
 
 Policy documents are the v1 JSON documents (`aplane.policy.v1`) specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md). There is no `target` field;
+[ARCH_POLICY.md](ARCH_POLICY.md#the-boundary). There is no `target` field;
 the node role selects the field set a document may carry, and every document
 is addressed by its `key`: `default` for the node default, or the selector of
 the key it governs (an Algorand address on a signer node, a Witness Key ID on
@@ -490,39 +527,14 @@ Result codes include `expected_policy_set_sha256_required`,
 `get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
 `policy.update`. Policy messages are not exposed through apshell or MCP.
 
-## Writable Settings
+Policy selection semantics:
 
-Writable admin settings:
+- every key is governed by exactly one document: its own `policies/<selector>.json` when it has one, otherwise the node default `default.json`; a key's own document replaces the default wholesale and inherits nothing (see [ARCH_POLICY.md](ARCH_POLICY.md#policy-selection))
+- normal signing selects the document by signing auth address, not by transaction sender, so rekeyed accounts use the auth address; user-role component signing selects by the guarded account; cosigner component signing selects by the request `component_key`
+- admin settings do not expose or mutate policy fields; documents change only through a whole-document `apply_policy`
+- documents placed by hand in a stopped store apply only after `apstore policy sign` and the next unlock
 
-- `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch). It replaces the operator prompt only when no policy rule produced a verdict; Always Review still prompts. With the switch on, a key with no policy document of its own signs whatever the shipped signer default does not reject or force to review.
-- `lock_on_disconnect`
-- `passphrase_timeout`
-- `theme`
-
-Node role is not a writable admin setting. It is initialized once in root
-`node.yaml`, integrity-bound to the store, and changed only by creating a
-separate signer data root.
-
-YAML-only runtime settings:
-
-- `endpoint.signer_port`: loopback REST API port behind the signer endpoint.
-  Admin settings may report it as `signer_port` but do not mutate it.
-- `endpoint.ssh.listen_address`: SSH listener bind host/address. It defaults
-  to `127.0.0.1`; admin settings may report it as `ssh_listen_address` but do
-  not mutate it.
-- `endpoint.ssh.port`: SSH listener port. Admin settings may report it as
-  `ssh_port` but do not mutate it.
-- `endpoint.advertise_url`: optional operator-declared endpoint handoff URL
-  used by endpoint export when `--host`/`--url` are omitted. Admin settings may
-  report it but do not mutate it.
-- `approval_wait`: product-runtime manual signing approval timeout. It is
-  not projected through admin IPC.
-
-Policy has no scalar admin setting surface. Read, validation, and mutation use
-`get_policy`, `check_policy`, and `apply_policy` with complete v1 JSON
-documents.
-
-### Cosigner References And Generation Inventory
+#### Cosigner References And Generation Inventory
 
 - `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
 - `get_cosigner_reference`: `name` -> `cosigner_reference`: `success`, optional `reference`, `code`, `error`
@@ -543,6 +555,9 @@ documents.
   requires `confirm:true`, and records a durable audit intent before mutation.
   An already-absent selected ID is successful and reported as such, making an
   interrupted multi-ID request safely retryable.
+- `discard_abandoned_generations`: `generation_ids[]`, `confirm` ->
+  `discard_abandoned_generations_result`: `success`, `discarded[]`, optional
+  `code`, `error`.
 - `list_deleted_archive` -> `deleted_archive_list`: canonical `entries[]` with
   `path` and `encoded_bytes`, aggregate `entry_count`, `encoded_bytes`, and a
   `warning` when release headroom has been consumed; optional `code`, `error`.
@@ -575,14 +590,39 @@ explicit confirmation, and a durable audit intent written before any removal.
 Only selected-generation `deleted/keys/` and `deleted/keytypes/` canonical paths
 are accepted; arbitrary filesystem paths are not an admin-protocol surface.
 
-Policy selection semantics:
+### Writable Settings
 
-- every key is governed by exactly one document: its own `policies/<selector>.json` when it has one, otherwise the node default `default.json`; a key's own document replaces the default wholesale and inherits nothing (see [ARCH_POLICY.md](ARCH_POLICY.md#policy-selection))
-- normal signing selects the document by signing auth address, not by transaction sender, so rekeyed accounts use the auth address; user-role component signing selects by the guarded account; cosigner component signing selects by the request `component_key`
-- admin settings do not expose or mutate policy fields; documents change only through a whole-document `apply_policy`
-- documents placed by hand in a stopped store apply only after `apstore policy sign` and the next unlock
+Writable admin settings:
 
-## Admin Lock Semantics
+- `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch). It replaces the operator prompt only when no policy rule produced a verdict; Always Review still prompts. With the switch on, a key with no policy document of its own signs whatever the shipped signer default does not reject or force to review.
+- `lock_on_disconnect`
+- `passphrase_timeout`
+- `theme`
+
+Node role is not a writable admin setting. It is initialized once in root
+`node.yaml`, integrity-bound to the store, and changed only by creating a
+separate signer data root.
+
+YAML-only runtime settings:
+
+- `endpoint.signer_port`: loopback REST API port behind the signer endpoint.
+  Admin settings may report it as `signer_port` but do not mutate it.
+- `endpoint.ssh.listen_address`: SSH listener bind host/address. It defaults
+  to `127.0.0.1`; admin settings may report it as `ssh_listen_address` but do
+  not mutate it.
+- `endpoint.ssh.port`: SSH listener port. Admin settings may report it as
+  `ssh_port` but do not mutate it.
+- `endpoint.advertise_url`: optional operator-declared endpoint handoff URL
+  used by endpoint export when `--host`/`--url` are omitted. Admin settings may
+  report it but do not mutate it.
+- `approval_wait`: product-runtime manual signing approval timeout. It is
+  not projected through admin IPC.
+
+Policy has no scalar admin setting surface. Read, validation, and mutation use
+`get_policy`, `check_policy`, and `apply_policy` with complete v1 JSON
+documents.
+
+### Admin Lock Semantics
 
 - `list_key_types` requires an authenticated, runtime-bound admin session but
   does not require the product runtime to be unlocked. Template-backed key
@@ -597,7 +637,7 @@ Policy selection semantics:
   template administration surface, even though the returned library YAML is plaintext reference material.
 - `install_library_template` requires the product runtime to be unlocked because it writes into the encrypted `default` template store and immediately reloads that runtime.
 
-## Error Codes and Semantics
+### Error Codes and Semantics
 
 Failure messages carry optional `code` alongside `error`. Central protocol
 error-message codes are defined in `internal/protocol/error_codes.go`:
@@ -640,7 +680,7 @@ already-authenticated admin session after a process-wide invariant failure.
 The operator must repair the underlying store/role conflict and restart the
 signer; the session cannot resume administrative work in-process.
 
-## Admin Client Capabilities
+### Admin Client Capabilities
 
 | Capability | `apadmin` TUI | `apadmin` test mode | `apapprover` | `appass` |
 |-----------|----------------|------------------|--------------|----------|
@@ -670,4 +710,356 @@ operations use the one process-owned runtime; `apadmin`, `apapprover`, and
 - default builds keep the `-test` flag surface but reject it with a stub error instead of exposing the non-interactive path.
 
 The `apadmin` TUI's policy workflow is described in
-[ARCH_TUI.md](ARCH_TUI.md#policies-view).
+[Policies View](#policies-view).
+
+## Signer Admin TUI
+
+`apadmin` is the signer admin TUI. It is built on
+[Bubble Tea](https://github.com/charmbracelet/bubbletea) and communicates with
+`apsigner` over the [admin protocol](#admin-protocol-contract) through a local Unix socket. For remote
+administration, SSH into the signer machine and run `apadmin` there. The TUI is a separate
+admin-protocol client and does **not** route through `internal/engine` or the
+`apshell` REPL/MCP pipeline (see [ARCH_SHELL.md](ARCH_SHELL.md#repl-surface) and
+[ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) for those).
+
+The implementation lives in `internal/signerapp/signertui/`.
+
+### Model / View / Update
+
+The TUI follows the standard Bubble Tea pattern:
+
+| Aspect | Detail |
+|--------|--------|
+| Input | Key events, forms, async IPC messages |
+| Output | Rendered screen with layouts and borders |
+| State | `Model` owns view state, IPC connection, caches, and pending requests |
+
+| Phase | Files |
+|-------|-------|
+| Model definition | `model.go` (Model struct, ViewState, initialization) |
+| Async messages | `messages.go` |
+| IPC / transport | `ipc_client.go`, `connector.go`, `client_home.go` |
+| Update dispatch | `update.go` plus per-view `update_*.go` files |
+| View dispatch | `view.go` plus per-view `view_*.go` files |
+| Activity tracking | `activity.go` |
+| Restore helpers | `restore_helpers.go` |
+
+Per-view `update_*.go` and `view_*.go` files cover authentication, the key list,
+admin panel, KeyType Library, signing approval, client enrollment
+approval, the enrolled-client list with revocation, generate / import / export /
+delete forms, and managed backup restore. The `view.go` dispatcher selects the renderer by current
+`ViewState`; the `update.go` dispatcher selects the handler the same way.
+
+Popup panels use a shared overflow viewport instead of truncating content.
+`Ctrl+Up` / `Ctrl+Down` scroll that outer panel incrementally,
+`Ctrl+PgUp` / `Ctrl+PgDn` move by larger steps, and `Ctrl+Home` / `Ctrl+End`
+jump to its boundaries. The popup displays its visible line range whenever it
+overflows. Views with an existing purpose-built list, editor, or approval
+viewport retain that viewport so nested scroll handlers do not compete.
+
+Signing and client-enrollment approval popups stay in front of every other
+screen until the operator answers them or apsigner withdraws the request.
+Results that arrive meanwhile update the screen underneath, and answering or a
+withdrawal returns to that screen; a second pending approval shows next.
+apsigner rejects every pending approval when the admin session ends or the
+signer locks, so disconnect, reconnect, reauthentication, displacement, and lock
+drop them from the TUI as well.
+
+Each in-progress generate, import, delete, key-type install, or backup records
+its request ID. An untyped failure (an authorization denial, a send error, or a
+signer message the TUI cannot decode) whose ID names that request returns the
+operation to the screen it started from, as its own failure result would.
+Progress screens ignore Esc, so nothing may strand them. An error for any other
+request, such as a background refresh, leaves the operation waiting for its own
+result, matching the policy-load flow.
+
+In parameter forms, `j`, `k`, space, `<`, and `>` type into free-text fields;
+they navigate or cycle only on choice fields and the submit button. Tab and the
+arrow keys always navigate. Parameter fields accept ASCII only and refuse other
+input with an error rather than rewriting it.
+
+Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
+instead of an editable multi-line field. Activating the control accepts the
+next terminal bracketed-paste event, stores the complete validated value, and
+renders a read-only single-line preview with its middle elided. This behavior
+is shared by standalone `apadmin` and the admin pane embedded in `apconsole`.
+
+### View States
+
+`ViewState` (defined in `internal/signerapp/signertui/model.go`) is an enum that
+identifies the current screen. The enum has families for:
+
+- Authentication and unlock (`ViewAuth`, `ViewUnlock`)
+- Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
+- Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
+- Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
+  list): the enrollment requests waiting for approval (`a` approve, `x`
+  reject) followed by every enrolled key with fingerprint, label, key type,
+  and live connection state (`r` revoke, `A` revoke all); `i` opens the key
+  import form (`ViewImportClientKey`: a public-key file on this machine plus
+  an optional label). The screen has no manual refresh: it re-fetches both
+  lists on every `enrollment_changed` notification while it, one of its
+  sub-views, or a popup raised over it is showing, so requests arriving over
+  SSH, answers from another admin client, and clients connecting or
+  disconnecting appear on their own. The enrollment popup queues requests announced while
+  one is on screen and shows them in turn; a request announced again at
+  login is shown once. `Esc` on the popup defers the request rather than
+  rejecting it: nothing is sent, the request stays in the signer's queue and
+  on the Enrolled Clients screen, the next waiting request takes the popup,
+  and a later announcement (the next login, or the client asking again)
+  shows it again. `Esc` on the signing popup still rejects, since a signing
+  client is waiting on the answer
+- Generate / import flows (form, params, loading, display)
+- Signer-side public cosigner-reference management (`ViewCosignerReferences`,
+  details, import, removal confirmation, and removal progress)
+- Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
+- Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
+- Store recovery screen (`ViewStoreRecovery`): reconcile, direct credential restore, or rollback of the latest
+  eligible restore. While the signer reports the `recovery` runtime state the
+  screen is blocking — Escape does not leave it, ordinary administration stays
+  unavailable, and the status bar shows "Signer Recovery (signing disabled)"
+  until the visible store validates cleanly. The client preserves the server's three-way runtime state
+  (`locked` / `recovery` / `unlocked`); recovery is never rendered as
+  unlocked.
+- Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewDisplaceConfirm`)
+- Settings panel (`ViewAdminPanel`)
+- KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
+- `ViewError`
+
+See `internal/signerapp/signertui/model.go` for the authoritative enum values and the
+one-line comments that document each screen's purpose.
+
+### Cosigner Reference Manager
+
+On signer nodes, `e` from the key list opens the public cosigner-reference
+manager. Rows are alias-first and show a compact Witness Key ID; the details
+screen shows the complete grouped ID, witness key type, public-key digest,
+import time, and all aliases for the same authority. It deliberately does not
+render the raw public-key hex. Imports reuse the full-ID enrollment review and
+return to the manager when they were started there. Removing a reference is an
+explicit alias-scoped mutation whose confirmation defaults to Cancel.
+
+From reference details, `Generate account` filters the signer-advertised key
+types by `cosigner_component_key_type`. A sole compatible type proceeds directly
+to its parameter view with the stable Witness Key ID selected; multiple types
+use a dedicated filtered chooser. Canceling returns to the reference details
+instead of losing the manager context.
+
+The manager is role-gated and is not offered on cosigner nodes. It communicates
+through the existing list/import/remove cosigner-reference admin messages, so
+the signer remains responsible for authorization, lock-state enforcement,
+store serialization, and audit emission.
+
+On cosigner nodes, witness-key details and the successful witness-generation
+screen offer `Export cosigner key`. The cosigner returns the public witness
+envelope over the admin protocol, and the operator-side `apadmin` process
+validates it, lays it out canonically, and either writes it to the chosen local
+path or displays full JSON directly in the terminal. The file is the key and
+nothing else; the result screen names the address clients should add, from
+`endpoint.advertise_url` when it is configured, so the address is handed over
+by the operator rather than carried in the file. `SHOW JSON` releases the terminal through Bubble Tea's execution lifecycle and writes
+the complete original JSON for manual selection using terminal soft wrapping
+and scrollback. Enter restores the export screen. No clipboard commands or OSC 52
+sequences are emitted. File export or batch stdout also preserves the original
+JSON bytes. Files are written on the machine running `apadmin`. Ordinary account keys do not expose
+this action. The output path is directly editable and does not rename the
+witness credential or add an authority claim to the public envelope. Imports
+recognize the `.aplane-cosigner.json` suffix and may prefill an editable alias
+from its sanitized filename stem.
+
+The import form accepts the public witness document only; a file that carries
+an endpoint block or any other field is refused before review. apadmin never
+reads or writes client endpoint registries, client SSH identities, host trust,
+aliases, or caches.
+
+The manager exposes `p: Paste JSON` alongside `i: Import file`. The paste field
+captures a complete bracketed terminal paste without interpreting its contents
+as navigation keys, replacing the previous document. Input over 64 KiB clears
+the buffer and reports an error. Backspace/Delete clears the field. The
+document goes through the same parser and import review as a file. Returning
+from review
+preserves the paste for correction; canceling or completing import clears it.
+
+Endpoint creation, enrollment requests, and live route discovery belong to apshell.
+The reference details screen shows signer-owned metadata only.
+
+TEAL exports save to the working directory of the apadmin process. Address-list
+generation inputs require full account addresses; client aliases and sets are
+resolved only by apshell.
+
+### Admin Panel
+
+The admin panel (Settings) opens from the key list with `s` and exposes live
+signer settings and status:
+
+- `user_auto_approve`
+- `lock_on_disconnect`
+- `passphrase_timeout`
+- Color theme
+- Admin transport, node role, passphrase unlock method, and TEAL compile network
+- A `Policies` row that opens the policies view
+- SSH enabled state, port, fingerprint, and connected-client count
+- Build information
+
+Backup creation and managed restore open directly from the key list with `b`
+and `r`.
+
+### Policies View
+
+`p` on the key list or Settings, and the Settings `Policies` row, open a
+list of the node's policy documents and key coverage, loaded with the
+`get_policy` admin message (`internal/signerapp/signertui/policy_view.go`).
+The list is the same on both node roles:
+
+- the `default` row first, labelled `node default (governs every key without
+  its own policy)`,
+- then every held key (address on a signer node, Witness Key ID on a cosigner
+  node) with its status: `own policy` or `default`,
+- then stored documents for keys the node does not hold: `policy, key not
+  held`.
+
+Each row with a document shows its size, SHA-256, and applied time from the
+sidecar's diagnostic `signed_at`; the header shows the `policy_set_sha256`.
+Enter fetches that document with `get_policy_document` and opens a read-only
+scrollable view of its exact bytes; Esc returns. A key on `default` has no
+document of its own to open.
+
+A policy document changes only through one check, review, and apply workflow
+(`internal/signerapp/signertui/policy_apply.go`), which follows the same steps
+as `apadmin policy apply FILE`. It has two sources for the candidate document:
+`a` loads one policy file, and `e` opens the in-place editor described below.
+For a loaded file:
+
+1. A path prompt reads the file with the shared reader in
+   `internal/signerapp/policyreview`. The read happens inside the event loop,
+   so the path must be a regular file: a symlink, FIFO, or device is refused
+   rather than opened. The file's `"key"` field selects the document:
+   `default` or one key. The TUI refuses a file for a key the node does not
+   hold, which the batch command only warns about; pre-staging a policy for a
+   key that is not yet held stays a batch operation.
+2. `check_policy` validates the exact bytes. Errors are shown on the prompt
+   and stop the load; warnings carry into the review.
+3. `get_policy_document` fetches the document that governs the key now: the
+   key's own, or the node default it follows, and `policyreview.DiffCandidate`
+   produces the same effective tightened/loosened/changed diff the batch
+   command prints, so a first document for a key is shown as a change from
+   the default. A file that decodes equal to the governing document reports
+   `Policy unchanged` and cannot be applied.
+4. Only `y` confirms. `apply_policy` carries, as its concurrency base, the
+   `policy_set_sha256` of the summary the review was built from: the one that
+   decided in step 3 whether the key has a document of its own. It is captured
+   when the check returns and is never replaced by a later summary, so the
+   daemon rejects the apply if the active policy changed after the review was
+   built. On success the list reloads and
+   shows the new generation ID; on failure the review shows the daemon's error
+   and must be left and restarted. A `commit_uncertain` result means the
+   daemon has entered recovery without sending a status message, so the TUI
+   opens the Store Recovery screen with the daemon's error.
+
+Request IDs tie each response to the pending step. An untyped failure such as
+an authorization denial releases the pending step only when its request ID
+names that step; an error for another request, such as a background key-list
+refresh, leaves the step waiting for its own response. A request that cannot
+be sent fails its own step the same way. `diff` without applying, `remove`, multi-file applies, and stdin
+remain `apadmin policy` verbs; `apadmin policy rescue` covers a stopped daemon.
+The `apadmin policy` verbs (`status`, `export`, `check`, `diff`, `apply`,
+`remove`, `template`) cover the full surface. The editor adds no RPC: the TUI
+uses the same `get_policy`, `get_policy_document`, `check_policy`, and
+`apply_policy` messages as the verbs.
+
+#### Policy Editor
+
+`e` in the policies list or the document view opens `ViewPolicyEdit`
+(`internal/signerapp/signertui/policy_edit.go`), a `bubbles/textarea` holding
+one document's JSON. The editor is only another source for the workflow above:
+`ctrl+s` sends the text through steps 2 to 4, and nothing is stored before the
+confirmed apply.
+
+- **What it opens on.** The default row and a key with `own policy` open on
+  that document, fetched with `get_policy_document`. A single-line document is
+  indented for editing; whitespace does not change what a policy allows, so an
+  unedited reformat still reports `Policy unchanged`. A key on `default` opens
+  on the node's current default, fetched the same way and rendered by
+  `policyreview.Template` with the key filled in under a header comment; the
+  editor marks it `No policy of its own yet`. Applying it unedited gives the key a
+  document of its own that does what the default did, so a key's policy always
+  starts from exactly what it was already doing; on a cosigner node that is
+  the deny-all default. A key the node does not hold cannot be edited.
+- **Comments.** The text may carry `//` and `/* */` comments outside strings.
+  `policyreview.DocumentFromText` removes them before the check, so the
+  daemon receives and stores strict JSON; the review's "stores the edited
+  text exactly" is the text without its comments.
+- **Local checks before the daemon's.** A JSON syntax error is reported with
+  its line and column without a request; comments are blanked in place for
+  that check so the position is the one in the text shown. The `"key"`
+  field must stay the document being edited (`default` or the key); setting
+  another key's policy is a file load. The node must hold the key, as for
+  file loads.
+- **The text is never lost to an error.** A rejected check keeps the editor
+  open with the daemon's problems under the text. Leaving the review, declined
+  or failed, returns to the editor with the text intact; after a failed apply
+  the policy summary is reloaded so the next attempt names the current policy
+  set. Esc on changed text asks once before discarding.
+- **No check against a reloading summary.** `ctrl+s` is refused while the
+  summary is reloading. Together with the captured concurrency base in step 4,
+  this keeps a review from being built on one policy state and applied against
+  another.
+- **Nothing is silently shortened.** The text area drops inserted lines past
+  10,000 without notice. A document is opened only if the editor holds all of
+  it (compared as JSON, since the component normalizes whitespace); otherwise
+  editing is refused in favor of export, edit, and load. A paste that is cut
+  off at that limit is reported.
+- **Keys.** Every key except `ctrl+s` and `esc` goes to the text area, so the
+  list's single-letter shortcuts are inert while editing. Paste is the
+  terminal's own paste, which arrives as key input. The component's `ctrl+v`
+  binding is disabled: it would read the machine's clipboard through an
+  external helper program and return a message the view does not receive.
+
+### Local Activity And Idle Locking
+
+`apadmin` treats only Bubble Tea `tea.KeyMsg` input as local user activity.
+Window resizes, timers, IPC responses, server notifications, and background
+polling do not count. The TUI does not report local activity to the signer;
+keyboard activity only re-arms apadmin's own local idle-disconnect timer.
+
+The signer remains authoritative for lock state and term-key zeroing. After
+`apadmin` learns the effective passphrase timeout from admin settings, it
+arms a local idle timer from the latest local activity baseline. If the UI is
+still idle when that timer fires, it disconnects the admin session. Any signer
+lock that follows that disconnect is decided by the signer-owned
+`lock_on_disconnect` setting. Manual lock actions are separate explicit
+`lock_identity` requests. After a local idle disconnect, `apadmin` immediately
+returns to the authentication view and starts a fresh pre-auth reconnect so the
+operator sees the login screen instead of the stale authenticated view.
+Disconnect, reconnect, reauthentication, and server lock notifications clear
+pending activity and idle state. Every end of an admin session (disconnect,
+reconnect, reauthentication, local idle disconnect, or displacement by another
+apadmin) also zeroes the restore passphrase and drops cosigner workflow state,
+pending approvals, and a pending manual lock. Every path into the unlocked
+state (signer status, unlock, or a completed recovery reconcile) loads the same
+keys, key types, cosigner references, and settings.
+
+### Error Handling
+
+Errors surface in `ViewError` or inline in the active screen's status area,
+allowing retry. The TUI never panics on IPC errors; it transitions back to a
+recoverable view.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `internal/signerapp/signertui/model.go` | `Model`, `ViewState`, initialization |
+| `internal/signerapp/signertui/update.go` | Top-level Update dispatch |
+| `internal/signerapp/signertui/view.go` | Top-level View dispatch |
+| `internal/signerapp/signertui/activity.go` | Local keystroke activity tracking and idle-disconnect timers |
+| `internal/signerapp/signertui/ipc_client.go` | IPC connection to the signer |
+| `internal/signerapp/signertui/connector.go` | Local Unix socket admin connector |
+| `internal/signerapp/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
+
+## Related Documentation
+
+- [ARCH_SHELL.md](ARCH_SHELL.md#repl-surface) — `apshell` REPL (separate UI surface)
+- [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) — `apshell` MCP server (separate UI surface)
+- [ARCH_SECURITY.md](ARCH_SECURITY.md) — Admin protocol authentication
+- [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization) — Signer authorization model

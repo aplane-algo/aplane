@@ -224,7 +224,7 @@ opaque JSON object keys; the admin surfaces must not hard-code `mainnet`,
 `testnet`, or `betanet`.
 
 The exact message contracts are documented in
-[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
+[ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 ## Plugins And SDKs
 

@@ -63,8 +63,8 @@ Runtime model: APlane exposes one **single-product signing runtime** with no
 runtime selector. Client SSH enrollments distinguish *which device/agent* is
 acting for that product runtime.
 
-> Full detail: [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md), [ARCH_MCP.md](ARCH_MCP.md),
-> [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+> Full detail: [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md), [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface),
+> [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 ---
 
@@ -84,9 +84,9 @@ The MCP server exposes these tools:
 | `jslist` | List saved scripts as `[{name, size, mtime}]`. |
 
 **Reading the deep docs.** Throughout this manual, a *Full detail* pointer names
-a bundled reference doc (e.g. `ARCH_TXNFLOW`). Fetch any of them with the `doc`
+a bundled reference doc (e.g. `ARCH_SIGNING`). Fetch any of them with the `doc`
 tool — `doc` with no argument lists everything available with one-line summaries,
-and `doc name=ARCH_TXNFLOW` returns the full Markdown. Those docs are the
+and `doc name=ARCH_SIGNING` returns the full Markdown. Those docs are the
 authoritative source; this manual is the map.
 
 ### `execute` vs `js` — how to choose
@@ -111,7 +111,7 @@ These return an error telling you the right path:
 | `quit`, `exit` | MCP disconnect |
 | `keyreg` with no args | provide args directly (`keyreg alice online`) — paste mode is interactive |
 
-> Full detail: [ARCH_MCP.md](ARCH_MCP.md), [ARCH_REPL.md](ARCH_REPL.md).
+> Full detail: [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) (MCP and REPL surfaces).
 
 ---
 
@@ -272,7 +272,7 @@ LogicSig templates have no key to import).
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md),
 > [ARCH_CRYPTO.md](ARCH_CRYPTO.md),
 > [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types),
-> [ARCH_LSIG_PROVIDER.md](ARCH_LSIG_PROVIDER.md).
+> [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#logicsig-providers).
 
 ---
 
@@ -346,7 +346,7 @@ passthrough.
 These are static, per-sender checks; they do not model cross-funding within a
 group. Plugin-built groups can bypass them.
 
-> Full detail: [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md),
+> Full detail: [ARCH_SIGNING.md](ARCH_SIGNING.md),
 > [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md),
 > [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md),
 > [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md),
@@ -422,7 +422,7 @@ it never holds keys:
   before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
-> [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
+> [ARCH_GUARDED.md](ARCH_GUARDED.md).
 
 ---
 
@@ -466,7 +466,7 @@ tokens set `networks.<token>.genesis_hash` in signer config. Switch with
 `network <token>`. The active network determines algod endpoint, cache
 namespace, and asset-name resolution.
 
-> Full detail: [ARCH_MCP.md](ARCH_MCP.md) (Configuration),
+> Full detail: [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) (Configuration),
 > [ARCH_NETWORKS.md](ARCH_NETWORKS.md), [USER_CONFIG.md](USER_CONFIG.md).
 
 ---
@@ -561,7 +561,7 @@ rekey list
 
 > Full detail: [USER_QUICKSTART_LOCALNET.md](USER_QUICKSTART_LOCALNET.md),
 > [USER_QUICKSTART.md](USER_QUICKSTART.md),
-> [ARCH_APP_INTERACTION.md](ARCH_APP_INTERACTION.md).
+> [ARCH_SHELL.md](ARCH_SHELL.md#app-interaction).
 
 ---
 
@@ -611,14 +611,14 @@ each MCP server instance uses its own:
 
 ## Related documentation
 
-- [ARCH_MCP.md](ARCH_MCP.md) — MCP server, tool surface, routing
-- [ARCH_REPL.md](ARCH_REPL.md) — command parsing, dispatch, and shared results
+- [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) — MCP server, tool surface, routing
+- [ARCH_SHELL.md](ARCH_SHELL.md#repl-surface) — command parsing, dispatch, and shared results
 - [USER_JSAPI.md](USER_JSAPI.md) — JavaScript API (served by `js_reference`)
 - [USER_COMMANDS.md](USER_COMMANDS.md) — shell command grammar and byte encodings
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
-- [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) — transaction/group/signing flow
+- [ARCH_SIGNING.md](ARCH_SIGNING.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_COSIGNER.md](ARCH_COSIGNER.md) — guarded signing
+- [ARCH_GUARDED.md](ARCH_GUARDED.md) — guarded signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [WP_CORRIDORS.md](WP_CORRIDORS.md) — corridors (constrained-transfer graphs)
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins

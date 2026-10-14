@@ -70,7 +70,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 // themselves; admin paths that already hold it call Reload directly (see
 // reloadFromWatcher).
 //
-// The full process-wide lock table lives in docs/ARCH_SPEC.md, "Lock Hierarchy".
+// The full process-wide lock table lives in docs/ARCH_OVERVIEW.md, "Lock Hierarchy".
 type Runtime struct {
 	keyStore    *keystore.FileKeyStore
 	keyPaths    storepaths.Paths

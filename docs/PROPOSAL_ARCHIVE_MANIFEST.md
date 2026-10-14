@@ -202,7 +202,7 @@ Decided under a maximal-simplification directive:
    so the tri-state never coexists with the manifest.
 3. Collapse the protocol fields and the CLI/TUI rendering.
 4. Docs sweep: ARCH_CONTRACTS backup contract, archive README template,
-   ARCH_ADMIN_PROTOCOL review fields, user guides.
+   ARCH_ADMIN review fields, user guides.
 
 Land before protocol v3 ships; independent of the keyterm rotation
 proposal, but smaller — do this first.

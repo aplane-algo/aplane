@@ -116,7 +116,7 @@ func RegisterMetadata(metadata SignatureMetadata) {
 // routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
 // fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
 //
-// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md). The prefix fallback
+// This rides the RESOLVE axis (docs/ARCH_KEYTYPES.md). The prefix fallback
 // is limited to LogicSig families because callers also consume authorization
 // and mnemonic semantics from the returned metadata; native algorithms must
 // resolve only by their exact registered identity.

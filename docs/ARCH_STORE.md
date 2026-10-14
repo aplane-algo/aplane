@@ -9,7 +9,7 @@ Each signer or cosigner data root contains one product store at
 APIs accept no identity locator, and live mutation and inspection use one
 process-wide product-store lock. Compatibility-bearing on-disk formats are in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the closed product-principal and action
-model is in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+model is in [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization).
 
 This document does not define transaction planning, policy verdicts, endpoint
 routing, client enrollment, or approval prompts.
@@ -1223,7 +1223,7 @@ Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
 own derivation and stage program template, and `internal/rotatingkey`
 classifies both and carries their frozen sizes in a per-type profile. The
 profile also marks the WOTS hybrid's stage signature as one-time, which
-changes only what the signer reports (`ARCH_HTTP_API.md`, rotating alerts),
+changes only what the signer reports (`ARCH_SIGNING.md`, rotating alerts),
 never what it signs.
 
 - `private_key` is the 64-byte BIP-39 seed. Mnemonic entropy is not stored.
@@ -1478,7 +1478,7 @@ account's live stage, and without limit for an account whose live stage it
 has not yet found. The seed is held only inside the derivation itself, and
 locking the signer cancels the pass. The audit log, not the table, is what
 rebuilds the signer's memory of released transactions at unlock (see the
-`ROTATING_RELEASE` entry in `ARCH_HTTP_API.md`).
+`ROTATING_RELEASE` entry in `ARCH_SIGNING.md`).
 
 ### Backup and restore matrix
 
@@ -1928,7 +1928,7 @@ Related documents:
 
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing file and
   restore contracts
-- [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): product principals and actions
+- [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization): product principals and actions
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable/runtime/wire data model
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md): developer guide for adding key types
 - [USER_KEYTYPES.md](USER_KEYTYPES.md): operator key type management

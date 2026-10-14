@@ -402,11 +402,11 @@ sufficient LogicSig resources and no additional dummies are needed.
 | Requires group ID? | Yes | No for server-built groups; allowed for already sufficient pre-grouped groups |
 | Best for | Pre-signed finalized groups | LogicSig swaps needing dummies or unsigned full-group context |
 
-See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) for full protocol documentation.
+See [ARCH_SIGNING.md](ARCH_SIGNING.md) for full protocol documentation.
 
 ## Related Documentation
 
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Cryptography layer architecture
-- [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) - Transaction signing flow and passthrough mode
+- [ARCH_SIGNING.md](ARCH_SIGNING.md) - Transaction signing flow and passthrough mode
 - [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) - Fee distribution details
 - [TXN_BYTES_HEX.md](TXN_BYTES_HEX.md) - Transaction byte encoding for signer requests

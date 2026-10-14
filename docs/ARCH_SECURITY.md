@@ -1,9 +1,21 @@
 # Security Architecture
 
 This document describes APlane's security architecture: authentication channels,
-SSH transport security, passphrase and key handling, audit, cache integrity, and
-defense-in-depth controls. The closed single-product authorization model is
-defined in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+SSH transport security, the closed single-product authorization model
+(principals, stable actions, resources, and enforcement points), passphrase and
+key handling, audit, cache integrity, and defense-in-depth controls.
+
+## Contents
+
+- [Overview](#overview)
+- [Authentication Channels](#authentication-channels)
+- [Connection Models Compared](#connection-models-compared)
+- [SSH Tunnel (Transport Layer)](#ssh-tunnel-transport-layer)
+- [Authorization](#authorization)
+- [Interface Architecture](#interface-architecture)
+- [Security Properties](#security-properties)
+- [Summary](#summary)
+- [Source of Truth](#source-of-truth)
 
 ## Overview
 
@@ -13,11 +25,11 @@ APlane uses a multi-layer security model designed for distinct use cases.
 credentials map to the reserved `system:product-admin` principal, and the
 closed product authorizer requires exact membership in its explicit action
 allowlist. See
-[ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
+[Authorization](#authorization) for the detailed model.
 
 **Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for product-scoped policy stored as a node default (`default.json`) plus optional per-key documents (`policies/<selector>.json`) on both node roles, with guards such as a per-type allow/review/reject gate, rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings (including application update, asset reconfigure/destroy, and asset freeze), and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests. A key with no document of its own follows the default; the shipped cosigner default is deny-all.
 
-**Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
+**Deployment scope:** the fixed product store and runtime are described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md#fixed-product-store-and-runtime).
 
 | Channel | Tool | User Type | Auth Method | Connection Model |
 |---------|------|-----------|-------------|------------------|
@@ -127,7 +139,7 @@ Clients should:
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
-See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the authoritative route and wire
+See [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract) for the authoritative route and wire
 contracts.
 
 Simulation is client-owned after ordinary signing. Apsigner exposes no
@@ -684,12 +696,367 @@ Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they req
 
 The `request-enrollment` flow (or an operator import of the public key) is the only bootstrap path: one operator decision enrolls the client's key, and that key is the client's whole credential. This is a single trust decision that fully onboards the client; the client does not wait for it, and connects once it has been made.
 
+## Authorization
+
+This section defines APlane's product authorization model: the reserved admin
+principal, explicit allowed actions, resources, and the enforcement points that
+protect signer operations.
+
+Product-store model: see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Fixed Product Store and Runtime). The
+product surface exposes one reserved administrator principal and no mutable
+principal, group, grant, or runtime-selection management.
+
+### Purpose
+
+Authorization answers this question:
+
+```text
+May this principal perform this action on this resource?
+```
+
+It is separate from:
+
+- **Authentication:** Which credential was presented, and did it verify?
+- **Product-store ownership:** Which process owns keys, config, the enrolled
+  client registry, runtime state, and approval state?
+- **Signing policy:** Is a specific transaction safe enough to sign?
+- **Encryption and key handling:** How passphrases, term keys, and key files
+  are protected.
+
+For wire and storage compatibility contracts, see
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+
+### Core Concepts
+
+#### Credential
+
+A credential is proof presented at an authentication boundary.
+
+Credential types include:
+
+- an enrolled client SSH key, presented at the SSH handshake; the HTTP API is
+  reachable only through that tunnel, and each request is attributed to the
+  key that authenticated its connection
+- admin passphrase over local IPC
+
+Credentials authenticate access. They are not themselves the authorization
+subject.
+
+#### Principal
+
+A principal is the actor used for authorization decisions.
+
+The admin passphrase authenticates the reserved system principal:
+
+```text
+system:product-admin
+```
+
+An enrolled client key authenticates a client principal named by the key's
+SHA256 fingerprint, with role `client`:
+
+```text
+client:SHA256:<fingerprint>
+```
+
+`default` is not a principal. It names the product signing store directory in
+durable paths.
+
+#### Product Store and Target Attribution
+
+The one product store owns signer state:
+
+- encrypted key files
+- keystore metadata
+- product runtime config
+- enrolled client registry (`.ssh/authorized_keys`)
+- approval coordinator
+- runtime lock/unlock state
+- watcher and reload ownership
+
+Its durable namespace is `identities/default/`. The directory name is not an
+authorization principal or request value.
+
+#### Action
+
+An action is a stable operation name used for authorization checks and audit.
+
+Examples:
+
+```text
+sign.request
+keys.generate
+policy.update
+clients.revoke
+```
+
+#### Resource
+
+`auth.Resource` describes the concrete thing being accessed:
+
+```go
+type Resource struct {
+    Type string
+    ID   string
+}
+```
+
+Conventions:
+
+- `Type` is the resource family, such as `key`, `keys`, `policy`,
+  `transaction`, or `client`.
+- `ID` is the concrete resource identifier when one exists, such as a key
+  address, request ID, or template key type.
+
+### Product Authorization
+
+The product mode is:
+
+```text
+mode: product_single
+admin principal: system:product-admin
+client principals: client:<fingerprint>, role client
+authorization source: closed action allowlists (product admin, client role)
+identity/principal/group/grant management UI: enrolled-client list and revocation only
+```
+
+The authorization path is:
+
+```text
+credential
+  -> authenticated product session or tunneled API connection
+  -> system:product-admin, or client:<fingerprint> with role client
+  -> explicit ProductAllowedActions or ClientAllowedActions membership
+  -> concrete resource type and optional resource ID
+```
+
+Important implications:
+
+- Logging in with `apadmin` authenticates against the product store, and the admin
+  session authorizes as `system:product-admin`.
+- A tunneled HTTP request authorizes as the client principal of its
+  connection. `ClientAllowedActions` (`internal/authz`) grants only what the
+  authenticated HTTP routes expose: `identity.view`, `sign.request` (which
+  also covers `/sign/rotating/prepare` and `/sign/rotating/sign`),
+  `sign.component`, `sign.assemble`, `keys.view`, `keys.generate`,
+  `keys.delete`, and `keytypes.view`. Clients never receive administrative
+  actions.
+- A known action is not automatically allowed. It must also appear in the
+  explicit allowlist for that principal kind.
+
+### Authorization Flow
+
+#### HTTP
+
+HTTP requests are authenticated by their connection, then authorized:
+
+```text
+SSH handshake with enrolled key
+  -> direct-tcpip channel handed off as an API connection (sshtunnel.APIConn)
+  -> auth.ConnIdentity{KeyFingerprint} attached to the connection context
+  -> productAuthenticator looks the fingerprint up in the enrolled registry
+  -> client:<fingerprint> (role client)
+  -> ProductAuthorizer (ClientAllowedActions)
+  -> process-owned product runtime
+  -> handler
+```
+
+A request carries no credential: nothing in it can supply or override the
+connection identity. The loopback REST listener attaches no identity, so on it
+only `/health` answers and every other route fails authentication with `401`.
+Authentication and authorization never select a runtime or store.
+
+#### Admin IPC
+
+Local admin sessions use the product passphrase and bind to the product runtime:
+
+```text
+admin auth message
+  -> passphrase verification
+  -> system:product-admin principal
+  -> default runtime binding
+  -> ProductAuthorizer
+  -> admin operation
+```
+
+Membership in the operating-system `aplane` group grants only the ability to
+traverse `/run/apsigner` and connect to `aplane.sock`. It grants no access to
+the private signer store. The admin passphrase, principal mapping, product
+runtime binding, and explicit action authorization are still required after
+socket connection.
+
+Auth-time unlock is authorization-gated before the runtime is unlocked.
+Explicit admin lock requests retain the stable `identity.lock` action name.
+Admin disconnect cleanup applies the product runtime's `lock_on_disconnect`
+setting. Local admin idle timeout is enforced by `apadmin` as a disconnect,
+not by a signer-side activity grant.
+
+#### No Remote Admin Transport
+
+The admin protocol is carried only over the local IPC socket. SSH carries
+port forwarding to the HTTP API and `request-enrollment` bootstrap; it refuses
+session channels, so no admin subsystem is reachable over SSH. Remote
+administration means logging in to the signer host and running `apadmin`
+there.
+
+Recovery-material operations are narrower than normal admin
+operations: `keys.import` is accepted only on local IPC admin sessions,
+`keys.export` is denied on all admin transports, and `keys.generate` never
+returns generated recovery material over the admin protocol.
+
+### Action Vocabulary
+
+Stable action names live in `internal/auth/authorizer.go`. A known-action guard
+makes action typos such as `keys.veiw` fail before allowlist matching.
+
+| Action | Meaning | Typical Resource | Unlock Required |
+|--------|---------|------------------|-----------------|
+| `identity.view` | View identity state | `identity` | No |
+| `identity.unlock` | Unlock signer identity | `identity` | No |
+| `identity.lock` | Lock signer identity | `identity` | No |
+| `identity.backup` | Create, export/read back, and delete signer-managed encrypted backup archives for the product store | `identity` | Yes for create/delete; export/read is available in unlocked or recovery state |
+| `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
+| `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
+| `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
+| `sign.component` | Request user, cosigner, or bounded-base authorization components over a frozen group | `transaction` | Yes |
+| `sign.assemble` | Assemble verified user and cosigner component signatures into signed guarded transactions | `transaction` | Yes |
+| `sign.approve` | Approve or reject signing request | `sign_request` | No |
+| `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
+| `keys.generate` | Generate a key | `key` | Yes |
+| `keys.import` | Import a key | `key` | Yes |
+| `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
+| `keys.delete` | Delete a key | `key` | Yes |
+| `cosigners.view` | List/show public cosigner references and export public witness metadata | `cosigner_references`, `cosigner_reference`, `cosigner_public` | No |
+| `cosigners.manage` | Import or remove signer-owned public cosigner references | `cosigner_reference` | Yes |
+| `generations.view` | Inspect current/retained generations, quarantine, and selected deleted-archive usage | `generations`, `deleted_archive` | No; runtime must be unlocked or authenticated recovery |
+| `identity.generation.quarantine.prune` | Irreversibly delete explicitly selected non-authoritative quarantined generation publications after durable audit | `generation_quarantine` | Yes; recovery-admin state is allowed |
+| `identity.generation.abandoned.discard` | Irreversibly delete explicitly selected in-place abandoned publications that reconciliation cannot safely quarantine | `generation_abandoned` | Yes; recovery-admin state is allowed |
+| `identity.archive.prune` | Irreversibly delete explicitly selected canonical entries from the selected generation's deleted credential/template archive after durable intent audit | `deleted_archive` | Yes; recovery-admin state is allowed |
+| `keytypes.view` | List available key types | `keytypes` | No |
+| `keytypes.activate` | Activate a key type | `keytype` | Yes |
+| `keytypes.deactivate` | Deactivate a key type | `keytype` | Yes |
+| `templates.view` | List template library | `templates` | Yes |
+| `templates.install` | Install a template | `template` | Yes |
+| `templates.remove` | Remove an installed template | `template` | Yes |
+| `policy.view` | View signer policy | `policy` | No |
+| `policy.update` | Update signer policy | `policy` | No |
+| `settings.view` | View admin settings | `settings` | No |
+| `settings.update` | Update admin settings | `settings` | No |
+| `clients.view` | List enrolled client keys and their live connections, and the enrollment requests waiting for approval | `clients`, `client_enrollment` | No |
+| `clients.enroll` | Approve or reject a queued client enrollment request, or import a client public key directly | `client_enrollment`, `client` | No |
+| `clients.revoke` | Revoke one enrolled client key, or every key, closing its connections | `client`, `clients` | No |
+| `health.get` | Reserved action name; `/health` is unauthenticated and does not call the authorizer | `system` | No |
+
+New sensitive operations must either use an existing action with the same
+meaning or define a new stable action before implementation.
+
+### Product Action Allowlist
+
+`ProductAllowedActions` and `ClientAllowedActions` are closed, explicit sets
+populated in code. The product authorizer grants an operation only when all of
+these conditions hold:
+
+- the principal is exactly `system:product-admin`, or is a `client:` principal
+  whose role is `client`;
+- the action is in the closed known-action vocabulary;
+- the action is independently present in the allowlist for that principal
+  kind; and
+- the callsite supplies a concrete resource type and, where applicable, ID.
+
+Adding a known action does not add it to the product allowlist. This preserves
+a deliberate review point for new sensitive operations. There is no runtime
+principal, group, grant, wildcard-target, membership, or disabled-node graph in
+the single-product authorizer.
+
+### Enforcement Points
+
+Authorization checks must run before private-key access, mutation, approval
+response handling, client enrollment or revocation, or policy/settings changes.
+
+Enforced callsites:
+
+- `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`,
+  `/sign/component`, `/sign/assemble`, `/sign/bounded-admin`,
+  `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
+  `/status`, `/keys`, `/keytypes`, `/admin/generate`, and `/admin/keys` with
+  `requireAuth`.
+- `internal/signerapp/daemon/http_auth.go` calls `Authorizer.Authorize` after
+  authentication and before the handler executes.
+- `internal/signerapp/adminserver/session.go` gates auth-time unlock through
+  `authorizeIdentity`.
+- `internal/signerapp/adminserver/handlers.go` gates admin `unlock`, key
+  list/details/generate/import/export/delete, key type list/activate/deactivate,
+  template list/install/remove, policy view/update, settings view/update,
+  signer-managed backup creation/list, credential restore preview/apply,
+  restore rollback/reconciliation,
+  passphrase rotation, signing approval response, client enrollment response,
+  enrolled-key listing, and key revocation through `s.authorize`.
+
+`/health` is intentionally absent from the enforcement list. It is an
+unauthenticated health endpoint in [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract);
+`health.get` is reserved.
+
+### Denial Semantics
+
+Authorization is fail-closed:
+
+- nil or unknown principal is forbidden
+- unknown action is forbidden before allowlist matching
+- known but unlisted action is forbidden
+
+Wire behavior:
+
+- HTTP authentication failure returns `401`
+- HTTP authorization failure returns `403`
+- IPC/admin authorization failure returns an `error` message with code
+  `authorization_denied`
+- HTTP authorization denials are written to the audit log as auth failures with
+  an authorization reason
+- IPC/admin authorization denials are written to the audit log as
+  `AUTHORIZATION_DENIED`
+
+### Audit Attribution
+
+Audit records identify the actors and request context for sensitive operations.
+
+The attribution fields are listed under [Audit Logger](#audit-logger).
+
+Target invariant:
+
+```text
+Every sensitive operation should be attributable to its principal and relevant
+operation-specific resource evidence.
+```
+
+Authorization denials must also be attributable. Admin denials record the
+session, principal, action, resource, and denial reason. HTTP
+denials record the authenticated principal and remote address at the HTTP auth
+boundary.
+
+### Security Invariants
+
+- Runtime code must not use an allow-all authorizer.
+- Product authorization must use an explicit action allowlist.
+- Every private-key operation must have an authorization check.
+- Every key, policy, settings, template, client-registry, identity, or
+  lifecycle mutation must have an authorization check.
+- Auth-time unlock must be authorization-gated.
+- Approval responses must be authorization-gated.
+- Authorization resources must not grow a runtime or store selector.
+- Unknown actions must fail closed.
+- Unknown actions must fail before allowlist matching so callsite typos do
+  not create ad hoc permissions.
+- Unknown principals must fail closed.
+- `system:product-admin` is reserved.
+- A client principal's role is assigned by the trusted authentication path,
+  never read from a request.
+
 ## Interface Architecture
 
 Authentication, authorization, and audit logging are abstracted behind
 interfaces for extensibility. This section summarizes the interfaces; the
 authorization architecture and invariants live in
-[ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+[Authorization](#authorization).
 
 ### Authenticator Interface
 
@@ -743,8 +1110,8 @@ type Resource struct {
 - `internal/authz.ProductAuthorizer` - exact principal, action-allowlist, and product-resource checks with no mutable principal/group/grant graph
 - `authz.NewProductSingleAuthorizer()` - maps product credentials to the reserved `system:product-admin` principal and a copied explicit action allowlist
 
-See [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the action vocabulary,
-product-principal model, denial semantics, and enforcement points.
+See [Action Vocabulary](#action-vocabulary), [Principal](#principal),
+[Denial Semantics](#denial-semantics), and [Enforcement Points](#enforcement-points).
 
 ### Audit Logger
 
@@ -788,7 +1155,8 @@ appends one JSON object per line with a UTC timestamp, and syncs each write.
 Audit entries carry attribution fields:
 
 - `principal`: principal field
-- `requester_principal`: principal requesting the action
+- `requester_principal`: principal requesting the action; for tunneled
+  HTTP requests this is the connection's `client:<fingerprint>`
 - `approver_principal`: principal approving or rejecting the action
 - `admin_session_id`: admin protocol session ID when available
 - `transport`: `ipc`, `ssh`, `http`, or empty for process-level events
@@ -796,6 +1164,7 @@ Audit entries carry attribution fields:
 - `txn_auth`, `txn_sender`, `txn_type`, `txn_details`, `txid`: transaction/key attribution for signing and key events
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
+- `policy_rule_id`: policy rule that forced manual signing review, when present
 - `key_count`: key count for startup and reload events
 
 Requester and approver remain distinct principal fields in the log shape.
@@ -895,7 +1264,7 @@ Signing-audit semantics:
   signature leaves the signer; it records the account, `txid`,
   `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
   release memory from these entries at unlock (see
-  [ARCH_HTTP_API.md](ARCH_HTTP_API.md#rotating-accounts-rotating1))
+  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1))
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
@@ -959,22 +1328,23 @@ Store-management audit semantics:
 All sensitive handlers run through both authentication and authorization:
 
 ```go
-// cmd/apsigner/main.go composes the Signer; internal/signerapp/daemon/http_runtime.go
+// internal/signerapp/daemon/run.go composes the Signer; internal/signerapp/daemon/http_runtime.go
 // registers handlers. Product authentication is bound directly to the one runtime.
-productAuth := daemon.NewProductAuthenticator(nodeFailState, productRuntime)
 authorizer := authz.NewProductSingleAuthorizer()
 
 server := &Signer{
-    authenticator: productAuth,
-    runtime:       productRuntime,
+    nodeFailState: &productruntime.NodeFailState{},
     authorizer:    authorizer,
 }
+server.httpAuth = newProductAuthenticator(server.nodeFailState, productRuntime)
 
 // Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
 mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
 mux.HandleFunc("/sign/bounded-admin", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleBoundedAdmin))
 mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
 mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
+mux.HandleFunc("/sign/rotating/prepare", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleRotatingPrepare))
+mux.HandleFunc("/sign/rotating/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleRotatingSign))
 mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
 mux.HandleFunc("/plan", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handlePlan))
 mux.HandleFunc("/status", server.requireAuth(auth.ActionIdentityView, auth.Resource{Type: "identity"}, server.handleStatus))
@@ -995,7 +1365,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
         ctx := r.Context()
 
         // Step 1: Authentication - who is this?
-        identity, err := fs.authenticator.Authenticate(ctx, r)
+        identity, err := fs.httpAuth.Authenticate(ctx, r)
         if err != nil {
             // Return 401 Unauthorized
             return
@@ -1519,5 +1889,23 @@ separate stable actions (`keys.generate`, `keys.delete`) from signing
 adding a known action does not accidentally expose it; an enrolled client key
 holds the `client` role and never an administrative action.
 
-Authorization behavior is documented in
-[ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+## Source of Truth
+
+Primary implementation files:
+
+- `internal/auth/authorizer.go`
+- `internal/authz/authorizer.go`
+- `internal/signerapp/adminserver/session.go`
+- `internal/signerapp/adminserver/handlers.go`
+- `internal/signerapp/daemon/http_auth.go`
+- `internal/signerapp/daemon/product_authenticator.go`
+- `internal/signerapp/daemon/http_runtime.go`
+- `internal/signerapp/daemon/admin_services.go`
+- `internal/signerapp/daemon/audit_attribution.go`
+- `internal/signerapp/audit/audit.go`
+
+Compatibility-bearing references:
+
+- `internal/protocol/error_codes.go`
+- `internal/protocol/messages.go`
+- `docs/ARCH_CONTRACTS.md`

@@ -223,7 +223,7 @@ every stage sign once in normal operation, and the Ed25519 half keeps a
 twice-signed stage (after an expired release and its repair, or a client
 re-signing a rebuilt transaction) at classical strength until the next
 release lands. Nothing prevents the second signature; the signer reports it
-(`ARCH_HTTP_API.md`, rotating alerts).
+(`ARCH_SIGNING.md`, rotating alerts).
 
 ## Unified Registry
 
@@ -547,5 +547,5 @@ Start here when changing the subsystem:
 - `internal/keystore/session.go`
 - `internal/signerapp/templates/reload.go`
 - `docs/DEV_KEYTYPES.md`
-- `docs/ARCH_SPEC.md`
+- `docs/ARCH_OVERVIEW.md`
 - `docs/ARCH_CONTRACTS.md`

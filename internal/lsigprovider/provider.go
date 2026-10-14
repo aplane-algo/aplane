@@ -22,7 +22,7 @@ import "context"
 type LSigProvider interface {
 	// Identity
 	KeyType() string       // Versioned identifier (e.g., "aplane.htlc.v1", "aplane.falcon1024.v1")
-	RoutingFamily() string // Routing family / registry key (e.g., "aplane.falcon1024"); see docs/ARCH_KEYTYPE_AXES.md
+	RoutingFamily() string // Routing family / registry key (e.g., "aplane.falcon1024"); see docs/ARCH_KEYTYPES.md
 	Version() int          // Version number (e.g., 1)
 
 	// Category returns the LSig category.

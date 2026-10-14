@@ -39,7 +39,7 @@ This document answers these questions:
 
 For low-level wire and file-format contracts, see
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). For implementation ownership and
-runtime layering, see [ARCH_SPEC.md](ARCH_SPEC.md). For key/keytype state
+runtime layering, see [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md). For key/keytype state
 machines and transition rules, see [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 The [Catalog](#catalog) at the end inventories every durable file, cache, DTO,
 runtime manager, request model, and public handoff envelope.
@@ -444,7 +444,7 @@ installation and enablement.
 ### Policy
 
 Policy is product-store durable state stored as `aplane.policy.v1` JSON
-documents ([ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md)) in the selected
+documents ([ARCH_POLICY.md](ARCH_POLICY.md#the-boundary)) in the selected
 generation, with the same layout on both node roles:
 
 ```text
@@ -1179,8 +1179,8 @@ columns as follows:
   existing file writer/store lock.
 
 The entries are compact by design. Compatibility-bearing details remain in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md), [ARCH_HTTP_API.md](ARCH_HTTP_API.md),
-and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md), [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract),
+and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 
 ### Signer Storage
 
@@ -1324,7 +1324,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/svcerr` | Contracted in `ARCH_HTTP_API.md`. |
+| HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/svcerr` | Contracted in `ARCH_SIGNING.md`. |
 | Health response | wire projection | process liveness | `signerapi.HealthResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Unauthenticated `GET /health`; not product-store state. |
 | Status response | wire projection | authenticated product runtime state | `signerapi.StatusResponse` | `internal/signerapp/daemon`, `internal/signerapp/rest`, `pkg/signerapi` | `keyset_revision` is process-local, not durable. |
 | Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Cosigner-key rows use Witness Key ID as `address`; guarded rows expose non-secret params. |
@@ -1462,11 +1462,11 @@ name a test inline:
 
 | Model area | Source |
 |------------|--------|
-| Architecture ownership | [ARCH_SPEC.md](ARCH_SPEC.md) |
+| Architecture ownership | [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) |
 | Wire/file contracts | [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) |
-| HTTP DTOs | `pkg/signerapi/types.go`, [ARCH_HTTP_API.md](ARCH_HTTP_API.md) |
-| Admin protocol DTOs | `internal/protocol/messages.go`, [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md) |
-| Authorization actions/resources | `internal/auth`, `internal/authz`, [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) |
+| HTTP DTOs | `pkg/signerapi/types.go`, [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract) |
+| Admin protocol DTOs | `internal/protocol/messages.go`, [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract) |
+| Authorization actions/resources | `internal/auth`, `internal/authz`, [ARCH_SECURITY.md](ARCH_SECURITY.md#authorization) |
 | Policy config and verdicts | `internal/policy`, [ARCH_POLICY.md](ARCH_POLICY.md) |
 | Network tokens and genesis hashes | `internal/config/networkid.go`, `internal/config/genesishash.go`, [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
 | Client/server config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go` |
@@ -1475,16 +1475,16 @@ name a test inline:
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys`, [ARCH_STORE.md](ARCH_STORE.md) |
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |
-| Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_COSIGNER.md](ARCH_COSIGNER.md) |
+| Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_GUARDED.md](ARCH_GUARDED.md) |
 | Bounded authorization / external admin | `internal/boundedmeta`, `lsig/composeddsa`, `internal/witness/artifact`, `internal/boundedadmin`, `internal/apboundedadminapp`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
-| Signing flow | `internal/signerapp/signing`, [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |
+| Signing flow | `internal/signerapp/signing`, [ARCH_SIGNING.md](ARCH_SIGNING.md) |
 | Unlock config | `internal/signerapp/unlockconfig` |
 | Client mutation lock | `internal/clientdata` |
-| App interaction model | `internal/engine`, `internal/appspec`, [ARCH_APP_INTERACTION.md](ARCH_APP_INTERACTION.md) |
+| App interaction model | `internal/engine`, `internal/appspec`, [ARCH_SHELL.md](ARCH_SHELL.md#app-interaction) |
 | Client state/cache | `internal/clientstate`, `internal/cache`, `internal/asa`, `internal/refname` |
 | Plugins | `internal/plugin`, [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |
-| JavaScript/MCP | `internal/scripting`, `internal/jsapi`, [ARCH_MCP.md](ARCH_MCP.md) |
+| JavaScript/MCP | `internal/scripting`, `internal/jsapi`, [ARCH_SHELL.md](ARCH_SHELL.md#mcp-surface) |
 | Backup/restore | `internal/backup` |
 | Audit | `internal/signerapp/audit` |

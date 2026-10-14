@@ -213,7 +213,7 @@ default-visible for generation. Visibility is recorded in
 `aplane.ed25519.v1` are library-visible and not available for generation until
 the product store enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See
-`docs/ARCH_KEYTYPE_AXES.md` for the exact
+`docs/ARCH_KEYTYPES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
 and the concrete `aplane.ed25519.v1` key type.
 Opt-in state records are plaintext product-store metadata under
@@ -344,7 +344,7 @@ Choose exactly one primary category.
 > `internal/cosigner/keytypes` leaf), and **Behave** (the operation, via
 > provider-capability interfaces). They are deliberately distinct because each is
 > called from a place with different availability (registry? provider instance?
-> neither?). Read [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md); routing by
+> neither?). Read [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md); routing by
 > `BaseKeyType` or moving classification onto provider interfaces violates
 > those availability boundaries.
 
@@ -586,7 +586,7 @@ Not supported:
 LogicSig key types register with the unified `internal/lsigprovider` registry.
 Native signing keys such as `ed25519` use the native signing, keygen, mnemonic,
 and algorithm registries instead. The LogicSig interface hierarchy is
-documented in [`ARCH_LSIG_PROVIDER.md`](ARCH_LSIG_PROVIDER.md).
+documented in [`ARCH_KEYTYPES.md`](ARCH_KEYTYPES.md#logicsig-providers).
 
 Summary:
 

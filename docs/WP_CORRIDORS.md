@@ -7,7 +7,7 @@
 > Status: This whitepaper preserves exploratory design framing, including
 > variants that are not shipped. Normative words below apply to that proposed
 > model, not to the current product contract.
-> See [ARCH_CORRIDOR.md](ARCH_CORRIDOR.md), [ARCH_COSIGNER.md](ARCH_COSIGNER.md),
+> See [ARCH_GUARDED.md](ARCH_GUARDED.md) (including [Corridor v1](ARCH_GUARDED.md#corridor-v1)),
 > [USER_KEYTYPES.md](USER_KEYTYPES.md), and
 > [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
 > supported key types.
@@ -32,7 +32,7 @@ profile matrix explored below:
   and escape-hatch variants discussed below are not Corridor v1 features.
 
 The frozen wire, program, metadata, custody, and choreography contract is in
-[ARCH_CORRIDOR.md](ARCH_CORRIDOR.md) and
+[ARCH_GUARDED.md](ARCH_GUARDED.md#corridor-v1) and
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). The remainder of this paper should
 be read as broader product/design rationale and possible future variants.
 

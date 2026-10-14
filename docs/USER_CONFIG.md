@@ -566,7 +566,7 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 
 For the full current policy model and phase ordering, see
 [ARCH_POLICY.md](ARCH_POLICY.md). The v1 JSON document format is specified in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md).
+[ARCH_POLICY.md](ARCH_POLICY.md#the-boundary).
 
 Signer safety policy is product-local and stored in the selected store
 generation. Every node holds one default document, which governs every key
