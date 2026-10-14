@@ -128,15 +128,6 @@ func validatePolicySelector(selector string) {
 	}
 }
 
-// ValidateWitnessKeyIDComponent reports whether id is a canonical Witness Key
-// ID usable as a file-name component.
-func ValidateWitnessKeyIDComponent(id string) error {
-	if !witnessKeyIDPattern.MatchString(id) {
-		return fmt.Errorf("invalid Witness Key ID path component %q", id)
-	}
-	return nil
-}
-
 func validateKeyTypeComponent(keyType string) {
 	if err := ValidateKeyTypeComponent(keyType); err != nil {
 		panic(err.Error())
