@@ -58,6 +58,7 @@ func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow"}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow","keyreg":"review"}}`)
 	assertChanges(t, DiffPolicyV1(current, next),
+		"tightened /transaction_types/*: allow → reject (types without an entry of their own)",
 		"tightened /transaction_types/acfg: allow → reject",
 		"tightened /transaction_types/afrz: allow → reject",
 		"tightened /transaction_types/appl: allow → reject",
@@ -66,12 +67,27 @@ func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 		"tightened /transaction_types/stpf: allow → reject",
 	)
 	assertChanges(t, DiffPolicyV1(next, current),
+		"loosened /transaction_types/*: reject → allow (types without an entry of their own)",
 		"loosened /transaction_types/acfg: reject → allow",
 		"loosened /transaction_types/afrz: reject → allow",
 		"loosened /transaction_types/appl: reject → allow",
 		"loosened /transaction_types/hb: reject → allow",
 		"loosened /transaction_types/keyreg: review → allow",
 		"loosened /transaction_types/stpf: reject → allow",
+	)
+}
+
+// With every known type named, a changed wildcard reaches no known type, but
+// it still decides unlisted and future types, so it is reported on its own.
+func TestDiffPolicyWildcardChangeWithEveryTypeNamed(t *testing.T) {
+	explicit := `"pay":"allow","axfer":"allow","acfg":"allow","afrz":"allow","appl":"allow","keyreg":"allow","stpf":"allow","hb":"allow"`
+	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject",`+explicit+`}}`)
+	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow",`+explicit+`}}`)
+	assertChanges(t, DiffPolicyV1(current, next),
+		"loosened /transaction_types/*: reject → allow (types without an entry of their own)",
+	)
+	assertChanges(t, DiffPolicyV1(next, current),
+		"tightened /transaction_types/*: allow → reject (types without an entry of their own)",
 	)
 }
 

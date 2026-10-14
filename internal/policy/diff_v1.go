@@ -148,8 +148,18 @@ func verdictStrictness(v TransactionTypeVerdict) int {
 }
 
 // transactionTypes compares the effective verdict of every transaction type,
-// so a change to "*" is reported on each type it reaches.
+// so a change to "*" is reported on each type it reaches. The wildcard is
+// also compared on its own: it governs any type the document does not name,
+// including types this build does not know, so a change to it matters even
+// when every known type has an entry of its own.
 func (d *policyDiff) transactionTypes(current, next TransactionTypesV1) {
+	if c, n := current[TransactionTypeWildcard], next[TransactionTypeWildcard]; c != n {
+		effect := PolicyChangeLoosened
+		if verdictStrictness(n) > verdictStrictness(c) {
+			effect = PolicyChangeTightened
+		}
+		d.add("/transaction_types/*", effect, "%s → %s (types without an entry of their own)", c, n)
+	}
 	for _, txType := range TransactionTypeNames {
 		c, n := current.Verdict(txType), next.Verdict(txType)
 		if c == n {

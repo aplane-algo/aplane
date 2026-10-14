@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -696,5 +697,48 @@ func TestOnlineApplyKeepsChangesTheDiffCannotSee(t *testing.T) {
 	}
 	if len(session.applies) != 1 || !strings.Contains(stdout.String(), "differs only in order") {
 		t.Fatalf("reorder: applies %d, output:\n%s", len(session.applies), stdout.String())
+	}
+}
+
+// A default applied together with other documents reports the keys it will
+// govern after the whole change: not a key gaining its own document in the
+// same apply, and a removed key only when the node holds it.
+func TestOnlineDiffGovernedKeysReflectTheWholeChange(t *testing.T) {
+	onlineEnv(t)
+	notHeld := strings.Repeat("C", 52)
+	session := newFakeSession("cosigner",
+		protocol.PolicyDocumentWire{Key: testKeyB, Document: testCosignerDoc(testKeyB)},
+		protocol.PolicyDocumentWire{Key: notHeld, Document: testCosignerDoc(notHeld)},
+	)
+	session.policy.Keys = []protocol.PolicyKeyStatusWire{
+		{Key: testKeyA, Status: "default"},
+		{Key: testKeyB, Status: "own"},
+		{Key: notHeld, Status: "key_not_held"},
+	}
+	defaultFile := writePolicyFile(t, "default.json", policytest.Cosigner(t, policy.DefaultKey, `{"reject_clawback":true}`))
+	ownFile := writePolicyFile(t, "own.json", testCosignerDoc(testKeyA))
+
+	// The default's only key on it gains a document of its own: nothing governed.
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{Session: session}).Run(context.Background(), Command{Verb: VerbDiff, Args: []string{defaultFile, ownFile}}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	if out := stdout.String(); !strings.Contains(out, defaultFile+" (governs no held key; every held key has a policy of its own):") {
+		t.Fatalf("combined diff reports the key gaining its own document as governed:\n%s", out)
+	}
+
+	// Removing a held key's document returns it to the default; removing a
+	// stored document for a key the node does not hold governs nothing.
+	view := adminproto.PolicyView{NodeRole: "cosigner", Keys: []adminproto.PolicyKeyStatus{
+		{Key: testKeyA, Status: adminproto.PolicyKeyDefault},
+		{Key: testKeyB, Status: adminproto.PolicyKeyOwn},
+		{Key: notHeld, Status: adminproto.PolicyKeyNotHeld},
+	}}
+	if note := governedKeysNote(view, nil, []string{testKeyB, notHeld}); note != " (governs 2 held key(s): "+testKeyA+", "+testKeyB+")" {
+		t.Fatalf("governed note with removals = %q", note)
+	}
+	docs := []adminproto.PolicyDocument{{Key: policy.DefaultKey}, {Key: testKeyA}}
+	if note := governedKeysNote(view, docs, []string{testKeyB}); note != " (governs 1 held key(s): "+testKeyB+")" {
+		t.Fatalf("governed note with a key gaining its own document = %q", note)
 	}
 }

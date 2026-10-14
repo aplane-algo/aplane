@@ -283,7 +283,7 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 		}
 		if doc.Key == policy.DefaultKey {
 			nextDefault = doc.Document
-			label += governedKeysNote(view, remove)
+			label += governedKeysNote(view, docs, remove)
 		}
 		out = append(out, policyreview.DocumentDiff{Label: label, Changes: changes, Identical: identical})
 	}
@@ -301,16 +301,29 @@ func diffChange(ctx context.Context, backend Backend, view adminproto.PolicyView
 	return out, nil
 }
 
-// governedKeysNote names the held keys a changed default reaches: those on
-// the default now, plus those losing their own document in the same change.
-func governedKeysNote(view adminproto.PolicyView, remove []string) string {
+// governedKeysNote names the held keys a changed default reaches once the
+// whole change is applied: those on the default now that are not gaining a
+// document of their own in the same change, plus held keys losing theirs.
+func governedKeysNote(view adminproto.PolicyView, docs []adminproto.PolicyDocument, remove []string) string {
+	gaining := map[string]bool{}
+	for _, doc := range docs {
+		if doc.Key != policy.DefaultKey {
+			gaining[doc.Key] = true
+		}
+	}
+	removing := map[string]bool{}
+	for _, key := range remove {
+		removing[key] = true
+	}
 	var governed []string
 	for _, st := range view.Keys {
-		if st.Status == adminproto.PolicyKeyDefault {
+		switch {
+		case st.Status == adminproto.PolicyKeyDefault && !gaining[st.Key]:
+			governed = append(governed, st.Key)
+		case st.Status == adminproto.PolicyKeyOwn && removing[st.Key] && !gaining[st.Key]:
 			governed = append(governed, st.Key)
 		}
 	}
-	governed = append(governed, remove...)
 	if len(governed) == 0 {
 		return " (governs no held key; every held key has a policy of its own)"
 	}
