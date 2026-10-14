@@ -366,6 +366,320 @@ a pure 0 ALGO self-payment with non-zero `RekeyTo` and no close remainder.
 cosigner is spend-only; its pure rekey instead requires the separate offline
 contract-admin witness and does not contact the cosigner.
 
+## Writing a signer policy
+
+This section builds one signer document from the starting template to a
+complete policy with guards, limits, named sets, routes, and a key override.
+Each step adds a fragment to the document; the complete result is in
+[step 7](#7-the-complete-document) and can be checked and applied as it
+stands. The addresses and asset IDs are examples: replace them with your own.
+A cosigner key's document uses the same sets and routes with no review
+fields; see [Cosigner Documents](USER_TRANSFER_ROUTING.md#cosigner-documents).
+
+### 1. Start from the template
+
+```bash
+apadmin policy template signer > policy.json
+```
+
+The template is the document a new store starts with:
+
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "routes": [
+      {
+        "id": "self-transfer",
+        "description": "Any account may send any asset to itself",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["self"]
+      }
+    ]
+  }
+}
+```
+
+Routing is on, one route lets every account send to itself (ASA opt-ins and
+self-sends), and every other direct transfer is a route miss, which
+`on_no_route: reject` rejects. Keep `transfer_policy` and the `self-transfer`
+route in every document you write. A document without `transfer_policy`
+turns routing off: applied to a fresh store it removes the self-transfer
+allowlist and leaves every transfer to the operator default. `diff` reports
+that as a removed route, so read the diff before confirming.
+
+### 2. Set document-wide guards
+
+Add the scalar settings at the top level, next to `format`:
+
+```json
+  "description": "Operations signer",
+  "reject_close_remainder": true,
+  "reject_clawback": true,
+  "always_review_warnings": true,
+  "max_fee_microalgos": "10000",
+```
+
+- `reject_*` settings are Always Deny: a matching transaction is rejected
+  before any prompt and cannot be approved by an operator. Here ALGO
+  close-outs and clawbacks are rejected for every account on the node.
+  `reject_foreign_rekey` defaults to `true` and is left unset.
+- `always_review_warnings` forces an operator prompt, even with
+  `user_auto_approve: true`, when warning analysis finds a rekey, an ALGO or
+  ASA close-out, a clawback, an app delete or clear-state call, or a fee
+  above 1 ALGO.
+- `max_fee_microalgos` rejects a transaction whose fee, as finally signed,
+  exceeds the cap. That fee includes anything the signer adds for LogicSig
+  budget or post-quantum keys, so set the cap above what those keys need.
+
+### 3. Add document-level limits
+
+```json
+  "limits": {
+    "mainnet": {
+      "algo": { "review_above": "100000000", "reject_above": "1000000000" },
+      "asa:31566704": { "reject_above": "5000000000" }
+    }
+  },
+```
+
+Document limits are ceilings for every account on the node on that network:
+a mainnet ALGO payment above 100 ALGO needs operator review, one above 1000
+ALGO is rejected, and a USDC transfer above 5000 USDC is rejected. Amounts
+are decimal strings in base units (microAlgos; USDC has 6 decimals), and
+`review_above` must not exceed `reject_above`. Routes cannot raise these
+ceilings; they can only add thresholds of their own. A network named here
+must be one the node's configuration maps a genesis hash to.
+
+### 4. Name the accounts and assets
+
+```json
+  "address_sets": {
+    "treasury": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"],
+    "ops": {
+      "mainnet": ["EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"],
+      "testnet": ["GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA"]
+    }
+  },
+  "asset_sets": {
+    "usd": {
+      "mainnet": ["asa:31566704"],
+      "testnet": ["asa:10458941"]
+    }
+  },
+```
+
+An address set is either a flat list, which applies on every network, or a
+map from network to addresses. Asset sets are always per network because ASA
+IDs are network-local. Sets do nothing on their own; routes reference them as
+`@treasury`, `@ops`, and `@usd`.
+
+### 5. Add routes
+
+Extend `transfer_policy`, keeping the `self-transfer` route:
+
+```json
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "blocked_destinations": ["KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"],
+    "routes": [
+      { "id": "self-transfer", "...": "as in the template" },
+      {
+        "id": "treasury-to-ops",
+        "description": "Treasury tops up ops in ALGO",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["algo"],
+        "destinations": ["@ops"],
+        "limits": {
+          "mainnet": { "algo": { "review_above": "500000000" } }
+        }
+      },
+      {
+        "id": "ops-usd-payouts",
+        "description": "Ops pays anyone in USD, capped per payment",
+        "networks": ["mainnet", "testnet"],
+        "sources": ["@ops"],
+        "assets": ["@usd"],
+        "destinations": ["*"],
+        "limits": {
+          "mainnet": { "asa:31566704": { "reject_above": "1000000000" } },
+          "testnet": { "asa:10458941": { "reject_above": "1000000000" } }
+        }
+      }
+    ]
+  },
+```
+
+How to read this:
+
+- A route is an allowance for direct ALGO and ASA transfers from `sources`
+  of `assets` to `destinations` on `networks`. Treasury may pay ops in ALGO
+  on mainnet; ops may pay anyone in USD on either network. Every other
+  direct transfer, including treasury paying anyone else or ops sending
+  ALGO, is a route miss and is rejected.
+- A route match lets the transfer continue through the other rules; it is
+  not an approval. The document limits from step 3 and the warning review
+  from step 2 still apply.
+- Route `limits` add thresholds for that route. Treasury payments above 500
+  ALGO are reviewed; USD payouts above 1000 USDC are rejected. A route's
+  limits may only name networks and assets the route covers.
+- When several routes match one transfer, the lowest threshold among them
+  wins. A wildcard route with a limit therefore caps every narrower route it
+  overlaps; put organization-wide ceilings in the document `limits` instead.
+- `blocked_destinations` is checked before any route, so the wildcard
+  `ops-usd-payouts` route cannot pay the blocked address.
+- Close-outs and clawbacks are rejected unless a matching route sets
+  `allow_close` or `allow_clawback`, and the `reject_*` settings from step 2
+  override even that. For those routes, asset opt-ins, and the exact
+  matching rules, see [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
+
+### 6. Override one key
+
+```json
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "description": "Treasury key: tighter fee and earlier review",
+      "max_fee_microalgos": "2000",
+      "limits": {
+        "mainnet": { "algo": { "review_above": "50000000" } }
+      }
+    }
+  }
+```
+
+The treasury key keeps every document setting except the two it names: its
+fee cap drops to 2000 microAlgos and mainnet ALGO review starts at 50 ALGO
+while the 1000 ALGO reject cap is inherited. An override is selected by the
+auth address that signs, so it must be the key's own address. Overrides carry
+scalar settings and `limits` only; routing for one account is written with
+route `sources`, as in step 5.
+
+### 7. The complete document
+
+```json
+{
+  "format": "aplane.signer-policy.v1",
+  "description": "Operations signer",
+  "reject_close_remainder": true,
+  "reject_clawback": true,
+  "always_review_warnings": true,
+  "max_fee_microalgos": "10000",
+  "limits": {
+    "mainnet": {
+      "algo": { "review_above": "100000000", "reject_above": "1000000000" },
+      "asa:31566704": { "reject_above": "5000000000" }
+    }
+  },
+  "address_sets": {
+    "treasury": ["CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM"],
+    "ops": {
+      "mainnet": ["EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI"],
+      "testnet": ["GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZ6LH5CFA"]
+    }
+  },
+  "asset_sets": {
+    "usd": {
+      "mainnet": ["asa:31566704"],
+      "testnet": ["asa:10458941"]
+    }
+  },
+  "transfer_policy": {
+    "enabled": true,
+    "on_no_route": "reject",
+    "blocked_destinations": ["KVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVKVDNKFTE"],
+    "routes": [
+      {
+        "id": "self-transfer",
+        "description": "Any account may send any asset to itself",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["self"]
+      },
+      {
+        "id": "treasury-to-ops",
+        "description": "Treasury tops up ops in ALGO",
+        "networks": ["mainnet"],
+        "sources": ["@treasury"],
+        "assets": ["algo"],
+        "destinations": ["@ops"],
+        "limits": {
+          "mainnet": { "algo": { "review_above": "500000000" } }
+        }
+      },
+      {
+        "id": "ops-usd-payouts",
+        "description": "Ops pays anyone in USD, capped per payment",
+        "networks": ["mainnet", "testnet"],
+        "sources": ["@ops"],
+        "assets": ["@usd"],
+        "destinations": ["*"],
+        "limits": {
+          "mainnet": { "asa:31566704": { "reject_above": "1000000000" } },
+          "testnet": { "asa:10458941": { "reject_above": "1000000000" } }
+        }
+      }
+    ]
+  },
+  "key_overrides": {
+    "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {
+      "description": "Treasury key: tighter fee and earlier review",
+      "max_fee_microalgos": "2000",
+      "limits": {
+        "mainnet": { "algo": { "review_above": "50000000" } }
+      }
+    }
+  }
+}
+```
+
+A larger variant with close-out and clawback routes is the contract fixture
+[`test/contracts/policy/v1/signer_full.json`](../test/contracts/policy/v1/signer_full.json),
+which the schema and decoder tests keep valid.
+
+### 8. Check, diff, and apply
+
+```bash
+apadmin policy check policy.json
+apadmin policy diff policy.json
+apadmin policy apply policy.json
+```
+
+`check` reports errors with the JSON Pointer of the failing field and prints
+warnings; for this document there are none. Against a fresh store, `diff`
+marks every guard, limit, and the blocked destination `tightened`, the two
+new routes `loosened`, and the sets and override `changed`. Confirm the
+changes are the ones you intended, then apply. Work through the
+[Validation Checklist](#validation-checklist) before relying on the policy.
+
+### What this policy does not control
+
+- **Transaction types other than payments and asset transfers.** Asset
+  configuration, asset freeze, key registration, and application calls
+  receive no routing or limit verdict; they go to the operator default.
+  `always_review_warnings` catches them only when they carry a rekey,
+  close-out, or clawback field, delete or clear an application, or pay a
+  fee above 1 ALGO. An application update or an asset configuration change
+  is not a warning. If such transactions must always be reviewed, keep
+  `user_auto_approve: false`.
+- **Inner transactions.** Routing inspects the signed transaction only, not
+  what an application does with it.
+- **Group totals.** Thresholds apply to each transaction. A group of several
+  transfers that are each below a threshold is not summed against it.
+- **Accounts after a rekey.** A key override follows the auth address that
+  signs. Once an account is rekeyed to another key this node holds, that
+  key's override governs it.
+- **The operator default.** `user_auto_approve` lives in
+  `identities/default/config.yaml`, outside the policy document.
+- **Who may ask and whether keys are unlocked.** Client enrollment and
+  unlock state are separate from policy.
+
 ## Basic Example
 
 ```json
@@ -382,7 +696,11 @@ contract-admin witness and does not contact the cosigner.
 ```
 
 This rejects foreign rekeys and ALGO close-outs, forces review for warning-level
-findings, and rejects any transaction fee above 1 ALGO.
+findings, and rejects any transaction fee above 1 ALGO. It carries no
+`transfer_policy`, so routing is off: applied to a fresh store it removes the
+starting `self-transfer` route and leaves every direct transfer to the
+operator default. [Writing a signer policy](#writing-a-signer-policy) builds
+a document that keeps routing on.
 
 ## Transfer Routing
 
