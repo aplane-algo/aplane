@@ -1928,7 +1928,7 @@ Verification expectations remain:
 
 ## Approval Model
 
-See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Approval and Policy Contracts) for the approval contract.
+See [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) for the approval contract.
 
 ## SSH, Watching, Templates, and Audit
 
