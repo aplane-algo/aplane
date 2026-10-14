@@ -44,7 +44,9 @@ cosigner-only rule ids `cosigner:non_transfer`,
 
 Stores from earlier releases are not read: there is no compatibility shim for
 `policy.json`, the old formats, or `key_overrides`. Re-initialize the store, or
-rewrite its policy documents in the new format before starting the node.
+rewrite its policy documents in the new format before starting the node. The
+installer's in-place upgrade floor moves to v0.41.0 accordingly: an install
+from an earlier release needs a fresh install root rather than an upgrade.
 
 ## Rotating hash hybrid accounts
 
