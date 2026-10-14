@@ -282,7 +282,7 @@ disturb the primary signer tunnel. Cosigner HTTP requests use restricted direct 
 that authenticated SSH connection instead of a transient local forwarding
 listener.
 
-Setup then makes three separate observations on its own connection to the
+Setup then makes two separate observations on its own connection to the
 chosen endpoint:
 
 1. **Node role.** It reads `node_role` from authenticated `/status` and
@@ -290,11 +290,7 @@ chosen endpoint:
    or a failed read stops setup. Sweeps and signing do not check the role;
    setup does because an endpoint-only handoff carries nothing else that
    distinguishes a cosigner from a signer.
-2. **Key from the document.** When the input carries a witness, the validated,
-   deduplicated `/keys` inventory must contain the exact key type, public key,
-   and derived Witness Key ID. Endpoint-only input has no key to compare and
-   reports only the inventory count.
-3. **Routes.** It runs the signing resolver's bounded sweep and reports the
+2. **Routes.** It runs the signing resolver's bounded sweep and reports the
    result in the resolver's own classifications. An endpoint that was tried and
    failed is ignored by routing, so routes through answering endpoints stand
    but are qualified. A sweep that stopped early (an SSH host-key mismatch, or
@@ -302,8 +298,7 @@ chosen endpoint:
    is reported as a mismatch and the remaining ones as never contacted.
 
 Setup fails only for the connection being added: no access, a node that is not
-a cosigner, a document key that is not advertised, or a witness that this
-endpoint and another both advertise. The state of other endpoints, and of
+a cosigner, or a witness that this endpoint and another both advertise. The state of other endpoints, and of
 accounts that need other cosigners, is reported without failing it.
 
 Reference aliases are security-bearing generation inputs: resolving

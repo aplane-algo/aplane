@@ -10,7 +10,7 @@
 
 Normative inputs:
 
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): key-file, v1 signing-metadata,
+- [ARCH_STORE.md](ARCH_STORE.md): key-file, v1 signing-metadata,
   off-curve, template reload, backup/restore, and signing-authority contracts.
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable authority map for key files,
   templates, policy, and runtime indexes.

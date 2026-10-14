@@ -680,7 +680,7 @@ Configuration behavior and validation rules are compatibility-bearing and are do
 
 ## On-Disk Data Model
 
-The concrete on-disk layouts, key-file compatibility, keystore metadata versioning, template files, and backup format are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). The audit log format and events are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
+The concrete on-disk layouts, key-file compatibility, keystore metadata versioning, template files, and backup format are documented in [ARCH_STORE.md](ARCH_STORE.md). The audit log format and events are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
 
 Operationally:
 
@@ -1287,7 +1287,7 @@ Group canonicalization is described in [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md#sign-pr
 
 ### Signing Authority And Template Authority
 
-See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Files / Signing Authority) for the signing authority contract.
+See [ARCH_STORE.md](ARCH_STORE.md#signing-authority) for the signing authority contract.
 
 ## Bounded Authorization Contracts
 
@@ -1375,7 +1375,7 @@ the node rather than being silently skipped. `internal/noderole` owns
 `node.yaml` parsing and runtime-bound integrity sidecars, sharing the sidecar
 format and HMAC checks with policy through `internal/integritysidecar`; `internal/keyclass`
 owns role-versus-key-type classification. The exact node-role contract and
-on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+on-disk integrity checks live in [ARCH_STORE.md](ARCH_STORE.md#node-role-gate).
 
 ### Key Types
 
@@ -1559,8 +1559,8 @@ inventory.
 
 Operator handoff and manual endpoint setup use two paths:
 
-- `apadmin endpoint export` emits `aplane.endpoint.v1` with portable endpoint
-  URL and port data only. The endpoint URL is either explicit CLI input
+- `apadmin endpoint export` emits `aplane.endpoint.v1` carrying the schema and
+  the endpoint URL only. The endpoint URL is either explicit CLI input
   (`--url` or `--host`) or the operator-declared signer
   `config.yaml` value `endpoint.advertise_url`; it is not inferred from the
   SSH listener bind address.
@@ -1663,8 +1663,8 @@ Primary implementation ownership:
   evaluation domains.
 
 Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK
-contracts remain in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
-[ARCH_HTTP_API.md](ARCH_HTTP_API.md).
+contracts live in their subject documents; [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md)
+indexes them.
 
 ## Provider and Algorithm Model
 
@@ -1706,7 +1706,7 @@ This split means:
 - decryption remains on-demand,
 - signer lock state is modeled as keyring availability plus session activity.
 
-Offline mutation rules are compatibility-sensitive and are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+Offline mutation rules are compatibility-sensitive and are documented in [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access).
 
 ## Plugin System
 
@@ -1732,7 +1732,7 @@ The plugin manager owns:
 - reuse between commands,
 - shutdown.
 
-Process protocol details, discovery order, method names, and manifest contract are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+Process protocol details, discovery order, method names, and manifest contract are documented in [ARCH_PLUGINS.md](ARCH_PLUGINS.md).
 
 ## JavaScript and MCP
 
@@ -1995,7 +1995,7 @@ The SSH tunnel is implemented in `internal/sshtunnel`. It provides:
 - SSH clients in `apshell` and the external Go, Python, and
   TypeScript SDKs that establish the tunnel.
 
-Watcher, template reload, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). Audit logging, client enrollment, and key revocation contracts are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md).
+Watcher, template reload, and backup/restore contracts are documented in [ARCH_STORE.md](ARCH_STORE.md). Audit logging, client enrollment, and key revocation contracts are documented in [ARCH_SECURITY.md](ARCH_SECURITY.md).
 
 Architecturally:
 

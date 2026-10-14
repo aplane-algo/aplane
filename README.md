@@ -216,7 +216,7 @@ All documentation is in the [`docs/`](docs/) directory.
 
 ### Specification
 - [ARCH_SPEC.md](docs/ARCH_SPEC.md) - Cross-cutting implementation map and subsystem ownership
-- [ARCH_CONTRACTS.md](docs/ARCH_CONTRACTS.md) - Compatibility contracts (on-disk, config, SDK, plugin, MCP) with TOC into extracted docs
+- [ARCH_CONTRACTS.md](docs/ARCH_CONTRACTS.md) - Index of compatibility contracts by owning document, plus compatibility scope and configuration contracts
 - [ARCH_HTTP_API.md](docs/ARCH_HTTP_API.md) - HTTP wire shapes, status codes, product-runtime binding, and sign cancellation
 - [ARCH_ADMIN_PROTOCOL.md](docs/ARCH_ADMIN_PROTOCOL.md) - apsigner admin RPC catalog, payload shapes, writable-settings rules
 - [ARCH_POLICY_FORMAT.md](docs/ARCH_POLICY_FORMAT.md) - v1 JSON policy document format, storage, and acceptance rules

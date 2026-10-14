@@ -7,7 +7,7 @@ Guidelines for AI agents and contributors working on the APlane codebase.
 Before making architectural, protocol, storage, or refactor-sensitive changes, read:
 
 - `docs/ARCH_SPEC.md`: repo orientation, subsystem ownership, runtime model, architectural seams, and source-of-truth files
-- `docs/ARCH_CONTRACTS.md`: compatibility-bearing HTTP/IPC behavior, on-disk formats, config contracts, SDK/plugin/MCP contracts
+- `docs/ARCH_CONTRACTS.md`: index of compatibility-bearing contracts and where each lives; holds the compatibility scope and configuration contracts
 - `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
 - `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
 - `docs/ARCH_POLICY_FORMAT.md`: `aplane.policy.v1` JSON policy document format (`role` and `key`), storage (`default.json` plus `policies/<selector>.json` on both node roles), and acceptance rules
@@ -301,7 +301,7 @@ gofmt -s -w .         # Format code
 - `identities/default/unlock.yaml`: Product passphrase-helper configuration
 - `identities/default/generations/<gen-id>/default.json` (node default) and `policies/<selector>.json` (per-key, on both node roles): `aplane.policy.v1` JSON policy documents, each with a `.hmac` sidecar
 
-See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility details.
+See `docs/ARCH_STORE.md` for the full on-disk layout and `docs/ARCH_CONTRACTS.md` for where each compatibility contract lives.
 
 ### Environment Variables
 - `APCLIENT_DATA`: Data directory for apshell (config, plugins)
@@ -315,7 +315,7 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 
 ### Engineering Docs
 - `ARCH_SPEC.md`: Cross-cutting implementation map, ownership model, runtime model, architectural seams, source-of-truth files
-- `ARCH_CONTRACTS.md`: Compatibility-bearing on-disk/config/SDK/plugin/MCP contracts and TOC pointing at extracted contract docs
+- `ARCH_CONTRACTS.md`: Index of compatibility-bearing contracts by owning document, plus the compatibility scope and configuration contracts
 - `ARCH_HTTP_API.md`: HTTP request/response wire shapes, status codes, fixed runtime binding, and `/sign/cancel` lifecycle
 - `ARCH_ADMIN_PROTOCOL.md`: apsigner admin RPC message catalog, payload shapes, and writable-settings rules
 

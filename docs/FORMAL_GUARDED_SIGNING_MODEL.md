@@ -15,9 +15,11 @@ Normative inputs:
   cosigner key types, guarded account key types, endpoint workflow,
   role-separated messages, assembly semantics, and endpoint routing trust
   model.
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
-  `/sign/assemble`, endpoint registry, node role, policy documents,
-  and on-disk selector contracts.
+- [ARCH_HTTP_API.md](ARCH_HTTP_API.md) and [ARCH_COSIGNER.md](ARCH_COSIGNER.md):
+  `/keys`, `/sign/component`, and `/sign/assemble`;
+  [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#endpoint-registry): endpoint registry;
+  [ARCH_STORE.md](ARCH_STORE.md): node role and on-disk selectors;
+  [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md): policy documents.
 - [ARCH_POLICY.md](ARCH_POLICY.md): the cosigner node default and per-key
   documents, the transaction-type verdict, cosigner transfer policy,
   deterministic reject-only route-miss behavior, and Witness Key ID document

@@ -1003,7 +1003,7 @@ Witness Key ID in `txn_auth`, the decoded sender in `txn_sender`, and the
 policy rule in `policy_rule_id` when applicable. The
 architecture overview is in [ARCH_COSIGNER.md](ARCH_COSIGNER.md);
 compatibility-bearing audit details live in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+[ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
 
 ## Source Files
 

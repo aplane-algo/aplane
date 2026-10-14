@@ -418,8 +418,8 @@ Creating and using rotating accounts:
 
 Restore: a rotating key restored from a backup, rebuilt or re-imported has
 everything it needs. The signer reads the live stage from the chain and
-rebuilds the stage address table (`ARCH_CONTRACTS.md`, Stage Address
-Tables) in the background; until the table reaches the live stage,
+rebuilds the stage address table
+([ARCH_STORE.md](ARCH_STORE.md#stage-address-tables)) in the background; until the table reaches the live stage,
 requests are refused with `rotating_stage_unproven` and `/status` carries a
 note ("stage not yet found, N stages scanned"). No operator recovery step
 exists or is needed.

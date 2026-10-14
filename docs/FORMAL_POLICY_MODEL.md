@@ -13,7 +13,7 @@ Normative inputs:
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy storage, verdict precedence, snapshot
   semantics, rule inventory, transfer routing, per-key policy selection, and
   transaction scope.
-- [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing approval and
+- [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model): compatibility-bearing approval and
   policy contract.
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md): finalized transaction data and policy
   placement in the signing flow.

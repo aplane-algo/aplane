@@ -68,7 +68,7 @@ The word **contract** has three related but distinct uses in APlane:
 - An **authorization contract**, such as `bounded1`, is an on-chain LogicSig
   behavior and its canonical durable metadata vocabulary.
 - A **wire or storage contract** is a compatibility-bearing DTO, file shape, or
-  behavioral guarantee documented in `ARCH_CONTRACTS.md`.
+  behavioral guarantee, indexed in `ARCH_CONTRACTS.md`.
 - A **message or transcript contract** is an exact cryptographic encoding and
   domain, such as `APLANE_COSIGNER_V1` or `APLANE_BOUNDED_ADMIN_AUTH_V1`.
 

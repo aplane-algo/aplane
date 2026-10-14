@@ -519,6 +519,12 @@ operator must verify the key's fingerprint with the client's owner through a
 channel they trust; the public key itself is not secret. A waiting request
 for the same key is cleared by the import.
 
+During enrollment, apshell displays the complete SHA256 fingerprint
+of the key that signed SSH authentication, including agent-selected keys.
+The admin enrollment request already carries that fingerprint; this adds no wire
+field. It identifies the requesting client key, not an individual request,
+the server host key, or a Witness Key ID.
+
 The admin protocol message is `import_client_key` (one OpenSSH
 public-key line; its comment is the label unless one is given). Imports reject
 authorized_keys options, including reserved `aplane-` options, and trailing key

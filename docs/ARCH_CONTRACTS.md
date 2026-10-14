@@ -1,32 +1,42 @@
 # Engineering Contracts
 
-> Compatibility-bearing wire formats, on-disk formats, and behavioral contracts.
+> Index of APlane's compatibility-bearing contracts. Each contract lives in the
+> document that owns its subject; this index says where. The compatibility scope
+> and the configuration contracts, which have no other owner, are kept here.
 > For system orientation, ownership, and architecture, see [ARCH_SPEC.md](ARCH_SPEC.md).
-> For the signer store: layout, formats, generations, key and key type lifecycle, reload,
-> and backup and restore, see [ARCH_STORE.md](ARCH_STORE.md).
-> For the explanatory network context model, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
-> For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
-> For guarded signing and cosigner node architecture, see [ARCH_COSIGNER.md](ARCH_COSIGNER.md).
-> For bounded authorization and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
-> Load this document when working on a specific subsystem, not as general pre-reading.
 
 ## Contents
 
+- [Where Each Contract Lives](#where-each-contract-lives)
 - [Current Release Compatibility Scope](#current-release-compatibility-scope)
-- [Key Type Identifier Contract](#key-type-identifier-contract)
-- [HTTP API Contract](#http-api-contract)
-- [Admin Protocol](#admin-protocol)
-- [apshell Parsing Contracts](#apshell-parsing-contracts)
 - [Configuration Contracts](#configuration-contracts)
-- [On-Disk Formats](#on-disk-formats)
-- [Authentication, SSH, and Client Enrollment](#authentication-ssh-and-client-enrollment)
-- [Approval and Policy Contracts](#approval-and-policy-contracts)
-- [Runtime Ownership and Shutdown](#runtime-ownership-and-shutdown)
-- [Plugin Contract](#plugin-contract)
-- [MCP Contract](#mcp-contract)
-- [Error Model](#error-model)
-- [SDK Contracts](#sdk-contracts)
-- [Swap Contract](#swap-contract)
+
+## Where Each Contract Lives
+
+| Contract | Owner |
+|---|---|
+| HTTP API wire shapes, status codes, `/sign/cancel` | [ARCH_HTTP_API.md](ARCH_HTTP_API.md) |
+| Error model | [ARCH_HTTP_API.md](ARCH_HTTP_API.md#error-model) |
+| SDK contracts | [ARCH_HTTP_API.md](ARCH_HTTP_API.md#sdk-contracts) |
+| Admin protocol, admin error codes, admin client capabilities | [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md) |
+| apshell parsing | [ARCH_REPL.md](ARCH_REPL.md#parsing-contracts) |
+| Signer data directory layout and store formats (store root, term envelopes, managed credential files, key type records, template files, stage address tables) | [ARCH_STORE.md](ARCH_STORE.md) |
+| Generations, reload, key watching, backup and restore | [ARCH_STORE.md](ARCH_STORE.md) |
+| Client data directory layout, endpoint registry, client caches | [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model) |
+| Policy document format and storage | [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md) |
+| Approval and policy verdicts | [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) |
+| Approval waits and cancellation | [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md#approval-waits-and-cancellation) |
+| Native Falcon authorization and consensus resources | [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |
+| Authentication, SSH, client enrollment, revocation | [ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer) |
+| Audit log | [ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger) |
+| Cosigner component message and canonicalization, cosigner key file, public key reference library | [ARCH_COSIGNER.md](ARCH_COSIGNER.md) |
+| `bounded1` authorization, external contract-admin artifact, ceremony, and inventory | [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
+| Key type identifiers | [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md#key-type-identifier-contract) |
+| Network context tokens and genesis hashes | [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
+| Plugin contract | [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |
+| MCP tool contract | [ARCH_MCP.md](ARCH_MCP.md#tool-surface) |
+| Runtime ownership and shutdown | [ARCH_SPEC.md](ARCH_SPEC.md#lockunlock-lifecycle) |
+| Standalone swap client | [ARCH_SPEC.md](ARCH_SPEC.md#standalone-swap-client) |
 
 ## Current Release Compatibility Scope
 
@@ -88,31 +98,6 @@ This section deliberately does not weaken the security-sensitive key contracts
 below: encrypted key files, keystore metadata, and signing provider lookup still
 define whether an existing key can be unlocked, validated, and signed by a
 future release.
-
-## Key Type Identifier Contract
-
-The key type identifier contract is in
-[ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md#key-type-identifier-contract).
-
-## HTTP API Contract
-
-The HTTP API contract is in [ARCH_HTTP_API.md](ARCH_HTTP_API.md).
-
-The cosigner component message and the component canonicalization and
-byte-binding rules are in ARCH_COSIGNER.md:
-[Component Message](ARCH_COSIGNER.md#component-message) and
-[Component-Flow Unification Invariants](ARCH_COSIGNER.md#component-flow-unification-invariants).
-The `bounded1` authorization contract, the external contract-admin artifact,
-and the contract-admin ceremony are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
-
-## Admin Protocol
-
-The admin protocol contract, including error codes and admin client capabilities, is in
-[ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
-
-## apshell Parsing Contracts
-
-The apshell parsing contracts are in [ARCH_REPL.md](ARCH_REPL.md#parsing-contracts).
 
 ## Configuration Contracts
 
@@ -206,7 +191,7 @@ to defaults. A document carries a `role` that must match the node role and a
 `key` that must match its file name; either mismatch is rejected.
 Every policy change is an authenticated whole-document `apply_policy` (online)
 or `apadmin policy rescue apply|remove` (stopped daemon), and each committed
-change mints a new generation (see [Policy Documents](#policy-documents)).
+change mints a new generation (see [ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#storage-and-acceptance)).
 There is no scalar policy-settings IPC.
 
 Validation:
@@ -380,77 +365,3 @@ execution, output decoding, environment filtering, and validation.
 - Admin settings may also report `endpoint_display_url` for UI chrome. This is
   not exported endpoint handoff metadata and must not be persisted by admin
   clients as `endpoint.advertise_url`.
-
-## On-Disk Formats
-
-The signer data directory layout and the store formats (store root, term
-envelopes, managed credential files, key type records, template files, and
-stage address tables) are in [ARCH_STORE.md](ARCH_STORE.md).
-
-### Client Data Directory Layout
-
-The client data directory layout and its notes are in
-[ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model).
-
-### Policy Documents
-
-The policy document storage contract is in
-[ARCH_POLICY_FORMAT.md](ARCH_POLICY_FORMAT.md#files).
-
-### Cosigner And Contract-Admin Files
-
-The managed credential file format is in
-[ARCH_STORE.md](ARCH_STORE.md#managed-credential-files). The cosigner key file
-and the public cosigner reference library are in
-[ARCH_COSIGNER.md](ARCH_COSIGNER.md#cosigner-key-file); the external
-contract-admin inventory is in
-[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#external-contract-admin-inventory).
-
-During enrollment, apshell displays the complete SHA256 fingerprint
-of the key that signed SSH authentication, including agent-selected keys.
-The admin enrollment request already carries that fingerprint; this adds no wire
-field. It identifies the requesting client key, not an individual request,
-the server host key, or a Witness Key ID.
-
-### Audit Log
-
-The audit log contract (format, rotation, events, and event semantics) is in
-[ARCH_SECURITY.md](ARCH_SECURITY.md#audit-logger).
-
-## Authentication, SSH, and Client Enrollment
-
-The client authentication, SSH, enrollment, and revocation contracts are in
-[ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer).
-
-## Approval and Policy Contracts
-
-The approval and policy contract is in [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model);
-approval waits and cancellation are in
-[ARCH_TXNFLOW.md](ARCH_TXNFLOW.md#approval-waits-and-cancellation).
-
-## Runtime Ownership and Shutdown
-
-The runtime ownership and shutdown contract is in
-[ARCH_SPEC.md](ARCH_SPEC.md#lockunlock-lifecycle).
-
-## Plugin Contract
-
-The plugin contract (discovery, activation, manifest, JSON-RPC methods, execute
-results, integrity, and sandboxing) is in [ARCH_PLUGINS.md](ARCH_PLUGINS.md).
-
-## MCP Contract
-
-The MCP tool contract is in [ARCH_MCP.md](ARCH_MCP.md#tool-surface).
-
-## Error Model
-
-The signer error model is in [ARCH_HTTP_API.md](ARCH_HTTP_API.md#error-model).
-
-## SDK Contracts
-
-The SDK contracts are in [ARCH_HTTP_API.md](ARCH_HTTP_API.md#sdk-contracts).
-
-## Swap Contract
-
-The standalone swap client contract is in
-[ARCH_SPEC.md](ARCH_SPEC.md#standalone-swap-client).
