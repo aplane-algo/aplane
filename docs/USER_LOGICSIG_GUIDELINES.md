@@ -780,9 +780,13 @@ approval and local signer policy. See
   two resource dummies; the cost for a given TxID is 5,592 plus 53 per chain
   step, pinned against the node's budget report in the LocalNet test
 - the signer, not TEAL, guarantees that every rekey targets the account's
-  next never-revealed stage and that a stage signs once; see
-  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hash-hybrid-accounts) for the
-  twice-signed case
+  next never-revealed stage. Nothing enforces that a stage signs once: the
+  stateless flow signs again from the live stage when a release expired or a
+  client re-signs a rebuilt transaction, and the signer reports the reuse as
+  a warning until the account moves. While a stage has signed one message
+  its quantum resistance rests on SHA-256; after two it is Ed25519-only
+  until a spend lands; see
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hash-hybrid-accounts)
 
 #### Bounded Authorization Allowlist
 

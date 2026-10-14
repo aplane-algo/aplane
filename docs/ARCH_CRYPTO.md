@@ -220,8 +220,10 @@ where the public account tag is HKDF output of the seed alone. The stage
 program verifies it with `sha256`, `itob` and `concat` only, paired with an
 `ed25519verify_bare`. A WOTS key must sign one message; the rotation makes
 every stage sign once in normal operation, and the Ed25519 half keeps a
-twice-signed stage (after an expired release and its repair) at classical
-strength until the next release lands.
+twice-signed stage (after an expired release and its repair, or a client
+re-signing a rebuilt transaction) at classical strength until the next
+release lands. Nothing prevents the second signature; the signer reports it
+(`ARCH_HTTP_API.md`, rotating alerts).
 
 ## Unified Registry
 
