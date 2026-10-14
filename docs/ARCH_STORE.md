@@ -1,23 +1,591 @@
-# Key And Key Type Lifecycle
+# Signer Store
 
-> State model for signer key files, key type definitions, key type state
-> records, template provenance, node role, and backup/restore behavior.
+> The signer product store under `APSIGNER_DATA`: its layout, which processes
+> may read or change it, how generations commit and recover, and how keys and
+> key types move between states.
+
+Each signer or cosigner data root contains one product store at
+`identities/default/` and managed backups at `backups/default/`. Store-owning
+APIs accept no identity locator, and live mutation and inspection use one
+process-wide product-store lock. Compatibility-bearing on-disk formats are in
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the closed product-principal and action
+model is in [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
+
+This document does not define transaction planning, policy verdicts, endpoint
+routing, client enrollment, or approval prompts.
 
 ## Contents
 
-- [Purpose](#purpose)
-- [Core Rule](#core-rule)
-- [Objects](#objects)
-- [Node Role Gate](#node-role-gate)
-- [Key Type Lifecycle](#key-type-lifecycle)
-- [Key File Lifecycle](#key-file-lifecycle)
-- [Backup And Restore Matrix](#backup-and-restore-matrix)
-- [Runtime Reload Behavior](#runtime-reload-behavior)
-- [Transition Catalog](#transition-catalog)
-- [Invariants](#invariants)
-- [Source Of Truth](#source-of-truth)
+- [Layout](#layout)
+- [Ownership and access](#ownership-and-access)
+- [Generations](#generations)
+- [Keys and key types](#keys-and-key-types)
+- [Source of truth](#source-of-truth)
 
-## Purpose
+## Layout
+
+```text
+<data-root>/
+  config.yaml
+  node.yaml
+  audit.log
+  backups/default/
+  library/templates/
+  identities/default/
+    .keystore
+    store-root.enc
+    config.yaml
+    unlock.yaml
+    .ssh/authorized_keys
+    passphrase | passphrase.cred
+    cosigners/<name>.json
+    quarantine/generations/<gen-id>/
+    generations/<gen-id>/
+      manifest.json
+      seal.json
+      keys/*.key|*.cos|*.wit.json
+      keytypes/*.json|*.template
+      deleted/keys/*.key|*.cos
+      deleted/keytypes/*.template
+      deleted/policies/<selector>.json|.json.hmac
+      default.json                                      (node default policy)
+      default.json.hmac
+      policies/<selector>.json|.json.hmac               (per-key policy; address on
+                                                         signer nodes, Witness Key ID
+                                                         on cosigner nodes)
+      node.yaml.hmac
+```
+
+The generation boundary includes all mutable state whose confidentiality or
+integrity depends on a keyring term. Process and product configuration,
+unlock helpers, SSH state including the enrolled-client registry, cosigner
+references, backups, the plaintext template library, and the root node-role
+document are not generational.
+
+`quarantine/` is non-authoritative. Normal resolution, signing, historical
+reads, successor construction, and rollback never search it.
+
+## Ownership and access
+
+This section is the source of truth for which process may access or mutate
+`APSIGNER_DATA`.
+
+### Trust statement
+
+Membership in the operator-facing `aplane` Unix group grants connectivity to
+the local administrative IPC socket. It does not grant signer-store authority,
+an authenticated admin session, product authorization, or direct access to
+encrypted custody material.
+
+The systemd deployment has two distinct filesystem roots:
+
+- `/var/lib/apsigner` is service-user-owned private state (`0700` directories,
+  `0600` files). `apsigner` is its sole normal-runtime writer.
+- `/run/apsigner` is a service-user-owned runtime directory (`0750`) whose
+  `aplane.sock` socket is group-connectable (`0660`). The group can traverse
+  the runtime directory and connect to the socket, but cannot create, unlink,
+  rename, or replace entries there.
+
+Root-run bootstrap and rescue remain supported while the daemon is stopped.
+They are explicit maintenance writers protected by the store lock, not an
+ordinary group-mediated administration path. Same-UID local development is a
+separate deployment model and may keep its socket below its private data root.
+Store ancestors must be owned by the store user or the filesystem-root owner
+and must not be group/other writable. Canonical root-owned sticky `/tmp` and
+`/var/tmp` are the only shared-ancestor exceptions, allowing a same-UID store
+beneath an owned private child without permitting a general writable-ancestor
+exception.
+An explicit custom socket for a systemd-managed signer must remain outside the
+store and its parent runtime directory must be service-user-owned and
+non-writable by group and other users. Valid legacy configurations that placed
+a custom socket inside the store can be migrated while stopped; the daemon
+then refuses that configuration until the socket is moved.
+
+All IPC bind paths use the same directory-chain trust rule. Directory aliases
+are resolved before validation and the daemon binds the canonical result. The
+canonical immediate socket parent must be owned by the daemon UID and must not
+be writable by group or other users. Every canonical ancestor must be a real
+directory owned by either the daemon UID or the filesystem-root owner and must
+not be group/other writable. A lexical symlink is accepted only when owned by
+the daemon or filesystem-root owner and its containing chain independently
+meets the same write and ownership rules. Root-owner sticky `/tmp` and
+`/var/tmp`, including their canonical platform targets, are the only shared
+directory exceptions. This supports macOS temporary paths and compatibility
+aliases such as `/var/run` without binding through an unchecked alias or
+allowing an unrelated-owner or writable intermediate directory.
+
+### Access inventory
+
+The following classification is compatibility-bearing. A new direct
+`APSIGNER_DATA` consumer must be added here with an explicit execution mode or
+moved behind an existing owner.
+
+#### Daemon-owned normal runtime
+
+| Owner | Store access |
+|---|---|
+| `internal/signerapp/productruntime`, `storemut`, `keyadmin`, `templateadmin`, `templates` | Product settings, store mutation locking, keys and templates |
+| `internal/signerapp/backupadmin` and `internal/backup` when invoked by it | Managed backup, restore, rollback, reconciliation |
+| `internal/keystore`, `internal/keys`, `internal/keymgmt` | Active credential state |
+| `internal/genstore`, `internal/storepass` | Atomic store-root publication, reconciliation/quarantine, archive bounds, and fresh-term passphrase rotation |
+| `internal/stagetable` when invoked by the daemon | Rotating accounts' stage address tables (`identities/default/stages/`): plaintext caches, removed on key delete, rebuilt from the seed when missing or damaged |
+| `internal/policy`, `internal/signerapp/policyapply`, `internal/noderole` when invoked by the daemon | Authenticated policy documents, policy-apply generation commits, and node-role state |
+| `internal/cosigner/cosignerrefs` when invoked by the daemon | Public cosigner-reference inventory |
+| `internal/signerapp/clientregistry` when invoked by the daemon | Enrolled client key registry (`identities/default/.ssh/authorized_keys`) |
+| `internal/signerapp/enrollqueue` when invoked by the daemon | Pending enrollment queue (`identities/default/.ssh/pending_enrollments.json`) |
+
+Normal operators reach these owners through authenticated HTTP or the admin protocol over local IPC;
+they do not call the storage packages directly.
+
+`internal/signerapp/productruntime` owns the product runtime aggregate; the
+aggregate has no identity ID or selectable runtime registry.
+
+#### Offline bootstrap and rescue
+
+| Command | Classification |
+|---|---|
+| `apstore initialize` | Offline mutation; root on systemd or data-root owner in same-UID mode |
+| `apstore rebuild` | Offline mutation into an absent product store |
+| `apstore verify` and offline policy check/verify | Offline read-only recovery inspection |
+| `apstore policy sign` | Offline re-signing of sidecars for hand-placed policy documents |
+| `apadmin policy rescue` reads | Offline read-only policy inspection under the shared store lock |
+| `apadmin policy rescue apply`/`remove` | Offline policy repair for a stopped daemon |
+| `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
+| `apstore permissions` | Offline bootstrap, audit, and ownership migration |
+| `apstore keys list` | Offline credential inventory for recovery diagnostics |
+| `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |
+
+Offline mutations require a stopped daemon, exclusive store lock, no-follow
+inventory validation, and the installation-mode owner check. They preserve the
+narrow root-owned `identities/default/passphrase.cred` exception and the
+installer-owned `install/` metadata artifacts.
+
+Root-run `apadmin policy rescue apply` and `remove` hold one exclusive lock
+across the policy generation commit and managed-store ownership normalization,
+so a daemon cannot start between publication and repair. They commit through
+the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
+(`status`, `export`, `check`) hold the shared store lock.
+
+#### External-file-only operations
+
+Backup inspection and validation of explicitly supplied external artifacts do
+not require signer-store access. Output selected by an operator is created as
+operator-owned state outside `APSIGNER_DATA`.
+
+#### Operator clients
+
+The multi-UID clients `apadmin`, `apapprover`, `approbe`, and systemd-attach
+`apconsole` resolve the public runtime socket without reading signer
+configuration. `apadmin` owns every general running-daemon administration
+workflow: policy check/apply, template and key-type administration, cosigner-reference
+administration, endpoint export, generation listing, managed backup transfer,
+restore, and passphrase rotation. Those workflows use typed admin operations;
+operator-selected exports are written to operator-owned locations. `apstore`
+does not open the admin transport or construct live admin requests. Same-UID
+child `apconsole` retains direct config and node-role access as an explicit
+local-mode exception.
+
+Config-free fallback from an unreadable data root to the singleton
+`/run/apsigner/aplane.sock` is restricted to the conventional
+`/var/lib/apsigner` store. A custom private managed store must supply an
+explicit `APSIGNER_IPC_PATH` or `--ipc-path`; permission failure on any other
+selected data root is an error and never retargets the client to the singleton
+system signer.
+Explicit client selection follows the same rule: `--ipc-path` wins first, then
+an explicit `-d`, then `APSIGNER_IPC_PATH` paired with an environment/profile
+data root. This prevents a stale inherited socket override from redirecting an
+operation aimed at a CLI-selected store. The systemd installer pairs its
+generated `APSIGNER_DATA` with the daemon's configured external `ipc_path`, or
+`/run/apsigner/aplane.sock` when unset. A command that supplies `-d` must also
+supply `--ipc-path` when that private root cannot be inspected.
+
+### Filesystem primitives
+
+`internal/fsutil` owns low-level durable publication. Store callers select a
+closed artifact profile rather than arbitrary mode/UID/GID combinations. A
+store directory uses `MkdirAllPrivate`, which rejects a final symlink and
+clamps the caller-owned directory to `0700`. The separate generic `MkdirAll`
+creates owner-private client state but does not rechmod an existing directory
+that the client may not own. A durable replacement uses a random exclusive
+temporary regular file, applies
+ownership and its permission ceiling to the unpublished file descriptor,
+syncs it, renames it in the destination directory, and syncs that directory.
+File-set publication stages and syncs every member before the first rename, so
+preparation failure exposes none of the new members. Because multiple paths
+cannot be renamed atomically, interruption between publication renames remains
+a documented fail-closed mixed-generation state.
+Symlink and non-regular destinations are rejected. The legacy profile remains
+internal to pre-migration validation; normal writers use private profiles.
+
+`internal/storeperm` owns read-only audit, stopped-service migration, and the
+startup permission contract. It inventories without following symlinks and
+reports unsafe ancestors, ownership, modes, hardlinks, and unexpected file
+types. Its public policies are opaque operation-specific values: production
+audit rejects every in-store socket, same-UID audit recognizes one exact live
+socket without relaxing ancestor checks, and migration alone receives a
+removable legacy socket. Migration validates the complete legacy inventory before mutation,
+removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
+access at the root first, repairs recognized objects through opened
+descriptors, syncs directories, and independently audits the private result. A
+clean audit is authority to proceed; an incomplete audit is not.
+Stopped migration and post-root-mutation normalization resolve the same exact
+configured legacy in-store socket; neither hardcodes the historical default.
+
+The installer bootstrap first uses `apstore permissions prepare-managed-root`
+to create and close the real data-directory root through opened directory
+descriptors. That operation rejects symlinked, unrelated-owner, and
+group/other-writable ancestors before any privileged pathname mutation beneath
+them. It retains the final parent descriptor and, after changing ownership,
+reopens the leaf without following symlinks to prove the pathname still names
+the secured inode; this closes the allowed sticky-temporary-root replacement
+window. The narrower read-only `permissions preflight` then runs before `.prod`,
+service-principal metadata, or the store lock exists. Preflight rejects
+symlinks, hardlinked regular files, and unexpected object types without opening
+file contents or changing the tree. Unix sockets are left inert for the
+subsequent configured-socket migration policy to classify. The command
+deliberately does not infer an owner from untrusted store metadata and does not
+create `.apstore.lock`.
+
+`apstore permissions convert-managed` then acquires the exclusive store lock,
+migrates and audits the legacy tree, and publishes root-controlled
+`install/service-principal.json` followed by `.prod`. A busy store therefore
+fails before either managed marker appears. The marker is published last so a
+failed migration remains an unmarked local store.
+
+`apstore permissions preflight` and `permissions audit` are read-only. Same-UID audit recognizes the local
+installer's non-writable executable `bin/` subtree without treating those
+files as signer data. It retains the real-directory requirement for the store
+leaf but canonicalizes trusted platform aliases in its ancestor chain and
+socket parent before applying the ancestor policy. `apstore permissions migrate` is restricted to
+systemd-managed stores, requires the normal offline execution mode and
+exclusive store lock, and rejects any store-local `bin/` subtree rather than
+stripping binary execute bits or file capabilities. The standalone systemd
+setup closes only the real store root before preflight, then rejects a local
+`bin/` before writing `.prod` or changing any descendant ownership or mode; its
+service `bindir` must be outside the data root. A
+root-controlled `install/service-principal.json` records the numeric service
+uid/gid and is refreshed by systemd setup before migration. Audit, migration,
+and post-mutation normalization use this record instead of trusting the store
+root's possibly damaged owner; a missing or unsafe record fails closed. A
+systemd-managed daemon reads the same record, verifies that its effective
+uid/gid match the recorded principal, and checks the private profile against
+that principal before loading configuration or opening the store lock. A
+principal mismatch directs the operator to rerun systemd setup; unsafe store
+state directs the operator to the permission migration command.
+
+Installer-owned management scripts, release metadata, operator metadata, and
+the template library are installed only after migration succeeds. In
+particular, recursive template ownership repair never runs against a legacy
+tree. The shell installer does not repair `.apstore.lock`; the descriptor-based
+Go migrator owns that operation.
+
+### Implemented rollout
+
+The migration order is fixed:
+
+1. harden writers and ownership traversal;
+2. establish config-free runtime-socket discovery and move normal clients;
+3. add missing authenticated policy, cosigner-reference, and generation reads;
+4. move the socket to the protected runtime directory;
+5. audit and migrate a stopped legacy store;
+6. enable strict startup enforcement and private creation defaults;
+7. remove legacy group-shared behavior from normal writers, retaining only the
+   read-only legacy profile needed to validate supported upgrades.
+
+The systemd installer performs this ordering while the service is stopped and
+runs both migration and post-migration audit before starting the daemon.
+The standalone `installer/scripts/systemd-setup.sh` enforces the same stopped
+service precondition before changing the unit or store.
+Fresh systemd stores are created private. Supported upgrades clamp existing
+stores before restart. The systemd smoke test proves that an operator-group
+user cannot traverse `/var/lib/apsigner` while the same user can reach
+`/run/apsigner/aplane.sock`.
+
+## Generations
+
+This section is the storage contract for the product store. The only
+supported layout uses one authenticated commit record for both cryptographic
+authority and active-generation selection. There is no compatibility path for
+the retired `CURRENT` plus `keyring.enc` layout.
+
+### Store root
+
+`store-root.enc` has strict schema `aplane.store-root.v1`. It contains:
+
+- the passphrase-wrapped `aplane.keyring.v3` subobject;
+- `current_generation_id`;
+- the current selection term;
+- a domain-separated HMAC over the selector and exact wrapped-keyring digest.
+
+The wrapped keyring is AEAD-authenticated under the Argon2id-derived KEK. After
+unwrap, the selection term must equal the keyring's current term and the
+selection MAC must verify. Unknown fields, trailing content, noncanonical
+encoding, unsafe KDF parameters, and oversized input fail closed.
+
+The selector is outside the KEK-sealed payload so an unlocked runtime can mint
+an ordinary successor without retaining the passphrase. Such commits reread
+the exact root under the mutation lock, authenticate it, preserve the wrapped
+keyring subobject byte-for-byte, and change only the selector and selection
+MAC. Passphrase change replaces the wrapped keyring and selector together.
+
+The store root authenticates state but is not an external freshness oracle.
+An adversary able to restore an older authentic root can roll authority back.
+Detecting such replay needs a monotonic hardware or remote authority outside
+this store.
+
+### Active-path capability
+
+Passphrase unlock authenticates `store-root.enc`, validates the selected
+generation, and binds its ID into a `storepaths.Paths` capability or returns a
+`storepaths.GenPaths`. Lower-level packages cannot derive active selection from
+public filesystem state. `genstore.Resolve` accepts only an already-bound
+capability; an unbound path fails.
+
+Root-changing operations repeat a fresh exact root read under the store
+mutation lock. A cached runtime generation or serialized root is never commit
+authority.
+
+Reload binds whatever the authenticated root selects as its first step,
+before any validation or scan can fail, so a failed reload after a commit
+never leaves the runtime bound to the superseded, sealed generation. A root that no
+longer authenticates clears the binding. Deleted-archive list and prune, which
+run in recovery, read and authenticate the root themselves rather than trust
+the cached binding. Every post-commit failure enters recovery before the
+store mutation lock is released, and every in-place writer (key generate,
+import, and delete; template and key-type changes) rechecks under the lock
+that the runtime is still unlocked, so a request queued behind a failed
+commit cannot resume into the superseded generation.
+
+### Generation manifest and seal
+
+Every generation has a strict, complete `manifest.json` recording its ID,
+parent, operation identity, creation time, at-mint inventory, and optional
+restore rollback capability. Self-parent lineage and incomplete manifests are
+invalid.
+
+The selected generation is mutable through ordinary durable key, template,
+policy, and sidecar operations. A `seal.json` beside it is stale precommit
+residue and has no authority.
+
+Immediately before selection moves, the outgoing generation receives an
+authenticated seal. The seal binds the exact manifest bytes and complete final
+inventory:
+
+- active credentials and installed templates;
+- deleted credentials and templates;
+- policy documents and integrity sidecars (`default.json` when present,
+  `policies/` and `deleted/policies/`), on both node roles;
+- node-role integrity sidecar;
+- term numbers, sizes, and exact digests.
+
+A retained generation must have a valid seal. Old-term retained generations
+also require an exact historical seal anchor in the active keyring. A term key
+alone never grants historical authority.
+
+Generations are copied as independent files, never hardlinks. Once non-current,
+they are immutable except for explicit generation pruning.
+
+### Ordinary generation commit
+
+Credential restore, restore rollback reconstruction, initialization, rebuild,
+passphrase change, and policy apply mint generations. Every policy apply or
+removal, online or rescue, mints one generation with operation `policy-apply`
+(`internal/signerapp/policyapply`), so each committed apply leaves a retained
+generation until explicit generation pruning. Ordinary key mutations do not
+mint.
+
+The commit order is:
+
+1. acquire the store mutation lock and any maintenance fence;
+2. freshly authenticate the root and selected generation;
+3. create a private `.staging-<gen-id>` directory;
+4. independently copy the parent, or construct an authorized empty successor;
+5. apply the transaction and validate the complete namespace;
+6. write the complete manifest and sync the staging tree bottom-up;
+7. rename staging to `generations/<gen-id>` and sync `generations/`;
+8. write and sync the outgoing generation seal;
+9. durably replace `store-root.enc` once;
+10. reload and validate the selected generation.
+
+Step 5 includes the caller's complete semantic validation of the candidate
+(`storevalidate.Candidate`: deleted archive, node role, policy, templates, and
+every credential). Every commit runs it, including initialization and
+`apstore rebuild`; `genstore.Mint` refuses a request without it. Rebuild
+matters most: once any generation exists a second rebuild is refused, so an
+invalid first generation could otherwise only be repaired by hand.
+
+A failure before root replacement leaves the old root authoritative. A visible
+candidate after a replacement or directory-sync error is commit-uncertain and
+enters recovery; callers do not blindly retry. Once the one root rename is
+visible and directory-durable, there is no second witness or publication step.
+
+### Passphrase and term rotation
+
+Changing the passphrase also replaces the current data-encryption term:
+
+1. authenticate and seal the outgoing generation;
+2. retain its exact seal and manifest buffers;
+3. create a fresh random term and successor keyring;
+4. preserve historical keys and exact anchors, adding the outgoing anchor;
+5. stage an empty successor;
+6. read every source member once and verify it against the retained seal;
+7. re-encrypt term envelopes and re-sign integrity sidecars under the new term;
+8. validate and publish the complete successor;
+9. replace `store-root.enc` with the new wrapped keyring and selector in one
+   durable operation;
+10. update the configured passphrase helper and reload.
+
+Helper update failure is a post-commit warning. It never rolls the store back.
+There is no pending rotation, resumable rewrap, rotation snapshot, rotation
+baseline, or unlock-time completion pass.
+
+Retained generations are not rewritten during rotation. Exact historical
+anchors and anchor-gated reads preserve historical least authority.
+
+### Restore rollback
+
+Credential restore may add a strict `rollback_capability` to its manifest. The
+capability binds the originating operation, archive digest, authenticated
+source generation, clean-cutover decision, and exact inventory authority.
+
+Passphrase change carries it only when the outgoing live inventory still
+matches its effective authenticated authority. Routine mutations cause that
+comparison to fail. Rollback reconstructs authorized source content into a new
+current-term successor; it never repoints the root at historical ciphertext.
+Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
+restore installs a key's archived policy with the key on both node roles. Each
+restored policy document is checked against the source seal and written with a
+sidecar signed under the current term. The node default `default.json`, the
+deleted archives, and node role authority are kept from the outgoing
+generation.
+
+### Reconciliation and quarantine
+
+Reconciliation first authenticates the root and validates its selected
+generation. Until that succeeds, it deletes nothing.
+
+- Incomplete `.staging-*` directories and durable-write temporary files have
+  never carried authority and are removed.
+- Sealed, referenced, and declared-parent generations are retained.
+- A complete, non-current, unsealed, unreferenced final directory is ambiguous:
+  it may be crashed-mint residue or newer state orphaned by restoration of an
+  older authentic root. It is classified and quarantined, never adopted or
+  deleted.
+
+Quarantine eligibility requires a valid ID, strict complete manifest, closed
+regular-file-only layout, bounded enumeration, and live inventory digests.
+At-mint mismatch is recorded but is not a veto because a formerly selected
+generation may have legitimate post-mint mutations.
+
+Available term validation is classification, not authority. Known-term checks
+are recorded as `verified` or `failed`; a member whose term is absent from the
+current keyring is `term_unavailable`. All remain relocatable when structural
+and bounded checks pass. This is essential when an old root restored across a
+passphrase change lacks the orphan's newer term.
+
+A candidate that cannot be safely parsed, enumerated, or bounded remains in
+place. Reconciliation and further mints fail closed until authenticated
+operator remediation. Quarantine capacity overflow behaves the same way.
+Explicit removal of an in-place unvalidatable final directory uses the
+separate `identity.generation.abandoned.discard` action, explicit confirmation,
+and a durable intent audit. It refuses current, rollback-parent, and sealed
+generation state.
+
+Eligible candidates are atomically renamed to
+`quarantine/generations/<gen-id>` and both parent directories are synced.
+Quarantine is bounded to eight generations and 1 GiB. Live pruning requires
+the stable `identity.generation.quarantine.prune` action, explicit
+confirmation, and durable intent audit before deletion.
+
+A crashed changepass before root replacement can leave its complete successor
+in quarantine. That ciphertext is non-authoritative; a later changepass remains
+blocked until an authenticated operator prunes it.
+
+If an orphan crossed a passphrase change, quarantine preserves its ciphertext
+but does not imply it is decryptable with the restored root or passphrase. The
+newer overwritten root must also be recovered from a coherent snapshot.
+
+### Deleted archive capacity
+
+The selected generation's deleted archive is bounded by release-contract
+constants:
+
+- 4,096 entries;
+- 256 MiB total encoded bytes;
+- warning thresholds reserve one entry and one maximum standalone-envelope
+  allocation for an emergency deletion.
+
+If a release ever lowers these layout constants below an existing store's
+usage, generation minting and changepass refuse until authenticated archive
+prune restores compliance. The health and status surfaces retain a warning
+whenever the emergency reserve is consumed.
+
+Deletes preflight the exact append and fail before active-state mutation if the
+hard bound would be exceeded. Deleting a key that has a policy of its own
+preflights the credential together with its policy document and sidecar, which
+move into `deleted/policies/` with it, on both node roles. Mints check the parent before staging and the
+successor after apply. An over-limit selected generation blocks ordinary
+validation, mint, and passphrase change until pruned.
+
+`apadmin archive list` reports exact usage and the reserve warning.
+`apadmin archive prune --confirm <deleted/path>...` accepts only canonical
+`deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
+`deleted/policies/*.json|*.json.hmac` selections. An archived policy document
+and its sidecar must be selected together. It
+requires `identity.archive.prune`, a recovery-capable authenticated runtime,
+and durable intent audit before mutation. It changes only the selected
+generation; retained copies disappear only with retained-generation pruning.
+
+### Recovery and restoration
+
+Keyring unwrap remains independent of selected-generation health. A valid root
+and passphrase with damaged selected state enters authenticated recovery with
+signing blocked. Invalid or absent root authority requires `apstore rebuild`;
+the implementation never chooses the newest-looking generation.
+
+Credential recovery restore can repair only explicitly selected credential
+damage when all destination authority outside those credentials validates.
+Damage to policy, node-role integrity, key types/templates, deleted archives,
+unselected credentials, or the selected directory itself is not repaired by
+inventing authority; restore refuses and directs the operator to rebuild.
+
+Filesystem restoration of `identities/default/` is stopped-signer and
+all-or-nothing. Restoring only `store-root.enc`, only generation directories,
+or files from independently captured snapshots is unsupported. Quarantine
+prevents destructive cleanup after such a mistake but does not make a mixed
+restore valid.
+
+### Generation invariants
+
+- One root selects exactly one published generation and one current term.
+- The durable root is wholly old or wholly new after a crash.
+- A root never selects an unpublished or unsynced generation.
+- Every changepass successor term consumer uses the new current term.
+- Every old-term input promoted during changepass matches the exact outgoing
+  seal buffer and inventory entry.
+- Historical terms require exact active-root anchors.
+- Non-current generations are immutable.
+- Invalid selection authority never triggers automatic adoption or signing.
+- Wrapped key authority and generation selection change in one rename.
+- Restore rollback eligibility is carried only after an authenticated clean
+  decision.
+- Credential recovery never fabricates destination authority.
+- Deleted-archive count and bytes remain within closed release bounds.
+- Ambiguous complete publications are quarantined or preserved, never
+  automatically adopted or destroyed.
+- Quarantine cannot influence signing, history, rollback, or selection.
+
+The commit and substitution properties are modeled in
+[`formal/store_root_commit.tla`](formal/store_root_commit.tla). The normal
+configuration checks the invariants; `store_root_commit_negative.cfg` is an
+expected-failure control that removes exact outgoing-seal verification.
+What the runtime binds, serves, and maintains after a failed post-commit
+reload is modeled in [`formal/recovery_binding.tla`](formal/recovery_binding.tla);
+its negative control is the pre-fix binding and reproduces the superseded-
+generation prune as an invariant violation.
+
+## Keys and key types
+
 
 This document describes durable key and key type states that affect:
 
@@ -27,11 +595,7 @@ This document describes durable key and key type states that affect:
 - how disabled or conflicting key type records behave,
 - which warnings are provenance-only.
 
-It is the key/keytype companion to transaction lifecycle documentation. It does
-not define transaction planning, policy verdicts, endpoint routing, client
-enrollment, or approval prompts.
-
-## Core Rule
+### Core rule
 
 **Key type state controls discovery and generation. Key files control restore
 and signing.**
@@ -54,7 +618,7 @@ This separation is deliberate:
   longer matches the key's original creation definition without changing
   signability.
 
-## Objects
+### Objects
 
 | Object | Durable location | Authority |
 |---|---|---|
@@ -93,7 +657,7 @@ startup. That plaintext is only a hint until each initialized identity verifies
 its HMAC sidecar after unlock. The sidecar key is derived from that identity's
 term key, following the same tamper-detection model used by policy sidecars.
 
-## Node Role Gate
+### Node role gate
 
 Node role is the single-purpose key-class gate for an apsigner data directory.
 It applies before ordinary key type state can make a key type usable for
@@ -146,7 +710,7 @@ Running those two nodes on one host is useful for development and operations,
 but it is not independent cosigner. Independence remains a deployment-domain
 property.
 
-## Key Type Lifecycle
+### Key type lifecycle
 
 Key type state answers this question:
 
@@ -157,7 +721,7 @@ Can this identity discover this key type and generate new keys of this type?
 It does not answer whether an existing key file can sign, and it is still
 subject to the node role gate above.
 
-### Key Type State Matrix
+#### Key type state matrix
 
 | State | Durable representation | Discovery/generation | Existing-key signing | Normal transition |
 |---|---|---|---|---|
@@ -174,7 +738,7 @@ subject to the node role gate above.
 | YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No; reload rejects that template. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall through supported template import/install path. |
 | YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall/import template. |
 
-### Key Type Transitions
+#### Key type transitions
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
@@ -201,7 +765,7 @@ hiding the normal generation source for a key type still in use. It is not a
 sign-time dependency rule; a valid existing key file remains the signing
 authority.
 
-### Template Mutation Ownership And Publication
+#### Template mutation ownership and publication
 
 `internal/templatelibrary` is the sole production feature-level coordinator
 for writes to encrypted template files and key-type state records.
@@ -227,7 +791,7 @@ disable/deactivation, and installed-template removal leave their completed
 durable change in place and report the reload failure; removal still reports
 that it occurred. The lifecycle must not be described as fully transactional.
 
-## Key File Lifecycle
+### Key file lifecycle
 
 Key file state answers this question:
 
@@ -238,7 +802,7 @@ Can this stored key be loaded and used for the signing path it belongs to?
 Key files must also be allowed by the node role gate. A role-conflicting active
 key is rejected during reload rather than published as a signable key.
 
-### Key File State Matrix
+#### Key file state matrix
 
 | State | Durable representation | Signability | Backup/restore behavior |
 |---|---|---|---|
@@ -263,7 +827,7 @@ key is rejected during reload rather than published as a signable key.
 | Template provenance unavailable | Key has no matching current template/provider fingerprint for comparison. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
 | Template provenance conflict | Key's optional `template_fingerprint` differs from current local definition. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
 
-### Key File Transitions
+#### Key file transitions
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
@@ -277,7 +841,7 @@ key is rejected during reload rather than published as a signable key.
 | Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
-## Backup And Restore Matrix
+### Backup and restore matrix
 
 This matrix describes restoring a template-backed or library-visible key.
 Credential backups do not carry template YAML; native default-enabled keys
@@ -309,7 +873,7 @@ rebuilds the account's stage address table, a cache under
 Until the table reaches the live stage, signing refuses with
 `rotating_stage_unproven`.
 
-## Runtime Reload Behavior
+### Runtime reload behavior
 
 Unlock/reload publishes a new runtime snapshot only after validation succeeds.
 The relevant order is:
@@ -339,7 +903,7 @@ already-valid key files from active key scans.
 Node role is stronger than disabled/enabled state: a role-forbidden active key
 is not published as valid runtime inventory.
 
-## Transition Catalog
+### Transition catalog
 
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
@@ -362,7 +926,7 @@ is not published as valid runtime inventory.
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
 
-## Invariants
+### Key invariants
 
 1. Key files are the signing authority for existing keys.
 2. Key type state records are discovery/generation state, not signing authority.
@@ -397,7 +961,7 @@ is not published as valid runtime inventory.
     conflict — a cross-version or malformed stored fingerprint is "not
     comparable" and benign.
 
-## Source Of Truth
+## Source of truth
 
 Primary implementation owners:
 
@@ -422,6 +986,7 @@ Related documents:
 
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing file and
   restore contracts
+- [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): product principals and actions
 - [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md): durable/runtime/wire data model
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md): developer guide for adding key types
 - [USER_KEYTYPES.md](USER_KEYTYPES.md): operator key type management

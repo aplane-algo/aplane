@@ -14,7 +14,7 @@ import (
 )
 
 // cmdGenerations manages generation-based active storage
-// (docs/ARCH_GENERATIONS.md). Destructive pruning is offline and requires the
+// (docs/ARCH_STORE.md). Destructive pruning is offline and requires the
 // daemon to stop. Live inventory is owned by `apadmin generations list`.
 //
 //	apstore generations prune [--yes]               keep current + newest sealed prior

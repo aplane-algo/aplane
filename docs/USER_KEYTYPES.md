@@ -6,7 +6,7 @@ runtime use, not on writing new provider code or authoring TEAL policies.
 For development details, see [DEV_KEYTYPES.md](DEV_KEYTYPES.md). For LogicSig
 policy design, see [USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md).
 For the full architecture-level key/keytype state matrix, see
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 
 ## Concepts
 

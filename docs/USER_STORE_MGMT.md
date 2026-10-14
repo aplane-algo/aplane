@@ -359,7 +359,7 @@ disablement, removal, inspection, reload behavior, and recovery guidance, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md). For the complete architecture-level
 key/keytype state matrix, including restore behavior for missing, disabled, and
 fingerprint-conflicting key types, see
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 
 For normal operator use, manage key types from the apadmin **KeyType Library**.
 For scripted maintenance, use the `apadmin template` and `apadmin keytype`

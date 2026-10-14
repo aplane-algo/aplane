@@ -109,8 +109,8 @@ counterexample; the make harness asserts that expectation.
 
 ## Linking back
 
-- Architecture: [ARCH_GENERATIONS.md](ARCH_GENERATIONS.md) (reload binding
-  and recovery maintenance) and [ARCH_STORE_OWNERSHIP.md](ARCH_STORE_OWNERSHIP.md).
+- Architecture: [ARCH_STORE.md](ARCH_STORE.md#generations) (reload binding
+  and recovery maintenance) and [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access).
 - Traceability: the Recovery Binding section and the Recovery binding
   module section in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 - Concrete tests: `internal/keystore/scan_binding_test.go`,

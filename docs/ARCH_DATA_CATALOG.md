@@ -7,7 +7,7 @@ This catalog complements [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md). The data
 model document explains the conceptual model; this catalog inventories the
 actual elements that cross package, process, request, goroutine, or persistence
 boundaries. Key file and key type state transitions are documented in
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 
 ## Scope
 
@@ -376,5 +376,5 @@ name a test inline:
   architecture.
 - [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md): bounded1 encodings, custody, and
   ceremony contracts.
-- [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md): key and key type state
+- [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types): key and key type state
   machines.

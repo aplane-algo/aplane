@@ -38,7 +38,7 @@ type TemplateRegistrar struct {
 // with process-global providers, idempotent re-registration, disabled
 // records) are deliberately excluded — they are not store corruption. On a
 // generation-based store any entry here fails the selected generation's
-// validation (docs/ARCH_GENERATIONS.md §6).
+// validation (docs/ARCH_STORE.md, "Runtime reload behavior").
 func (r RegistrationReport) ContentDefectKeyTypes() []string {
 	var defects []string
 	for _, bucket := range [][]string{
@@ -276,7 +276,7 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 // YAML sources own exactly one .template, compiled sources own none.
 // Enabled templates and malformed records are already covered by
 // registration and ListInvalidActive; the sweep does not re-report them.
-// Defects feed the fail-closed reload gate (docs/ARCH_GENERATIONS.md §6).
+// Defects feed the fail-closed reload gate (docs/ARCH_STORE.md, "Runtime reload behavior").
 func sweepKeyTypeNamespace(active storepaths.ActivePaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) []string {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)

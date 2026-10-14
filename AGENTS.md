@@ -15,7 +15,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_COSIGNER.md`: guarded signing and cosigner node architecture, cosigner keys, endpoint routing, and assembly invariants
 - `docs/ARCH_BOUNDED_DSA.md`: bounded DSA contracts, effect inventory, canonical encodings, external contract-admin signing, and cold custody
 - `docs/ARCH_CORRIDOR.md`: Corridor v1 composition, custody roles, bounded-cosigner choreography, close behavior, and compiler budgets
-- `docs/ARCH_STORE_OWNERSHIP.md`: private signer-store ownership, runtime IPC boundary, offline maintenance, and permission migration
+- `docs/ARCH_STORE.md`: signer store layout, ownership and offline maintenance, generational commit and recovery, and key and key type lifecycle
 
 Before generating or modifying key types or LogicSig templates, also read:
 

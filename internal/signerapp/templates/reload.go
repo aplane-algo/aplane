@@ -174,7 +174,7 @@ func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 	// Reload fails closed on content defects: the selected generation is
 	// the committed state, and a malformed or undecryptable entry in it
 	// means the generation fails validation — recovery, not a
-	// warning-tolerant unlock (docs/ARCH_GENERATIONS.md §6).
+	// warning-tolerant unlock (docs/ARCH_STORE.md, "Runtime reload behavior").
 	{
 		var warnings []keys.KeyScanWarning
 		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {

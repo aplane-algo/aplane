@@ -39,7 +39,7 @@ This document answers these questions:
 For low-level wire and file-format contracts, see
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). For implementation ownership and
 runtime layering, see [ARCH_SPEC.md](ARCH_SPEC.md). For key/keytype state
-machines and transition rules, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+machines and transition rules, see [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 For the complete inventory of durable files, caches, DTOs, runtime managers,
 request models, and public handoff envelopes, see
 [ARCH_DATA_CATALOG.md](ARCH_DATA_CATALOG.md).
@@ -211,7 +211,7 @@ encrypted canonical managed credential (`.key` or `.cos`)
 Templates are generation and provenance authority, not sign-time authority for
 existing keys.
 The full key file and key type lifecycle is documented in
-[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+[ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 
 ## Signer Data Model
 
