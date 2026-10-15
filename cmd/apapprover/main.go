@@ -106,6 +106,7 @@ func main() {
 		answer: func(msg any) ([]byte, error) {
 			return ipcClient.SendAndReceive(msg, enrollmentAnswerTimeout)
 		},
+		armDelay: approvalArmDelay,
 	}
 	notifications := ipcClient.Notifications()
 	lifecycle := ipcClient.LifecycleEvents()
@@ -202,6 +203,30 @@ type approver struct {
 	// dropped (it may have been answered elsewhere, or lapsed).
 	answer func(any) ([]byte, error)
 	queue  []approvalRequest
+
+	// armDelay is how long a newly shown request refuses approval. A
+	// requester can withdraw a request and send another in its place; a
+	// "y" typed for the first must not approve the second.
+	armDelay    time.Duration
+	now         func() time.Time
+	headShownAt time.Time
+}
+
+// approvalArmDelay is how long a newly shown request refuses approval.
+const approvalArmDelay = time.Second
+
+func (a *approver) clock() time.Time {
+	if a.now != nil {
+		return a.now()
+	}
+	return time.Now()
+}
+
+// showHead displays the request at the head of the queue and starts its arming
+// delay.
+func (a *approver) showHead() {
+	a.headShownAt = a.clock()
+	displayRequest(a.queue[0], len(a.queue))
 }
 
 // handleInput applies the operator's answer to the request at the head of the
@@ -213,6 +238,13 @@ func (a *approver) handleInput(input string) {
 	approved, reason, ok := parseApprovalInput(input)
 	if !ok {
 		fmt.Print("Please enter y/yes or n/no or n <reason>: ")
+		return
+	}
+	if approved && a.clock().Sub(a.headShownAt) < a.armDelay {
+		// Rejecting is always safe; approving waits until the request has
+		// been on screen long enough to have been read.
+		fmt.Println("\n⚠ This request appeared a moment ago and may have replaced the one you meant. Review it, then answer again.")
+		fmt.Print(approvalPrompt)
 		return
 	}
 
@@ -351,7 +383,7 @@ func (a *approver) enqueue(req approvalRequest) {
 	}
 	a.queue = append(a.queue, req)
 	if len(a.queue) == 1 {
-		displayRequest(a.queue[0], 1)
+		a.showHead()
 		return
 	}
 	fmt.Printf("\n⏳ New request queued (%d total pending). Current prompt still applies to the active request.\n", len(a.queue))
@@ -360,7 +392,7 @@ func (a *approver) enqueue(req approvalRequest) {
 
 func (a *approver) showHeadOrWait() {
 	if len(a.queue) > 0 {
-		displayRequest(a.queue[0], len(a.queue))
+		a.showHead()
 	} else {
 		logInfof("waiting for approval requests")
 	}

@@ -206,6 +206,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SignRequestReceivedMsg:
 		m.signing.request = &msg.Request
+		m.signing.shownAt = signingNow()
 		m.signing.focus = 1 // Default to reject button (safety-first)
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())

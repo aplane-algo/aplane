@@ -834,7 +834,11 @@ identifies the current screen. The enum has families for:
   and a later announcement at the next login shows it again. A repeated client
   request refreshes the queued entry (announced as `enrollment_changed`, which
   updates the Enrolled Clients lists) but does not raise the popup again. `Esc` on the signing popup still rejects, since a signing
-  client is waiting on the answer
+  client is waiting on the answer. A signing popup refuses approval for one
+  second after it appears (rejection is immediate): a requester can withdraw a
+  request and send another in its place, and a key pressed for the first must
+  not approve the second. `apapprover` applies the same delay to every request
+  it shows
 - Generate / import flows (form, params, loading, display)
 - Signer-side public cosigner-reference management (`ViewCosignerReferences`,
   details, import, removal confirmation, and removal progress), the cosigner

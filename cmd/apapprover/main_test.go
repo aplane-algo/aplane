@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -471,4 +472,44 @@ func mustMarshal(t *testing.T, msg any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// A request shown a moment ago refuses approval, so a "y" typed for a request
+// the requester withdrew cannot approve the one that replaced it. Rejection
+// is never delayed.
+func TestApproverRefusesApprovalUntilRequestIsArmed(t *testing.T) {
+	var sent []any
+	clock := time.Unix(1_000, 0)
+	a := &approver{
+		send:     func(v any) error { sent = append(sent, v); return nil },
+		armDelay: time.Second,
+		now:      func() time.Time { return clock },
+	}
+	a.enqueue(signApproval("prompt-a"))
+	clock = clock.Add(5 * time.Second)
+
+	// The requester withdraws A and sends B; the operator's "y" for A
+	// arrives just after B is shown.
+	a.handleCanceled(approvalKindSign, "Signing request", "prompt-a", "client_canceled")
+	a.enqueue(signApproval("prompt-b"))
+	clock = clock.Add(200 * time.Millisecond)
+	a.handleInput("y")
+	if len(sent) != 0 || len(a.queue) != 1 {
+		t.Fatalf("approval within the arming delay: sent %d, queue %d; want nothing sent", len(sent), len(a.queue))
+	}
+
+	clock = clock.Add(time.Second)
+	a.handleInput("y")
+	if len(sent) != 1 || len(a.queue) != 0 {
+		t.Fatalf("approval after the arming delay: sent %d, queue %d", len(sent), len(a.queue))
+	}
+	if resp := sent[0].(protocol.SignResponseMessage); resp.ID != "prompt-b" || !resp.Approved {
+		t.Fatalf("response = %#v, want approval of prompt-b", resp)
+	}
+
+	a.enqueue(signApproval("prompt-c"))
+	a.handleInput("n")
+	if len(sent) != 2 || sent[1].(protocol.SignResponseMessage).Approved {
+		t.Fatalf("rejection was delayed or became an approval: %#v", sent)
+	}
 }

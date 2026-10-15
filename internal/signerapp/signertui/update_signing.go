@@ -7,12 +7,19 @@ import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 const signingDetailsBoxHorizontalChrome = 4 // rounded border plus horizontal padding
+
+// approvalArmDelay is how long a newly shown signing request refuses approval.
+const approvalArmDelay = time.Second
+
+// signingNow is the clock for the arming delay; tests replace it.
+var signingNow = time.Now
 
 // handleSigningPopupKeys handles keyboard input on signing popup
 func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -23,6 +30,12 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.signing.focus, requestID,
 		func(m Model, id string, approved bool) (Model, tea.Cmd) {
+			// A requester can withdraw a request and send another in its
+			// place; a key pressed for the first must not approve the
+			// second. Rejecting is always immediate.
+			if approved && signingNow().Sub(m.signing.shownAt) < approvalArmDelay {
+				return m, m.setTransientWarning("This request appeared a moment ago and may have replaced the one you meant. Review it, then approve again.")
+			}
 			m.signing.request = nil
 			m.viewState = m.screenUnderApproval()
 			return m, m.sendSignResponse(id, approved)
