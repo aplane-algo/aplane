@@ -26,6 +26,8 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		wantArgs     []string
 		wantKey      string
 		wantEmbedded string
+		wantPreset   string
+		wantList     bool
 		wantRescue   bool
 		wantErr      string
 	}{
@@ -56,6 +58,11 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "template takes no role argument", args: []string{"template", "signer"}, wantErr: "takes no arguments"},
 		{name: "embedded needs a node role", args: []string{"template", "--embedded", "operator"}, wantErr: "signer or cosigner"},
 		{name: "embedded only for template", args: []string{"status", "--embedded", "signer"}, wantErr: "--embedded applies only"},
+		{name: "template preset", args: []string{"template", "--preset", "self-only", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID, wantPreset: "self-only"},
+		{name: "template list presets", args: []string{"template", "--list-presets"}, wantVerb: policycmd.VerbTemplate, wantList: true},
+		{name: "preset only for template", args: []string{"status", "--preset", "self-only"}, wantErr: "apply only to policy template"},
+		{name: "preset or embedded", args: []string{"template", "--preset", "self-only", "--embedded", "cosigner"}, wantErr: "alternatives"},
+		{name: "list presets alone", args: []string{"template", "--list-presets", "--key", keyID}, wantErr: "takes no other template flag"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,7 +76,7 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || command.Embedded != tt.wantEmbedded || rescue != tt.wantRescue ||
+			if command.Verb != tt.wantVerb || command.Key != tt.wantKey || command.Embedded != tt.wantEmbedded || command.Preset != tt.wantPreset || command.ListPresets != tt.wantList || rescue != tt.wantRescue ||
 				strings.Join(command.Args, ",") != strings.Join(tt.wantArgs, ",") {
 				t.Fatalf("command = %#v rescue=%t", command, rescue)
 			}

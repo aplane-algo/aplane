@@ -1,0 +1,28 @@
+// WARNING: this policy cosigns every payment and asset transfer to any
+// destination. It gives no protection against a compromised signer moving
+// funds; use it for testing, or where the cosigner is only an availability
+// check. Close-outs, clawbacks, rekeys, and every other transaction type
+// are still rejected.
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "default",
+  "description": "Any transfer: any account may send any asset anywhere. No spend protection.",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "10000",
+  "transaction_types": { "pay": "allow", "axfer": "allow" },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "any",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}

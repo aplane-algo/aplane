@@ -117,6 +117,8 @@ func (m Model) viewFooterText() string {
 		return m.policyApplyFooterText()
 	case ViewPolicyEdit:
 		return m.policyEditFooterText()
+	case ViewPolicyPresetPick:
+		return "up/down: Select | enter: Open in editor | esc/q: Back"
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:

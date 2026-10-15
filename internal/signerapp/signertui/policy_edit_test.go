@@ -31,6 +31,10 @@ func pressPolicyKey(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 		msg = tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
 	case "down":
 		msg = tea.KeyMsg{Type: tea.KeyDown}
+	case "up":
+		msg = tea.KeyMsg{Type: tea.KeyUp}
+	case "enter":
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
 	}
 	var next tea.Model
 	var cmd tea.Cmd
@@ -43,6 +47,8 @@ func pressPolicyKey(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 		next, cmd = m.handlePolicyEditKeys(msg)
 	case ViewPolicyApplyReview:
 		next, cmd = m.handlePolicyApplyReviewKeys(msg)
+	case ViewPolicyPresetPick:
+		next, cmd = m.handlePolicyPresetPickKeys(msg)
 	default:
 		t.Fatalf("no policy key handler for view %v", m.viewState)
 	}
@@ -81,13 +87,25 @@ func selectKeyA(t *testing.T, m Model) Model {
 	return m
 }
 
+// pressPolicyEdit presses e on the policies list and, when the cosigner
+// starting-text picker opens, takes its first choice: the text the editor
+// opened on before presets existed.
+func pressPolicyEdit(t *testing.T, m Model) (Model, tea.Cmd) {
+	t.Helper()
+	m, cmd := pressPolicyKey(t, m, "e")
+	if m.viewState != ViewPolicyPresetPick {
+		return m, cmd
+	}
+	return pressPolicyKey(t, m, "enter")
+}
+
 // openEditorForKeyOnDefault presses e on key A, which follows the default,
 // and delivers the default the editor asked for. The editor opens on the
 // default with the key filled in.
 func openEditorForKeyOnDefault(t *testing.T, m Model) Model {
 	t.Helper()
 	m = selectKeyA(t, m)
-	m, cmd := pressPolicyKey(t, m, "e")
+	m, cmd := pressPolicyEdit(t, m)
 	edit := m.policies.apply.edit
 	if m.viewState != ViewPolicyEdit || !edit.loading || edit.templateFor != policyViewKeyA || edit.pendingDocumentID == "" || cmd == nil {
 		t.Fatalf("e on a key on the default: view %v edit %+v cmd %v, want the default requested", m.viewState, edit, cmd)
@@ -184,7 +202,7 @@ func TestPolicyEditLoadsTheKeysOwnDocument(t *testing.T) {
 	m := cosignerPoliciesModel("own", protocol.PolicyDocumentInfoWire{Key: policyViewKeyA, SHA256: "abc", Size: 10})
 	m.width, m.height = 120, 40
 	m = selectKeyA(t, m)
-	m, cmd := pressPolicyKey(t, m, "e")
+	m, cmd := pressPolicyEdit(t, m)
 	edit := m.policies.apply.edit
 	if m.viewState != ViewPolicyEdit || !edit.loading || edit.pendingDocumentID == "" || edit.templateFor != "" || cmd == nil {
 		t.Fatalf("e: view %v edit %+v cmd %v, want the key's own document requested", m.viewState, edit, cmd)
@@ -224,7 +242,7 @@ func TestPolicyEditLoadsTheKeysOwnDocument(t *testing.T) {
 func TestPolicyEditOpensTheDefaultItself(t *testing.T) {
 	m := cosignerPoliciesModel("default")
 	m.width, m.height = 120, 40
-	m, cmd := pressPolicyKey(t, m, "e")
+	m, cmd := pressPolicyEdit(t, m)
 	edit := m.policies.apply.edit
 	if m.viewState != ViewPolicyEdit || !edit.loading || edit.key != policy.DefaultKey || edit.templateFor != "" || cmd == nil {
 		t.Fatalf("e on the default: view %v edit %+v cmd %v", m.viewState, edit, cmd)
@@ -324,7 +342,7 @@ func TestPolicyEditDiscardNeedsSecondEsc(t *testing.T) {
 func TestPolicyEditRefusesKeyTheNodeDoesNotHold(t *testing.T) {
 	m := cosignerPoliciesModel("key_not_held", protocol.PolicyDocumentInfoWire{Key: policyViewKeyA, SHA256: "abc", Size: 10})
 	m = selectKeyA(t, m)
-	m, cmd := pressPolicyKey(t, m, "e")
+	m, cmd := pressPolicyEdit(t, m)
 	if m.viewState != ViewPolicies || cmd != nil || !strings.Contains(m.policies.status, "does not hold key "+policyViewKeyA) {
 		t.Fatalf("e: view %v status %q cmd %v", m.viewState, m.policies.status, cmd)
 	}
@@ -339,7 +357,7 @@ func TestPolicyEditSignerDefaultFromDocumentView(t *testing.T) {
 	if footer := m.policiesFooterText(); !strings.Contains(footer, "e: Edit") {
 		t.Fatalf("document footer = %q", footer)
 	}
-	m, cmd := pressPolicyKey(t, m, "e")
+	m, cmd := pressPolicyEdit(t, m)
 	edit := m.policies.apply.edit
 	if m.viewState != ViewPolicyEdit || edit.key != policy.DefaultKey || edit.isNew || edit.loading || cmd != nil {
 		t.Fatalf("e: view %v edit %+v cmd %v", m.viewState, edit, cmd)
@@ -475,7 +493,7 @@ func TestPolicyEditRequestFailuresReachTheEditor(t *testing.T) {
 	// The document could not be loaded: there is nothing to edit.
 	m = cosignerPoliciesModel("own", protocol.PolicyDocumentInfoWire{Key: policyViewKeyA, SHA256: "abc", Size: 10})
 	m = selectKeyA(t, m)
-	m, _ = pressPolicyKey(t, m, "e")
+	m, _ = pressPolicyEdit(t, m)
 	m, handled = m.failPendingPolicyApply(m.policies.apply.edit.pendingDocumentID, errors.New("not connected"))
 	if !handled || m.viewState != ViewPolicies || !strings.Contains(m.policies.status, "Could not open the policy for editing: not connected") {
 		t.Fatalf("failed load: handled %v view %v status %q", handled, m.viewState, m.policies.status)
@@ -606,7 +624,7 @@ func TestPolicyEditRefusesDocumentItCannotHoldCompletely(t *testing.T) {
 	oversized := `{"key":"default",` + strings.Repeat("\n", policyEditMaxLines+10) + `"max_fee_microalgos":"2000"}`
 	m := loadedPoliciesModel(protocol.PolicyMessage{Success: true, NodeRole: "signer",
 		Documents: []protocol.PolicyDocumentInfoWire{{Key: policy.DefaultKey, SHA256: "abc", Size: len(oversized)}}, PolicySetSHA256: "set-digest"})
-	m, _ = pressPolicyKey(t, m, "e")
+	m, _ = pressPolicyEdit(t, m)
 	next, _ := m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
 		BaseMessage: protocol.BaseMessage{ID: m.policies.apply.edit.pendingDocumentID}, Success: true, Key: policy.DefaultKey, Document: oversized,
 	}})

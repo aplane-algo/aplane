@@ -1,0 +1,28 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "default",
+  "description": "Listed destinations: any account may send any asset to the addresses in @destinations, and nowhere else.",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "10000",
+  "transaction_types": { "pay": "allow", "axfer": "allow" },
+  "address_sets": {
+    // Replace the placeholder with the addresses this key may send to, one
+    // per entry. check rejects the document until every entry is an address.
+    "destinations": ["REPLACE-WITH-DESTINATION-ADDRESS"]
+  },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "listed-destinations",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["@destinations"]
+      }
+    ]
+  }
+}

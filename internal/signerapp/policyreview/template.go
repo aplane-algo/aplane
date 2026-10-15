@@ -37,20 +37,29 @@ func Template(role noderole.Role, key string, defaultDocument []byte) (string, e
 	if key == policy.DefaultKey {
 		header = fmt.Sprintf("// This node's default policy: the rulebook for every %s key without a\n// policy of its own. Every field is required. Comments are removed on apply.\n", role)
 	} else {
-		matches := documentKeyPattern.FindAllStringIndex(body, -1)
-		if len(matches) != 1 {
-			return "", fmt.Errorf("default policy does not carry exactly one top-level \"key\" member")
+		var err error
+		if body, err = renameDocumentKey(body, key); err != nil {
+			return "", fmt.Errorf("default policy: %w", err)
 		}
-		match := matches[0]
-		prefix := body[:match[0]]
-		matched := body[match[0]:match[1]]
-		replaced := strings.Replace(matched, `"`+policy.DefaultKey+`"`, fmt.Sprintf("%q", key), 1)
-		// The first capture group keeps the character before "key" (or
-		// nothing at the start of the text); replace only the value.
-		body = prefix + replaced + body[match[1]:]
 		header = fmt.Sprintf("// Policy for key %s, started from this node's default policy.\n// This file replaces the default for that key: every field is required,\n// nothing is inherited. Comments are removed on apply.\n", key)
 	}
 	return header + body, nil
+}
+
+// renameDocumentKey replaces the "default" value of body's one top-level
+// "key" member with key, leaving every other byte as it was.
+func renameDocumentKey(body, key string) (string, error) {
+	matches := documentKeyPattern.FindAllStringIndex(body, -1)
+	if len(matches) != 1 {
+		return "", fmt.Errorf("document does not carry exactly one top-level \"key\" member")
+	}
+	match := matches[0]
+	prefix := body[:match[0]]
+	matched := body[match[0]:match[1]]
+	replaced := strings.Replace(matched, `"`+policy.DefaultKey+`"`, fmt.Sprintf("%q", key), 1)
+	// The first capture group keeps the character before "key" (or nothing
+	// at the start of the text); replace only the value.
+	return prefix + replaced + body[match[1]:], nil
 }
 
 // EmbeddedTemplate renders the shipped default for role as the starting

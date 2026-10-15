@@ -131,6 +131,38 @@ A cosigner key with no file signs nothing. Cosigner policy has only two
 outcomes, reject or sign, so the default cannot defer to an operator; giving a
 cosigner key a file is the act of saying what it may witness.
 
+### Cosigner presets
+
+To give a cosigner key (or the cosigner default) rules without writing routes
+from nothing, start from a preset: a named starting document for one common
+intent. A preset is only starting text. It goes through the same `check`,
+`diff`, and `apply` as any other document, and the diff shows exactly what it
+opens compared with what governs the key now.
+
+| Preset | Allows | Placeholders |
+|--------|--------|--------------|
+| `deny-all` | Nothing | none |
+| `self-only` | Any account sending any asset to itself (ASA opt-ins, self-payments) | none |
+| `listed-destinations` | Any account sending any asset to the addresses in `@destinations` | the destination addresses |
+| `capped-any` | Any transfer anywhere, refusing an ALGO transfer above the cap on a capped network | the mainnet ALGO cap; add other networks yourself |
+| `any-transfer` | Any transfer anywhere; no spend protection, for testing | none |
+
+Every preset refuses close-outs, clawbacks, rekeys, and every transaction type
+other than payments and asset transfers, and caps the fee at 0.01 ALGO; edit
+the document to change any of that. A placeholder looks like
+`REPLACE-WITH-DESTINATION-ADDRESS` and is never a valid value, so `check`
+rejects the document at the placeholder until you fill it in.
+
+```bash
+apadmin policy template --list-presets
+apadmin policy template --preset listed-destinations --key <WitnessKeyID> > key.json
+```
+
+`--preset` needs no node and no passphrase. In the apadmin TUI, pressing `e`
+on a cosigner key without a policy of its own, or on the cosigner default,
+first asks for the starting text: the current document, or one of the
+presets.
+
 ### When to give a key its own file
 
 Keep keys on the default while one rulebook fits them all: the default is
@@ -217,9 +249,11 @@ commented file if you want the notes. `apstore policy check` and `sign` read
 documents already in the store, which must be plain JSON.
 
 `apadmin policy template --embedded signer|cosigner [--key K]` writes the
-shipped default for that role instead of the node's own. It is the only form
-that needs no node and no passphrase, for writing policy on a machine that
-has no store.
+shipped default for that role instead of the node's own, and
+`apadmin policy template --preset NAME [--key K]` writes a
+[cosigner preset](#cosigner-presets). These, with `--list-presets`, are the
+forms that need no node and no passphrase, for writing policy on a machine
+that has no store.
 
 The apadmin TUI can also load one policy file: open Policies (`p`), press `a`,
 and enter the file path. The TUI checks the file, shows the same diff as
@@ -243,6 +277,9 @@ load, and applies it only after you press `y`. Nothing is stored before that.
   file of its own opens the editor on the node default with the key filled in,
   marked "No policy of its own yet". Applying it, changed or not, gives the key
   its own policy. Any other document opens exactly as stored.
+- **Cosigner presets.** On a cosigner node, `e` on the default or on a key
+  without a policy of its own first asks what to start from: the document it
+  would open on anyway, or one of the [cosigner presets](#cosigner-presets).
 - **Comments are allowed.** `//` and `/* */` comments outside strings are
   removed before the text reaches the node, so they never appear in the
   stored document. A syntax error is still reported at the line and column
@@ -276,7 +313,9 @@ or lock the node when it finishes.
 | `apply FILE...` | Check, show the diff, ask for confirmation, then replace the documents in one commit; `-` reads one file from stdin |
 | `remove K...` | Show the diff, ask for confirmation, then delete the keys' own policies; the keys follow the node default. The default cannot be removed |
 | `template [--key K]` | Write the node's current default policy as the starting document for key K, or annotated as the default itself |
-| `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; the only form that needs no node and no passphrase |
+| `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
+| `template --preset NAME [--key K]` | Write a cosigner preset instead; needs no node and no passphrase |
+| `template --list-presets` | List the cosigner presets |
 
 `apply` and `remove` ask "Apply these changes?" on the terminal. Pass `--yes`
 to skip the question in scripts; without a terminal and without `--yes` they

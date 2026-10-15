@@ -27,8 +27,8 @@ func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams)
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if command.Verb == VerbTemplate && command.Embedded != "" {
-		return WriteEmbeddedTemplate(command, streams)
+	if command.NeedsNoNode() {
+		return WriteOfflineTemplate(command, streams)
 	}
 	if r.Session == nil {
 		return fmt.Errorf("admin policy session is required")
