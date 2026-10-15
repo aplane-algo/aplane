@@ -1123,8 +1123,10 @@ variables above. The sandbox then removes:
   `_PASSWORD`
 
 Variables whose names start with `APSHELL_` are exempt (so
-`APSHELL_ALGOD_TOKEN` survives), and so are the two LocalNet overrides
-`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD`. `PATH` is
+`APSHELL_ALGOD_TOKEN` survives). The two LocalNet overrides
+`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only
+for the plugin whose manifest name is `algokit-localnet`; every other plugin
+has them stripped, since all plugins run with network access. `PATH` is
 rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and
 `/sbin/`. All other host environment variables are inherited unchanged.
 
