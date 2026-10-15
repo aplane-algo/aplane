@@ -215,10 +215,7 @@
     "cosignerTransactionTypes": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "*"
-      ],
-      "description": "Per-type verdict. A cosigner has no operator: every value is allow or reject, and only pay and axfer, the types routing governs, may be allowed.",
+      "description": "Per-type verdict. A cosigner has no operator: every value is allow or reject, and only pay and axfer, the types routing governs, may be allowed. \"*\" may be omitted; every type the map does not name is rejected.",
       "properties": {
         "*": {
           "const": "reject"

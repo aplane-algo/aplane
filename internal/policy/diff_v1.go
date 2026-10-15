@@ -151,9 +151,11 @@ func verdictStrictness(v TransactionTypeVerdict) int {
 // so a change to "*" is reported on each type it reaches. The wildcard is
 // also compared on its own: it governs any type the document does not name,
 // including types this build does not know, so a change to it matters even
-// when every known type has an entry of its own.
+// when every known type has an entry of its own. It is compared by effective
+// verdict too, so a cosigner document that omits "*" equals one that spells
+// out its reject.
 func (d *policyDiff) transactionTypes(current, next TransactionTypesV1) {
-	if c, n := current[TransactionTypeWildcard], next[TransactionTypeWildcard]; c != n {
+	if c, n := current.Verdict(TransactionTypeWildcard), next.Verdict(TransactionTypeWildcard); c != n {
 		effect := PolicyChangeLoosened
 		if verdictStrictness(n) > verdictStrictness(c) {
 			effect = PolicyChangeTightened

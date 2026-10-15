@@ -654,7 +654,7 @@ unknown field is rejected. Amounts are decimal strings in base units.
 | `always_review_warnings` | signer | bool | Require operator review for txns with warning-level findings, even when `user_auto_approve:true` |
 | `auto_approve_self_noop_transfer` | signer | bool | Auto-approve a single 0 ALGO payment to self or 0-unit ASA transfer to self with no caller-provided group, no passthrough/foreign slots, no rekey, no close remainder, no asset close, no clawback sender, no note, no lease, and normalized fee at most 1000 microAlgos. Signer-generated LogicSig-budget dummies are allowed when they exactly match APlane's dummy transaction shape. |
 | `max_fee_microalgos` | both | amount | Reject txns whose fee exceeds this raw microAlgo ceiling; `"0"` means no limit |
-| `transaction_types` | both | map | Transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` is required. A cosigner document may `allow` only `pay` and `axfer` and may not use `review` |
+| `transaction_types` | both | map | Transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` is required in a signer document. A cosigner document may `allow` only `pay` and `axfer`, may not use `review`, and may omit `*`, which can only be `reject` there |
 | `limits` | both | map | Per-network, per-asset (`algo` or `asa:<id>`) `review_above` / `reject_above` thresholds in base units; cosigner documents take `reject_above` only |
 | `address_sets` | both | map | Named address sets for routes, local to the document |
 | `asset_sets` | both | map | Named per-network asset sets for routes, local to the document |

@@ -797,7 +797,8 @@ Cosigner semantics:
   `auto_approve_self_noop_transfer`, `review_above`, and the three route-miss
   actions do not exist there.
 - `transaction_types` may `allow` only `pay` and `axfer`; `*` and every
-  non-transfer type must be `reject`.
+  non-transfer type must be `reject`. `*` may be omitted, since `reject` is
+  its only value: `{ "pay": "allow", "axfer": "allow" }` is a complete map.
 - `transfer_policy` is required and is the positive authorization surface.
   Route misses, unallowed close-outs, and unallowed clawbacks always reject.
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
@@ -901,8 +902,9 @@ a key's document does not see the default's sets.
 ### Transaction Types
 
 `transaction_types` maps a transaction type, or `*`, to `allow`, `review`,
-or `reject`. The `*` entry is required and covers every type the map does not
-name. The verdict is evaluated first, before every other rule: `reject` is
+or `reject`. The `*` entry covers every type the map does not name. It is
+required on a signer node, where it is a choice; on a cosigner node it may be
+omitted, and a missing `*` rejects. The verdict is evaluated first, before every other rule: `reject` is
 Always Deny and `review` is Always Review, both with rule ID
 `transaction_type:<type>`; `allow` lets the transaction continue through the
 other rules (routing and limits for `pay` and `axfer`). A compiled policy
@@ -913,6 +915,10 @@ accepted only for `pay` and `axfer`, the types routing governs: `*` and every
 non-transfer type must be `reject`. Routing is the cosigner's only
 authorization surface, and a type permission with no route table behind it
 would authorize application calls from any account composed with the key.
+Because `reject` is the only value `*` can take there, a cosigner document
+may leave it out; the decoder records no entry, every type the map does not
+name resolves to `reject` with rule ID `transaction_type:<type>`, and the
+policy diff treats an omitted `*` as equal to an explicit `"*": "reject"`.
 
 ```json
 "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow", "keyreg": "review" }

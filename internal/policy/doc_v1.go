@@ -401,9 +401,11 @@ func decodeRouteMissAction(n *jsonNode) (TransferOnNoRoute, error) {
 	}
 }
 
-// decodeTransactionTypes decodes the verdict map. "*" is required. A cosigner
-// document may allow only pay and axfer, the types routing governs, and
-// never reviews.
+// decodeTransactionTypes decodes the verdict map. A cosigner document may
+// allow only pay and axfer, the types routing governs, and never reviews. "*"
+// is required on a signer, where it is a choice; on a cosigner its only legal
+// value is reject, so it may be omitted and Verdict resolves a missing entry
+// to reject.
 func decodeTransactionTypes(node *jsonNode, role noderole.Role) (TransactionTypesV1, error) {
 	r, err := readJSONObject(node, "transaction_types")
 	if err != nil {
@@ -439,7 +441,7 @@ func decodeTransactionTypes(node *jsonNode, role noderole.Role) (TransactionType
 		}
 		out[name] = verdict
 	}
-	if _, ok := out[TransactionTypeWildcard]; !ok {
+	if _, ok := out[TransactionTypeWildcard]; !ok && role != noderole.RoleCosigner {
 		return nil, docErrorf(node.pointer, "missing required field %q", TransactionTypeWildcard)
 	}
 	return out, r.finish()
