@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/command"
+	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
 func TestRequestEnrollmentRejectsPositionalHost(t *testing.T) {
@@ -375,6 +377,38 @@ func TestArgSpecsAreValid(t *testing.T) {
 			if spec.Type != "" && !validArgTypes[spec.Type] {
 				t.Errorf("command %q ArgSpec[%d] has unknown type: %v", cmd.Name, i, spec.Type)
 			}
+		}
+	}
+}
+
+// Tab completion offers exactly the registered commands and their aliases:
+// nothing that is not a command, and no command left out.
+func TestCompleterMatchesCommandRegistry(t *testing.T) {
+	registry := (&REPLState{}).initCommandRegistry()
+	want := map[string]bool{}
+	for _, cmd := range registry.All() {
+		want[cmd.Name] = true
+		for _, alias := range cmd.Aliases {
+			want[alias] = true
+		}
+	}
+
+	signers := cache.NewSignerCache()
+	completer := shellrepl.CreateDynamicCompleter(&cache.AliasCache{}, &cache.ASACache{}, &cache.SetCache{}, &signers, func() error { return nil }, nil, nil)
+	candidates, _ := completer.Do([]rune(""), 0)
+	got := map[string]bool{}
+	for _, candidate := range candidates {
+		got[strings.TrimSpace(string(candidate))] = true
+	}
+
+	for name := range want {
+		if !got[name] {
+			t.Errorf("registered command %q is not offered by tab completion", name)
+		}
+	}
+	for name := range got {
+		if !want[name] {
+			t.Errorf("tab completion offers %q, which is not a registered command", name)
 		}
 	}
 }
