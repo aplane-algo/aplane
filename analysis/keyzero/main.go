@@ -170,14 +170,14 @@ func checkFile(path string) []finding {
 	keyRefContent := ""
 
 	funcPattern := regexp.MustCompile(`^func\s+(\([^)]+\)\s+)?(\w+)`)
-	inBlockComment := false
+	state := lexCode
 
 	for i, line := range lines {
 		lineNum := i + 1
 		// Match only code: a commented-out zeroing call must not count, and a
 		// comment or string must not hide or invent a key reference or brace.
 		var code string
-		code, inBlockComment = codeOnly(line, inBlockComment)
+		code, state = codeOnly(line, state)
 
 		// Track function boundaries
 		if match := funcPattern.FindStringSubmatch(line); match != nil {
@@ -248,10 +248,22 @@ func checkFile(path string) []finding {
 	return findings
 }
 
+// lexState is where a line starts: in code, or inside a /* */ comment or a
+// raw string literal that an earlier line opened. Both span lines, and losing
+// either would misread the lines that follow (a "/*" inside a raw string must
+// not start a comment that hides real code).
+type lexState int
+
+const (
+	lexCode lexState = iota
+	lexBlockComment
+	lexRawString
+)
+
 // codeOnly returns line with comments removed and string and rune literal
-// contents blanked, given whether the line starts inside a /* */ comment, and
-// reports whether it ends inside one.
-func codeOnly(line string, inBlockComment bool) (string, bool) {
+// contents blanked, given the state the line starts in, and returns the state
+// it ends in.
+func codeOnly(line string, state lexState) (string, lexState) {
 	var out strings.Builder
 	runes := []rune(line)
 	for i := 0; i < len(runes); i++ {
@@ -261,20 +273,27 @@ func codeOnly(line string, inBlockComment bool) (string, bool) {
 			next = runes[i+1]
 		}
 		switch {
-		case inBlockComment:
+		case state == lexBlockComment:
 			if ch == '*' && next == '/' {
-				inBlockComment = false
+				state = lexCode
 				i++
 			}
+		case state == lexRawString:
+			if ch == '`' {
+				state = lexCode
+				out.WriteRune(' ')
+			}
 		case ch == '/' && next == '/':
-			return out.String(), false
+			return out.String(), lexCode
 		case ch == '/' && next == '*':
-			inBlockComment = true
+			state = lexBlockComment
 			i++
-		case ch == '"' || ch == '`' || ch == '\'':
+		case ch == '`':
+			state = lexRawString
+		case ch == '"' || ch == '\'':
 			quote := ch
 			for i++; i < len(runes) && runes[i] != quote; i++ {
-				if runes[i] == '\\' && quote != '`' {
+				if runes[i] == '\\' {
 					i++
 				}
 			}
@@ -283,5 +302,5 @@ func codeOnly(line string, inBlockComment bool) (string, bool) {
 			out.WriteRune(ch)
 		}
 	}
-	return out.String(), inBlockComment
+	return out.String(), state
 }

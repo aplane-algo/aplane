@@ -16,6 +16,8 @@ func TestSensitiveFormattedName(t *testing.T) {
 		{`log.Printf("mnemonic: %s", mnemonic)`, "mnemonic"},
 		{`log.Printf("loaded %x (size %d)", account.PrivateKey, n)`, "account.PrivateKey"},
 		{`fmt.Printf("public %v", seed)`, "seed"},
+		{`log.Printf("%v", mnemonicWords)`, "mnemonicWords"},
+		{`log.Printf("%s", strings.Join(mnemonics, " "))`, "mnemonics"},
 		{"log.Printf(`raw %x`, entropy)", "entropy"},
 		{`log.Printf("key: %x", privKey) // privKey is public here`, "privKey"},
 
@@ -24,6 +26,7 @@ func TestSensitiveFormattedName(t *testing.T) {
 		{`fmt.Errorf("unsupported mnemonic type %s", mnemonicType)`, ""},
 		{`log.Printf("%d mnemonic words", len(mnemonicWords))`, ""},
 		{`fmt.Errorf("handlers: %v", mnemonicHandlers)`, ""},
+		{`logInfof("mnemonic handlers: %v", mnemonicFamilies)`, ""},
 		{`log.Printf("%s", cfg.KeyTypeSeed)`, ""},
 		{`log.Printf("%x", accountSeed)`, "accountSeed"},
 		// A security term only inside the message, with no argument naming it.

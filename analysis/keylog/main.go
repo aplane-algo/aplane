@@ -28,12 +28,13 @@ var (
 )
 
 // benignWords mark an identifier that names something about key material
-// rather than the material itself (publicKey, mnemonicType, seedLen).
+// rather than the material itself (publicKey, mnemonicType, seedLen). Words
+// such as "words" or "mnemonics" are not here: mnemonicWords holds the secret.
 var benignWords = map[string]bool{
 	"public": true, "pub": true, "type": true, "types": true, "count": true,
 	"size": true, "len": true, "length": true, "handler": true, "handlers": true,
-	"provider": true, "providers": true, "mnemonics": true, "words": true,
-	"word": true, "path": true, "file": true, "dir": true, "name": true,
+	"provider": true, "providers": true, "path": true, "file": true,
+	"dir": true, "name": true, "family": true, "families": true,
 	"label": true, "param": true, "params": true, "version": true,
 	"fingerprint": true, "id": true, "ids": true,
 }

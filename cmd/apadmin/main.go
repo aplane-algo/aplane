@@ -133,9 +133,9 @@ func main() {
 	}
 
 	// Check registered mnemonic handlers
-	mnemonics := mnemonic.GetRegisteredFamilies()
-	if len(mnemonics) > 0 {
-		logInfof("mnemonic handlers: %v", mnemonics)
+	mnemonicFamilies := mnemonic.GetRegisteredFamilies()
+	if len(mnemonicFamilies) > 0 {
+		logInfof("mnemonic handlers: %v", mnemonicFamilies)
 	}
 
 	// Check algorithm metadata

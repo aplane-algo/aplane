@@ -53,6 +53,20 @@ func describe() string {
 	return "the PrivateKey field is encrypted"
 }
 `, 0},
+		{"comment opener inside a multiline raw string hides nothing", "package p\n" +
+			"func use(k *Key) {\n" +
+			"\tpattern := `start\n" +
+			"/* not a comment`\n" +
+			"\tsign(k.PrivateKey, pattern)\n" +
+			"}\n", 1},
+		{"zeroing inside a multiline raw string does not count", "package p\n" +
+			"func use(k *Key) {\n" +
+			"\tsign(k.PrivateKey)\n" +
+			"\tdoc := `\n" +
+			"crypto.ZeroBytes(k.PrivateKey)\n" +
+			"`\n" +
+			"\t_ = doc\n" +
+			"}\n", 1},
 		{"braces in strings do not end the function", `package p
 func use(k *Key) {
 	log.Print("}")
