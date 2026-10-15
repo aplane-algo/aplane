@@ -20,7 +20,7 @@ func TestManagedCredentialExtensionsHaveOneOwner(t *testing.T) {
 	root := filepath.Join("..", "..")
 	extensions := map[string]bool{
 		"." + "key": true,
-		"." + "sen": true,
+		"." + "cos": true,
 	}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {

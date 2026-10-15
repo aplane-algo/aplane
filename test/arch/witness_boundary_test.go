@@ -29,9 +29,15 @@ func TestNetworkedAndStoreProcessesCannotReachColdWitnessSigning(t *testing.T) {
 	}
 }
 
+// isColdWitnessForbiddenRoot covers every binary except the offline ceremony
+// tool, cmd/aprekey, plus the store and signer packages, so neither a
+// networked process nor a client can link cold witness signing.
 func isColdWitnessForbiddenRoot(pkg string) bool {
-	return pkg == modulePrefix+"/cmd/apstore" ||
-		pkg == modulePrefix+"/internal/keys" || strings.HasPrefix(pkg, modulePrefix+"/internal/keys/") ||
+	if strings.HasPrefix(pkg, modulePrefix+"/cmd/") && pkg != modulePrefix+"/cmd/aprekey" &&
+		!strings.HasPrefix(pkg, modulePrefix+"/cmd/aprekey/") {
+		return true
+	}
+	return pkg == modulePrefix+"/internal/keys" || strings.HasPrefix(pkg, modulePrefix+"/internal/keys/") ||
 		pkg == modulePrefix+"/internal/keystore" || strings.HasPrefix(pkg, modulePrefix+"/internal/keystore/") ||
 		pkg == modulePrefix+"/internal/signerapp" || strings.HasPrefix(pkg, modulePrefix+"/internal/signerapp/")
 }

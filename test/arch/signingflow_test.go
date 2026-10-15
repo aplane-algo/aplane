@@ -17,14 +17,17 @@ import (
 // on the runtime signing_flow metadata served by the daemon, never on the
 // compiled guarded key-type vocabulary. The compiled switches stay available
 // to signer-side code, which owns the keys it reports on.
+// Each directory is scanned with its subpackages.
 var clientPackageDirs = []string{
+	"../../cmd/apshell",
 	"../../internal/engine",
-	"../../internal/engine/guarded",
 	"../../internal/apshellapp",
 	"../../internal/apshellcli",
 	"../../internal/clientsign",
 	"../../internal/clientstate",
 	"../../internal/jsapi",
+	"../../internal/shellrepl",
+	"../../internal/signerclient",
 }
 
 // forbiddenGuardedSwitches are the compiled key-type classification helpers
@@ -45,25 +48,27 @@ var forbiddenGuardedSwitches = []string{
 // simulate the daemon side of the contract.
 func TestClientPackagesRouteOnSigningFlow(t *testing.T) {
 	for _, dir := range clientPackageDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read %s: %v", dir, err)
-		}
-		for _, entry := range entries {
+		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 			name := entry.Name()
 			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-				continue
+				return nil
 			}
-			path := filepath.Join(dir, name)
 			content, err := os.ReadFile(path)
 			if err != nil {
-				t.Fatalf("read %s: %v", path, err)
+				return err
 			}
 			for _, forbidden := range forbiddenGuardedSwitches {
 				if strings.Contains(string(content), forbidden) {
 					t.Errorf("%s uses compiled guarded key-type switch %s; client routing must use runtime signing_flow metadata", path, forbidden)
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", dir, err)
 		}
 	}
 }
