@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
@@ -67,6 +68,13 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 // committed generation. outcome.Uncertain reports a commit that may have
 // landed without the runtime following it.
 func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.ApplyPolicyRequest, outcome *policyapply.Outcome) error {
+	// Recovery mode admits only the operations that resolve the store
+	// (reconcile, rollback, restore, prune). Its keyring is open, but minting
+	// a policy generation on top of a store that failed validation is not one
+	// of them. Checked under the store mutation lock, so no state change races it.
+	if ir.IsRecovery() {
+		return policyapply.Error{Code: protocol.ResultCodeRecoveryBlocked, Msg: "the store is in recovery mode; reconcile, roll back, or restore it before applying policy"}
+	}
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		var err error
 		*outcome, err = policyapply.Commit(s.policyEnv(kr), req)
