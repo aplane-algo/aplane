@@ -432,7 +432,7 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `always_review_warnings` | signer | yes | Require operator review for warning-level findings, even with `user_auto_approve: true`. |
 | `auto_approve_self_noop_transfer` | signer | yes | Auto-approve exact low-risk 0-amount self-transfer shapes. |
 | `max_fee_microalgos` | both | yes | Reject txns whose fee exceeds this microAlgo ceiling; `"0"` means no cap. |
-| `transaction_types` | both | yes | Map from transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` is required and covers every type not named. A cosigner document may `allow` only `pay` and `axfer` and may not use `review`. |
+| `transaction_types` | both | yes | Map from transaction type (`pay`, `axfer`, `acfg`, `afrz`, `appl`, `keyreg`, `stpf`, `hb`) or `*` to `allow`, `review`, or `reject`; `*` covers every type not named and is required in a signer document. A cosigner document may `allow` only `pay` and `axfer` and may not use `review`; its `*` can only be `reject`, so it may be left out. |
 | `limits` | both | no | Per-network, per-asset `review_above` / `reject_above` thresholds in base units; cosigner documents take `reject_above` only. |
 | `address_sets` | both | no | Named address sets for routes, local to this document. |
 | `asset_sets` | both | no | Named per-network asset sets for routes, local to this document. |
@@ -923,7 +923,8 @@ still apply independently.
 
 The cosigner equivalent is one file per witness key. Its `transfer_policy`
 holds only `routes` and `blocked_destinations`, its `transaction_types` may
-allow only `pay` and `axfer`, and a finite fee cap keeps a permitted
+allow only `pay` and `axfer` (every type it does not name is rejected, so
+`"*": "reject"` may be left out), and a finite fee cap keeps a permitted
 self-payment from carrying any fee (a cosigner has no warning review, and
 `check` warns when routes exist with no cap):
 

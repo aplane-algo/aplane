@@ -233,7 +233,7 @@ func PrintDiffs(w io.Writer, diffs []DocumentDiff) {
 			if d.Identical {
 				_, _ = fmt.Fprintf(w, "%s: no changes\n", d.Label)
 			} else {
-				_, _ = fmt.Fprintf(w, "%s: no change to what the policy allows; the document differs only in order\n", d.Label)
+				_, _ = fmt.Fprintf(w, "%s: the document differs, but effective permissions are unchanged\n", d.Label)
 			}
 			continue
 		}

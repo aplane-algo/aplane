@@ -797,7 +797,8 @@ Cosigner semantics:
   `auto_approve_self_noop_transfer`, `review_above`, and the three route-miss
   actions do not exist there.
 - `transaction_types` may `allow` only `pay` and `axfer`; `*` and every
-  non-transfer type must be `reject`.
+  non-transfer type must be `reject`. `*` may be omitted, since `reject` is
+  its only value: `{ "pay": "allow", "axfer": "allow" }` is a complete map.
 - `transfer_policy` is required and is the positive authorization surface.
   Route misses, unallowed close-outs, and unallowed clawbacks always reject.
 - `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
@@ -901,8 +902,9 @@ a key's document does not see the default's sets.
 ### Transaction Types
 
 `transaction_types` maps a transaction type, or `*`, to `allow`, `review`,
-or `reject`. The `*` entry is required and covers every type the map does not
-name. The verdict is evaluated first, before every other rule: `reject` is
+or `reject`. The `*` entry covers every type the map does not name. It is
+required on a signer node, where it is a choice; on a cosigner node it may be
+omitted, and a missing `*` rejects. The verdict is evaluated first, before every other rule: `reject` is
 Always Deny and `review` is Always Review, both with rule ID
 `transaction_type:<type>`; `allow` lets the transaction continue through the
 other rules (routing and limits for `pay` and `axfer`). A compiled policy
@@ -913,6 +915,10 @@ accepted only for `pay` and `axfer`, the types routing governs: `*` and every
 non-transfer type must be `reject`. Routing is the cosigner's only
 authorization surface, and a type permission with no route table behind it
 would authorize application calls from any account composed with the key.
+Because `reject` is the only value `*` can take there, a cosigner document
+may leave it out; the decoder records no entry, every type the map does not
+name resolves to `reject` with rule ID `transaction_type:<type>`, and the
+policy diff treats an omitted `*` as equal to an explicit `"*": "reject"`.
 
 ```json
 "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow", "keyreg": "review" }
@@ -1289,8 +1295,10 @@ loosened lines against the default, never as a bare "policy removed".
 `apply` and `remove` ask for confirmation on the controlling terminal, never
 stdin; `--yes` skips it. Output names the committed generation or reports
 `policy unchanged`. `apply` skips the commit only when every submitted
-document decodes identical to the active one; a document that differs only
-in term order is still applied.
+document decodes identical to the active one; a document that differs but
+leaves effective permissions unchanged (term order, or a cosigner `*` entry
+written out or omitted) is still applied, and `diff` reports it as "the
+document differs, but effective permissions are unchanged".
 
 Online verbs authenticate through admin IPC and unlock a locked identity with
 the authenticated passphrase before policy access; this applies to read-only
@@ -1418,7 +1426,7 @@ compatibility-bearing audit details live in
 | Cosigner `on_no_route` / `close_on_no_route` / `clawback_on_no_route` (must be `reject`) | Removed; always reject |
 | Absent fields resolved through product defaults | Every verdict-bearing field required; nothing implied |
 | One document per node with `key_overrides` by address or Witness Key ID | One node default plus zero or one complete document per key; no inheritance |
-| Implicit transaction-type behavior | `transaction_types` with a required `*` entry |
+| Implicit transaction-type behavior | `transaction_types` with a `*` entry, required in a signer document; a cosigner document may omit it, since it can only be `reject` |
 | Sidecar `policy_mtime_ns` | Removed (already gone) |
 
 ## Source Files

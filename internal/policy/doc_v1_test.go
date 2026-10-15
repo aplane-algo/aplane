@@ -71,6 +71,7 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 		{"cosigner review type", cosigner(`"transaction_types":{"*":"reject","pay":"review"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/pay", "cannot produce review"},
 		{"cosigner allow non-transfer type", cosigner(`"transaction_types":{"*":"reject","appl":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/appl", "only pay and axfer"},
 		{"cosigner wildcard allow", cosigner(`"transaction_types":{"*":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/*", "only pay and axfer"},
+		{"cosigner omitted wildcard still rejects non-transfer allow", cosigner(`"transaction_types":{"pay":"allow","appl":"allow"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transaction_types/appl", "only pay and axfer"},
 		{"cosigner review field", cosigner(`"always_review_warnings":true`), testWitnessKeyIDV1, noderole.RoleCosigner, "/always_review_warnings", "not accepted in a cosigner document"},
 		{"cosigner foreign rekey field", cosigner(`"reject_foreign_rekey":true`), testWitnessKeyIDV1, noderole.RoleCosigner, "/reject_foreign_rekey", "not accepted in a cosigner document"},
 		{"cosigner route miss field", cosigner(`"transfer_policy":{"on_no_route":"reject"}`), testWitnessKeyIDV1, noderole.RoleCosigner, "/transfer_policy/on_no_route", "not accepted in a cosigner document"},
@@ -208,6 +209,39 @@ func TestTransactionTypesVerdictResolution(t *testing.T) {
 	clone.TransactionTypes["pay"] = TransactionTypeReject
 	if cfg.VerdictForType(types.PaymentTx) != TransactionTypeAllow {
 		t.Fatal("Clone shares the transaction_types map")
+	}
+}
+
+// A cosigner document may omit "*", whose only legal value there is reject:
+// the omitted entry rejects every type the map does not name, with the same
+// rule IDs, and the document diffs equal to one that spells the reject out.
+func TestCosignerTransactionTypesWildcardOptional(t *testing.T) {
+	omitted := mustCosignerDoc(t, testWitnessKeyIDV1, `{"transaction_types":{"pay":"allow","axfer":"allow"}}`)
+	explicit := mustCosignerDoc(t, testWitnessKeyIDV1, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow"}}`)
+	if _, ok := omitted.TransactionTypes[TransactionTypeWildcard]; ok {
+		t.Fatal("decoder added a \"*\" entry the document did not have")
+	}
+	cfg, err := omitted.Compile(DefaultConfig())
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	for txType, want := range map[types.TxType]TransactionTypeVerdict{
+		types.PaymentTx:           TransactionTypeAllow,
+		types.AssetTransferTx:     TransactionTypeAllow,
+		types.KeyRegistrationTx:   TransactionTypeReject,
+		types.ApplicationCallTx:   TransactionTypeReject,
+		types.AssetConfigTx:       TransactionTypeReject,
+		types.TxType("future-tx"): TransactionTypeReject,
+	} {
+		if got := cfg.VerdictForType(txType); got != want {
+			t.Errorf("%s verdict = %q, want %q", txType, got, want)
+		}
+	}
+	if changes := DiffPolicyV1(explicit, omitted); len(changes) != 0 {
+		t.Fatalf("omitting \"*\" diffs as %v, want no change", changes)
+	}
+	if _, err := DecodePolicyV1(signerJSON(t, DefaultKey, `{"transaction_types":{"pay":"allow"}}`), DefaultKey, noderole.RoleSigner); err == nil {
+		t.Fatal("a signer document without \"*\" decoded")
 	}
 }
 
