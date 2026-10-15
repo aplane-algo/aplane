@@ -5,6 +5,22 @@ token, setup-file, and protocol-v5 entries describe behavior superseded by the
 enrolled-key model and current admin protocol v6.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 
+## Rotating triple hybrid accounts
+
+New library-visible key type `aplane.rotating-triple-hybrid.v1`: the rotating
+account whose every stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an
+Ed25519 signature over the TxID, each derived from one signer-held seed under
+the type's own derivation label. A forgery needs breaks of lattices, SHA-256
+and Ed25519 at once. It uses the same `rotating1` flow, commands, stage
+address cache, alerts and restore behavior as the other rotating types; a
+spend carries three resource dummies and pays four minimum fees. A stage
+that released twice loses only its WOTS protection and rests on Falcon-1024
+and Ed25519 until one of its transactions lands; the reuse warning now names
+what a reused stage still rests on for each type. The Falcon and hash
+hybrids are unchanged and remain the cheaper options. `/keys` and
+`/keytypes` report the type with `signing_flow: rotating1`; no new error
+codes.
+
 ## Per-key signer policy
 
 Policy is now one document per key with a node default behind it, laid out

@@ -207,8 +207,8 @@ func (s *Service) releaseAddresses(ctx context.Context, account string, stage ui
 //     never confirm;
 //   - the same, within the validity, but the stage has released over more
 //     than one transaction and its scheme is one-time: reused (warning),
-//     because the stage is Ed25519-only until the account moves; for other
-//     schemes the reuse is harmless and stays a note;
+//     because the stage has lost its one-time scheme's protection until the
+//     account moves; for other schemes the reuse is harmless and stays a note;
 //   - authorizer anywhere else: the release landed or the account moved on;
 //     the memory is cleared and nothing is said. A record made after the
 //     pass's chain read is newer than the observation and is left alone;
@@ -252,7 +252,7 @@ func (s *Service) RotatingStatus(reports []StageTableReport) (warnings, notes []
 		}
 		profile, _ := rotatingkey.Lookup(snapshot.KeyTypes[r.Account])
 		if rec.Reused && profile.OneTimeStage {
-			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage is Ed25519-only until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, rec.TxID, rec.LastValid))
+			warnings = append(warnings, fmt.Sprintf("rotating account %s: stage %d has signed more than one transaction; its one-time hash-based key is spent and the stage rests on %s until the account moves; latest release %s is in flight (valid through round %d), wait for it to land or send a rotate-only spend", r.Account, rec.Stage, profile.ReusedStageRestsOn, rec.TxID, rec.LastValid))
 			continue
 		}
 		notes = append(notes, fmt.Sprintf("rotating account %s: release from stage %d in flight (transaction %s, valid through round %d)%s", r.Account, rec.Stage, rec.TxID, rec.LastValid, reuse))

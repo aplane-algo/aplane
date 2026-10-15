@@ -788,6 +788,25 @@ approval and local signer policy. See
   until a spend lands; see
   [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-hash-hybrid-accounts)
 
+#### `aplane.rotating-triple-hybrid.v1`
+
+- dedicated compiled stage program, library-visible and signer-gated; the
+  same rotation with a Falcon-1024, a WOTS-w16 and an Ed25519 signature all
+  required
+- each stage requires, in order, a non-zero rekey that is not the sender, no
+  close-out, a validity window of at most 100 rounds, an Ed25519 signature
+  over the TxID (argument 1), a Falcon-1024 signature over the TxID
+  (argument 2) and a WOTS-w16 signature over the TxID (argument 0), the WOTS
+  check being the hash hybrid's program unchanged
+- worst-case opcode cost 59,767 and 3,631 argument bytes, so a spend needs
+  three resource dummies; the cost for a given TxID is 7,296 plus 53 per
+  chain step, pinned against the node's budget report in the LocalNet test
+- the signer, not TEAL, guarantees that every rekey targets the account's
+  next never-revealed stage. As with the hash hybrid nothing enforces that a
+  stage signs once; a reused stage loses its WOTS protection and rests on
+  Falcon-1024 and Ed25519 until a spend lands; see
+  [USER_KEYTYPES.md](USER_KEYTYPES.md#rotating-triple-hybrid-accounts)
+
 #### Bounded Authorization Allowlist
 
 `aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with

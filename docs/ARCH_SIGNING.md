@@ -1454,7 +1454,8 @@ transaction, or a later rotation, confirms.
 The signer reads the authorizer, finds its stage `n` (through the stage
 address table, confirmed by derivation), sets `rekey_to` to stage `n + 1`'s
 address derived from the seed, adds the resource dummies the key type's
-profile needs (one for the Falcon hybrid, two for the WOTS hybrid), sets fees
+profile needs (one for the Falcon hybrid, two for the WOTS hybrid, three for
+the triple hybrid), sets fees
 and the group ID, and returns the exact unsigned group. It stores nothing.
 Preparation needs no approval and reveals nothing secret. An account whose
 live stage the signer has not found yet is refused with
@@ -1495,8 +1496,8 @@ account's lock, it reads the chain again and refuses unless the authorizer
 is still stage `n` (`rotating_stage_changed` otherwise: nothing was signed),
 `first_valid` is at most 2 rounds ahead of the round read, and at least 10
 rounds remain before `last_valid`. It proves stage `n + 1` can sign, signs
-the TxID with stage `n`'s two keys (Falcon-1024 and Ed25519, or WOTS and
-Ed25519), verifies both,
+the TxID with stage `n`'s keys (Falcon-1024 and Ed25519; WOTS and Ed25519;
+or Falcon-1024, WOTS and Ed25519), verifies every signature,
 writes a `ROTATING_RELEASE` audit entry (account, TxID, stage, `last_valid`)
 with a durable sync, records the release in memory, and responds. An audit
 write failure is logged as a warning and does not withhold the signature:
@@ -1517,12 +1518,13 @@ store would change that outcome.
 
 Creating and using rotating accounts:
 
-- `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
-  `aplane.rotating-wots-hybrid.v1` (hash-based WOTS + Ed25519 stages) are
-  `Library` key types: an operator enables one, then generates with the
+- `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages),
+  `aplane.rotating-wots-hybrid.v1` (hash-based WOTS + Ed25519 stages) and
+  `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
+  are `Library` key types: an operator enables one, then generates with the
   single creation parameter `network`: any network the signer knows
   (built-in or configured, which `/keytypes` lists as the parameter's
-  `options`), or a base64 genesis hash. Both use this flow unchanged; they
+  `options`), or a base64 genesis hash. All use this flow unchanged; they
   differ only in the stage program and its resource profile. Like every key
   type, their recovery material never leaves the signer: neither the admin
   protocol nor HTTP returns the mnemonic, and backups carry the seed.
@@ -1567,10 +1569,11 @@ that expired while a newer one is still within its window is reported
 through the newer one: the stage is the same, and the newer transaction
 either lands and moves the account or expires and raises the warning, which
 then also says the stage has signed more than one transaction. For a key
-type whose stage signature is one-time (`aplane.rotating-wots-hybrid.v1`),
-a reused stage that is still live raises a warning even while the newest
-release is within its window: the stage is Ed25519-only until the account
-moves. For other types the reuse is harmless and only appears in the
+type whose stage includes a one-time signature
+(`aplane.rotating-wots-hybrid.v1`, `aplane.rotating-triple-hybrid.v1`), a
+reused stage that is still live raises a warning even while the newest
+release is within its window: until the account moves, the WOTS stage rests
+on Ed25519 only and the triple stage on Falcon-1024 and Ed25519. For other types the reuse is harmless and only appears in the
 in-flight note. Warnings appear in the daemon log once when they
 appear and once when they clear, in authenticated `/status` `warnings`, in
 apadmin's status bar, and in apshell's `rotate status`; notes appear in

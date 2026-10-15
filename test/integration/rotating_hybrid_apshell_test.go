@@ -30,6 +30,12 @@ func TestRotatingWotsApshellEndToEnd(t *testing.T) {
 	runRotatingApshellEndToEnd(t, rotatingkey.RotatingWotsHybridV1)
 }
 
+// TestRotatingTripleApshellEndToEnd is the same client surface over the
+// triple hybrid key type.
+func TestRotatingTripleApshellEndToEnd(t *testing.T) {
+	runRotatingApshellEndToEnd(t, rotatingkey.RotatingTripleHybridV1)
+}
+
 func runRotatingApshellEndToEnd(t *testing.T, keyType string) {
 	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {

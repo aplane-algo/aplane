@@ -28,6 +28,13 @@ const (
 	// RotatingWotsHybridFamily is its versionless family.
 	RotatingWotsHybridFamily = "aplane.rotating-wots-hybrid"
 
+	// RotatingTripleHybridV1 is the rotating account whose every stage
+	// requires a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519 signature.
+	RotatingTripleHybridV1 = "aplane.rotating-triple-hybrid.v1"
+
+	// RotatingTripleHybridFamily is its versionless family.
+	RotatingTripleHybridFamily = "aplane.rotating-triple-hybrid"
+
 	// RotatingSeedSize is the stored BIP-39 seed, the only private material.
 	RotatingSeedSize = 64
 
@@ -65,6 +72,24 @@ const (
 	// stage program: 5,592 plus 53 per chain step over at most 990 steps.
 	RotatingWotsMaxOpcodeCost = 5592 + 53*990 + 1
 
+	// RotatingTripleStagePublicKeySize is the triple hybrid's stage 0 record:
+	// the stage 0 tweak (which carries the public account tag), the
+	// Falcon-1024 public key, the WOTS public key and the Ed25519 public key.
+	RotatingTripleStagePublicKeySize = 32 + 1793 + 32 + 32
+
+	// RotatingTripleMaxProgramBytes is the salted triple stage program.
+	RotatingTripleMaxProgramBytes = 2096
+
+	// RotatingTripleMaxArgumentBytes is a 2,144-byte WOTS signature, a
+	// 64-byte Ed25519 signature and a compressed Falcon-1024 signature of at
+	// most 1,423 bytes.
+	RotatingTripleMaxArgumentBytes = 2144 + 64 + 1423
+
+	// RotatingTripleMaxOpcodeCost is the worst accepting run of a salted
+	// triple stage program: 7,296 plus 53 per chain step over at most 990
+	// steps.
+	RotatingTripleMaxOpcodeCost = 7296 + 53*990 + 1
+
 	// RotatingMaxValidityWindow is the longest LastValid-FirstValid span a
 	// stage program accepts.
 	RotatingMaxValidityWindow = 100
@@ -90,6 +115,9 @@ const (
 	RotatingWotsDisplayName = "Rotating hash hybrid (WOTS + Ed25519)"
 	RotatingWotsDescription = "Fixed account address whose authorizing hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
 
+	RotatingTripleDisplayName = "Rotating triple hybrid (Falcon-1024 + WOTS + Ed25519)"
+	RotatingTripleDescription = "Fixed account address whose authorizing Falcon-1024, hash-based WOTS and Ed25519 stage program changes on every spend. Signs only through the rotating1 flow."
+
 	// RotatingNetworkParameter is the single creation parameter.
 	RotatingNetworkParameter            = "network"
 	RotatingNetworkParameterLabel       = "Network"
@@ -114,11 +142,15 @@ type Profile struct {
 	MaxArgumentBytes int
 	MaxOpcodeCost    int
 
-	// OneTimeStage reports that a stage's post-quantum signature scheme is
-	// one-time: a stage that signs two different messages is only as strong
-	// as Ed25519 until the account moves past it. The signer still signs
+	// OneTimeStage reports that a stage includes a one-time signature
+	// scheme: a stage that signs two different messages loses that scheme's
+	// protection until the account moves past it. The signer still signs
 	// (the flow is stateless by design) but reports the reuse.
 	OneTimeStage bool
+
+	// ReusedStageRestsOn names what a reused one-time stage still rests on,
+	// for the reuse warning.
+	ReusedStageRestsOn string
 }
 
 var profiles = map[string]Profile{
@@ -142,6 +174,19 @@ var profiles = map[string]Profile{
 		MaxArgumentBytes:   RotatingWotsMaxArgumentBytes,
 		MaxOpcodeCost:      RotatingWotsMaxOpcodeCost,
 		OneTimeStage:       true,
+		ReusedStageRestsOn: "Ed25519 only",
+	},
+	RotatingTripleHybridV1: {
+		KeyType:            RotatingTripleHybridV1,
+		Family:             RotatingTripleHybridFamily,
+		DisplayName:        RotatingTripleDisplayName,
+		Description:        RotatingTripleDescription,
+		StagePublicKeySize: RotatingTripleStagePublicKeySize,
+		MaxProgramBytes:    RotatingTripleMaxProgramBytes,
+		MaxArgumentBytes:   RotatingTripleMaxArgumentBytes,
+		MaxOpcodeCost:      RotatingTripleMaxOpcodeCost,
+		OneTimeStage:       true,
+		ReusedStageRestsOn: "Falcon-1024 and Ed25519",
 	},
 }
 
@@ -159,7 +204,7 @@ func Lookup(keyType string) (Profile, bool) {
 
 // KeyTypes lists the rotating key types in a fixed order.
 func KeyTypes() []string {
-	return []string{RotatingHybridV1, RotatingWotsHybridV1}
+	return []string{RotatingHybridV1, RotatingWotsHybridV1, RotatingTripleHybridV1}
 }
 
 // RoutingFamily returns the family of a rotating key type. Rotating key

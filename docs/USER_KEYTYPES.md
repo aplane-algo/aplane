@@ -303,9 +303,12 @@ and the confirmation of that spend.
 
 `aplane.rotating-wots-hybrid.v1` is the same account with a hash-based
 stage: each stage checks a Winternitz one-time signature built from SHA-256
-alone and an Ed25519 signature. Everything below applies to both types;
-see [Rotating hash hybrid accounts](#rotating-hash-hybrid-accounts) for
-what the hash-based stage changes.
+alone and an Ed25519 signature. `aplane.rotating-triple-hybrid.v1` requires
+all three: Falcon-1024, WOTS and Ed25519. Everything below applies to every
+rotating type; see
+[Rotating hash hybrid accounts](#rotating-hash-hybrid-accounts) and
+[Rotating triple hybrid accounts](#rotating-triple-hybrid-accounts) for what
+those stages change.
 
 Enable the key type, then generate an account bound to one network:
 
@@ -423,6 +426,36 @@ What it changes:
 Everything else is identical: the same `rotating1` flow, `rotate` and
 `rotate status`, the stage address cache, alerts, backups and restore, and
 no exit.
+
+### Rotating triple hybrid accounts
+
+`aplane.rotating-triple-hybrid.v1` is the strongest rotating type: every
+stage requires a Falcon-1024, a WOTS-w16 (SHA-256) and an Ed25519 signature
+over the transaction ID. The Falcon and WOTS hybrids remain supported as
+cheaper options. Enable and generate it like the others:
+
+```bash
+apadmin -d $APSIGNER_DATA keytype enable aplane.rotating-triple-hybrid.v1
+```
+
+What it changes:
+
+- **Security claim.** Forging a spend from a live stage needs a break of the
+  Falcon lattice assumption, of SHA-256 and of Ed25519 at once, within the
+  time between that stage's signature and the confirmation of its spend. A
+  stage that signs twice (the same two cases as the hash hybrid: an expired
+  release and its repair, or a client re-signing a rebuilt transaction)
+  loses only its WOTS protection: until one of its transactions lands it
+  rests on Falcon-1024 and Ed25519, the Falcon hybrid's strength. The signer
+  reports the reuse as a warning until the account moves. The triple type is
+  never weaker than the Falcon hybrid.
+- **Cost per spend.** The three signatures total up to 3,631 bytes, so every
+  spend carries three resource dummies and pays four minimum fees (two for
+  the Falcon hybrid, three for the hash hybrid).
+- **Speed.** Each stage costs a Falcon key generation, like the Falcon
+  hybrid, so the background stage scan and a restore from backup take as
+  long as they do for that type.
+- **Program size.** A stage program is about 2,100 bytes.
 
 ## YAML Templates
 

@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
 	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -78,7 +79,11 @@ var (
 		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register,
 		newKeyPayload: rotatingwotssignerreg.NewKeyPayload, dummies: 2,
 	}
-	rotatingTestTypes = []rotatingTestType{hybridTestType, wotsTestType}
+	tripleTestType = rotatingTestType{
+		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register,
+		newKeyPayload: rotatingtriplesignerreg.NewKeyPayload, dummies: 3,
+	}
+	rotatingTestTypes = []rotatingTestType{hybridTestType, wotsTestType, tripleTestType}
 )
 
 type rotatingKeyStore struct {

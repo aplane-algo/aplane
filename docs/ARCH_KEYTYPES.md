@@ -322,6 +322,7 @@ Examples of the composed ontology:
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 | `aplane.rotating-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024 and Ed25519, both required), a new program per spend | none; the signer reads the chain for the live stage (`rotating1` flow) |
 | `aplane.rotating-wots-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (hash-based WOTS-w16 and Ed25519, both required), a new program per spend | none; same `rotating1` flow |
+| `aplane.rotating-triple-hybrid.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program (Falcon-1024, hash-based WOTS-w16 and Ed25519, all required), a new program per spend | none; same `rotating1` flow |
 
 ## Key types summary
 
@@ -340,6 +341,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 | `aplane.rotating-hybrid.v1` | `aplane.rotating-hybrid` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 | `aplane.rotating-wots-hybrid.v1` | `aplane.rotating-wots-hybrid` | `rotating_lsig` | Library-visible rotating account: WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
+| `aplane.rotating-triple-hybrid.v1` | `aplane.rotating-triple-hybrid` | `rotating_lsig` | Library-visible rotating account: Falcon-1024 + WOTS-w16 + Ed25519 stage program, `rotating1` flow; signer-side only (no client provider) |
 
 ## The three axes
 
@@ -624,6 +626,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
 | `lsig/rotatinghybrid` | Rotating Falcon-1024 + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `lsig/rotatingwots` | Rotating WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
+| `lsig/rotatingtriple` | Rotating Falcon-1024 + WOTS-w16 + Ed25519 key type: stage program, signer-side operations, and signer registration |
 | `library/templates/aplane.corridor.v1.yaml` | Optional schema-v2 bounded-cosigner Corridor profile; compiled by `lsig/composeddsa` after product-store install |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
 | `lsig/signerreg` | Registers all built-in LogicSig signer-side providers with their catalog availability |
@@ -638,7 +641,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
 | `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-cosigner1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
-| `rotating_lsig` | `aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
+| `rotating_lsig` | `aplane.rotating-hybrid.v1`, `aplane.rotating-wots-hybrid.v1`, `aplane.rotating-triple-hybrid.v1` | Yes | Per-stage hybrid signatures through the `rotating1` flow; signer-side codec, not an `lsigprovider` provider |
 
 ### Interface hierarchy
 
@@ -751,7 +754,9 @@ lsig.RegisterClient()
     │   └── ed25519lsig.RegisterClient()
     ├── keytypecatalog.Register(aplane.rotating-hybrid.v1, library)
     │   └── (no client provider)
-    └── keytypecatalog.Register(aplane.rotating-wots-hybrid.v1, library)
+    ├── keytypecatalog.Register(aplane.rotating-wots-hybrid.v1, library)
+    │   └── (no client provider)
+    └── keytypecatalog.Register(aplane.rotating-triple-hybrid.v1, library)
         └── (no client provider)
 
 lsig/signerreg.RegisterSigner()
