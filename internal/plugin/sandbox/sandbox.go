@@ -321,8 +321,22 @@ var pluginConfigEnvKeys = map[string]map[string]bool{
 	},
 }
 
+// hostEnvKeys are secret-shaped names the plugin host itself sets for every
+// plugin (see the manager's environment); the suffix rule must not strip them.
+var hostEnvKeys = map[string]bool{
+	"APSHELL_ALGOD_TOKEN": true,
+}
+
+// secretEnvSuffixes mark a variable as a credential: tokens, secrets, API keys,
+// passwords, and APlane's own passphrase, mnemonic, and key material (e.g.
+// APSIGNER_PASSPHRASE, TEST_FUNDING_MNEMONIC).
+var secretEnvSuffixes = []string{
+	"_TOKEN", "_SECRET", "_API_KEY", "_PASSWORD",
+	"_PASSPHRASE", "_MNEMONIC", "_PRIVATE_KEY", "_SEED",
+}
+
 func sensitiveEnvKey(pluginName, key string) bool {
-	if strings.HasPrefix(key, "APSHELL_") || pluginConfigEnvKeys[pluginName][key] {
+	if hostEnvKeys[key] || pluginConfigEnvKeys[pluginName][key] {
 		return false
 	}
 	exact := map[string]bool{
@@ -339,8 +353,9 @@ func sensitiveEnvKey(pluginName, key string) bool {
 	if exact[key] {
 		return true
 	}
-	for _, suffix := range []string{"_TOKEN", "_SECRET", "_API_KEY", "_PASSWORD"} {
-		if strings.HasSuffix(key, suffix) {
+	upper := strings.ToUpper(key)
+	for _, suffix := range secretEnvSuffixes {
+		if strings.HasSuffix(upper, suffix) {
 			return true
 		}
 	}
