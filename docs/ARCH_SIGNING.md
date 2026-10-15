@@ -1256,9 +1256,12 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
 `/plan` accepts the same request DTO but does not perform approval or signing.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
-sign request with a later `/sign/cancel` request. If absent, apsigner generates
-an internal request ID for approval display as before, but external clients
-cannot cancel it by ID. Clients that need explicit cancellation should set
+sign request with a later `/sign/cancel` request. If absent, external clients
+cannot cancel the request by ID. It never identifies the operator prompt:
+every approval prompt carries its own unguessable, single-use ID that apsigner
+generates, so an operator's answer reaches only the prompt it was given for. A
+client that cancels a request and resubmits under the same `request_id` gets a
+new prompt, and a late answer to the old one matches nothing. Clients that need explicit cancellation should set
 `request_id` to an opaque ASCII identifier of at most 128 characters using
 letters, digits, `-`, `_`, `.`, or `:`.
 

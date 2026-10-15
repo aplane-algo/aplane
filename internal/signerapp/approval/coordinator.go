@@ -5,6 +5,8 @@ package approval
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -38,7 +40,13 @@ type Coordinator struct {
 	sendSignRequest         SendSignRequestFunc
 	sendSignRequestCanceled SendSignRequestCanceledFunc
 
-	pendingRequests      map[string]chan SignResponse
+	// pendingRequests is keyed by the prompt ID the coordinator generates for
+	// each prompt, never by the client's request ID: an operator's answer must
+	// reach only the prompt it was given for, so a client that cancels and
+	// resubmits under the same request ID cannot inherit a late approval.
+	pendingRequests map[string]chan SignResponse
+	// promptIDs maps a client request ID to its live prompt, for /sign/cancel.
+	promptIDs            map[string]string
 	activeRequests       map[string]map[*activeSignRequest]struct{}
 	canceledRequests     map[string]string
 	canceledRequestOrder []string
@@ -67,6 +75,7 @@ func New(hasClient HasClientFunc, sendSignRequest SendSignRequestFunc, sendSignR
 		sendSignRequest:         sendSignRequest,
 		sendSignRequestCanceled: sendSignRequestCanceled,
 		pendingRequests:         make(map[string]chan SignResponse),
+		promptIDs:               make(map[string]string),
 		activeRequests:          make(map[string]map[*activeSignRequest]struct{}),
 		canceledRequests:        make(map[string]string),
 	}
@@ -140,9 +149,11 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 
 	var activeCancels []context.CancelFunc
 	c.pendingRequestsLock.Lock()
-	ch, exists := c.pendingRequests[requestID]
+	promptID := c.promptIDs[requestID]
+	ch, exists := c.pendingRequests[promptID]
 	if exists {
-		delete(c.pendingRequests, requestID)
+		delete(c.pendingRequests, promptID)
+		delete(c.promptIDs, requestID)
 	}
 	if activeSet := c.activeRequests[requestID]; len(activeSet) > 0 {
 		activeCancels = make([]context.CancelFunc, 0, len(activeSet))
@@ -161,8 +172,8 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 	}
 	if exists {
 		if ch != nil {
-			c.notifySignRequestCanceled(requestID, reason)
-			trySendSignResponse(ch, SignResponse{ID: requestID, Approved: false, Reason: reason})
+			c.notifySignRequestCanceled(promptID, reason)
+			trySendSignResponse(ch, SignResponse{ID: promptID, Approved: false, Reason: reason})
 		}
 		return SignRequestCancelResult{State: SignRequestCancelStateCanceled}
 	}
@@ -339,19 +350,27 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 	}
 
 	responseChan := make(chan SignResponse, 1)
+	promptID, err := newPromptID()
+	if err != nil {
+		return SignResponse{}, err
+	}
 
 	c.pendingRequestsLock.Lock()
-	c.pendingRequests[requestID] = responseChan
+	c.pendingRequests[promptID] = responseChan
+	c.promptIDs[requestID] = promptID
 	c.pendingRequestsLock.Unlock()
 
 	defer func() {
 		c.pendingRequestsLock.Lock()
-		delete(c.pendingRequests, requestID)
+		delete(c.pendingRequests, promptID)
+		if c.promptIDs[requestID] == promptID {
+			delete(c.promptIDs, requestID)
+		}
 		c.pendingRequestsLock.Unlock()
 	}()
 
 	request := &SignRequest{
-		ID:          requestID,
+		ID:          promptID,
 		Address:     address,
 		TxnSender:   txnSender,
 		Description: description,
@@ -375,12 +394,21 @@ func (c *Coordinator) RequestSigningApprovalResponseContext(ctx context.Context,
 		}
 		return response, nil
 	case <-timer.C:
-		c.notifySignRequestCanceled(requestID, SignRequestCancelReasonTimeout)
+		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonTimeout)
 		return SignResponse{}, fmt.Errorf("%w - no response from apadmin within %v", ErrApprovalTimeout, timeout)
 	case <-ctx.Done():
-		c.notifySignRequestCanceled(requestID, SignRequestCancelReasonClientCanceled)
+		c.notifySignRequestCanceled(promptID, SignRequestCancelReasonClientCanceled)
 		return SignResponse{}, fmt.Errorf("%w: %w", ErrApprovalCanceled, ctx.Err())
 	}
+}
+
+// newPromptID returns an unguessable, single-use ID for one approval prompt.
+func newPromptID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate approval prompt ID: %w", err)
+	}
+	return "apv-" + hex.EncodeToString(b[:]), nil
 }
 
 func (c *Coordinator) notifySignRequestCanceled(requestID, reason string) {
@@ -397,6 +425,7 @@ func (c *Coordinator) FailAllPendingRequests(reason string) {
 	c.pendingRequestsLock.Lock()
 	signRequests := c.pendingRequests
 	c.pendingRequests = make(map[string]chan SignResponse)
+	c.promptIDs = make(map[string]string)
 	c.pendingRequestsLock.Unlock()
 
 	for id, ch := range signRequests {
