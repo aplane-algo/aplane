@@ -41,12 +41,20 @@ type gateInput struct {
 	RequestOperatorApproval func(ctx context.Context, forceReviewRuleID string) *ServiceError
 }
 
-// runApprovalGates runs the shared signer-domain gate sequence: hard policy
-// rejection, always-review rules, auto-approval rules, then the operator
+// runApprovalGates runs the shared signer-domain gate sequence: the
+// rekey-to-rotating invariant, hard policy rejection, always-review rules, auto-approval rules, then the operator
 // approval fallback. It returns the matched
 // always-review rule ID for approval audit events ("" when none matched).
 func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
 	console = consoleOf(console)
+	if err := s.rejectRekeyToRotating(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices); err != nil {
+		console.Printf("[SIGNER] Rejected: %s\n", err.Message)
+		console.Sync()
+		if in.LogRejection != nil {
+			in.LogRejection(err.Error())
+		}
+		return "", err
+	}
 	if err := EvaluateAutoRejectionRules(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices, console); err != nil {
 		if in.LogRejection != nil {
 			in.LogRejection(err.Error())

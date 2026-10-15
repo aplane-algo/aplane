@@ -47,6 +47,11 @@ var guardedSanctionedExports = map[string]bool{
 	"EndpointInspection":             true,
 	"NodeRoleCosigner":               true,
 
+	// Pure classification over the routing table: whether an account on a
+	// signing flow can be another account's authorizer. It signs nothing and
+	// routes nothing; rekey uses it to fail closed on unroutable targets.
+	"CanAuthorizeOtherAccounts": true,
+
 	// Names of the states InspectRoutes reports, so callers classify an
 	// observation without matching display text.
 	"ConnectionStateNotChecked":      true,

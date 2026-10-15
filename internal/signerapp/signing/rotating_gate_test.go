@@ -72,3 +72,60 @@ func TestComponentRequestRefusesRotatingAccount(t *testing.T) {
 	}
 	requireRotatingRefusal(t, svc.rejectRotatingComponentRequest(req), "transaction 1:")
 }
+
+func TestRejectRekeyToRotatingAccount(t *testing.T) {
+	plain := types.Address{1}
+	rotating := types.Address{2}
+	stage := types.Address{3}
+	other := types.Address{4}
+	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{
+			plain.String():    "ed25519",
+			rotating.String(): rotatingkey.RotatingTripleHybridV1,
+		}}
+	}}}
+	rekey := func(sender, to types.Address) types.Transaction {
+		return types.Transaction{Header: types.Header{Sender: sender, RekeyTo: to}}
+	}
+	none := map[int]bool{}
+
+	err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), rekey(plain, rotating)}, 2, none, none)
+	if err == nil || err.HTTPStatus() != 403 || !strings.HasPrefix(err.Message, "transaction 2:") || !strings.Contains(err.Message, rotating.String()) {
+		t.Fatalf("rekey to a rotating account: err = %v", err)
+	}
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, rotating)}, 1, none, map[int]bool{0: true}); err != nil {
+		t.Fatalf("foreign position was judged: %v", err)
+	}
+	// The rotating flow's own spend rekeys the account to its next stage.
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(rotating, stage)}, 1, none, none); err != nil {
+		t.Fatalf("rotation to a stage address refused: %v", err)
+	}
+	if err := svc.rejectRekeyToRotating([]types.Transaction{rekey(plain, other), {Header: types.Header{Sender: plain}}}, 2, none, none); err != nil {
+		t.Fatalf("ordinary rekey refused: %v", err)
+	}
+}
+
+func TestApprovalGatesRefuseRekeyToRotatingBeforePolicy(t *testing.T) {
+	sender := types.Address{1}
+	rotating := types.Address{2}
+	svc := &Service{Planner: &Planner{Snapshot: func() PlannerRuntimeSnapshot {
+		return PlannerRuntimeSnapshot{KeyTypes: map[string]string{rotating.String(): rotatingkey.RotatingHybridV1}}
+	}}}
+	var logged string
+	// No policy is loaded, so reaching the policy gate would fail as internal.
+	_, err := svc.runApprovalGates(context.Background(), gateInput{
+		AllTxns:      []types.Transaction{{Header: types.Header{Sender: sender, RekeyTo: rotating}}},
+		EvalCount:    1,
+		LogRejection: func(reason string) { logged = reason },
+		RequestOperatorApproval: func(context.Context, string) *ServiceError {
+			t.Fatal("operator was asked")
+			return nil
+		},
+	}, nil)
+	if err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "rotating account") {
+		t.Fatalf("err = %v, want the rekey-to-rotating refusal", err)
+	}
+	if logged == "" {
+		t.Fatal("rejection was not logged")
+	}
+}
