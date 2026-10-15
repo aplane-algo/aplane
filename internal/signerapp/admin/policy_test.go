@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -296,5 +297,19 @@ func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	}
 	if !ir.IsRecovery() {
 		t.Fatal("runtime is not in recovery after a failed post-commit reload")
+	}
+
+	// Recovery admits only the operations that resolve the store; a further
+	// apply must not mint another generation on top of it.
+	stuck := currentGeneration(t, svc, ir)
+	again := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("3000")}},
+		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+	})
+	if again.Success || again.Code != protocol.ResultCodeRecoveryBlocked || again.CommitUncertain {
+		t.Fatalf("ApplyPolicy() in recovery = %+v, want recovery_blocked", again)
+	}
+	if after := currentGeneration(t, svc, ir); after != stuck {
+		t.Fatalf("apply in recovery moved the generation %s -> %s", stuck, after)
 	}
 }

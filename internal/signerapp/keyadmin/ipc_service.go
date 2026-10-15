@@ -37,8 +37,8 @@ func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyR
 	return ipcResult
 }
 
-func (s IPCService) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
-	delResult, err := s.Service.DeleteKey(req.Address)
+func (s IPCService) DeleteKey(ctx context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+	delResult, err := s.Service.DeleteKey(ctx, req.Address)
 	ipcResult := ProjectDeleteIPC(err)
 	if !ipcResult.Success {
 		return ipcResult
@@ -50,8 +50,8 @@ func (s IPCService) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.Delete
 	return ipcResult
 }
 
-func (s IPCService) ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
-	importResult, err := s.Service.ImportKey(req.KeyType, req.Mnemonic, req.Parameters)
+func (s IPCService) ImportKey(ctx context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+	importResult, err := s.Service.ImportKey(ctx, req.KeyType, req.Mnemonic, req.Parameters)
 	ipcResult := ProjectImportIPC(importResult, err)
 	if !ipcResult.Success {
 		return ipcResult

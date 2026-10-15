@@ -1217,9 +1217,10 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	}
 
 	// Watch keys and key-type records through the authenticated generation
-	// capability. The identity directory observes store-root replacement; a
-	// root commit re-arms the watcher on the newly selected generation because
-	// fsnotify watches bind to inodes.
+	// capability. The identity directory observes store-root replacement.
+	// fsnotify watches bind to inodes, so a root commit leaves these watches
+	// on the superseded generation until a caller re-arms the watcher
+	// (restore, rollback, and reconcile do).
 	dirs := []string{ir.keyPaths.ProductDir()}
 	if active, err := ir.ActivePaths(); err == nil {
 		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
@@ -1300,10 +1301,15 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// Destroy cleans up the product runtime for shutdown.
-// Blocks until in-flight key operations complete.
+// Destroy cleans up the product runtime for shutdown. Like a lock, it first
+// waits for background key users to finish, then clears the session under the
+// passphrase lock, so a lock cleanup racing shutdown (an admin session closing
+// on its way out) cannot interleave with it.
 func (ir *Runtime) Destroy() {
 	ir.StopKeyWatcher()
+	ir.drainKeyUsers()
+	ir.passphraseLock.Lock()
+	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {
 		ir.keySession.Destroy()
 	}

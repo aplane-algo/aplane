@@ -4,10 +4,11 @@
 package engine
 
 // Pre-sign planning: APlane canonicalizes an unsigned plugin-supplied group
-// (/plan), verifies the plan preserved each plugin slot's artifact-bound fields,
+// (/plan), verifies the plan made only its contracted mutations,
 // asks the plugin to sign the slots it owns over the canonical bytes (by reference,
 // never exporting key material), then submits with apsigner signing the managed
-// slots (/sign) — passthrough for plugin-signed and dummy slots.
+// slots (/sign) — passthrough for plugin-signed and dummy slots — and checks the
+// signed group against the plan before it is broadcast.
 //
 // Scope: APlane-managed slots + plugin-callback-signed slots + budget dummies.
 // Already-signed passthrough slots supplied in the draft (e.g. Mithras verifier
@@ -23,6 +24,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -127,22 +129,17 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		canonicalTxns[i] = txn
 	}
 
-	// --- Guardrail: /plan must preserve EVERY original slot's artifact-bound fields ---
-	// Only the group id and fee may change. For plugin-owned slots this protects the
-	// plugin's HPKE envelope/proof. For APlane-managed slots it matters just as much:
-	// a Falcon-funded Mithras deposit's funder payment + app-call carry HPKE-bound
-	// fields (sender/firstValid/lastValid/lease/appId), so a re-stamp here would
-	// silently mint an unspendable UTXO. The planner is not supposed to touch these
-	// (it only pools fees and appends budget dummies), but enforce it rather than
-	// trust an emergent property — a future planner change must not break deposits.
-	for i := 0; i < originalCount; i++ {
-		if err := assertSlotArtifactFieldsPreserved(txns[i], canonicalTxns[i]); err != nil {
-			owner := "managed"
-			if _, owned := pluginSignerRefs[txns[i].Sender.String()]; owned {
-				owner = "plugin"
-			}
-			return nil, fmt.Errorf("plan modified %s slot %d: %w", owner, i, err)
-		}
+	// --- Guardrail: /plan may only make its contracted mutations ---
+	// Only the group id and reported fee increases may change an original slot,
+	// and appended slots must be the planner's canonical budget dummies. For
+	// plugin-owned slots this protects the plugin's HPKE envelope/proof (and the
+	// plugin pays any fee it signs). For APlane-managed slots it matters just as
+	// much: a Falcon-funded Mithras deposit's funder payment + app-call carry
+	// HPKE-bound fields (sender/firstValid/lastValid/lease/appId), so a re-stamp
+	// here would silently mint an unspendable UTXO. Enforce it rather than trust
+	// an emergent property of the planner.
+	if err := validatePluginPlan(txns, canonicalTxns, planResp.Mutations, pluginSignerRefs); err != nil {
+		return nil, fmt.Errorf("invalid group plan: %w", err)
 	}
 
 	// --- Phase 2: gather plugin slots for the callback; sign dummies locally ---
@@ -223,6 +220,9 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err != nil {
 		return nil, err
 	}
+	if err := verifySignedAgainstPlan(canonicalTxns, passthrough, finalSignedTxns); err != nil {
+		return nil, err
+	}
 
 	var output bytes.Buffer
 	if e.Simulate {
@@ -289,18 +289,99 @@ func assertPluginSignersMatched(txns []types.Transaction, refs map[string]string
 	return nil
 }
 
-// assertSlotArtifactFieldsPreserved verifies /plan changed nothing on a slot except
-// the group ID and fee. Any other change (sender, validity window, lease, genesis,
-// amount, app id, args) could silently break a plugin slot's HPKE envelope or proof,
-// or a managed funder slot's HPKE binding, so it is rejected. Applies to both
-// plugin-owned and APlane-managed slots — only fee pooling and the group id are
-// legitimate planning mutations.
-func assertSlotArtifactFieldsPreserved(draft, canonical types.Transaction) error {
-	d, c := draft, canonical
-	d.Group, c.Group = types.Digest{}, types.Digest{}
-	d.Fee, c.Fee = 0, 0
-	if !bytes.Equal(msgpack.Encode(d), msgpack.Encode(c)) {
-		return fmt.Errorf("an artifact-bound field changed during planning (only group id and fee may change)")
+// validatePluginPlan permits only the planner's contracted mutations: a group
+// id over the final group, reported fee increases on original slots, and
+// canonical budget dummies appended after them. Any other change (sender,
+// validity window, lease, genesis, amount, app id, args) could silently break a
+// plugin slot's HPKE envelope or proof, or a managed funder slot's HPKE
+// binding, so it is rejected.
+func validatePluginPlan(draft, planned []types.Transaction, mutations *signerapi.MutationReport, pluginSignerRefs map[string]string) error {
+	if len(planned) < len(draft) {
+		return fmt.Errorf("signer returned %d transaction(s), want at least %d", len(planned), len(draft))
+	}
+	appended := len(planned) - len(draft)
+	feeModified := make(map[int]struct{})
+	if mutations == nil {
+		if appended != 0 {
+			return fmt.Errorf("signer appended %d transaction(s) without a mutation report", appended)
+		}
+	} else {
+		if mutations.OriginalCount != len(draft) {
+			return fmt.Errorf("mutation original_count %d does not match request count %d", mutations.OriginalCount, len(draft))
+		}
+		if mutations.FinalCount != len(planned) {
+			return fmt.Errorf("mutation final_count %d does not match returned count %d", mutations.FinalCount, len(planned))
+		}
+		if mutations.DummiesAdded != appended {
+			return fmt.Errorf("mutation dummies_added %d does not match appended count %d", mutations.DummiesAdded, appended)
+		}
+		for _, index := range mutations.FeesModified {
+			if index < 0 || index >= len(draft) {
+				return fmt.Errorf("mutation fee index %d is outside original positions", index)
+			}
+			if _, duplicate := feeModified[index]; duplicate {
+				return fmt.Errorf("mutation fee index %d is duplicated", index)
+			}
+			feeModified[index] = struct{}{}
+		}
+	}
+	var totalFeeDelta uint64
+	for i := range draft {
+		want, got := draft[i], planned[i]
+		if mutations != nil && mutations.GroupIDChanged {
+			want.Group = got.Group
+		}
+		if _, ok := feeModified[i]; ok {
+			if got.Fee < want.Fee {
+				return fmt.Errorf("plan decreased the fee of slot %d", i)
+			}
+			totalFeeDelta += uint64(got.Fee - want.Fee)
+			want.Fee = got.Fee
+		}
+		if !bytes.Equal(msgpack.Encode(want), msgpack.Encode(got)) {
+			owner := "managed"
+			if _, owned := pluginSignerRefs[draft[i].Sender.String()]; owned {
+				owner = "plugin"
+			}
+			return fmt.Errorf("plan modified %s slot %d beyond its group id and reported fee", owner, i)
+		}
+	}
+	if mutations != nil && uint64(mutations.TotalFeesDelta) != totalFeeDelta {
+		return fmt.Errorf("mutation total_fees_delta %d does not match observed delta %d", mutations.TotalFeesDelta, totalFeeDelta)
+	}
+	groupID, err := clientsign.ValidateCanonicalGroupID(planned)
+	if err != nil {
+		return err
+	}
+	if appended == 0 {
+		return nil
+	}
+	_, err = clientsign.ValidateCanonicalDummyTxns(draft[0], groupID, planned[len(draft):])
+	return err
+}
+
+// verifySignedAgainstPlan checks the /sign response against the frozen plan
+// before anything is broadcast: every slot must sign exactly the canonical
+// transaction, and every passthrough slot (plugin-signed or dummy) must come
+// back byte-for-byte as it was sent.
+func verifySignedAgainstPlan(canonicalTxns []types.Transaction, passthrough map[int]string, signed [][]byte) error {
+	if len(signed) != len(canonicalTxns) {
+		return fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signed), len(canonicalTxns))
+	}
+	for i, signedBytes := range signed {
+		if sentHex, ok := passthrough[i]; ok {
+			if hex.EncodeToString(signedBytes) != sentHex {
+				return fmt.Errorf("signer altered passthrough slot %d", i)
+			}
+			continue
+		}
+		var stxn types.SignedTxn
+		if err := msgpack.Decode(signedBytes, &stxn); err != nil {
+			return fmt.Errorf("failed to decode signed transaction %d: %w", i, err)
+		}
+		if !bytes.Equal(msgpack.Encode(stxn.Txn), msgpack.Encode(canonicalTxns[i])) {
+			return fmt.Errorf("signer signed a different transaction at slot %d than was planned", i)
+		}
 	}
 	return nil
 }

@@ -16,21 +16,27 @@ import (
 	"strings"
 )
 
-// Dangerous: format specifiers that could print key bytes
-// %x, %v, %+v, %#v with key-related variable names
-var dangerousFormatPatterns = []*regexp.Regexp{
-	// Printing hex of something with "key" or "priv" in name
-	regexp.MustCompile(`%x.*(?i)(private|priv|secret)key`),
-	regexp.MustCompile(`(?i)(private|priv|secret)key.*%x`),
-	// Printing %v of key material
-	regexp.MustCompile(`%v.*(?i)(privatekey|privkey|secretkey)`),
-	regexp.MustCompile(`(?i)(privatekey|privkey|secretkey).*%v`),
-	// Printing mnemonic content (not just the word)
-	regexp.MustCompile(`%[sv].*(?i)mnemonic[^s]`), // mnemonic but not mnemonics (list of handlers)
-	regexp.MustCompile(`(?i)mnemonic[^s].*%[sv]`),
-	// Printing entropy or seed bytes
-	regexp.MustCompile(`%x.*(?i)\bentropy\b`),
-	regexp.MustCompile(`(?i)\bentropy\b.*%x`),
+// A formatted line is dangerous when a string literal on it holds a verb that
+// renders a value's contents and an identifier outside the string literals
+// names key material. Matching identifiers, not raw text, keeps the words in a
+// message ("private key: %x") from vouching for the argument that follows it.
+var (
+	contentFormatVerb = regexp.MustCompile(`%[-+# 0-9.]*[xXvsq]`)
+	identifierToken   = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*`)
+	sensitiveName     = regexp.MustCompile(`(?i)(privatekey|privkey|secretkey|mnemonic|entropy|seed)`)
+	camelWord         = regexp.MustCompile(`[A-Z]?[a-z0-9]+|[A-Z]+(?:[A-Z][a-z]|$|[0-9])?`)
+)
+
+// benignWords mark an identifier that names something about key material
+// rather than the material itself (publicKey, mnemonicType, seedLen). Words
+// such as "words" or "mnemonics" are not here: mnemonicWords holds the secret.
+var benignWords = map[string]bool{
+	"public": true, "pub": true, "type": true, "types": true, "count": true,
+	"size": true, "len": true, "length": true, "handler": true, "handlers": true,
+	"provider": true, "providers": true, "path": true, "file": true,
+	"dir": true, "name": true, "family": true, "families": true,
+	"label": true, "param": true, "params": true, "version": true,
+	"fingerprint": true, "id": true, "ids": true,
 }
 
 // Very dangerous: directly printing key variables
@@ -41,16 +47,8 @@ var directKeyPrintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`log\.(Print|Println)\((?i)(privatekey|privkey|secretkey|mnemonic)\)`),
 }
 
-// Patterns that look dangerous but are actually safe
-var safePatterns = []*regexp.Regexp{
-	// String literals with security terms (help text, error messages)
-	regexp.MustCompile(`"[^"]*(?i)(mnemonic|seed|private|secret)[^"]*"`),
-	// Talking about handlers, types, or counts
-	regexp.MustCompile(`(?i)(handlers|providers|types|count|size|length)`),
-	// Public key operations are fine
-	regexp.MustCompile(`(?i)public`),
-	// KeyType is metadata, not key material
-	regexp.MustCompile(`(?i)keytype`),
+// Lines that are safe whatever identifiers they mention.
+var safeLinePatterns = []*regexp.Regexp{
 	// Struct field assignments (for encrypted storage, not logging)
 	regexp.MustCompile(`^\s*\w+:\s+fmt\.Sprintf`),
 }
@@ -201,88 +199,95 @@ func checkFile(path string) []finding {
 			}
 		}
 
-		// Check for format specifier patterns
-		for _, pat := range dangerousFormatPatterns {
-			if pat.MatchString(line) {
-				// Verify it's not a safe pattern
-				isSafe := false
-
-				// If the line is primarily a string literal (help text), skip it
-				// Count quotes - if there are more string chars than code, likely safe
-				stringContent := extractStringLiterals(line)
-				if containsSecurityTerm(stringContent) && !containsFormatSpecInString(line) {
-					isSafe = true
-				}
-
-				for _, safePat := range safePatterns {
-					if safePat.MatchString(line) {
-						// Check if the safe pattern explains the dangerous match
-						isSafe = true
-						break
-					}
-				}
-
-				if !isSafe {
-					findings = append(findings, finding{
-						file:    path,
-						line:    lineNum,
-						content: line,
-						reason:  "Potential key material in formatted output",
-					})
-				}
-				break
-			}
+		if name := sensitiveFormattedName(line); name != "" {
+			findings = append(findings, finding{
+				file:    path,
+				line:    lineNum,
+				content: line,
+				reason:  "Potential key material in formatted output: " + name,
+			})
 		}
 	}
 
 	return findings
 }
 
-// extractStringLiterals extracts all string literal content from a line
-func extractStringLiterals(line string) string {
-	var result strings.Builder
-	inString := false
-	escaped := false
-
-	for _, ch := range line {
-		if escaped {
-			escaped = false
-			if inString {
-				result.WriteRune(ch)
-			}
-			continue
-		}
-		if ch == '\\' {
-			escaped = true
-			continue
-		}
-		if ch == '"' {
-			inString = !inString
-			continue
-		}
-		if inString {
-			result.WriteRune(ch)
+// sensitiveFormattedName returns the first identifier on a formatting line
+// that names key material, or "" when the line formats nothing or names none.
+func sensitiveFormattedName(line string) string {
+	for _, pat := range safeLinePatterns {
+		if pat.MatchString(line) {
+			return ""
 		}
 	}
-
-	return result.String()
+	literals, code := splitStringLiterals(line)
+	if !contentFormatVerb.MatchString(literals) {
+		return ""
+	}
+	for _, name := range identifierToken.FindAllString(code, -1) {
+		last := name[strings.LastIndex(name, ".")+1:]
+		if sensitiveName.MatchString(last) && !namesAboutKeyMaterial(last) {
+			return name
+		}
+	}
+	return ""
 }
 
-// containsSecurityTerm checks if text contains security-related terms
-func containsSecurityTerm(text string) bool {
-	terms := []string{"mnemonic", "seed", "private", "secret", "key", "entropy"}
-	lower := strings.ToLower(text)
-	for _, term := range terms {
-		if strings.Contains(lower, term) {
-			return true
+// namesAboutKeyMaterial reports whether an identifier's words include one that
+// names metadata (a type, count, path...) rather than the material itself.
+func namesAboutKeyMaterial(identifier string) bool {
+	for _, part := range strings.Split(identifier, "_") {
+		for _, word := range camelWord.FindAllString(part, -1) {
+			if benignWords[strings.ToLower(word)] {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// containsFormatSpecInString checks if format specifiers appear to be formatting key material
-func containsFormatSpecInString(line string) bool {
-	// Look for patterns like: fmt.Printf("key: %x", privateKey)
-	// where %x is inside a string but privateKey is outside
-	return strings.Contains(line, "%x") || strings.Contains(line, "%v")
+// splitStringLiterals separates a line into the contents of its string
+// literals (interpreted and raw) and the code outside them, dropping a
+// trailing // comment. Code keeps a space where each literal was.
+func splitStringLiterals(line string) (literals, code string) {
+	var lit, out strings.Builder
+	var quote rune
+	escaped := false
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		switch {
+		case quote != 0:
+			if escaped {
+				escaped = false
+				lit.WriteRune(ch)
+				continue
+			}
+			if ch == '\\' && quote == '"' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+				lit.WriteRune(' ')
+				out.WriteRune(' ')
+				continue
+			}
+			lit.WriteRune(ch)
+		case ch == '"' || ch == '`':
+			quote = ch
+		case ch == '\'':
+			// A rune literal: skip to its closing quote.
+			for i++; i < len(runes) && runes[i] != '\''; i++ {
+				if runes[i] == '\\' {
+					i++
+				}
+			}
+		case ch == '/' && i+1 < len(runes) && runes[i+1] == '/':
+			return lit.String(), out.String()
+		default:
+			out.WriteRune(ch)
+		}
+	}
+	return lit.String(), out.String()
 }

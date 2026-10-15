@@ -17,7 +17,7 @@ type ProductServices interface {
 	VerifyPassphrase(passphrase []byte) error
 	UnlockIdentity(passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
-	ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
+	ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
 	// EnrolledKeys lists the enrolled client keys.
 	EnrolledKeys() []protocol.EnrolledKeyInfo
@@ -54,8 +54,8 @@ type KeyServices interface {
 	ListKeys() ([]adminproto.KeyInfo, error)
 	GetKeyDetails(req adminproto.GetKeyDetailsRequest) adminproto.GetKeyDetailsResult
 	GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
-	DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
-	ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult
+	DeleteKey(ctx context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
+	ImportKey(ctx context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult
 }
 
 type BackupServices interface {

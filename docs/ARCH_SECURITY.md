@@ -1306,7 +1306,7 @@ Signing-audit semantics:
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, `reason:"ssh"`, and outcome, attributed to `system:product-admin`
-- key-management audit events are emitted for both REST and authenticated IPC admin operations; REST `KEY_GENERATED`/`KEY_DELETED` entries are currently attributed to `system:product-admin` with no transport, not to the requesting client
+- key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time key-file invariant; for LogicSig salt failures,
   `reason` includes the key filename and rejection reason
@@ -1496,7 +1496,7 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
   },
   "current_generation_id": "gen-1700000000-0123abcd",
   "selection_term": 4,
-  "selection_mac": "<base64 current-term HMAC>"
+  "selection_mac": "<64 lowercase hex: current-term HMAC-SHA256>"
 }
 ```
 
@@ -1628,13 +1628,19 @@ the one product runtime only after every service reports a clean stop:
 
 All service stops share one 5 s shutdown deadline.
 
-1. Close the API listener, then `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests.
+1. Close the API listener, cancel every in-flight request context, then
+   `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests. Every request
+   context descends from one server base context, so a `/sign` parked on
+   operator approval is rejected at once instead of holding shutdown until the
+   deadline (and cannot be approved after the stop began).
 2. Cancel and stop the SSH server.
 3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
 4. Stop the rotating stage-table worker.
 5. Write `SERVER_STOP` and close the audit log.
 6. Call `Destroy()` on the product runtime:
    - `StopKeyWatcher()` — prevents new reloads.
+   - drain background key users, then take the passphrase lock, as a lock does,
+     so a lock cleanup racing shutdown cannot interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
 

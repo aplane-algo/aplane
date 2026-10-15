@@ -4,6 +4,7 @@
 package audit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -357,6 +358,32 @@ func (attr Attribution) entry(includeApprover bool) AuditEntry {
 		Transport:          attr.Transport,
 		RemoteAddr:         attr.RemoteAddr,
 	}
+}
+
+type attributionContextKey struct{}
+
+// WithAttribution returns ctx carrying a request's attribution, for a service
+// call outside an admin session (e.g. a client's REST key mutation) whose
+// audit events must name the requester.
+func WithAttribution(ctx context.Context, attr Attribution) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, attributionContextKey{}, attr)
+}
+
+// contextAuditFields attributes an event to whoever ctx says requested it: a
+// request attribution, else an admin session, else the product admin.
+func contextAuditFields(ctx context.Context) AuditEntry {
+	if ctx != nil {
+		if attr, ok := ctx.Value(attributionContextKey{}).(Attribution); ok && attr.RequesterPrincipal != "" {
+			return attr.entry(false)
+		}
+		if session, ok := adminserver.SessionContextFromContext(ctx); ok {
+			return sessionAuditFields(session)
+		}
+	}
+	return productPrincipalAuditFields()
 }
 
 func productPrincipalAuditFields() AuditEntry {
@@ -766,8 +793,8 @@ func (a *AuditLogger) LogClientKeyRevokedContext(ctx adminserver.SessionContext,
 }
 
 // LogKeyGenerated logs a key generation event.
-func (a *AuditLogger) LogKeyGenerated(address, keyType string) {
-	entry := productPrincipalAuditFields()
+func (a *AuditLogger) LogKeyGenerated(ctx context.Context, address, keyType string) {
+	entry := contextAuditFields(ctx)
 	entry.Event = AuditKeyGenerated
 	entry.Outcome = "generated"
 	entry.TxnAuth = address
@@ -776,12 +803,12 @@ func (a *AuditLogger) LogKeyGenerated(address, keyType string) {
 }
 
 // LogKeyDeleted logs a key deletion event.
-func (a *AuditLogger) LogKeyDeleted(address, deletedPath string) {
+func (a *AuditLogger) LogKeyDeleted(ctx context.Context, address, deletedPath string) {
 	reason := filepath.Base(deletedPath)
 	if reason == "." || reason == string(filepath.Separator) {
 		reason = deletedPath
 	}
-	entry := productPrincipalAuditFields()
+	entry := contextAuditFields(ctx)
 	entry.Event = AuditKeyDeleted
 	entry.Outcome = "deleted"
 	entry.TxnAuth = address
@@ -790,8 +817,8 @@ func (a *AuditLogger) LogKeyDeleted(address, deletedPath string) {
 }
 
 // LogKeyImported logs a key import event.
-func (a *AuditLogger) LogKeyImported(address, keyType string) {
-	entry := productPrincipalAuditFields()
+func (a *AuditLogger) LogKeyImported(ctx context.Context, address, keyType string) {
+	entry := contextAuditFields(ctx)
 	entry.Event = AuditKeyImported
 	entry.Outcome = "imported"
 	entry.TxnAuth = address
@@ -1064,8 +1091,8 @@ func (a *AuditLogger) LogStoreInitializeFailed(reason string) {
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogPassphraseChanged(keysMigrated, templatesMigrated int) {
-	entry := productPrincipalAuditFields()
+func (a *AuditLogger) LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int) {
+	entry := contextAuditFields(ctx)
 	entry.Event = AuditPassphraseChanged
 	entry.Outcome = "changed"
 	entry.Reason = fmt.Sprintf(
@@ -1076,8 +1103,8 @@ func (a *AuditLogger) LogPassphraseChanged(keysMigrated, templatesMigrated int) 
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogPassphraseChangeFailed(reason string) {
-	entry := productPrincipalAuditFields()
+func (a *AuditLogger) LogPassphraseChangeFailed(ctx context.Context, reason string) {
+	entry := contextAuditFields(ctx)
 	entry.Event = AuditPassphraseChangeFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason

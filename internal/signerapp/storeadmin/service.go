@@ -5,6 +5,7 @@ package storeadmin
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -31,8 +32,8 @@ type Deps interface {
 type AuditLogger interface {
 	LogStoreInitialized(metadataDir string)
 	LogStoreInitializeFailed(reason string)
-	LogPassphraseChanged(keysMigrated, templatesMigrated int)
-	LogPassphraseChangeFailed(reason string)
+	LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int)
+	LogPassphraseChangeFailed(ctx context.Context, reason string)
 }
 
 type UnlockIdentityFunc func(passphrase []byte) (bool, int, string, string)
@@ -116,24 +117,24 @@ func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminpro
 	}
 }
 
-func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	ir := s.Runtime
 	if len(req.CurrentPassphrase) == 0 || len(req.NewPassphrase) == 0 {
-		s.logPassphraseChangeFailed("current and new passphrases are required")
+		s.logPassphraseChangeFailed(ctx, "current and new passphrases are required")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "current and new passphrases are required",
 		}
 	}
 	if bytes.Equal(req.CurrentPassphrase, req.NewPassphrase) {
-		s.logPassphraseChangeFailed("new passphrase must be different from current passphrase")
+		s.logPassphraseChangeFailed(ctx, "new passphrase must be different from current passphrase")
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "invalid_passphrase",
 			Error: "new passphrase must be different from current passphrase",
 		}
 	}
 	if err := storepass.VerifyCurrentPassphrase(s.Deps.KeyPaths(), req.CurrentPassphrase); err != nil {
-		s.logPassphraseChangeFailed(err.Error())
+		s.logPassphraseChangeFailed(ctx, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  protocol.ErrCodeInvalidPassphrase,
 			Error: err.Error(),
@@ -143,7 +144,7 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 	configSnapshot := *s.Deps.Config()
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir(), &configSnapshot)
 	if err != nil {
-		s.logPassphraseChangeFailed(err.Error())
+		s.logPassphraseChangeFailed(ctx, err.Error())
 		return adminproto.ChangeStorePassphraseResult{
 			Code:  "passphrase_helper_error",
 			Error: err.Error(),
@@ -196,9 +197,9 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 		// durability-confirmation error is operational failure after a
 		// successful passphrase cutover, not PASSPHRASE_CHANGE_FAILED.
 		if rotation.RootCommitted {
-			s.logPassphraseChanged(rotation.KeysMigrated, rotation.TemplatesMigrated)
+			s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated)
 		} else {
-			s.logPassphraseChangeFailed(err.Error())
+			s.logPassphraseChangeFailed(ctx, err.Error())
 		}
 		return adminproto.ChangeStorePassphraseResult{
 			KeysMigrated:             rotation.KeysMigrated,
@@ -212,7 +213,7 @@ func (s Service) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseReque
 			Error:                    err.Error(),
 		}
 	}
-	s.logPassphraseChanged(rotation.KeysMigrated, rotation.TemplatesMigrated)
+	s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated)
 	return adminproto.ChangeStorePassphraseResult{
 		Success:                  true,
 		KeysMigrated:             rotation.KeysMigrated,
@@ -247,14 +248,14 @@ func (s Service) logStoreInitializeFailed(reason string) {
 	}
 }
 
-func (s Service) logPassphraseChanged(keysMigrated, templatesMigrated int) {
+func (s Service) logPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChanged(keysMigrated, templatesMigrated)
+		s.AuditLog.LogPassphraseChanged(ctx, keysMigrated, templatesMigrated)
 	}
 }
 
-func (s Service) logPassphraseChangeFailed(reason string) {
+func (s Service) logPassphraseChangeFailed(ctx context.Context, reason string) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChangeFailed(reason)
+		s.AuditLog.LogPassphraseChangeFailed(ctx, reason)
 	}
 }

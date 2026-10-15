@@ -1094,3 +1094,42 @@ func reloadKeysForTest(server *Signer) error {
 	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
 	return nil
 }
+
+// A key mutation over REST is attributed to the enrolled client that asked
+// for it, not to the product admin.
+func TestAdminKeyMutationsAttributedToRequestingClient(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	const client = "client:SHA256:attributiontest"
+
+	genBody, _ := json.Marshal(AdminGenerateRequest{KeyType: "ed25519"})
+	genW := httptest.NewRecorder()
+	server.handleAdminGenerate(genW, requestWithIdentityID(http.MethodPost, "/admin/generate", genBody, client))
+	if genW.Code != http.StatusOK {
+		t.Fatalf("Generate failed: %d: %s", genW.Code, genW.Body.String())
+	}
+	var genResp AdminGenerateResponse
+	decodeResponse(t, genW, &genResp)
+	if err := reloadKeysForTest(server); err != nil {
+		t.Fatalf("Failed to reload keys: %v", err)
+	}
+	delW := httptest.NewRecorder()
+	server.handleAdminDelete(delW, requestWithIdentityID(http.MethodDelete, "/admin/keys?address="+genResp.Address, nil, client))
+	if delW.Code != http.StatusOK {
+		t.Fatalf("Delete failed: %d: %s", delW.Code, delW.Body.String())
+	}
+
+	seen := map[AuditEventType]bool{}
+	for _, entry := range readAuditEntries(t, server.auditLog.Path()) {
+		if entry.Event != AuditKeyGenerated && entry.Event != AuditKeyDeleted {
+			continue
+		}
+		seen[entry.Event] = true
+		if entry.Principal != client || entry.RequesterPrincipal != client || entry.Transport != auditTransportHTTP || entry.RemoteAddr == "" {
+			t.Errorf("%s entry not attributed to the client: %#v", entry.Event, entry)
+		}
+	}
+	if !seen[AuditKeyGenerated] || !seen[AuditKeyDeleted] {
+		t.Fatalf("missing key mutation entries: %v", seen)
+	}
+}

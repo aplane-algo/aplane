@@ -682,7 +682,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	newPassphrase := msg.NewPassphrase.Clone()
 	defer zeroBytes(currentPassphrase)
 	defer zeroBytes(newPassphrase)
-	result := s.productServices.ChangeStorePassphrase(adminproto.ChangeStorePassphraseRequest{
+	result := s.productServices.ChangeStorePassphrase(s.auditContext(), adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: currentPassphrase,
 		NewPassphrase:     newPassphrase,
 	})
@@ -1000,7 +1000,7 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
-	gen := s.keyServices.GenerateKey(s.Context(), adminproto.GenerateKeyRequest{
+	gen := s.keyServices.GenerateKey(s.auditContext(), adminproto.GenerateKeyRequest{
 		KeyType:    msg.KeyType,
 		Name:       msg.Name,
 		Parameters: msg.Parameters,
@@ -1015,7 +1015,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address}) {
 		return
 	}
-	del := s.keyServices.DeleteKey(adminproto.DeleteKeyRequest{Address: msg.Address})
+	del := s.keyServices.DeleteKey(s.auditContext(), adminproto.DeleteKeyRequest{Address: msg.Address})
 	_ = s.WriteJSON(ProtocolDeleteResultMessage(msg.ID, del))
 }
 
@@ -1044,7 +1044,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.requireLocalImportTransport(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	imp := s.keyServices.ImportKey(adminproto.ImportKeyRequest{
+	imp := s.keyServices.ImportKey(s.auditContext(), adminproto.ImportKeyRequest{
 		KeyType:    msg.KeyType,
 		Mnemonic:   msg.Mnemonic,
 		Parameters: msg.Parameters,

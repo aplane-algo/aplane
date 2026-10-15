@@ -1648,7 +1648,11 @@ Mechanism:
 
 - reacts to Create, Write, Remove, and Rename on `.key`, `.cos`, and `.template` files
 - a `store-root.enc` replacement is a reload candidate; reload authenticates the new
-  active generation and re-arms the watcher on its directories
+  active generation. Restore, rollback, and reconcile then re-arm the watcher on
+  the new generation's directories; after a policy apply or passphrase change the
+  key and key type watches stay on the superseded generation until the next
+  re-arm or restart, so only store-root replacement triggers a reload for
+  out-of-band file edits in that window
 - missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload
 - when locked, the watcher remains running and marks the product runtime dirty

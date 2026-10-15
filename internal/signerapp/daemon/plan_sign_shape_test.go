@@ -289,7 +289,7 @@ func TestPlanRejectsMixedPassthroughAndForeignWithStableErrorShape(t *testing.T)
 	if got, _ := planResp["code"].(string); got != signerapi.ErrCodeBadRequest {
 		t.Fatalf("/plan code = %q, want %q", got, signerapi.ErrCodeBadRequest)
 	}
-	if got, _ := planResp["error"].(string); got != "cannot mix passthrough and foreign transactions: passthrough requires pre-grouped, foreign requires server-computed group ID" {
+	if got, _ := planResp["error"].(string); got != "cannot mix passthrough and foreign transactions in one request" {
 		t.Fatalf("/plan error = %q", got)
 	}
 }

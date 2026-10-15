@@ -92,21 +92,21 @@ func (l *recordingLock) Unlock() {
 	l.held = false
 }
 
-func (a *auditRecorder) LogKeyGenerated(address, keyType string) {
+func (a *auditRecorder) LogKeyGenerated(_ context.Context, address, keyType string) {
 	a.generated = append(a.generated, struct {
 		address string
 		keyType string
 	}{address: address, keyType: keyType})
 }
 
-func (a *auditRecorder) LogKeyDeleted(address, deletedPath string) {
+func (a *auditRecorder) LogKeyDeleted(_ context.Context, address, deletedPath string) {
 	a.deleted = append(a.deleted, struct {
 		address     string
 		deletedPath string
 	}{address: address, deletedPath: deletedPath})
 }
 
-func (a *auditRecorder) LogKeyImported(address, keyType string) {
+func (a *auditRecorder) LogKeyImported(_ context.Context, address, keyType string) {
 	a.imported = append(a.imported, struct {
 		address string
 		keyType string
@@ -481,7 +481,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 		t.Fatalf("FindKeyFile(%q) before delete error = %v", genResult.Address, findErr)
 	}
 
-	delResult, delErr := svc.DeleteKey(genResult.Address)
+	delResult, delErr := svc.DeleteKey(context.Background(), genResult.Address)
 	if delErr != nil {
 		t.Fatalf("DeleteKey() error = %#v", delErr)
 	}
@@ -515,7 +515,7 @@ func TestServiceDeleteKeyRemovesCosignerComponentKey(t *testing.T) {
 		t.Fatalf("FindKeyFile(%q) before delete error = %v", genResult.Address, findErr)
 	}
 
-	delResult, delErr := svc.DeleteKey(genResult.Address)
+	delResult, delErr := svc.DeleteKey(context.Background(), genResult.Address)
 	if delErr != nil {
 		t.Fatalf("DeleteKey(component) error = %#v", delErr)
 	}
@@ -537,12 +537,12 @@ func TestServiceDeleteKeyValidatesAddressAndNotFound(t *testing.T) {
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
 
-	if result, err := svc.DeleteKey("not-an-address"); result != nil || err == nil || err.Kind != ErrorInvalidInput {
+	if result, err := svc.DeleteKey(context.Background(), "not-an-address"); result != nil || err == nil || err.Kind != ErrorInvalidInput {
 		t.Fatalf("DeleteKey(invalid) = (%#v, %#v), want invalid input error", result, err)
 	}
 
 	missing := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-	if result, err := svc.DeleteKey(missing); result != nil || err == nil || err.Kind != ErrorNotFound {
+	if result, err := svc.DeleteKey(context.Background(), missing); result != nil || err == nil || err.Kind != ErrorNotFound {
 		t.Fatalf("DeleteKey(missing) = (%#v, %#v), want not found error", result, err)
 	}
 }
@@ -654,7 +654,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	svc := Service{AuditLog: audit, Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := svc.ImportKey("aplane.falcon1024.v1", mnemonic, nil)
+	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
 	if err != nil {
 		t.Fatalf("ImportKey(aplane.falcon1024.v1) error = %#v", err)
 	}
@@ -697,7 +697,7 @@ func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	svc := Service{Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := svc.ImportKey("aplane.falcon1024.v1", mnemonic, nil)
+	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
 	if result != nil {
 		t.Fatalf("ImportKey(disallowed node role) result = %#v, want nil", result)
 	}
@@ -712,7 +712,7 @@ func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
 	svc := Service{Runtime: ir}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	result, err := svc.ImportKey("aplane.falcon1024.v1", mnemonic, nil)
+	result, err := svc.ImportKey(context.Background(), "aplane.falcon1024.v1", mnemonic, nil)
 	if result != nil {
 		t.Fatalf("ImportKey(locked) result = %#v, want nil", result)
 	}
@@ -732,13 +732,13 @@ func TestServiceImportKeyCanonicalizesAddressListParams(t *testing.T) {
 	addr2 := "AEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEA5RCDXMI"
 	canonicalRecipients := addr1 + "," + addr2
 
-	first, err := svc.ImportKey(addressListImportKeyType, mnemonic, map[string]string{
+	first, err := svc.ImportKey(context.Background(), addressListImportKeyType, mnemonic, map[string]string{
 		"recipients": addr1 + "," + addr2,
 	})
 	if err != nil {
 		t.Fatalf("ImportKey(first) error = %#v", err)
 	}
-	second, err := svc.ImportKey(addressListImportKeyType, mnemonic, map[string]string{
+	second, err := svc.ImportKey(context.Background(), addressListImportKeyType, mnemonic, map[string]string{
 		"recipients": addr2 + "," + addr1,
 	})
 	if err != nil {
@@ -1008,7 +1008,7 @@ func TestServiceDeleteKeyRemovesStageTable(t *testing.T) {
 		t.Fatalf("stage table not written: %v", err)
 	}
 
-	if _, delErr := svc.DeleteKey(genResult.Address); delErr != nil {
+	if _, delErr := svc.DeleteKey(context.Background(), genResult.Address); delErr != nil {
 		t.Fatalf("DeleteKey() error = %#v", delErr)
 	}
 	if _, err := os.Stat(table.Path()); !os.IsNotExist(err) {

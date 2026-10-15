@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,8 +205,8 @@ func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreReque
 	return s.storeApp().InitializeStore(req)
 }
 
-func (s signerAdminServices) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
-	return s.storeApp().ChangeStorePassphrase(req)
+func (s signerAdminServices) ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+	return s.storeApp().ChangeStorePassphrase(ctx, req)
 }
 
 func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {

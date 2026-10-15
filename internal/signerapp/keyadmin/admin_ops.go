@@ -4,6 +4,7 @@
 package keyadmin
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -127,7 +128,7 @@ func cosignerComponentSelectorForDetails(keyType, publicKeyHex string) (string, 
 	return witness.ID(componentKeyType, publicKey)
 }
 
-func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
+func (s Service) ImportKey(ctx context.Context, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
 	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ir == nil {
@@ -188,7 +189,7 @@ func (s Service) ImportKey(keyType, mnemonic string, params map[string]string) (
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyImported(importResult.Address, keyType)
+		s.AuditLog.LogKeyImported(ctx, importResult.Address, keyType)
 	}
 	return importResult, nil
 }

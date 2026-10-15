@@ -120,7 +120,7 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 	if !result.RootCommitted || result.KeysMigrated != 2 || result.TemplatesMigrated != 2 ||
-		result.PolicySidecarsMigrated != 1 || result.NodeRoleSidecarsMigrated != 1 {
+		result.PolicySidecarsMigrated != 2 || result.NodeRoleSidecarsMigrated != 1 {
 		t.Fatalf("Rotate() result = %+v", result)
 	}
 	if _, _, err := genstore.ResolveStoreRoot(fixture.paths, fixture.oldPassphrase); err == nil {

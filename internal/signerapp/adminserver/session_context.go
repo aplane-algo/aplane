@@ -4,6 +4,7 @@
 package adminserver
 
 import (
+	"context"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"sync/atomic"
@@ -86,4 +87,25 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+type sessionContextKey struct{}
+
+// WithSessionContext returns ctx carrying the admin session's attribution, so
+// services that log on the session's behalf can attribute the event.
+func WithSessionContext(ctx context.Context, session SessionContext) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, sessionContextKey{}, cloneSessionContext(session))
+}
+
+// SessionContextFromContext returns the admin session attribution that
+// WithSessionContext attached to ctx.
+func SessionContextFromContext(ctx context.Context) (SessionContext, bool) {
+	if ctx == nil {
+		return SessionContext{}, false
+	}
+	session, ok := ctx.Value(sessionContextKey{}).(SessionContext)
+	return session, ok
 }

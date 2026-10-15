@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
@@ -73,6 +74,7 @@ func TestChangeStorePassphraseCompletesRotationAndRepublishesRuntime(t *testing.
 	newPassphrase := []byte("new-admin-passphrase")
 
 	result := server.adminServices().ChangeStorePassphrase(
+		context.Background(),
 		adminproto.ChangeStorePassphraseRequest{
 			CurrentPassphrase: testPassphrase,
 			NewPassphrase:     newPassphrase,
@@ -115,6 +117,7 @@ func TestChangeStorePassphraseFailureLeavesRuntimeLocked(t *testing.T) {
 	}
 
 	result := server.adminServices().ChangeStorePassphrase(
+		context.Background(),
 		adminproto.ChangeStorePassphraseRequest{
 			CurrentPassphrase: testPassphrase,
 			NewPassphrase:     []byte("new-failing-passphrase"),

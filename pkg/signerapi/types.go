@@ -137,12 +137,12 @@ const (
 	// PQSchemeFalcon1024 is the v42 native Falcon-1024 authorization scheme.
 	PQSchemeFalcon1024 = "f1"
 
-	// SignCancelStateCanceled means the request is canceled or a pre-pending
-	// cancellation was recorded for that request ID.
+	// SignCancelStateCanceled means the request was live and is now canceled,
+	// including a repeat cancel while the canceled request is still unwinding.
 	SignCancelStateCanceled SignCancelState = "canceled"
 
-	// SignCancelStateNotFound means no pending request exists for the ID and no
-	// pre-pending cancellation was recorded.
+	// SignCancelStateNotFound means no live request has the ID. A cancel that
+	// arrives before its request exists is not recorded.
 	SignCancelStateNotFound SignCancelState = "not_found"
 )
 
@@ -227,7 +227,7 @@ func (r GroupSignRequest) Validate() error {
 	}
 
 	if passthroughCount > 0 && foreignCount > 0 {
-		return fmt.Errorf("cannot mix passthrough and foreign transactions: passthrough requires pre-grouped, foreign requires server-computed group ID")
+		return fmt.Errorf("cannot mix passthrough and foreign transactions in one request")
 	}
 	if signCount == 0 && foreignCount > 0 {
 		return fmt.Errorf("no signable transactions: all entries are foreign. Build and submit this group locally instead of using apsigner")

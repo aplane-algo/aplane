@@ -759,6 +759,13 @@ apsigner's keys. APlane validates the live client algod as v42-compatible before
 invoking a `presign-plan` callback. It performs the same check before broadcasting
 or simulating a `pregrouped-signed` group verbatim.
 
+APlane also checks apsigner's work in `presign-plan`, as it does for ordinary and
+guarded signing. The `/plan` result may only assign the group ID over the final
+group, raise the fees the mutation report lists, and append the planner's canonical
+budget dummies; any other change to a slot is rejected before the plugin is called.
+The `/sign` result must sign exactly the planned transactions and return every
+plugin-signed and dummy slot byte-for-byte as sent, or nothing is broadcast.
+
 #### What these flows enable
 
 A plugin could always compose groups with keys held anywhere — its own LogicSig, an HSM
@@ -1118,11 +1125,12 @@ variables above. The sandbox then removes:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
 - `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
-- any variable whose name ends in `_TOKEN`, `_SECRET`, `_API_KEY`, or
-  `_PASSWORD`
+- any variable whose name ends (case-insensitively) in `_TOKEN`, `_SECRET`,
+  `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, or
+  `_SEED` — so `APSIGNER_PASSPHRASE` and test mnemonics never reach a plugin
 
-Variables whose names start with `APSHELL_` are exempt (so
-`APSHELL_ALGOD_TOKEN` survives). The two LocalNet overrides
+The host-set `APSHELL_ALGOD_TOKEN` is exempt; other `APSHELL_*` names follow
+the same rules as any variable. The two LocalNet overrides
 `APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only
 for the plugin whose manifest name is `algokit-localnet`; every other plugin
 has them stripped, since all plugins run with network access. `PATH` is

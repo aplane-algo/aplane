@@ -526,13 +526,14 @@ Apply rules, the same on both node roles:
 - Response sizes are bounded: `policy` and `apply_policy_result` carry document summaries, never bytes, so with both caps full and every field at its longest they encode to about 3 MB, inside the 4 MiB admin frame. `policy_document` carries one document of at most 1 MiB; admin messages are encoded without HTML escaping, so a document string at most doubles (only quotes, backslashes, JSON whitespace, and U+2028/U+2029 are escaped) and the response stays near 2 MiB.
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
+- A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed; signing is blocked pending reconciliation or recovery.
 
 Result codes include `expected_policy_set_sha256_required`,
 `policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
 `invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_document_not_found`, `policy_verify_failed`,
-`identity_locked`, `policy_commit_uncertain`, `policy_reload_failed`, and
-`policy_save_failed`.
+`identity_locked`, `recovery_blocked`, `policy_commit_uncertain`,
+`policy_reload_failed`, and `policy_save_failed`.
 
 `get_policy`, `get_policy_document`, and `check_policy` require `policy.view`; `apply_policy` requires
 `policy.update`. Policy messages are not exposed through apshell or MCP.

@@ -170,9 +170,14 @@ func checkFile(path string) []finding {
 	keyRefContent := ""
 
 	funcPattern := regexp.MustCompile(`^func\s+(\([^)]+\)\s+)?(\w+)`)
+	state := lexCode
 
 	for i, line := range lines {
 		lineNum := i + 1
+		// Match only code: a commented-out zeroing call must not count, and a
+		// comment or string must not hide or invent a key reference or brace.
+		var code string
+		code, state = codeOnly(line, state)
 
 		// Track function boundaries
 		if match := funcPattern.FindStringSubmatch(line); match != nil {
@@ -199,13 +204,13 @@ func checkFile(path string) []finding {
 		}
 
 		if inFunc {
-			braceCount += strings.Count(line, "{") - strings.Count(line, "}")
+			braceCount += strings.Count(code, "{") - strings.Count(code, "}")
 
 			// Check for key material references
 			for _, pat := range keyPatterns {
-				if pat.MatchString(line) {
+				if pat.MatchString(code) {
 					// Skip type declarations and struct definitions
-					if !strings.Contains(line, "type ") && !strings.Contains(line, "//") {
+					if !strings.Contains(code, "type ") {
 						hasKeyRef = true
 						keyRefLine = lineNum
 						keyRefContent = line
@@ -216,7 +221,7 @@ func checkFile(path string) []finding {
 
 			// Check for zeroing calls
 			for _, pat := range zeroPatterns {
-				if pat.MatchString(line) {
+				if pat.MatchString(code) {
 					hasZero = true
 					break
 				}
@@ -241,4 +246,61 @@ func checkFile(path string) []finding {
 	}
 
 	return findings
+}
+
+// lexState is where a line starts: in code, or inside a /* */ comment or a
+// raw string literal that an earlier line opened. Both span lines, and losing
+// either would misread the lines that follow (a "/*" inside a raw string must
+// not start a comment that hides real code).
+type lexState int
+
+const (
+	lexCode lexState = iota
+	lexBlockComment
+	lexRawString
+)
+
+// codeOnly returns line with comments removed and string and rune literal
+// contents blanked, given the state the line starts in, and returns the state
+// it ends in.
+func codeOnly(line string, state lexState) (string, lexState) {
+	var out strings.Builder
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		next := rune(0)
+		if i+1 < len(runes) {
+			next = runes[i+1]
+		}
+		switch {
+		case state == lexBlockComment:
+			if ch == '*' && next == '/' {
+				state = lexCode
+				i++
+			}
+		case state == lexRawString:
+			if ch == '`' {
+				state = lexCode
+				out.WriteRune(' ')
+			}
+		case ch == '/' && next == '/':
+			return out.String(), lexCode
+		case ch == '/' && next == '*':
+			state = lexBlockComment
+			i++
+		case ch == '`':
+			state = lexRawString
+		case ch == '"' || ch == '\'':
+			quote := ch
+			for i++; i < len(runes) && runes[i] != quote; i++ {
+				if runes[i] == '\\' {
+					i++
+				}
+			}
+			out.WriteRune(' ')
+		default:
+			out.WriteRune(ch)
+		}
+	}
+	return out.String(), state
 }

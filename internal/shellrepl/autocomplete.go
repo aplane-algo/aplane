@@ -729,13 +729,6 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			readline.PcItem("clear"),
 		),
 
-		readline.PcItem("box",
-			readline.PcItem("create"),
-			readline.PcItem("write"),
-			readline.PcItem("read"),
-			readline.PcItem("delete"),
-		),
-
 		readline.PcItem("sets",
 			readline.PcItem("list"),
 			readline.PcItem("add",
@@ -777,6 +770,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 		readline.PcItem("app",
 			readline.PcItem("read",
+				readline.PcItem("info"),
 				readline.PcItem("global"),
 				readline.PcItem("local"),
 				readline.PcItem("box"),
@@ -788,6 +782,35 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 				}),
 				readline.PcItem("raw"),
 			),
+			readline.PcItem("deploy"),
+		),
+
+		readline.PcItem("rotate",
+			readline.PcItemDynamic(func(line string) []string {
+				suggestions := []string{"status", "nowait"}
+				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+			}),
+		),
+
+		readline.PcItem("delete",
+			readline.PcItemDynamic(func(line string) []string {
+				return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
+			}),
+		),
+
+		readline.PcItem("endpoints",
+			readline.PcItem("list"),
+			readline.PcItem("show"),
+			readline.PcItem("add"),
+			readline.PcItem("create"),
+			readline.PcItem("import"),
+			readline.PcItem("discover-cosigners"),
+			readline.PcItem("default"),
+			readline.PcItem("delete"),
+		),
+
+		readline.PcItem("cosigner",
+			readline.PcItem("status"),
 		),
 
 		readline.PcItem("accounts"),
@@ -796,9 +819,13 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("jssave"),
 		readline.PcItem("jslist"),
 		readline.PcItem("keys"),
+		readline.PcItem("keytypes"),
+		readline.PcItem("generate"),
 		readline.PcItem("plugins"),
 		readline.PcItem("sign"),
 		readline.PcItem("connect"),
+		readline.PcItem("disconnect"),
+		readline.PcItem("request-enrollment"),
 		readline.PcItem("write"),
 		readline.PcItem("script"),
 		readline.PcItem("verbose"),
@@ -815,6 +842,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			readline.PcItem("rekey"),
 			readline.PcItem("unrekey"),
 			readline.PcItem("close"),
+			readline.PcItem("rotate"),
 			readline.PcItem("app"),
 		),
 		readline.PcItem("config"),
@@ -822,6 +850,8 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		buildPcItemForStrings("network", networkTokens),
 
 		readline.PcItem("status"),
+		readline.PcItem("clear"),
+		readline.PcItem("cls"),
 		readline.PcItem("help"),
 		readline.PcItem("h"),
 		readline.PcItem("quit"),

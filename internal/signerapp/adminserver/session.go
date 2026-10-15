@@ -345,6 +345,12 @@ func (s *Session) Context() context.Context {
 	return s.ctx
 }
 
+// auditContext is the session's context carrying its attribution, for service
+// calls whose audit events must name this session.
+func (s *Session) auditContext() context.Context {
+	return WithSessionContext(s.Context(), s.SessionContext())
+}
+
 func (s *Session) BoundRuntime() *productruntime.Runtime {
 	s.mu.Lock()
 	defer s.mu.Unlock()
