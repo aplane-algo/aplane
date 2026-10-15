@@ -1300,10 +1300,15 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// Destroy cleans up the product runtime for shutdown.
-// Blocks until in-flight key operations complete.
+// Destroy cleans up the product runtime for shutdown. Like a lock, it first
+// waits for background key users to finish, then clears the session under the
+// passphrase lock, so a lock cleanup racing shutdown (an admin session closing
+// on its way out) cannot interleave with it.
 func (ir *Runtime) Destroy() {
 	ir.StopKeyWatcher()
+	ir.drainKeyUsers()
+	ir.passphraseLock.Lock()
+	defer ir.passphraseLock.Unlock()
 	if ir.keySession != nil {
 		ir.keySession.Destroy()
 	}

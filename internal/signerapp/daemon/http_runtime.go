@@ -182,3 +182,25 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	logInfof(strings.Repeat("=", 50))
 	logInfof("REST API listening on %s (localhost only - accessed via SSH tunnel)", httpBindAddr(port))
 }
+
+// withCancelableRequests roots every request context of srv in one context
+// and returns its cancel, so shutdown can end requests that would otherwise
+// wait out the shutdown deadline.
+func withCancelableRequests(srv *http.Server) context.CancelFunc {
+	base, cancel := context.WithCancel(context.Background())
+	srv.BaseContext = func(net.Listener) context.Context { return base }
+	return cancel
+}
+
+// stopHTTPServer stops accepting API connections, cancels in-flight requests,
+// and waits for their handlers. A /sign request parked on operator approval
+// waits on its request context, so without the cancel it would hold shutdown
+// until the deadline, and the operator could still approve a signature after
+// the signer was told to stop. Canceled requests are rejected, not signed.
+func stopHTTPServer(ctx context.Context, srv *http.Server, apiListener net.Listener, cancelRequests context.CancelFunc) error {
+	if apiListener != nil {
+		_ = apiListener.Close()
+	}
+	cancelRequests()
+	return srv.Shutdown(ctx)
+}

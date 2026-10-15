@@ -293,6 +293,8 @@ func Run(dataDir string) int {
 	}
 
 	httpServer := buildHTTPServer(server, port)
+	cancelHTTPRequests := withCancelableRequests(httpServer)
+	defer cancelHTTPRequests()
 	logHTTPStartup(keyCount, keysSnapshot, port)
 	apiListener := sshtunnel.NewAPIListener(maxHTTPConnections)
 	server.apiListener = apiListener
@@ -300,6 +302,9 @@ func Run(dataDir string) int {
 	sshRuntime, err := startSSHRuntime(server, config.Endpoint.SSH.ListenAddress, config.Endpoint.SSH.Port, config.Endpoint.SSH.HostKeyPath, auditLog)
 	if err != nil {
 		logErrorf("failed to start SSH server: %v", err)
+		if server.ipcServer != nil {
+			server.ipcServer.Stop()
+		}
 		return 1
 	}
 	server.setSSHRuntime(sshRuntime)
@@ -356,8 +361,7 @@ func Run(dataDir string) int {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					_ = apiListener.Close()
-					return httpServer.Shutdown(ctx)
+					return stopHTTPServer(ctx, httpServer, apiListener, cancelHTTPRequests)
 				},
 			},
 		},

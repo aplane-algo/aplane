@@ -1628,13 +1628,19 @@ the one product runtime only after every service reports a clean stop:
 
 All service stops share one 5 s shutdown deadline.
 
-1. Close the API listener, then `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests.
+1. Close the API listener, cancel every in-flight request context, then
+   `httpServer.Shutdown(ctx)` — drain in-flight HTTP requests. Every request
+   context descends from one server base context, so a `/sign` parked on
+   operator approval is rejected at once instead of holding shutdown until the
+   deadline (and cannot be approved after the stop began).
 2. Cancel and stop the SSH server.
 3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
 4. Stop the rotating stage-table worker.
 5. Write `SERVER_STOP` and close the audit log.
 6. Call `Destroy()` on the product runtime:
    - `StopKeyWatcher()` — prevents new reloads.
+   - drain background key users, then take the passphrase lock, as a lock does,
+     so a lock cleanup racing shutdown cannot interleave.
    - `keySession.Destroy()` — drain in-flight key retrieval operations.
    - `keyStore.ClearKeys()` — zero every term key.
 
