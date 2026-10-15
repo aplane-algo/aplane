@@ -79,6 +79,9 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 		return nil, gateErr
 	}
 	defer release()
+	if bindErr := checkApprovalBinding(groupReq, plan); bindErr != nil {
+		return nil, bindErr
+	}
 	req.RequestID = guardedRequestID("bcmp", req.RequestID)
 	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {

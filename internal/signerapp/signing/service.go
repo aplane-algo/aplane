@@ -124,6 +124,9 @@ func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, request si
 		return nil, gateErr
 	}
 	defer release()
+	if bindErr := checkApprovalBinding(req, plan); bindErr != nil {
+		return nil, bindErr
+	}
 
 	partials, signErr := s.Executor.ExecuteBoundedAdminPartial(ctx, plan, req, session, targetIndex, item)
 	if signErr != nil {
@@ -185,6 +188,7 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		if err := validateKnownNetwork(componentPlanTxns(plan), s.genesisHashResolver()); err != nil {
 			return nil, err
 		}
+		approvedDigest := componentApprovalDigest(plan)
 		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, plan)
 		if gateErr != nil {
 			return nil, gateErr
@@ -194,6 +198,9 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 			return nil, leaseErr
 		}
 		defer release()
+		if componentApprovalDigest(plan) != approvedDigest {
+			return nil, internal("refusing to sign: the component request changed after it was approved")
+		}
 		result, signErr := signPreparedUserComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
@@ -262,6 +269,9 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 		return nil, gateErr
 	}
 	defer release()
+	if bindErr := checkApprovalBinding(req, plan); bindErr != nil {
+		return nil, bindErr
+	}
 
 	execResult, err := s.Executor.ExecuteGroupSigning(ctx, plan, req, session)
 	if err != nil {
@@ -293,6 +303,8 @@ func rejectOrdinarySignKeyTypes(plan *PlanResult) *ServiceError {
 func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult) (string, func(), *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
+	// What the gates below judge and the operator is shown.
+	approvedDigest := approvalDigest(req, plan)
 
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return "", nil, lockedError()
@@ -353,6 +365,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 	if err != nil {
 		return "", nil, err
 	}
+	plan.bindApproval(approvedDigest)
 	return alwaysReviewRuleID, release, nil
 }
 

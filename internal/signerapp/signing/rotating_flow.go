@@ -456,7 +456,15 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	if addr, err := rs.stageAddress(targetStage); err != nil || addr != spend.RekeyTo {
 		return nil, internal("rotation target does not derive from the seed")
 	}
+	// The spend and the transaction ID about to be signed must be exactly
+	// the group the approval covered.
+	if bindErr := checkApprovalBinding(signReq, plan); bindErr != nil {
+		return nil, bindErr
+	}
 	txID := group.Entries[0].TxID
+	if !bytes.Equal(txnutil.EncodeWithPrefix(spend), txnutil.EncodeWithPrefix(plan.AllTxns[0])) || !bytes.Equal(txID[:], algocrypto.TransactionID(plan.AllTxns[0])) {
+		return nil, internal("refusing to sign: the rotating spend differs from the approved group")
+	}
 	stageSig, signErr := rs.ops.SignStage(rs.secret, stage, txID[:])
 	if signErr != nil {
 		return nil, internal(fmt.Sprintf("sign with stage %d: %v", stage, signErr))

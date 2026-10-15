@@ -862,6 +862,14 @@ When transactions are modified (fees adjusted, group ID computed), the **modifie
 
 This ensures operators approve exactly what will be signed, and policy rules evaluate the actual transaction data rather than the original request.
 
+The signer also enforces it. Before the approval gates run, it hashes what they
+judge: every transaction of the final group, the bytes of each passthrough
+slot, which slots are foreign, and the key that signs each request (for
+`/sign/component`, the frozen group bytes, the component key, and each
+target's transaction ID and message). Immediately before signing, each signing
+path recomputes the hash and refuses with an internal error on any difference,
+so nothing between approval and signing can change what is signed.
+
 When modifications occur, the approval UI displays an explicit banner:
 ```
 [MODIFIED BY SERVER]
