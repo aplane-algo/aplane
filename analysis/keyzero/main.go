@@ -170,9 +170,14 @@ func checkFile(path string) []finding {
 	keyRefContent := ""
 
 	funcPattern := regexp.MustCompile(`^func\s+(\([^)]+\)\s+)?(\w+)`)
+	inBlockComment := false
 
 	for i, line := range lines {
 		lineNum := i + 1
+		// Match only code: a commented-out zeroing call must not count, and a
+		// comment or string must not hide or invent a key reference or brace.
+		var code string
+		code, inBlockComment = codeOnly(line, inBlockComment)
 
 		// Track function boundaries
 		if match := funcPattern.FindStringSubmatch(line); match != nil {
@@ -199,13 +204,13 @@ func checkFile(path string) []finding {
 		}
 
 		if inFunc {
-			braceCount += strings.Count(line, "{") - strings.Count(line, "}")
+			braceCount += strings.Count(code, "{") - strings.Count(code, "}")
 
 			// Check for key material references
 			for _, pat := range keyPatterns {
-				if pat.MatchString(line) {
+				if pat.MatchString(code) {
 					// Skip type declarations and struct definitions
-					if !strings.Contains(line, "type ") && !strings.Contains(line, "//") {
+					if !strings.Contains(code, "type ") {
 						hasKeyRef = true
 						keyRefLine = lineNum
 						keyRefContent = line
@@ -216,7 +221,7 @@ func checkFile(path string) []finding {
 
 			// Check for zeroing calls
 			for _, pat := range zeroPatterns {
-				if pat.MatchString(line) {
+				if pat.MatchString(code) {
 					hasZero = true
 					break
 				}
@@ -241,4 +246,42 @@ func checkFile(path string) []finding {
 	}
 
 	return findings
+}
+
+// codeOnly returns line with comments removed and string and rune literal
+// contents blanked, given whether the line starts inside a /* */ comment, and
+// reports whether it ends inside one.
+func codeOnly(line string, inBlockComment bool) (string, bool) {
+	var out strings.Builder
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		next := rune(0)
+		if i+1 < len(runes) {
+			next = runes[i+1]
+		}
+		switch {
+		case inBlockComment:
+			if ch == '*' && next == '/' {
+				inBlockComment = false
+				i++
+			}
+		case ch == '/' && next == '/':
+			return out.String(), false
+		case ch == '/' && next == '*':
+			inBlockComment = true
+			i++
+		case ch == '"' || ch == '`' || ch == '\'':
+			quote := ch
+			for i++; i < len(runes) && runes[i] != quote; i++ {
+				if runes[i] == '\\' && quote != '`' {
+					i++
+				}
+			}
+			out.WriteRune(' ')
+		default:
+			out.WriteRune(ch)
+		}
+	}
+	return out.String(), inBlockComment
 }
