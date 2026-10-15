@@ -34,6 +34,12 @@ func TestRotatingWotsTransactionTypes(t *testing.T) {
 	runRotatingTransactionTypes(t, rotatingkey.RotatingWotsHybridV1)
 }
 
+// TestRotatingTripleTransactionTypes runs every transaction type over the
+// triple hybrid key type.
+func TestRotatingTripleTransactionTypes(t *testing.T) {
+	runRotatingTransactionTypes(t, rotatingkey.RotatingTripleHybridV1)
+}
+
 func runRotatingTransactionTypes(t *testing.T, keyType string) {
 	t.Helper()
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {

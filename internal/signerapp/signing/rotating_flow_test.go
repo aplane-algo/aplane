@@ -427,8 +427,8 @@ func TestReleaseMemoryMarksStageReuse(t *testing.T) {
 }
 
 // TestRotatingStatusReportsStageReuse signs two different transactions from
-// one stage without either landing. The one-time WOTS stage is then
-// Ed25519-only until the account moves, which is a warning; the Falcon
+// one stage without either landing. A stage with a one-time WOTS key then
+// rests on its other schemes until the account moves, which is a warning; the Falcon
 // stage can sign again safely, so the reuse is only mentioned in the note.
 // Either way the mark survives until a chain read shows the account moved.
 func TestRotatingStatusReportsStageReuse(t *testing.T) {
@@ -453,7 +453,7 @@ func TestRotatingStatusReportsStageReuse(t *testing.T) {
 			warnings, notes := f.svc.RotatingStatus(report(f.account, 1050))
 			switch {
 			case profile.OneTimeStage:
-				if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], "Ed25519-only") || !strings.Contains(warnings[0], second.TxID) {
+				if len(warnings) != 1 || len(notes) != 0 || !strings.Contains(warnings[0], "more than one transaction") || !strings.Contains(warnings[0], "rests on "+profile.ReusedStageRestsOn) || !strings.Contains(warnings[0], second.TxID) {
 					t.Fatalf("one-time stage reuse in flight: warnings %v, notes %v", warnings, notes)
 				}
 				again, _ := f.svc.RotatingStatus(report(f.account, 1060))

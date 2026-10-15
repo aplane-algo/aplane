@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	rotatingsignerreg "github.com/aplane-algo/aplane/lsig/rotatinghybrid/signerreg"
+	rotatingtriplesignerreg "github.com/aplane-algo/aplane/lsig/rotatingtriple/signerreg"
 	rotatingwotssignerreg "github.com/aplane-algo/aplane/lsig/rotatingwots/signerreg"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -63,6 +64,9 @@ var (
 	localnetWots = localnetRotatingType{
 		keyType: rotatingkey.RotatingWotsHybridV1, register: rotatingwotssignerreg.Register, newKeyPayload: rotatingwotssignerreg.NewKeyPayload,
 	}
+	localnetTriple = localnetRotatingType{
+		keyType: rotatingkey.RotatingTripleHybridV1, register: rotatingtriplesignerreg.Register, newKeyPayload: rotatingtriplesignerreg.NewKeyPayload,
+	}
 )
 
 // TestRotatingHybridSignerFlowOnChain drives the signer's stateless rotating
@@ -78,6 +82,11 @@ func TestRotatingHybridSignerFlowOnChain(t *testing.T) {
 // TestRotatingWotsSignerFlowOnChain is the same flow over the WOTS hybrid.
 func TestRotatingWotsSignerFlowOnChain(t *testing.T) {
 	runRotatingSignerFlowOnChain(t, localnetWots)
+}
+
+// TestRotatingTripleSignerFlowOnChain is the same flow over the triple hybrid.
+func TestRotatingTripleSignerFlowOnChain(t *testing.T) {
+	runRotatingSignerFlowOnChain(t, localnetTriple)
 }
 
 func runRotatingSignerFlowOnChain(t *testing.T, kind localnetRotatingType) {

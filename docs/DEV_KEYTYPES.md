@@ -420,6 +420,7 @@ in `lsig/falcon1024/register.go`.
 Examples:
 - `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages)
 - `aplane.rotating-wots-hybrid.v1` (hash-based WOTS + Ed25519 stages)
+- `aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS + Ed25519 stages)
 
 Characteristics:
 - the account address is fixed while its authorizing program changes on every
@@ -445,6 +446,8 @@ Typical code areas:
 - `internal/crypto/rotatinghybrid` (the HKDF stage deriver both types use
   under their own labels), `internal/crypto/wots` and `lsig/rotatingwots/`
   (the WOTS hybrid's primitives, stage program, stage ops, generator)
+- `lsig/rotatingtriple/` (the triple hybrid's stage program, stage ops,
+  generator; it reuses `internal/crypto/wots` and the Falcon signer)
 
 These are protocol-level key types, not templates. A new rotating stage
 scheme is a new key type on the same flow: a `rotatingkey` profile, a stage

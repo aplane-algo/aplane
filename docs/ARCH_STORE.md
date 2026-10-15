@@ -1229,10 +1229,12 @@ runtime-argument metadata under `runtime_args`.
 
 Rotating LogicSig accounts use `category: "rotating_lsig"`. The key types are
 `aplane.rotating-hybrid.v1` (Falcon-1024 + Ed25519 stages) and
-`aplane.rotating-wots-hybrid.v1` (WOTS-w16 + Ed25519 stages); each fixes its
-own derivation and stage program template, and `internal/rotatingkey`
-classifies both and carries their frozen sizes in a per-type profile. The
-profile also marks the WOTS hybrid's stage signature as one-time, which
+`aplane.rotating-wots-hybrid.v1` (WOTS-w16 + Ed25519 stages) and
+`aplane.rotating-triple-hybrid.v1` (Falcon-1024 + WOTS-w16 + Ed25519 stages);
+each fixes its own derivation and stage program template, and
+`internal/rotatingkey` classifies them and carries their frozen sizes in a
+per-type profile. The profile also marks a stage that includes a WOTS
+signature as one-time, and names what a reused stage still rests on; that
 changes only what the signer reports (`ARCH_SIGNING.md`, rotating alerts),
 never what it signs.
 
@@ -1242,7 +1244,9 @@ never what it signs.
 - `public_key` is stage 0's public record: for the Falcon hybrid the
   Falcon-1024 public key (1793 bytes) followed by the Ed25519 public key (32
   bytes); for the WOTS hybrid the stage tweak, the WOTS public key and the
-  Ed25519 public key (32 bytes each, 96 in all).
+  Ed25519 public key (32 bytes each, 96 in all); for the triple hybrid the
+  stage tweak (32), the Falcon-1024 public key (1793), the WOTS public key
+  (32) and the Ed25519 public key (32), 1889 in all.
 - No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
   `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
   `parameters` and `signing_args` are all rejected.
@@ -1256,7 +1260,9 @@ never what it signs.
   profile is the same for every stage of a key type: 1873 program bytes,
   1487 argument bytes and an opcode ceiling of 3628 for the Falcon hybrid
   (one resource dummy); 295 program bytes, 2208 argument bytes and an opcode
-  ceiling of 58063 for the WOTS hybrid (two resource dummies).
+  ceiling of 58063 for the WOTS hybrid (two resource dummies); 2096 program
+  bytes, 3631 argument bytes and an opcode ceiling of 59767 for the triple
+  hybrid (three resource dummies).
 - The key file is the whole credential. The signer keeps no durable state
   for the account: which stage is live is read from the chain at every
   request, and the stage address table under `stages/` (below) is a cache
