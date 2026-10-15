@@ -56,6 +56,11 @@ func TestPolicyPresetPickOpensPresetForKeyOnTheDefault(t *testing.T) {
 	if !policyTextEquivalent(want, policyEditText(m)) || !strings.Contains(policyEditText(m), fmt.Sprintf("%q preset", "self-only")) {
 		t.Fatalf("editor text is not the self-only preset under key A:\n%s", policyEditText(m))
 	}
+	// The hint names the preset; it must not claim the text is the node default.
+	rendered = stripANSI(m.renderPolicyEdit())
+	if edit.preset != "self-only" || !strings.Contains(rendered, `Started from the "self-only" preset`) || strings.Contains(rendered, "node default") {
+		t.Fatalf("editor hint for a preset (preset %q):\n%s", edit.preset, rendered)
+	}
 }
 
 // The first choice is what e opened before presets existed: for a key on the

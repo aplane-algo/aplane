@@ -1372,7 +1372,7 @@ default (governs every key without its own policy)"), then every held key as
 opens a document; `e` edits it (a key on the default opens the editor on the
 default with the key filled in, marked "No policy of its own yet"; on a
 cosigner node, `e` on the default or on a key on the default first offers the
-presets); `a` loads a file; review shows the effective diff; `y` applies.
+presets, and a chosen preset opens marked with its name); `a` loads a file; review shows the effective diff; `y` applies.
 
 ## Backup and Restore
 

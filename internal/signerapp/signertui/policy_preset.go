@@ -98,7 +98,11 @@ func (m Model) handlePolicyPresetPickKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.policies.status = "Cannot start from that preset: " + err.Error()
 			return m, nil
 		}
-		return m.startPolicyEditor(row.key, text, row.doc == nil), nil
+		m = m.startPolicyEditor(row.key, text, row.doc == nil)
+		if m.viewState == ViewPolicyEdit {
+			m.policies.apply.edit.preset = presets[selected-1].Name
+		}
+		return m, nil
 	}
 	return m, nil
 }

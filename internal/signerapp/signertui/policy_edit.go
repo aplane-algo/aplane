@@ -47,9 +47,11 @@ type policyEditState struct {
 	loading bool
 	// key is the document being edited: "default" or a key selector.
 	key string
-	// isNew reports that the key had no document of its own and the editor
-	// opened on the node default with the key filled in.
+	// isNew reports that the key had no document of its own.
 	isNew bool
+	// preset names the preset the editor opened on; empty when it opened on
+	// the key's own document or the node default with the key filled in.
+	preset string
 	// templateFor, while loading, names the key a template is being built
 	// for from the default document being fetched.
 	templateFor string
@@ -408,7 +410,12 @@ func (m Model) renderPolicyEdit() string {
 	sb.WriteString(subtitleStyle.Render(ellipsize(m.policyEditTargetLabel(), width)))
 	sb.WriteString("\n")
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
-	if edit.isNew {
+	switch {
+	case edit.preset != "" && edit.isNew:
+		hint = fmt.Sprintf("Started from the %q preset. Applying it gives the key its own policy; comments are removed on apply.", edit.preset)
+	case edit.preset != "":
+		hint = fmt.Sprintf("Started from the %q preset. Applying it replaces the current document; comments are removed on apply.", edit.preset)
+	case edit.isNew:
 		hint = "No policy of its own yet: this is the node default with the key filled in. Applying it gives the key its own policy; comments are removed on apply."
 	}
 	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
