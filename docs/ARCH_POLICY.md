@@ -1268,7 +1268,9 @@ in [ARCH_STORE.md](ARCH_STORE.md#generations).
 | `apply [--yes] FILE...\|-` | Run `check`, stop on errors, print the diff, confirm, then apply against the current `policy_set_sha256` |
 | `remove [--yes] K...` | Run `check`, stop on errors, print the diff, confirm, then delete keys' own documents; the keys follow the default. `default` is refused |
 | `template [--key K]` | Write the node's current default as the starting document for key `K`, or annotated as the default itself |
-| `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; the only form that needs no node and no passphrase |
+| `template --embedded signer\|cosigner [--key K]` | Write the shipped default for that role instead; needs no node and no passphrase |
+| `template --preset NAME [--key K]` | Write a cosigner preset instead; needs no node and no passphrase |
+| `template --list-presets` | List the cosigner presets |
 
 Each file is one document and names its key in its `key` field; several
 files apply in one commit. Diffs are effective: `diff` compares decoded
@@ -1310,12 +1312,36 @@ Templates: `apadmin policy template [--key K]` prints the node's current
 set to `K`, or annotated as the default itself when `--key` is omitted. A
 key that gets a document of its own therefore starts from exactly what it was
 already doing. `apadmin policy template --embedded signer|cosigner [--key K]`
-prints the shipped default instead and is the only form that needs no node,
-store, or passphrase; the online and rescue forms fail rather than fall back
-to it, so a customized node default is never silently replaced by the shipped
-one. Each template carries a header comment; stripped of it, a template
-decodes equal to the document it stands for (`policyreview.Template`,
-`policyreview.EmbeddedTemplate`).
+prints the shipped default instead, and `--preset NAME [--key K]` prints a
+cosigner preset; these and `--list-presets` are the forms that need no node,
+store, or passphrase (`policycmd.Command.NeedsNoNode`). The online and rescue
+forms fail rather than fall back to the shipped default, so a customized node
+default is never silently replaced by the shipped one. Each template carries
+a header comment; stripped of it, a template decodes equal to the document it
+stands for (`policyreview.Template`, `policyreview.EmbeddedTemplate`).
+
+Presets (`policyreview.Presets`, `policyreview.PresetTemplate`) are named
+starting documents for the cosigner role, embedded from
+`internal/signerapp/policyreview/presets/cosigner/*.jsonc`. They exist
+because the shipped cosigner default cosigns nothing, so every new cosigner
+key needs routes before it is usable. A preset is starting text only: it adds
+no policy semantics and reaches the node through the same check, diff, and
+apply. Every preset sets `reject_rekey` and the three `reject_*` flags,
+allows only `pay` and `axfer`, and caps the fee at 10000 microAlgos:
+
+| Preset | Allows | Placeholders |
+|--------|--------|--------------|
+| `deny-all` | Nothing | none |
+| `self-only` | Any account sending any asset to itself (ASA opt-ins, self-payments) | none |
+| `listed-destinations` | Any account sending any asset to the addresses in `@destinations` | the destination addresses |
+| `capped-any` | Any transfer anywhere, refusing an ALGO transfer above the cap on a capped network | the mainnet ALGO cap; add other networks yourself |
+| `any-transfer` | Any transfer anywhere; no spend protection, for testing | none |
+
+A placeholder is a string starting `REPLACE-WITH-`, which no address or
+amount can be, so `check` rejects an unfilled preset at the placeholder's JSON
+Pointer and a half-edited preset cannot be applied. Tests pin that each
+preset, once filled, passes the JSON Schema and the decoder with no advisory,
+and allows exactly what its name says.
 
 `apadmin policy rescue VERB` runs the same verbs directly against the store with
 the same rules as the daemon (the shared `internal/signerapp/policyapply`
@@ -1344,8 +1370,9 @@ The apadmin TUI Policies view lists the default first (labelled "node
 default (governs every key without its own policy)"), then every held key as
 "own policy" or "default", then stored documents for keys not held. Enter
 opens a document; `e` edits it (a key on the default opens the editor on the
-default with the key filled in, marked "No policy of its own yet"); `a`
-loads a file; review shows the effective diff; `y` applies.
+default with the key filled in, marked "No policy of its own yet"; on a
+cosigner node, `e` on the default or on a key on the default first offers the
+presets); `a` loads a file; review shows the effective diff; `y` applies.
 
 ## Backup and Restore
 

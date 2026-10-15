@@ -425,6 +425,33 @@ func TestTemplateEmbeddedNeedsNoNodeAndOnlinePrintsTheNodeDefault(t *testing.T) 
 	}
 }
 
+// template --preset and --list-presets, like --embedded, print apadmin's own
+// text with no node, store, or passphrase.
+func TestTemplatePresetNeedsNoNode(t *testing.T) {
+	t.Setenv(retiredPassphraseEnv, "")
+	t.Setenv(passphraseEnv, "")
+	var stdout bytes.Buffer
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Preset: "self-only", Key: testKeyA}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := policyreview.PresetTemplate(noderole.RoleCosigner, "self-only", testKeyA)
+	if err != nil || stdout.String() != want {
+		t.Fatalf("preset template = %q, %v", stdout.String(), err)
+	}
+	stdout.Reset()
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, ListPresets: true}, Streams{Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	for _, preset := range policyreview.Presets(noderole.RoleCosigner) {
+		if !strings.Contains(stdout.String(), preset.Name) {
+			t.Fatalf("preset list misses %s:\n%s", preset.Name, stdout.String())
+		}
+	}
+	if err := (OnlineRunner{}).Run(context.Background(), Command{Verb: VerbTemplate, Preset: "nope"}, Streams{Stdout: &stdout}); err == nil || !strings.Contains(err.Error(), "unknown cosigner policy preset") {
+		t.Fatalf("unknown preset error = %v", err)
+	}
+}
+
 func TestRescueSignerApplyPreservesExactBytesAndVerifies(t *testing.T) {
 	root, passphrase := initializedPolicyStore(t, noderole.RoleSigner)
 	t.Setenv(retiredPassphraseEnv, "")

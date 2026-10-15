@@ -46,11 +46,12 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 
-	// template --embedded is the producer side's own text: no store, socket,
-	// data directory, or passphrase takes part, so none is resolved. Every
-	// other template form prints the node's own default and needs the node.
-	if command.Verb == policycmd.VerbTemplate && command.Embedded != "" {
-		if err := policycmd.WriteEmbeddedTemplate(command, ioStreams); err != nil {
+	// template --embedded, --preset, and --list-presets print apadmin's own
+	// text: no store, socket, data directory, or passphrase takes part, so
+	// none is resolved. Every other template form prints the node's own
+	// default and needs the node.
+	if command.NeedsNoNode() {
+		if err := policycmd.WriteOfflineTemplate(command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
 			return 1
 		}
@@ -135,8 +136,14 @@ Verbs:
                     write the node's current default policy as the starting
                     document for key K (or annotated as the default itself)
   template --embedded signer|cosigner [--key K]
-                    write the shipped default for that role instead; the
-                    only form that needs no node and no passphrase
+                    write the shipped default for that role instead
+  template --preset NAME [--key K]
+                    write a cosigner preset: a starting policy for one
+                    common intent (see --list-presets)
+  template --list-presets
+                    list the cosigner presets
+                    The --embedded, --preset, and --list-presets forms need
+                    no node and no passphrase.
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
 
@@ -158,6 +165,8 @@ apply and remove, and reject --ipc-path.
 	}
 	key := fs.String("key", "", "key whose own document to export, or to name in a template (default: the node default)")
 	embedded := fs.String("embedded", "", "template only: write the shipped default for this node role (signer or cosigner) instead of the node's own")
+	preset := fs.String("preset", "", "template only: write this cosigner preset instead of the node's default (see --list-presets)")
+	listPresets := fs.Bool("list-presets", false, "template only: list the cosigner presets")
 	yes := fs.Bool("yes", false, "apply or remove without asking for confirmation")
 	if err := fs.Parse(args); err != nil {
 		return command, rescue, err
@@ -167,6 +176,8 @@ apply and remove, and reject --ipc-path.
 	}
 	command.Key = *key
 	command.Embedded = *embedded
+	command.Preset = *preset
+	command.ListPresets = *listPresets
 	command.Yes = *yes
 	command.Args = fs.Args()
 	if err := command.Validate(); err != nil {

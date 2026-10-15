@@ -37,6 +37,8 @@ type policiesState struct {
 	// status reports the last apply on the list.
 	status string
 	apply  policyApplyState
+	// presetPick is the starting-text picker shown before the editor.
+	presetPick policyPresetPickState
 }
 
 func newRequestID(prefix string) string {
@@ -131,7 +133,7 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openPolicyApply()
 	case "e":
 		if m.policies.selected < len(rows) {
-			return m.openPolicyEditForRow(rows[m.policies.selected])
+			return m.openPolicyPresetPick(rows[m.policies.selected])
 		}
 	case "up", "k":
 		if m.policies.selected > 0 {

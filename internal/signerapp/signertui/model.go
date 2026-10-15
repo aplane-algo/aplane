@@ -66,6 +66,7 @@ const (
 	ViewPolicyApplyForm     // File path prompt for loading a policy file
 	ViewPolicyApplyReview   // Diff review and confirmation before a policy apply
 	ViewPolicyEdit          // In-place JSON editor for one policy document
+	ViewPolicyPresetPick    // Starting-text choice before editing a cosigner policy
 	ViewTemplateLibrary     // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling

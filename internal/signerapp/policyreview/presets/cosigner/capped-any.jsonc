@@ -1,0 +1,34 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "default",
+  "description": "Capped: any account may send any asset anywhere, but no single ALGO transfer above the per-network cap.",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "10000",
+  "transaction_types": { "pay": "allow", "axfer": "allow" },
+  // Caps are per network and per asset, in base units (microALGO for algo).
+  // Replace the placeholder with the largest single ALGO transfer this key
+  // may cosign on mainnet; check rejects the document until it is a number.
+  // A network with no entry here is uncapped: add one for each network this
+  // key signs on, e.g. "testnet". ASAs are uncapped unless you add an
+  // "asa:<id>" entry with its own reject_above.
+  "limits": {
+    "mainnet": {
+      "algo": { "reject_above": "REPLACE-WITH-MAX-MICROALGOS" }
+    }
+  },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "any",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  }
+}

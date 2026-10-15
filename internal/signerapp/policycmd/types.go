@@ -55,15 +55,25 @@ func ParseVerb(raw string) (Verb, error) {
 // for check, diff, and apply, or key selectors for remove. Key selects one
 // document for export ("default" when empty) or the key a template is for.
 // Embedded, for template only, names a node role whose shipped default is
-// printed instead of a node's own; it is the only form that needs no node.
-// Yes applies without asking for confirmation.
+// printed instead of a node's own. Preset, for template only, names a
+// cosigner preset to print instead, and ListPresets lists the presets. These
+// three are the template forms that need no node. Yes applies without asking
+// for confirmation.
 type Command struct {
-	Verb     Verb
-	Args     []string
-	Key      string
-	Embedded string
-	Yes      bool
-	DataDir  string
+	Verb        Verb
+	Args        []string
+	Key         string
+	Embedded    string
+	Preset      string
+	ListPresets bool
+	Yes         bool
+	DataDir     string
+}
+
+// NeedsNoNode reports a template form that prints text apadmin carries
+// itself, so no store, socket, data directory, or passphrase takes part.
+func (c Command) NeedsNoNode() bool {
+	return c.Verb == VerbTemplate && (c.Embedded != "" || c.Preset != "" || c.ListPresets)
 }
 
 func (c Command) Validate() error {
@@ -101,6 +111,15 @@ func (c Command) Validate() error {
 		if _, err := noderole.ParseRole(c.Embedded); err != nil {
 			return fmt.Errorf("--embedded takes a node role: signer or cosigner")
 		}
+	}
+	if (c.Preset != "" || c.ListPresets) && c.Verb != VerbTemplate {
+		return fmt.Errorf("--preset and --list-presets apply only to policy template")
+	}
+	if c.Preset != "" && c.Embedded != "" {
+		return fmt.Errorf("--preset and --embedded are alternatives; give one")
+	}
+	if c.ListPresets && (c.Preset != "" || c.Embedded != "" || c.Key != "") {
+		return fmt.Errorf("--list-presets takes no other template flag")
 	}
 	if c.Key != "" && c.Verb != VerbExport && c.Verb != VerbTemplate {
 		return fmt.Errorf("--key applies only to policy export and template")

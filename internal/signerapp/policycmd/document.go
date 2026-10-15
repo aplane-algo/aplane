@@ -20,26 +20,43 @@ import (
 // ErrPolicyInvalid reports that check found errors; they have been printed.
 var ErrPolicyInvalid = errors.New("policy is invalid")
 
-// WriteEmbeddedTemplate writes the shipped default for the role named by
-// --embedded, as the starting document for --key (or as the default itself).
-// It needs no node and no passphrase, and is the only template form that
-// does not print a node's own default.
-func WriteEmbeddedTemplate(command Command, streams Streams) error {
+// WriteOfflineTemplate writes a template apadmin carries itself: the
+// shipped default for the role named by --embedded, or the cosigner preset
+// named by --preset, as the starting document for --key (or as the default
+// itself); or, for --list-presets, the list of cosigner presets. It needs no
+// node and no passphrase. Every other template form prints a node's own
+// default.
+func WriteOfflineTemplate(command Command, streams Streams) error {
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if command.Verb != VerbTemplate || command.Embedded == "" {
-		return fmt.Errorf("policy template --embedded signer|cosigner is required without a node")
+	if !command.NeedsNoNode() {
+		return fmt.Errorf("policy template --embedded signer|cosigner, --preset NAME, or --list-presets is required without a node")
 	}
-	role, err := noderole.ParseRole(command.Embedded)
-	if err != nil {
-		return err
+	stdout := streams.normalized().Stdout
+	var text string
+	switch {
+	case command.ListPresets:
+		var b strings.Builder
+		for _, preset := range policyreview.Presets(noderole.RoleCosigner) {
+			fmt.Fprintf(&b, "%-20s %s\n", preset.Name, preset.Summary)
+		}
+		text = b.String()
+	case command.Preset != "":
+		var err error
+		if text, err = policyreview.PresetTemplate(noderole.RoleCosigner, command.Preset, command.documentKey()); err != nil {
+			return err
+		}
+	default:
+		role, err := noderole.ParseRole(command.Embedded)
+		if err != nil {
+			return err
+		}
+		if text, err = policyreview.EmbeddedTemplate(role, command.documentKey()); err != nil {
+			return err
+		}
 	}
-	text, err := policyreview.EmbeddedTemplate(role, command.documentKey())
-	if err != nil {
-		return err
-	}
-	_, err = io.WriteString(streams.normalized().Stdout, text)
+	_, err := io.WriteString(stdout, text)
 	return err
 }
 

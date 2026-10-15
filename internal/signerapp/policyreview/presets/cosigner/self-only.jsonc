@@ -1,0 +1,23 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "default",
+  "description": "Self-transfers only: any account may send any asset to itself (ASA opt-ins, self-payments); nothing leaves the account.",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "10000",
+  "transaction_types": { "pay": "allow", "axfer": "allow" },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "self",
+        "networks": ["*"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["self"]
+      }
+    ]
+  }
+}
