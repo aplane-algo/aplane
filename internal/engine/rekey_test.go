@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/pkg/signerapi"
+
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 )
 
@@ -95,5 +97,24 @@ func TestPrepareRekey_Success(t *testing.T) {
 	}
 	if txn.RekeyTo.String() != target {
 		t.Errorf("txn.RekeyTo = %q, want %q", txn.RekeyTo.String(), target)
+	}
+}
+
+func TestPrepareRekey_RotatingTargetRefused(t *testing.T) {
+	sender := testAddr(1)
+	target := testAddr(2)
+
+	transport := newAccountMockTransport(t)
+	transport.addAccount(sender, 1_000_000)
+	transport.addAccount(target, 1_000_000)
+	eng := setupEngineWithMockAlgod(t, transport)
+	eng.SignerCache.SetSigningFlowForAddress(target, signerapi.SigningFlowRotating1)
+
+	result, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
+	if err == nil || result != nil {
+		t.Fatalf("rekey to a rotating account was prepared: result = %v, err = %v", result, err)
+	}
+	if !strings.Contains(err.Error(), "rotating account") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

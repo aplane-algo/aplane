@@ -1342,6 +1342,14 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 - Rotating accounts (`signing_flow: rotating1`) are rejected before approval
   with `code:"rotating_signing_required"` on `/plan`, `/sign`,
   `/sign/bounded-admin` and `/sign/component`.
+- A signed position that rekeys any other account to a rotating account this
+  signer holds is rejected with `403` before policy runs, on every path that
+  reaches the approval gates. A rotating account's address is its stage 0
+  program, which authorizes only the account itself: an account rekeyed to it
+  would be pinned to that one-time stage, outside the rotation. This is a
+  signer invariant, not a policy setting; the rotating flow's own rekeys go
+  to stage addresses and are unaffected. apshell's `rekey` refuses the same
+  target before building the transaction.
 
 `/plan` response (`signerapi.GroupPlanResponse`):
 

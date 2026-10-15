@@ -238,7 +238,9 @@ every non-transfer type a cosigner is asked to attest is rejected here.
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
-sender. `reject_rekey` is the cosigner coarse-deny analog and ignores key
+sender. A held rotating account is never an acceptable target: the signer
+refuses that rekey before policy runs, whatever the policy says (see
+[ARCH_SIGNING.md](ARCH_SIGNING.md)). `reject_rekey` is the cosigner coarse-deny analog and ignores key
 ownership: when true, any non-zero `RekeyTo` rejects. When it is false, the
 cosigner still fails closed unless `rekey_policy.allowed` authorizes the exact
 sender-to-target edge and the target transaction is a pure 0 ALGO

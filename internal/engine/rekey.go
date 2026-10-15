@@ -39,6 +39,14 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 		IsUnrekey: params.From == params.To,
 	}
 
+	// A rotating account's address is its stage 0 program, which authorizes
+	// only the account itself; the signer refuses such a rekey, so refuse it
+	// here with the reason before building anything.
+	if !checkResult.IsUnrekey && e.IsRotatingAccount(params.To) {
+		return nil, checkResult, fmt.Errorf("cannot rekey to %s: it is a rotating account, whose address authorizes only itself; give %s its own rotating key instead",
+			params.To, params.From)
+	}
+
 	// Check if target address is itself rekeyed (unless unrekeying)
 	if !checkResult.IsUnrekey {
 		toAcctInfo, err := e.AlgodClient.AccountInformation(params.To).Do(ctx)
