@@ -80,9 +80,9 @@ type KeyDetailsResult struct {
 }
 
 type AuditLogger interface {
-	LogKeyGenerated(address, keyType string)
-	LogKeyDeleted(address, deletedPath string)
-	LogKeyImported(address, keyType string)
+	LogKeyGenerated(ctx context.Context, address, keyType string)
+	LogKeyDeleted(ctx context.Context, address, deletedPath string)
+	LogKeyImported(ctx context.Context, address, keyType string)
 }
 
 type Locker interface {
@@ -213,7 +213,7 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyGenerated(genResult.Address, genResult.KeyType)
+		s.AuditLog.LogKeyGenerated(ctx, genResult.Address, genResult.KeyType)
 	}
 
 	return &GenerateResult{
@@ -271,7 +271,7 @@ func validateVisibleCosignerAuthorityCollisions(ir *productruntime.Runtime, cosi
 	return nil
 }
 
-func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
+func (s Service) DeleteKey(ctx context.Context, address string) (*DeleteResult, *Error) {
 	ir := s.Runtime
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
@@ -318,7 +318,7 @@ func (s Service) DeleteKey(address string) (*DeleteResult, *Error) {
 	}
 
 	if s.AuditLog != nil {
-		s.AuditLog.LogKeyDeleted(address, delResult.DeletedPath)
+		s.AuditLog.LogKeyDeleted(ctx, address, delResult.DeletedPath)
 	}
 
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil

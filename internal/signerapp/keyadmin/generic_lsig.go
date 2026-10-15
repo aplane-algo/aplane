@@ -109,7 +109,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 	}
 
 	if g.AuditLog != nil {
-		g.AuditLog.LogKeyGenerated(address, keyType)
+		g.AuditLog.LogKeyGenerated(ctx, address, keyType)
 	}
 
 	return address, nil

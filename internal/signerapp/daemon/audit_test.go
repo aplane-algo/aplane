@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -56,8 +58,8 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogSessionDisconnected("10.0.0.1", "user")
 	logger.LogStoreInitialized("/data/identities/default")
 	logger.LogStoreInitializeFailed("already initialized")
-	logger.LogPassphraseChanged(2, 1)
-	logger.LogPassphraseChangeFailed("invalid passphrase")
+	logger.LogPassphraseChanged(context.Background(), 2, 1)
+	logger.LogPassphraseChangeFailed(context.Background(), "invalid passphrase")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -454,9 +456,9 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogKeyGenerated("ADDR1", "ed25519")
-	logger.LogKeyDeleted("ADDR2", "/tmp/deleted/ADDR2.key")
-	logger.LogKeyImported("ADDR4", "ed25519")
+	logger.LogKeyGenerated(context.Background(), "ADDR1", "ed25519")
+	logger.LogKeyDeleted(context.Background(), "ADDR2", "/tmp/deleted/ADDR2.key")
+	logger.LogKeyImported(context.Background(), "ADDR4", "ed25519")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -509,4 +511,40 @@ func readAuditEntries(t *testing.T, path string) []AuditEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// Key and passphrase events name whoever the context says asked: a request
+// attribution, else an admin session, else the product admin.
+func TestAuditKeyMutationAttributionFromContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+
+	session := adminserver.SessionContext{
+		SessionID:      "sess-1",
+		AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
+		Transport:      adminserver.TransportIPC,
+	}
+	logger.LogKeyGenerated(context.Background(), "ADDR1", "ed25519")
+	logger.LogKeyGenerated(signeraudit.WithAttribution(context.Background(), auditAttribution{
+		RequesterPrincipal: "client:SHA256:abc", Transport: auditTransportHTTP, RemoteAddr: "127.0.0.1:5",
+	}), "ADDR2", "ed25519")
+	logger.LogPassphraseChanged(adminserver.WithSessionContext(context.Background(), session), 1, 0)
+
+	entries := readAuditEntries(t, path)
+	if len(entries) != 3 {
+		t.Fatalf("got %d entries, want 3", len(entries))
+	}
+	if e := entries[0]; e.Principal != "system:product-admin" || e.AdminSessionID != "" || e.Transport != "" {
+		t.Errorf("no attribution: %#v", e)
+	}
+	if e := entries[1]; e.Principal != "client:SHA256:abc" || e.RequesterPrincipal != "client:SHA256:abc" || e.Transport != auditTransportHTTP || e.RemoteAddr != "127.0.0.1:5" {
+		t.Errorf("request attribution: %#v", e)
+	}
+	if e := entries[2]; e.Principal != "system:product-admin" || e.AdminSessionID != "sess-1" || e.Transport != adminserver.TransportIPC {
+		t.Errorf("session attribution: %#v", e)
+	}
 }

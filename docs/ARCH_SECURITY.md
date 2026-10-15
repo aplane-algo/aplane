@@ -1306,7 +1306,7 @@ Signing-audit semantics:
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, `reason:"ssh"`, and outcome, attributed to `system:product-admin`
-- key-management audit events are emitted for both REST and authenticated IPC admin operations; REST `KEY_GENERATED`/`KEY_DELETED` entries are currently attributed to `system:product-admin` with no transport, not to the requesting client
+- key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time key-file invariant; for LogicSig salt failures,
   `reason` includes the key filename and rejection reason

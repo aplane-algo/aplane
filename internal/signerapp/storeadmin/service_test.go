@@ -4,6 +4,7 @@
 package storeadmin
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -34,11 +35,11 @@ func (l *recordingAuditLog) LogStoreInitializeFailed(reason string) {
 	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", reason: reason})
 }
 
-func (l *recordingAuditLog) LogPassphraseChanged(_, _ int) {
+func (l *recordingAuditLog) LogPassphraseChanged(_ context.Context, _, _ int) {
 	l.events = append(l.events, auditEvent{kind: "passphrase_changed"})
 }
 
-func (l *recordingAuditLog) LogPassphraseChangeFailed(reason string) {
+func (l *recordingAuditLog) LogPassphraseChangeFailed(_ context.Context, reason string) {
 	l.events = append(l.events, auditEvent{kind: "passphrase_change_failed", reason: reason})
 }
 
@@ -161,7 +162,7 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 			audit := &recordingAuditLog{}
 			ir := testIdentityRuntime()
 
-			result := Service{Runtime: ir, AuditLog: audit}.ChangeStorePassphrase(tt.req)
+			result := Service{Runtime: ir, AuditLog: audit}.ChangeStorePassphrase(context.Background(), tt.req)
 			if result.Code != "invalid_passphrase" {
 				t.Fatalf("Code = %q, want invalid_passphrase", result.Code)
 			}

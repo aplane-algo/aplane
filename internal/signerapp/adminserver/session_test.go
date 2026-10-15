@@ -151,7 +151,7 @@ func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) ad
 	}
 	return s.initializeStoreResult
 }
-func (s *stubServices) ChangeStorePassphrase(req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
+func (s *stubServices) ChangeStorePassphrase(_ context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	s.changePassphraseCalls++
 	s.lastChangePassphrase = adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: append([]byte(nil), req.CurrentPassphrase...),
@@ -213,10 +213,10 @@ func (s *stubServices) GenerateKey(ctx context.Context, req adminproto.GenerateK
 	s.lastGenerateKey = req
 	return s.generateKeyResult
 }
-func (s *stubServices) DeleteKey(req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
+func (s *stubServices) DeleteKey(_ context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
 	return adminproto.DeleteKeyResult{}
 }
-func (s *stubServices) ImportKey(req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
+func (s *stubServices) ImportKey(_ context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	s.importKeyCalls++
 	s.lastImportKey = req
 	return s.importKeyResult

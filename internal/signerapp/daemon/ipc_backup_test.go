@@ -107,7 +107,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	if archivePath == "" {
 		t.Fatalf("backup response = %#v", backupMessages)
 	}
-	if result := svc.keyApp().DeleteKey(adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
+	if result := svc.keyApp().DeleteKey(context.Background(), adminproto.DeleteKeyRequest{Address: generated.Address}); !result.Success {
 		t.Fatalf("DeleteKey() = %+v", result)
 	}
 	restoreRecorder := &ipcJSONRecorderConn{}
